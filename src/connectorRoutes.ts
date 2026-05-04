@@ -42,15 +42,26 @@ export function tryHandlePublicConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleGithubCallback } = await import("./connectors/github.js");
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleGithubCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleGithubCallback } = await import("./connectors/github.js");
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleGithubCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -59,15 +70,26 @@ export function tryHandlePublicConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleLinearCallback } = await import("./connectors/linear.js");
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleLinearCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleLinearCallback } = await import("./connectors/linear.js");
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleLinearCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -76,15 +98,26 @@ export function tryHandlePublicConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleSentryCallback } = await import("./connectors/sentry.js");
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleSentryCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleSentryCallback } = await import("./connectors/sentry.js");
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleSentryCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -93,17 +126,28 @@ export function tryHandlePublicConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleCalendarCallback } = await import(
-        "./connectors/googleCalendar.js"
-      );
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleCalendarCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleCalendarCallback } = await import(
+          "./connectors/googleCalendar.js"
+        );
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleCalendarCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -112,17 +156,28 @@ export function tryHandlePublicConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleDriveCallback } = await import(
-        "./connectors/googleDrive.js"
-      );
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleDriveCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleDriveCallback } = await import(
+          "./connectors/googleDrive.js"
+        );
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleDriveCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -131,15 +186,26 @@ export function tryHandlePublicConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleSlackCallback } = await import("./connectors/slack.js");
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleSlackCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleSlackCallback } = await import("./connectors/slack.js");
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleSlackCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -148,15 +214,26 @@ export function tryHandlePublicConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleGmailCallback } = await import("./connectors/gmail.js");
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleGmailCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "text/html",
-      });
-      res.end(result.body);
+      try {
+        const { handleGmailCallback } = await import("./connectors/gmail.js");
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleGmailCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "text/html",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -180,12 +257,23 @@ export function tryHandleConnectorRoute(
   // ── Gmail / Connections endpoints ───────────────────────────────────────
   if (parsedUrl.pathname === "/connections" && req.method === "GET") {
     void (async () => {
-      const { handleConnectionsList } = await import("./connectors/gmail.js");
-      const result = await handleConnectionsList();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleConnectionsList } = await import("./connectors/gmail.js");
+        const result = await handleConnectionsList();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -194,28 +282,52 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleGmailAuthRedirect } = await import("./connectors/gmail.js");
-      const result = handleGmailAuthRedirect();
-      if (result.redirect) {
-        res.writeHead(302, { Location: result.redirect });
-        res.end();
-      } else {
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+      try {
+        const { handleGmailAuthRedirect } = await import(
+          "./connectors/gmail.js"
+        );
+        const result = handleGmailAuthRedirect();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
     })();
     return true;
   }
   if (parsedUrl.pathname === "/connections/gmail" && req.method === "DELETE") {
     void (async () => {
-      const { handleGmailDisconnect } = await import("./connectors/gmail.js");
-      const result = await handleGmailDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleGmailDisconnect } = await import("./connectors/gmail.js");
+        const result = await handleGmailDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -224,12 +336,23 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleGmailTest } = await import("./connectors/gmail.js");
-      const result = await handleGmailTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleGmailTest } = await import("./connectors/gmail.js");
+        const result = await handleGmailTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -240,16 +363,29 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleGithubAuthorize } = await import("./connectors/github.js");
-      const result = await handleGithubAuthorize();
-      if (result.redirect) {
-        res.writeHead(302, { Location: result.redirect });
-        res.end();
-      } else {
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+      try {
+        const { handleGithubAuthorize } = await import(
+          "./connectors/github.js"
+        );
+        const result = await handleGithubAuthorize();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
     })();
     return true;
@@ -259,23 +395,47 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleGithubTest } = await import("./connectors/github.js");
-      const result = await handleGithubTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleGithubTest } = await import("./connectors/github.js");
+        const result = await handleGithubTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
   if (parsedUrl.pathname === "/connections/github" && req.method === "DELETE") {
     void (async () => {
-      const { handleGithubDisconnect } = await import("./connectors/github.js");
-      const result = await handleGithubDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleGithubDisconnect } = await import(
+          "./connectors/github.js"
+        );
+        const result = await handleGithubDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -286,16 +446,29 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleSentryAuthorize } = await import("./connectors/sentry.js");
-      const result = await handleSentryAuthorize();
-      if (result.redirect) {
-        res.writeHead(302, { Location: result.redirect });
-        res.end();
-      } else {
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+      try {
+        const { handleSentryAuthorize } = await import(
+          "./connectors/sentry.js"
+        );
+        const result = await handleSentryAuthorize();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
     })();
     return true;
@@ -305,15 +478,26 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleSentryCallback } = await import("./connectors/sentry.js");
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleSentryCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleSentryCallback } = await import("./connectors/sentry.js");
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleSentryCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -322,23 +506,47 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleSentryTest } = await import("./connectors/sentry.js");
-      const result = await handleSentryTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleSentryTest } = await import("./connectors/sentry.js");
+        const result = await handleSentryTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
   if (parsedUrl.pathname === "/connections/sentry" && req.method === "DELETE") {
     void (async () => {
-      const { handleSentryDisconnect } = await import("./connectors/sentry.js");
-      const result = await handleSentryDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleSentryDisconnect } = await import(
+          "./connectors/sentry.js"
+        );
+        const result = await handleSentryDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -349,16 +557,29 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleLinearAuthorize } = await import("./connectors/linear.js");
-      const result = await handleLinearAuthorize();
-      if (result.redirect) {
-        res.writeHead(302, { Location: result.redirect });
-        res.end();
-      } else {
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+      try {
+        const { handleLinearAuthorize } = await import(
+          "./connectors/linear.js"
+        );
+        const result = await handleLinearAuthorize();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
     })();
     return true;
@@ -368,15 +589,26 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleLinearCallback } = await import("./connectors/linear.js");
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleLinearCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleLinearCallback } = await import("./connectors/linear.js");
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleLinearCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -385,23 +617,47 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleLinearTest } = await import("./connectors/linear.js");
-      const result = await handleLinearTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleLinearTest } = await import("./connectors/linear.js");
+        const result = await handleLinearTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
   if (parsedUrl.pathname === "/connections/linear" && req.method === "DELETE") {
     void (async () => {
-      const { handleLinearDisconnect } = await import("./connectors/linear.js");
-      const result = await handleLinearDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleLinearDisconnect } = await import(
+          "./connectors/linear.js"
+        );
+        const result = await handleLinearDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -413,16 +669,27 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleSlackAuthorize } = await import("./connectors/slack.js");
-      const result = handleSlackAuthorize();
-      if (result.redirect) {
-        res.writeHead(302, { Location: result.redirect });
-        res.end();
-      } else {
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+      try {
+        const { handleSlackAuthorize } = await import("./connectors/slack.js");
+        const result = handleSlackAuthorize();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
     })();
     return true;
@@ -432,23 +699,45 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleSlackTest } = await import("./connectors/slack.js");
-      const result = await handleSlackTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleSlackTest } = await import("./connectors/slack.js");
+        const result = await handleSlackTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
   if (parsedUrl.pathname === "/connections/slack" && req.method === "DELETE") {
     void (async () => {
-      const { handleSlackDisconnect } = await import("./connectors/slack.js");
-      const result = handleSlackDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleSlackDisconnect } = await import("./connectors/slack.js");
+        const result = handleSlackDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -460,18 +749,29 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleDiscordAuthorize } = await import(
-        "./connectors/discord.js"
-      );
-      const result = handleDiscordAuthorize();
-      if (result.redirect) {
-        res.writeHead(302, { Location: result.redirect });
-        res.end();
-      } else {
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+      try {
+        const { handleDiscordAuthorize } = await import(
+          "./connectors/discord.js"
+        );
+        const result = handleDiscordAuthorize();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
     })();
     return true;
@@ -481,15 +781,28 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleDiscordCallback } = await import("./connectors/discord.js");
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleDiscordCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "text/html",
-      });
-      res.end(result.body);
+      try {
+        const { handleDiscordCallback } = await import(
+          "./connectors/discord.js"
+        );
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleDiscordCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "text/html",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -498,12 +811,23 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleDiscordTest } = await import("./connectors/discord.js");
-      const result = await handleDiscordTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleDiscordTest } = await import("./connectors/discord.js");
+        const result = await handleDiscordTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -512,14 +836,25 @@ export function tryHandleConnectorRoute(
     req.method === "DELETE"
   ) {
     void (async () => {
-      const { handleDiscordDisconnect } = await import(
-        "./connectors/discord.js"
-      );
-      const result = await handleDiscordDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleDiscordDisconnect } = await import(
+          "./connectors/discord.js"
+        );
+        const result = await handleDiscordDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -531,16 +866,27 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleAsanaAuthorize } = await import("./connectors/asana.js");
-      const result = handleAsanaAuthorize();
-      if (result.redirect) {
-        res.writeHead(302, { Location: result.redirect });
-        res.end();
-      } else {
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+      try {
+        const { handleAsanaAuthorize } = await import("./connectors/asana.js");
+        const result = handleAsanaAuthorize();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
     })();
     return true;
@@ -550,15 +896,26 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleAsanaCallback } = await import("./connectors/asana.js");
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleAsanaCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "text/html",
-      });
-      res.end(result.body);
+      try {
+        const { handleAsanaCallback } = await import("./connectors/asana.js");
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleAsanaCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "text/html",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -567,23 +924,45 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleAsanaTest } = await import("./connectors/asana.js");
-      const result = await handleAsanaTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleAsanaTest } = await import("./connectors/asana.js");
+        const result = await handleAsanaTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
   if (parsedUrl.pathname === "/connections/asana" && req.method === "DELETE") {
     void (async () => {
-      const { handleAsanaDisconnect } = await import("./connectors/asana.js");
-      const result = await handleAsanaDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleAsanaDisconnect } = await import("./connectors/asana.js");
+        const result = await handleAsanaDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -595,16 +974,29 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleGitLabAuthorize } = await import("./connectors/gitlab.js");
-      const result = handleGitLabAuthorize();
-      if (result.redirect) {
-        res.writeHead(302, { Location: result.redirect });
-        res.end();
-      } else {
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+      try {
+        const { handleGitLabAuthorize } = await import(
+          "./connectors/gitlab.js"
+        );
+        const result = handleGitLabAuthorize();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
     })();
     return true;
@@ -614,15 +1006,26 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleGitLabCallback } = await import("./connectors/gitlab.js");
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleGitLabCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "text/html",
-      });
-      res.end(result.body);
+      try {
+        const { handleGitLabCallback } = await import("./connectors/gitlab.js");
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleGitLabCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "text/html",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -631,23 +1034,47 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleGitLabTest } = await import("./connectors/gitlab.js");
-      const result = await handleGitLabTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleGitLabTest } = await import("./connectors/gitlab.js");
+        const result = await handleGitLabTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
   if (parsedUrl.pathname === "/connections/gitlab" && req.method === "DELETE") {
     void (async () => {
-      const { handleGitLabDisconnect } = await import("./connectors/gitlab.js");
-      const result = await handleGitLabDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleGitLabDisconnect } = await import(
+          "./connectors/gitlab.js"
+        );
+        const result = await handleGitLabDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -661,14 +1088,27 @@ export function tryHandleConnectorRoute(
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
       void (async () => {
-        const { handleNotionConnect } = await import("./connectors/notion.js");
-        const result = await handleNotionConnect(
-          Buffer.concat(chunks).toString("utf-8"),
-        );
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+        try {
+          const { handleNotionConnect } = await import(
+            "./connectors/notion.js"
+          );
+          const result = await handleNotionConnect(
+            Buffer.concat(chunks).toString("utf-8"),
+          );
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        } catch (err) {
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        }
       })();
     });
     return true;
@@ -678,23 +1118,47 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleNotionTest } = await import("./connectors/notion.js");
-      const result = await handleNotionTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleNotionTest } = await import("./connectors/notion.js");
+        const result = await handleNotionTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
   if (parsedUrl.pathname === "/connections/notion" && req.method === "DELETE") {
     void (async () => {
-      const { handleNotionDisconnect } = await import("./connectors/notion.js");
-      const result = handleNotionDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleNotionDisconnect } = await import(
+          "./connectors/notion.js"
+        );
+        const result = handleNotionDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -708,16 +1172,27 @@ export function tryHandleConnectorRoute(
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
       void (async () => {
-        const { handleConfluenceConnect } = await import(
-          "./connectors/confluence.js"
-        );
-        const result = await handleConfluenceConnect(
-          Buffer.concat(chunks).toString("utf-8"),
-        );
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+        try {
+          const { handleConfluenceConnect } = await import(
+            "./connectors/confluence.js"
+          );
+          const result = await handleConfluenceConnect(
+            Buffer.concat(chunks).toString("utf-8"),
+          );
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        } catch (err) {
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        }
       })();
     });
     return true;
@@ -727,14 +1202,25 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleConfluenceTest } = await import(
-        "./connectors/confluence.js"
-      );
-      const result = await handleConfluenceTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleConfluenceTest } = await import(
+          "./connectors/confluence.js"
+        );
+        const result = await handleConfluenceTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -743,14 +1229,25 @@ export function tryHandleConnectorRoute(
     req.method === "DELETE"
   ) {
     void (async () => {
-      const { handleConfluenceDisconnect } = await import(
-        "./connectors/confluence.js"
-      );
-      const result = handleConfluenceDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleConfluenceDisconnect } = await import(
+          "./connectors/confluence.js"
+        );
+        const result = handleConfluenceDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -764,16 +1261,27 @@ export function tryHandleConnectorRoute(
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
       void (async () => {
-        const { handleZendeskConnect } = await import(
-          "./connectors/zendesk.js"
-        );
-        const result = await handleZendeskConnect(
-          Buffer.concat(chunks).toString("utf-8"),
-        );
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+        try {
+          const { handleZendeskConnect } = await import(
+            "./connectors/zendesk.js"
+          );
+          const result = await handleZendeskConnect(
+            Buffer.concat(chunks).toString("utf-8"),
+          );
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        } catch (err) {
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        }
       })();
     });
     return true;
@@ -783,12 +1291,23 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleZendeskTest } = await import("./connectors/zendesk.js");
-      const result = await handleZendeskTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleZendeskTest } = await import("./connectors/zendesk.js");
+        const result = await handleZendeskTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -797,14 +1316,25 @@ export function tryHandleConnectorRoute(
     req.method === "DELETE"
   ) {
     void (async () => {
-      const { handleZendeskDisconnect } = await import(
-        "./connectors/zendesk.js"
-      );
-      const result = handleZendeskDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleZendeskDisconnect } = await import(
+          "./connectors/zendesk.js"
+        );
+        const result = handleZendeskDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -818,16 +1348,27 @@ export function tryHandleConnectorRoute(
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
       void (async () => {
-        const { handleIntercomConnect } = await import(
-          "./connectors/intercom.js"
-        );
-        const result = await handleIntercomConnect(
-          Buffer.concat(chunks).toString("utf-8"),
-        );
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+        try {
+          const { handleIntercomConnect } = await import(
+            "./connectors/intercom.js"
+          );
+          const result = await handleIntercomConnect(
+            Buffer.concat(chunks).toString("utf-8"),
+          );
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        } catch (err) {
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        }
       })();
     });
     return true;
@@ -837,12 +1378,23 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleIntercomTest } = await import("./connectors/intercom.js");
-      const result = await handleIntercomTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleIntercomTest } = await import("./connectors/intercom.js");
+        const result = await handleIntercomTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -851,14 +1403,25 @@ export function tryHandleConnectorRoute(
     req.method === "DELETE"
   ) {
     void (async () => {
-      const { handleIntercomDisconnect } = await import(
-        "./connectors/intercom.js"
-      );
-      const result = handleIntercomDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleIntercomDisconnect } = await import(
+          "./connectors/intercom.js"
+        );
+        const result = handleIntercomDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -872,16 +1435,27 @@ export function tryHandleConnectorRoute(
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
       void (async () => {
-        const { handleHubSpotConnect } = await import(
-          "./connectors/hubspot.js"
-        );
-        const result = await handleHubSpotConnect(
-          Buffer.concat(chunks).toString("utf-8"),
-        );
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+        try {
+          const { handleHubSpotConnect } = await import(
+            "./connectors/hubspot.js"
+          );
+          const result = await handleHubSpotConnect(
+            Buffer.concat(chunks).toString("utf-8"),
+          );
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        } catch (err) {
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        }
       })();
     });
     return true;
@@ -891,12 +1465,23 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleHubSpotTest } = await import("./connectors/hubspot.js");
-      const result = await handleHubSpotTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleHubSpotTest } = await import("./connectors/hubspot.js");
+        const result = await handleHubSpotTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -905,14 +1490,25 @@ export function tryHandleConnectorRoute(
     req.method === "DELETE"
   ) {
     void (async () => {
-      const { handleHubSpotDisconnect } = await import(
-        "./connectors/hubspot.js"
-      );
-      const result = handleHubSpotDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleHubSpotDisconnect } = await import(
+          "./connectors/hubspot.js"
+        );
+        const result = handleHubSpotDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -926,16 +1522,27 @@ export function tryHandleConnectorRoute(
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
       void (async () => {
-        const { handleDatadogConnect } = await import(
-          "./connectors/datadog.js"
-        );
-        const result = await handleDatadogConnect(
-          Buffer.concat(chunks).toString("utf-8"),
-        );
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+        try {
+          const { handleDatadogConnect } = await import(
+            "./connectors/datadog.js"
+          );
+          const result = await handleDatadogConnect(
+            Buffer.concat(chunks).toString("utf-8"),
+          );
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        } catch (err) {
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        }
       })();
     });
     return true;
@@ -945,12 +1552,23 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleDatadogTest } = await import("./connectors/datadog.js");
-      const result = await handleDatadogTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleDatadogTest } = await import("./connectors/datadog.js");
+        const result = await handleDatadogTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -959,14 +1577,25 @@ export function tryHandleConnectorRoute(
     req.method === "DELETE"
   ) {
     void (async () => {
-      const { handleDatadogDisconnect } = await import(
-        "./connectors/datadog.js"
-      );
-      const result = handleDatadogDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleDatadogDisconnect } = await import(
+          "./connectors/datadog.js"
+        );
+        const result = handleDatadogDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -980,16 +1609,27 @@ export function tryHandleConnectorRoute(
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
       void (async () => {
-        const { handlePagerDutyConnect } = await import(
-          "./connectors/pagerduty.js"
-        );
-        const result = await handlePagerDutyConnect(
-          Buffer.concat(chunks).toString("utf-8"),
-        );
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+        try {
+          const { handlePagerDutyConnect } = await import(
+            "./connectors/pagerduty.js"
+          );
+          const result = await handlePagerDutyConnect(
+            Buffer.concat(chunks).toString("utf-8"),
+          );
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        } catch (err) {
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        }
       })();
     });
     return true;
@@ -999,12 +1639,25 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handlePagerDutyTest } = await import("./connectors/pagerduty.js");
-      const result = await handlePagerDutyTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handlePagerDutyTest } = await import(
+          "./connectors/pagerduty.js"
+        );
+        const result = await handlePagerDutyTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -1013,14 +1666,25 @@ export function tryHandleConnectorRoute(
     req.method === "DELETE"
   ) {
     void (async () => {
-      const { handlePagerDutyDisconnect } = await import(
-        "./connectors/pagerduty.js"
-      );
-      const result = handlePagerDutyDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handlePagerDutyDisconnect } = await import(
+          "./connectors/pagerduty.js"
+        );
+        const result = handlePagerDutyDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -1036,12 +1700,25 @@ export function tryHandleConnectorRoute(
     });
     req.on("end", () => {
       void (async () => {
-        const { handleStripeConnect } = await import("./connectors/stripe.js");
-        const result = await handleStripeConnect(body);
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+        try {
+          const { handleStripeConnect } = await import(
+            "./connectors/stripe.js"
+          );
+          const result = await handleStripeConnect(body);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        } catch (err) {
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        }
       })();
     });
     return true;
@@ -1051,23 +1728,47 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleStripeTest } = await import("./connectors/stripe.js");
-      const result = await handleStripeTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleStripeTest } = await import("./connectors/stripe.js");
+        const result = await handleStripeTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
   if (parsedUrl.pathname === "/connections/stripe" && req.method === "DELETE") {
     void (async () => {
-      const { handleStripeDisconnect } = await import("./connectors/stripe.js");
-      const result = handleStripeDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleStripeDisconnect } = await import(
+          "./connectors/stripe.js"
+        );
+        const result = handleStripeDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -1078,18 +1779,29 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleCalendarAuthRedirect } = await import(
-        "./connectors/googleCalendar.js"
-      );
-      const result = handleCalendarAuthRedirect();
-      if (result.redirect) {
-        res.writeHead(302, { Location: result.redirect });
-        res.end();
-      } else {
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+      try {
+        const { handleCalendarAuthRedirect } = await import(
+          "./connectors/googleCalendar.js"
+        );
+        const result = handleCalendarAuthRedirect();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
     })();
     return true;
@@ -1099,17 +1811,28 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleCalendarCallback } = await import(
-        "./connectors/googleCalendar.js"
-      );
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleCalendarCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleCalendarCallback } = await import(
+          "./connectors/googleCalendar.js"
+        );
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleCalendarCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -1118,14 +1841,25 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleCalendarTest } = await import(
-        "./connectors/googleCalendar.js"
-      );
-      const result = await handleCalendarTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleCalendarTest } = await import(
+          "./connectors/googleCalendar.js"
+        );
+        const result = await handleCalendarTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -1134,14 +1868,25 @@ export function tryHandleConnectorRoute(
     req.method === "DELETE"
   ) {
     void (async () => {
-      const { handleCalendarDisconnect } = await import(
-        "./connectors/googleCalendar.js"
-      );
-      const result = await handleCalendarDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleCalendarDisconnect } = await import(
+          "./connectors/googleCalendar.js"
+        );
+        const result = await handleCalendarDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -1152,18 +1897,29 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleDriveAuthRedirect } = await import(
-        "./connectors/googleDrive.js"
-      );
-      const result = handleDriveAuthRedirect();
-      if (result.redirect) {
-        res.writeHead(302, { Location: result.redirect });
-        res.end();
-      } else {
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
+      try {
+        const { handleDriveAuthRedirect } = await import(
+          "./connectors/googleDrive.js"
+        );
+        const result = handleDriveAuthRedirect();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
     })();
     return true;
@@ -1173,17 +1929,28 @@ export function tryHandleConnectorRoute(
     req.method === "GET"
   ) {
     void (async () => {
-      const { handleDriveCallback } = await import(
-        "./connectors/googleDrive.js"
-      );
-      const code = parsedUrl.searchParams.get("code");
-      const state = parsedUrl.searchParams.get("state");
-      const error = parsedUrl.searchParams.get("error");
-      const result = await handleDriveCallback(code, state, error);
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleDriveCallback } = await import(
+          "./connectors/googleDrive.js"
+        );
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleDriveCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -1192,12 +1959,23 @@ export function tryHandleConnectorRoute(
     req.method === "POST"
   ) {
     void (async () => {
-      const { handleDriveTest } = await import("./connectors/googleDrive.js");
-      const result = await handleDriveTest();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleDriveTest } = await import("./connectors/googleDrive.js");
+        const result = await handleDriveTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
@@ -1206,14 +1984,25 @@ export function tryHandleConnectorRoute(
     req.method === "DELETE"
   ) {
     void (async () => {
-      const { handleDriveDisconnect } = await import(
-        "./connectors/googleDrive.js"
-      );
-      const result = await handleDriveDisconnect();
-      res.writeHead(result.status, {
-        "Content-Type": result.contentType ?? "application/json",
-      });
-      res.end(result.body);
+      try {
+        const { handleDriveDisconnect } = await import(
+          "./connectors/googleDrive.js"
+        );
+        const result = await handleDriveDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
     })();
     return true;
   }
