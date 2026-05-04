@@ -35,6 +35,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
+import { loadConfig as loadPatchworkConfigSync } from "../patchworkConfig.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
 import type { RecipeRunLog } from "../runLog.js";
 import {
@@ -1104,12 +1105,11 @@ function buildAgentExecutorDeps(
       return !probe.error;
     },
     loadPatchworkConfig: () => {
+      // Synchronous static import — earlier `require()` form silently failed
+      // under "type": "module" and returned {}, dropping config-driven
+      // model/driver preferences for no-driver agent steps.
       try {
-        // Lazy sync load — patchworkConfig exports a synchronous loadConfig.
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { loadConfig } =
-          require("../patchworkConfig.js") as typeof import("../patchworkConfig.js");
-        return loadConfig();
+        return loadPatchworkConfigSync();
       } catch {
         return {};
       }
