@@ -3,6 +3,20 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+// Isolate from the developer's real ~/.patchwork/config.json — agent steps
+// now read it via a static import (was a broken `require()` under ESM that
+// always returned {}). Tests assert default model / driver behavior, so we
+// hold the config to {} here.
+vi.mock("../../patchworkConfig.js", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../patchworkConfig.js")
+  >("../../patchworkConfig.js");
+  return {
+    ...actual,
+    loadConfig: vi.fn(() => ({})),
+  };
+});
+
 vi.mock("../../connectors/linear.js", () => ({
   loadTokens: vi.fn(),
   listIssues: vi.fn(),
