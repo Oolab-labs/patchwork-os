@@ -7,11 +7,8 @@ import {
   type MockInstance,
   vi,
 } from "vitest";
-import type {
-  ProviderDriver,
-  ProviderTaskInput,
-} from "../drivers/types.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
+import type { ProviderDriver, ProviderTaskInput } from "../drivers/types.js";
 
 // ── Mock driver helpers ───────────────────────────────────────────────────────
 
