@@ -372,9 +372,18 @@ function lintStep(
   // Emit a warning rather than error: the recipe may be installed on the
   // deploy target but not the author's machine.
   if (existsSync(RECIPES_DIR)) {
-    const found =
-      findYamlRecipePath(RECIPES_DIR, ref) ??
-      (existsSync(join(RECIPES_DIR, ref)) ? join(RECIPES_DIR, ref) : null);
+    let found: string | null = null;
+    try {
+      found =
+        findYamlRecipePath(RECIPES_DIR, ref) ??
+        (existsSync(join(RECIPES_DIR, ref)) ? join(RECIPES_DIR, ref) : null);
+    } catch (err) {
+      issues.push({
+        level: "error",
+        message: `Step ${stepLabel}: '${field}: ${ref}' — ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return issues;
+    }
     if (!found) {
       issues.push({
         level: "warning",

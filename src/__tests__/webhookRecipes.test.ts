@@ -15,6 +15,7 @@ import {
   listInstalledRecipes,
   loadRecipeContent,
   loadRecipePrompt,
+  RecipeNameConflictError,
   renderWebhookPrompt,
   saveRecipe,
   saveRecipeContent,
@@ -129,6 +130,43 @@ describe("findWebhookRecipe", () => {
     expect(findYamlRecipePath(tmp, "declared-yaml-name")).toBe(
       path.join(tmp, "custom-filename.yaml"),
     );
+  });
+
+  it("throws RecipeNameConflictError when two YAML recipes declare the same name", () => {
+    const yamlBody = (name: string) =>
+      [
+        `name: ${name}`,
+        "trigger:",
+        "  type: manual",
+        "steps:",
+        "  - tool: file.write",
+        "    path: /tmp/out.txt",
+        "    content: ok",
+        "",
+      ].join("\n");
+
+    writeFileSync(
+      path.join(tmp, "daily-status.yaml"),
+      yamlBody("daily-status"),
+    );
+    writeFileSync(path.join(tmp, "copy.yaml"), yamlBody("daily-status"));
+
+    let caught: unknown;
+    try {
+      findYamlRecipePath(tmp, "daily-status");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(RecipeNameConflictError);
+    const err = caught as RecipeNameConflictError;
+    expect(err.recipeName).toBe("daily-status");
+    expect(err.paths).toHaveLength(2);
+    expect(err.paths.map((p) => path.basename(p)).sort()).toEqual([
+      "copy.yaml",
+      "daily-status.yaml",
+    ]);
+    expect(err.message).toContain("daily-status");
+    expect(err.message).toContain("copy.yaml");
   });
 });
 
