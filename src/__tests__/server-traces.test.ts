@@ -152,3 +152,60 @@ describe("GET /traces", () => {
     expect(await req).toBe(401);
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET /traces/export — passphrase header validation
+// ---------------------------------------------------------------------------
+
+function getExport(
+  extraHeaders: Record<string, string> = {},
+  qs = "",
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        method: "GET",
+        path: `/traces/export${qs}`,
+        headers: { Authorization: `Bearer ${TOKEN}`, ...extraHeaders },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (c) => (data += c));
+        res.on("end", () =>
+          resolve({ status: res.statusCode ?? 0, body: data }),
+        );
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+describe("GET /traces/export — passphrase validation", () => {
+  it("rejects passphrase supplied as query string param", async () => {
+    await startServer();
+    const { status, body } = await getExport({}, "?passphrase=secretpassword");
+    expect(status).toBe(400);
+    expect(JSON.parse(body).error).toMatch(/header/i);
+  });
+
+  it("rejects passphrase shorter than 12 chars via header", async () => {
+    await startServer();
+    const { status, body } = await getExport({
+      "x-trace-passphrase": "short",
+    });
+    expect(status).toBe(400);
+    expect(JSON.parse(body).error).toMatch(/too short/i);
+  });
+
+  it("rejects passphrase longer than 4096 chars via header", async () => {
+    await startServer();
+    const { status, body } = await getExport({
+      "x-trace-passphrase": "a".repeat(4097),
+    });
+    expect(status).toBe(400);
+    expect(JSON.parse(body).error).toMatch(/too long/i);
+  });
+});
