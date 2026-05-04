@@ -262,21 +262,25 @@ export async function runTracesExport(
   };
 
   // Emit: manifest line + one envelope per row, gzip-piped to disk.
-  const gzip = createGzip();
+  // Use a Readable source so pipeline() owns backpressure end-to-end —
+  // writing directly to gzip outside the pipeline ignores the drain signal
+  // and silently buffers everything in memory on large exports.
+  const { Readable } = await import("node:stream");
+  const source = Readable.from(
+    (function* () {
+      yield `${JSON.stringify(manifest)}\n`;
+      for (const f of files) {
+        for (const entry of f.rows) {
+          const env: RowEnvelope = { source: f.source, entry };
+          if (f.activityFile) env.file = f.activityFile;
+          yield `${JSON.stringify(env)}\n`;
+        }
+      }
+    })(),
+    { objectMode: false },
+  );
   const sink = createWriteStream(outputPath, { mode: 0o600 });
-  const writeChunk = (line: string): boolean => gzip.write(`${line}\n`);
-  const drainPromise = pipeline(gzip, sink);
-
-  writeChunk(JSON.stringify(manifest));
-  for (const f of files) {
-    for (const entry of f.rows) {
-      const env: RowEnvelope = { source: f.source, entry };
-      if (f.activityFile) env.file = f.activityFile;
-      writeChunk(JSON.stringify(env));
-    }
-  }
-  gzip.end();
-  await drainPromise;
+  await pipeline(source, createGzip(), sink);
 
   return {
     outputPath,
@@ -357,22 +361,22 @@ export async function runTracesExportToStream(
     totalCount,
   };
 
-  const gzip = createGzip();
-  const drainPromise = pipeline(gzip, writable);
-
-  const writeChunk = (line: string): void => {
-    gzip.write(`${line}\n`);
-  };
-  writeChunk(JSON.stringify(manifest));
-  for (const f of files) {
-    for (const entry of f.rows) {
-      const env: RowEnvelope = { source: f.source, entry };
-      if (f.activityFile) env.file = f.activityFile;
-      writeChunk(JSON.stringify(env));
-    }
-  }
-  gzip.end();
-  await drainPromise;
+  // Use a Readable source so pipeline() owns backpressure end-to-end.
+  const { Readable } = await import("node:stream");
+  const source = Readable.from(
+    (function* () {
+      yield `${JSON.stringify(manifest)}\n`;
+      for (const f of files) {
+        for (const entry of f.rows) {
+          const env: RowEnvelope = { source: f.source, entry };
+          if (f.activityFile) env.file = f.activityFile;
+          yield `${JSON.stringify(env)}\n`;
+        }
+      }
+    })(),
+    { objectMode: false },
+  );
+  await pipeline(source, createGzip(), writable);
 
   return {
     exportedAt,
