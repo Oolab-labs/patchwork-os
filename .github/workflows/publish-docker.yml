@@ -17,9 +17,26 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Promote :latest only for stable semver tags (no `-alpha`, `-beta`, `-rc`).
+      # Alpha tags publish only as `:<tag>` and `:alpha`, so `docker pull
+      # ghcr.io/.../claude-ide-bridge:latest` never silently lands on a
+      # prerelease build.
+      - name: Compute Docker tags
+        id: tags
+        run: |
+          REF="${{ github.ref_name }}"
+          TAGS="ghcr.io/oolab-labs/claude-ide-bridge:${REF}"
+          if [[ "$REF" =~ -(alpha|beta|rc) ]]; then
+            TAGS="${TAGS}"$'\n'"ghcr.io/oolab-labs/claude-ide-bridge:alpha"
+          else
+            TAGS="${TAGS}"$'\n'"ghcr.io/oolab-labs/claude-ide-bridge:latest"
+          fi
+          {
+            echo 'tags<<EOF'
+            echo "$TAGS"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           push: true
-          tags: |
-            ghcr.io/oolab-labs/claude-ide-bridge:${{ github.ref_name }}
-            ghcr.io/oolab-labs/claude-ide-bridge:latest
+          tags: ${{ steps.tags.outputs.tags }}
