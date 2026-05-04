@@ -1095,6 +1095,28 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
   return { recipesDir, recipes };
 }
 
+/**
+ * Thrown by `findYamlRecipePath` (and listing/lint paths that surface this)
+ * when more than one enabled YAML recipe declares the same `name`. Callers
+ * must surface this loudly rather than silently picking the first match —
+ * dashboard run buttons, scheduler fires, and webhook resolution would all
+ * be ambiguous otherwise.
+ */
+export class RecipeNameConflictError extends Error {
+  readonly recipeName: string;
+  readonly paths: string[];
+  constructor(recipeName: string, paths: string[]) {
+    super(
+      `Multiple YAML recipes declare name "${recipeName}": ${paths
+        .map((p) => path.basename(p))
+        .join(", ")}`,
+    );
+    this.name = "RecipeNameConflictError";
+    this.recipeName = recipeName;
+    this.paths = paths;
+  }
+}
+
 export function findYamlRecipePath(
   recipesDir: string,
   name: string,
@@ -1103,57 +1125,62 @@ export function findYamlRecipePath(
   if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) return null;
 
   const base = path.resolve(recipesDir);
-  const candidates = [
-    path.resolve(recipesDir, `${safeName}.yaml`),
-    path.resolve(recipesDir, `${safeName}.yml`),
-  ];
-  for (const candidate of candidates) {
+  const matches = new Set<string>();
+
+  // Exact-filename matches (top-level legacy layout). The parsed `name`
+  // field is allowed to differ from the filename, so we still scan below.
+  for (const ext of [".yaml", ".yml"]) {
+    const candidate = path.resolve(recipesDir, `${safeName}${ext}`);
     if (!candidate.startsWith(base + path.sep)) return null;
-    if (existsSync(candidate)) {
-      return candidate;
-    }
+    if (existsSync(candidate)) matches.add(candidate);
   }
 
-  let entries: string[];
+  let entries: string[] = [];
   try {
     entries = readdirSync(recipesDir);
   } catch {
-    return null;
+    // recipesDir missing — fall through; matches may still be empty
   }
 
   for (const entry of entries) {
     if (!entry.endsWith(".yaml") && !entry.endsWith(".yml")) continue;
     const entryPath = path.join(recipesDir, entry);
+    if (matches.has(entryPath)) continue;
     try {
-      const entryRaw = readFileSync(entryPath, "utf-8");
-      const entryParsed = parseYaml(entryRaw) as { name?: string };
-      if (entryParsed.name?.toLowerCase() !== safeName) {
-        continue;
+      const entryParsed = parseYaml(readFileSync(entryPath, "utf-8")) as {
+        name?: string;
+      };
+      if (entryParsed.name?.toLowerCase() === safeName) {
+        matches.add(entryPath);
       }
-      return entryPath;
     } catch {
       // skip malformed candidate
     }
   }
 
-  // Also search install dirs from `recipeInstall`. Skips dirs with
+  // Install dirs from `recipeInstall`. iterateInstallDirs skips dirs with
   // `.disabled` marker so the manual-fire / orchestrator path can't
   // resolve a recipe the user has explicitly disabled.
   for (const { entrypointPath } of iterateInstallDirs(recipesDir)) {
     if (!/\.ya?ml$/i.test(entrypointPath)) continue;
+    if (matches.has(entrypointPath)) continue;
     try {
       const parsed = parseYaml(readFileSync(entrypointPath, "utf-8")) as {
         name?: string;
       };
       if (parsed.name?.toLowerCase() === safeName) {
-        return entrypointPath;
+        matches.add(entrypointPath);
       }
     } catch {
       // skip malformed
     }
   }
 
-  return null;
+  if (matches.size === 0) return null;
+  if (matches.size > 1) {
+    throw new RecipeNameConflictError(safeName, [...matches].sort());
+  }
+  return [...matches][0] ?? null;
 }
 
 /**

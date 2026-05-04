@@ -304,8 +304,18 @@ export class RecipeScheduler {
       // proceed if config unreadable — falling back to scan-time snapshot
     }
 
-    // YAML recipe — delegate to runYaml if provided
-    const yamlPath = findYamlRecipePath(this.opts.recipesDir, name);
+    // YAML recipe — delegate to runYaml if provided. findYamlRecipePath
+    // now throws RecipeNameConflictError when two recipes declare the same
+    // name; surface that loudly instead of letting the timer crash silently.
+    let yamlPath: string | null;
+    try {
+      yamlPath = findYamlRecipePath(this.opts.recipesDir, name);
+    } catch (err) {
+      this.opts.logger?.warn?.(
+        `[scheduler] skipped "${name}" — ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
 
     if (yamlPath) {
       if (!this.opts.runYaml) {
