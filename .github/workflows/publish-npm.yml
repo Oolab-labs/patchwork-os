@@ -47,6 +47,11 @@ jobs:
             --repo Oolab-labs/claude-ide-bridge
 
   publish:
+    # Stable publish runs only on manual workflow_dispatch. Without this guard
+    # an alpha tag push (`v*-alpha*`) would also trigger this job, which would
+    # then fail noisily because `inputs.bump` is unset on tag events — or, if
+    # ever edited, could publish a stable bump from an alpha tag.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
