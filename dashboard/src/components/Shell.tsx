@@ -424,7 +424,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <BridgeStatusBlock status={status} />
       </aside>
 
-      <main className="app-main">
+      <main id="main-content" className="app-main" tabIndex={-1}>
         <div className="app-content">{children}</div>
       </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

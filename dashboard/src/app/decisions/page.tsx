@@ -221,6 +221,8 @@ function DecisionsContent() {
               key={t}
               type="button"
               onClick={() => setTag(tag === t ? "" : t)}
+              aria-pressed={tag === t}
+              aria-label={`Filter by tag: ${t}`}
               className={tag === t ? "pill accent" : "pill muted"}
               style={{ cursor: "pointer", fontFamily: "var(--font-mono)" }}
             >

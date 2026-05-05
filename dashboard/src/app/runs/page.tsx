@@ -92,9 +92,9 @@ const RUNS_PAGE_SIZE = 100;
 export default function RunsPage() {
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [err, setErr] = useState<string>();
-  const [trigger] = useState<TriggerFilter>("all");
+  const [trigger, setTrigger] = useState<TriggerFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [recipeQuery] = useState("");
+  const [recipeQuery, setRecipeQuery] = useState("");
   const [limit, setLimit] = useState(RUNS_PAGE_SIZE);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -155,6 +155,53 @@ export default function RunsPage() {
           </div>
         </div>
         <LivePill label="5s" />
+      </div>
+
+      {/* filter bar */}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          alignItems: "center",
+          marginBottom: "var(--s-4)",
+        }}
+      >
+        <input
+          type="text"
+          value={recipeQuery}
+          onChange={(e) => setRecipeQuery(e.target.value)}
+          placeholder="Filter by recipe…"
+          aria-label="Filter by recipe"
+          className="input"
+          style={{ minWidth: 200, width: 240 }}
+        />
+        <select
+          value={trigger}
+          onChange={(e) => setTrigger(e.target.value as TriggerFilter)}
+          aria-label="Trigger type"
+          className="input"
+          style={{ width: "auto", cursor: "pointer" }}
+        >
+          <option value="all">All triggers</option>
+          <option value="cron">Cron</option>
+          <option value="webhook">Webhook</option>
+          <option value="recipe">Recipe</option>
+          <option value="manual">Manual</option>
+          <option value="git_hook">Git hook</option>
+        </select>
+        {(recipeQuery || trigger !== "all") && (
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => {
+              setRecipeQuery("");
+              setTrigger("all");
+            }}
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {/* stat cards */}

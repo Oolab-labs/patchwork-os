@@ -488,6 +488,71 @@ function NewRecipePageInner() {
             .replace(/^\/hooks\//, "")
         : "";
 
+      // Parse steps: collect prompt strings from `- id: step-X` blocks under
+      // the top-level `steps:` key. We don't pull a full YAML parser in just
+      // for this — the AI generator emits a predictable shape.
+      const parsedSteps: Step[] = [];
+      const stepsIdx = lines.findIndex((l) => /^steps:\s*$/.test(l));
+      if (stepsIdx >= 0) {
+        let i = stepsIdx + 1;
+        let current: Partial<Step> | null = null;
+        // Multiline prompt buffer for `prompt: |` block scalars.
+        let promptBuf: string[] | null = null;
+        let promptBaseIndent = 0;
+        const flush = () => {
+          if (current && current.id) {
+            parsedSteps.push({
+              id: current.id,
+              agent: current.agent ?? true,
+              prompt: (current.prompt ?? "").trim(),
+            });
+          }
+          current = null;
+          promptBuf = null;
+        };
+        while (i < lines.length) {
+          const raw = lines[i] ?? "";
+          // Stop at a new top-level key (no leading space and ends with `:`).
+          if (/^[a-zA-Z_]/.test(raw)) break;
+          if (promptBuf) {
+            const indent = raw.match(/^(\s*)/)?.[1].length ?? 0;
+            if (raw.trim() === "" || indent > promptBaseIndent) {
+              promptBuf.push(raw.slice(Math.min(promptBaseIndent + 2, indent)));
+              i++;
+              continue;
+            }
+            current = { ...current, prompt: promptBuf.join("\n").trim() };
+            promptBuf = null;
+            // fall through to handle this line as a new key
+          }
+          const itemMatch = raw.match(/^\s*-\s*id:\s*(.+?)\s*$/);
+          if (itemMatch) {
+            flush();
+            current = { id: itemMatch[1]?.replace(/^"|"$/g, "") };
+            i++;
+            continue;
+          }
+          const kvMatch = raw.match(/^\s+([a-zA-Z_]+):\s*(.*)$/);
+          if (kvMatch && current) {
+            const key = kvMatch[1];
+            const value = kvMatch[2]?.trim() ?? "";
+            if (key === "agent") {
+              current.agent = value === "true";
+            } else if (key === "prompt") {
+              if (value === "|" || value === ">" || value === "|-" || value === ">-") {
+                promptBuf = [];
+                promptBaseIndent =
+                  (raw.match(/^(\s*)/)?.[1].length ?? 0);
+              } else {
+                current.prompt = value.replace(/^"|"$/g, "").replace(/^'|'$/g, "");
+              }
+            }
+          }
+          i++;
+        }
+        flush();
+      }
+
       setForm((f) => ({
         ...f,
         name: parsedName || f.name,
@@ -497,6 +562,14 @@ function NewRecipePageInner() {
           cron: parsedCron,
           path: parsedPath,
         },
+        steps: parsedSteps.length > 0 ? parsedSteps : f.steps,
+      }));
+      setValidation((cur) => ({
+        ...cur,
+        steps:
+          parsedSteps.length > 0
+            ? parsedSteps.map(() => null)
+            : cur.steps,
       }));
       setAiOpen(false);
       setAiResult(null);

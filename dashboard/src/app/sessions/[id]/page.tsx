@@ -160,6 +160,11 @@ export default function SessionDetailPage() {
             : `Unreachable: ${error}`}
         </div>
       )}
+      {loading && !data && !error && (
+        <div className="empty-state" role="status" aria-live="polite">
+          <p>Loading session…</p>
+        </div>
+      )}
       {!loading && !data && status === 404 && (
         <div className="empty-state">
           <h3>Session not found</h3>

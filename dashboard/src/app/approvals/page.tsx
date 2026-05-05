@@ -419,6 +419,7 @@ function ApprovalCard({
             className="approval-params-toggle"
             onClick={() => onToggleExpand(p.callId)}
             aria-expanded={isExpanded}
+            aria-controls={`approval-params-${p.callId}`}
           >
             {isExpanded ? "▾" : "▸"} Full params
             {!isExpanded && p.params && (
@@ -428,7 +429,7 @@ function ApprovalCard({
             )}
           </button>
           {isExpanded && (
-            <div style={{ position: "relative" }}>
+            <div id={`approval-params-${p.callId}`} style={{ position: "relative" }}>
               <button
                 type="button"
                 onClick={() => {

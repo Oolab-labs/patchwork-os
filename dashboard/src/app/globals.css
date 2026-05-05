@@ -69,6 +69,28 @@
   --info-soft:     var(--blue-soft);
   --overlay-bg:    rgba(10, 11, 13, 0.55);
   --shadow-modal:  0 20px 50px rgba(10, 11, 13, 0.35);
+
+  /* Visually-hidden until focused; surfaces for keyboard users only. */
+}
+.skip-nav {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 10000;
+  padding: 8px 14px;
+  background: var(--surface);
+  color: var(--ink-0);
+  border: 2px solid var(--accent);
+  border-radius: var(--r-2);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+  transition: transform 0.15s ease;
+}
+.skip-nav:focus {
+  transform: translateY(0);
+}
+:root {
   --terminal-bg:        #0b0d10;
   --terminal-fg:        #d8e0e8;
   --terminal-prompt:    #7fd1a8;
@@ -89,7 +111,7 @@
   --fg-3: var(--ink-3);
 
   /* type */
-  --font-sans: var(--font-geist, "Albert Sans"), ui-sans-serif, "SF Pro Text", "Segoe UI", sans-serif;
+  --font-sans: var(--font-albert, "Albert Sans"), ui-sans-serif, "SF Pro Text", "Segoe UI", sans-serif;
   --font-serif: var(--font-instrument-serif, "Instrument Serif"), ui-serif, Georgia, serif;
   --font-mono: var(--font-jetbrains, "JetBrains Mono"), ui-monospace, "SF Mono", Menlo, monospace;
 
