@@ -719,10 +719,21 @@ function ApprovalsContent() {
     };
   }, [sessionFilter]);
 
-  // Fade-out then remove
+  // Fade-out then remove. The 320ms timeout outlives a route change, so
+  // track + clear pending timeouts when the component unmounts to avoid
+  // updating state on a torn-down tree.
+  const fadeTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  useEffect(() => {
+    const timers = fadeTimersRef.current;
+    return () => {
+      for (const id of timers) clearTimeout(id);
+      timers.clear();
+    };
+  }, []);
   function removeWithFade(callId: string) {
     setFadingOut((prev) => new Set([...prev, callId]));
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      fadeTimersRef.current.delete(timer);
       setPending((prev) => prev.filter((p) => p.callId !== callId));
       setFadingOut((prev) => {
         const next = new Set(prev);
@@ -740,6 +751,7 @@ function ApprovalsContent() {
         return next;
       });
     }, 320);
+    fadeTimersRef.current.add(timer);
   }
 
   async function decide(callId: string, decision: "approve" | "reject") {
