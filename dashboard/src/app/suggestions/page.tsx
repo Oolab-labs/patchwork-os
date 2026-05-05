@@ -3,6 +3,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { DecisionsTabs } from "@/components/DecisionsTabs";
+import { ErrorState } from "@/components/patchwork";
 
 interface CoOccurringPairDetails {
   pair: [string, string];
@@ -135,13 +137,14 @@ export default function SuggestionsPage() {
 
   return (
     <section>
+      <DecisionsTabs />
       <div className="page-head">
         <div>
-          <h1>Suggestions</h1>
-          <div className="page-head-sub">
-            Pattern-mined from your activity log + recipe runs. Read-only —
-            nothing on this page changes policy or installs anything. Same data
-            the <code>patchwork suggest</code> CLI prints.
+          <h1 className="editorial-h1">
+            Suggestions — <span className="accent">patterns mined from your runs.</span>
+          </h1>
+          <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+            Read-only — nothing on this page changes policy. Same data <code>patchwork suggest</code> prints.
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -176,7 +179,17 @@ export default function SuggestionsPage() {
       {loading && suggestions.length === 0 && (
         <p style={{ color: "var(--fg-2)" }}>Loading…</p>
       )}
-      {error && <div className="alert-err">Unreachable: {error}</div>}
+      {error && suggestions.length === 0 && (
+        <ErrorState
+          title="Couldn't load suggestions"
+          description="The bridge isn't responding to /suggestions."
+          error={error}
+          onRetry={() => window.location.reload()}
+        />
+      )}
+      {error && suggestions.length > 0 && (
+        <div className="alert-err">Refresh failed — {error}</div>
+      )}
 
       {!loading && !error && suggestions.length === 0 && (
         <div className="empty-state">

@@ -2,6 +2,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
+import { MetricsDonut, HBarList, ErrorState, AnimatedNumber } from "@/components/patchwork";
+import { AnalyticsTabs } from "@/components/AnalyticsTabs";
+import type { DonutSegment, HBarItem } from "@/components/patchwork";
 
 interface Metric {
   name: string;
@@ -33,17 +36,109 @@ export default function MetricsPage() {
     return () => clearInterval(id);
   }, []);
 
-  const groups = useMemo(() => categorize(metrics), [metrics]);
-  const totalSeries = metrics.length;
-  const groupCount = Object.keys(groups).length;
+  const totalCalls = useMemo(
+    () =>
+      metrics
+        .filter((m) => m.name === "bridge_tool_calls_total")
+        .reduce((s, m) => s + m.value, 0),
+    [metrics],
+  );
+
+  const totalErrors = useMemo(
+    () =>
+      metrics
+        .filter(
+          (m) =>
+            m.name === "bridge_tool_calls_total" &&
+            (m.labels?.status === "error" ||
+              m.labels?.outcome === "error" ||
+              m.labels?.result === "error"),
+        )
+        .reduce((s, m) => s + m.value, 0),
+    [metrics],
+  );
+
+  const successRate = useMemo(
+    () =>
+      totalCalls > 0
+        ? ((totalCalls - totalErrors) / totalCalls * 100).toFixed(1)
+        : null,
+    [totalCalls, totalErrors],
+  );
+
+  const uptimeSeconds = useMemo(() => {
+    const m = metrics.find(
+      (m) => /uptime|process_uptime/i.test(m.name) && !m.labels,
+    );
+    return m?.value ?? null;
+  }, [metrics]);
+
+  const rateLimitCount = useMemo(
+    () =>
+      metrics
+        .filter((m) => /rate|throttle|limit|token_bucket/i.test(m.name))
+        .reduce((s, m) => s + m.value, 0),
+    [metrics],
+  );
+
+  const DONUT_COLORS = ["var(--orange)", "var(--blue)", "var(--green)", "var(--red)", "var(--amber)", "var(--purple, #a855f7)"];
+
+  const toolCallDonut = useMemo<DonutSegment[]>(() => {
+    const calls = metrics.filter(
+      (m) => m.name === "bridge_tool_calls_total" && m.labels?.tool,
+    );
+    return calls
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6)
+      .map((m, i) => ({
+        label: m.labels!.tool!,
+        value: m.value,
+        color: DONUT_COLORS[i % DONUT_COLORS.length],
+      }));
+  }, [metrics]);
+
+  const callsByToolStatus = useMemo(() => {
+    const calls = metrics.filter(
+      (m) => m.name === "bridge_tool_calls_total" && m.labels?.tool,
+    );
+    return calls
+      .map((m) => {
+        const status =
+          m.labels?.status ||
+          m.labels?.outcome ||
+          m.labels?.result ||
+          "success";
+        return { tool: m.labels!.tool!, status, value: m.value };
+      })
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 12);
+  }, [metrics]);
+
+  const durationHBar = useMemo<HBarItem[]>(() => {
+    const dur = metrics.filter(
+      (m) => m.name === "bridge_tool_duration_seconds_sum" && m.labels?.tool,
+    );
+    return dur
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8)
+      .map((m, i) => ({
+        label: m.labels!.tool!,
+        value: parseFloat(m.value.toFixed(2)),
+        color: DONUT_COLORS[i % DONUT_COLORS.length],
+        sub: "s",
+      }));
+  }, [metrics]);
 
   return (
     <section>
+      <AnalyticsTabs />
       <div className="page-head">
         <div>
-          <h1>Metrics</h1>
-          <div className="page-head-sub">
-            Live Prometheus counters from the bridge.
+          <h1 className="editorial-h1">
+            Metrics — <span className="accent">Prometheus counters, exposed locally.</span>
+          </h1>
+          <div className="editorial-sub">
+            scrape interval 15s · uptime {uptimeSeconds != null ? Math.round(uptimeSeconds) + "s" : "…"} · rate-limits {rateLimitCount}
           </div>
         </div>
         {updatedAt && (
@@ -51,125 +146,150 @@ export default function MetricsPage() {
         )}
       </div>
 
-      {metrics.length > 0 && (
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, minmax(0,1fr))",
+          gap: "var(--s-4)",
+          marginBottom: "var(--s-5)",
+        }}
+      >
+        <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--orange)" }}>
+          <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
+            <span style={{ color: "var(--orange)", marginRight: 6 }}>{">_"}</span>Total calls
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 28, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
+            <AnimatedNumber value={totalCalls} />
+          </div>
+        </div>
+        <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--err)" }}>
+          <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
+            <span style={{ color: "var(--err)", marginRight: 6 }}>△</span>Errors
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 28, fontWeight: 800, color: totalErrors > 0 ? "var(--err)" : "var(--ink-0)", lineHeight: 1 }}>
+            <AnimatedNumber value={totalErrors} />
+          </div>
+        </div>
+        <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--green)" }}>
+          <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
+            <span style={{ color: "var(--green)", marginRight: 6 }}>✓</span>Success rate
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 28, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
+            {successRate !== null ? `${successRate}%` : "—"}
+          </div>
+          {successRate === null && (
+            <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}>no calls yet</div>
+          )}
+        </div>
+        <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--blue)" }}>
+          <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
+            <span style={{ color: "var(--blue)", marginRight: 6 }}>◎</span>Uptime
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 28, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
+            {uptimeSeconds != null ? `${Math.round(uptimeSeconds)}s` : "—"}
+          </div>
+        </div>
+      </div>
+
+      {err && metrics.length === 0 && (
+        <ErrorState
+          title="Couldn't load metrics"
+          description="The bridge isn't responding to /metrics."
+          error={err}
+          onRetry={() => window.location.reload()}
+        />
+      )}
+      {err && metrics.length > 0 && (
+        <div className="alert-err">Refresh failed — {err}</div>
+      )}
+
+      {/* Visual charts: donut + time-spent hbar */}
+      {metrics.length > 0 && (toolCallDonut.length > 0 || durationHBar.length > 0) && (
         <div
-          className="card"
           style={{
-            padding: "16px 22px",
+            display: "grid",
+            gridTemplateColumns: "repeat(2, minmax(0,1fr))",
+            gap: "var(--s-4)",
             marginBottom: "var(--s-5)",
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--s-5)",
-            flexWrap: "wrap",
+            alignItems: "start",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              aria-hidden="true"
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                background: err ? "var(--err)" : "var(--ok)",
-                display: "inline-block",
-              }}
-            />
-            <span style={{ fontSize: 13, fontWeight: 600, color: err ? "var(--err)" : "var(--ok)" }}>
-              {err ? "Unreachable" : "Streaming live"}
-            </span>
-          </div>
-          <div aria-hidden="true" style={{ width: 1, height: 28, background: "var(--line-2)" }} />
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--s-4)" }}>
-            <div>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: 20, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
-                {totalSeries}
+          {toolCallDonut.length > 0 && (
+            <div className="card" style={{ padding: "16px 20px" }}>
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--ink-3)",
+                  marginBottom: 12,
+                }}
+              >
+                Calls by tool
               </div>
-              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Series
-              </div>
-            </div>
-            <div>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: 20, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
-                {groupCount}
-              </div>
-              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Groups
+              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "var(--s-4)", alignItems: "center" }}>
+                <MetricsDonut segments={toolCallDonut} size={110} strokeWidth={16} label="calls" />
+                <ul style={{ listStyle: "none", margin: 0, padding: 0, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-1)", display: "flex", flexDirection: "column", gap: 4 }}>
+                  {callsByToolStatus.map((row, i) => (
+                    <li key={`${row.tool}-${row.status}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, borderBottom: "1px dashed var(--line-2)", paddingBottom: 3 }}>
+                      <span style={{ color: "var(--ink-2)" }}>
+                        tool=<span style={{ color: "var(--ink-0)" }}>{row.tool}</span>, status=
+                        <span style={{ color: row.status === "error" ? "var(--err)" : "var(--green)" }}>{row.status}</span>
+                      </span>
+                      <span style={{ color: "var(--ink-0)", fontWeight: 700 }}>· {row.value.toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
-          </div>
+          )}
+          {durationHBar.length > 0 && (
+            <div className="card" style={{ padding: "16px 20px" }}>
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--ink-3)",
+                  marginBottom: 12,
+                }}
+              >
+                Time spent (seconds)
+              </div>
+              <HBarList items={durationHBar} height={5} />
+            </div>
+          )}
         </div>
       )}
 
-      {err && <div className="alert-err">Unreachable: {err}</div>}
-
-      {metrics.length === 0 && !err ? (
-        <div className="empty-state">
-          <h3>No metrics yet</h3>
-          <p>Metrics appear once the bridge begins serving tool calls.</p>
+      {metrics.length === 0 && !err && (
+        <div
+          style={{
+            border: "1.5px dashed var(--line-2)",
+            borderRadius: "var(--r-card)",
+            minHeight: 200,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "var(--s-5)",
+            textAlign: "center",
+          }}
+        >
+          <h3 style={{ color: "var(--ink-1)", marginBottom: 8 }}>No metrics yet</h3>
+          <p style={{ color: "var(--ink-3)", fontSize: 13, maxWidth: 380, margin: 0 }}>
+            Metrics appear once the bridge begins serving tool calls. Make a tool call or wait for the next scrape interval.
+          </p>
         </div>
-      ) : (
-        Object.entries(groups).map(([title, rows]) => (
-          <div key={title} className="metrics-group">
-            <div className="metrics-group-title">{title}</div>
-            <div className="metrics-grid">
-              {Object.entries(rows).map(([name, list]) => (
-                <div key={name} className="metric-card">
-                  <div className="metric-card-name" title={list[0].help ?? name}>
-                    {name}
-                  </div>
-                  {list.length === 1 && !list[0].labels ? (
-                    <div className="metric-card-value">
-                      {formatNum(list[0].value)}
-                    </div>
-                  ) : (
-                    <ul>
-                      {list.slice(0, 8).map((r, i) => (
-                        <li key={i}>
-                          <span className="key">{labelStr(r.labels)}</span>
-                          <span className="val">{formatNum(r.value)}</span>
-                        </li>
-                      ))}
-                      {list.length > 8 && (
-                        <li>
-                          <span className="key">
-                            +{list.length - 8} more
-                          </span>
-                          <span />
-                        </li>
-                      )}
-                    </ul>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))
       )}
     </section>
   );
 }
 
-function categorize(metrics: Metric[]): Record<string, Record<string, Metric[]>> {
-  const out: Record<string, Record<string, Metric[]>> = {
-    "Tool calls": {},
-    "Uptime & process": {},
-    "Rate limits": {},
-    Other: {},
-  };
-  for (const m of metrics) {
-    const n = m.name.toLowerCase();
-    let bucket = "Other";
-    if (/tool|call|invoc|approval/.test(n)) bucket = "Tool calls";
-    else if (/uptime|process|memory|heap|cpu/.test(n)) bucket = "Uptime & process";
-    else if (/rate|throttle|limit|token_bucket/.test(n)) bucket = "Rate limits";
-    (out[bucket][m.name] ??= []).push(m);
-  }
-  // drop empty buckets
-  for (const key of Object.keys(out)) {
-    if (Object.keys(out[key]).length === 0) delete out[key];
-  }
-  return out;
-}
 
 function parsePrometheus(text: string): Metric[] {
   const out: Metric[] = [];
@@ -208,16 +328,3 @@ function parsePrometheus(text: string): Metric[] {
   return out;
 }
 
-function labelStr(labels?: Record<string, string>): string {
-  if (!labels) return "(value)";
-  return Object.entries(labels)
-    .map(([k, v]) => `${k}=${v}`)
-    .join(", ");
-}
-
-function formatNum(n: number): string {
-  if (!Number.isFinite(n)) return String(n);
-  if (Math.abs(n) >= 1000) return n.toLocaleString();
-  if (Number.isInteger(n)) return n.toString();
-  return n.toFixed(2);
-}

@@ -642,6 +642,75 @@ const MOCK_STEP_RESULTS: Record<number, Array<{ stepId: string; tool?: string; s
   ],
 };
 
+const MOCK_APPROVAL_INSIGHTS = {
+  generatedAt: new Date().toISOString(),
+  totalDecisions: 47,
+  trustedToolCount: 4,
+  rejectedToolCount: 1,
+  tools: [
+    {
+      toolName: "github.list_pull_requests",
+      approvals: 18,
+      rejections: 0,
+      approvalRate: 1,
+      lastDecisionAt: new Date(ago(2 * 60 * 1000)).toISOString(),
+      firstDecisionAt: new Date(ago(7 * 24 * 60 * 60 * 1000)).toISOString(),
+      heuristicLabel: "Approved 18× consecutively — looks trusted.",
+      severity: "low" as const,
+    },
+    {
+      toolName: "slack.post_message",
+      approvals: 12,
+      rejections: 0,
+      approvalRate: 1,
+      lastDecisionAt: new Date(ago(6 * 60 * 1000)).toISOString(),
+      firstDecisionAt: new Date(ago(5 * 24 * 60 * 60 * 1000)).toISOString(),
+      heuristicLabel: "Frequent low-risk write — consider auto-approve.",
+      severity: "low" as const,
+    },
+    {
+      toolName: "linear.list_issues",
+      approvals: 14,
+      rejections: 1,
+      approvalRate: 14 / 15,
+      lastDecisionAt: new Date(ago(12 * 60 * 1000)).toISOString(),
+      firstDecisionAt: new Date(ago(6 * 24 * 60 * 60 * 1000)).toISOString(),
+      heuristicLabel: "Mostly approved with one rejection.",
+      severity: "medium" as const,
+    },
+    {
+      toolName: "github.create_pull_request",
+      approvals: 5,
+      rejections: 2,
+      approvalRate: 5 / 7,
+      lastDecisionAt: new Date(ago(15 * 60 * 1000)).toISOString(),
+      firstDecisionAt: new Date(ago(3 * 24 * 60 * 60 * 1000)).toISOString(),
+      heuristicLabel: "External write — review each invocation.",
+      severity: "medium" as const,
+    },
+    {
+      toolName: "linear.create_issue",
+      approvals: 3,
+      rejections: 0,
+      approvalRate: 1,
+      lastDecisionAt: new Date(ago(28 * 60 * 1000)).toISOString(),
+      firstDecisionAt: new Date(ago(2 * 24 * 60 * 60 * 1000)).toISOString(),
+      heuristicLabel: "New tool — building history.",
+      severity: "medium" as const,
+    },
+    {
+      toolName: "shell.rm_rf",
+      approvals: 0,
+      rejections: 3,
+      approvalRate: 0,
+      lastDecisionAt: new Date(ago(2 * 24 * 60 * 60 * 1000)).toISOString(),
+      firstDecisionAt: new Date(ago(2 * 24 * 60 * 60 * 1000)).toISOString(),
+      heuristicLabel: "Always rejected — consider deny rule.",
+      severity: "high" as const,
+    },
+  ],
+};
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -660,6 +729,11 @@ export function mockBridgeResponse(pathname: string, method = "GET"): Response |
   if (path === "/status")                  return json(MOCK_STATUS);
   if (path === "/health")                  return json(MOCK_HEALTH);
   if (path === "/approvals" && method === "GET") return json(MOCK_APPROVALS);
+  // Demo mode: short-circuit approve/reject so destructive clicks don't fall
+  // through to a real bridge that may happen to be running locally.
+  if ((path.startsWith("/approve/") || path.startsWith("/reject/")) && method === "POST") {
+    return json({ ok: true, demo: true });
+  }
   if (path.startsWith("/suggestions") && method === "GET") {
     return json({
       generatedAt: new Date().toISOString(),
@@ -817,6 +891,13 @@ export function mockBridgeResponse(pathname: string, method = "GET"): Response |
       }
       return json({ pending: null, decision: null, nearby: [] }, 404);
     }
+  }
+  if (path === "/approval-insights" && method === "GET") return json(MOCK_APPROVAL_INSIGHTS);
+  if (path === "/approval-insights/explain" && method === "GET") {
+    return json({ tool: pathname.split("tool=")[1] ?? "", specifier: null, explanation: null });
+  }
+  if (path === "/cc-permissions" && method === "GET") {
+    return json({ allow: ["Bash(npm test)"], ask: ["Bash(npm publish)"], deny: [], workspace: "~/projects/patchwork-os", attributed: { allow: [], ask: [], deny: [] } });
   }
   if (path === "/recipes" && method === "GET")   return json({ recipes: MOCK_RECIPES });
   if (path === "/tasks" && method === "GET")     return json(MOCK_TASKS);

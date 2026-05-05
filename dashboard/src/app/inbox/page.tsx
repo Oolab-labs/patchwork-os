@@ -107,6 +107,58 @@ function stripMarkdown(text: string): string {
  * attributes embedded in HTML strings (which sanitize-allows-style would
  * otherwise need to permit).
  */
+// React-controlled section heading with a Copy button. Replaces the prior
+// post-render DOM injection (querySelectorAll('h2') + appendChild) with a
+// component that owns its own state and lifecycle. On click it walks
+// subsequent DOM siblings until the next h2/hr to gather the section text —
+// that walk is unavoidable because react-markdown only sees this h2's own
+// children, not the content that follows it in the rendered tree.
+function H2WithCopy({ children }: { children?: React.ReactNode }) {
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const [copied, setCopied] = useState(false);
+  const onCopy = useCallback(() => {
+    const el = headingRef.current;
+    if (!el) return;
+    const parts: string[] = [];
+    let next = el.nextElementSibling;
+    while (next && next.tagName !== "H2" && next.tagName !== "HR") {
+      parts.push(next.textContent ?? "");
+      next = next.nextElementSibling;
+    }
+    const text = parts.join("\n").trim();
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    });
+  }, []);
+  return (
+    <h2
+      ref={headingRef}
+      style={{
+        fontSize: 15,
+        fontWeight: 600,
+        margin: "24px 0 8px",
+        color: "var(--ink-0)",
+        paddingBottom: 6,
+        borderBottom: "1px solid var(--line-2)",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+      }}
+    >
+      <span style={{ flex: 1 }}>{children}</span>
+      <button
+        type="button"
+        onClick={onCopy}
+        aria-label={copied ? "Section copied to clipboard" : "Copy section to clipboard"}
+        className={`copy-section-btn${copied ? " copied" : ""}`}
+      >
+        {copied ? "Copied ✓" : "Copy"}
+      </button>
+    </h2>
+  );
+}
+
 const markdownComponents = {
   h1: ({ children }: { children?: React.ReactNode }) => (
     <h1
@@ -120,20 +172,7 @@ const markdownComponents = {
       {children}
     </h1>
   ),
-  h2: ({ children }: { children?: React.ReactNode }) => (
-    <h2
-      style={{
-        fontSize: 15,
-        fontWeight: 600,
-        margin: "24px 0 8px",
-        color: "var(--ink-0)",
-        paddingBottom: 6,
-        borderBottom: "1px solid var(--line-2)",
-      }}
-    >
-      {children}
-    </h2>
-  ),
+  h2: ({ children }: { children?: React.ReactNode }) => <H2WithCopy>{children}</H2WithCopy>,
   h3: ({ children }: { children?: React.ReactNode }) => (
     <h3
       style={{
@@ -263,6 +302,7 @@ export default function InboxPage() {
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [seenNames] = useState<Set<string>>(() => new Set());
+  const [replaying, setReplaying] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detailRef = useRef<HTMLDivElement | null>(null);
   const selectedRef = useRef<InboxDetail | null>(null);
@@ -313,51 +353,16 @@ export default function InboxPage() {
     };
   }, [fetchList]);
 
-  // Copy buttons on h2 headings
+  // Auto-select first item after initial load if nothing is selected
   useEffect(() => {
-    const container = detailRef.current;
-    if (!container || !selected) return;
-
-    const h2s = container.querySelectorAll<HTMLElement>("h2");
-    const cleanup: (() => void)[] = [];
-
-    for (const h2 of h2s) {
-      if (h2.querySelector(".copy-section-btn")) continue;
-      const btn = document.createElement("button");
-      btn.className = "copy-section-btn";
-      btn.type = "button";
-      btn.textContent = "Copy";
-
-      let next = h2.nextElementSibling;
-      const parts: string[] = [];
-      while (next && next.tagName !== "H2" && next.tagName !== "HR") {
-        parts.push(next.textContent ?? "");
-        next = next.nextElementSibling;
-      }
-      const sectionText = parts.join("\n").trim();
-
-      const handler = () => {
-        void navigator.clipboard.writeText(sectionText).then(() => {
-          btn.textContent = "Copied ✓";
-          btn.classList.add("copied");
-          setTimeout(() => {
-            btn.textContent = "Copy";
-            btn.classList.remove("copied");
-          }, 2000);
-        });
-      };
-      btn.addEventListener("click", handler);
-      h2.appendChild(btn);
-      cleanup.push(() => btn.removeEventListener("click", handler));
+    if (!loading && items.length > 0 && !selected && !detailLoading) {
+      void selectItem(items[0].name);
     }
+    // Only on initial load — don't re-trigger on polling updates
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
-    return () => {
-      for (const fn of cleanup) fn();
-      for (const h2 of h2s) h2.querySelector(".copy-section-btn")?.remove();
-    };
-  }, [selected]);
-
-  const filteredItems = items.filter((item) => {
+const filteredItems = items.filter((item) => {
     if (activeFilter !== "All" && categoryForItem(item.name) !== activeFilter) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -418,8 +423,10 @@ export default function InboxPage() {
         {/* Page header */}
         <div className="page-head" style={{ marginBottom: 16 }}>
           <div>
-            <h1>Inbox</h1>
-            <div className="page-head-sub">Recipe outputs — briefs, summaries, and agent reports.</div>
+            <h1 className="editorial-h1">
+              Inbox — <span className="accent">what your agents wrote you.</span>
+            </h1>
+            <div className="editorial-sub">~/.patchwork/inbox · briefs · summaries · agent reports</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {unseen > 0 && (
@@ -699,6 +706,63 @@ export default function InboxPage() {
                       {selected.content}
                     </ReactMarkdown>
                   </div>
+
+                  {/* Italic byline */}
+                  <p
+                    style={{
+                      fontStyle: "italic",
+                      fontSize: 12,
+                      color: "var(--ink-3)",
+                      marginTop: 24,
+                      marginBottom: 20,
+                    }}
+                  >
+                    — written by your local agent. nothing left this machine.
+                  </p>
+
+                  {/* Action buttons (bottom) */}
+                  {(() => {
+                    const recipeNameForSelected = selected.name.replace(/\.md$/, "").replace(/-\d{4}-\d{2}-\d{2}$/, "");
+                    return (
+                      <div style={{ display: "flex", gap: 6, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--line-1)" }}>
+                        <button
+                          type="button"
+                          className="btn sm primary"
+                          style={{ background: "var(--orange)", border: "none", fontSize: 11 }}
+                          disabled={replaying}
+                          onClick={async () => {
+                            setReplaying(true);
+                            try {
+                              await fetch(apiPath(`/api/bridge/recipes/${encodeURIComponent(recipeNameForSelected)}/run`), { method: "POST" });
+                            } finally {
+                              setTimeout(() => setReplaying(false), 2000);
+                            }
+                          }}
+                        >
+                          {replaying ? "Running…" : "Replay recipe"}
+                        </button>
+                        <a
+                          href={"/dashboard/traces?q=" + recipeNameForSelected}
+                          className="btn sm ghost"
+                          style={{ fontSize: 11, textDecoration: "none" }}
+                        >
+                          View trace
+                        </a>
+                        <button
+                          type="button"
+                          className="btn sm ghost"
+                          style={{ fontSize: 11, color: "var(--ink-3)" }}
+                          onClick={async () => {
+                            await fetch(apiPath(`/api/bridge/inbox/${encodeURIComponent(selected.name)}`), { method: "DELETE" });
+                            fetchList(true);
+                            setSelected(null);
+                          }}
+                        >
+                          Archive
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 10, color: "var(--ink-3)" }}>
