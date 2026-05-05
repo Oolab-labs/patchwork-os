@@ -950,37 +950,81 @@ export default function ConnectionsPage() {
     }
   }
 
-  function handleConnect(id: string) {
+  function handleConnect(id: string): Promise<"connected" | "timeout" | "blocked"> {
     if (id === "notion") {
       setNotionModalOpen(true);
       setNotionErr(null);
-      return;
+      return Promise.resolve("connected");
     }
     if (id in TOKEN_MODAL_CONNECTORS) {
       setTokenModal(id);
       setTokenValue("");
       setTokenErr(null);
-      return;
+      return Promise.resolve("connected");
     }
-    window.open(apiPath(`/api/connections/${id}/auth`), "_blank");
-    oauthPollRef.current = setInterval(async () => {
-      const res = await fetch(apiPath("/api/connections")).catch(() => null);
-      if (!res) return;
-      const data = (await res.json().catch(() => null)) as { connectors: ConnectorStatus[] } | null;
-      if (!data) return;
-      const updated = data.connectors.find((c) => c.id === id);
-      if (updated?.status === "connected") {
-        setConnectors(data.connectors);
-        clearInterval(oauthPollRef.current!);
-        oauthPollRef.current = null;
+    const popup = window.open(apiPath(`/api/connections/${id}/auth`), "_blank");
+    if (!popup) {
+      return Promise.resolve("blocked");
+    }
+    return new Promise((resolve) => {
+      const poll = setInterval(async () => {
+        if (popup.closed) {
+          clearInterval(poll);
+          clearTimeout(timeoutId);
+          await fetchConnectors();
+          resolve("connected");
+          return;
+        }
+        const res = await fetch(apiPath("/api/connections")).catch(() => null);
+        if (!res) return;
+        const data = (await res.json().catch(() => null)) as { connectors: ConnectorStatus[] } | null;
+        if (!data) return;
+        const updated = data.connectors.find((c) => c.id === id);
+        if (updated?.status === "connected") {
+          setConnectors(data.connectors);
+          clearInterval(poll);
+          clearTimeout(timeoutId);
+          try { popup.close(); } catch {}
+          resolve("connected");
+        }
+      }, 3000);
+      oauthPollRef.current = poll;
+      const timeoutId = setTimeout(() => {
+        clearInterval(poll);
+        if (oauthPollRef.current === poll) oauthPollRef.current = null;
+        resolve("timeout");
+      }, 120_000);
+    });
+  }
+
+  const [reAuthing, setReAuthing] = useState(false);
+  const [reAuthMsg, setReAuthMsg] = useState<string | null>(null);
+
+  async function handleReAuthAll() {
+    if (reAuthing) return;
+    const targets = connectors
+      .filter((c) => c.status === "connected" || c.status === "needs_reauth")
+      .map((c) => c.id);
+    if (targets.length === 0) return;
+    setReAuthing(true);
+    setReAuthMsg(null);
+    try {
+      let blocked = 0;
+      for (const id of targets) {
+        const result = await handleConnect(id);
+        if (result === "blocked") {
+          blocked++;
+          break;
+        }
       }
-    }, 3000);
-    setTimeout(() => {
-      if (oauthPollRef.current !== null) {
-        clearInterval(oauthPollRef.current);
-        oauthPollRef.current = null;
+      if (blocked > 0) {
+        setReAuthMsg(
+          "Browser blocked the popup. Allow popups for this site, then click Re-auth all again.",
+        );
       }
-    }, 120_000);
+    } finally {
+      setReAuthing(false);
+    }
   }
 
   useEffect(() => {
@@ -1091,15 +1135,18 @@ export default function ConnectionsPage() {
             <button
               type="button"
               className="btn sm"
-              onClick={() => {
-                connectors
-                  .filter((c) => c.status === "connected" || c.status === "needs_reauth")
-                  .forEach((c) => handleConnect(c.id));
-              }}
-              title="Re-authorize all connected providers"
+              onClick={() => void handleReAuthAll()}
+              disabled={reAuthing}
+              title="Re-authorize all connected providers (one at a time)"
+              aria-busy={reAuthing}
             >
-              ↻ Re-auth all
+              {reAuthing ? "Re-authing…" : "↻ Re-auth all"}
             </button>
+            {reAuthMsg && (
+              <span role="status" style={{ fontSize: 12, color: "var(--warn)" }}>
+                {reAuthMsg}
+              </span>
+            )}
           </div>
         )}
       </div>

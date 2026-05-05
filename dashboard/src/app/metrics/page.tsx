@@ -138,7 +138,7 @@ export default function MetricsPage() {
             Metrics — <span className="accent">Prometheus counters, exposed locally.</span>
           </h1>
           <div className="editorial-sub">
-            scrape interval 15s · uptime {uptimeSeconds != null ? Math.round(uptimeSeconds) + "s" : "…"} · rate-limits {rateLimitCount}
+            polled every 3s · uptime {uptimeSeconds != null ? Math.round(uptimeSeconds) + "s" : "…"} · rate-limits {rateLimitCount}
           </div>
         </div>
         {updatedAt && (

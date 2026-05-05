@@ -684,7 +684,7 @@ function NewRecipePageInner() {
               <details style={{ fontSize: 12 }}>
                 <summary
                   style={{
-                    color: "var(--warn, #e6a817)",
+                    color: "var(--warn)",
                     cursor: "pointer",
                   }}
                 >

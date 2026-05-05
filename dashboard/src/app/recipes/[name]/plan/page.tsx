@@ -35,7 +35,7 @@ interface DryRunPlan {
 
 const RISK_COLORS: Record<string, string> = {
   low: "var(--ok)",
-  medium: "var(--warn, #e6a817)",
+  medium: "var(--warn)",
   high: "var(--err)",
 };
 
@@ -63,8 +63,8 @@ function RiskBadge({ risk }: { risk?: string }) {
 function TypeBadge({ type }: { type: string }) {
   const colors: Record<string, string> = {
     tool: "var(--accent)",
-    agent: "#8b5cf6",
-    recipe: "#06b6d4",
+    agent: "var(--purple)",
+    recipe: "var(--blue)",
   };
   const color = colors[type] ?? "var(--fg-3)";
   return (
@@ -220,7 +220,7 @@ export default function RecipePlanPage({
               </strong>
             </span>
             {plan.hasWriteSteps && (
-              <span style={{ color: "var(--warn, #e6a817)" }}>
+              <span style={{ color: "var(--warn)" }}>
                 ⚠ Has write steps
               </span>
             )}
@@ -266,10 +266,10 @@ export default function RecipePlanPage({
                   key={w}
                   style={{
                     background:
-                      "color-mix(in srgb, var(--warn, #e6a817) 10%, transparent)",
-                    border: "1px solid var(--warn, #e6a817)",
+                      "color-mix(in srgb, var(--warn) 10%, transparent)",
+                    border: "1px solid var(--warn)",
                     borderRadius: "var(--r-2)",
-                    color: "var(--warn, #e6a817)",
+                    color: "var(--warn)",
                     fontSize: 13,
                     padding: "var(--s-2) var(--s-3)",
                   }}

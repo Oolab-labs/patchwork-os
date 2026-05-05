@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { Dialog } from "@/components/Dialog";
 
 interface PlanStep {
   id: string;
@@ -202,8 +203,13 @@ function CompareInner() {
   const [loadingA, setLoadingA] = useState(true);
   const [loadingB, setLoadingB] = useState(true);
   const [promoteResult, setPromoteResult] = useState<string | null>(null);
+  const [promoteResultKind, setPromoteResultKind] = useState<"ok" | "err" | null>(null);
   const [promotingA, setPromotingA] = useState(false);
   const [promotingB, setPromotingB] = useState(false);
+  const [confirm, setConfirm] = useState<{
+    variantName: string;
+    setPromoting: (v: boolean) => void;
+  } | null>(null);
 
   useEffect(() => {
     if (!nameA) return;
@@ -241,6 +247,7 @@ function CompareInner() {
   ) {
     setPromoting(true);
     setPromoteResult(null);
+    setPromoteResultKind(null);
     try {
       const res = await fetch(
         apiPath(`/api/bridge/recipes/${encodeURIComponent(variantName)}/promote`),
@@ -256,23 +263,19 @@ function CompareInner() {
         targetExists?: boolean;
       };
       if (body.ok) {
-        setPromoteResult(`✓ ${variantName} promoted to ${baseName}`);
-      } else if (body.targetExists) {
-        // Ask the user to confirm before overwriting the canonical recipe.
-        const confirmed = window.confirm(
-          `"${baseName}" already exists. Overwrite it with "${variantName}"?\n\nThe existing recipe will be replaced.`,
-        );
-        if (confirmed) {
-          setPromoting(false);
-          await promote(variantName, setPromoting, true);
-          return;
-        }
-        setPromoteResult(null);
+        setPromoteResult(`${variantName} promoted to ${baseName}`);
+        setPromoteResultKind("ok");
+      } else if (body.targetExists && !force) {
+        setPromoting(false);
+        setConfirm({ variantName, setPromoting });
+        return;
       } else {
-        setPromoteResult(`Error: ${body.error ?? "promote failed"}`);
+        setPromoteResult(body.error ?? "promote failed");
+        setPromoteResultKind("err");
       }
     } catch (e) {
       setPromoteResult(e instanceof Error ? e.message : String(e));
+      setPromoteResultKind("err");
     } finally {
       setPromoting(false);
     }
@@ -308,21 +311,24 @@ function CompareInner() {
         </div>
       </div>
 
-      {promoteResult && (
+      {promoteResult && promoteResultKind && (
         <div
+          role={promoteResultKind === "err" ? "alert" : "status"}
           style={{
             marginBottom: "var(--s-4)",
             padding: "10px 14px",
             borderRadius: "var(--r-2)",
-            background: promoteResult.startsWith("✓")
-              ? "color-mix(in srgb, var(--ok) 12%, transparent)"
-              : "color-mix(in srgb, var(--err) 12%, transparent)",
-            border: `1px solid ${promoteResult.startsWith("✓") ? "color-mix(in srgb, var(--ok) 30%, transparent)" : "color-mix(in srgb, var(--err) 30%, transparent)"}`,
+            background:
+              promoteResultKind === "ok" ? "var(--ok-soft)" : "var(--err-soft)",
+            border: `1px solid ${promoteResultKind === "ok" ? "var(--ok)" : "var(--err)"}`,
             fontSize: 13,
           }}
         >
+          <span aria-hidden="true">
+            {promoteResultKind === "ok" ? "✓ " : ""}
+          </span>
           {promoteResult}
-          {promoteResult.startsWith("✓") && (
+          {promoteResultKind === "ok" && (
             <>
               {" "}
               <Link href="/recipes" style={{ color: "var(--ok)", fontSize: 12 }}>
@@ -355,6 +361,59 @@ function CompareInner() {
           targetName={baseName}
         />
       </div>
+
+      <Dialog
+        open={confirm !== null}
+        onClose={() => setConfirm(null)}
+        ariaLabelledBy="promote-confirm-heading"
+        maxWidth={460}
+      >
+        {confirm && (
+          <>
+            <h3 id="promote-confirm-heading" style={{ marginTop: 0, marginBottom: 8 }}>
+              Overwrite <code>{baseName}</code>?
+            </h3>
+            <p style={{ fontSize: 13, color: "var(--ink-2)", margin: "0 0 16px", lineHeight: 1.5 }}>
+              <code>{baseName}</code> already exists. Promoting{" "}
+              <code>{confirm.variantName}</code> will replace it. The existing
+              recipe file will be overwritten.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setConfirm(null)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "var(--r-1)",
+                  border: "1px solid var(--line-2)",
+                  background: "transparent",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const c = confirm;
+                  setConfirm(null);
+                  void promote(c.variantName, c.setPromoting, true);
+                }}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "var(--r-1)",
+                  border: "1px solid var(--err)",
+                  background: "var(--err)",
+                  color: "var(--surface)",
+                  cursor: "pointer",
+                }}
+              >
+                Overwrite
+              </button>
+            </div>
+          </>
+        )}
+      </Dialog>
     </section>
   );
 }

@@ -168,7 +168,7 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
         padding: "12px 18px",
         fontSize: 13,
         color: "var(--fg-0)",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+        boxShadow: "0 8px 32px var(--overlay-bg)",
         zIndex: 9999,
         display: "flex",
         alignItems: "center",
@@ -329,7 +329,7 @@ function RecipeCard({
               style={{
                 background: "var(--ok-soft)",
                 color: "var(--ok)",
-                border: "1px solid rgba(52,211,153,0.2)",
+                border: "1px solid var(--ok)",
                 fontSize: 11,
               }}
             >
@@ -504,8 +504,8 @@ export default function MarketplacePage() {
           style={{
             marginBottom: "var(--s-6)",
             padding: "12px 16px",
-            background: "rgba(99,102,241,0.06)",
-            border: "1px solid rgba(99,102,241,0.18)",
+            background: "var(--purple-soft)",
+            border: "1px solid var(--purple)",
             borderRadius: "var(--r-3)",
             display: "flex",
             alignItems: "center",
@@ -529,7 +529,7 @@ export default function MarketplacePage() {
               borderRadius: "var(--r-full)",
               background: "var(--accent-soft)",
               color: "var(--accent-strong)",
-              border: "1px solid rgba(99,102,241,0.25)",
+              border: "1px solid var(--purple)",
               textDecoration: "none",
             }}
           >
@@ -650,7 +650,7 @@ export default function MarketplacePage() {
                       letterSpacing: "0.06em",
                       background: "var(--accent-soft)",
                       color: "var(--accent)",
-                      border: "1px solid rgba(255,122,69,0.25)",
+                      border: "1px solid var(--accent-tint)",
                     }}
                   >
                     ★ FEATURED

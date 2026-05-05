@@ -949,7 +949,7 @@ export default function RunDetailPage() {
               borderRadius: "var(--r-1)",
               border: "1px solid var(--blue)",
               background: "var(--blue)",
-              color: "#fff",
+              color: "var(--surface)",
               cursor: "pointer",
             }}
           >

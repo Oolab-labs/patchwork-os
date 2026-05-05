@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { relTime } from "@/components/time";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
@@ -291,7 +291,6 @@ function TraceDetail({
           </pre>
         </details>
       ))}
-      <TraceActions traceType={traceType} body={body} />
     </div>
   );
 }
@@ -311,6 +310,23 @@ function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
   const [passphrase, setPassphrase] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   async function handleDownload() {
     const phrase = passphrase.trim();
@@ -346,12 +362,14 @@ function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
   }
 
   return (
-    <div style={{ position: "relative" }}>
+    <div ref={wrapRef} style={{ position: "relative" }}>
       <button
         type="button"
         className="btn sm"
         onClick={() => setOpen((v) => !v)}
         disabled={outerDisabled}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         style={{ opacity: outerDisabled ? 0.4 : 1 }}
       >
         Export
@@ -566,6 +584,7 @@ export default function TracesPage() {
             const status = traceStatus(t);
             const theme = TYPE_THEME[t.traceType];
             const statusColor = status === "done" ? "var(--ok)" : status === "error" ? "var(--err)" : "var(--ink-3)";
+            const statusBg = status === "done" ? "var(--ok-soft)" : status === "error" ? "var(--err-soft)" : "var(--recess)";
             const statusLabel = status === "done" ? "done" : status === "error" ? "error" : "running";
             return (
               <div key={rowKey} style={{ borderBottom: "1px solid var(--line-3)" }}>
@@ -648,7 +667,7 @@ export default function TracesPage() {
                     {relTime(t.ts)}
                   </span>
                   <span style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <span className="pill" style={{ background: statusColor + "22", color: statusColor, fontSize: 10, fontWeight: 700 }}>
+                    <span className="pill" style={{ background: statusBg, color: statusColor, fontSize: 10, fontWeight: 700 }}>
                       {statusLabel}
                     </span>
                   </span>
