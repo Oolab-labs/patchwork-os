@@ -147,8 +147,13 @@ function useIdentity(status: BridgeStatus): { user: string; host: string; port: 
   const port = status.patchwork?.port ?? status.port;
   const workspace = status.patchwork?.workspace ?? status.workspace ?? "";
   const wsName = workspace ? workspace.split("/").filter(Boolean).pop() ?? "local" : "local";
-  // Best-effort username — falls back to "local"
-  const user = (typeof process !== "undefined" && process.env?.USER) || "local";
+  // `process.env.USER` is the *server's* USER (whoever ran `npm run dev`),
+  // not the user viewing the page. Reading it during render causes a
+  // hydration mismatch ("wesh@local" SSR, "local@local" client) which
+  // forces React to fall back to client-only rendering for the entire
+  // tree. We always render "local" — this is a localhost dashboard and
+  // the username has no semantic meaning here.
+  const user = "local";
   return { user, host: `${user}@${wsName}`, port };
 }
 
