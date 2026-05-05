@@ -675,9 +675,21 @@ const filteredItems = items.filter((item) => {
             {/* ── Right content panel ── */}
             <div style={{ flex: 1, overflowY: "auto", minWidth: 0 }}>
               {detailLoading ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 40px" }} role="status" aria-busy="true">
+                <div
+                  role="status"
+                  aria-busy="true"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexDirection: "column",
+                    gap: 10,
+                    minHeight: 320,
+                    padding: "40px",
+                  }}
+                >
                   <Spinner />
-                  <span style={{ fontSize: 13, color: "var(--ink-2)" }}>Loading…</span>
+                  <span style={{ fontSize: 13, color: "var(--ink-2)" }}>Loading message…</span>
                 </div>
               ) : selected ? (
                 <div style={{ padding: "28px 40px 48px", maxWidth: 700 }}>

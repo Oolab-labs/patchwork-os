@@ -190,7 +190,12 @@ export default function ApprovalDetailPage() {
 
   const rawGate = bridgeStatus?.patchwork?.approvalGate;
   const gateMode: GateMode =
-    rawGate === "high" || rawGate === "all" ? rawGate : "off";
+    rawGate === "high" || rawGate === "all" || rawGate === "off"
+      ? rawGate
+      : "off";
+  // Surface to the user when the bridge reports a mode this dashboard
+  // doesn't know about, instead of silently labelling it "off".
+  const gateUnknown = rawGate != null && rawGate !== gateMode;
   const effectiveTier = (pending?.tier ?? undefined) as Tier | undefined;
   // Render the policy card whenever bridge status is known. Even on
   // "Unknown callId" the user benefits from seeing their active mode —
@@ -271,7 +276,15 @@ export default function ApprovalDetailPage() {
               mode: {match.mode}
             </span>
           </div>
-          <Row label="Active mode" value={match.mode} mono />
+          <Row
+            label="Active mode"
+            value={
+              gateUnknown
+                ? `${rawGate} (unrecognised — bridge ahead of dashboard)`
+                : match.mode
+            }
+            mono
+          />
           {effectiveTier && (
             <Row label="Risk tier" value={effectiveTier} mono />
           )}

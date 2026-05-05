@@ -13,6 +13,15 @@ interface Metric {
   labels?: Record<string, string>;
 }
 
+const DONUT_COLORS = [
+  "var(--orange)",
+  "var(--blue)",
+  "var(--green)",
+  "var(--red)",
+  "var(--amber)",
+  "var(--purple)",
+];
+
 export default function MetricsPage() {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [err, setErr] = useState<string>();
@@ -36,13 +45,16 @@ export default function MetricsPage() {
     return () => clearInterval(id);
   }, []);
 
-  const totalCalls = useMemo(
-    () =>
-      metrics
-        .filter((m) => m.name === "bridge_tool_calls_total")
-        .reduce((s, m) => s + m.value, 0),
-    [metrics],
-  );
+  const totalCalls = useMemo(() => {
+    const rows = metrics.filter((m) => m.name === "bridge_tool_calls_total");
+    // Prefer the labelless aggregate row if the bridge emits one; falling
+    // back to summing per-label rows would double-count it.
+    const aggregate = rows.find(
+      (m) => !m.labels || Object.keys(m.labels).length === 0,
+    );
+    if (aggregate) return aggregate.value;
+    return rows.reduce((s, m) => s + m.value, 0);
+  }, [metrics]);
 
   const totalErrors = useMemo(
     () =>
@@ -80,8 +92,6 @@ export default function MetricsPage() {
         .reduce((s, m) => s + m.value, 0),
     [metrics],
   );
-
-  const DONUT_COLORS = ["var(--orange)", "var(--blue)", "var(--green)", "var(--red)", "var(--amber)", "var(--purple, #a855f7)"];
 
   const toolCallDonut = useMemo<DonutSegment[]>(() => {
     const calls = metrics.filter(
@@ -138,7 +148,7 @@ export default function MetricsPage() {
             Metrics — <span className="accent">Prometheus counters, exposed locally.</span>
           </h1>
           <div className="editorial-sub">
-            polled every 3s · uptime {uptimeSeconds != null ? Math.round(uptimeSeconds) + "s" : "…"} · rate-limits {rateLimitCount}
+            polled every 3s · uptime {uptimeSeconds != null ? Math.round(uptimeSeconds) + "s" : "—"} · rate-limits {rateLimitCount}
           </div>
         </div>
         {updatedAt && (

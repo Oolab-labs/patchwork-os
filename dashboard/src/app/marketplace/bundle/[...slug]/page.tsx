@@ -259,33 +259,55 @@ function InstallInstructions({
   manifest: BundleManifest | null;
 }) {
   const plugin = manifest?.plugin;
+  const recipes = manifest?.recipes ?? [];
   return (
     <div className="glass-card" style={{ padding: "var(--s-5)" }}>
       <h3 style={{ fontSize: 13, marginTop: 0, marginBottom: "var(--s-3)" }}>Install</h3>
       <p style={{ fontSize: 12, color: "var(--fg-2)", marginTop: 0 }}>
-        Bundle install support is coming in a future bridge release. Until then, install each recipe individually from the Marketplace.
+        Bundle install via a single command isn&apos;t wired through the
+        bridge yet. Install each constituent recipe from the Marketplace —
+        the trust + risk metadata above carries over per-recipe.
       </p>
+      {recipes.length > 0 && (
+        <ul
+          style={{
+            listStyle: "none",
+            padding: 0,
+            margin: "var(--s-3) 0",
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+          }}
+        >
+          {recipes.map((r) => (
+            <li
+              key={r}
+              style={{
+                fontSize: 12,
+                fontFamily: "var(--font-mono)",
+                color: "var(--fg-1)",
+              }}
+            >
+              <Link
+                href={`/marketplace/${encodeURIComponent(r)}`}
+                style={{
+                  color: "inherit",
+                  textDecoration: "underline",
+                  textDecorationColor: "var(--line-2)",
+                }}
+              >
+                {r}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
       {plugin && (
         <p style={{ fontSize: 12, color: "var(--fg-2)" }}>
           Plugin: <code style={{ fontSize: 11 }}>npm install -g {plugin}</code>, then restart the bridge with{" "}
           <code style={{ fontSize: 11 }}>--plugin {plugin}</code>.
         </p>
       )}
-      <div style={{ marginTop: "var(--s-3)", display: "flex", gap: 8 }}>
-        <code
-          style={{
-            fontSize: 11,
-            background: "var(--bg-1)",
-            border: "1px solid var(--border-subtle)",
-            borderRadius: "var(--r-2)",
-            padding: "6px 10px",
-            color: "var(--fg-1)",
-          }}
-        >
-          patchwork install-bundle {bundle.name}
-        </code>
-        <span style={{ fontSize: 11, color: "var(--fg-3)", alignSelf: "center" }}>coming soon</span>
-      </div>
     </div>
   );
 }

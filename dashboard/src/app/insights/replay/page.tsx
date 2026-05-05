@@ -147,8 +147,8 @@ export default function ReplayPage() {
               style={{
                 padding: "12px 16px",
                 borderRadius: "var(--r-2)",
-                background: "color-mix(in srgb, var(--ok) 10%, transparent)",
-                border: "1px solid color-mix(in srgb, var(--ok) 25%, transparent)",
+                background: "var(--ok-soft)",
+                border: "1px solid var(--ok)",
                 fontSize: 13,
                 marginBottom: "var(--s-4)",
               }}
@@ -208,9 +208,7 @@ export default function ReplayPage() {
                       key={`${row.timestamp}-${row.toolName}-${idx}`}
                       style={{
                         borderBottom: "1px solid var(--border-subtle)",
-                        background: !row.unchanged
-                          ? "color-mix(in srgb, var(--warn) 5%, transparent)"
-                          : undefined,
+                        background: !row.unchanged ? "var(--warn-soft)" : undefined,
                       }}
                     >
                       <td style={{ padding: "9px 0", verticalAlign: "middle" }}>

@@ -35,7 +35,12 @@ function detectConnectors(recipes: Recipe[]): string[] {
   for (const recipe of recipes) {
     const haystack = `${recipe.name} ${recipe.description ?? ""}`.toLowerCase();
     for (const [prefix, connector] of Object.entries(TOOL_PREFIX_MAP)) {
-      if (haystack.includes(prefix)) {
+      // Match either the underscored tool prefix (`slack_chat`) if it
+      // happens to be quoted in description text, or the bare connector
+      // word (`slack`, `calendar`) which is far more likely to appear in
+      // recipe names like "slack-digest" / "calendar-summary".
+      const keyword = prefix.replace(/_$/, "");
+      if (haystack.includes(prefix) || haystack.includes(keyword)) {
         found.add(connector);
       }
     }
@@ -689,16 +694,40 @@ export default function RecipesPage() {
   }
 
   async function handleToggleEnabled(recipe: Recipe) {
+    const target = recipe.enabled === false;
+    // Optimistic flip — the toggle was tap-then-wait-2s before, which felt
+    // unresponsive. Roll back to the previous state if the PATCH fails.
+    setRecipes((prev) =>
+      prev
+        ? prev.map((r) =>
+            r.name === recipe.name ? { ...r, enabled: target } : r,
+          )
+        : prev,
+    );
     try {
-      await fetch(apiPath(`/api/bridge/recipes/${encodeURIComponent(recipe.name)}`), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: recipe.enabled === false }),
-      });
+      const res = await fetch(
+        apiPath(`/api/bridge/recipes/${encodeURIComponent(recipe.name)}`),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: target }),
+        },
+      );
+      if (!res.ok) throw new Error(`/recipes/${recipe.name} ${res.status}`);
+      // Re-sync once on success so any server-side derived fields stay
+      // current (lastRun, etc.).
+      void load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+      // Roll back the optimistic flip.
+      setRecipes((prev) =>
+        prev
+          ? prev.map((r) =>
+              r.name === recipe.name ? { ...r, enabled: !target } : r,
+            )
+          : prev,
+      );
     }
-    void load();
   }
 
   async function handleModalConfirm(vars: Record<string, string>) {
