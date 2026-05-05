@@ -142,7 +142,7 @@ export function Dialog({
       style={{
         position: "fixed",
         inset: 0,
-        background: "var(--overlay-bg, rgba(10, 11, 13, 0.55))",
+        background: "var(--overlay-bg)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",

@@ -102,13 +102,13 @@ export function AreaChart({
         </defs>
 
         {/* gridlines */}
-        {tickVals.map((v) => {
+        {tickVals.map((v, i) => {
           const y =
             PAD.top +
             (height - PAD.top - PAD.bottom) * (1 - v / Math.max(maxVal, 1));
           return (
             <line
-              key={v}
+              key={`tick-${i}-${v}`}
               x1={0}
               x2={100}
               y1={y}
@@ -157,14 +157,14 @@ export function AreaChart({
           color: "var(--ink-3)",
         }}
       >
-        {tickVals.map((v) => {
+        {tickVals.map((v, i) => {
           const pct =
             ((PAD.top + (height - PAD.top - PAD.bottom) * (1 - v / Math.max(maxVal, 1))) /
               height) *
             100;
           return (
             <span
-              key={v}
+              key={`tick-${i}-${v}`}
               style={{
                 position: "absolute",
                 top: `${pct}%`,

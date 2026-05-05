@@ -622,7 +622,7 @@ export default function SettingsPage() {
                       borderRadius: "var(--r-2)",
                       border: "none",
                       background: "var(--accent)",
-                      color: "#fff",
+                      color: "var(--on-accent)",
                       cursor: gateSaving || gatePending === gateValue ? "default" : "pointer",
                       opacity: gateSaving || gatePending === gateValue ? 0.5 : 1,
                     }}

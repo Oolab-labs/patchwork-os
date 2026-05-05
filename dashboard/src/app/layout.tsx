@@ -41,7 +41,10 @@ export const metadata = {
   },
   title: "Patchwork",
   description: "AI agent oversight and approval dashboard",
-  manifest: "/dashboard/manifest.json",
+  // Next.js 14 strips/re-applies basePath inconsistently for the metadata
+  // `manifest` field — leaving `<link rel="manifest" href="/manifest.json">`
+  // in the head, which 404s on a basePath deploy. We emit the link
+  // ourselves below from <head> instead.
   appleWebApp: {
     statusBarStyle: "black-translucent",
     title: "Patchwork",
@@ -76,6 +79,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <meta name="theme-color" content="#0d0c0b" media="(prefers-color-scheme: dark)" />
         <meta name="mobile-web-app-capable" content="yes" />
         <link rel="apple-touch-icon" href="/dashboard/icons/icon-192.png" />
+        <link rel="manifest" href="/dashboard/manifest.json" />
       </head>
       <body>
         <a href="#main-content" className="skip-nav">

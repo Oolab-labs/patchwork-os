@@ -70,7 +70,7 @@ function senderBadgeColor(name: string): string {
   if (lower.includes("morning-brief")) return "var(--orange)";
   if (lower.includes("health") || lower.includes("check")) return "var(--ok)";
   if (lower.includes("sentry") || lower.includes("error") || lower.includes("incident")) return "var(--err)";
-  if (lower.includes("recipe") || lower.includes("ctx-loop")) return "#6b6bff";
+  if (lower.includes("recipe") || lower.includes("ctx-loop")) return "var(--purple)";
   return "var(--ink-2)";
 }
 

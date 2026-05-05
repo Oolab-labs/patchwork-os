@@ -55,7 +55,7 @@ export default function ErrorBoundary({
             background: "var(--accent)",
             border: "none",
             borderRadius: "var(--r-s)",
-            color: "#fff",
+            color: "var(--on-accent)",
             cursor: "pointer",
             fontFamily: "var(--font-sans)",
             fontSize: "0.875rem",
