@@ -78,10 +78,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <link rel="apple-touch-icon" href="/dashboard/icons/icon-192.png" />
       </head>
       <body>
-        <DemoBanner />
-        <BridgeBanner />
-        <Shell>{children}</Shell>
-        <MobileBottomNav />
+        <div data-app-root>
+          <DemoBanner />
+          <BridgeBanner />
+          <Shell>{children}</Shell>
+          <MobileBottomNav />
+        </div>
         <script
           dangerouslySetInnerHTML={{
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/dashboard/sw.js',{scope:'/dashboard/'}).catch(()=>{})}`,

@@ -68,8 +68,8 @@ function RecipeIcon({ name }: { name: string }) {
 function senderBadgeColor(name: string): string {
   const lower = name.toLowerCase();
   if (lower.includes("morning-brief")) return "var(--orange)";
-  if (lower.includes("health") || lower.includes("check")) return "var(--ok, #0d8a5e)";
-  if (lower.includes("sentry") || lower.includes("error") || lower.includes("incident")) return "var(--err, #b91c1c)";
+  if (lower.includes("health") || lower.includes("check")) return "var(--ok)";
+  if (lower.includes("sentry") || lower.includes("error") || lower.includes("incident")) return "var(--err)";
   if (lower.includes("recipe") || lower.includes("ctx-loop")) return "#6b6bff";
   return "var(--ink-2)";
 }
@@ -303,6 +303,7 @@ export default function InboxPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [seenNames] = useState<Set<string>>(() => new Set());
   const [replaying, setReplaying] = useState(false);
+  const [actionErr, setActionErr] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detailRef = useRef<HTMLDivElement | null>(null);
   const selectedRef = useRef<InboxDetail | null>(null);
@@ -724,6 +725,7 @@ const filteredItems = items.filter((item) => {
                   {(() => {
                     const recipeNameForSelected = selected.name.replace(/\.md$/, "").replace(/-\d{4}-\d{2}-\d{2}$/, "");
                     return (
+                      <>
                       <div style={{ display: "flex", gap: 6, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--line-1)" }}>
                         <button
                           type="button"
@@ -742,7 +744,7 @@ const filteredItems = items.filter((item) => {
                           {replaying ? "Running…" : "Replay recipe"}
                         </button>
                         <a
-                          href={"/dashboard/traces?q=" + recipeNameForSelected}
+                          href={`/traces?q=${encodeURIComponent(recipeNameForSelected)}`}
                           className="btn sm ghost"
                           style={{ fontSize: 11, textDecoration: "none" }}
                         >
@@ -753,14 +755,39 @@ const filteredItems = items.filter((item) => {
                           className="btn sm ghost"
                           style={{ fontSize: 11, color: "var(--ink-3)" }}
                           onClick={async () => {
-                            await fetch(apiPath(`/api/bridge/inbox/${encodeURIComponent(selected.name)}`), { method: "DELETE" });
-                            fetchList(true);
-                            setSelected(null);
+                            setActionErr(null);
+                            try {
+                              const res = await fetch(
+                                apiPath(`/api/bridge/inbox/${encodeURIComponent(selected.name)}`),
+                                { method: "DELETE" },
+                              );
+                              if (!res.ok) {
+                                const text = await res.text().catch(() => res.statusText);
+                                setActionErr(`Archive failed: ${text || res.status}`);
+                                return;
+                              }
+                              fetchList(true);
+                              setSelected(null);
+                            } catch (e) {
+                              setActionErr(
+                                e instanceof Error ? e.message : String(e),
+                              );
+                            }
                           }}
                         >
                           Archive
                         </button>
                       </div>
+                      {actionErr && (
+                        <div
+                          role="alert"
+                          className="alert-err"
+                          style={{ marginTop: 8, fontSize: 12 }}
+                        >
+                          {actionErr}
+                        </div>
+                      )}
+                    </>
                     );
                   })()}
                 </div>

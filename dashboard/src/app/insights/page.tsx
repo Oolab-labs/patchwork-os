@@ -82,10 +82,10 @@ function approvalBar(approvals: number, rejections: number) {
           width: `${pct}%`,
           background:
             pct >= 80
-              ? "var(--ok, #22c55e)"
+              ? "var(--ok)"
               : pct >= 50
                 ? "var(--warn, #f59e0b)"
-                : "var(--err, #ef4444)",
+                : "var(--err)",
           transition: "width 0.2s",
         }}
       />
@@ -358,7 +358,7 @@ export default function InsightsPage() {
                     style={{
                       padding: "10px 8px",
                       textAlign: "right",
-                      color: "var(--ok, #22c55e)",
+                      color: "var(--ok)",
                       verticalAlign: "middle",
                       fontVariantNumeric: "tabular-nums",
                     }}
@@ -371,7 +371,7 @@ export default function InsightsPage() {
                       textAlign: "right",
                       color:
                         t.rejections > 0
-                          ? "var(--err, #ef4444)"
+                          ? "var(--err)"
                           : "var(--fg-3)",
                       verticalAlign: "middle",
                       fontVariantNumeric: "tabular-nums",

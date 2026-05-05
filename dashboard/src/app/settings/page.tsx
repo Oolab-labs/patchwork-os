@@ -88,7 +88,7 @@ export default function SettingsPage() {
   const [err, setErr] = useState<string>();
   const [unsupported, setUnsupported] = useState(false);
   const [active, setActive] = useState<SectionId>("s-bridge");
-  const [savedFlash, setSavedFlash] = useState(true);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
 
   // Bridge form state
   const [workspacePath, setWorkspacePath] = useState("");
@@ -208,14 +208,9 @@ export default function SettingsPage() {
   }, []);
 
   function flashSaved() {
-    setSavedFlash(false);
-    setTimeout(() => setSavedFlash(true), 1500);
-  }
-
-  // TODO(backend): wire to /api/bridge/settings PUT for workspace/inbox/ports.
-  // Until then, Apply still flashes "saved" to keep the design's UX shape.
-  async function saveBridge() {
-    flashSaved();
+    setSaveState("saving");
+    setTimeout(() => setSaveState("saved"), 600);
+    setTimeout(() => setSaveState("idle"), 2400);
   }
 
   async function setPrimary(rowId: string) {
@@ -303,18 +298,27 @@ export default function SettingsPage() {
         </div>
         <div
           aria-live="polite"
+          aria-atomic="true"
           style={{
             fontSize: 12,
-            color: savedFlash ? "var(--ok)" : "var(--fg-2)",
+            color: saveState === "saved" ? "var(--ok)" : "var(--fg-2)",
             display: "flex",
             alignItems: "center",
             gap: 6,
             paddingTop: 8,
-            transition: "color 0.2s",
+            minHeight: 16,
+            transition: "color 0.2s, opacity 0.2s",
+            opacity: saveState === "idle" ? 0 : 1,
           }}
         >
-          <span aria-hidden style={{ fontSize: 13 }}>{savedFlash ? "✓" : "…"}</span>
-          {savedFlash ? "All changes saved" : "Saving…"}
+          {saveState !== "idle" && (
+            <>
+              <span aria-hidden style={{ fontSize: 13 }}>
+                {saveState === "saved" ? "✓" : "…"}
+              </span>
+              {saveState === "saved" ? "Saved" : "Saving…"}
+            </>
+          )}
         </div>
       </div>
 
@@ -457,21 +461,24 @@ export default function SettingsPage() {
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <button
                     type="button"
-                    onClick={saveBridge}
+                    disabled
+                    title="Editing not wired yet — change values in the config file below and restart the bridge."
+                    aria-describedby="bridge-apply-help"
                     style={{
-                      background: "var(--accent)",
-                      color: "#fff",
-                      border: "none",
+                      background: "var(--bg-2)",
+                      color: "var(--fg-3)",
+                      border: "1px solid var(--border-default)",
                       borderRadius: "var(--r-2)",
                       padding: "6px 14px",
                       fontSize: 13,
-                      cursor: "pointer",
+                      cursor: "not-allowed",
+                      opacity: 0.6,
                     }}
                   >
                     Apply
                   </button>
-                  <span style={{ fontSize: 12, color: "var(--fg-3)" }}>
-                    Restart the bridge for port changes to take effect.
+                  <span id="bridge-apply-help" style={{ fontSize: 12, color: "var(--fg-3)" }}>
+                    Read-only — edit the config file directly and restart the bridge.
                   </span>
                 </div>
               </div>
@@ -540,14 +547,17 @@ export default function SettingsPage() {
                       </button>
                       <button
                         type="button"
+                        disabled
+                        title="Per-driver configuration UI coming soon — edit the config file directly."
                         style={{
                           background: "transparent",
-                          color: "var(--fg-1)",
+                          color: "var(--fg-3)",
                           border: "1px solid var(--border-default)",
                           borderRadius: "var(--r-2)",
                           padding: "5px 10px",
                           fontSize: 12,
-                          cursor: "pointer",
+                          cursor: "not-allowed",
+                          opacity: 0.5,
                         }}
                       >
                         Configure
@@ -671,35 +681,29 @@ export default function SettingsPage() {
               </div>
 
               <div style={{ padding: "16px 0", display: "flex", flexDirection: "column", gap: 14 }}>
+                <div role="status" style={{ fontSize: 12, color: "var(--fg-3)", marginBottom: 4 }}>
+                  Preview only — toggles do not yet persist between reloads.
+                </div>
                 <ToggleRow
                   id="tel-crash"
                   label="Crash reports"
                   help="Send anonymized stack traces to help diagnose bridge crashes. No source files, no env vars."
                   checked={telCrash}
-                  onChange={(v) => {
-                    setTelCrash(v);
-                    flashSaved();
-                  }}
+                  onChange={setTelCrash}
                 />
                 <ToggleRow
                   id="tel-usage"
                   label="Anonymous usage stats"
                   help="Tool-call counts and feature flag usage. No prompts, no file paths, no identifiers."
                   checked={telUsage}
-                  onChange={(v) => {
-                    setTelUsage(v);
-                    flashSaved();
-                  }}
+                  onChange={setTelUsage}
                 />
                 <ToggleRow
                   id="tel-diag"
                   label="Local diagnostics retention"
                   help="Keep last 7 days of bridge logs on this machine for debugging. Never leaves your computer."
                   checked={telDiag}
-                  onChange={(v) => {
-                    setTelDiag(v);
-                    flashSaved();
-                  }}
+                  onChange={setTelDiag}
                 />
               </div>
             </div>

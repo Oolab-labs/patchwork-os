@@ -83,7 +83,7 @@ function GraduateButton({ recipeName }: { recipeName: string }) {
   }
   if (state === "done") {
     return (
-      <span style={{ color: "var(--ok, #22c55e)", fontSize: 13 }}>
+      <span style={{ color: "var(--ok)", fontSize: 13 }}>
         ✓ Graduated to mostly trusted
       </span>
     );

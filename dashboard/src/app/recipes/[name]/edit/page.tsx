@@ -224,8 +224,8 @@ export default function RecipeEditPage({
               fontSize: 13,
               borderRadius: "var(--r-2)",
               background: t.kind === "ok" ? "var(--ok-soft, #1a3a2a)" : "var(--err-soft, #3a1a1a)",
-              border: `1px solid ${t.kind === "ok" ? "var(--ok, #4ade80)" : "var(--err, #f87171)"}`,
-              color: t.kind === "ok" ? "var(--ok, #4ade80)" : "var(--err, #f87171)",
+              border: `1px solid ${t.kind === "ok" ? "var(--ok)" : "var(--err)"}`,
+              color: t.kind === "ok" ? "var(--ok)" : "var(--err)",
               boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
               pointerEvents: "auto",
             }}
@@ -304,8 +304,8 @@ export default function RecipeEditPage({
             padding: "var(--s-3) var(--s-4)",
             borderRadius: "var(--r-2)",
             background: "var(--err-soft, #3a1a1a)",
-            border: "1px solid var(--err, #f87171)",
-            color: "var(--err, #f87171)",
+            border: "1px solid var(--err)",
+            color: "var(--err)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "flex-start",
@@ -349,8 +349,8 @@ export default function RecipeEditPage({
             padding: "var(--s-3) var(--s-4)",
             borderRadius: "var(--r-2)",
             background: "var(--err-soft, #3a1a1a)",
-            border: "1px solid var(--err, #f87171)",
-            color: "var(--err, #f87171)",
+            border: "1px solid var(--err)",
+            color: "var(--err)",
             fontSize: 13,
           }}
         >
@@ -410,9 +410,9 @@ export default function RecipeEditPage({
             style={{
               width: "100%",
               minHeight: 400,
-              background: "#0f0f1a",
-              color: "#e2e2f0",
-              border: "1px solid var(--glass-border)",
+              background: "var(--recess)",
+              color: "var(--ink-0)",
+              border: "1px solid var(--line-2)",
               borderRadius: "var(--r-2)",
               fontFamily: "var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace)",
               fontSize: 13,
@@ -427,7 +427,7 @@ export default function RecipeEditPage({
               e.currentTarget.style.borderColor = "var(--accent)";
             }}
             onBlur={(e) => {
-              e.currentTarget.style.borderColor = "var(--glass-border)";
+              e.currentTarget.style.borderColor = "var(--line-2)";
             }}
             onKeyDown={(e) => {
               if (e.key === "Tab") {

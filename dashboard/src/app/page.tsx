@@ -324,8 +324,12 @@ function ActiveRecipeCard() {
         >
           Active recipe
         </h3>
-        <span className="pill ok" style={{ fontSize: 10 }}>
-          running
+        <span
+          className="pill muted"
+          style={{ fontSize: 10 }}
+          title="Live wiring pending — preview only"
+        >
+          preview
         </span>
       </div>
 
@@ -365,17 +369,25 @@ function ActiveRecipeCard() {
 function HealthCard({
   bridgeVersion,
   extensionVersion,
+  bridgeOk,
+  extensionConnected,
 }: {
   bridgeVersion: string;
   extensionVersion: string;
+  bridgeOk: boolean;
+  extensionConnected: boolean;
 }) {
-  const rows: { label: string; value: string; tone?: "ok" | "muted" }[] = [
-    { label: "Bridge connected", value: bridgeVersion, tone: "ok" },
-    { label: "VS Code extension", value: extensionVersion, tone: "ok" },
-    { label: "JetBrains plugin", value: "1.0.0", tone: "ok" },
-    { label: "Ollama qwen2.5-coder", value: "7B", tone: "ok" },
-    { label: "Push relay iOS", value: "1 device", tone: "ok" },
-    { label: "Free disk", value: "38.4 GB", tone: "muted" },
+  const rows: { label: string; value: string; tone?: "ok" | "muted" | "warn" }[] = [
+    {
+      label: "Bridge",
+      value: bridgeOk ? bridgeVersion : "offline",
+      tone: bridgeOk ? "ok" : "warn",
+    },
+    {
+      label: "VS Code extension",
+      value: extensionConnected ? extensionVersion : "disconnected",
+      tone: extensionConnected ? "ok" : "muted",
+    },
   ];
 
   return (
@@ -401,8 +413,15 @@ function HealthCard({
         >
           Health
         </h3>
-        <span className="pill ok" style={{ fontSize: 10 }}>
-          all green
+        <span
+          className={`pill ${bridgeOk && extensionConnected ? "ok" : bridgeOk ? "muted" : "warn"}`}
+          style={{ fontSize: 10 }}
+        >
+          {bridgeOk && extensionConnected
+            ? "all green"
+            : bridgeOk
+              ? "extension off"
+              : "bridge offline"}
         </span>
       </div>
 
@@ -588,8 +607,8 @@ export default function HomePage() {
   ).size;
   const activeRecipesCount = recipes.filter((r) => r.enabled !== false).length;
 
-  const bridgeVersion = "0.4.2";
-  const extensionVersion = health?.extensionVersion ?? "0.4.2";
+  const bridgeVersion = bridgeStatus.patchwork?.version ?? "unknown";
+  const extensionVersion = health?.extensionVersion ?? "unknown";
 
   return (
     <section>
@@ -795,6 +814,8 @@ export default function HomePage() {
         <HealthCard
           bridgeVersion={bridgeVersion}
           extensionVersion={extensionVersion}
+          bridgeOk={bridgeStatus.ok === true}
+          extensionConnected={Boolean(health?.extensionConnected)}
         />
       </div>
     </section>

@@ -489,8 +489,9 @@ export default function MarketplacePage() {
     );
   });
 
-  const featured = filtered[0];
-  const rest = filtered.slice(1);
+  const isSearching = search.trim().length > 0;
+  const featured = isSearching ? undefined : filtered[0];
+  const rest = isSearching ? filtered : filtered.slice(1);
   const totalVisible = filtered.length;
 
   return (

@@ -20,25 +20,13 @@ interface SessionSummary {
   clientType?: string;
 }
 
-function recipeFor(s: SessionSummary, idx: number): string {
-  if (s.firstTool) return s.firstTool;
-  const fallbacks = ["morning-brief", "inbox-triage", "pr-review", "stand-up"];
-  return fallbacks[idx % fallbacks.length];
+function recipeFor(s: SessionSummary): string {
+  return s.firstTool ?? "session";
 }
 
-function descriptionFor(recipe: string): string {
-  switch (recipe) {
-    case "morning-brief":
-      return "morning-brief — assembling Slack + Gmail …";
-    case "inbox-triage":
-      return "inbox-triage — sorting unread threads …";
-    case "pr-review":
-      return "pr-review — reading diff + writing notes …";
-    case "stand-up":
-      return "stand-up — summarising yesterday + today …";
-    default:
-      return `${recipe} — running …`;
-  }
+function descriptionFor(recipe: string, hasRealRecipe: boolean): string {
+  if (!hasRealRecipe) return "no recipe metadata reported";
+  return `${recipe} — running …`;
 }
 
 function activityState(
@@ -65,8 +53,7 @@ function SessionLogPanel({
   const lines = [
     `$ patchwork run ${recipe}`,
     `→ resolving recipe templates/recipes/${recipe}.yaml`,
-    `→ model: claude-3.5-sonnet · provider: anthropic`,
-    `→ context: 4 connectors · 170 tools`,
+    `→ session ${shortId} streaming · live tail not yet wired`,
   ];
 
   return (
@@ -108,8 +95,8 @@ function SessionLogPanel({
       {/* terminal body */}
       <div
         style={{
-          background: "#0b0d10",
-          color: "#d8e0e8",
+          background: "var(--terminal-bg)",
+          color: "var(--terminal-fg)",
           fontFamily: "var(--font-mono)",
           fontSize: 12.5,
           lineHeight: 1.65,
@@ -123,7 +110,9 @@ function SessionLogPanel({
           <div
             key={i}
             style={{
-              color: l.startsWith("$") ? "#7fd1a8" : "#9aa7b3",
+              color: l.startsWith("$")
+                ? "var(--terminal-prompt)"
+                : "var(--terminal-comment)",
               whiteSpace: "pre-wrap",
             }}
           >
@@ -136,7 +125,7 @@ function SessionLogPanel({
             alignItems: "center",
             gap: 10,
             marginTop: 14,
-            color: "#d8e0e8",
+            color: "var(--terminal-fg)",
           }}
         >
           <Spinner size={12} />
@@ -266,8 +255,8 @@ export default function SessionsPage() {
               const act = activityState(lastMs);
               const toolCount = s.toolCount ?? 0;
               const isSelected = selectedId === s.id;
-              const recipe = recipeFor(s, idx);
-              const description = descriptionFor(recipe);
+              const recipe = recipeFor(s);
+              const description = descriptionFor(recipe, Boolean(s.firstTool));
 
               return (
                 <button
@@ -459,7 +448,7 @@ export default function SessionsPage() {
             {selectedId && selectedSession ? (
               <SessionLogPanel
                 shortId={`s${selectedIndex + 1}`}
-                recipe={recipeFor(selectedSession, selectedIndex)}
+                recipe={recipeFor(selectedSession)}
                 toolCount={selectedSession.toolCount ?? 0}
               />
             ) : (

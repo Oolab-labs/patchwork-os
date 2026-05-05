@@ -7,8 +7,8 @@ interface RunSparkBarsProps {
 
 function statusColor(status: string): string {
   const s = status.toLowerCase();
-  if (s === "done" || s === "success") return "var(--ok, #22c55e)";
-  if (s === "error" || s === "failed" || s === "errored") return "var(--err, #ef4444)";
+  if (s === "done" || s === "success") return "var(--ok)";
+  if (s === "error" || s === "failed" || s === "errored") return "var(--err)";
   if (s === "running") return "var(--warn, #e6a817)";
   return "var(--ink-3, #9ca3af)";
 }
