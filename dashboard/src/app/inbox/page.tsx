@@ -249,6 +249,13 @@ function relativeTime(iso: string): string {
   return `${days}d ago`;
 }
 
+function RelativeTime({ iso }: { iso: string }) {
+  const now = useNow(60_000);
+  // Reference now so the linter knows it drives the render.
+  void now;
+  return <>{relativeTime(iso)}</>;
+}
+
 function useNow(intervalMs = 30_000) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -308,7 +315,6 @@ export default function InboxPage() {
   const detailRef = useRef<HTMLDivElement | null>(null);
   const selectedRef = useRef<InboxDetail | null>(null);
   selectedRef.current = selected;
-  const now = useNow(60_000);
 
   const fetchList = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -388,6 +394,12 @@ const filteredItems = items.filter((item) => {
       const res = await fetch(apiPath(`/api/inbox/${encodeURIComponent(name)}`));
       if (!res.ok) throw new Error(`/api/inbox/${name} ${res.status}`);
       setSelected((await res.json()) as InboxDetail);
+      // Move focus to the detail pane so keyboard users skip past the
+      // sidebar nav. Pane has tabIndex={-1} so it's programmatically
+      // focusable but stays out of the natural Tab order afterwards.
+      requestAnimationFrame(() => {
+        detailRef.current?.focus({ preventScroll: false });
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -601,9 +613,6 @@ const filteredItems = items.filter((item) => {
                         const title = slugToTitle(item.name);
                         const shortDate = slugToShortDate(item.name);
                         const plainPreview = stripMarkdown(item.preview);
-                        // suppress unused now dep — just referencing it forces re-render for live timestamps
-                        void now;
-
                         return (
                           <button
                             key={item.name}
@@ -648,7 +657,7 @@ const filteredItems = items.filter((item) => {
                             {/* Row 3: timestamp + new badge */}
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                               <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
-                                {relativeTime(item.modifiedAt)}
+                                <RelativeTime iso={item.modifiedAt} />
                               </span>
                               {isNew && (
                                 <span className="pill info" style={{ fontSize: 9, padding: "1px 6px" }}>new</span>
@@ -699,7 +708,9 @@ const filteredItems = items.filter((item) => {
                   {/* Rendered content */}
                   <div
                     ref={detailRef}
-                    style={{ fontSize: 14, lineHeight: 1.7, color: "var(--ink-1)" }}
+                    tabIndex={-1}
+                    aria-label={`Message: ${slugToTitle(selected.name)}`}
+                    style={{ fontSize: 14, lineHeight: 1.7, color: "var(--ink-1)", outline: "none" }}
                   >
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}

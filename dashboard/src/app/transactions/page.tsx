@@ -102,6 +102,24 @@ export default function TransactionsPage() {
     }
   }
 
+  // Clear stale busy entries for transactions that are no longer in the list,
+  // so a reused id can't pre-disable a brand-new transaction's Discard button.
+  useEffect(() => {
+    const liveIds = new Set(transactions.map((t) => t.id));
+    setBusy((prev) => {
+      let changed = false;
+      const next: typeof prev = {};
+      for (const [id, val] of Object.entries(prev)) {
+        if (liveIds.has(id)) {
+          next[id] = val;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [transactions]);
+
   return (
     <section>
       <div className="page-head">
@@ -113,7 +131,9 @@ export default function TransactionsPage() {
             Active staged multi-file edits — review, then commit from the agent
             (MCP <code>commitTransaction</code>) or discard from here. See{" "}
             <a
-              href="https://github.com/Oolab-labs/patchwork-os/blob/main/documents/speculative-refactoring.md"
+              href="https://github.com/Oolab-labs/patchwork-os/blob/HEAD/documents/speculative-refactoring.md"
+              target="_blank"
+              rel="noreferrer"
               style={{ color: "var(--accent)" }}
             >
               the speculative-refactoring doc
@@ -134,9 +154,8 @@ export default function TransactionsPage() {
       {error && transactions.length === 0 && (
         <ErrorState
           title="Couldn't load transactions"
-          description="The bridge isn't responding to /transactions."
+          description="The bridge isn't responding to /transactions. The next poll will try again automatically."
           error={error}
-          onRetry={() => window.location.reload()}
         />
       )}
       {error && transactions.length > 0 && (

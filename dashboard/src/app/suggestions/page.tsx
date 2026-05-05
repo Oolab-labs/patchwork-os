@@ -65,8 +65,10 @@ function GraduateButton({ recipeName }: { recipeName: string }) {
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">(
     "idle",
   );
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   async function graduate() {
     setState("loading");
+    setErrorMsg(null);
     try {
       const res = await fetch(
         apiPath(`/api/bridge/recipes/${encodeURIComponent(recipeName)}/trust`),
@@ -76,27 +78,47 @@ function GraduateButton({ recipeName }: { recipeName: string }) {
           body: JSON.stringify({ level: "mostly_trusted" }),
         },
       );
-      setState(res.ok ? "done" : "error");
-    } catch {
+      if (res.ok) {
+        setState("done");
+      } else {
+        const text = await res.text().catch(() => res.statusText);
+        setErrorMsg(`${res.status}${text ? ` — ${text.slice(0, 120)}` : ""}`);
+        setState("error");
+      }
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : String(e));
       setState("error");
     }
   }
   if (state === "done") {
     return (
-      <span style={{ color: "var(--ok)", fontSize: 13 }}>
-        ✓ Graduated to mostly trusted
+      <span style={{ color: "var(--ok)", fontSize: 13 }} role="status">
+        <span aria-hidden="true">✓ </span>Graduated to mostly trusted
       </span>
     );
   }
   return (
-    <button
-      type="button"
-      className="btn sm"
-      disabled={state === "loading"}
-      onClick={() => void graduate()}
-    >
-      {state === "loading" ? "Graduating…" : state === "error" ? "Retry" : "Graduate trust"}
-    </button>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <button
+        type="button"
+        className="btn sm"
+        disabled={state === "loading"}
+        aria-busy={state === "loading"}
+        aria-label={`Graduate trust for ${recipeName}`}
+        onClick={() => void graduate()}
+      >
+        {state === "loading"
+          ? "Graduating…"
+          : state === "error"
+            ? "Retry"
+            : "Graduate trust"}
+      </button>
+      {state === "error" && errorMsg && (
+        <span role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
+          {errorMsg}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -283,7 +305,7 @@ function SuggestionGroup({
       <p style={{ fontSize: 12, color: "var(--fg-2)", margin: "0 0 var(--s-3)" }}>
         {subtitle}
       </p>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+      <ul role="list" aria-label={title} style={{ listStyle: "none", padding: 0, margin: 0 }}>
         {items.map((s, idx) => {
           const meta = KIND_META[s.kind];
           const key = `${s.kind}-${idx}-${

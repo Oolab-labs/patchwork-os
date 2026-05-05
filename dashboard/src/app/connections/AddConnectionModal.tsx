@@ -1,9 +1,7 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState } from "react";
 import { apiPath } from "@/lib/api";
-
-// ------------------------------------------------------------------ types
+import { Dialog } from "@/components/Dialog";
 
 interface ConnectorStatus {
   id: string;
@@ -27,8 +25,6 @@ interface Props {
   providers: ProviderDef[];
 }
 
-// ------------------------------------------------------------------ modal
-
 export default function AddConnectionModal({
   open,
   onClose,
@@ -37,9 +33,6 @@ export default function AddConnectionModal({
   onConnect,
   providers,
 }: Props) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<Element | null>(null);
-
   const [reqOpen, setReqOpen] = useState(false);
   const [reqName, setReqName] = useState("");
   const [reqNotes, setReqNotes] = useState("");
@@ -64,14 +57,20 @@ export default function AddConnectionModal({
       const res = await fetch(apiPath("/api/connector-requests"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: reqName.trim(), notes: reqNotes.trim() || undefined }),
+        body: JSON.stringify({
+          name: reqName.trim(),
+          notes: reqNotes.trim() || undefined,
+        }),
       });
-      const data = await res.json() as { ok: boolean; error?: string };
+      const data = (await res.json()) as { ok: boolean; error?: string };
       if (!data.ok) throw new Error(data.error ?? "Unknown error");
       setReqSuccess(true);
       setReqName("");
       setReqNotes("");
-      setTimeout(() => { setReqSuccess(false); setReqOpen(false); }, 4000);
+      setTimeout(() => {
+        setReqSuccess(false);
+        setReqOpen(false);
+      }, 4000);
     } catch (err) {
       setReqError(err instanceof Error ? err.message : "Failed to submit");
     } finally {
@@ -79,327 +78,287 @@ export default function AddConnectionModal({
     }
   }
 
-  // Save trigger element before modal opens so we can return focus on close
-  useEffect(() => {
-    if (open) {
-      triggerRef.current = document.activeElement;
-    }
-  }, [open]);
-
-  // Escape key → close
-  useEffect(() => {
-    if (!open) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
-
-  // Focus first non-disabled button on open
-  useEffect(() => {
-    if (!open) return;
-    const id = requestAnimationFrame(() => {
-      const btn = panelRef.current?.querySelector<HTMLButtonElement>(
-        "button:not([disabled])",
-      );
-      btn?.focus();
-    });
-    return () => cancelAnimationFrame(id);
-  }, [open]);
-
-  // Lock body scroll
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-      // Return focus to trigger
-      if (triggerRef.current instanceof HTMLElement) {
-        triggerRef.current.focus();
-      }
-    };
-  }, [open]);
-
-  if (!open) return null;
-
   function getStatus(id: string): ConnectorStatus["status"] {
     return connectors.find((c) => c.id === id)?.status ?? "disconnected";
   }
 
-  const content = (
-    <>
-      {/* Scoped styles — no globals.css edit */}
-      <style>{`
-        .acm-backdrop {
-          position: fixed;
-          inset: 0;
-          background: rgba(0, 0, 0, 0.5);
-          z-index: 50;
-        }
-        .acm-panel {
-          position: fixed;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          width: min(480px, 90vw);
-          max-height: 80vh;
-          overflow-y: auto;
-          background: var(--bg-2);
-          border: 1px solid var(--border-default);
-          border-radius: var(--r-4);
-          z-index: 51;
-          box-shadow: var(--shadow-2);
-        }
-        .acm-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 20px 20px 16px;
-          border-bottom: 1px solid var(--border-subtle);
-          position: sticky;
-          top: 0;
-          background: var(--bg-2);
-          z-index: 1;
-        }
-        .acm-close {
-          background: none;
-          border: none;
-          cursor: pointer;
-          color: var(--fg-2);
-          font-size: 20px;
-          line-height: 1;
-          padding: 4px 6px;
-          border-radius: var(--r-2);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .acm-close:hover {
-          color: var(--fg-0);
-          background: var(--bg-3);
-        }
-        .acm-list {
-          padding: 8px 0 12px;
-        }
-        .acm-row {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 10px 20px;
-        }
-        .acm-row:not(:last-child) {
-          border-bottom: 1px solid var(--border-subtle);
-        }
-        .acm-icon {
-          width: 36px;
-          height: 36px;
-          border-radius: var(--r-3);
-          background: var(--bg-3);
-          border: 1px solid var(--border-default);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--fg-1);
-          flex-shrink: 0;
-        }
-        .acm-info {
-          flex: 1;
-          min-width: 0;
-        }
-        .acm-name-row {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          flex-wrap: wrap;
-          margin-bottom: 2px;
-        }
-        .acm-name {
-          font-weight: 600;
-          font-size: 13px;
-          color: var(--fg-0);
-        }
-        .acm-desc {
-          font-size: 12px;
-          color: var(--fg-2);
-          line-height: 1.4;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .acm-action {
-          flex-shrink: 0;
-        }
-      `}</style>
-
-      {/* Backdrop */}
-      <div className="acm-backdrop" onClick={onClose} aria-hidden="true" />
-
-      {/* Panel */}
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      ariaLabelledBy="add-connection-title"
+      maxWidth={480}
+      panelStyle={{ padding: 0, maxHeight: "min(80vh, calc(100vh - 32px))" }}
+    >
       <div
-        ref={panelRef}
-        className="acm-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="add-connection-title"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "20px 20px 16px",
+          borderBottom: "1px solid var(--line-1)",
+          position: "sticky",
+          top: 0,
+          background: "var(--surface)",
+          zIndex: 1,
+        }}
       >
-        <div className="acm-header">
-          <h2 id="add-connection-title" style={{ fontSize: 16 }}>
-            Add connection
-          </h2>
+        <h2 id="add-connection-title" style={{ fontSize: 16, margin: 0 }}>
+          Add connection
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--fg-2)",
+            fontSize: 20,
+            lineHeight: 1,
+            padding: "4px 6px",
+            borderRadius: "var(--r-2)",
+          }}
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+      </div>
+
+      <div style={{ padding: "8px 0 12px" }}>
+        {providers.map(({ id, name, description, icon: Icon }, idx) => {
+          const status = getStatus(id);
+          const isActing = acting === id;
+          return (
+            <div
+              key={id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "10px 20px",
+                borderBottom:
+                  idx < providers.length - 1
+                    ? "1px solid var(--line-1)"
+                    : "none",
+              }}
+            >
+              <div
+                aria-hidden="true"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "var(--r-3)",
+                  background: "var(--recess)",
+                  border: "1px solid var(--line-2)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--fg-1)",
+                  flexShrink: 0,
+                }}
+              >
+                <Icon />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    marginBottom: 2,
+                  }}
+                >
+                  <span style={{ fontWeight: 600, fontSize: 13, color: "var(--fg-0)" }}>
+                    {name}
+                  </span>
+                  <span
+                    className={`pill ${
+                      status === "connected"
+                        ? "ok"
+                        : status === "needs_reauth"
+                          ? "warn"
+                          : "muted"
+                    }`}
+                    title={
+                      status === "needs_reauth"
+                        ? "Token expired — reconnect to restore access"
+                        : undefined
+                    }
+                  >
+                    {status === "connected" ? (
+                      <>
+                        <span className="pill-dot" />
+                        Connected
+                      </>
+                    ) : status === "needs_reauth" ? (
+                      <>
+                        <span className="pill-dot" />
+                        Reconnect required
+                      </>
+                    ) : (
+                      "Not connected"
+                    )}
+                  </span>
+                </div>
+                <div
+                  title={description}
+                  style={{
+                    fontSize: 12,
+                    color: "var(--fg-2)",
+                    lineHeight: 1.4,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {description}
+                </div>
+              </div>
+              <div style={{ flexShrink: 0 }}>
+                {status === "connected" ? (
+                  <button
+                    type="button"
+                    className="btn sm"
+                    disabled
+                    aria-label={`${name} already connected`}
+                  >
+                    Connected
+                  </button>
+                ) : status === "needs_reauth" ? (
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => onConnect(id)}
+                    disabled={isActing}
+                    aria-label={`Reconnect ${name}`}
+                  >
+                    {isActing ? "…" : "Reconnect"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn sm primary"
+                    onClick={() => onConnect(id)}
+                    disabled={isActing}
+                    aria-label={`Connect ${name}`}
+                  >
+                    {isActing ? "…" : "Connect"}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        style={{
+          borderTop: "1px solid var(--line-1)",
+          padding: "12px 20px 16px",
+        }}
+      >
+        {!reqOpen && !reqSuccess && (
           <button
             type="button"
-            className="acm-close"
-            onClick={onClose}
-            aria-label="Close"
+            onClick={() => setReqOpen(true)}
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              fontSize: 12,
+              color: "var(--fg-2)",
+              textDecoration: "underline",
+            }}
           >
-            ×
+            Don&apos;t see what you need? Request a connector
           </button>
-        </div>
+        )}
 
-        <div className="acm-list">
-          {providers.map(({ id, name, description, icon: Icon }) => {
-            const status = getStatus(id);
-            const isActing = acting === id;
+        {reqSuccess && (
+          <p role="status" style={{ fontSize: 12, color: "var(--ok)", margin: 0 }}>
+            <span aria-hidden="true">✓ </span>Request submitted. We&apos;ll add
+            it to the roadmap.
+          </p>
+        )}
 
-            return (
-              <div key={id} className="acm-row">
-                {/* Icon */}
-                <div className="acm-icon" aria-hidden="true">
-                  <Icon />
-                </div>
-
-                {/* Info */}
-                <div className="acm-info">
-                  <div className="acm-name-row">
-                    <span className="acm-name">{name}</span>
-                    <span
-                      className={`pill ${
-                        status === "connected"
-                          ? "ok"
-                          : status === "needs_reauth"
-                            ? "warn"
-                            : "muted"
-                      }`}
-                      title={
-                        status === "needs_reauth"
-                          ? "Token expired — reconnect to restore access"
-                          : undefined
-                      }
-                    >
-                      {status === "connected" ? (
-                        <>
-                          <span className="pill-dot" />
-                          Connected
-                        </>
-                      ) : status === "needs_reauth" ? (
-                        <>
-                          <span className="pill-dot" />
-                          Reconnect required
-                        </>
-                      ) : (
-                        "Not connected"
-                      )}
-                    </span>
-                  </div>
-                  <div className="acm-desc" title={description}>
-                    {description}
-                  </div>
-                </div>
-
-                {/* Action */}
-                <div className="acm-action">
-                  {status === "connected" ? (
-                    <button
-                      type="button"
-                      className="btn sm"
-                      disabled
-                      aria-label={`${name} already connected`}
-                    >
-                      Connected
-                    </button>
-                  ) : status === "needs_reauth" ? (
-                    <button
-                      type="button"
-                      className="btn sm"
-                      onClick={() => onConnect(id)}
-                      disabled={isActing}
-                      aria-label={`Reconnect ${name}`}
-                    >
-                      {isActing ? "…" : "Reconnect"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn sm primary"
-                      onClick={() => onConnect(id)}
-                      disabled={isActing}
-                      aria-label={`Connect ${name}`}
-                    >
-                      {isActing ? "…" : "Connect"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Request a connector */}
-        <div style={{ borderTop: "1px solid var(--border-subtle)", padding: "12px 20px 16px" }}>
-          {!reqOpen && !reqSuccess && (
-            <button
-              type="button"
-              onClick={() => setReqOpen(true)}
-              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, color: "var(--fg-2)", textDecoration: "underline" }}
-            >
-              Don't see what you need? Request a connector
-            </button>
-          )}
-
-          {reqSuccess && (
-            <p style={{ fontSize: 12, color: "var(--ok)", margin: 0 }}>
-              ✓ Request submitted. We'll add it to the roadmap.
-            </p>
-          )}
-
-          {reqOpen && !reqSuccess && (
-            <form onSubmit={handleReqSubmit} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <input
-                type="text"
-                value={reqName}
-                onChange={e => setReqName(e.target.value)}
-                placeholder="Service name (e.g. Notion, HubSpot…)"
-                maxLength={100}
-                required
-                style={{ width: "100%", padding: "6px 10px", fontSize: 13, background: "var(--bg-1)", border: "1px solid var(--border-default)", borderRadius: "var(--r-2)", color: "var(--fg-0)", boxSizing: "border-box" }}
-              />
-              <textarea
-                value={reqNotes}
-                onChange={e => setReqNotes(e.target.value)}
-                placeholder="Any notes? (optional)"
-                maxLength={500}
-                rows={3}
-                style={{ width: "100%", padding: "6px 10px", fontSize: 13, background: "var(--bg-1)", border: "1px solid var(--border-default)", borderRadius: "var(--r-2)", color: "var(--fg-0)", resize: "vertical", boxSizing: "border-box" }}
-              />
-              {reqError && (
-                <p role="alert" style={{ fontSize: 12, color: "var(--err)", margin: 0 }}>{reqError}</p>
-              )}
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button type="submit" className="btn sm primary" disabled={reqSubmitting || !reqName.trim()}>
-                  {reqSubmitting ? "Submitting…" : "Submit request"}
-                </button>
-                <button type="button" onClick={resetReqForm} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, color: "var(--fg-2)", textDecoration: "underline" }}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
+        {reqOpen && !reqSuccess && (
+          <form
+            onSubmit={handleReqSubmit}
+            style={{ display: "flex", flexDirection: "column", gap: 8 }}
+          >
+            <input
+              type="text"
+              value={reqName}
+              onChange={(e) => setReqName(e.target.value)}
+              placeholder="Service name (e.g. Notion, HubSpot…)"
+              maxLength={100}
+              required
+              aria-label="Service name"
+              style={{
+                width: "100%",
+                padding: "6px 10px",
+                fontSize: 13,
+                background: "var(--bg-1)",
+                border: "1px solid var(--line-2)",
+                borderRadius: "var(--r-2)",
+                color: "var(--fg-0)",
+                boxSizing: "border-box",
+              }}
+            />
+            <textarea
+              value={reqNotes}
+              onChange={(e) => setReqNotes(e.target.value)}
+              placeholder="Any notes? (optional)"
+              maxLength={500}
+              rows={3}
+              aria-label="Notes"
+              style={{
+                width: "100%",
+                padding: "6px 10px",
+                fontSize: 13,
+                background: "var(--bg-1)",
+                border: "1px solid var(--line-2)",
+                borderRadius: "var(--r-2)",
+                color: "var(--fg-0)",
+                resize: "vertical",
+                boxSizing: "border-box",
+              }}
+            />
+            {reqError && (
+              <p role="alert" style={{ fontSize: 12, color: "var(--err)", margin: 0 }}>
+                {reqError}
+              </p>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                type="submit"
+                className="btn sm primary"
+                disabled={reqSubmitting || !reqName.trim()}
+              >
+                {reqSubmitting ? "Submitting…" : "Submit request"}
+              </button>
+              <button
+                type="button"
+                onClick={resetReqForm}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  fontSize: 12,
+                  color: "var(--fg-2)",
+                  textDecoration: "underline",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
       </div>
-    </>
+    </Dialog>
   );
-
-  return createPortal(content, document.body);
 }

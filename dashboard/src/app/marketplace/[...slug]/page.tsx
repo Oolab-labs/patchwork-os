@@ -59,10 +59,23 @@ export default async function RecipeDetailPage({ params }: PageProps) {
   const src = parseInstallSource(recipe.install);
   let manifest: RecipeManifest | null = null;
   let yaml: string | null = null;
+  // Network failures on the CDN are not page-level errors — render the
+  // detail page in a degraded state (description + install source) rather
+  // than throwing a 500 the user can't recover from.
   if (src) {
-    manifest = await fetchManifest(src);
+    try {
+      manifest = await fetchManifest(src);
+    } catch {
+      manifest = null;
+    }
     const main = manifest?.recipes?.main;
-    if (main) yaml = await fetchRecipeYaml(src, main);
+    if (main) {
+      try {
+        yaml = await fetchRecipeYaml(src, main);
+      } catch {
+        yaml = null;
+      }
+    }
   }
 
   return (
@@ -166,10 +179,10 @@ function Variables({ manifest }: { manifest: RecipeManifest | null }) {
       <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ textAlign: "left", color: "var(--ink-2)" }}>
-            <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-1)" }}>Variable</th>
-            <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-1)" }}>Required</th>
-            <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-1)" }}>Default</th>
-            <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-1)" }}>Description</th>
+            <th scope="col" style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-1)", textAlign: "left" }}>Variable</th>
+            <th scope="col" style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-1)", textAlign: "left" }}>Required</th>
+            <th scope="col" style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-1)", textAlign: "left" }}>Default</th>
+            <th scope="col" style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-1)", textAlign: "left" }}>Description</th>
           </tr>
         </thead>
         <tbody>

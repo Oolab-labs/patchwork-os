@@ -3,7 +3,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { ErrorState } from "@/components/patchwork";
-import { AnalyticsTabs } from "@/components/AnalyticsTabs";
 
 interface ToolInsight {
   toolName: string;
@@ -143,29 +142,33 @@ export default function InsightsPage() {
 
   useEffect(() => {
     if (tools.length === 0) return;
-    // Fetch rule explanations for all tools in parallel via the Next.js bridge proxy.
+    // Abort any explain fetches still in flight from a prior generatedAt
+    // tick — without this, two waves of N requests can race and the older
+    // wave's responses overwrite the newer wave's explanations.
+    const controller = new AbortController();
     void Promise.all(
       tools.map(async (t) => {
         try {
           const url = `/api/bridge/approval-insights/explain?tool=${encodeURIComponent(t.toolName)}`;
-          const res = await fetch(url);
+          const res = await fetch(url, { signal: controller.signal });
           if (!res.ok) return;
           const json = (await res.json()) as ExplainResponse;
           setExplanations((prev) => ({
             ...prev,
             [t.toolName]: json.explanation,
           }));
-        } catch {
-          // ignore — bridge unreachable
+        } catch (e) {
+          if (e instanceof DOMException && e.name === "AbortError") return;
+          // ignore other errors — bridge unreachable
         }
       }),
     );
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.generatedAt]);
 
   return (
     <section>
-      <AnalyticsTabs />
       <div className="page-head">
         <div>
           <h1 className="editorial-h1">

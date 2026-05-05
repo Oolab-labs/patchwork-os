@@ -159,7 +159,7 @@ export default function MetricsPage() {
             <span style={{ color: "var(--orange)", marginRight: 6 }}>{">_"}</span>Total calls
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 28, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
-            <AnimatedNumber value={totalCalls} />
+            {metrics.length === 0 ? "—" : <AnimatedNumber value={totalCalls} />}
           </div>
         </div>
         <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--err)" }}>
@@ -167,7 +167,7 @@ export default function MetricsPage() {
             <span style={{ color: "var(--err)", marginRight: 6 }}>△</span>Errors
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 28, fontWeight: 800, color: totalErrors > 0 ? "var(--err)" : "var(--ink-0)", lineHeight: 1 }}>
-            <AnimatedNumber value={totalErrors} />
+            {metrics.length === 0 ? "—" : <AnimatedNumber value={totalErrors} />}
           </div>
         </div>
         <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--green)" }}>

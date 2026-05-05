@@ -152,7 +152,13 @@ function TaskDetail({ task, onCancel, cancelling }: {
           </pre>
         )}
         {task.output ? (
-          <pre className="task-output" style={{ maxHeight: "calc(100vh - 460px)" }}>
+          <pre
+            className="task-output"
+            aria-live={task.status === "running" ? "polite" : undefined}
+            aria-atomic="false"
+            aria-label={`Task ${task.taskId.slice(0, 8)} output`}
+            style={{ maxHeight: "calc(100vh - 460px)" }}
+          >
             {task.output.slice(0, 8000)}
           </pre>
         ) : (
@@ -364,7 +370,9 @@ export default function TasksPage() {
     return c;
   }, [tasks]);
 
-  const selectedTask = filteredTasks.find((t) => t.taskId === selectedTaskId) ?? null;
+  // Derive from the unfiltered list so applying a status filter that hides
+  // the selected task doesn't blank the detail pane silently.
+  const selectedTask = tasks.find((t) => t.taskId === selectedTaskId) ?? null;
 
   async function handleCancel(id: string) {
     setCancelling((p) => ({ ...p, [id]: true }));
@@ -527,6 +535,8 @@ export default function TasksPage() {
                   key={t.taskId}
                   type="button"
                   onClick={() => setSelectedTaskId(t.taskId)}
+                  aria-pressed={isSelected}
+                  aria-label={`Task ${t.taskId.slice(0, 8)}, ${t.status}${t.driver ? ` (${t.driver})` : ""}`}
                   style={{
                     position: "relative",
                     textAlign: "left",

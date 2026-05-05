@@ -9,7 +9,7 @@ import { MobileBottomNav } from "@/components/MobileBottomNav";
 const albertSans = Albert_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-geist",
+  variable: "--font-albert",
   display: "swap",
 });
 
@@ -78,6 +78,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <link rel="apple-touch-icon" href="/dashboard/icons/icon-192.png" />
       </head>
       <body>
+        <a href="#main-content" className="skip-nav">
+          Skip to main content
+        </a>
         <div data-app-root>
           <DemoBanner />
           <BridgeBanner />

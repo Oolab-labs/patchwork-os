@@ -29,7 +29,12 @@ const FOCUSABLE_SELECTOR = [
   "input:not([disabled])",
   "select:not([disabled])",
   "textarea:not([disabled])",
+  "summary",
+  "audio[controls]",
+  "video[controls]",
   '[tabindex]:not([tabindex="-1"])',
+  '[contenteditable=""]',
+  '[contenteditable="true"]',
 ].join(",");
 
 export function Dialog({

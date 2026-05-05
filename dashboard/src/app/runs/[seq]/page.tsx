@@ -637,6 +637,7 @@ function ReplayPreflight({ stepResults }: { stepResults: StepResult[] }) {
 export default function RunDetailPage() {
   const params = useParams();
   const seq = params.seq as string;
+  const seqIsValid = !!seq && /^\d+$/.test(seq);
 
   const [run, setRun] = useState<RunDetail | null>(null);
   const [runErr, setRunErr] = useState<string>();
@@ -680,11 +681,17 @@ export default function RunDetailPage() {
     } catch (e) {
       setReplayState("error");
       setReplayMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      // Return to idle after a beat so the user can re-trigger if they want
+      // to replay a second time without staring at a stale "done" banner.
+      setTimeout(() => {
+        setReplayState((cur) => (cur === "done" || cur === "error" ? "idle" : cur));
+      }, 4000);
     }
   };
 
   useEffect(() => {
-    if (!seq) return;
+    if (!seqIsValid) return;
     let intervalId: ReturnType<typeof setInterval> | undefined;
 
     const doFetch = () =>
@@ -959,7 +966,17 @@ export default function RunDetailPage() {
       </Dialog>
 
       {runErr && <div className="alert-err">Failed to load run: {runErr}</div>}
-      {!run && !runErr && <div className="empty-state"><p>Loading…</p></div>}
+      {!seqIsValid ? (
+        <div className="empty-state">
+          <h3>Invalid run id</h3>
+          <p>
+            <code>{seq}</code> isn&apos;t a numeric run sequence. Open a run
+            from the <Link href="/runs">Runs</Link> list.
+          </p>
+        </div>
+      ) : (
+        !run && !runErr && <div className="empty-state" role="status"><p>Loading run…</p></div>
+      )}
 
       {run && (
         <>

@@ -244,8 +244,11 @@ export default function ActivityPage() {
         )}
       </div>
 
-      {/* Tabs */}
+      {/* Tabs (toggle-button group, not ARIA tabs — there's no associated tabpanel
+          since the table below is shared and just filters). */}
       <div
+        role="group"
+        aria-label="Filter events by type"
         style={{
           display: "flex",
           gap: 0,
@@ -276,6 +279,7 @@ export default function ActivityPage() {
             <button
               key={t}
               type="button"
+              aria-pressed={tab === t}
               onClick={() => setTab(t)}
               style={{
                 padding: "6px 16px",
