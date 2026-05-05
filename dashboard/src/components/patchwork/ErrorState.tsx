@@ -73,7 +73,7 @@ export function ErrorState({
                 onClick={onRetry}
                 style={{
                   background: "var(--accent)",
-                  color: "#fff",
+                  color: "var(--on-accent)",
                   border: "none",
                   borderRadius: "var(--r-2)",
                   padding: "6px 14px",

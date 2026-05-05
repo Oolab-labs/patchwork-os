@@ -671,7 +671,7 @@ function NewRecipePageInner() {
             style={{
               background: "var(--accent)",
               borderRadius: 4,
-              color: "#fff",
+              color: "var(--on-accent)",
               fontSize: 10,
               fontWeight: 700,
               letterSpacing: "0.05em",
@@ -730,7 +730,7 @@ function NewRecipePageInner() {
                   background: "var(--accent)",
                   border: "none",
                   borderRadius: "var(--r-2)",
-                  color: "#fff",
+                  color: "var(--on-accent)",
                   cursor:
                     aiLoading || !aiPrompt.trim() ? "not-allowed" : "pointer",
                   fontSize: 13,
@@ -813,7 +813,7 @@ function NewRecipePageInner() {
                       background: "var(--accent)",
                       border: "none",
                       borderRadius: "var(--r-2)",
-                      color: "#fff",
+                      color: "var(--on-accent)",
                       cursor: "pointer",
                       fontSize: 13,
                       fontWeight: 500,

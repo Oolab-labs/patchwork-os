@@ -29,16 +29,23 @@ export function QuiltBg({
   rows?: number;
   size?: number;
 }) {
+  // Deterministic initial layout — Math.random() on either side of SSR
+  // hydration causes mismatch warnings (server/client get different
+  // delays + fills). Use a tiny mulberry32-ish hash off (r,c) so SSR and
+  // first client render agree, then randomise post-mount.
   const initial = useMemo<Cell[]>(() => {
     const cells: Cell[] = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
+        const h = (r * 73856093) ^ (c * 19349663);
+        const fillIdx = Math.abs(h) % PALETTE.length;
+        const delayJitter = (Math.abs(h >> 8) % 200);
         cells.push({
           id: `${r}-${c}`,
           x: c * size,
           y: r * size,
-          fill: PALETTE[Math.floor(Math.random() * PALETTE.length)],
-          enterDelay: (r + c) * 50 + Math.random() * 200,
+          fill: PALETTE[fillIdx],
+          enterDelay: (r + c) * 50 + delayJitter,
         });
       }
     }
@@ -46,6 +53,17 @@ export function QuiltBg({
   }, [cols, rows, size]);
 
   const [cells, setCells] = useState<Cell[]>(initial);
+
+  // After mount, splash a fresh randomised palette across the grid so
+  // the visual richness isn't just a deterministic checker pattern.
+  useEffect(() => {
+    setCells((prev) =>
+      prev.map((c) => ({
+        ...c,
+        fill: PALETTE[Math.floor(Math.random() * PALETTE.length)],
+      })),
+    );
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => {

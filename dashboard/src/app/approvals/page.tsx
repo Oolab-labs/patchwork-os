@@ -481,7 +481,7 @@ function ApprovalCard({
         <button
           type="button"
           className="btn primary"
-          style={{ background: "var(--green)", borderColor: "var(--green)", color: "#fff", display: "inline-flex", alignItems: "center", gap: 6 }}
+          style={{ background: "var(--green)", borderColor: "var(--green)", color: "var(--on-accent)", display: "inline-flex", alignItems: "center", gap: 6 }}
           onClick={() => handleDecide("approve")}
           disabled={approving || rejecting}
           aria-label={`Approve ${p.toolName}`}
