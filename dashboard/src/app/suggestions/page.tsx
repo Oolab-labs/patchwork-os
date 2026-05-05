@@ -285,6 +285,8 @@ export default function SuggestionsPage() {
   );
 }
 
+const SUGGESTION_PAGE_SIZE = 20;
+
 function SuggestionGroup({
   title,
   subtitle,
@@ -296,6 +298,9 @@ function SuggestionGroup({
   items: AutomationSuggestion[];
   renderAction: (s: AutomationSuggestion) => React.ReactNode;
 }) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? items : items.slice(0, SUGGESTION_PAGE_SIZE);
+  const hidden = items.length - visible.length;
   return (
     <div className="card" style={{ marginTop: "var(--s-4)" }}>
       <div className="card-head">
@@ -306,7 +311,7 @@ function SuggestionGroup({
         {subtitle}
       </p>
       <ul role="list" aria-label={title} style={{ listStyle: "none", padding: 0, margin: 0 }}>
-        {items.map((s, idx) => {
+        {visible.map((s, idx) => {
           const meta = KIND_META[s.kind];
           const key = `${s.kind}-${idx}-${
             isCoOccurringPair(s.details)
@@ -338,6 +343,16 @@ function SuggestionGroup({
           );
         })}
       </ul>
+      {hidden > 0 && (
+        <button
+          type="button"
+          className="btn sm ghost"
+          onClick={() => setShowAll(true)}
+          style={{ marginTop: "var(--s-3)", fontSize: 12 }}
+        >
+          Show {hidden} more
+        </button>
+      )}
     </div>
   );
 }

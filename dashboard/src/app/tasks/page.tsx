@@ -540,7 +540,7 @@ export default function TasksPage() {
                     : "—";
               const isLive = t.status === "running" || t.status === "pending";
               const isSelected = selectedTaskId === t.taskId;
-              const firstOutputLine = (t.output ?? "").split("\n")[0]?.slice(0, 80) ?? "(running…)";
+              const firstOutputLine = (t.output ?? "").split("\n")[0]?.slice(0, 80) ?? "";
               const driver = driverFromTask(t);
 
               const durSec =
