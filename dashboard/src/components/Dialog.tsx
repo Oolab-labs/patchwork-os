@@ -159,7 +159,7 @@ export function Dialog({
           color: "var(--ink-0)",
           border: "1px solid var(--line-2)",
           borderRadius: "var(--r-2, 10px)",
-          boxShadow: "0 20px 50px rgba(0, 0, 0, 0.35)",
+          boxShadow: "var(--shadow-modal)",
           padding: "var(--s-5, 20px)",
           width: "100%",
           maxWidth,

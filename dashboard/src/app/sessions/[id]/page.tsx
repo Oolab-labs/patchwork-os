@@ -360,7 +360,7 @@ export default function SessionDetailPage() {
                     style={{
                       fontFamily: "var(--font-mono)",
                       fontSize: 12,
-                      color: "#a78bfa",
+                      color: "var(--purple)",
                       flexShrink: 0,
                     }}
                   >
