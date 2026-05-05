@@ -9,7 +9,7 @@ function statusColor(status: string): string {
   const s = status.toLowerCase();
   if (s === "done" || s === "success") return "var(--ok)";
   if (s === "error" || s === "failed" || s === "errored") return "var(--err)";
-  if (s === "running") return "var(--warn, #e6a817)";
+  if (s === "running") return "var(--warn)";
   return "var(--ink-3, #9ca3af)";
 }
 

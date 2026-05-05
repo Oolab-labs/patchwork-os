@@ -52,7 +52,12 @@ function TtlPill({ expiresAt }: { expiresAt: number }) {
   const expired = ms === 0;
   const critical = !expired && ms < 30_000;
   const warning = !expired && !critical && ms < 60_000;
-  const cls = expired || critical || warning ? "pill err" : "pill warn";
+  const cls =
+    expired || critical
+      ? "pill err"
+      : warning
+        ? "pill warn"
+        : "pill muted";
   return (
     <span
       className={cls}

@@ -188,11 +188,9 @@ export default function ActivityPage() {
             Activity — <span className="accent">every tool, every event, in real time.</span>
           </h1>
           <div className="editorial-sub">
-            {(() => {
-              const total = events.length || 100;
-              const errored = stats.errors || (events.length === 0 ? 8 : 0);
-              return `${total} events · last 24h · ${errored} errored`;
-            })()}
+            {events.length === 0
+              ? "No events yet"
+              : `${events.length} events · last 24h · ${stats.errors} errored`}
           </div>
         </div>
         <span className={`pill ${connected ? "ok" : "err"}`}>

@@ -302,7 +302,7 @@ export default function InboxPage() {
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [seenNames] = useState<Set<string>>(() => new Set());
-  const [replaying, setReplaying] = useState(false);
+  const [replayingFor, setReplayingFor] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detailRef = useRef<HTMLDivElement | null>(null);
@@ -520,17 +520,19 @@ const filteredItems = items.filter((item) => {
                     <button
                       type="button"
                       onClick={() => setSidebarOpen(false)}
-                      title="Collapse"
+                      title="Collapse sidebar"
+                      aria-label="Collapse message sidebar"
                       style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", padding: "3px 5px", borderRadius: "var(--r-s)", fontSize: 11, lineHeight: 1 }}
                     >
-                      ◀
+                      <span aria-hidden="true">◀</span>
                     </button>
                   </>
                 ) : (
                   <button
                     type="button"
                     onClick={() => setSidebarOpen(true)}
-                    title="Expand"
+                    title="Expand sidebar"
+                    aria-label="Expand message sidebar"
                     style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", padding: "3px 5px", borderRadius: "var(--r-s)", fontSize: 11, lineHeight: 1, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -731,17 +733,30 @@ const filteredItems = items.filter((item) => {
                           type="button"
                           className="btn sm primary"
                           style={{ background: "var(--orange)", border: "none", fontSize: 11 }}
-                          disabled={replaying}
+                          disabled={replayingFor === selected.name}
                           onClick={async () => {
-                            setReplaying(true);
+                            setActionErr(null);
+                            const itemName = selected.name;
+                            setReplayingFor(itemName);
                             try {
-                              await fetch(apiPath(`/api/bridge/recipes/${encodeURIComponent(recipeNameForSelected)}/run`), { method: "POST" });
+                              const res = await fetch(
+                                apiPath(`/api/bridge/recipes/${encodeURIComponent(recipeNameForSelected)}/run`),
+                                { method: "POST" },
+                              );
+                              if (!res.ok) {
+                                const text = await res.text().catch(() => res.statusText);
+                                setActionErr(`Replay failed: ${text || res.status}`);
+                              }
+                            } catch (e) {
+                              setActionErr(e instanceof Error ? e.message : String(e));
                             } finally {
-                              setTimeout(() => setReplaying(false), 2000);
+                              setTimeout(() => {
+                                setReplayingFor((cur) => (cur === itemName ? null : cur));
+                              }, 2000);
                             }
                           }}
                         >
-                          {replaying ? "Running…" : "Replay recipe"}
+                          {replayingFor === selected.name ? "Running…" : "Replay recipe"}
                         </button>
                         <a
                           href={`/traces?q=${encodeURIComponent(recipeNameForSelected)}`}

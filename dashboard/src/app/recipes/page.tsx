@@ -3,6 +3,7 @@ import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Dialog } from "@/components/Dialog";
 import { apiPath } from "@/lib/api";
 import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
 import { SkeletonList } from "@/components/Skeleton";
@@ -140,125 +141,108 @@ function RunModal({
   onConfirm,
   running,
 }: {
-  state: RunModalState;
+  state: RunModalState | null;
   onClose: () => void;
   onConfirm: (vars: Record<string, string>) => void;
   running: boolean;
 }) {
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const [values, setValues] = useState<Record<string, string>>(() => {
+  const [values, setValues] = useState<Record<string, string>>({});
+
+  // Reset form values when the recipe being run changes.
+  useEffect(() => {
+    if (!state) return;
     const init: Record<string, string> = {};
     for (const v of state.recipe.vars ?? []) {
       init[v.name] = v.default ?? "";
     }
-    return init;
-  });
+    setValues(init);
+  }, [state]);
 
-  function handleOverlayClick(e: React.MouseEvent) {
-    if (e.target === overlayRef.current) onClose();
-  }
-
-  const vars = state.recipe.vars ?? [];
+  const vars = state?.recipe.vars ?? [];
 
   return (
-    <div
-      ref={overlayRef}
-      onClick={handleOverlayClick}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.5)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-      }}
+    <Dialog
+      open={state !== null}
+      onClose={onClose}
+      ariaLabelledBy="run-modal-title"
+      maxWidth={480}
     >
-      <div
-        style={{
-          background: "var(--bg-1)",
-          border: "1px solid var(--border-default)",
-          borderRadius: "var(--r-3)",
-          padding: "var(--s-6)",
-          minWidth: 360,
-          maxWidth: 480,
-          width: "100%",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "var(--s-4)",
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
-            Run <code>{state.recipe.name}</code>
-          </h2>
-          <button
-            type="button"
-            className="btn sm ghost"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            onConfirm(values);
-          }}
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
-            {vars.map((v) => (
-              <div key={v.name}>
-                <label
-                  htmlFor={`run-var-${v.name}`}
-                  style={{ display: "block", marginBottom: 4, fontSize: 13, fontFamily: "var(--font-mono)" }}
-                >
-                  {v.name}
-                  {v.required && <span style={{ color: "var(--err)", marginLeft: 4 }}>*</span>}
-                </label>
-                {v.description && (
-                  <div style={{ fontSize: 12, color: "var(--fg-3)", marginBottom: 4 }}>
-                    {v.description}
-                  </div>
-                )}
-                <input
-                  id={`run-var-${v.name}`}
-                  type="text"
-                  required={v.required}
-                  value={values[v.name] ?? ""}
-                  onChange={(e) =>
-                    setValues((prev) => ({ ...prev, [v.name]: e.target.value }))
-                  }
-                  className="input"
-                  style={{ width: "100%" }}
-                />
-              </div>
-            ))}
-          </div>
+      {state && (
+        <>
           <div
             style={{
               display: "flex",
-              gap: "var(--s-3)",
-              marginTop: "var(--s-5)",
-              justifyContent: "flex-end",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: "var(--s-4)",
             }}
           >
-            <button type="button" className="btn ghost" onClick={onClose} disabled={running}>
-              Cancel
-            </button>
-            <button type="submit" className="btn" disabled={running}>
-              {running ? "Starting…" : "Run recipe"}
+            <h2 id="run-modal-title" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
+              Run <code>{state.recipe.name}</code>
+            </h2>
+            <button
+              type="button"
+              className="btn sm ghost"
+              onClick={onClose}
+              aria-label="Close"
+            >
+              ×
             </button>
           </div>
-        </form>
-      </div>
-    </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              onConfirm(values);
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
+              {vars.map((v) => (
+                <div key={v.name}>
+                  <label
+                    htmlFor={`run-var-${v.name}`}
+                    style={{ display: "block", marginBottom: 4, fontSize: 13, fontFamily: "var(--font-mono)" }}
+                  >
+                    {v.name}
+                    {v.required && <span style={{ color: "var(--err)", marginLeft: 4 }}>*</span>}
+                  </label>
+                  {v.description && (
+                    <div style={{ fontSize: 12, color: "var(--fg-3)", marginBottom: 4 }}>
+                      {v.description}
+                    </div>
+                  )}
+                  <input
+                    id={`run-var-${v.name}`}
+                    type="text"
+                    required={v.required}
+                    value={values[v.name] ?? ""}
+                    onChange={(e) =>
+                      setValues((prev) => ({ ...prev, [v.name]: e.target.value }))
+                    }
+                    className="input"
+                    style={{ width: "100%" }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: "var(--s-3)",
+                marginTop: "var(--s-5)",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button type="button" className="btn ghost" onClick={onClose} disabled={running}>
+                Cancel
+              </button>
+              <button type="submit" className="btn" disabled={running}>
+                {running ? "Starting…" : "Run recipe"}
+              </button>
+            </div>
+          </form>
+        </>
+      )}
+    </Dialog>
   );
 }
 
@@ -282,7 +266,7 @@ function SuccessRing({
       : safePct >= 90
         ? "var(--ok)"
         : safePct >= 60
-          ? "var(--warn, #e6a817)"
+          ? "var(--warn)"
           : "var(--err)";
   return (
     <svg
@@ -788,14 +772,12 @@ export default function RecipesPage() {
 
   return (
     <section>
-      {modal && (
-        <RunModal
-          state={modal}
-          onClose={() => setModal(null)}
-          onConfirm={handleModalConfirm}
-          running={modalRunning}
-        />
-      )}
+      <RunModal
+        state={modal}
+        onClose={() => setModal(null)}
+        onConfirm={handleModalConfirm}
+        running={modalRunning}
+      />
 
       <div className="page-head">
         <div>
