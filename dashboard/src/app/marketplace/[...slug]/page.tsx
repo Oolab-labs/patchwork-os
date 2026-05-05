@@ -345,8 +345,8 @@ function TrustNote() {
     <div
       style={{
         padding: "12px 16px",
-        background: "rgba(180,83,9,0.06)",
-        border: "1px solid rgba(180,83,9,0.18)",
+        background: "var(--warn-soft)",
+        border: "1px solid var(--warn)",
         borderRadius: "var(--r-3)",
         fontSize: 12,
         color: "var(--ink-2)",

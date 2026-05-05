@@ -27,7 +27,7 @@ export function ErrorState({
           marginBottom: 12,
           display: "flex",
           justifyContent: "center",
-          color: "var(--err, #d14343)",
+          color: "var(--err)",
         }}
         aria-hidden="true"
       >

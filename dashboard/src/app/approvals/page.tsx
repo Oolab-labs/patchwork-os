@@ -243,6 +243,7 @@ interface ApprovalCardProps {
   isSelected: boolean;
   onToggleSelect: (callId: string) => void;
   fadingOut: boolean;
+  isKeyboardFocused?: boolean;
 }
 
 function ApprovalCard({
@@ -254,6 +255,7 @@ function ApprovalCard({
   isSelected,
   onToggleSelect,
   fadingOut,
+  isKeyboardFocused = false,
 }: ApprovalCardProps) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -284,15 +286,25 @@ function ApprovalCard({
   const codeLines = commandPreview(p.toolName, p.params ?? {}).split("\n");
   const icon = toolIcon(p.toolName);
 
+  const cardRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (isKeyboardFocused && cardRef.current) {
+      cardRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [isKeyboardFocused]);
+
   return (
     <article
+      ref={cardRef}
       className="card"
       style={{
         opacity: fadingOut ? 0 : 1,
         transform: fadingOut ? "translateY(-4px)" : "translateY(0)",
-        transition: "opacity 300ms ease, transform 300ms ease",
+        transition: "opacity 300ms ease, transform 300ms ease, box-shadow 150ms ease, border-color 150ms ease",
         padding: "16px 18px",
         marginBottom: "var(--s-3)",
+        outline: isKeyboardFocused ? "2px solid var(--accent)" : "none",
+        outlineOffset: isKeyboardFocused ? 2 : 0,
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
@@ -468,7 +480,7 @@ function ApprovalCard({
         <button
           type="button"
           className="btn primary"
-          style={{ background: "var(--green, #16a34a)", borderColor: "var(--green, #16a34a)", color: "#fff", display: "inline-flex", alignItems: "center", gap: 6 }}
+          style={{ background: "var(--green)", borderColor: "var(--green)", color: "#fff", display: "inline-flex", alignItems: "center", gap: 6 }}
           onClick={() => handleDecide("approve")}
           disabled={approving || rejecting}
           aria-label={`Approve ${p.toolName}`}
@@ -620,6 +632,9 @@ function ApprovalsContent() {
   const [batchApproving, setBatchApproving] = useState(false);
   const [batchRejecting, setBatchRejecting] = useState(false);
   const [batchErr, setBatchErr] = useState<string | null>(null);
+  const [focusIndex, setFocusIndex] = useState(0);
+  const [announcement, setAnnouncement] = useState("");
+  const inFlightRef = useRef<Set<string>>(new Set());
   const { patterns, clearPatterns } = useApprovalPatterns();
 
   useEffect(() => {
@@ -809,6 +824,59 @@ function ApprovalsContent() {
     setDismissed((prev) => new Set([...prev, toolName]));
   }, []);
 
+  // Clamp focus index when the visible list shrinks.
+  useEffect(() => {
+    setFocusIndex((i) => {
+      if (filtered.length === 0) return 0;
+      return Math.min(i, filtered.length - 1);
+    });
+  }, [filtered.length]);
+
+  // J/K/E/X keyboard shortcuts. Skip when typing in inputs.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      const tag = t.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        t.isContentEditable
+      )
+        return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (filtered.length === 0) return;
+
+      const key = e.key.toLowerCase();
+      if (key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setFocusIndex((i) => Math.min(i + 1, filtered.length - 1));
+      } else if (key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setFocusIndex((i) => Math.max(i - 1, 0));
+      } else if (key === "e" || key === "x") {
+        const target = filtered[focusIndex];
+        if (!target) return;
+        if (inFlightRef.current.has(target.callId)) return;
+        e.preventDefault();
+        const choice = key === "e" ? "approve" : "reject";
+        const verb = key === "e" ? "Approved" : "Rejected";
+        inFlightRef.current.add(target.callId);
+        decide(target.callId, choice)
+          .then(() => setAnnouncement(`${verb} ${target.toolName}`))
+          .catch((err: unknown) =>
+            setAnnouncement(
+              `${choice} failed: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          )
+          .finally(() => inFlightRef.current.delete(target.callId));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filtered, focusIndex]);
+
   const copyRule = useCallback((toolName: string) => {
     const snippet = JSON.stringify({ allow: [toolName] }, null, 2);
     navigator.clipboard.writeText(snippet).then(() => {
@@ -848,6 +916,25 @@ function ApprovalsContent() {
       `}</style>
 
       <DecisionsTabs pendingCount={pending.length} />
+
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: "hidden",
+          clip: "rect(0,0,0,0)",
+          whiteSpace: "nowrap",
+          border: 0,
+        }}
+      >
+        {announcement}
+      </div>
 
       <div className="page-head">
         <div>
@@ -1130,7 +1217,7 @@ function ApprovalsContent() {
           )}
 
           <div className="approval-list">
-            {filtered.map((p) => (
+            {filtered.map((p, idx) => (
               <ApprovalCard
                 key={p.callId}
                 p={p}
@@ -1141,6 +1228,7 @@ function ApprovalsContent() {
                 isSelected={selected.has(p.callId)}
                 onToggleSelect={toggleSelect}
                 fadingOut={fadingOut.has(p.callId)}
+                isKeyboardFocused={idx === focusIndex}
               />
             ))}
           </div>

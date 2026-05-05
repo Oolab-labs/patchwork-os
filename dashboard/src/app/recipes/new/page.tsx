@@ -667,7 +667,7 @@ function NewRecipePageInner() {
             {aiResult?.error && (
               <p
                 style={{
-                  background: "var(--err-bg, #2a1a1a)",
+                  background: "var(--err-soft)",
                   border: "1px solid var(--err)",
                   borderRadius: "var(--r-2)",
                   color: "var(--err)",

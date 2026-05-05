@@ -280,10 +280,10 @@ function SuccessRing({
     pct == null
       ? "var(--line-3)"
       : safePct >= 90
-        ? "var(--ok, #22c55e)"
+        ? "var(--ok)"
         : safePct >= 60
           ? "var(--warn, #e6a817)"
-          : "var(--err, #ef4444)";
+          : "var(--err)";
   return (
     <svg
       width={size}
@@ -355,11 +355,11 @@ function highlightYaml(yaml: string): React.ReactNode {
       body = (
         <>
           <span>{lead}</span>
-          <span className="yaml-key" style={{ color: "var(--accent, #7aa2f7)" }}>{key}</span>
+          <span className="yaml-key" style={{ color: "var(--accent)" }}>{key}</span>
           <span>{colon}</span>
           <span>{ws}</span>
           {rest && (
-            <span className="yaml-string" style={{ color: "var(--ok, #9ece6a)" }}>{rest}</span>
+            <span className="yaml-string" style={{ color: "var(--ok)" }}>{rest}</span>
           )}
         </>
       );
@@ -980,7 +980,7 @@ export default function RecipesPage() {
                               height: 20,
                               borderRadius: 999,
                               border: "1px solid var(--line-2)",
-                              background: enabled ? "var(--ok, #22c55e)" : "var(--bg-2)",
+                              background: enabled ? "var(--ok)" : "var(--bg-2)",
                               cursor: "pointer",
                               padding: 0,
                               transition: "background 0.15s",
@@ -995,9 +995,9 @@ export default function RecipesPage() {
                                 width: 16,
                                 height: 16,
                                 borderRadius: "50%",
-                                background: "white",
+                                background: "var(--surface)",
                                 transition: "left 0.15s",
-                                boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                                boxShadow: "var(--shadow-s, 0 1px 2px rgba(0,0,0,0.2))",
                               }}
                             />
                           </button>

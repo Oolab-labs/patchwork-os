@@ -166,9 +166,8 @@ export default function RunsPage() {
           style={{
             textAlign: "left",
             padding: "20px 24px",
-            borderLeft: "3px solid var(--orange)",
+            borderLeft: `3px solid ${status === "all" ? "var(--orange)" : "var(--line-2)"}`,
             cursor: "pointer",
-            borderColor: status === "all" ? "var(--orange)" : undefined,
             background: "transparent",
           }}
           aria-pressed={status === "all"}
@@ -184,9 +183,8 @@ export default function RunsPage() {
           style={{
             textAlign: "left",
             padding: "20px 24px",
-            borderLeft: "3px solid var(--ok)",
+            borderLeft: `3px solid ${status === "done" ? "var(--ok)" : "var(--line-2)"}`,
             cursor: "pointer",
-            borderColor: status === "done" ? "var(--ok)" : undefined,
             background: "transparent",
           }}
           aria-pressed={status === "done"}
@@ -202,9 +200,8 @@ export default function RunsPage() {
           style={{
             textAlign: "left",
             padding: "20px 24px",
-            borderLeft: "3px solid var(--err)",
+            borderLeft: `3px solid ${status === "error" ? "var(--err)" : "var(--line-2)"}`,
             cursor: "pointer",
-            borderColor: status === "error" ? "var(--err)" : undefined,
             background: "transparent",
           }}
           aria-pressed={status === "error"}

@@ -34,9 +34,9 @@ interface DryRunPlan {
 }
 
 const RISK_COLORS: Record<string, string> = {
-  low: "var(--ok, #22c55e)",
+  low: "var(--ok)",
   medium: "var(--warn, #e6a817)",
-  high: "var(--err, #ef4444)",
+  high: "var(--err)",
 };
 
 function RiskBadge({ risk }: { risk?: string }) {
@@ -181,7 +181,7 @@ export default function RecipePlanPage({
       {error && (
         <div
           style={{
-            background: "var(--err-bg, #2a1a1a)",
+            background: "var(--err-soft)",
             border: "1px solid var(--err)",
             borderRadius: "var(--r-2)",
             color: "var(--err)",
@@ -250,7 +250,7 @@ export default function RecipePlanPage({
                 <div
                   key={e}
                   style={{
-                    background: "var(--err-bg, #2a1a1a)",
+                    background: "var(--err-soft)",
                     border: "1px solid var(--err)",
                     borderRadius: "var(--r-2)",
                     color: "var(--err)",
