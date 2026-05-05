@@ -90,6 +90,11 @@ function TaskDetail({ task, onCancel, cancelling }: {
   onCancel: (id: string) => void;
   cancelling: Record<string, boolean>;
 }) {
+  const [copied, setCopied] = useState<"id" | "term" | "replay" | null>(null);
+  function flash(kind: "id" | "term" | "replay") {
+    setCopied(kind);
+    setTimeout(() => setCopied((c) => (c === kind ? null : c)), 1500);
+  }
   const isLive = task.status === "running" || task.status === "pending";
   const errText = task.errorMessage ?? task.stderrTail;
   const dur =
@@ -213,27 +218,46 @@ function TaskDetail({ task, onCancel, cancelling }: {
           type="button"
           className="btn sm ghost"
           style={{ fontSize: 12 }}
-          onClick={() => void navigator.clipboard.writeText(`patchwork task resume ${task.taskId}`)}
-        >
-          {"> Open in terminal"}
-        </button>
-        <button
-          type="button"
-          className="btn sm ghost"
-          style={{ fontSize: 12 }}
-          onClick={() => {
-            void fetch(apiPath(`/api/bridge/tasks/${task.taskId}/replay`), { method: "POST" });
+          onClick={async () => {
+            await navigator.clipboard.writeText(`patchwork task resume ${task.taskId}`);
+            flash("term");
           }}
         >
-          ↻ Replay
+          {copied === "term" ? "✓ Copied" : "> Open in terminal"}
         </button>
         <button
           type="button"
           className="btn sm ghost"
           style={{ fontSize: 12 }}
-          onClick={() => void navigator.clipboard.writeText(task.taskId)}
+          onClick={async () => {
+            try {
+              const res = await fetch(
+                apiPath(`/api/bridge/tasks/${task.taskId}/replay`),
+                { method: "POST" },
+              );
+              if (res.ok) flash("replay");
+            } catch {
+              /* swallow — surfaced via next poll */
+            }
+          }}
         >
-          📋 Copy id
+          {copied === "replay" ? "✓ Queued" : "↻ Replay"}
+        </button>
+        <button
+          type="button"
+          className="btn sm ghost"
+          aria-label="Copy task ID"
+          style={{ fontSize: 12 }}
+          onClick={async () => {
+            await navigator.clipboard.writeText(task.taskId);
+            flash("id");
+          }}
+        >
+          {copied === "id" ? "✓ Copied" : (
+            <>
+              <span aria-hidden="true">📋 </span>Copy id
+            </>
+          )}
         </button>
         {isLive && (
           <button
@@ -516,7 +540,7 @@ export default function TasksPage() {
                     : "—";
               const isLive = t.status === "running" || t.status === "pending";
               const isSelected = selectedTaskId === t.taskId;
-              const firstOutputLine = (t.output ?? "").split("\n")[0]?.slice(0, 80) ?? "(running…)";
+              const firstOutputLine = (t.output ?? "").split("\n")[0]?.slice(0, 80) ?? "";
               const driver = driverFromTask(t);
 
               const durSec =

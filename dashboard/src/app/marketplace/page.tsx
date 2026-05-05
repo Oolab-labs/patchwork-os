@@ -462,7 +462,14 @@ export default function MarketplacePage() {
     // Defense in depth: refuse to forward anything that isn't a github:owner/repo[/path]@ref
     // shape. The bridge also validates server-side; this blocks the obvious tampered-registry
     // attack at the dashboard layer before the request leaves the browser.
-    assertValidInstallSource(recipe.install);
+    try {
+      assertValidInstallSource(recipe.install);
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      throw new Error(
+        `This recipe's install source is invalid (${detail}). Refusing to install.`,
+      );
+    }
     const res = await fetch(apiPath("/api/bridge/recipes/install"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -554,7 +561,7 @@ export default function MarketplacePage() {
             Marketplace — <span className="accent">recipes built by the community.</span>
           </h1>
           <div className="editorial-sub">
-            {`${registry?.length ?? 8} recipes · open-source YAML · audited weekly`}
+            {`${registry?.length ?? FALLBACK_REGISTRY.recipes.length} recipes · open-source YAML · audited weekly`}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
