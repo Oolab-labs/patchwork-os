@@ -46,27 +46,47 @@ export function Dialog({
   const previousActiveRef = useRef<HTMLElement | null>(null);
   const fallbackId = useId();
 
+  // Capture the previously-focused element BEFORE the dialog renders so that
+  // a rapid open/close/open sequence doesn't end up storing the dialog itself
+  // as the "previous" element.
+  if (open && previousActiveRef.current === null) {
+    const active = document.activeElement as HTMLElement | null;
+    if (active && !panelRef.current?.contains(active)) {
+      previousActiveRef.current = active;
+    }
+  }
+
   // Move focus into panel on open; restore on close.
   useEffect(() => {
     if (!open) return;
-    previousActiveRef.current = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
     if (!panel) return;
     const focusables = panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
     const target = focusables[0] ?? panel;
     target.focus({ preventScroll: true });
     return () => {
-      previousActiveRef.current?.focus?.({ preventScroll: true });
+      const restore = previousActiveRef.current;
+      previousActiveRef.current = null;
+      restore?.focus?.({ preventScroll: true });
     };
   }, [open]);
 
-  // Prevent body scroll while open.
+  // Prevent body scroll while open + mark the rest of the app inert.
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
+    const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    const main = document.querySelector<HTMLElement>("[data-app-root]");
+    if (main) {
+      main.setAttribute("inert", "");
+      main.setAttribute("aria-hidden", "true");
+    }
     return () => {
-      document.body.style.overflow = prev;
+      document.body.style.overflow = prevOverflow;
+      if (main) {
+        main.removeAttribute("inert");
+        main.removeAttribute("aria-hidden");
+      }
     };
   }, [open]);
 

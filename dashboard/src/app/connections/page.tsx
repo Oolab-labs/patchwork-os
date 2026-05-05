@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import AddConnectionModal from "./AddConnectionModal";
+import { Dialog } from "@/components/Dialog";
 
 interface ConnectorStatus {
   id: string;
@@ -573,14 +574,14 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
   const borderColor = isDegraded
     ? "var(--warn)"
     : isConnected
-    ? "rgba(34,197,94,0.35)"
+    ? "var(--ok)"
     : "var(--border-default)";
 
   return (
     <div
       className="card beam"
       style={{
-        background: isDegraded ? "rgba(234,179,8,0.03)" : undefined,
+        background: isDegraded ? "var(--warn-soft)" : undefined,
         borderColor: borderColor,
         display: "flex",
         flexDirection: "column",
@@ -608,8 +609,8 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 5,
             padding: "3px 9px", borderRadius: 999,
-            background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.22)",
-            fontSize: 10, fontWeight: 700, color: "#15803d",
+            background: "var(--ok-soft)", border: "1px solid var(--ok)",
+            fontSize: 10, fontWeight: 700, color: "var(--ok)",
             textTransform: "uppercase", letterSpacing: "0.07em",
             marginBottom: 10,
           }}>
@@ -619,8 +620,8 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 5,
             padding: "3px 9px", borderRadius: 999,
-            background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.28)",
-            fontSize: 10, fontWeight: 700, color: "#92400e",
+            background: "var(--warn-soft)", border: "1px solid var(--warn)",
+            fontSize: 10, fontWeight: 700, color: "var(--warn)",
             textTransform: "uppercase", letterSpacing: "0.07em",
             marginBottom: 10,
           }}>
@@ -692,16 +693,16 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
       {(isConnected || isDegraded) && (
         <div
           style={{
-            borderTop: `1px solid ${isDegraded ? "rgba(234,179,8,0.18)" : "var(--border-default)"}`,
+            borderTop: `1px solid ${isDegraded ? "var(--warn)" : "var(--border-default)"}`,
             padding: "9px 14px",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            background: isDegraded ? "rgba(234,179,8,0.03)" : "rgba(0,0,0,0.012)",
+            background: isDegraded ? "var(--warn-soft)" : "rgba(0,0,0,0.012)",
             gap: 6,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: isDegraded ? "#92400e" : "var(--ink-2)", minWidth: 0, overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: isDegraded ? "var(--warn)" : "var(--ink-2)", minWidth: 0, overflow: "hidden" }}>
             <span
               style={{
                 width: 6, height: 6, borderRadius: "50%",
@@ -778,8 +779,8 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
               style={{
                 fontSize: 11, fontWeight: 500, padding: "3px 9px",
                 borderRadius: 5, border: "none",
-                background: isDegraded ? "rgba(234,179,8,0.14)" : "rgba(239,68,68,0.09)",
-                color: isDegraded ? "#92400e" : "#dc2626",
+                background: isDegraded ? "var(--warn-soft)" : "var(--err-soft)",
+                color: isDegraded ? "var(--warn)" : "var(--err)",
                 cursor: loading ? "wait" : "pointer",
                 opacity: loading ? 0.55 : 1,
               }}
@@ -834,7 +835,7 @@ function RecentCard({ def, lastSync }: { def: ConnectorDef; lastSync: string }) 
       <LogoTile def={def} size={40} />
       <div>
         <div style={{ fontWeight: 700, fontSize: 13, color: "var(--ink-0)" }}>{def.name}</div>
-        <div style={{ fontSize: 11, color: "#16a34a", marginTop: 2, fontWeight: 500 }}>
+        <div style={{ fontSize: 11, color: "var(--ok)", marginTop: 2, fontWeight: 500 }}>
           ✓ {relativeTime(lastSync)}
         </div>
       </div>
@@ -1180,76 +1181,78 @@ export default function ConnectionsPage() {
       )}
 
       {/* Notion token-paste modal */}
-      {notionModalOpen && (
-        <div
-          style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}
-          onClick={(e) => { if (e.target === e.currentTarget) { setNotionModalOpen(false); setNotionToken(""); setNotionErr(null); } }}
-        >
-          <div className="card" style={{ width: "100%", maxWidth: 420, padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <IconNotion />
-              <strong style={{ fontSize: 15 }}>Connect Notion</strong>
-            </div>
-            <p style={{ fontSize: 13, color: "var(--fg-2)", margin: 0 }}>
-              Create an internal integration at{" "}
-              <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
-                notion.so/my-integrations
-              </a>
-              , copy the integration token, and paste it below. Then share your databases/pages with the integration inside Notion.
-            </p>
-            <input
-              type="password"
-              autoFocus
-              placeholder="secret_..."
-              value={notionToken}
-              onChange={(e) => setNotionToken(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") void handleNotionConnect(); }}
-              style={{ fontFamily: "var(--font-mono)", fontSize: 13, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-0)", color: "var(--fg-1)", width: "100%", boxSizing: "border-box" }}
-            />
-            {notionErr && <div className="alert-err" style={{ fontSize: 12 }}>{notionErr}</div>}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button
-                onClick={() => { setNotionModalOpen(false); setNotionToken(""); setNotionErr(null); }}
-                style={{ padding: "6px 16px", fontSize: 13, cursor: "pointer", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-1)", color: "var(--fg-1)" }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => void handleNotionConnect()}
-                disabled={notionConnecting || !notionToken}
-                style={{ padding: "6px 16px", fontSize: 13, cursor: notionConnecting ? "wait" : "pointer", borderRadius: 6, border: "none", background: "var(--fg-1)", color: "var(--bg-0)", opacity: !notionToken ? 0.5 : 1 }}
-              >
-                {notionConnecting ? "Connecting…" : "Connect"}
-              </button>
-            </div>
+      <Dialog
+        open={notionModalOpen}
+        onClose={() => { setNotionModalOpen(false); setNotionToken(""); setNotionErr(null); }}
+        ariaLabelledBy="notion-modal-title"
+        maxWidth={420}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <IconNotion />
+            <strong id="notion-modal-title" style={{ fontSize: 15 }}>Connect Notion</strong>
+          </div>
+          <p style={{ fontSize: 13, color: "var(--fg-2)", margin: 0 }}>
+            Create an internal integration at{" "}
+            <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+              notion.so/my-integrations
+            </a>
+            , copy the integration token, and paste it below. Then share your databases/pages with the integration inside Notion.
+          </p>
+          <input
+            type="password"
+            placeholder="secret_..."
+            value={notionToken}
+            onChange={(e) => setNotionToken(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void handleNotionConnect(); }}
+            style={{ fontFamily: "var(--font-mono)", fontSize: 13, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-0)", color: "var(--fg-1)", width: "100%", boxSizing: "border-box" }}
+          />
+          {notionErr && <div className="alert-err" role="alert" style={{ fontSize: 12 }}>{notionErr}</div>}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={() => { setNotionModalOpen(false); setNotionToken(""); setNotionErr(null); }}
+              style={{ padding: "6px 16px", fontSize: 13, cursor: "pointer", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-1)", color: "var(--fg-1)" }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleNotionConnect()}
+              disabled={notionConnecting || !notionToken}
+              style={{ padding: "6px 16px", fontSize: 13, cursor: notionConnecting ? "wait" : "pointer", borderRadius: 6, border: "none", background: "var(--fg-1)", color: "var(--bg-0)", opacity: !notionToken ? 0.5 : 1 }}
+            >
+              {notionConnecting ? "Connecting…" : "Connect"}
+            </button>
           </div>
         </div>
-      )}
+      </Dialog>
 
       {/* Generic token-paste modal */}
-      {tokenModal && TOKEN_MODAL_CONNECTORS[tokenModal] && (
-        <div
-          style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}
-          onClick={(e) => { if (e.target === e.currentTarget) { setTokenModal(null); setTokenValue(""); setTokenErr(null); } }}
-        >
-          <div className="card" style={{ width: "100%", maxWidth: 440, padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+      <Dialog
+        open={Boolean(tokenModal && TOKEN_MODAL_CONNECTORS[tokenModal])}
+        onClose={() => { setTokenModal(null); setTokenValue(""); setTokenErr(null); }}
+        ariaLabelledBy="token-modal-title"
+        maxWidth={440}
+      >
+        {tokenModal && TOKEN_MODAL_CONNECTORS[tokenModal] && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {TOKEN_MODAL_CONNECTORS[tokenModal].icon}
-              <strong style={{ fontSize: 15 }}>Connect {TOKEN_MODAL_CONNECTORS[tokenModal].name}</strong>
+              <strong id="token-modal-title" style={{ fontSize: 15 }}>Connect {TOKEN_MODAL_CONNECTORS[tokenModal].name}</strong>
             </div>
             <p style={{ fontSize: 13, color: "var(--fg-2)", margin: 0, lineHeight: 1.6 }}>
               {TOKEN_MODAL_CONNECTORS[tokenModal].instructions}
             </p>
             <input
               type="password"
-              autoFocus
               placeholder={TOKEN_MODAL_CONNECTORS[tokenModal].placeholder}
               value={tokenValue}
               onChange={(e) => setTokenValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") void handleTokenConnect(); }}
               style={{ fontFamily: "var(--font-mono)", fontSize: 13, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-0)", color: "var(--fg-1)", width: "100%", boxSizing: "border-box" }}
             />
-            {tokenErr && <div className="alert-err" style={{ fontSize: 12 }}>{tokenErr}</div>}
+            {tokenErr && <div className="alert-err" role="alert" style={{ fontSize: 12 }}>{tokenErr}</div>}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button
                 type="button"
@@ -1268,8 +1271,8 @@ export default function ConnectionsPage() {
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Dialog>
 
       <AddConnectionModal
         open={modalOpen}

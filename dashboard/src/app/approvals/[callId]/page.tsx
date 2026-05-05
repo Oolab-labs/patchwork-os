@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiPath } from '@/lib/api';
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
@@ -137,10 +137,17 @@ export default function ApprovalDetailPage() {
   const [decideErr, setDecideErr] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<"approve" | "reject" | null>(null);
 
+  // Stop polling once a decision arrives — page is in a terminal state.
+  // We need the most recent value to gate the hook, so we read it via a
+  // separate ref-like state rather than letting `useBridgeFetch` run forever.
+  const [hasDecision, setHasDecision] = useState(false);
   const { data, error, loading, status } = useBridgeFetch<DetailResponse>(
     `/api/bridge/approvals/${callId}`,
-    { intervalMs: 2000 },
+    { intervalMs: 2000, enabled: !hasDecision },
   );
+  useEffect(() => {
+    if (data?.decision) setHasDecision(true);
+  }, [data?.decision]);
   const { data: bridgeStatus } = useBridgeFetch<BridgeStatus>(
     "/api/bridge/status",
     { intervalMs: 5000 },

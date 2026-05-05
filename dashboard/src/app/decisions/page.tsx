@@ -157,14 +157,48 @@ function DecisionsContent() {
             <LivePill label="5s" tone="muted" />
           </div>
         </div>
-        <input
-          type="text"
-          value={textQuery}
-          onChange={(e) => setTextQuery(e.target.value)}
-          placeholder="Search problems & solutions…"
-          className="input"
-          style={{ minWidth: 280, width: 320 }}
-        />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span className="visually-hidden" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)" }}>
+              Search decisions
+            </span>
+            <input
+              type="text"
+              value={textQuery}
+              onChange={(e) => setTextQuery(e.target.value)}
+              placeholder="Search problems & solutions…"
+              className="input"
+              aria-label="Search decisions"
+              style={{ minWidth: 240, width: 280 }}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <input
+              type="text"
+              value={keyQuery}
+              onChange={(e) => setKeyQuery(e.target.value)}
+              placeholder="Filter by ref (e.g. PR-42)"
+              className="input"
+              aria-label="Filter by ref"
+              style={{ minWidth: 160, width: 180, fontFamily: "var(--font-mono)" }}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <select
+              value={since}
+              onChange={(e) => setSince(e.target.value as SinceFilter)}
+              className="input"
+              aria-label="Time window"
+              style={{ width: "auto", cursor: "pointer" }}
+            >
+              {SINCE_OPTIONS.map((o) => (
+                <option key={o.k} value={o.k}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {allTags.length > 0 && (
@@ -235,6 +269,7 @@ function DecisionsContent() {
                 setTag("");
                 setKeyQuery("");
                 setTextQuery("");
+                setSince("30d");
               }}
               className="pill muted"
               style={{ cursor: "pointer", marginTop: "var(--s-3)" }}

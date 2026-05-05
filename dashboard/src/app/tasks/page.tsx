@@ -430,7 +430,7 @@ export default function TasksPage() {
             style={{ flex: "1 1 280px", maxWidth: 360, fontSize: 13 }}
             aria-label="Filter tasks"
           />
-          <div style={{ display: "flex", gap: 4 }} role="tablist" aria-label="Status filter">
+          <div style={{ display: "flex", gap: 4 }} role="group" aria-label="Status filter">
             {([
               ["all", "All", statusCounts.all],
               ["live", "Live", statusCounts.live],
@@ -440,8 +440,7 @@ export default function TasksPage() {
               <button
                 key={k}
                 type="button"
-                role="tab"
-                aria-selected={statusFilter === k}
+                aria-pressed={statusFilter === k}
                 onClick={() => setStatusFilter(k)}
                 className={`btn sm ${statusFilter === k ? "primary" : "ghost"}`}
                 style={{ fontSize: 12 }}

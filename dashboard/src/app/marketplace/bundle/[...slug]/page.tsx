@@ -148,8 +148,13 @@ function WhatIsIncluded({
             </div>
             <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 4 }}>
               {recipes.map((r) => (
-                <li key={r} style={{ fontSize: 12, fontFamily: "var(--font-mono, ui-monospace, monospace)", color: "var(--fg-1)" }}>
-                  {r}
+                <li key={r} style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--fg-1)" }}>
+                  <Link
+                    href={`/marketplace/${encodeURIComponent(r)}`}
+                    style={{ color: "inherit", textDecoration: "underline", textDecorationColor: "var(--line-2)" }}
+                  >
+                    {r}
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -290,8 +295,8 @@ function TrustNote() {
     <div
       style={{
         padding: "12px 16px",
-        background: "rgba(180,83,9,0.06)",
-        border: "1px solid rgba(180,83,9,0.18)",
+        background: "var(--warn-soft)",
+        border: "1px solid var(--warn)",
         borderRadius: "var(--r-3)",
         fontSize: 12,
         color: "var(--ink-2)",
