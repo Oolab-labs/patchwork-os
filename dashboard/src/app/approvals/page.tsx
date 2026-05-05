@@ -312,7 +312,7 @@ function ApprovalCard({
           type="checkbox"
           checked={isSelected}
           onChange={() => onToggleSelect(p.callId)}
-          aria-label={`Select ${p.toolName} approval`}
+          aria-label={`Select ${p.toolName} approval ${p.callId.slice(0, 8)}`}
           style={{ cursor: "pointer", accentColor: "var(--accent)", flexShrink: 0, marginTop: 4 }}
         />
         <span
@@ -945,7 +945,10 @@ function ApprovalsContent() {
           <div className="editorial-sub">
             {(() => {
               const oldestTs = pending.length > 0
-                ? Math.min(...pending.map((p) => p.requestedAt ?? p.expiresAt ?? Date.now()))
+                ? pending.reduce(
+                    (m, p) => Math.min(m, p.requestedAt ?? p.expiresAt ?? Date.now()),
+                    Number.POSITIVE_INFINITY,
+                  )
                 : null;
               return `~/.patchwork/inbox · ${pending.length} pending${oldestTs ? ` · oldest ${relTime(oldestTs)}` : ""}`;
             })()}

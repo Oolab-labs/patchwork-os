@@ -102,6 +102,24 @@ export default function TransactionsPage() {
     }
   }
 
+  // Clear stale busy entries for transactions that are no longer in the list,
+  // so a reused id can't pre-disable a brand-new transaction's Discard button.
+  useEffect(() => {
+    const liveIds = new Set(transactions.map((t) => t.id));
+    setBusy((prev) => {
+      let changed = false;
+      const next: typeof prev = {};
+      for (const [id, val] of Object.entries(prev)) {
+        if (liveIds.has(id)) {
+          next[id] = val;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [transactions]);
+
   return (
     <section>
       <div className="page-head">

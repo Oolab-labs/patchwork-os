@@ -464,7 +464,7 @@ export default function RecipeEditPage({
             {content.split("\n").length} lines &middot; {content.length} chars
           </span>
           <span>
-            {linting ? "Linting… " : ""}Tab inserts 2 spaces &middot; Cmd+S to save
+            {linting ? "Linting… " : ""}Tab inserts 2 spaces &middot; Cmd/Ctrl+S to save
           </span>
         </div>
       </div>

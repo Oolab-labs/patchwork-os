@@ -443,8 +443,8 @@ export default function ApprovalDetailPage() {
             <h2>Nearby activity</h2>
             <span className="pill muted">±60s · {data.nearby.length}</span>
           </div>
-          <div className="table-wrap">
-            <table className="table">
+          <div className="table-wrap" style={{ overflowX: "auto" }}>
+            <table className="table" style={{ minWidth: 600 }}>
               <thead>
                 <tr>
                   <th style={{ width: 140 }}>Time</th>
