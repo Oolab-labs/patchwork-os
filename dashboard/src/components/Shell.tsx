@@ -335,11 +335,6 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <aside className="app-sidebar" aria-label="Primary navigation">
-        <Link href="/" className="app-brand">
-          <BrandMark />
-          <span>patchwork</span>
-        </Link>
-
         <Link href="/recipes/new" className="sidebar-create" style={{ textDecoration: "none" }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ position: "relative", zIndex: 1 }}>
             <path d={PATHS.plus} />
@@ -424,7 +419,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <BridgeStatusBlock status={status} />
       </aside>
 
-      <main className="app-main">
+      <main id="main-content" className="app-main" tabIndex={-1}>
         <div className="app-content">{children}</div>
       </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

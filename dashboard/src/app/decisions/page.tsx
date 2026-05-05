@@ -221,6 +221,8 @@ function DecisionsContent() {
               key={t}
               type="button"
               onClick={() => setTag(tag === t ? "" : t)}
+              aria-pressed={tag === t}
+              aria-label={`Filter by tag: ${t}`}
               className={tag === t ? "pill accent" : "pill muted"}
               style={{ cursor: "pointer", fontFamily: "var(--font-mono)" }}
             >
@@ -282,10 +284,12 @@ function DecisionsContent() {
         <div
           style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)" }}
         >
-          {traces.map((t) => {
+          {traces.map((t, idx) => {
             const b = t.body;
             const tags = Array.isArray(b.tags) ? b.tags : [];
-            const rowKey = `${t.ts}:${t.key}`;
+            // Index suffix guarantees uniqueness when two traces share both
+            // ts and key (e.g. rapid saves on the same ref).
+            const rowKey = `${t.ts}:${t.key}:${idx}`;
             const variant = variantFor(t);
             return (
               <div

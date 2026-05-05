@@ -312,7 +312,7 @@ function ApprovalCard({
           type="checkbox"
           checked={isSelected}
           onChange={() => onToggleSelect(p.callId)}
-          aria-label={`Select ${p.toolName} approval`}
+          aria-label={`Select ${p.toolName} approval ${p.callId.slice(0, 8)}`}
           style={{ cursor: "pointer", accentColor: "var(--accent)", flexShrink: 0, marginTop: 4 }}
         />
         <span
@@ -419,6 +419,7 @@ function ApprovalCard({
             className="approval-params-toggle"
             onClick={() => onToggleExpand(p.callId)}
             aria-expanded={isExpanded}
+            aria-controls={`approval-params-${p.callId}`}
           >
             {isExpanded ? "▾" : "▸"} Full params
             {!isExpanded && p.params && (
@@ -428,7 +429,7 @@ function ApprovalCard({
             )}
           </button>
           {isExpanded && (
-            <div style={{ position: "relative" }}>
+            <div id={`approval-params-${p.callId}`} style={{ position: "relative" }}>
               <button
                 type="button"
                 onClick={() => {
@@ -944,7 +945,10 @@ function ApprovalsContent() {
           <div className="editorial-sub">
             {(() => {
               const oldestTs = pending.length > 0
-                ? Math.min(...pending.map((p) => p.requestedAt ?? p.expiresAt ?? Date.now()))
+                ? pending.reduce(
+                    (m, p) => Math.min(m, p.requestedAt ?? p.expiresAt ?? Date.now()),
+                    Number.POSITIVE_INFINITY,
+                  )
                 : null;
               return `~/.patchwork/inbox · ${pending.length} pending${oldestTs ? ` · oldest ${relTime(oldestTs)}` : ""}`;
             })()}

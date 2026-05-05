@@ -252,6 +252,11 @@ export default function ApprovalDetailPage() {
             This approval isn&apos;t pending and hasn&apos;t been decided yet.
             It may have expired, or the ID is wrong.
           </p>
+          <p style={{ marginTop: "var(--s-3)" }}>
+            <Link href="/approvals" className="btn sm primary" style={{ textDecoration: "none" }}>
+              ← Back to queue
+            </Link>
+          </p>
         </div>
       )}
 
@@ -443,8 +448,8 @@ export default function ApprovalDetailPage() {
             <h2>Nearby activity</h2>
             <span className="pill muted">±60s · {data.nearby.length}</span>
           </div>
-          <div className="table-wrap">
-            <table className="table">
+          <div className="table-wrap" style={{ overflowX: "auto" }}>
+            <table className="table" style={{ minWidth: 600 }}>
               <thead>
                 <tr>
                   <th style={{ width: 140 }}>Time</th>

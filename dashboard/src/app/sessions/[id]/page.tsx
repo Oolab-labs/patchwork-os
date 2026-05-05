@@ -106,12 +106,16 @@ export default function SessionDetailPage() {
   const lifecycle = data?.lifecycle ?? [];
   const tools = data?.tools ?? [];
   const decisions = data?.decisions ?? [];
+  // Lifecycle and tool entries come from independent auto-increment
+  // counters server-side, so sorting by `entry.id` interleaves the two
+  // streams arbitrarily (lifecycle row 5 is not the same instant as tool
+  // row 5). Use the wall-clock timestamp instead so the merged stream
+  // reflects actual chronology.
   const stream: StreamRow[] = [
     ...lifecycle.map((entry) => ({ kind: "lifecycle" as const, entry })),
     ...tools.map((entry) => ({ kind: "tool" as const, entry })),
   ]
-    .sort((a, b) => a.entry.id - b.entry.id)
-    .reverse(); // newest first
+    .sort((a, b) => Date.parse(b.entry.timestamp) - Date.parse(a.entry.timestamp));
 
   return (
     <section>
@@ -158,6 +162,11 @@ export default function SessionDetailPage() {
           {error.startsWith("/sessions/:id")
             ? `Response shape unexpected (bridge version mismatch?): ${error}`
             : `Unreachable: ${error}`}
+        </div>
+      )}
+      {loading && !data && !error && (
+        <div className="empty-state" role="status" aria-live="polite">
+          <p>Loading session…</p>
         </div>
       )}
       {!loading && !data && status === 404 && (

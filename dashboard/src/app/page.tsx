@@ -122,30 +122,7 @@ function parseToolCallTotal(text: string): number {
 // Activity thread (wireframe spec)
 // ---------------------------------------------------------------------------
 
-function ActivityThread() {
-  const [events, setEvents] = useState<ActivityEvent[]>([]);
-
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      try {
-        const r = await fetch(apiPath("/api/bridge/activity?last=8"));
-        if (!r.ok || !alive) return;
-        const d = (await r.json()) as { events?: ActivityEvent[] };
-        const items = (d.events ?? []).map(withAt).reverse().slice(0, 8);
-        if (alive) setEvents(items);
-      } catch {
-        // bridge offline
-      }
-    };
-    load();
-    const id = setInterval(load, 8000);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
-  }, []);
-
+function ActivityThread({ events }: { events: ActivityEvent[] }) {
   return (
     <div className="card" style={{ padding: "18px 20px" }}>
       <div
@@ -426,40 +403,67 @@ function HealthCard({
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {rows.map((r) => (
-          <div
-            key={r.label}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              fontSize: 12.5,
-            }}
-          >
-            <span
-              aria-hidden="true"
+        {rows.map((r) => {
+          const toneLabel =
+            r.tone === "ok"
+              ? "healthy"
+              : r.tone === "warn"
+                ? "degraded"
+                : "inactive";
+          const toneColor =
+            r.tone === "ok"
+              ? "var(--ok)"
+              : r.tone === "warn"
+                ? "var(--warn)"
+                : "var(--ink-3)";
+          return (
+            <div
+              key={r.label}
               style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                background:
-                  r.tone === "muted" ? "var(--ink-3)" : "var(--ok)",
-                flexShrink: 0,
-              }}
-            />
-            <span style={{ color: "var(--ink-1)", flex: 1 }}>{r.label}</span>
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11.5,
-                color: "var(--ink-0)",
-                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                fontSize: 12.5,
               }}
             >
-              {r.value}
-            </span>
-          </div>
-        ))}
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: toneColor,
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ color: "var(--ink-1)", flex: 1 }}>
+                {r.label}
+                <span
+                  style={{
+                    position: "absolute",
+                    width: 1,
+                    height: 1,
+                    overflow: "hidden",
+                    clip: "rect(0,0,0,0)",
+                  }}
+                >
+                  {" "}
+                  ({toneLabel})
+                </span>
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11.5,
+                  color: "var(--ink-0)",
+                  fontWeight: 600,
+                }}
+              >
+                {r.value}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -482,6 +486,7 @@ export default function HomePage() {
   const [toolCallSeries, setToolCallSeries] = useState<number[]>([]);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const prevToolCallsRef = useRef<number | undefined>(undefined);
+  const tickRef = useRef<() => void>(() => {});
   const greet = useGreeting();
 
   useEffect(() => {
@@ -531,6 +536,7 @@ export default function HomePage() {
         // bridge offline
       }
     };
+    tickRef.current = () => void tick();
     tick();
     const id = setInterval(tick, 5000);
     return () => {
@@ -627,11 +633,18 @@ export default function HomePage() {
           <WeatherRing
             label="LOAD"
             percent={loadPct}
-            delta="+4"
             trend={loadTrend}
             live={bridgeStatus.ok}
-            mood="healthy weather"
-            meta="4°C · 12GB · 38°"
+            mood={
+              !bridgeStatus.ok
+                ? "bridge offline"
+                : loadPct >= 80
+                  ? "high load"
+                  : loadPct >= 50
+                    ? "warming up"
+                    : "quiet"
+            }
+            meta={`${recipes.length} recipes · ${pendingApprovals.length} pending`}
           />
         }
       />
@@ -664,7 +677,7 @@ export default function HomePage() {
         <button
           type="button"
           className="btn sm ghost"
-          onClick={() => window.location.reload()}
+          onClick={() => tickRef.current()}
           style={{
             fontSize: 11,
             display: "inline-flex",
@@ -803,7 +816,7 @@ export default function HomePage() {
           marginBottom: "var(--s-5)",
         }}
       >
-        <ActivityThread />
+        <ActivityThread events={activityEvents.slice(-8).reverse()} />
         <ActiveRecipeCard />
       </div>
 

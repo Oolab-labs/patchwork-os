@@ -497,7 +497,10 @@ export default function TracesPage() {
             Traces — <em className="accent" style={{ fontStyle: "italic" }}>recipe runs and their decision logs.</em>
           </h1>
           <div className="editorial-sub" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span>{traces.length} traces · {doneCount} done · {errorCount} errors</span>
+            <span>
+              {traces.length} traces · {doneCount} done · {errorCount} errors ·{" "}
+              {SINCE_OPTIONS.find((o) => o.k === since)?.label.toLowerCase() ?? since}
+            </span>
             <LivePill label="3s" tone="muted" />
           </div>
         </div>

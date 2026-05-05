@@ -2,7 +2,7 @@
 import React from "react";
 import { apiPath } from "@/lib/api";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LivePill } from "@/components/patchwork/LivePill";
 import { ErrorState } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
@@ -92,11 +92,13 @@ const RUNS_PAGE_SIZE = 100;
 export default function RunsPage() {
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [err, setErr] = useState<string>();
-  const [trigger] = useState<TriggerFilter>("all");
+  const [trigger, setTrigger] = useState<TriggerFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [recipeQuery] = useState("");
+  const [recipeQuery, setRecipeQuery] = useState("");
   const [limit, setLimit] = useState(RUNS_PAGE_SIZE);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  const reloadRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const load = async () => {
@@ -109,10 +111,12 @@ export default function RunsPage() {
         if (!res.ok) throw new Error(`/runs ${res.status}`);
         const data = (await res.json()) as { runs?: Run[] };
         setRuns(data.runs ?? []);
+        setErr(undefined);
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
       }
     };
+    reloadRef.current = () => void load();
     load();
     const id = setInterval(load, 5000);
     return () => clearInterval(id);
@@ -155,6 +159,53 @@ export default function RunsPage() {
           </div>
         </div>
         <LivePill label="5s" />
+      </div>
+
+      {/* filter bar */}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          alignItems: "center",
+          marginBottom: "var(--s-4)",
+        }}
+      >
+        <input
+          type="text"
+          value={recipeQuery}
+          onChange={(e) => setRecipeQuery(e.target.value)}
+          placeholder="Filter by recipe…"
+          aria-label="Filter by recipe"
+          className="input"
+          style={{ minWidth: 200, width: 240 }}
+        />
+        <select
+          value={trigger}
+          onChange={(e) => setTrigger(e.target.value as TriggerFilter)}
+          aria-label="Trigger type"
+          className="input"
+          style={{ width: "auto", cursor: "pointer" }}
+        >
+          <option value="all">All triggers</option>
+          <option value="cron">Cron</option>
+          <option value="webhook">Webhook</option>
+          <option value="recipe">Recipe</option>
+          <option value="manual">Manual</option>
+          <option value="git_hook">Git hook</option>
+        </select>
+        {(recipeQuery || trigger !== "all") && (
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => {
+              setRecipeQuery("");
+              setTrigger("all");
+            }}
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {/* stat cards */}
@@ -217,7 +268,7 @@ export default function RunsPage() {
           title="Couldn't load runs"
           description="The bridge isn't responding to /runs."
           error={err}
-          onRetry={() => window.location.reload()}
+          onRetry={() => reloadRef.current()}
         />
       )}
       {err && runs && runs.length > 0 && (
@@ -253,7 +304,7 @@ export default function RunsPage() {
             <tbody>
               {runs.map((r, idx) => {
                 const isExpanded = expanded === String(r.seq);
-                const key = `${r.seq}-${idx}`;
+                const key = String(r.seq);
                 const pct = Math.max(
                   3,
                   Math.round((r.durationMs / maxDur) * 100),
