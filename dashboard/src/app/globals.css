@@ -519,7 +519,12 @@ button { font-family: inherit; }
   grid-row: 2 / 3;
   min-width: 0;
   position: relative;
-  overflow-x: hidden;
+  /* `overflow-x: hidden` would force overflow-y: auto per CSS spec, turning
+   * .app-main into a second scroll container nested inside the body and
+   * leaving the sticky header/sidebar unable to follow inner scroll.
+   * `clip` clamps overflow on a single axis without creating a scroll box. */
+  overflow-x: clip;
+  overflow-y: visible;
   background:
     radial-gradient(600px 400px at 15% 20%, var(--aurora-2), transparent 60%),
     radial-gradient(500px 350px at 90% 70%, var(--aurora-1), transparent 65%),
