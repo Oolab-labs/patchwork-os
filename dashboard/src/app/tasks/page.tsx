@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { fmtDuration } from "@/components/time";
 import { SkeletonList } from "@/components/Skeleton";
@@ -267,6 +267,8 @@ export default function TasksPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "live" | "done" | "error">("all");
 
+  const refetchRef = useRef<() => void>(() => {});
+
   useEffect(() => {
     let fastId: ReturnType<typeof setInterval> | null = null;
     let slowId: ReturnType<typeof setInterval> | null = null;
@@ -296,6 +298,7 @@ export default function TasksPage() {
         setErr(e instanceof Error ? e.message : String(e));
       }
     };
+    refetchRef.current = () => void tick();
     tick();
     fastId = setInterval(tick, 2000);
     return () => {
@@ -388,7 +391,7 @@ export default function TasksPage() {
           <button
             type="button"
             className="btn sm ghost"
-            onClick={() => setTick((t) => t + 1)}
+            onClick={() => refetchRef.current()}
           >
             Sync
           </button>
@@ -401,7 +404,7 @@ export default function TasksPage() {
           title="Couldn't load tasks"
           description="The bridge isn't responding. The next poll will try again automatically."
           error={err}
-          onRetry={() => setTick((t) => t + 1)}
+          onRetry={() => refetchRef.current()}
         />
       )}
       {err && tasks.length > 0 && (
@@ -518,8 +521,8 @@ export default function TasksPage() {
                 t.status === "error"
                   ? "var(--err)"
                   : t.status === "running" || t.status === "pending"
-                    ? "var(--blue, #6ea8fe)"
-                    : "var(--ok, #22c55e)";
+                    ? "var(--blue)"
+                    : "var(--ok)";
               return (
                 <button
                   key={t.taskId}
@@ -582,7 +585,7 @@ export default function TasksPage() {
                             position: "absolute",
                             inset: 0,
                             width: `${intensity * 100}%`,
-                            background: intensity > 0.7 ? "var(--orange, var(--accent))" : "var(--ok, #22c55e)",
+                            background: intensity > 0.7 ? "var(--orange, var(--accent))" : "var(--ok)",
                           }}
                         />
                       </span>

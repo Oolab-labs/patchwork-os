@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { apiPath } from '@/lib/api';
 import { relTime } from "@/components/time";
@@ -131,8 +131,11 @@ function explainMatch(
 export default function ApprovalDetailPage() {
   const params = useParams<{ callId: string }>();
   const router = useRouter();
+  const search = useSearchParams();
   const callId = params.callId;
+  const approvalToken = search.get("approvalToken") ?? undefined;
   const [decideErr, setDecideErr] = useState<string | null>(null);
+  const [deciding, setDeciding] = useState<"approve" | "reject" | null>(null);
 
   const { data, error, loading, status } = useBridgeFetch<DetailResponse>(
     `/api/bridge/approvals/${callId}`,
@@ -144,18 +147,33 @@ export default function ApprovalDetailPage() {
   );
 
   async function decide(choice: "approve" | "reject") {
+    if (deciding) return;
     setDecideErr(null);
+    setDeciding(choice);
     try {
+      const headers: Record<string, string> = {};
+      if (approvalToken) {
+        headers.Authorization = `Bearer ${approvalToken}`;
+      }
       const res = await fetch(apiPath(`/api/bridge/${choice}/${callId}`), {
         method: "POST",
+        headers,
       });
       if (!res.ok) {
-        setDecideErr(`${choice} failed: ${res.status}`);
+        let detail = "";
+        try {
+          detail = (await res.text()).slice(0, 200);
+        } catch {}
+        setDecideErr(
+          `${choice} failed: ${res.status}${detail ? ` — ${detail}` : ""}`,
+        );
         return;
       }
       router.push("/approvals");
     } catch (e) {
       setDecideErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeciding(null);
     }
   }
 
@@ -288,15 +306,19 @@ export default function ApprovalDetailPage() {
               type="button"
               className="btn success"
               onClick={() => decide("approve")}
+              disabled={deciding !== null}
+              aria-busy={deciding === "approve"}
             >
-              Approve
+              {deciding === "approve" ? "Approving…" : "Approve"}
             </button>
             <button
               type="button"
               className="btn danger"
               onClick={() => decide("reject")}
+              disabled={deciding !== null}
+              aria-busy={deciding === "reject"}
             >
-              Reject
+              {deciding === "reject" ? "Rejecting…" : "Reject"}
             </button>
             <span className="approval-spacer" />
             <Link href="/approvals" className="btn sm ghost" style={{ textDecoration: "none" }}>

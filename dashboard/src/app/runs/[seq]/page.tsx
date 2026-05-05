@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { StepDiffHover } from "@/components/StepDiffHover";
+import { Dialog } from "@/components/Dialog";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
 import { diffForStep, previewMockedReplay } from "@/lib/registryDiff";
 
@@ -582,6 +583,55 @@ function CausalChainCard({ run }: { run: RunDetail }) {
   );
 }
 
+function ReplayPreflight({ stepResults }: { stepResults: StepResult[] }) {
+  const preflight = previewMockedReplay(stepResults);
+  if (preflight.unmocked.length === 0) {
+    return (
+      <p style={{ fontSize: 12, color: "var(--ink-3)", margin: "0 0 16px" }}>
+        All {preflight.mocked.length} step
+        {preflight.mocked.length === 1 ? "" : "s"} will be mocked from captures.
+        No external API calls.
+      </p>
+    );
+  }
+  return (
+    <div
+      style={{
+        fontSize: 12,
+        margin: "0 0 16px",
+        padding: "8px 10px",
+        borderRadius: "var(--r-1)",
+        border: "1px solid var(--amber)",
+        background: "var(--amber-soft)",
+        color: "var(--amber)",
+      }}
+    >
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>
+        {preflight.unmocked.length} step
+        {preflight.unmocked.length === 1 ? "" : "s"} will run for real (no
+        usable capture)
+      </div>
+      <ul style={{ margin: "4px 0 0", paddingLeft: 20, color: "var(--ink-2)" }}>
+        {preflight.unmocked.slice(0, 8).map((u) => (
+          <li key={u.id} className="mono" style={{ fontSize: 11 }}>
+            {u.tool ? `${u.tool} ` : ""}
+            <span style={{ color: "var(--ink-3)" }}>({u.id})</span>
+            {" — "}
+            {u.reason === "truncated"
+              ? "output >8 KB, will fire real tool"
+              : "no capture"}
+          </li>
+        ))}
+        {preflight.unmocked.length > 8 && (
+          <li style={{ fontSize: 11, color: "var(--ink-3)" }}>
+            …and {preflight.unmocked.length - 8} more
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ page
 
 export default function RunDetailPage() {
@@ -802,10 +852,10 @@ export default function RunDetailPage() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span className="pill muted" style={{ fontSize: 11 }}>{run.trigger}</span>
             <span
-              className={`pill ${run.status === "done" && !(run.assertionFailures?.length) ? "ok" : (run.status === "cancelled" || run.status === "interrupted") ? "warn" : "err"}`}
+              className={`pill ${run.assertionFailures?.length ? "err" : statusPillClass(run.status)}`}
               style={{ fontSize: 11 }}
             >
-              <span className="pill-dot" />
+              {run.status !== "running" && <span className="pill-dot" />}
               {run.status}
             </span>
             <span className="pill muted" style={{ fontSize: 11 }}>
@@ -857,125 +907,56 @@ export default function RunDetailPage() {
         </div>
       )}
 
-      {/* Replay confirm modal */}
-      {replayState === "confirming" && (
-        <div
-          role="dialog"
-          aria-label="Confirm mocked replay"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-          }}
-          onClick={() => setReplayState("idle")}
-        >
-          <div
-            className="card"
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 480, padding: 20 }}
+      <Dialog
+        open={replayState === "confirming"}
+        onClose={() => setReplayState("idle")}
+        ariaLabelledBy="replay-confirm-heading"
+      >
+        <h3 id="replay-confirm-heading" style={{ marginTop: 0, marginBottom: 8 }}>
+          Replay this run?
+        </h3>
+        <p style={{ fontSize: 13, color: "var(--ink-2)", margin: "0 0 12px" }}>
+          Re-runs the recipe with each step's tool / agent call replaced by its
+          captured output from this run. Templates, transforms, and
+          <code className="mono"> when:</code> conditions re-evaluate against the
+          new state — useful for verifying recipe edits without re-hitting
+          connected services.
+        </p>
+        <ReplayPreflight stepResults={run?.stepResults ?? []} />
+        <p style={{ fontSize: 12, color: "var(--ink-3)", margin: "0 0 16px" }}>
+          A new run will be created with{" "}
+          <code className="mono">replay:{seq}</code> in its taskId.
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => setReplayState("idle")}
+            style={{
+              padding: "6px 12px",
+              borderRadius: "var(--r-1)",
+              border: "1px solid var(--line-2)",
+              background: "transparent",
+              cursor: "pointer",
+            }}
           >
-            <h3 style={{ marginTop: 0, marginBottom: 8 }}>Replay this run?</h3>
-            <p style={{ fontSize: 13, color: "var(--ink-2)", margin: "0 0 12px" }}>
-              Re-runs the recipe with each step's tool / agent call replaced
-              by its captured output from this run. Templates, transforms, and
-              <code className="mono"> when:</code> conditions re-evaluate against
-              the new state — useful for verifying recipe edits without
-              re-hitting connected services.
-            </p>
-            {(() => {
-              const preflight = previewMockedReplay(run?.stepResults ?? []);
-              if (preflight.unmocked.length === 0) {
-                return (
-                  <p style={{ fontSize: 12, color: "var(--ink-3)", margin: "0 0 16px" }}>
-                    All {preflight.mocked.length} step
-                    {preflight.mocked.length === 1 ? "" : "s"} will be mocked
-                    from captures. No external API calls.
-                  </p>
-                );
-              }
-              return (
-                <div
-                  style={{
-                    fontSize: 12,
-                    margin: "0 0 16px",
-                    padding: "8px 10px",
-                    borderRadius: "var(--r-1, 4px)",
-                    border: "1px solid var(--amber, #fbbf24)",
-                    background: "rgba(251,191,36,0.08)",
-                    color: "var(--amber, #fbbf24)",
-                  }}
-                >
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                    {preflight.unmocked.length} step
-                    {preflight.unmocked.length === 1 ? "" : "s"} will run for
-                    real (no usable capture)
-                  </div>
-                  <ul
-                    style={{
-                      margin: "4px 0 0",
-                      paddingLeft: 20,
-                      color: "var(--ink-2)",
-                    }}
-                  >
-                    {preflight.unmocked.slice(0, 8).map((u) => (
-                      <li key={u.id} className="mono" style={{ fontSize: 11 }}>
-                        {u.tool ? `${u.tool} ` : ""}
-                        <span style={{ color: "var(--ink-3)" }}>({u.id})</span>
-                        {" — "}
-                        {u.reason === "truncated"
-                          ? "output >8 KB, will fire real tool"
-                          : "no capture"}
-                      </li>
-                    ))}
-                    {preflight.unmocked.length > 8 && (
-                      <li style={{ fontSize: 11, color: "var(--ink-3)" }}>
-                        …and {preflight.unmocked.length - 8} more
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              );
-            })()}
-            <p style={{ fontSize: 12, color: "var(--ink-3)", margin: "0 0 16px" }}>
-              A new run will be created with{" "}
-              <code className="mono">replay:{seq}</code> in its taskId.
-            </p>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => setReplayState("idle")}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: "var(--r-1, 4px)",
-                  border: "1px solid var(--line-2)",
-                  background: "transparent",
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleReplay()}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: "var(--r-1, 4px)",
-                  border: "1px solid var(--blue, #3b82f6)",
-                  background: "var(--blue, #3b82f6)",
-                  color: "#fff",
-                  cursor: "pointer",
-                }}
-              >
-                Replay (mocked)
-              </button>
-            </div>
-          </div>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleReplay()}
+            style={{
+              padding: "6px 12px",
+              borderRadius: "var(--r-1)",
+              border: "1px solid var(--blue)",
+              background: "var(--blue)",
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            Replay (mocked)
+          </button>
         </div>
-      )}
+      </Dialog>
 
       {runErr && <div className="alert-err">Failed to load run: {runErr}</div>}
       {!run && !runErr && <div className="empty-state"><p>Loading…</p></div>}

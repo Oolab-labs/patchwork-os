@@ -60,8 +60,14 @@
   --warn-soft:     var(--amber-soft);
   --err:           var(--red);
   --err-soft:      var(--red-soft);
+  --err-bg:        var(--red-soft);
   --info:          var(--blue);
   --info-soft:     var(--blue-soft);
+  --overlay-bg:    rgba(10, 11, 13, 0.55);
+  --terminal-bg:        #0b0d10;
+  --terminal-fg:        #d8e0e8;
+  --terminal-prompt:    #7fd1a8;
+  --terminal-comment:   #9aa7b3;
 
   /* legacy dark-mode compat aliases */
   --bg-0: var(--canvas);
@@ -486,7 +492,6 @@ button { font-family: inherit; }
   min-width: 0;
   position: relative;
   overflow-x: hidden;
-  overflow-y: auto;
   background:
     radial-gradient(600px 400px at 15% 20%, var(--aurora-2), transparent 60%),
     radial-gradient(500px 350px at 90% 70%, var(--aurora-1), transparent 65%),
@@ -1145,7 +1150,7 @@ button.topbar-search {
   font-weight: 600;
   margin-bottom: 4px;
 }
-.step-diff-added    { color: var(--green, #4ade80); }
+.step-diff-added    { color: var(--green); }
 .step-diff-modified { color: var(--amber, #fbbf24); }
 .step-diff-removed  { color: var(--red, #f87171); }
 .step-diff-row {
