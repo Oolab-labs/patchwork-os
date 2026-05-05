@@ -1,13 +1,11 @@
 "use client";
 import React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { apiPath } from "@/lib/api";
 import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
 import { SkeletonList } from "@/components/Skeleton";
-import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import {
   CodeBlock,
   ErrorState,
@@ -16,11 +14,6 @@ import {
   RunSparkBars,
   StatusPill,
 } from "@/components/patchwork";
-
-interface BridgeStatusForRecipes {
-  patchwork?: { port?: number };
-  port?: number;
-}
 
 // Tool prefix → connector name mapping
 const TOOL_PREFIX_MAP: Record<string, string> = {
@@ -570,14 +563,6 @@ function RecipeDetailPanel({
 }
 
 export default function RecipesPage() {
-  const { data: bridgeStatus } = useBridgeFetch<BridgeStatusForRecipes>(
-    "/api/bridge/status",
-    { intervalMs: 10000 },
-  );
-  // bridgePort retained for parity with prior page (used by webhook helpers in callers).
-  void bridgeStatus;
-  const router = useRouter();
-  void router;
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [runMap, setRunMap] = useState<Map<string, RunRecord>>(new Map());
   const [recentRunsMap, setRecentRunsMap] = useState<Map<string, RunRecord[]>>(new Map());

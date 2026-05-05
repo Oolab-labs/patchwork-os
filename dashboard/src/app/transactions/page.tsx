@@ -131,7 +131,9 @@ export default function TransactionsPage() {
             Active staged multi-file edits — review, then commit from the agent
             (MCP <code>commitTransaction</code>) or discard from here. See{" "}
             <a
-              href="https://github.com/Oolab-labs/patchwork-os/blob/main/documents/speculative-refactoring.md"
+              href="https://github.com/Oolab-labs/patchwork-os/blob/HEAD/documents/speculative-refactoring.md"
+              target="_blank"
+              rel="noreferrer"
               style={{ color: "var(--accent)" }}
             >
               the speculative-refactoring doc

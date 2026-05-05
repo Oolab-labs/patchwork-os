@@ -3,7 +3,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { ErrorState } from "@/components/patchwork";
-import { AnalyticsTabs } from "@/components/AnalyticsTabs";
 
 interface ToolInsight {
   toolName: string;
@@ -165,7 +164,6 @@ export default function InsightsPage() {
 
   return (
     <section>
-      <AnalyticsTabs />
       <div className="page-head">
         <div>
           <h1 className="editorial-h1">

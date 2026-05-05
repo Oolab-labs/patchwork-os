@@ -633,11 +633,18 @@ export default function HomePage() {
           <WeatherRing
             label="LOAD"
             percent={loadPct}
-            delta="+4"
             trend={loadTrend}
             live={bridgeStatus.ok}
-            mood="healthy weather"
-            meta="4°C · 12GB · 38°"
+            mood={
+              !bridgeStatus.ok
+                ? "bridge offline"
+                : loadPct >= 80
+                  ? "high load"
+                  : loadPct >= 50
+                    ? "warming up"
+                    : "quiet"
+            }
+            meta={`${recipes.length} recipes · ${pendingApprovals.length} pending`}
           />
         }
       />
