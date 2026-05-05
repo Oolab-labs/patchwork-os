@@ -654,6 +654,12 @@ function ApprovalsContent() {
     let es: EventSource | null = null;
     let pollId: ReturnType<typeof setInterval> | null = null;
     let alive = true;
+    // Once SSE has failed this many times (without a successful event in
+    // between), stay on polling and stop trying to reconnect — prevents a
+    // tight retry loop when the bridge upstream is missing /approvals/stream.
+    const MAX_SSE_FAILURES = 3;
+    let sseFailures = 0;
+    let sawSseEvent = false;
 
     function applySnapshot(data: string) {
       try {
@@ -665,17 +671,29 @@ function ApprovalsContent() {
 
     function startSSE() {
       if (!alive || typeof EventSource === "undefined") return;
+      if (sseFailures >= MAX_SSE_FAILURES) {
+        startPolling();
+        return;
+      }
+      sawSseEvent = false;
       es = new EventSource(streamUrl);
-      es.addEventListener("snapshot", (e) => applySnapshot((e as MessageEvent).data));
-      es.addEventListener("update", (e) => applySnapshot((e as MessageEvent).data));
+      const onEvent = (e: Event) => {
+        sawSseEvent = true;
+        sseFailures = 0;
+        applySnapshot((e as MessageEvent).data);
+      };
+      es.addEventListener("snapshot", onEvent);
+      es.addEventListener("update", onEvent);
       es.addEventListener("bridge-error", () => {
         // Bridge down event from SSE — fall back to polling
+        if (!sawSseEvent) sseFailures++;
         es?.close();
         es = null;
         startPolling();
       });
       es.onerror = () => {
         // SSE unavailable (e.g. old bridge) — fall back to polling
+        if (!sawSseEvent) sseFailures++;
         es?.close();
         es = null;
         startPolling();
@@ -692,12 +710,16 @@ function ApprovalsContent() {
           if (!r.ok) throw new Error(`/approvals ${r.status}`);
           setPending((await r.json()) as Pending[]);
           setErr(undefined);
-          // Bridge is back — re-establish SSE and stop polling
-          if (pollId !== null) {
-            clearInterval(pollId);
-            pollId = null;
+          // Bridge HTTP is reachable. Only try to re-establish SSE if we
+          // haven't already exhausted retries — otherwise polling is fine
+          // and re-opening would just loop on the same upstream error.
+          if (sseFailures < MAX_SSE_FAILURES) {
+            if (pollId !== null) {
+              clearInterval(pollId);
+              pollId = null;
+            }
+            startSSE();
           }
-          startSSE();
         } catch (e) {
           setErr(e instanceof Error ? e.message : String(e));
         }

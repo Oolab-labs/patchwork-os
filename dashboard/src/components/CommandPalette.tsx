@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 
 interface Command {
@@ -154,12 +154,20 @@ export function CommandPalette({
       .map((x) => x.c);
   }, [commands, query]);
 
-  // Reset state when opening
+  // Reset state and restore focus on close.
+  const previousActiveRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (open) {
+      previousActiveRef.current =
+        typeof document !== "undefined"
+          ? (document.activeElement as HTMLElement | null)
+          : null;
       setQuery("");
       setActiveIdx(0);
       requestAnimationFrame(() => inputRef.current?.focus());
+    } else {
+      // Restore focus to the trigger that opened the palette.
+      previousActiveRef.current?.focus?.();
     }
   }, [open]);
 
@@ -200,6 +208,13 @@ export function CommandPalette({
           cmd.perform();
           onClose();
         }
+        return;
+      }
+      if (e.key === "Tab") {
+        // Trap focus inside the palette: only the input is tab-focusable,
+        // so any Tab/Shift-Tab simply keeps focus on the input.
+        e.preventDefault();
+        inputRef.current?.focus();
       }
     },
     [filtered, activeIdx, onClose],
@@ -248,7 +263,7 @@ export function CommandPalette({
             <li className="cmdk-empty">No matches</li>
           )}
           {grouped.map((g) => (
-            <div key={g.group}>
+            <Fragment key={g.group}>
               <li className="cmdk-group" aria-hidden="true">{g.group}</li>
               {g.items.map(({ cmd, idx }) => (
                 <li
@@ -267,7 +282,7 @@ export function CommandPalette({
                   {cmd.hint && <span className="cmdk-row-hint">{cmd.hint}</span>}
                 </li>
               ))}
-            </div>
+            </Fragment>
           ))}
         </ul>
       </div>

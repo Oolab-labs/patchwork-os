@@ -62,9 +62,10 @@ function taskStatusPill(status: string) {
 
 export default function AnalyticsPage() {
   const windowHours = 24;
-  const [clientNow, setClientNow] = useState(() =>
-    typeof window === "undefined" ? 0 : Date.now(),
-  );
+  // Always start at 0 so server and client first-render match. Filled in
+  // after mount via the effect below — anything that depends on wall-clock
+  // time must gate on `clientNow !== 0` to avoid hydration mismatches.
+  const [clientNow, setClientNow] = useState(0);
   useEffect(() => { setClientNow(Date.now()); }, []);
 
   const { data, error, loading } = useBridgeFetch<AnalyticsData>(
@@ -213,7 +214,11 @@ export default function AnalyticsPage() {
                 <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-2)" }}>errors</span>
               </span>
             </div>
-            <AreaChart series={areaSeries} xLabels={areaLabels} height={140} yTicks={4} />
+            {clientNow === 0 ? (
+              <div style={{ height: 140 }} aria-hidden="true" />
+            ) : (
+              <AreaChart series={areaSeries} xLabels={areaLabels} height={140} yTicks={4} />
+            )}
           </div>
 
           <div className="page-head" style={{ marginTop: "var(--s-2)" }}>
@@ -290,7 +295,7 @@ export default function AnalyticsPage() {
                       return (
                         <tr key={task.id}>
                           <td className="muted" style={{ whiteSpace: "nowrap" }}>
-                            {relTime(task.startedAt)}
+                            {clientNow === 0 ? "—" : relTime(task.startedAt)}
                           </td>
                           <td className="mono">
                             {task.name ?? task.id}

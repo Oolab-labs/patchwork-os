@@ -430,7 +430,7 @@ export default function RecipeEditPage({
               e.currentTarget.style.borderColor = "var(--line-2)";
             }}
             onKeyDown={(e) => {
-              if (e.key === "Tab") {
+              if (e.key === "Tab" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
                 const ta = e.currentTarget;
                 const start = ta.selectionStart;
@@ -442,6 +442,10 @@ export default function RecipeEditPage({
                   ta.selectionStart = start + 2;
                   ta.selectionEnd = start + 2;
                 });
+              }
+              if (e.key === "Escape") {
+                e.currentTarget.blur();
+                return;
               }
               if ((e.metaKey || e.ctrlKey) && e.key === "s") {
                 e.preventDefault();
