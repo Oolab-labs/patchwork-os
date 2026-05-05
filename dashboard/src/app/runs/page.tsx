@@ -2,7 +2,7 @@
 import React from "react";
 import { apiPath } from "@/lib/api";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LivePill } from "@/components/patchwork/LivePill";
 import { ErrorState } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
@@ -98,6 +98,8 @@ export default function RunsPage() {
   const [limit, setLimit] = useState(RUNS_PAGE_SIZE);
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  const reloadRef = useRef<() => void>(() => {});
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -109,10 +111,12 @@ export default function RunsPage() {
         if (!res.ok) throw new Error(`/runs ${res.status}`);
         const data = (await res.json()) as { runs?: Run[] };
         setRuns(data.runs ?? []);
+        setErr(undefined);
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
       }
     };
+    reloadRef.current = () => void load();
     load();
     const id = setInterval(load, 5000);
     return () => clearInterval(id);
@@ -264,7 +268,7 @@ export default function RunsPage() {
           title="Couldn't load runs"
           description="The bridge isn't responding to /runs."
           error={err}
-          onRetry={() => window.location.reload()}
+          onRetry={() => reloadRef.current()}
         />
       )}
       {err && runs && runs.length > 0 && (
@@ -300,7 +304,7 @@ export default function RunsPage() {
             <tbody>
               {runs.map((r, idx) => {
                 const isExpanded = expanded === String(r.seq);
-                const key = `${r.seq}-${idx}`;
+                const key = String(r.seq);
                 const pct = Math.max(
                   3,
                   Math.round((r.durationMs / maxDur) * 100),

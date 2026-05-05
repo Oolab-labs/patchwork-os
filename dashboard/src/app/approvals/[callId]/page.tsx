@@ -252,6 +252,11 @@ export default function ApprovalDetailPage() {
             This approval isn&apos;t pending and hasn&apos;t been decided yet.
             It may have expired, or the ID is wrong.
           </p>
+          <p style={{ marginTop: "var(--s-3)" }}>
+            <Link href="/approvals" className="btn sm primary" style={{ textDecoration: "none" }}>
+              ← Back to queue
+            </Link>
+          </p>
         </div>
       )}
 

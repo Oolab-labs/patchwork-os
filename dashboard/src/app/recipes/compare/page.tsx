@@ -289,6 +289,11 @@ function CompareInner() {
           Use <code>/recipes/compare?a=recipe-name&b=recipe-name-v2</code>. The
           Fork button on the Recipes page links here automatically.
         </p>
+        <p style={{ marginTop: "var(--s-3)" }}>
+          <Link href="/recipes" className="btn sm primary" style={{ textDecoration: "none" }}>
+            ← Back to recipes
+          </Link>
+        </p>
       </div>
     );
   }

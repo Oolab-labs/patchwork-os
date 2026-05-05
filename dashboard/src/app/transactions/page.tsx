@@ -154,9 +154,8 @@ export default function TransactionsPage() {
       {error && transactions.length === 0 && (
         <ErrorState
           title="Couldn't load transactions"
-          description="The bridge isn't responding to /transactions."
+          description="The bridge isn't responding to /transactions. The next poll will try again automatically."
           error={error}
-          onRetry={() => window.location.reload()}
         />
       )}
       {error && transactions.length > 0 && (

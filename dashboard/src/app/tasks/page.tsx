@@ -370,7 +370,9 @@ export default function TasksPage() {
     return c;
   }, [tasks]);
 
-  const selectedTask = filteredTasks.find((t) => t.taskId === selectedTaskId) ?? null;
+  // Derive from the unfiltered list so applying a status filter that hides
+  // the selected task doesn't blank the detail pane silently.
+  const selectedTask = tasks.find((t) => t.taskId === selectedTaskId) ?? null;
 
   async function handleCancel(id: string) {
     setCancelling((p) => ({ ...p, [id]: true }));

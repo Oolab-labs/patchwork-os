@@ -410,11 +410,21 @@ export default function MarketplacePage() {
         setInstalledNames(new Set(installedResult.value.names));
       }
 
-      // Fetch registry: bridge → raw GitHub → hardcoded fallback
+      // Fetch registry: bridge → raw GitHub → hardcoded fallback. Each
+      // hop has a 4s timeout so a slow CDN can't keep the user staring
+      // at a skeleton.
+      const fetchWithTimeout = (url: string, ms: number) => {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), ms);
+        return fetch(url, { signal: ctl.signal }).finally(() =>
+          clearTimeout(timer),
+        );
+      };
+
       let recipes: RegistryRecipe[] | null = null;
 
       try {
-        const res = await fetch(apiPath("/api/bridge/templates"));
+        const res = await fetchWithTimeout(apiPath("/api/bridge/templates"), 4000);
         if (res.ok) {
           const data = (await res.json()) as { recipes?: RegistryRecipe[] } | RegistryRecipe[];
           recipes = Array.isArray(data)
@@ -424,25 +434,25 @@ export default function MarketplacePage() {
               : null;
         }
       } catch {
-        // bridge offline — try GitHub
+        // bridge offline / timed out — try GitHub
       }
 
       if (!recipes) {
         try {
-          const res = await fetch(
+          const res = await fetchWithTimeout(
             "https://raw.githubusercontent.com/patchworkos/recipes/main/index.json",
+            4000,
           );
           if (res.ok) {
             const data = (await res.json()) as RegistryData;
             recipes = data.recipes ?? null;
           }
         } catch {
-          // GitHub also failed — use hardcoded fallback
+          // GitHub also failed / timed out — use hardcoded fallback
         }
       }
 
       setRegistry(recipes ?? FALLBACK_REGISTRY.recipes);
-
     }
 
     load().catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));

@@ -59,10 +59,23 @@ export default async function RecipeDetailPage({ params }: PageProps) {
   const src = parseInstallSource(recipe.install);
   let manifest: RecipeManifest | null = null;
   let yaml: string | null = null;
+  // Network failures on the CDN are not page-level errors — render the
+  // detail page in a degraded state (description + install source) rather
+  // than throwing a 500 the user can't recover from.
   if (src) {
-    manifest = await fetchManifest(src);
+    try {
+      manifest = await fetchManifest(src);
+    } catch {
+      manifest = null;
+    }
     const main = manifest?.recipes?.main;
-    if (main) yaml = await fetchRecipeYaml(src, main);
+    if (main) {
+      try {
+        yaml = await fetchRecipeYaml(src, main);
+      } catch {
+        yaml = null;
+      }
+    }
   }
 
   return (
