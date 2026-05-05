@@ -103,13 +103,20 @@ export default function AnalyticsPage() {
         if (r.status === "error") errorsPerHour[slot]++;
       }
     }
-    // Show only 00:00, 06:00, 12:00, 18:00, now on the 24h axis.
+    // Anchor the axis at the user's clock: 24h ago on the left, "now" on
+    // the right, and 6-hour ticks in between. Labels read as wall-clock
+    // time so the user can reconcile peaks with their day, not as relative
+    // offsets which mix poorly with the explicit "now" anchor.
     const labels = Array.from({ length: buckets }, (_, i) => {
       if (now === 0) return "";
       if (i === buckets - 1) return "now";
+      if (i === 0) {
+        const t = new Date(now - (buckets - 1) * slotMs);
+        return `${String(t.getHours()).padStart(2, "0")}:00`;
+      }
       const t = new Date(now - (buckets - 1 - i) * slotMs);
       const h = t.getHours();
-      if (h === 0 || h === 6 || h === 12 || h === 18) {
+      if (h % 6 === 0) {
         return `${String(h).padStart(2, "0")}:00`;
       }
       return "";
@@ -206,7 +213,7 @@ export default function AnalyticsPage() {
                 <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-2)" }}>errors</span>
               </span>
             </div>
-            <AreaChart series={areaSeries} xLabels={areaLabels} height={100} yTicks={3} />
+            <AreaChart series={areaSeries} xLabels={areaLabels} height={140} yTicks={4} />
           </div>
 
           <div className="page-head" style={{ marginTop: "var(--s-2)" }}>
