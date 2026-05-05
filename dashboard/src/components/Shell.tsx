@@ -440,6 +440,7 @@ function IdentityPill({ ok, host, port }: { ok: boolean; host: string; port?: nu
       title={ok ? `Connected to ${host} on ${portText}` : "Bridge offline"}
     >
       <span className={`identity-pill-dot${ok ? " online" : ""}`} aria-hidden="true" />
+      <span className="sr-only">Bridge {ok ? "online" : "offline"}.</span>
       <span className="identity-pill-host">{host}</span>
       <span className="identity-pill-sep" aria-hidden="true">·</span>
       <span className="identity-pill-port">{portText}</span>
@@ -459,6 +460,7 @@ function BridgeStatusBlock({ status }: { status: BridgeStatus }) {
           aria-hidden="true"
           title={status.ok ? "online" : "offline"}
         />
+        <span className="sr-only">{status.ok ? "online" : "offline"}</span>
       </div>
       <div className="app-sidebar-bridge-meta">
         <span className="app-sidebar-bridge-version">

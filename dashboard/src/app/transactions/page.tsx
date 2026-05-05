@@ -153,7 +153,7 @@ export default function TransactionsPage() {
             <a
               href="https://github.com/Oolab-labs/patchwork-os/blob/HEAD/documents/speculative-refactoring.md"
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               style={{ color: "var(--accent)" }}
             >
               the speculative-refactoring doc

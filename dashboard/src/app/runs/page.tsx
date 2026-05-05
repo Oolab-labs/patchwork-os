@@ -302,9 +302,9 @@ export default function RunsPage() {
               </tr>
             </thead>
             <tbody>
-              {runs.map((r, idx) => {
-                const isExpanded = expanded === String(r.seq);
-                const key = String(r.seq);
+              {runs.map((r) => {
+                const key = `${r.taskId}-${r.seq}`;
+                const isExpanded = expanded === key;
                 const pct = Math.max(
                   3,
                   Math.round((r.durationMs / maxDur) * 100),
@@ -319,9 +319,16 @@ export default function RunsPage() {
                 return (
                   <React.Fragment key={key}>
                     <tr
-                      onClick={() =>
-                        setExpanded(isExpanded ? null : String(r.seq))
-                      }
+                      onClick={() => setExpanded(isExpanded ? null : key)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setExpanded(isExpanded ? null : key);
+                        }
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      aria-expanded={isExpanded}
                       style={{ cursor: "pointer" }}
                     >
                       <td className="mono muted">

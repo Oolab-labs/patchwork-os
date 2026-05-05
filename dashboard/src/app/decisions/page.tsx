@@ -69,6 +69,7 @@ function DecisionsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [tag, setTag] = useState(searchParams.get("tag") ?? "");
+  const [showAllTags, setShowAllTags] = useState(false);
   const [keyQuery, setKeyQuery] = useState(searchParams.get("ref") ?? "");
   const [textQuery, setTextQuery] = useState(searchParams.get("q") ?? "");
   const [since, setSince] = useState<SinceFilter>(() => {
@@ -216,7 +217,7 @@ function DecisionsContent() {
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)" }}>
             Tags
           </span>
-          {allTags.map((t) => (
+          {(showAllTags ? allTags : allTags.slice(0, 20)).map((t) => (
             <button
               key={t}
               type="button"
@@ -229,6 +230,16 @@ function DecisionsContent() {
               {t}
             </button>
           ))}
+          {allTags.length > 20 && (
+            <button
+              type="button"
+              onClick={() => setShowAllTags((v) => !v)}
+              className="pill muted"
+              style={{ cursor: "pointer", fontFamily: "var(--font-mono)" }}
+            >
+              {showAllTags ? "Show fewer" : `Show all (${allTags.length})`}
+            </button>
+          )}
         </div>
       )}
 

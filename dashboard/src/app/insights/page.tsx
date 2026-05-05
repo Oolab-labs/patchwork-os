@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { apiPath } from "@/lib/api";
 import { ErrorState } from "@/components/patchwork";
 
 interface ToolInsight {
@@ -143,26 +144,25 @@ export default function InsightsPage() {
   useEffect(() => {
     if (tools.length === 0) return;
     // Abort any explain fetches still in flight from a prior generatedAt
-    // tick — without this, two waves of N requests can race and the older
-    // wave's responses overwrite the newer wave's explanations.
+    // tick — without this, two waves of requests can race and the older
+    // wave's response overwrites the newer wave's explanations.
     const controller = new AbortController();
-    void Promise.all(
-      tools.map(async (t) => {
-        try {
-          const url = `/api/bridge/approval-insights/explain?tool=${encodeURIComponent(t.toolName)}`;
-          const res = await fetch(url, { signal: controller.signal });
-          if (!res.ok) return;
-          const json = (await res.json()) as ExplainResponse;
-          setExplanations((prev) => ({
-            ...prev,
-            [t.toolName]: json.explanation,
-          }));
-        } catch (e) {
-          if (e instanceof DOMException && e.name === "AbortError") return;
-          // ignore other errors — bridge unreachable
-        }
-      }),
-    );
+    (async () => {
+      try {
+        const res = await fetch(apiPath("/api/bridge/approval-insights/explain-batch"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ tools: tools.map((t) => t.toolName) }),
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { explanations: Record<string, RuleExplanation | null> };
+        setExplanations((prev) => ({ ...prev, ...json.explanations }));
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        // ignore other errors — bridge unreachable
+      }
+    })();
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.generatedAt]);
