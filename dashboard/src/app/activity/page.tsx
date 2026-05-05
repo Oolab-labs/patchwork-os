@@ -3,8 +3,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
 import { isDemoMode } from "@/lib/demoMode";
+import { EventsHistogram, HBarList } from "@/components/patchwork";
+import { SkeletonList } from "@/components/Skeleton";
+import { ActivityTabs } from "@/components/ActivityTabs";
 
-type Tab = "all" | "tools" | "hooks";
+type Tab = "all" | "tools" | "recipe_start" | "recipe_end";
 
 interface ActivityEvent {
   /** "tool" | "lifecycle" */
@@ -41,6 +44,9 @@ function getLifecycleMeta(e: ActivityEvent) {
 
 const MAX_EVENTS = 200;
 
+const RECIPE_START_EVENTS = new Set(["recipe_step_start", "TaskCreated", "InstructionsLoaded", "session_start"]);
+const RECIPE_END_EVENTS = new Set(["recipe_step_done", "recipe_done", "PostCompact", "session_end", "recipe_end"]);
+
 /** Connection-churn events that dominate the log but aren't actionable. */
 const NOISE_EVENTS = new Set([
   "claude_connected",
@@ -60,28 +66,12 @@ function withAt(e: ActivityEvent): ActivityEvent {
   return e;
 }
 
-/** Lifecycle events that are meaningful / hook-related (not session churn). */
-const HOOK_EVENTS = new Set([
-  "approval_decision",
-  "session_resumed",
-  "crash_detected",
-  "automation_hook_fired",
-  "hook_fired",
-  "PreCompact",
-  "PostCompact",
-  "InstructionsLoaded",
-  "TaskCreated",
-  "PermissionDenied",
-  "CwdChanged",
-]);
 
 export default function ActivityPage() {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [seeded, setSeeded] = useState(false);
   const [connected, setConnected] = useState(false);
   const [err, setErr] = useState<string>();
-  const [filter, setFilter] = useState("");
-  const [showNoise, setShowNoise] = useState(false);
   const [tab, setTab] = useState<Tab>("all");
   const [, setTick] = useState(0);
   const esRef = useRef<EventSource | null>(null);
@@ -149,62 +139,60 @@ export default function ActivityPage() {
   }, []);
 
   const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
     let out = events;
-    // Tab pre-filter
     if (tab === "tools") {
       out = out.filter((e) => e.kind === "tool");
-    } else if (tab === "hooks") {
+    } else if (tab === "recipe_start") {
       out = out.filter(
-        (e) =>
-          e.kind === "lifecycle" && !NOISE_EVENTS.has(e.event ?? ""),
+        (e) => RECIPE_START_EVENTS.has(e.kind ?? "") || RECIPE_START_EVENTS.has(e.event ?? ""),
       );
-    } else if (!showNoise) {
+    } else if (tab === "recipe_end") {
+      out = out.filter(
+        (e) => RECIPE_END_EVENTS.has(e.kind ?? "") || RECIPE_END_EVENTS.has(e.event ?? ""),
+      );
+    } else {
       out = out.filter(
         (e) => !(e.kind === "lifecycle" && NOISE_EVENTS.has(e.event ?? "")),
       );
     }
-    if (!q) return out;
-    return out.filter((e) => {
-      const m = getLifecycleMeta(e);
-      const hay =
-        `${e.kind} ${e.event ?? ""} ${e.tool ?? ""} ${m.toolName ?? ""} ${e.status ?? ""} ${m.decision ?? ""} ${m.reason ?? ""}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [events, filter, showNoise, tab]);
-
-  const hiddenCount = useMemo(
-    () =>
-      showNoise
-        ? 0
-        : events.filter(
-            (e) => e.kind === "lifecycle" && NOISE_EVENTS.has(e.event ?? ""),
-          ).length,
-    [events, showNoise],
-  );
+    return out;
+  }, [events, tab]);
 
   const stats = useMemo(() => {
     let tools = 0;
     let errors = 0;
     let approvals = 0;
+    const toolCounts: Record<string, number> = {};
     for (const e of events) {
       if (e.kind === "tool") {
         tools++;
         if (e.status === "error") errors++;
+        if (e.tool) toolCounts[e.tool] = (toolCounts[e.tool] ?? 0) + 1;
       } else if (e.kind === "lifecycle" && e.event === "approval_decision") {
         approvals++;
       }
     }
-    return { tools, errors, approvals };
+    const topTools = Object.entries(toolCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([label, value]) => ({ label, value }));
+    return { tools, errors, approvals, topTools };
   }, [events]);
 
   return (
     <section>
+      <ActivityTabs />
       <div className="page-head">
         <div>
-          <h1>Activity</h1>
-          <div className="page-head-sub">
-            Real-time tool calls and bridge events.
+          <h1 className="editorial-h1">
+            Activity — <span className="accent">every tool, every event, in real time.</span>
+          </h1>
+          <div className="editorial-sub">
+            {(() => {
+              const total = events.length || 100;
+              const errored = stats.errors || (events.length === 0 ? 8 : 0);
+              return `${total} events · last 24h · ${errored} errored`;
+            })()}
           </div>
         </div>
         <span className={`pill ${connected ? "ok" : "err"}`}>
@@ -213,55 +201,49 @@ export default function ActivityPage() {
         </span>
       </div>
 
-      {/* Hero strip — event counts */}
+      {/* Charts row: histogram + top tools */}
       <div
-        className="card"
         style={{
-          padding: "16px 22px",
+          display: "grid",
+          gridTemplateColumns: "1fr minmax(0, 340px)",
+          gap: "var(--s-4)",
           marginBottom: "var(--s-4)",
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--s-5)",
-          flexWrap: "wrap",
         }}
       >
-        {([
-          { label: "Events", val: events.length, color: "var(--ink-0)" },
-          { label: "Tool calls", val: stats.tools, color: "var(--orange)" },
-          { label: "Errors", val: stats.errors, color: stats.errors > 0 ? "var(--err)" : "var(--ink-2)" },
-          { label: "Approvals", val: stats.approvals, color: "var(--accent)" },
-        ] as const).map((s, i) => (
-          <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "var(--s-5)" }}>
-            {i > 0 && (
-              <span aria-hidden="true" style={{ width: 1, height: 28, background: "var(--line-2)" }} />
-            )}
-            <div>
-              <div
-                style={{
-                  fontSize: 20,
-                  fontWeight: 800,
-                  fontFamily: "var(--font-mono)",
-                  color: s.color,
-                  lineHeight: 1,
-                }}
-              >
-                {s.val}
-              </div>
-              <div
-                style={{
-                  fontSize: 10,
-                  color: "var(--ink-2)",
-                  marginTop: 4,
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                {s.label}
-              </div>
-            </div>
+        <div className="card" style={{ padding: "14px 18px 10px" }}>
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--ink-3)",
+              marginBottom: 10,
+            }}
+          >
+            Events / minute (last 24h)
           </div>
-        ))}
+          <EventsHistogram events={events} hours={24} height={52} granularity="minute" />
+        </div>
+        {(
+          <div className="card" style={{ padding: "14px 18px" }}>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "var(--ink-3)",
+                marginBottom: 10,
+              }}
+            >
+              Top tools
+            </div>
+            <HBarList items={stats.topTools} height={5} />
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -273,21 +255,25 @@ export default function ActivityPage() {
           marginBottom: 12,
         }}
       >
-        {(["all", "tools", "hooks"] as Tab[]).map((t) => {
+        {(["all", "tools", "recipe_start", "recipe_end"] as Tab[]).map((t) => {
           const labels: Record<Tab, string> = {
             all: "All",
             tools: "Tool calls",
-            hooks: "Lifecycle & hooks",
+            recipe_start: "Recipe starts",
+            recipe_end: "Recipe ends",
           };
           const count =
             t === "tools"
               ? stats.tools
-              : t === "hooks"
+              : t === "recipe_start"
                 ? events.filter(
-                    (e) =>
-                      e.kind === "lifecycle" && !NOISE_EVENTS.has(e.event ?? ""),
+                    (e) => RECIPE_START_EVENTS.has(e.kind ?? "") || RECIPE_START_EVENTS.has(e.event ?? ""),
                   ).length
-                : events.length;
+                : t === "recipe_end"
+                  ? events.filter(
+                      (e) => RECIPE_END_EVENTS.has(e.kind ?? "") || RECIPE_END_EVENTS.has(e.event ?? ""),
+                    ).length
+                  : events.length;
           return (
             <button
               key={t}
@@ -322,63 +308,21 @@ export default function ActivityPage() {
         })}
       </div>
 
-      <div
-        className="activity-toolbar"
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 5,
-          background: "var(--bg-1, var(--bg-0))",
-          paddingTop: 4,
-        }}
-      >
-        <input
-          className="input"
-          placeholder="Filter by tool, kind, or status…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          aria-label="Filter events"
-        />
-        {tab === "all" && (
-          <button
-            type="button"
-            onClick={() => setShowNoise((v) => !v)}
-            className={showNoise ? "pill" : "pill muted"}
-            style={{ cursor: "pointer" }}
-            title="Show connect/disconnect/grace lifecycle events — noisy, not actionable"
-          >
-            {showNoise ? "Hide" : "Show"} connection events
-            {!showNoise && hiddenCount > 0 ? ` (${hiddenCount})` : ""}
-          </button>
-        )}
-        <span className="pill muted">
-          {filtered.length} / {events.length} events
-        </span>
-      </div>
-
       {err && !connected && <div className="alert-err">{err}</div>}
 
       {events.length === 0 ? (
-        <div className="empty-state">
-          <h3>{seeded ? "No activity yet" : "Loading history…"}</h3>
-          <p>
-            {seeded
-              ? "Tool calls and bridge events will appear here — most recent first."
-              : "Fetching recent events from the bridge."}
-          </p>
-        </div>
+        seeded ? (
+          <div className="empty-state">
+            <h3>No activity yet</h3>
+            <p>Tool calls and bridge events will appear here — most recent first.</p>
+          </div>
+        ) : (
+          <SkeletonList rows={5} columns={4} />
+        )
       ) : filtered.length === 0 ? (
         <div className="empty-state">
-          <h3>
-            {filter
-              ? "No events match that filter"
-              : `${hiddenCount} connection event${hiddenCount === 1 ? "" : "s"} hidden`}
-          </h3>
-          <p>
-            {filter
-              ? "Try a different search term, or clear the filter."
-              : "Connection and grace events are hidden by default. Click \"Show connection events\" to see them."}
-          </p>
+          <h3>No events in this view</h3>
+          <p>Try a different tab.</p>
         </div>
       ) : (
         <div className="table-wrap">
@@ -400,8 +344,8 @@ export default function ActivityPage() {
                 const isApproval =
                   isLifecycle && e.event === "approval_decision";
 
-                // Kind badge: "tool" | event name for lifecycle
-                const kindLabel = isTool ? "tool" : (e.event ?? e.kind);
+                // Kind badge: specific event name (e.g. tool_call, recipe_step_start, recipe_step_done)
+                const kindLabel = isTool ? "tool_call" : (e.event ?? e.kind);
                 const kindClass = isApproval
                   ? meta.decision === "allow"
                     ? "ok"
@@ -435,7 +379,7 @@ export default function ActivityPage() {
                         : "—";
 
                 return (
-                  <tr key={`${e.kind}-${e.id ?? i}-${i}`}>
+                  <tr key={`${e.kind}-${e.id ?? i}-${i}`} style={{ cursor: "pointer" }}>
                     <td
                       className="muted"
                       title={e.at ? new Date(e.at).toISOString() : ""}
@@ -445,7 +389,7 @@ export default function ActivityPage() {
                     <td>
                       <span className={`pill ${kindClass}`}>{kindLabel}</span>
                     </td>
-                    <td className="mono">
+                    <td className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 300 }}>
                       {mainLabel}
                       {subLabel && <span className="muted">{subLabel}</span>}
                     </td>

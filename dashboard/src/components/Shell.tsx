@@ -3,11 +3,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { fmtDuration } from "./time";
 import { apiPath } from "@/lib/api";
 import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
-import { isDemoMode, setDemoMode, onDemoModeChange } from "@/lib/demoMode";
 import { CardGlow } from "./CardGlow";
+import { CommandPalette } from "./CommandPalette";
 
 // ------------------------------------------------------------------ icons
 
@@ -39,18 +38,25 @@ const PATHS: Record<string, string> = {
   plus:       "M12 4v16m8-8H4",
   diff:       "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 12h6m-3-3v6",
   person:     "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z",
+  chevron:    "M6 9l6 6 6-6",
 };
 
 // ------------------------------------------------------------------ brand logo
 
 function BrandMark() {
   return (
-    <svg width="26" height="26" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <rect x="2" y="2"  width="12" height="12" rx="3" fill="var(--orange)" />
-      <rect x="18" y="2" width="12" height="12" rx="3" fill="var(--orange)" opacity="0.7" />
-      <rect x="2" y="18" width="12" height="12" rx="3" fill="var(--orange)" opacity="0.7" />
-      <rect x="18" y="18" width="12" height="12" rx="3" fill="var(--orange)" opacity="0.4" />
-    </svg>
+    <div className="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <rect x="2" y="2" width="9" height="9" rx="1.5" fill="var(--accent)" />
+        <rect x="13" y="2" width="9" height="9" rx="1.5" fill="none" stroke="var(--accent)" strokeWidth="1.4" />
+        <rect x="2" y="13" width="9" height="9" rx="1.5" fill="none" stroke="var(--accent)" strokeWidth="1.4" />
+        <rect x="13" y="13" width="9" height="9" rx="1.5" fill="var(--accent)" opacity="0.4" />
+        <line className="brand-stitch" x1="11.5" y1="6.5" x2="13" y2="6.5" stroke="var(--accent)" strokeWidth="1.2" />
+        <line className="brand-stitch" x1="11.5" y1="17.5" x2="13" y2="17.5" stroke="var(--accent)" strokeWidth="1.2" />
+        <line className="brand-stitch" x1="6.5" y1="11.5" x2="6.5" y2="13" stroke="var(--accent)" strokeWidth="1.2" />
+        <line className="brand-stitch" x1="17.5" y1="11.5" x2="17.5" y2="13" stroke="var(--accent)" strokeWidth="1.2" />
+      </svg>
+    </div>
   );
 }
 
@@ -58,8 +64,9 @@ function BrandMark() {
 
 type NavItem = { href: string; label: string; icon: string; badge?: boolean };
 
-const NAV_SECTIONS: { title?: string; items: NavItem[] }[] = [
+const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
   {
+    title: "Workspace",
     items: [
       { href: "/",           label: "Overview",    icon: "home" },
       { href: "/inbox",      label: "Inbox",       icon: "inbox" },
@@ -70,23 +77,14 @@ const NAV_SECTIONS: { title?: string; items: NavItem[] }[] = [
   {
     title: "Automation",
     items: [
-      { href: "/recipes",              label: "Recipes",      icon: "book" },
-      { href: "/marketplace",           label: "Marketplace",  icon: "store" },
-      { href: "/tasks",                label: "Tasks",        icon: "tasks" },
-      { href: "/runs",                 label: "Runs",         icon: "play" },
-      { href: "/transactions",         label: "Transactions", icon: "diff" },
-      { href: "/suggestions",          label: "Suggestions",  icon: "lightbulb" },
+      { href: "/recipes",     label: "Recipes",     icon: "book" },
+      { href: "/marketplace", label: "Marketplace", icon: "store" },
     ],
   },
   {
     title: "Insights",
     items: [
-      { href: "/sessions",   label: "Sessions",   icon: "monitor" },
-      { href: "/metrics",    label: "Metrics",    icon: "bar" },
       { href: "/analytics",  label: "Analytics",  icon: "trending" },
-      { href: "/traces",     label: "Traces",     icon: "git" },
-      { href: "/decisions",  label: "Decisions",  icon: "lightbulb" },
-      { href: "/insights",   label: "Insights",   icon: "person" },
     ],
   },
   {
@@ -98,9 +96,9 @@ const NAV_SECTIONS: { title?: string; items: NavItem[] }[] = [
   },
 ];
 
-const ALL_NAV = NAV_SECTIONS.flatMap((s) => s.items);
-
-// ------------------------------------------------------------------ bridge status (hook imported from @/hooks/useBridgeStatus)
+const MORE_ITEMS: NavItem[] = [
+  { href: "/transactions", label: "Transactions", icon: "diff" },
+];
 
 // ------------------------------------------------------------------ approval count
 
@@ -130,7 +128,6 @@ function useApprovalCount(): number {
       } catch { /* offline */ }
       if (ok) failures = 0;
       else failures++;
-      // Exponential backoff with ±20% jitter, cap 30s
       const exp = Math.min(BASE * 2 ** failures, MAX);
       schedule(ok ? BASE : exp * (0.8 + Math.random() * 0.4));
     };
@@ -144,66 +141,65 @@ function useApprovalCount(): number {
   return count;
 }
 
-// ------------------------------------------------------------------ demo mode
+// ------------------------------------------------------------------ identity
 
-function useDemo() {
-  const [demo, setDemo] = useState(false);
-  useEffect(() => {
-    setDemo(isDemoMode());
-    return onDemoModeChange(setDemo);
-  }, []);
-  const toggle = () => setDemoMode(!demo);
-  return { demo, toggle };
+function useIdentity(status: BridgeStatus): { user: string; host: string; port: number | undefined } {
+  const port = status.patchwork?.port ?? status.port;
+  const workspace = status.patchwork?.workspace ?? status.workspace ?? "";
+  const wsName = workspace ? workspace.split("/").filter(Boolean).pop() ?? "local" : "local";
+  // Best-effort username — falls back to "local"
+  const user = (typeof process !== "undefined" && process.env?.USER) || "local";
+  return { user, host: `${user}@${wsName}`, port };
 }
 
 // ------------------------------------------------------------------ theme
 
-function useTheme() {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    const stored = localStorage.getItem("pw-theme");
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const isDark = stored ? stored === "dark" : prefersDark;
-    setDark(isDark);
-    document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
-  }, []);
-  const toggle = () => {
-    const next = !dark;
-    setDark(next);
-    document.documentElement.setAttribute("data-theme", next ? "dark" : "light");
-    localStorage.setItem("pw-theme", next ? "dark" : "light");
-  };
-  return { dark, toggle };
+type ThemePref = "system" | "dark" | "paper";
+
+function normalizeTheme(value: string | null): ThemePref {
+  if (value === "dark" || value === "paper" || value === "system") return value;
+  if (value === "light") return "paper";
+  return "system";
 }
 
-// ------------------------------------------------------------------ topbar nav
+function systemTheme(): Exclude<ThemePref, "system"> {
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "paper" : "dark";
+}
 
-function TopbarNav({ pathname }: { pathname: string }) {
-  const section = NAV_SECTIONS.find((s) =>
-    s.items.some((item) =>
-      item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href)
-    )
-  );
-  if (!section || !section.title) return null;
+function applyTheme(theme: Exclude<ThemePref, "system">) {
+  document.documentElement.setAttribute("data-theme", theme);
+  document.body.dataset.theme = theme;
+}
 
-  return (
-    <nav className="topbar-nav" aria-label="Section navigation">
-      {section.items.map((item) => {
-        const active = item.href === "/"
-          ? pathname === "/"
-          : pathname?.startsWith(item.href);
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`topbar-link${active ? " is-active" : ""}`}
-          >
-            {item.label}
-          </Link>
-        );
-      })}
-    </nav>
-  );
+function useTheme() {
+  const [pref, setPref] = useState<ThemePref>("system");
+  const [active, setActive] = useState<Exclude<ThemePref, "system">>("dark");
+  useEffect(() => {
+    const stored = normalizeTheme(localStorage.getItem("patchwork.theme") ?? localStorage.getItem("pw-theme"));
+    const resolved = stored === "system" ? systemTheme() : stored;
+    setPref(stored);
+    setActive(resolved);
+    applyTheme(resolved);
+    const media = window.matchMedia("(prefers-color-scheme: light)");
+    const onChange = () => {
+      if (localStorage.getItem("patchwork.theme") === "system" || !localStorage.getItem("patchwork.theme")) {
+        const next = systemTheme();
+        setActive(next);
+        applyTheme(next);
+      }
+    };
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+  const toggle = () => {
+    const nextPref: ThemePref = pref === "system" ? "dark" : pref === "dark" ? "paper" : "system";
+    const resolved = nextPref === "system" ? systemTheme() : nextPref;
+    setPref(nextPref);
+    setActive(resolved);
+    applyTheme(resolved);
+    localStorage.setItem("patchwork.theme", nextPref);
+  };
+  return { active, pref, toggle };
 }
 
 // ------------------------------------------------------------------ shell
@@ -212,13 +208,36 @@ export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const status = useBridgeStatus();
   const approvalCount = useApprovalCount();
-  const { dark, toggle } = useTheme();
-  const { demo, toggle: toggleDemo } = useDemo();
+  const { active, pref, toggle } = useTheme();
+  const identity = useIdentity(status);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(() =>
+    MORE_ITEMS.some((it) => typeof window !== "undefined" && window.location?.pathname?.startsWith(it.href))
+  );
+  // Demo: replace with real notification count when available
+  const hasNotifications = approvalCount > 0;
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
-  // Close the mobile drawer whenever the route changes.
   useEffect(() => {
     setMobileOpen(false);
+    setPaletteOpen(false);
+  }, [pathname]);
+
+  // Global ⌘K / Ctrl+K hotkey
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Auto-expand More if we navigate into one of its routes
+  useEffect(() => {
+    if (MORE_ITEMS.some((it) => pathname?.startsWith(it.href))) setMoreOpen(true);
   }, [pathname]);
 
   return (
@@ -231,11 +250,95 @@ export function Shell({ children }: { children: ReactNode }) {
         onClick={() => setMobileOpen(false)}
         tabIndex={mobileOpen ? 0 : -1}
       />
+      <header className="app-header">
+        <div className="app-header-left">
+          <button
+            type="button"
+            className="mobile-menu-btn"
+            aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+            aria-expanded={mobileOpen}
+            onClick={() => setMobileOpen((v) => !v)}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 6h18M3 12h18M3 18h18" />
+            </svg>
+          </button>
+          <Link href="/" className="topbar-brand">
+            <BrandMark />
+            <span>Patchwork OS</span>
+            <span className="topbar-local">local</span>
+          </Link>
+        </div>
+        <button
+          type="button"
+          className="topbar-search"
+          onClick={() => setPaletteOpen(true)}
+          aria-label="Open command palette"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.5-3.5" />
+          </svg>
+          <span className="topbar-search-placeholder">Jump to anything…</span>
+          <span className="kbd">⌘K</span>
+        </button>
+        <div className="app-header-actions">
+          <IdentityPill ok={status.ok} host={identity.host} port={identity.port} />
+          <button
+            className="theme-toggle"
+            onClick={toggle}
+            title={`Theme: ${pref}${pref === "system" ? ` (${active})` : ""}`}
+            aria-label="Cycle theme"
+          >
+            {active === "paper" ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+              </svg>
+            )}
+            {pref === "system" && <span className="theme-toggle-auto" aria-hidden="true">auto</span>}
+          </button>
+          <button
+            type="button"
+            className="topbar-icon-btn"
+            aria-label="Open terminal"
+            title="Terminal"
+          >
+            <span aria-hidden="true" style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, letterSpacing: "-0.05em" }}>
+              {">_"}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="topbar-icon-btn topbar-bell"
+            aria-label={hasNotifications ? "Notifications (unread)" : "Notifications"}
+            title="Notifications"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 01-3.46 0" />
+            </svg>
+            {hasNotifications && <span className="topbar-bell-dot" aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            className="topbar-avatar"
+            aria-label="Account"
+            title={identity.host}
+          >
+            <span aria-hidden="true">{(identity.user[0] ?? "?").toUpperCase()}</span>
+          </button>
+        </div>
+      </header>
       <aside className="app-sidebar" aria-label="Primary navigation">
-        <div className="app-brand">
+        <Link href="/" className="app-brand">
           <BrandMark />
           <span>patchwork</span>
-        </div>
+        </Link>
 
         <Link href="/recipes/new" className="sidebar-create" style={{ textDecoration: "none" }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ position: "relative", zIndex: 1 }}>
@@ -245,13 +348,11 @@ export function Shell({ children }: { children: ReactNode }) {
         </Link>
 
         <nav className="app-nav" aria-label="Main navigation">
-          {NAV_SECTIONS.map((section, si) => (
-            <div key={si}>
-              {section.title && (
-                <div className="app-nav-section-label">{section.title}</div>
-              )}
+          {NAV_SECTIONS.map((section) => (
+            <div key={section.title}>
+              <div className="app-nav-section-label">{section.title}</div>
               {section.items.map((item) => {
-                const active =
+                const isActive =
                   item.href === "/"
                     ? pathname === "/"
                     : pathname?.startsWith(item.href);
@@ -260,8 +361,8 @@ export function Shell({ children }: { children: ReactNode }) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`app-nav-link${active ? " is-active" : ""}`}
-                    aria-current={active ? "page" : undefined}
+                    className={`app-nav-link${isActive ? " is-active" : ""}`}
+                    aria-current={isActive ? "page" : undefined}
                   >
                     <span className="app-nav-link-icon" aria-hidden="true">
                       <NavIcon path={PATHS[item.icon]} />
@@ -277,107 +378,94 @@ export function Shell({ children }: { children: ReactNode }) {
               })}
             </div>
           ))}
-        </nav>
 
-        <div className="app-sidebar-footer">
-          <span
-            className={`app-sidebar-footer-dot ${status.ok ? "online" : "offline"}`}
-            aria-hidden="true"
-          />
-          <span>{status.ok ? "Bridge online" : "Bridge offline"}</span>
-        </div>
-      </aside>
-
-      <div className="app-main">
-        <header className="app-header">
-          <div className="app-header-left">
+          <div className="app-nav-more">
             <button
               type="button"
-              className="mobile-menu-btn"
-              aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
-              aria-expanded={mobileOpen}
-              onClick={() => setMobileOpen((v) => !v)}
+              className="app-nav-link app-nav-more-toggle"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((v) => !v)}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M3 6h18M3 12h18M3 18h18" />
-              </svg>
+              <span className="app-nav-link-icon" aria-hidden="true">
+                <NavIcon path={PATHS.chevron} />
+              </span>
+              <span>More</span>
+              <span
+                className="app-nav-more-caret"
+                data-open={moreOpen ? "1" : "0"}
+                aria-hidden="true"
+              >
+                <NavIcon path={PATHS.chevron} />
+              </span>
             </button>
-            <div className="app-header-title">{pageTitle(pathname ?? "/")}</div>
-            <TopbarNav pathname={pathname ?? "/"} />
+            {moreOpen && (
+              <div className="app-nav-more-items">
+                {MORE_ITEMS.map((item) => {
+                  const isActive = pathname?.startsWith(item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`app-nav-link${isActive ? " is-active" : ""}`}
+                      aria-current={isActive ? "page" : undefined}
+                    >
+                      <span className="app-nav-link-icon" aria-hidden="true">
+                        <NavIcon path={PATHS[item.icon]} />
+                      </span>
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button
-              onClick={toggleDemo}
-              title={demo ? "Disable demo mode" : "Enable demo mode"}
-              aria-label="Toggle demo mode"
-              style={{
-                display: "flex", alignItems: "center", gap: 5,
-                fontSize: 11, fontWeight: 600,
-                padding: "4px 10px", borderRadius: "var(--r-full)",
-                border: `1px solid ${demo ? "rgba(216,119,87,0.35)" : "var(--line-2)"}`,
-                background: demo ? "rgba(216,119,87,0.10)" : "transparent",
-                color: demo ? "var(--orange)" : "var(--ink-2)",
-                cursor: "pointer", transition: "all 150ms",
-              }}
-            >
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: demo ? "var(--orange)" : "var(--ink-3)", display: "inline-block", flexShrink: 0 }} />
-              Demo
-            </button>
-            <button
-              className="theme-toggle"
-              onClick={toggle}
-              title={dark ? "Switch to light mode" : "Switch to dark mode"}
-              aria-label="Toggle theme"
-            >
-              {dark ? (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="4" />
-                  <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-                </svg>
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
-                </svg>
-              )}
-            </button>
-            <BridgePill status={status} />
-          </div>
-        </header>
-        <main className="app-content">{children}</main>
-      </div>
+        </nav>
+
+        <BridgeStatusBlock status={status} />
+      </aside>
+
+      <main className="app-main">
+        <div className="app-content">{children}</div>
+      </main>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }
 
-function pageTitle(pathname: string): string {
-  const matches = ALL_NAV.filter((n) =>
-    n.href === "/" ? pathname === "/" : pathname.startsWith(n.href),
+function IdentityPill({ ok, host, port }: { ok: boolean; host: string; port?: number }) {
+  const portText = port ? `127.0.0.1:${port}` : "offline";
+  return (
+    <span
+      className={`identity-pill${ok ? "" : " is-offline"}`}
+      title={ok ? `Connected to ${host} on ${portText}` : "Bridge offline"}
+    >
+      <span className={`identity-pill-dot${ok ? " online" : ""}`} aria-hidden="true" />
+      <span className="identity-pill-host">{host}</span>
+      <span className="identity-pill-sep" aria-hidden="true">·</span>
+      <span className="identity-pill-port">{portText}</span>
+    </span>
   );
-  const entry = matches.reduce<(typeof ALL_NAV)[0] | undefined>(
-    (best, n) => (!best || n.href.length > best.href.length ? n : best),
-    undefined,
-  );
-  return entry?.label ?? "Patchwork";
 }
 
-function BridgePill({ status }: { status: BridgeStatus }) {
-  if (!status.ok) {
-    return (
-      <span className="pill err" style={{ borderRadius: 6 }} title="Bridge unreachable">
-        <span className="pill-dot" />
-        Bridge offline
-      </span>
-    );
-  }
+function BridgeStatusBlock({ status }: { status: BridgeStatus }) {
   const port = status.patchwork?.port ?? status.port;
-  const clients = status.activeSessions ?? "–";
-  const uptime = status.uptimeMs != null ? fmtDuration(status.uptimeMs) : "–";
-  const tooltip = `Port :${port ?? "–"} · ${clients} session(s) · uptime ${uptime}`;
-  const label = port ? `Connected · :${port}` : "Connected";
+  const version = status.patchwork?.version;
   return (
-    <span className="bridge-status-pill" title={tooltip}>
-      <span className="bridge-status-dot" />
-      {label}
-    </span>
+    <div className="app-sidebar-bridge" role="status" aria-label="Bridge status">
+      <div className="app-sidebar-bridge-row">
+        <span className="app-sidebar-bridge-label">Bridge</span>
+        <span
+          className={`app-sidebar-bridge-dot ${status.ok ? "online" : "offline"}`}
+          aria-hidden="true"
+          title={status.ok ? "online" : "offline"}
+        />
+      </div>
+      <div className="app-sidebar-bridge-meta">
+        <span className="app-sidebar-bridge-version">
+          {version ? `v${version}` : "patchwork"}
+        </span>
+        <span className="app-sidebar-bridge-port">{port ? `:${port}` : "—"}</span>
+      </div>
+    </div>
   );
 }

@@ -1,13 +1,23 @@
 import type { ReactNode } from "react";
-import { Albert_Sans, JetBrains_Mono } from "next/font/google";
+import { Albert_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Shell } from "@/components/Shell";
 import { DemoBanner } from "@/components/DemoBanner";
+import { BridgeBanner } from "@/components/BridgeBanner";
+import { MobileBottomNav } from "@/components/MobileBottomNav";
 
 const albertSans = Albert_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-albert",
+  variable: "--font-geist",
+  display: "swap",
+});
+
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: ["400"],
+  style: ["normal", "italic"],
+  variable: "--font-instrument-serif",
   display: "swap",
 });
 
@@ -36,6 +46,19 @@ export const metadata = {
     statusBarStyle: "black-translucent",
     title: "Patchwork",
   },
+  openGraph: {
+    type: "website",
+    title: "Patchwork",
+    description: "AI agent oversight and approval dashboard",
+    siteName: "Patchwork",
+    images: [{ url: "/dashboard/icons/icon-512.png", width: 512, height: 512, alt: "Patchwork" }],
+  },
+  twitter: {
+    card: "summary",
+    title: "Patchwork",
+    description: "AI agent oversight and approval dashboard",
+    images: ["/dashboard/icons/icon-512.png"],
+  },
 };
 
 export const viewport = {
@@ -47,7 +70,7 @@ export const viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${albertSans.variable} ${jetbrainsMono.variable}`}>
+    <html lang="en" className={`${albertSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}>
       <head>
         <meta name="theme-color" content="#faf7f2" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#0d0c0b" media="(prefers-color-scheme: dark)" />
@@ -56,7 +79,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         <DemoBanner />
+        <BridgeBanner />
         <Shell>{children}</Shell>
+        <MobileBottomNav />
         <script
           dangerouslySetInnerHTML={{
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/dashboard/sw.js',{scope:'/dashboard/'}).catch(()=>{})}`,

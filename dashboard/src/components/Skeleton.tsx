@@ -42,3 +42,45 @@ export function SkeletonStatCard() {
     </div>
   );
 }
+
+export function SkeletonRow({ columns = 3 }: { columns?: number }) {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+        gap: 12,
+        padding: "12px 14px",
+        borderBottom: "1px solid var(--line-1)",
+      }}
+    >
+      {Array.from({ length: columns }).map((_, i) => (
+        <SkeletonText key={i} width={`${60 + ((i * 13) % 30)}%`} size="sm" />
+      ))}
+    </div>
+  );
+}
+
+export function SkeletonCard({ lines = 3 }: { lines?: number }) {
+  return (
+    <div className="card" aria-hidden="true" style={{ padding: 16 }}>
+      <SkeletonText width="40%" size="lg" />
+      <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+        {Array.from({ length: lines }).map((_, i) => (
+          <SkeletonText key={i} width={`${100 - i * 12}%`} size="sm" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function SkeletonList({ rows = 4, columns = 3 }: { rows?: number; columns?: number }) {
+  return (
+    <div className="card" aria-hidden="true" style={{ padding: 0, overflow: "hidden" }}>
+      {Array.from({ length: rows }).map((_, i) => (
+        <SkeletonRow key={i} columns={columns} />
+      ))}
+    </div>
+  );
+}

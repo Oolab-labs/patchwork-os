@@ -4,6 +4,8 @@ import { apiPath } from "@/lib/api";
 
 export interface BridgeStatus {
   ok: boolean;
+  /** /status failed but a fallback endpoint responded — bridge is reachable but reporting degraded. */
+  degraded?: boolean;
   port?: number;
   workspace?: string;
   extensionConnected?: boolean;
@@ -16,6 +18,7 @@ export interface BridgeStatus {
     workspace?: string;
     approvalGate?: string;
     driver?: string;
+    version?: string;
   };
 }
 
@@ -51,14 +54,17 @@ export function useBridgeStatus(): BridgeStatus {
         if (alive) setStatus({ ok: true, ...data });
         succeeded = true;
       } catch {
+        // /status failed. Probe /approvals as a heartbeat — if it responds we
+        // know the dashboard API is reachable, but the bridge itself is not
+        // reporting healthy. Surface that as `degraded`, NOT `ok`, so banners
+        // and gating logic can distinguish "fully up" from "partially up".
         try {
           const res = await fetch(apiPath("/api/bridge/approvals"));
           const ct = res.headers.get("content-type") ?? "";
-          if (alive)
-            setStatus({ ok: res.ok && ct.includes("application/json") });
-          if (res.ok) succeeded = true;
+          const reachable = res.ok && ct.includes("application/json");
+          if (alive) setStatus({ ok: false, degraded: reachable });
         } catch {
-          if (alive) setStatus({ ok: false });
+          if (alive) setStatus({ ok: false, degraded: false });
         }
       }
 

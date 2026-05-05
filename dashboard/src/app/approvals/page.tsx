@@ -1,9 +1,11 @@
 "use client";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
 import { apiPath } from "@/lib/api";
+import { KeyChip, RiskPill, CodeBlock, type RiskLevel } from "@/components/patchwork";
+import { SkeletonList } from "@/components/Skeleton";
+import { DecisionsTabs } from "@/components/DecisionsTabs";
 
 interface RiskSignal {
   kind: "destructive_flag" | "domain_reputation" | "path_escape" | "chaining";
@@ -134,7 +136,9 @@ function CountdownTimer({ expiresAt }: { expiresAt: number }) {
   const totalSecs = Math.floor(remaining / 1000);
   const mins = Math.floor(totalSecs / 60);
   const secs = totalSecs % 60;
-  const urgent = remaining < 60_000;
+  // Two-tier urgency: amber 30-60s (warning), red+pulsing <30s (critical).
+  const critical = remaining < 30_000;
+  const warning = !critical && remaining < 60_000;
   const label =
     mins > 0
       ? `${mins}m ${secs}s remaining`
@@ -142,14 +146,17 @@ function CountdownTimer({ expiresAt }: { expiresAt: number }) {
 
   return (
     <span
-      className={`countdown${urgent ? " urgent" : ""}`}
+      className={`countdown${critical ? " urgent" : warning ? " warn" : ""}`}
       style={
-        urgent
+        critical
           ? {
               color: "var(--err)",
-              animation: "pulse-dot 1s ease-in-out infinite",
+              fontWeight: 600,
+              animation: "pulse-dot 0.8s ease-in-out infinite",
             }
-          : undefined
+          : warning
+            ? { color: "var(--warn)", fontWeight: 600 }
+            : undefined
       }
       title={`Expires at ${new Date(expiresAt).toLocaleTimeString()}`}
     >
@@ -251,6 +258,9 @@ function ApprovalCard({
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [editCopied, setEditCopied] = useState(false);
+  const [cliCopied, setCliCopied] = useState(false);
+  const [paramsCopied, setParamsCopied] = useState(false);
 
   const expires = p.expiresAt ?? p.requestedAt + DEFAULT_TTL_MS;
   const primary = primaryParam(p.toolName, p.params);
@@ -270,45 +280,72 @@ function ApprovalCard({
     }
   }
 
+  const heading = invocationHeading(p.toolName, p.params);
+  const codeLines = commandPreview(p.toolName, p.params ?? {}).split("\n");
+  const icon = toolIcon(p.toolName);
+
   return (
     <article
-      className="approval"
+      className="card"
       style={{
         opacity: fadingOut ? 0 : 1,
         transform: fadingOut ? "translateY(-4px)" : "translateY(0)",
         transition: "opacity 300ms ease, transform 300ms ease",
+        padding: "16px 18px",
+        marginBottom: "var(--s-3)",
       }}
     >
-      <div className="approval-head">
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <input
           type="checkbox"
           checked={isSelected}
           onChange={() => onToggleSelect(p.callId)}
           aria-label={`Select ${p.toolName} approval`}
-          style={{ cursor: "pointer", accentColor: "var(--accent)", flexShrink: 0 }}
+          style={{ cursor: "pointer", accentColor: "var(--accent)", flexShrink: 0, marginTop: 4 }}
         />
-        <h3>{p.toolName}</h3>
-        <span className={`pill ${tierClass(p.tier)}`}>
-          {p.tier} risk
+        <span
+          aria-hidden="true"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            background: "var(--recess)",
+            border: "1px solid var(--line-1)",
+            fontSize: 14,
+            flexShrink: 0,
+          }}
+        >
+          {icon}
         </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h3 style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 700, color: "var(--ink-0)", wordBreak: "break-all" }}>
+            {heading}
+          </h3>
+        </div>
+        <RiskMeter level={p.tier} />
         {match && (
-          <span className={`pill ${ruleClass(match)}`}>
+          <span className={`pill ${ruleClass(match)}`} style={{ flexShrink: 0 }}>
             CC: {match}
           </span>
         )}
         {p.sessionId && (
-          <span
-            className="pill muted"
-            title={`Session: ${p.sessionId}`}
-          >
-            session {p.sessionId.slice(0, 8)}
+          <span className="pill muted" title={`Session: ${p.sessionId}`} style={{ flexShrink: 0 }}>
+            {p.sessionId.slice(0, 8)}
           </span>
         )}
-        <span className="approval-spacer" />
-        <CountdownTimer expiresAt={expires} />
+        <span style={{ flexShrink: 0 }}>
+          <CountdownTimer expiresAt={expires} />
+        </span>
       </div>
 
-      {p.summary && <p className="approval-summary">{p.summary}</p>}
+      {p.summary && (
+        <p style={{ margin: "10px 0 0 52px", fontSize: 13, color: "var(--ink-2)", lineHeight: 1.5 }}>
+          {p.summary}
+        </p>
+      )}
 
       {p.riskSignals && p.riskSignals.length > 0 && (
         <div
@@ -379,45 +416,104 @@ function ApprovalCard({
             )}
           </button>
           {isExpanded && (
-            <pre className="approval-params-json">
-              {safeStringify(p.params)}
-            </pre>
+            <div style={{ position: "relative" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(safeStringify(p.params)).then(() => {
+                    setParamsCopied(true);
+                    setTimeout(() => setParamsCopied(false), 1400);
+                  });
+                }}
+                aria-label="Copy params as JSON"
+                style={{
+                  position: "absolute",
+                  top: 6,
+                  right: 6,
+                  fontSize: 11,
+                  padding: "3px 8px",
+                  borderRadius: 4,
+                  background: "var(--surface)",
+                  border: "1px solid var(--line-1)",
+                  color: paramsCopied ? "var(--ok)" : "var(--ink-2)",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  zIndex: 1,
+                }}
+              >
+                {paramsCopied ? "✓ Copied" : "Copy JSON"}
+              </button>
+              <pre className="approval-params-json">
+                {safeStringify(p.params)}
+              </pre>
+            </div>
           )}
         </div>
       )}
 
-      <div className="approval-actions">
+      <div style={{ marginTop: 12, marginLeft: 52 }}>
+        <CodeBlock>
+          {codeLines.map((line, i) => (
+            <div key={i} style={{ display: "flex" }}>
+              <span style={{ color: "var(--ink-3)", minWidth: 28, textAlign: "right", paddingRight: 12, userSelect: "none" }}>
+                {i + 1}
+              </span>
+              <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{line}</span>
+            </div>
+          ))}
+        </CodeBlock>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, marginLeft: 52, flexWrap: "wrap" }}>
         <button
           type="button"
-          className="btn success"
+          className="btn primary"
+          style={{ background: "var(--green, #16a34a)", borderColor: "var(--green, #16a34a)", color: "#fff", display: "inline-flex", alignItems: "center", gap: 6 }}
           onClick={() => handleDecide("approve")}
           disabled={approving || rejecting}
           aria-label={`Approve ${p.toolName}`}
         >
-          {approving ? <Spinner /> : null}
-          {approving ? " Approving…" : "Approve"}
+          {approving ? <Spinner /> : <span aria-hidden="true">✓</span>}
+          {approving ? " Approving…" : " Approve"}
+          <KeyChip>E</KeyChip>
         </button>
         <button
           type="button"
           className="btn danger"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
           onClick={() => handleDecide("reject")}
           disabled={approving || rejecting}
           aria-label={`Reject ${p.toolName}`}
         >
-          {rejecting ? <Spinner /> : null}
-          {rejecting ? " Rejecting…" : "Reject"}
+          {rejecting ? <Spinner /> : <span aria-hidden="true">✗</span>}
+          {rejecting ? " Rejecting…" : " Reject"}
+          <KeyChip>X</KeyChip>
         </button>
-        <Link
-          href={`/approvals/${p.callId}`}
+        <button
+          type="button"
           className="btn sm ghost"
-          style={{ textDecoration: "none" }}
+          onClick={() => {
+            navigator.clipboard.writeText(`patchwork approve --edit ${p.callId}`).then(() => {
+              setEditCopied(true);
+              setTimeout(() => setEditCopied(false), 1500);
+            });
+          }}
         >
-          Details →
-        </Link>
-        <span className="approval-spacer" />
-        <span className="pill muted" title={p.callId}>
-          {p.callId.slice(0, 8)}
-        </span>
+          {editCopied ? "Copied!" : "Edit & approve"}
+        </button>
+        <button
+          type="button"
+          className="btn sm ghost"
+          style={{ fontFamily: "var(--font-mono)" }}
+          onClick={() => {
+            navigator.clipboard.writeText(`patchwork approve ${p.callId}`).then(() => {
+              setCliCopied(true);
+              setTimeout(() => setCliCopied(false), 1500);
+            });
+          }}
+        >
+          {cliCopied ? "Copied!" : "› Open in terminal"}
+        </button>
       </div>
 
       {actionError && (
@@ -512,6 +608,7 @@ function ApprovalsContent() {
   const sessionFilter = searchParams.get("session");
 
   const [pending, setPending] = useState<Pending[]>([]);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [rules, setRules] = useState<CcRules | null>(null);
   const [err, setErr] = useState<string>();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -523,15 +620,15 @@ function ApprovalsContent() {
   const [batchApproving, setBatchApproving] = useState(false);
   const [batchRejecting, setBatchRejecting] = useState(false);
   const [batchErr, setBatchErr] = useState<string | null>(null);
-  const [ccRulesErr, setCcRulesErr] = useState(false);
   const { patterns, clearPatterns } = useApprovalPatterns();
 
   useEffect(() => {
-    // Load CC permissions once (changes rarely).
+    // Load CC permissions once (changes rarely) — used to show the inline
+    // "CC: allow|ask|deny" badge on each card.
     fetch(`${API}/cc-permissions`)
       .then((r) => r.ok ? r.json() : null)
       .then((d) => { if (d) setRules(d as CcRules); })
-      .catch(() => { setCcRulesErr(true); });
+      .catch(() => { /* badge silently absent */ });
   }, []);
 
   useEffect(() => {
@@ -545,6 +642,7 @@ function ApprovalsContent() {
     function applySnapshot(data: string) {
       try {
         setPending(JSON.parse(data) as Pending[]);
+        setHasLoaded(true);
         setErr(undefined);
       } catch { /* ignore parse errors */ }
     }
@@ -749,16 +847,66 @@ function ApprovalsContent() {
         }
       `}</style>
 
+      <DecisionsTabs pendingCount={pending.length} />
+
       <div className="page-head">
         <div>
-          <h1>Approvals</h1>
-          <div className="page-head-sub">
-            Review tool calls before they execute.
+          <h1 className="editorial-h1">
+            Approval queue — <span className="accent">nothing leaves your machine without a nod.</span>
+          </h1>
+          <div className="editorial-sub">
+            {(() => {
+              const oldestTs = pending.length > 0
+                ? Math.min(...pending.map((p) => p.requestedAt ?? p.expiresAt ?? Date.now()))
+                : null;
+              return `~/.patchwork/inbox · ${pending.length} pending${oldestTs ? ` · oldest ${relTime(oldestTs)}` : ""}`;
+            })()}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              marginTop: 8,
+              fontSize: 11,
+              color: "var(--ink-3)",
+              flexWrap: "wrap",
+            }}
+            aria-label="Keyboard shortcuts"
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <KeyChip>J</KeyChip> next
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <KeyChip>K</KeyChip> prev
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <KeyChip>E</KeyChip> approve
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <KeyChip>X</KeyChip> reject
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <KeyChip>⌘K</KeyChip> palette
+            </span>
           </div>
         </div>
         <span className={`pill ${pending.length > 0 ? "warn" : "ok"}`}>
           {pending.length} pending
         </span>
+        <button
+          type="button"
+          className="btn sm ghost"
+          onClick={() => {
+            const approvalsUrl = `${API}/approvals${sessionFilter ? `?session=${sessionFilter}` : ""}`;
+            fetch(approvalsUrl)
+              .then((r) => r.ok ? r.json() : null)
+              .then((d) => { if (d) setPending(d as Pending[]); })
+              .catch(() => {});
+          }}
+        >
+          Sync inbox
+        </button>
       </div>
 
       {/* Hero status bar — counts by tier */}
@@ -947,10 +1095,14 @@ function ApprovalsContent() {
       )}
 
       {filtered.length === 0 && !err ? (
-        <EmptyState
-          riskFilter={riskFilter}
-          onClearFilter={() => setRiskFilter("all")}
-        />
+        hasLoaded ? (
+          <EmptyState
+            riskFilter={riskFilter}
+            onClearFilter={() => setRiskFilter("all")}
+          />
+        ) : (
+          <SkeletonList rows={3} columns={3} />
+        )
       ) : (
         <>
           {/* Select-all header row */}
@@ -1100,45 +1252,55 @@ function ApprovalsContent() {
         </div>
       )}
 
-      {ccRulesErr && !rules && (
-        <div className="card" style={{ marginTop: "var(--s-6)" }}>
-          <div className="card-head">
-            <h2>CC permission rules</h2>
-            <span className="pill warn">Unavailable</span>
-          </div>
-          <p style={{ fontSize: 13, color: "var(--fg-2)", padding: "var(--s-3) 0" }}>
-            Could not load CC permission rules. Bridge may be unreachable.
-          </p>
-        </div>
-      )}
-      {rules && (
-        <div className="card" style={{ marginTop: "var(--s-6)" }}>
-          <div className="card-head">
-            <h2>CC permission rules</h2>
-            <span className="pill muted">{rules.workspace}</span>
-          </div>
-          <RuleRow
-            label="deny"
-            tone="err"
-            items={rules.deny ?? []}
-            attributed={rules.attributed?.deny}
-          />
-          <RuleRow
-            label="ask"
-            tone="warn"
-            items={rules.ask ?? []}
-            attributed={rules.attributed?.ask}
-          />
-          <RuleRow
-            label="allow"
-            tone="ok"
-            items={rules.allow ?? []}
-            attributed={rules.attributed?.allow}
-          />
-        </div>
-      )}
     </section>
   );
+}
+
+function RiskMeter({ level }: { level: "low" | "medium" | "high" }) {
+  const filled = level === "high" ? 4 : level === "medium" ? 3 : 2;
+  const color = level === "high" ? "var(--red)" : level === "medium" ? "var(--amber)" : "var(--green)";
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }} aria-label={`${level} risk`}>
+      <span style={{ display: "inline-flex", gap: 2 }} aria-hidden="true">
+        {[0, 1, 2, 3].map((i) => (
+          <span
+            key={i}
+            style={{
+              width: 10,
+              height: 6,
+              borderRadius: 1,
+              background: i < filled ? color : "var(--line-2)",
+            }}
+          />
+        ))}
+      </span>
+      <RiskPill level={level as RiskLevel} label={level.toUpperCase()} />
+    </div>
+  );
+}
+
+function toolIcon(toolName: string): string {
+  const lc = toolName.toLowerCase();
+  if (lc.includes("bash") || lc.includes("shell") || lc.includes("terminal") || lc.includes("run")) return "$_";
+  if (lc.includes("github") || lc.includes("git")) return "◆";
+  if (lc.includes("slack") || lc.includes("post")) return "✉";
+  if (lc.includes("linear") || lc.includes("jira") || lc.includes("issue")) return "▤";
+  if (lc.includes("fetch") || lc.includes("http") || lc.includes("web")) return "⌬";
+  if (lc.includes("write") || lc.includes("edit") || lc.includes("file")) return "✎";
+  if (lc.includes("read")) return "▭";
+  return "▣";
+}
+
+function invocationHeading(toolName: string, params?: Record<string, unknown>): string {
+  if (!params) return `${toolName}()`;
+  const lc = toolName.toLowerCase();
+  if (lc === "bash" || lc.includes("bash")) {
+    const cmd = params.command ?? params.cmd;
+    if (typeof cmd === "string") return `${toolName}(${cmd})`;
+  }
+  const primary = primaryParam(toolName, params);
+  if (primary) return `${toolName}(${primary})`;
+  return `${toolName}()`;
 }
 
 function primaryLabel(toolName: string): string {
@@ -1153,95 +1315,6 @@ function primaryLabel(toolName: string): string {
     Grep: "pattern",
   };
   return labels[toolName] ?? "value";
-}
-
-function sourceBadgeClass(source: RuleSource): string {
-  if (source === "managed") return "err";
-  if (source === "project-local") return "warn";
-  return "muted";
-}
-
-function RuleRow({
-  label,
-  tone,
-  items,
-  attributed,
-}: {
-  label: string;
-  tone: "ok" | "warn" | "err";
-  items: string[];
-  attributed?: AttributedRule[];
-}) {
-  const sourceMap = new Map<string, RuleSource>();
-  if (attributed) {
-    for (const r of attributed) {
-      if (!sourceMap.has(r.pattern)) sourceMap.set(r.pattern, r.source);
-    }
-  }
-
-  const visible = items.slice(0, 8);
-  const overflow = items.length > 8;
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        gap: "var(--s-3)",
-        padding: "6px 0",
-        fontSize: 13,
-        alignItems: "baseline",
-        flexWrap: "wrap",
-      }}
-    >
-      <span className={`pill ${tone}`} style={{ minWidth: 60, flexShrink: 0 }}>
-        {label} · {items.length}
-      </span>
-      {items.length === 0 ? (
-        <span style={{ color: "var(--fg-2)" }}>—</span>
-      ) : (
-        <span
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "var(--s-2)",
-            alignItems: "center",
-            flex: 1,
-          }}
-        >
-          {visible.map((pattern) => {
-            const src = sourceMap.get(pattern);
-            return (
-              <span
-                key={pattern}
-                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-              >
-                <code
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    color: "var(--fg-1)",
-                    background: "var(--bg-0)",
-                    padding: "1px 5px",
-                    borderRadius: "var(--r-1)",
-                  }}
-                >
-                  {pattern}
-                </code>
-                {src && (
-                  <span className={`pill ${sourceBadgeClass(src)}`}>{src}</span>
-                )}
-              </span>
-            );
-          })}
-          {overflow && (
-            <span style={{ color: "var(--fg-3)", fontSize: 12 }}>
-              +{items.length - 8} more
-            </span>
-          )}
-        </span>
-      )}
-    </div>
-  );
 }
 
 function matchRule(
@@ -1261,14 +1334,33 @@ function ruleClass(kind: "deny" | "ask" | "allow"): string {
   return kind === "deny" ? "err" : kind === "ask" ? "warn" : "ok";
 }
 
-function tierClass(t: string): string {
-  return t === "high" ? "err" : t === "medium" ? "warn" : "muted";
-}
-
 function safeStringify(v: unknown): string {
   try {
     return JSON.stringify(v, null, 2);
   } catch {
     return String(v);
   }
+}
+
+function relTime(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
+function commandPreview(toolName: string, params: Record<string, unknown>): string {
+  const lc = toolName.toLowerCase();
+  if (lc.includes("bash") || lc.includes("run") || lc.includes("terminal")) {
+    return String(params.command ?? params.cmd ?? JSON.stringify(params));
+  }
+  if (lc.includes("fetch") || lc.includes("http")) {
+    return `${params.method ?? "GET"} ${params.url ?? ""}`;
+  }
+  if (lc.includes("write") || lc.includes("edit") || lc.includes("file")) {
+    const path = params.file_path ?? params.path ?? params.filePath ?? "";
+    return `${path}\n${String(params.content ?? params.new_string ?? "").slice(0, 200)}`;
+  }
+  return JSON.stringify(params, null, 2).slice(0, 400);
 }

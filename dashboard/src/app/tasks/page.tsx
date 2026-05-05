@@ -1,8 +1,10 @@
 "use client";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { fmtDuration } from "@/components/time";
-import { useBridgeStatus } from "@/hooks/useBridgeStatus";
+import { SkeletonList } from "@/components/Skeleton";
+import { ErrorState } from "@/components/patchwork";
+import { ActivityTabs } from "@/components/ActivityTabs";
 
 interface Task {
   taskId: string;
@@ -26,9 +28,8 @@ interface Task {
   wasAborted?: boolean;
   driver?: string;
   model?: string;
+  filesReferenced?: string[];
 }
-
-type StatusFilter = "all" | "running" | "done" | "error" | "cancelled";
 
 // ----------------------------------------------------------- driver badge
 
@@ -68,68 +69,68 @@ function DriverBadge({ name }: { name: string }) {
   );
 }
 
-// ----------------------------------------------------------- copy button
+// ----------------------------------------------------------- file extraction
 
-function CopyBtn({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      className="btn sm ghost"
-      style={{ minHeight: 24, fontSize: 11, padding: "3px 9px" }}
-      onClick={async (e) => {
-        e.stopPropagation();
-        try {
-          await navigator.clipboard.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        } catch {
-          /* ignore */
-        }
-      }}
-    >
-      {copied ? "Copied" : "Copy"}
-    </button>
-  );
+function extractFiles(text: string | undefined): string[] {
+  if (!text) return [];
+  const re = /[\w\-./]+\.(?:tsx?|jsx?|json|md|ya?ml|css|html|py|rs|go|sh)\b/g;
+  const found = new Set<string>();
+  for (const m of text.match(re) ?? []) {
+    const base = m.split("/").pop() ?? m;
+    if (base.length <= 40) found.add(base);
+    if (found.size >= 6) break;
+  }
+  return Array.from(found);
 }
 
-// ----------------------------------------------------------- hero strip
+// ----------------------------------------------------------- detail pane
 
-function HeroStrip({ tasks }: { tasks: Task[] }) {
-  const counts = useMemo(() => {
-    const c = { running: 0, done: 0, error: 0, cancelled: 0 } as Record<
-      string,
-      number
-    >;
-    for (const t of tasks) {
-      if (t.status === "running" || t.status === "pending") c.running++;
-      else if (t.status === "done") c.done++;
-      else if (t.status === "error") c.error++;
-      else c.cancelled++;
-    }
-    return c;
-  }, [tasks]);
-
-  const items = [
-    { label: "Running", n: counts.running, color: "var(--blue)" },
-    { label: "Done", n: counts.done, color: "var(--green)" },
-    { label: "Errored", n: counts.error, color: "var(--red)" },
-    { label: "Cancelled", n: counts.cancelled, color: "var(--ink-3)" },
-  ];
+function TaskDetail({ task, onCancel, cancelling }: {
+  task: Task;
+  onCancel: (id: string) => void;
+  cancelling: Record<string, boolean>;
+}) {
+  const isLive = task.status === "running" || task.status === "pending";
+  const errText = task.errorMessage ?? task.stderrTail;
+  const dur =
+    task.startedAt && task.doneAt
+      ? fmtDuration(task.doneAt - task.startedAt)
+      : task.startedAt
+        ? fmtDuration(Date.now() - task.startedAt)
+        : "—";
+  const model = task.model ?? driverFromTask(task);
+  const files = task.filesReferenced ?? extractFiles(task.output ?? errText);
 
   return (
-    <div
-      className="card"
-      style={{
-        padding: "18px 22px",
-        marginBottom: "var(--s-5)",
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--s-5)",
-        flexWrap: "wrap",
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 180 }}>
+    <div className="card" style={{ padding: "var(--s-4)" }}>
+      {/* header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          marginBottom: 14,
+          paddingBottom: 12,
+          borderBottom: "1px solid var(--line-3)",
+          flexWrap: "wrap",
+        }}
+      >
+        <span className={`pill ${statusClass(task.status)}`} style={{ fontSize: 11 }}>
+          <span className="pill-dot" />
+          {task.status}
+        </span>
+        <span className="mono" style={{ fontSize: 12, color: "var(--ink-1)" }}>
+          {task.taskId.slice(0, 8)}
+        </span>
+        <span style={{ fontSize: 12, color: "var(--ink-2)", marginLeft: "auto" }}>
+          <span className="mono">{dur}</span>
+          <span style={{ margin: "0 6px", color: "var(--ink-3)" }}>·</span>
+          <span className="mono">{model}</span>
+        </span>
+      </div>
+
+      {/* OUTPUT */}
+      <div style={{ marginBottom: 14 }}>
         <div
           style={{
             fontSize: 10,
@@ -137,205 +138,109 @@ function HeroStrip({ tasks }: { tasks: Task[] }) {
             fontWeight: 600,
             textTransform: "uppercase",
             letterSpacing: "0.07em",
-            marginBottom: 4,
+            marginBottom: 6,
           }}
         >
-          Execution
+          Output
         </div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: "var(--ink-0)" }}>
-          {tasks.length} task{tasks.length !== 1 ? "s" : ""} in log
-        </div>
+        {errText && (
+          <pre
+            className="task-output"
+            style={{ color: "var(--err)", maxHeight: 120, marginBottom: 8 }}
+          >
+            {errText}
+          </pre>
+        )}
+        {task.output ? (
+          <pre className="task-output" style={{ maxHeight: "calc(100vh - 460px)" }}>
+            {task.output.slice(0, 8000)}
+          </pre>
+        ) : (
+          !errText && (
+            <div style={{ color: "var(--ink-3)", fontSize: 12, padding: "8px 0" }}>
+              No output yet.
+            </div>
+          )
+        )}
       </div>
-      {items.map((it, i) => (
-        <Fragment key={it.label}>
-          {i > 0 && (
-            <div
-              aria-hidden
-              style={{ width: 1, height: 32, background: "var(--line-2)" }}
-            />
-          )}
-          <div style={{ textAlign: "center", minWidth: 72 }}>
-            <div
-              style={{
-                fontSize: 22,
-                fontWeight: 800,
-                fontFamily: "var(--font-mono)",
-                color: it.n > 0 ? it.color : "var(--ink-3)",
-                lineHeight: 1,
-              }}
-            >
-              {it.n}
-            </div>
-            <div
-              style={{
-                fontSize: 10,
-                color: "var(--ink-2)",
-                marginTop: 4,
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-              }}
-            >
-              {it.label}
-            </div>
+
+      {/* FILES REFERENCED */}
+      {files.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--ink-2)",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.07em",
+              marginBottom: 6,
+            }}
+          >
+            Files Referenced
           </div>
-        </Fragment>
-      ))}
-    </div>
-  );
-}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {files.map((f) => (
+              <span
+                key={f}
+                className="pill muted mono"
+                style={{ fontSize: 11 }}
+              >
+                {f}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
-// ----------------------------------------------------------- quick-task launcher
-
-interface QuickTaskPreset {
-  id: string;
-  label: string;
-  desc: string;
-}
-
-const QUICK_TASK_PRESETS: QuickTaskPreset[] = [
-  { id: "fixErrors", label: "Fix all errors", desc: "Inspect diagnostics and fix every error" },
-  { id: "refactorFile", label: "Refactor active file", desc: "Refactor the active editor file for clarity" },
-  { id: "addTests", label: "Add tests", desc: "Write unit tests for the active file" },
-  { id: "explainCode", label: "Explain code", desc: "Explain the active file or last commit" },
-  { id: "optimizePerf", label: "Optimize performance", desc: "Find + fix the biggest perf hotspot" },
-  { id: "runTests", label: "Run test suite", desc: "Run the full project test suite" },
-  { id: "resumeLastCancelled", label: "Resume cancelled", desc: "Resume the last cancelled task" },
-];
-
-function QuickTaskLauncher({ onLaunched }: { onLaunched: () => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [open, setOpen] = useState(false);
-  const status = useBridgeStatus();
-  const driver = status.patchwork?.driver;
-  // While status is still loading (driver undefined) we optimistically allow
-  // the panel; the server will reject with a clear error if the driver isn't
-  // subprocess. Once we know the driver, gate strictly.
-  const driverReady = driver === undefined || driver === "subprocess";
-
-  async function launch(preset: QuickTaskPreset) {
-    setBusy(preset.id);
-    setMsg(null);
-    try {
-      const res = await fetch(apiPath("/api/bridge/launch-quick-task"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ presetId: preset.id, source: "dashboard" }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        taskId?: string;
-        error?: string;
-      };
-      if (res.ok && body.ok) {
-        setMsg({
-          ok: true,
-          text: body.taskId
-            ? `Launched ${preset.label} → task ${body.taskId.slice(0, 8)}`
-            : `Launched ${preset.label}`,
-        });
-        onLaunched();
-      } else {
-        setMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
-      }
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  return (
-    <div className="card" style={{ padding: "12px 16px", marginBottom: "var(--s-5)" }}>
+      {/* bottom buttons */}
       <div
         style={{
           display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
+          gap: 8,
+          paddingTop: 12,
+          borderTop: "1px solid var(--line-3)",
+          flexWrap: "wrap",
         }}
       >
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)" }}>
-            Quick-task launcher
-          </div>
-          <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
-            {driverReady
-              ? "Fire a context-aware Claude task using a preset."
-              : (
-                <>
-                  Unavailable — bridge driver is{" "}
-                  <code>{driver ?? "none"}</code>. Restart with{" "}
-                  <code>--driver subprocess</code> to enable.
-                </>
-              )}
-          </div>
-        </div>
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
-          disabled={!driverReady}
-          aria-expanded={open}
-          style={{
-            fontSize: 12,
-            padding: "6px 12px",
-            background: open ? "var(--bg-3)" : "var(--bg-2)",
-            border: "1px solid var(--border-default)",
-            borderRadius: "var(--r-2)",
-            cursor: driverReady ? "pointer" : "not-allowed",
-            opacity: driverReady ? 1 : 0.6,
-            color: "var(--fg-0)",
-            whiteSpace: "nowrap",
+          className="btn sm ghost"
+          style={{ fontSize: 12 }}
+          onClick={() => void navigator.clipboard.writeText(`patchwork task resume ${task.taskId}`)}
+        >
+          {"> Open in terminal"}
+        </button>
+        <button
+          type="button"
+          className="btn sm ghost"
+          style={{ fontSize: 12 }}
+          onClick={() => {
+            void fetch(apiPath(`/api/bridge/tasks/${task.taskId}/replay`), { method: "POST" });
           }}
         >
-          {open ? "Hide presets" : "Show presets"}
+          ↻ Replay
         </button>
-      </div>
-      {open && driverReady && (
-      <div
-        style={{
-          marginTop: 12,
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-          gap: 8,
-        }}
-      >
-        {QUICK_TASK_PRESETS.map((p) => (
+        <button
+          type="button"
+          className="btn sm ghost"
+          style={{ fontSize: 12 }}
+          onClick={() => void navigator.clipboard.writeText(task.taskId)}
+        >
+          📋 Copy id
+        </button>
+        {isLive && (
           <button
-            key={p.id}
             type="button"
-            disabled={busy !== null}
-            onClick={() => void launch(p)}
-            title={p.desc}
-            style={{
-              textAlign: "left",
-              padding: "8px 10px",
-              background: "var(--bg-2)",
-              border: "1px solid var(--border-default)",
-              borderRadius: "var(--r-2)",
-              cursor: busy !== null ? "not-allowed" : "pointer",
-              opacity: busy === p.id ? 0.6 : 1,
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-            }}
+            className="btn sm ghost"
+            style={{ fontSize: 12, color: "var(--red)", marginLeft: "auto" }}
+            disabled={!!cancelling[task.taskId]}
+            onClick={() => onCancel(task.taskId)}
           >
-            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
-              {busy === p.id ? "Launching…" : p.label}
-            </span>
-            <span style={{ fontSize: 11, color: "var(--fg-3)", lineHeight: 1.3 }}>
-              {p.desc}
-            </span>
+            {cancelling[task.taskId] ? "Cancelling…" : "Cancel"}
           </button>
-        ))}
+        )}
       </div>
-      )}
-      {msg && open && (
-        <p style={{ fontSize: 12, marginTop: 8, color: msg.ok ? "var(--ok)" : "var(--err)" }}>
-          {msg.text}
-        </p>
-      )}
     </div>
   );
 }
@@ -346,13 +251,21 @@ async function cancelTask(id: string): Promise<void> {
   await fetch(apiPath(`/api/bridge/tasks/${id}/cancel`), { method: "POST" });
 }
 
+function fmtAvg(ms: number): string {
+  if (!ms || !isFinite(ms)) return "—";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [err, setErr] = useState<string>();
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [filter, setFilter] = useState<StatusFilter>("all");
   const [, setTick] = useState(0);
   const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "live" | "done" | "error">("all");
 
   useEffect(() => {
     let fastId: ReturnType<typeof setInterval> | null = null;
@@ -367,8 +280,8 @@ export default function TasksPage() {
         const data = (await res.json()) as { tasks: Task[] };
         const fetched = data.tasks ?? [];
         setTasks(fetched);
+        setHasLoaded(true);
         setErr(undefined);
-        // All terminal → slow down
         const allTerminal = fetched.length > 0 && fetched.every((t) => TERMINAL.has(t.status));
         if (allTerminal && fastId !== null) {
           clearInterval(fastId);
@@ -396,211 +309,334 @@ export default function TasksPage() {
     return () => clearInterval(id);
   }, []);
 
-  const filtered = useMemo(() => {
-    if (filter === "all") return tasks;
-    if (filter === "running")
-      return tasks.filter(
-        (t) => t.status === "running" || t.status === "pending",
-      );
-    if (filter === "cancelled")
-      return tasks.filter(
-        (t) => t.status === "cancelled" || t.status === "interrupted",
-      );
-    return tasks.filter((t) => t.status === filter);
-  }, [tasks, filter]);
+  // live-computed subtitle stats
+  const { avgMs, driverLabel } = useMemo(() => {
+    let total = 0;
+    let n = 0;
+    const drivers = new Map<string, number>();
+    for (const t of tasks) {
+      if (t.startedAt && t.doneAt) {
+        total += t.doneAt - t.startedAt;
+        n++;
+      }
+      const key = t.model ?? driverFromTask(t);
+      drivers.set(key, (drivers.get(key) ?? 0) + 1);
+    }
+    let topDriver = "claude-3.5-sonnet";
+    let topN = -1;
+    for (const [k, v] of drivers) {
+      if (v > topN) {
+        topN = v;
+        topDriver = k;
+      }
+    }
+    return {
+      avgMs: n > 0 ? total / n : 0,
+      driverLabel: topDriver,
+    };
+  }, [tasks]);
 
-  const chips: { k: StatusFilter; label: string }[] = [
-    { k: "all", label: "All" },
-    { k: "running", label: "Running" },
-    { k: "done", label: "Done" },
-    { k: "error", label: "Errored" },
-    { k: "cancelled", label: "Cancelled" },
-  ];
+  const filteredTasks = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return tasks.filter((t) => {
+      if (statusFilter === "live" && t.status !== "running" && t.status !== "pending") return false;
+      if (statusFilter === "done" && t.status !== "done") return false;
+      if (statusFilter === "error" && t.status !== "error" && t.status !== "interrupted" && t.status !== "cancelled") return false;
+      if (!q) return true;
+      const hay = [t.taskId, t.sessionId, t.driver, t.model, t.output, t.errorMessage, t.stderrTail]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [tasks, search, statusFilter]);
+
+  const statusCounts = useMemo(() => {
+    const c = { all: tasks.length, live: 0, done: 0, error: 0 };
+    for (const t of tasks) {
+      if (t.status === "running" || t.status === "pending") c.live++;
+      else if (t.status === "done") c.done++;
+      else c.error++;
+    }
+    return c;
+  }, [tasks]);
+
+  const selectedTask = filteredTasks.find((t) => t.taskId === selectedTaskId) ?? null;
+
+  async function handleCancel(id: string) {
+    setCancelling((p) => ({ ...p, [id]: true }));
+    try {
+      await cancelTask(id);
+    } finally {
+      setCancelling((p) => ({ ...p, [id]: false }));
+    }
+  }
 
   return (
     <section>
+      <ActivityTabs />
       <div className="page-head">
         <div>
-          <h1>Claude tasks</h1>
-          <div className="page-head-sub">
-            Claude subprocess tasks running in the background.
+          <h1 className="editorial-h1">
+            Tasks — <span className="accent">Claude subprocess invocations.</span>
+          </h1>
+          <div className="editorial-sub">
+            {tasks.length} task{tasks.length !== 1 ? "s" : ""} · avg {fmtAvg(avgMs)} · driver: {driverLabel}
           </div>
         </div>
-        <span className="pill muted">{tasks.length} total</span>
-      </div>
-
-      <HeroStrip tasks={tasks} />
-
-      <QuickTaskLauncher onLaunched={() => setTick((t) => t + 1)} />
-
-      {/* filter chips */}
-      <div className="filter-chips" style={{ marginBottom: "var(--s-4)" }}>
-        {chips.map((c) => (
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <button
             type="button"
-            key={c.k}
-            onClick={() => setFilter(c.k)}
-            className={`filter-chip${filter === c.k ? " active" : ""}`}
+            className="btn sm ghost"
+            onClick={() => setTick((t) => t + 1)}
           >
-            {c.label}
+            Sync
           </button>
-        ))}
+          <span className="pill muted">{tasks.length} total</span>
+        </div>
       </div>
 
-      {err && <div className="alert-err">Unreachable: {err}</div>}
+      {err && tasks.length === 0 && (
+        <ErrorState
+          title="Couldn't load tasks"
+          description="The bridge isn't responding. The next poll will try again automatically."
+          error={err}
+          onRetry={() => setTick((t) => t + 1)}
+        />
+      )}
+      {err && tasks.length > 0 && (
+        <div className="alert-err">Refresh failed — {err}</div>
+      )}
 
-      {filtered.length === 0 && !err ? (
-        <div className="empty-state">
-          <h3>{tasks.length === 0 ? "No tasks yet" : "No matching tasks"}</h3>
-          <p>
-            Run one with <code>runClaudeTask</code> or{" "}
-            <code>patchwork start-task "…"</code>.
-          </p>
+      {tasks.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            flexWrap: "wrap",
+            marginBottom: "var(--s-3)",
+          }}
+        >
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search id, session, driver, output…"
+            className="input"
+            style={{ flex: "1 1 280px", maxWidth: 360, fontSize: 13 }}
+            aria-label="Filter tasks"
+          />
+          <div style={{ display: "flex", gap: 4 }} role="tablist" aria-label="Status filter">
+            {([
+              ["all", "All", statusCounts.all],
+              ["live", "Live", statusCounts.live],
+              ["done", "Done", statusCounts.done],
+              ["error", "Failed", statusCounts.error],
+            ] as const).map(([k, label, n]) => (
+              <button
+                key={k}
+                type="button"
+                role="tab"
+                aria-selected={statusFilter === k}
+                onClick={() => setStatusFilter(k)}
+                className={`btn sm ${statusFilter === k ? "primary" : "ghost"}`}
+                style={{ fontSize: 12 }}
+              >
+                {label} <span style={{ opacity: 0.7, marginLeft: 4 }}>{n}</span>
+              </button>
+            ))}
+          </div>
+          {(search || statusFilter !== "all") && (
+            <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
+              {filteredTasks.length} of {tasks.length}
+            </span>
+          )}
         </div>
+      )}
+
+      {tasks.length === 0 && !err ? (
+        hasLoaded ? (
+          <div className="empty-state">
+            <h3>No tasks yet</h3>
+            <p>
+              Run one with <code>runClaudeTask</code> or{" "}
+              <code>patchwork start-task "…"</code>.
+            </p>
+          </div>
+        ) : (
+          <SkeletonList rows={3} columns={3} />
+        )
       ) : (
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th style={{ width: 100 }}>ID</th>
-                <th style={{ width: 110 }}>Status</th>
-                <th style={{ width: 80 }}>Driver</th>
-                <th style={{ width: 100 }}>Duration</th>
-                <th>Output preview</th>
-                <th style={{ width: 40 }} aria-label="expand" />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((t) => {
-                const dur =
-                  t.startedAt && t.doneAt
-                    ? fmtDuration(t.doneAt - t.startedAt)
-                    : t.startedAt
-                      ? fmtDuration(Date.now() - t.startedAt)
-                      : "—";
-                const isLive =
-                  t.status === "running" || t.status === "pending";
-                const open = !!expanded[t.taskId];
-                const errText = t.errorMessage ?? t.stderrTail;
-                const hasDetail = !!(t.output || errText);
-                const preview = (t.output ?? errText ?? "")
-                  .split("\n")[0]
-                  .slice(0, 140);
-                const driver = driverFromTask(t);
-                return (
-                  <Fragment key={t.taskId}>
-                    <tr
-                      onClick={() =>
-                        hasDetail &&
-                        setExpanded((p) => ({
-                          ...p,
-                          [t.taskId]: !p[t.taskId],
-                        }))
-                      }
-                      style={{ cursor: hasDetail ? "pointer" : "default" }}
-                    >
-                      <td className="mono">{t.taskId.slice(0, 8)}</td>
-                      <td>
-                        <span className={`pill ${statusClass(t.status)}`}>
-                          <span className="pill-dot" />
-                          {t.status}
-                        </span>
-                      </td>
-                      <td>
-                        <DriverBadge name={driver} />
-                      </td>
-                      <td
-                        className="mono"
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "440px minmax(0,1fr)",
+            gap: "var(--s-4)",
+            alignItems: "start",
+          }}
+        >
+          {/* left: timeline rail + task list */}
+          <div style={{ position: "relative" }}>
+            <div
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                left: 22,
+                top: 8,
+                bottom: 8,
+                width: 1,
+                background:
+                  "linear-gradient(to bottom, transparent, var(--line-3) 8%, var(--line-3) 92%, transparent)",
+                pointerEvents: "none",
+              }}
+            />
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {filteredTasks.length === 0 && (
+              <div style={{ padding: "var(--s-4)", color: "var(--ink-3)", fontSize: 13 }}>
+                No tasks match this filter.
+              </div>
+            )}
+            {filteredTasks.map((t) => {
+              const dur =
+                t.startedAt && t.doneAt
+                  ? fmtDuration(t.doneAt - t.startedAt)
+                  : t.startedAt
+                    ? fmtDuration(Date.now() - t.startedAt)
+                    : "—";
+              const isLive = t.status === "running" || t.status === "pending";
+              const isSelected = selectedTaskId === t.taskId;
+              const firstOutputLine = (t.output ?? "").split("\n")[0]?.slice(0, 80) ?? "(running…)";
+              const driver = driverFromTask(t);
+
+              const durSec =
+                t.startedAt && t.doneAt
+                  ? (t.doneAt - t.startedAt) / 1000
+                  : 0;
+              const intensity = Math.min(1, durSec / 35);
+              const dotColor =
+                t.status === "error"
+                  ? "var(--err)"
+                  : t.status === "running" || t.status === "pending"
+                    ? "var(--blue, #6ea8fe)"
+                    : "var(--ok, #22c55e)";
+              return (
+                <button
+                  key={t.taskId}
+                  type="button"
+                  onClick={() => setSelectedTaskId(t.taskId)}
+                  style={{
+                    position: "relative",
+                    textAlign: "left",
+                    paddingLeft: 44,
+                    paddingRight: 14,
+                    paddingTop: 11,
+                    paddingBottom: 11,
+                    background: isSelected ? "var(--recess)" : "transparent",
+                    border: "1px solid",
+                    borderColor: isSelected ? "var(--line-3)" : "transparent",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    display: "block",
+                    width: "100%",
+                    transition: "background 0.15s, border-color 0.15s",
+                  }}
+                >
+                  {/* Timeline dot */}
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: "absolute",
+                      left: 16,
+                      top: 16,
+                      width: 13,
+                      height: 13,
+                      borderRadius: "50%",
+                      background: "var(--bg-1)",
+                      border: `2px solid ${dotColor}`,
+                      boxShadow: isSelected
+                        ? `0 0 0 4px color-mix(in oklch, ${dotColor} 25%, transparent)`
+                        : "none",
+                      transition: "box-shadow 0.2s",
+                    }}
+                  />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-2)", fontWeight: 500 }}>
+                      {t.taskId.slice(0, 8)}
+                    </span>
+                    <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                      {/* Duration intensity bar */}
+                      <span
                         style={{
-                          color: isLive ? "var(--blue)" : "var(--ink-3)",
-                          fontWeight: isLive ? 600 : 400,
-                        }}
-                      >
-                        {dur}
-                      </td>
-                      <td
-                        style={{
-                          maxWidth: 520,
+                          width: 32,
+                          height: 3,
+                          background: "var(--line-3)",
+                          borderRadius: 1,
+                          position: "relative",
                           overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
+                          display: "inline-block",
                         }}
                       >
-                        {preview || <span className="muted">—</span>}
-                      </td>
-                      <td className="muted">
-                        {hasDetail ? (open ? "▾" : "▸") : ""}
-                      </td>
-                    </tr>
-                    {open && hasDetail && (
-                      <tr className="task-row-expand">
-                        <td colSpan={6} style={{ padding: 0 }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              padding: "8px 14px",
-                              borderBottom: "1px solid var(--line-3)",
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: 11,
-                                color: "var(--ink-2)",
-                                fontWeight: 600,
-                                textTransform: "uppercase",
-                                letterSpacing: "0.07em",
-                              }}
-                            >
-                              {errText ? "Error + output" : "Output"}
-                            </span>
-                            <div style={{ display: "flex", gap: 6 }}>
-                              {isLive && (
-                                <button
-                                  type="button"
-                                  className="btn sm ghost"
-                                  style={{ minHeight: 24, fontSize: 11, padding: "3px 9px", color: "var(--red)" }}
-                                  disabled={!!cancelling[t.taskId]}
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    setCancelling((p) => ({ ...p, [t.taskId]: true }));
-                                    try {
-                                      await cancelTask(t.taskId);
-                                    } finally {
-                                      setCancelling((p) => ({ ...p, [t.taskId]: false }));
-                                    }
-                                  }}
-                                >
-                                  {cancelling[t.taskId] ? "Cancelling…" : "Cancel"}
-                                </button>
-                              )}
-                              <CopyBtn text={(errText ?? "") + (t.output ?? "")} />
-                            </div>
-                          </div>
-                          {errText && (
-                            <pre
-                              className="task-output"
-                              style={{ color: "var(--red)" }}
-                            >
-                              {errText}
-                            </pre>
-                          )}
-                          {t.output && (
-                            <pre className="task-output">
-                              {t.output.length > 4000
-                                ? `[Output truncated — showing last 4000 chars]\n\n${t.output.slice(-4000)}`
-                                : t.output}
-                            </pre>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+                        <span
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            width: `${intensity * 100}%`,
+                            background: intensity > 0.7 ? "var(--orange, var(--accent))" : "var(--ok, #22c55e)",
+                          }}
+                        />
+                      </span>
+                      <DriverBadge name={driver} />
+                      <span className={`pill ${statusClass(t.status)}`} style={{ fontSize: 10 }}>
+                        <span className="pill-dot" />
+                        {t.status}
+                      </span>
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: isSelected ? "var(--ink-1)" : "var(--ink-2)",
+                      lineHeight: 1.5,
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                      fontFamily: "var(--font-mono)",
+                    }}
+                  >
+                    {firstOutputLine || <span style={{ color: "var(--ink-3)" }}>(running…)</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: isLive ? "var(--blue)" : "var(--ink-3)", fontFamily: "var(--font-mono)", marginTop: 4 }}>
+                    {dur}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          </div>
+
+          {/* right: detail pane */}
+          <div style={{ position: "sticky", top: 80 }}>
+            {selectedTask ? (
+              <TaskDetail
+                task={selectedTask}
+                onCancel={(id) => void handleCancel(id)}
+                cancelling={cancelling}
+              />
+            ) : (
+              <div
+                style={{
+                  color: "var(--ink-3)",
+                  fontSize: 13,
+                  padding: 24,
+                  textAlign: "center",
+                }}
+              >
+                Select a task to see its output.
+              </div>
+            )}
+          </div>
         </div>
       )}
     </section>

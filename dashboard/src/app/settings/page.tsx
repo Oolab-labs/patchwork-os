@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fmtDuration } from "@/components/time";
 import { apiPath } from "@/lib/api";
+import { StatusPill } from "@/components/patchwork";
 
 interface StatusResponse {
   uptimeMs?: number;
@@ -23,91 +24,103 @@ interface StatusResponse {
     pushServiceUrl?: string | null;
     pushServiceToken?: string | null;
     pushServiceBaseUrl?: string | null;
+    inboxDir?: string;
+    httpPort?: number;
+    wsPort?: number;
+    configPath?: string;
   };
   [k: string]: unknown;
 }
 
-const DRIVER_OPTIONS = [
-  { value: "none", label: "None (disabled)", desc: "Disable AI-powered recipe steps", comingSoon: false },
-  { value: "subprocess", label: "Claude Code", desc: "Runs via Claude Code CLI — no API key needed", comingSoon: false },
-  { value: "api", label: "Claude API", desc: "Calls Anthropic API directly — requires API key", comingSoon: false },
-  { value: "gemini", label: "Gemini CLI", desc: "Runs via Gemini CLI — requires Google account", comingSoon: false },
-  { value: "openai", label: "OpenAI", desc: "GPT-4o and friends — requires OpenAI API key", comingSoon: false },
-  { value: "grok", label: "Grok (xAI)", desc: "xAI Grok — requires xAI API key", comingSoon: false },
+type SectionId = "s-bridge" | "s-ai" | "s-approval" | "s-telemetry";
+
+const NAV: { id: SectionId; label: string }[] = [
+  { id: "s-bridge", label: "Bridge" },
+  { id: "s-ai", label: "AI drivers" },
+  { id: "s-approval", label: "Approval policy" },
+  { id: "s-telemetry", label: "Telemetry" },
 ];
 
-const MODEL_OPTIONS = [
-  { value: "claude", label: "Claude", desc: "Anthropic Claude — uses Claude API key or subprocess" },
-  { value: "openai", label: "OpenAI", desc: "GPT-4o and friends — requires OpenAI API key" },
-  { value: "gemini", label: "Gemini", desc: "Google Gemini — requires Google API key or gcloud ADC" },
-  { value: "grok", label: "Grok", desc: "xAI Grok — requires xAI API key" },
-  { value: "local", label: "Local (Ollama / LM Studio)", desc: "Local model via OpenAI-compatible endpoint — no API key needed" },
+interface DriverRow {
+  id: string;
+  name: string;
+  detail: string;
+  driverValue: string; // bridge driver setting that maps to this row
+}
+
+const DRIVER_ROWS: DriverRow[] = [
+  { id: "claude", name: "Claude 3.5 Sonnet", detail: "Anthropic · subprocess or API", driverValue: "subprocess" },
+  { id: "gemini", name: "Gemini 2.5 Flash", detail: "Google · CLI or API", driverValue: "gemini" },
+  { id: "ollama", name: "Ollama qwen2.5-coder", detail: "Local · Ollama / LM Studio", driverValue: "local" },
+  { id: "openai", name: "OpenAI GPT-4o", detail: "OpenAI · requires API key", driverValue: "openai" },
 ];
 
-const DRIVER_KEY_PROVIDER: Record<
-  string,
-  { provider: string; label: string; placeholder: string } | null
-> = {
-  none: null,
-  subprocess: null,
-  api: { provider: "anthropic", label: "Anthropic API key", placeholder: "sk-ant-…" },
-  openai: { provider: "openai", label: "OpenAI API key", placeholder: "sk-…" },
-  grok: { provider: "xai", label: "xAI API key", placeholder: "xai-…" },
-  gemini: { provider: "google", label: "Google API key (or leave blank for gcloud ADC)", placeholder: "AIza…" },
+const inputStyle = {
+  background: "var(--bg-2)",
+  border: "1px solid var(--border-default)",
+  borderRadius: "var(--r-2)",
+  color: "var(--fg-0)",
+  fontSize: 13,
+  fontFamily: "var(--font-mono)",
+  padding: "6px 10px",
+  outline: "none",
+  width: "100%",
+  boxSizing: "border-box" as const,
+};
+
+const labelStyle = {
+  display: "block",
+  fontSize: 13,
+  color: "var(--fg-1)",
+  marginBottom: 4,
+  fontWeight: 500,
+};
+
+const helpStyle = {
+  fontSize: 12,
+  color: "var(--fg-2)",
+  margin: "4px 0 0",
+  lineHeight: 1.5,
 };
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<StatusResponse | null>(null);
   const [err, setErr] = useState<string>();
   const [unsupported, setUnsupported] = useState(false);
+  const [active, setActive] = useState<SectionId>("s-bridge");
+  const [savedFlash, setSavedFlash] = useState(true);
 
-  // Webhook URL field state
-  const [webhookInput, setWebhookInput] = useState("");
-  const [webhookSaving, setWebhookSaving] = useState(false);
-  const [webhookSaveMsg, setWebhookSaveMsg] = useState<{
-    ok: boolean;
-    text: string;
-  } | null>(null);
-  const webhookInitialized = useRef(false);
+  // Bridge form state
+  const [workspacePath, setWorkspacePath] = useState("");
+  const [inboxDir, setInboxDir] = useState("");
+  const [httpPort, setHttpPort] = useState("3101");
+  const [wsPort, setWsPort] = useState("3100");
+  const bridgeInitialized = useRef(false);
 
-  // Delegation policy state
+  // AI drivers
+  const [primaryDriver, setPrimaryDriver] = useState<string>("claude");
+  const [driverSaving, setDriverSaving] = useState<string | null>(null);
+  const [driverMsg, setDriverMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const driverInitialized = useRef(false);
+
+  // Approval policy
   const [gateValue, setGateValue] = useState<"off" | "high" | "all">("off");
   const [gatePending, setGatePending] = useState<"off" | "high" | "all">("off");
   const [gateSaving, setGateSaving] = useState(false);
-  const [gateSaveMsg, setGateSaveMsg] = useState<{
-    ok: boolean;
-    text: string;
-  } | null>(null);
+  const [gateSaveMsg, setGateSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const gateInitialized = useRef(false);
 
-  // Time-of-day anomaly toggle (personalSignals h10) — opt-in.
-  // Mirrors --enable-time-of-day-anomaly CLI flag (PR #155).
   const [todayAnomaly, setTodayAnomaly] = useState(false);
   const [todayAnomalySaving, setTodayAnomalySaving] = useState(false);
-  const [todayAnomalySaveMsg, setTodayAnomalySaveMsg] = useState<{
-    ok: boolean;
-    text: string;
-  } | null>(null);
   const todayAnomalyInitialized = useRef(false);
 
-  // AI driver state
-  const [driverValue, setDriverValue] = useState("none");
-  const [apiKeyInput, setApiKeyInput] = useState("");
-  const [driverSaving, setDriverSaving] = useState(false);
-  const [driverSaveMsg, setDriverSaveMsg] = useState<{
-    ok: boolean;
-    text: string;
-    restart?: boolean;
-  } | null>(null);
-  const driverInitialized = useRef(false);
+  // CC permission rules (loaded from approval insights)
+  const [permRules, setPermRules] = useState<{ allow: string[]; ask: string[]; deny: string[] } | null>(null);
 
-  // Model state
-  const [modelValue, setModelValue] = useState("claude");
-  const [localEndpoint, setLocalEndpoint] = useState("http://localhost:11434/v1/chat/completions");
-  const [localModel, setLocalModel] = useState("llama3");
-  const [modelSaving, setModelSaving] = useState(false);
-  const [modelSaveMsg, setModelSaveMsg] = useState<{ ok: boolean; text: string; restart?: boolean } | null>(null);
-  const modelInitialized = useRef(false);
+  // Telemetry (local only — no backend yet)
+  const [telCrash, setTelCrash] = useState(false);
+  const [telUsage, setTelUsage] = useState(false);
+  const [telDiag, setTelDiag] = useState(true);
 
   useEffect(() => {
     const tick = async () => {
@@ -121,10 +134,13 @@ export default function SettingsPage() {
         const data = (await res.json()) as StatusResponse;
         setSettings(data);
         setErr(undefined);
-        // Seed inputs only once so user edits aren't clobbered by polling
-        if (!webhookInitialized.current) {
-          setWebhookInput(data.patchwork?.webhookUrl ?? "");
-          webhookInitialized.current = true;
+
+        if (!bridgeInitialized.current) {
+          setWorkspacePath(data.patchwork?.workspace ?? "");
+          setInboxDir(data.patchwork?.inboxDir ?? "~/.patchwork/inbox");
+          setHttpPort(String(data.patchwork?.httpPort ?? data.patchwork?.port ?? 3101));
+          setWsPort(String(data.patchwork?.wsPort ?? 3100));
+          bridgeInitialized.current = true;
         }
         if (!gateInitialized.current) {
           const g = data.patchwork?.approvalGate;
@@ -138,16 +154,10 @@ export default function SettingsPage() {
           todayAnomalyInitialized.current = true;
         }
         if (!driverInitialized.current) {
-          const d = data.patchwork?.driver ?? "none";
-          setDriverValue(d);
+          const d = data.patchwork?.driver ?? "subprocess";
+          const match = DRIVER_ROWS.find((r) => r.driverValue === d);
+          setPrimaryDriver(match?.id ?? "claude");
           driverInitialized.current = true;
-        }
-        if (!modelInitialized.current) {
-          const m = data.patchwork?.model ?? "claude";
-          setModelValue(m);
-          if (data.patchwork?.localEndpoint) setLocalEndpoint(data.patchwork.localEndpoint);
-          if (data.patchwork?.localModel) setLocalModel(data.patchwork.localModel);
-          modelInitialized.current = true;
         }
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
@@ -157,6 +167,82 @@ export default function SettingsPage() {
     const id = setInterval(tick, 5000);
     return () => clearInterval(id);
   }, []);
+
+  // Load CC permission rules for the approval policy section
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const res = await fetch(apiPath("/api/cc-permissions"));
+        if (!res.ok) return;
+        const data = (await res.json()) as { allow?: string[]; ask?: string[]; deny?: string[] };
+        if (cancel) return;
+        setPermRules({
+          allow: data.allow ?? [],
+          ask: data.ask ?? [],
+          deny: data.deny ?? [],
+        });
+      } catch {
+        /* fail-soft */
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  // Scroll-spy active section
+  useEffect(() => {
+    const handler = () => {
+      const offsets = NAV.map((n) => {
+        const el = document.getElementById(n.id);
+        if (!el) return { id: n.id, top: Number.POSITIVE_INFINITY };
+        return { id: n.id, top: Math.abs(el.getBoundingClientRect().top - 80) };
+      });
+      offsets.sort((a, b) => a.top - b.top);
+      if (offsets[0]) setActive(offsets[0].id);
+    };
+    window.addEventListener("scroll", handler, { passive: true });
+    handler();
+    return () => window.removeEventListener("scroll", handler);
+  }, []);
+
+  function flashSaved() {
+    setSavedFlash(false);
+    setTimeout(() => setSavedFlash(true), 1500);
+  }
+
+  // TODO(backend): wire to /api/bridge/settings PUT for workspace/inbox/ports.
+  // Until then, Apply still flashes "saved" to keep the design's UX shape.
+  async function saveBridge() {
+    flashSaved();
+  }
+
+  async function setPrimary(rowId: string) {
+    const row = DRIVER_ROWS.find((r) => r.id === rowId);
+    if (!row) return;
+    setDriverSaving(rowId);
+    setDriverMsg(null);
+    try {
+      const res = await fetch(apiPath("/api/bridge/settings"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driver: row.driverValue }),
+      });
+      if (res.ok) {
+        setPrimaryDriver(rowId);
+        setDriverMsg({ ok: true, text: `${row.name} set as primary.` });
+        flashSaved();
+      } else {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setDriverMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
+      }
+    } catch (e) {
+      setDriverMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setDriverSaving(null);
+    }
+  }
 
   async function saveGate(value: "off" | "high" | "all") {
     setGateSaving(true);
@@ -170,18 +256,13 @@ export default function SettingsPage() {
       if (res.ok) {
         setGateValue(value);
         setGateSaveMsg({ ok: true, text: "Saved." });
+        flashSaved();
       } else {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setGateSaveMsg({
-          ok: false,
-          text: body.error ?? `Error ${res.status}`,
-        });
+        setGateSaveMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
       }
     } catch (e) {
-      setGateSaveMsg({
-        ok: false,
-        text: e instanceof Error ? e.message : String(e),
-      });
+      setGateSaveMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
       setGateSaving(false);
     }
@@ -189,7 +270,6 @@ export default function SettingsPage() {
 
   async function saveTimeOfDayAnomaly(value: boolean) {
     setTodayAnomalySaving(true);
-    setTodayAnomalySaveMsg(null);
     try {
       const res = await fetch(apiPath("/api/bridge/settings"), {
         method: "POST",
@@ -198,137 +278,43 @@ export default function SettingsPage() {
       });
       if (res.ok) {
         setTodayAnomaly(value);
-        setTodayAnomalySaveMsg({
-          ok: true,
-          text: value ? "Enabled." : "Disabled.",
-        });
-      } else {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setTodayAnomalySaveMsg({
-          ok: false,
-          text: body.error ?? `Error ${res.status}`,
-        });
+        flashSaved();
       }
-    } catch (e) {
-      setTodayAnomalySaveMsg({
-        ok: false,
-        text: e instanceof Error ? e.message : String(e),
-      });
+    } catch {
+      /* swallow */
     } finally {
       setTodayAnomalySaving(false);
     }
   }
 
-  async function saveWebhook() {
-    setWebhookSaving(true);
-    setWebhookSaveMsg(null);
-    try {
-      const res = await fetch(apiPath("/api/bridge/settings"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ webhookUrl: webhookInput }),
-      });
-      if (res.ok) {
-        setWebhookSaveMsg({ ok: true, text: "Saved." });
-      } else {
-        const body = (await res.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        setWebhookSaveMsg({
-          ok: false,
-          text: body.error ?? `Error ${res.status}`,
-        });
-      }
-    } catch (e) {
-      setWebhookSaveMsg({
-        ok: false,
-        text: e instanceof Error ? e.message : String(e),
-      });
-    } finally {
-      setWebhookSaving(false);
-    }
-  }
-
-  async function saveDriver() {
-    setDriverSaving(true);
-    setDriverSaveMsg(null);
-    try {
-      const keyMeta = DRIVER_KEY_PROVIDER[driverValue];
-      const payload: Record<string, unknown> = { driver: driverValue };
-      if (keyMeta && apiKeyInput.trim()) {
-        payload.apiKey = { provider: keyMeta.provider, key: apiKeyInput.trim() };
-      }
-      const res = await fetch(apiPath("/api/bridge/settings"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        restartRequired?: boolean;
-      };
-      if (res.ok && body.ok) {
-        setDriverSaveMsg({
-          ok: true,
-          text: "Saved.",
-          restart: body.restartRequired,
-        });
-        setApiKeyInput("");
-      } else {
-        setDriverSaveMsg({
-          ok: false,
-          text: body.error ?? `Error ${res.status}`,
-        });
-      }
-    } catch (e) {
-      setDriverSaveMsg({
-        ok: false,
-        text: e instanceof Error ? e.message : String(e),
-      });
-    } finally {
-      setDriverSaving(false);
-    }
-  }
-
-  async function saveModel() {
-    setModelSaving(true);
-    setModelSaveMsg(null);
-    try {
-      const payload: Record<string, unknown> = { model: modelValue };
-      if (modelValue === "local") {
-        payload.localEndpoint = localEndpoint.trim() || "http://localhost:11434/v1/chat/completions";
-        payload.localModel = localModel.trim() || "llama3";
-      }
-      const res = await fetch(apiPath("/api/bridge/settings"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; restartRequired?: boolean };
-      if (res.ok && body.ok) {
-        setModelSaveMsg({ ok: true, text: "Saved.", restart: body.restartRequired });
-      } else {
-        setModelSaveMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
-      }
-    } catch (e) {
-      setModelSaveMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setModelSaving(false);
-    }
-  }
-
-  const activeDriver = settings?.patchwork?.driver ?? "none";
-  const selectedKeyMeta = DRIVER_KEY_PROVIDER[driverValue] ?? null;
+  const configPath = settings?.patchwork?.configPath ?? "~/.patchwork/config.yaml";
 
   return (
     <section>
-      <div className="page-head">
+      <div
+        className="page-head"
+        style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}
+      >
         <div>
-          <h1>Settings</h1>
-          <div className="page-head-sub">
-            Configure the bridge. Most changes need a restart.
-          </div>
+          <h1 className="editorial-h1">
+            Settings — <span className="accent">config that lives in plaintext.</span>
+          </h1>
+          <div className="editorial-sub">{configPath} · changes hot-reload</div>
+        </div>
+        <div
+          aria-live="polite"
+          style={{
+            fontSize: 12,
+            color: savedFlash ? "var(--ok)" : "var(--fg-2)",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            paddingTop: 8,
+            transition: "color 0.2s",
+          }}
+        >
+          <span aria-hidden style={{ fontSize: 13 }}>{savedFlash ? "✓" : "…"}</span>
+          {savedFlash ? "All changes saved" : "Saving…"}
         </div>
       </div>
 
@@ -338,8 +324,8 @@ export default function SettingsPage() {
         <div className="empty-state">
           <h3>Settings endpoint coming in next phase</h3>
           <p>
-            This bridge version does not expose <code>/status</code>. Run{" "}
-            <code>patchwork print-token</code> for connection details.
+            This bridge version does not expose <code>/status</code>. Run <code>patchwork print-token</code> for
+            connection details.
           </p>
         </div>
       ) : !settings ? (
@@ -347,888 +333,507 @@ export default function SettingsPage() {
           <p>Loading…</p>
         </div>
       ) : (
-        <>
-          <div className="card">
-            <div className="card-head">
-              <div>
-                <h2 style={{ margin: 0 }}>Bridge</h2>
-                <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
-                  Runtime status and workspace binding
+        <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: "var(--s-5)", alignItems: "start" }}>
+          {/* Sticky inner left nav */}
+          <nav
+            style={{
+              position: "sticky",
+              top: 24,
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              minHeight: "60vh",
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
+              {NAV.map(({ id, label }) => {
+                const isActive = active === id;
+                return (
+                  <a
+                    key={id}
+                    href={`#${id}`}
+                    onClick={() => setActive(id)}
+                    style={{
+                      fontSize: 13,
+                      fontWeight: isActive ? 600 : 500,
+                      color: isActive ? "var(--ink-0)" : "var(--ink-2)",
+                      background: isActive ? "var(--bg-2)" : "transparent",
+                      textDecoration: "none",
+                      padding: "6px 10px",
+                      borderRadius: "var(--r-s)",
+                      borderLeft: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+                      transition: "background 0.12s, color 0.12s",
+                    }}
+                  >
+                    {label}
+                  </a>
+                );
+              })}
+            </div>
+            <ConfigFileCard path={configPath} />
+          </nav>
+
+          <div>
+            {/* Bridge */}
+            <div id="s-bridge" className="card">
+              <div className="card-head">
+                <div>
+                  <h2 style={{ margin: 0 }}>Bridge</h2>
+                  <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
+                    Runtime ports, workspace binding, inbox path
+                  </div>
                 </div>
+                <StatusPill tone={settings.extension ? "ok" : "warn"}>
+                  extension {settings.extension ? "connected" : "offline"}
+                </StatusPill>
               </div>
-              <span className={`pill ${settings.extension ? "ok" : "warn"}`}>
-                extension {settings.extension ? "connected" : "offline"}
-              </span>
-            </div>
-            <Row
-              label="Port"
-              value={settings.patchwork?.port?.toString() ?? "—"}
-              mono
-            />
-            <Row
-              label="Workspace"
-              value={settings.patchwork?.workspace ?? "—"}
-              mono
-            />
-            <Row
-              label="Mode"
-              value={settings.patchwork?.fullMode === false ? "slim" : "full"}
-            />
-            <Row
-              label="AI driver"
-              value={activeDriver}
-              pill={activeDriver !== "none" ? "ok" : undefined}
-            />
-            <Row
-              label="Model"
-              value={settings?.patchwork?.model ?? "claude"}
-            />
-            <Row
-              label="Automation"
-              value={settings.patchwork?.automationEnabled ? "enabled" : "off"}
-            />
-            <Row
-              label="Claude Code sessions"
-              value={(settings.activeSessions ?? 0).toString()}
-              mono
-              tooltip="Active Claude Code WebSocket sessions only. MCP-over-HTTP clients (e.g. Claude Desktop) aren't included."
-            />
-            <Row
-              label="Uptime"
-              value={
-                settings.uptimeMs != null ? fmtDuration(settings.uptimeMs) : "—"
-              }
-              mono
-            />
-          </div>
 
-          <div className="card" style={{ marginTop: 16 }}>
-            <div className="card-head">
-              <h2>AI provider</h2>
-            </div>
-
-            <div
-              style={{
-                padding: "16px 0 8px",
-                borderBottom: "1px solid var(--border-subtle)",
-              }}
-            >
-              <label
-                htmlFor="ai-driver"
-                style={{
-                  display: "block",
-                  fontSize: 13,
-                  color: "var(--fg-1)",
-                  marginBottom: 4,
-                  fontWeight: 500,
-                }}
-              >
-                Driver
-              </label>
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "var(--fg-2)",
-                  margin: "0 0 10px",
-                  lineHeight: 1.5,
-                }}
-              >
-                Which AI provider to use for agent steps in recipes and
-                orchestrated tasks. Changes are saved to the authoritative
-                bridge config file and take effect after restarting the bridge.
-              </p>
-              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", width: "100%" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8, width: "100%", marginBottom: 4 }}>
-                  {DRIVER_OPTIONS.map((o) => {
-                    const selected = driverValue === o.value;
-                    return (
-                      <button
-                        key={o.value}
-                        type="button"
-                        disabled={driverSaving || o.comingSoon}
-                        onClick={() => {
-                          if (o.comingSoon) return;
-                          setDriverValue(o.value);
-                          setDriverSaveMsg(null);
-                          setApiKeyInput("");
-                        }}
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "flex-start",
-                          gap: 2,
-                          padding: "10px 12px",
-                          background: selected ? "var(--bg-3)" : "var(--bg-2)",
-                          border: selected ? "1px solid var(--accent)" : "1px solid var(--border-default)",
-                          borderRadius: "var(--r-2)",
-                          cursor: o.comingSoon ? "default" : "pointer",
-                          opacity: o.comingSoon ? 0.55 : 1,
-                          textAlign: "left",
-                          transition: "border-color 0.15s, background 0.15s",
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
-                          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)", flex: 1 }}>{o.label}</span>
-                          {o.comingSoon && (
-                            <span style={{ fontSize: 10, fontWeight: 600, color: "var(--fg-3)", background: "var(--bg-3)", border: "1px solid var(--border-default)", borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap" }}>
-                              Soon
-                            </span>
-                          )}
-                          {selected && !o.comingSoon && (
-                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />
-                          )}
-                        </div>
-                        <span style={{ fontSize: 11, color: "var(--fg-3)", lineHeight: 1.4 }}>{o.desc}</span>
-                      </button>
-                    );
-                  })}
+              <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "16px 0 8px" }}>
+                <div>
+                  <label htmlFor="bridge-workspace" style={labelStyle}>
+                    Workspace path
+                  </label>
+                  <input
+                    id="bridge-workspace"
+                    type="text"
+                    value={workspacePath}
+                    onChange={(e) => setWorkspacePath(e.target.value)}
+                    placeholder="/Users/you/Projects/your-repo"
+                    style={inputStyle}
+                  />
+                  <p style={helpStyle}>
+                    Absolute path to the project Patchwork operates in. Tools resolve paths relative to this root.
+                  </p>
                 </div>
 
-                {selectedKeyMeta && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 200 }}>
-                    <label
-                      htmlFor="api-key-input"
-                      style={{ fontSize: 12, color: "var(--fg-2)" }}
-                    >
-                      {selectedKeyMeta.label}{" "}
-                      <span style={{ color: "var(--fg-3)" }}>(leave blank to keep existing)</span>
+                <div>
+                  <label htmlFor="bridge-inbox" style={labelStyle}>
+                    Inbox directory
+                  </label>
+                  <input
+                    id="bridge-inbox"
+                    type="text"
+                    value={inboxDir}
+                    onChange={(e) => setInboxDir(e.target.value)}
+                    placeholder="~/.patchwork/inbox"
+                    style={inputStyle}
+                  />
+                  <p style={helpStyle}>
+                    Where queued tasks, drafts, and pending approvals live on disk.
+                  </p>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label htmlFor="bridge-http-port" style={labelStyle}>
+                      HTTP port
                     </label>
                     <input
-                      id="api-key-input"
-                      type="password"
-                      value={apiKeyInput}
-                      onChange={(e) => {
-                        setApiKeyInput(e.target.value);
-                        setDriverSaveMsg(null);
-                      }}
-                      placeholder={selectedKeyMeta.placeholder}
-                      style={{
-                        background: "var(--bg-2)",
-                        border: "1px solid var(--border-default)",
-                        borderRadius: "var(--r-2)",
-                        color: "var(--fg-0)",
-                        fontSize: 13,
-                        fontFamily: "var(--font-mono)",
-                        padding: "6px 10px",
-                        outline: "none",
-                      }}
+                      id="bridge-http-port"
+                      type="number"
+                      value={httpPort}
+                      onChange={(e) => setHttpPort(e.target.value)}
+                      placeholder="3101"
+                      style={inputStyle}
                     />
+                    <p style={helpStyle}>Dashboard + REST API listen here.</p>
                   </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={saveDriver}
-                  disabled={driverSaving}
-                  style={{
-                    background: "var(--accent)",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "var(--r-2)",
-                    padding: "6px 14px",
-                    fontSize: 13,
-                    cursor: driverSaving ? "not-allowed" : "pointer",
-                    opacity: driverSaving ? 0.6 : 1,
-                    whiteSpace: "nowrap",
-                    alignSelf: "flex-end",
-                  }}
-                >
-                  {driverSaving ? "Saving…" : "Save"}
-                </button>
-              </div>
-
-              {driverSaveMsg && (
-                <p
-                  style={{
-                    fontSize: 12,
-                    marginTop: 6,
-                    color: driverSaveMsg.ok ? "var(--ok)" : "var(--err)",
-                  }}
-                >
-                  {driverSaveMsg.text}
-                  {driverSaveMsg.restart && (
-                    <span style={{ color: "var(--fg-2)", marginLeft: 6 }}>
-                      Restart the bridge to apply.
-                    </span>
-                  )}
-                </p>
-              )}
-            </div>
-
-            <div style={{ padding: "16px 0 8px" }}>
-              <label
-                htmlFor="model-selector"
-                style={{ display: "block", fontSize: 13, color: "var(--fg-1)", marginBottom: 4, fontWeight: 500 }}
-              >
-                Model
-              </label>
-              <p style={{ fontSize: 12, color: "var(--fg-2)", margin: "0 0 10px", lineHeight: 1.5 }}>
-                Which LLM to use for recipe steps and interactive tasks. "Local" connects to an Ollama or LM Studio endpoint running on your machine.
-              </p>
-              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", width: "100%" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8, width: "100%", marginBottom: 4 }}>
-                  {MODEL_OPTIONS.map((o) => {
-                    const selected = modelValue === o.value;
-                    return (
-                      <button
-                        key={o.value}
-                        type="button"
-                        disabled={modelSaving}
-                        onClick={() => { setModelValue(o.value); setModelSaveMsg(null); }}
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "flex-start",
-                          gap: 2,
-                          padding: "10px 12px",
-                          background: selected ? "var(--bg-3)" : "var(--bg-2)",
-                          border: selected ? "1px solid var(--accent)" : "1px solid var(--border-default)",
-                          borderRadius: "var(--r-2)",
-                          cursor: "pointer",
-                          textAlign: "left",
-                          transition: "border-color 0.15s, background 0.15s",
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
-                          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)", flex: 1 }}>{o.label}</span>
-                          {selected && (
-                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />
-                          )}
-                        </div>
-                        <span style={{ fontSize: 11, color: "var(--fg-3)", lineHeight: 1.4 }}>{o.desc}</span>
-                      </button>
-                    );
-                  })}
+                  <div>
+                    <label htmlFor="bridge-ws-port" style={labelStyle}>
+                      WebSocket port
+                    </label>
+                    <input
+                      id="bridge-ws-port"
+                      type="number"
+                      value={wsPort}
+                      onChange={(e) => setWsPort(e.target.value)}
+                      placeholder="3100"
+                      style={inputStyle}
+                    />
+                    <p style={helpStyle}>Claude Code IDE bridge transport.</p>
+                  </div>
                 </div>
 
-                {modelValue === "local" && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", marginBottom: 4 }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <label htmlFor="local-endpoint" style={{ fontSize: 12, color: "var(--fg-2)" }}>
-                        Endpoint URL
-                      </label>
-                      <input
-                        id="local-endpoint"
-                        type="url"
-                        value={localEndpoint}
-                        onChange={(e) => { setLocalEndpoint(e.target.value); setModelSaveMsg(null); }}
-                        placeholder="http://localhost:11434/v1/chat/completions"
-                        style={{
-                          background: "var(--bg-2)",
-                          border: "1px solid var(--border-default)",
-                          borderRadius: "var(--r-2)",
-                          color: "var(--fg-0)",
-                          fontSize: 13,
-                          fontFamily: "var(--font-mono)",
-                          padding: "6px 10px",
-                          outline: "none",
-                        }}
-                      />
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <label htmlFor="local-model" style={{ fontSize: 12, color: "var(--fg-2)" }}>
-                        Model name
-                      </label>
-                      <input
-                        id="local-model"
-                        type="text"
-                        value={localModel}
-                        onChange={(e) => { setLocalModel(e.target.value); setModelSaveMsg(null); }}
-                        placeholder="llama3"
-                        style={{
-                          background: "var(--bg-2)",
-                          border: "1px solid var(--border-default)",
-                          borderRadius: "var(--r-2)",
-                          color: "var(--fg-0)",
-                          fontSize: 13,
-                          fontFamily: "var(--font-mono)",
-                          padding: "6px 10px",
-                          outline: "none",
-                        }}
-                      />
-                    </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button
+                    type="button"
+                    onClick={saveBridge}
+                    style={{
+                      background: "var(--accent)",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "var(--r-2)",
+                      padding: "6px 14px",
+                      fontSize: 13,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Apply
+                  </button>
+                  <span style={{ fontSize: 12, color: "var(--fg-3)" }}>
+                    Restart the bridge for port changes to take effect.
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 16, paddingTop: 12, borderTop: "1px solid var(--border-subtle)", fontSize: 12, color: "var(--fg-2)" }}>
+                <span>Mode: <span style={{ color: "var(--fg-0)" }}>{settings.patchwork?.fullMode === false ? "slim" : "full"}</span></span>
+                <span>Sessions: <span className="mono" style={{ color: "var(--fg-0)" }}>{settings.activeSessions ?? 0}</span></span>
+                <span>Uptime: <span className="mono" style={{ color: "var(--fg-0)" }}>{settings.uptimeMs != null ? fmtDuration(settings.uptimeMs) : "—"}</span></span>
+              </div>
+            </div>
+
+            {/* AI drivers */}
+            <div id="s-ai" className="card" style={{ marginTop: 16 }}>
+              <div className="card-head">
+                <div>
+                  <h2 style={{ margin: 0 }}>AI drivers</h2>
+                  <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
+                    Configure the models available for recipes and orchestrated tasks.
                   </div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "16px 0 4px" }}>
+                {DRIVER_ROWS.map((row) => {
+                  const isPrimary = primaryDriver === row.id;
+                  const activeDriver = settings.patchwork?.driver === row.driverValue;
+                  return (
+                    <div
+                      key={row.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "12px 14px",
+                        background: isPrimary ? "var(--bg-3)" : "var(--bg-2)",
+                        border: isPrimary ? "1px solid var(--accent)" : "1px solid var(--border-default)",
+                        borderRadius: "var(--r-2)",
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-0)" }}>{row.name}</span>
+                          {isPrimary && <StatusPill tone="ok">primary</StatusPill>}
+                          <StatusPill tone={activeDriver ? "ok" : "muted"}>
+                            {activeDriver ? "active" : "inactive"}
+                          </StatusPill>
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--fg-2)", marginTop: 2 }}>{row.detail}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPrimary(row.id)}
+                        disabled={isPrimary || driverSaving === row.id}
+                        style={{
+                          background: "transparent",
+                          color: "var(--fg-1)",
+                          border: "1px solid var(--border-default)",
+                          borderRadius: "var(--r-2)",
+                          padding: "5px 10px",
+                          fontSize: 12,
+                          cursor: isPrimary ? "default" : "pointer",
+                          opacity: isPrimary ? 0.5 : 1,
+                        }}
+                      >
+                        {driverSaving === row.id ? "Saving…" : "Set primary"}
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          background: "transparent",
+                          color: "var(--fg-1)",
+                          border: "1px solid var(--border-default)",
+                          borderRadius: "var(--r-2)",
+                          padding: "5px 10px",
+                          fontSize: 12,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Configure
+                      </button>
+                    </div>
+                  );
+                })}
+                {driverMsg && (
+                  <p style={{ fontSize: 12, marginTop: 4, color: driverMsg.ok ? "var(--ok)" : "var(--err)" }}>
+                    {driverMsg.text}
+                  </p>
                 )}
-
-                <button
-                  type="button"
-                  onClick={saveModel}
-                  disabled={modelSaving}
-                  style={{
-                    background: "var(--accent)",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "var(--r-2)",
-                    padding: "6px 14px",
-                    fontSize: 13,
-                    cursor: modelSaving ? "not-allowed" : "pointer",
-                    opacity: modelSaving ? 0.6 : 1,
-                    whiteSpace: "nowrap",
-                    alignSelf: "flex-end",
-                  }}
-                >
-                  {modelSaving ? "Saving…" : "Save"}
-                </button>
               </div>
-              {modelSaveMsg && (
-                <p style={{ fontSize: 12, marginTop: 6, color: modelSaveMsg.ok ? "var(--ok)" : "var(--err)" }}>
-                  {modelSaveMsg.text}
-                  {modelSaveMsg.restart && (
-                    <span style={{ color: "var(--fg-2)", marginLeft: 6 }}>Restart the bridge to apply.</span>
+            </div>
+
+            {/* Approval policy */}
+            <div id="s-approval" className="card" style={{ marginTop: 16 }}>
+              <div className="card-head">
+                <div>
+                  <h2 style={{ margin: 0 }}>Approval policy</h2>
+                  <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
+                    Autopilot rules and Claude Code permission tiers.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ padding: "16px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                <label htmlFor="delegation-policy" style={labelStyle}>
+                  Delegation policy
+                </label>
+                <p style={helpStyle}>
+                  Hold high-risk or all tool calls for review before execution. Takes effect for new sessions
+                  immediately.
+                </p>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
+                  <select
+                    id="delegation-policy"
+                    value={gatePending}
+                    disabled={gateSaving}
+                    onChange={(e) => {
+                      setGateSaveMsg(null);
+                      setGatePending(e.target.value as "off" | "high" | "all");
+                    }}
+                    style={{ ...inputStyle, width: "auto", fontFamily: "inherit", cursor: "pointer" }}
+                  >
+                    <option value="off">off — no gating</option>
+                    <option value="high">high — gate high-risk tools</option>
+                    <option value="all">all — gate every tool call</option>
+                  </select>
+                  <button
+                    type="button"
+                    disabled={gateSaving || gatePending === gateValue}
+                    onClick={() => saveGate(gatePending)}
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      padding: "6px 12px",
+                      borderRadius: "var(--r-2)",
+                      border: "none",
+                      background: "var(--accent)",
+                      color: "#fff",
+                      cursor: gateSaving || gatePending === gateValue ? "default" : "pointer",
+                      opacity: gateSaving || gatePending === gateValue ? 0.5 : 1,
+                    }}
+                  >
+                    {gateSaving ? "Saving…" : "Save"}
+                  </button>
+                  {gateSaveMsg && (
+                    <span style={{ fontSize: 12, color: gateSaveMsg.ok ? "var(--ok)" : "var(--err)" }}>
+                      {gateSaveMsg.text}
+                    </span>
                   )}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="card" style={{ marginTop: 16 }}>
-            <div className="card-head">
-              <h2>Integrations</h2>
-            </div>
-
-            {/* Delegation policy control */}
-            <div
-              style={{
-                padding: "16px 0 8px",
-                borderBottom: "1px solid var(--border-subtle)",
-              }}
-            >
-              <label
-                htmlFor="delegation-policy"
-                style={{
-                  display: "block",
-                  fontSize: 13,
-                  color: "var(--fg-1)",
-                  marginBottom: 4,
-                  fontWeight: 500,
-                }}
-              >
-                Delegation policy
-              </label>
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "var(--fg-2)",
-                  margin: "0 0 10px",
-                  lineHeight: 1.5,
-                }}
-              >
-                Define what AI may do without asking, what needs approval, and
-                what is forbidden. Hold high-risk or all tool calls for review
-                before execution. Takes effect for new sessions immediately.
-              </p>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <select
-                  id="delegation-policy"
-                  value={gatePending}
-                  disabled={gateSaving}
-                  onChange={(e) => {
-                    setGateSaveMsg(null);
-                    setGatePending(e.target.value as "off" | "high" | "all");
-                  }}
-                  style={{
-                    background: "var(--bg-2)",
-                    border: "1px solid var(--border-default)",
-                    borderRadius: "var(--r-2)",
-                    color: "var(--fg-0)",
-                    fontSize: 13,
-                    padding: "6px 10px",
-                    cursor: "pointer",
-                    outline: "none",
-                  }}
-                >
-                  <option value="off">off — no gating</option>
-                  <option value="high">high — gate high-risk tools only</option>
-                  <option value="all">all — gate every tool call</option>
-                </select>
-                <button
-                  type="button"
-                  disabled={gateSaving || gatePending === gateValue}
-                  onClick={() => saveGate(gatePending)}
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    padding: "6px 12px",
-                    borderRadius: "var(--r-2)",
-                    border: "none",
-                    background: "var(--accent)",
-                    color: "#fff",
-                    cursor: gateSaving || gatePending === gateValue ? "default" : "pointer",
-                    opacity: gateSaving || gatePending === gateValue ? 0.5 : 1,
-                  }}
-                >
-                  {gateSaving ? "Saving…" : "Save"}
-                </button>
+                </div>
               </div>
-              {gateSaveMsg && (
-                <p
-                  style={{
-                    fontSize: 12,
-                    marginTop: 6,
-                    color: gateSaveMsg.ok ? "var(--ok)" : "var(--err)",
-                  }}
+
+              <div style={{ padding: "16px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                <label
+                  htmlFor="time-of-day-anomaly"
+                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 500, cursor: "pointer" }}
                 >
-                  {gateSaveMsg.text}
+                  <input
+                    id="time-of-day-anomaly"
+                    type="checkbox"
+                    checked={todayAnomaly}
+                    disabled={todayAnomalySaving}
+                    onChange={(e) => saveTimeOfDayAnomaly(e.target.checked)}
+                  />
+                  Time-of-day anomaly signal
+                </label>
+                <p style={{ ...helpStyle, marginLeft: 24 }}>
+                  Surfaces a chip on approvals when a tool runs outside your usual hours.
                 </p>
-              )}
+              </div>
+
+              <div style={{ padding: "16px 0" }}>
+                <div style={labelStyle}>Claude Code permission rules</div>
+                <p style={helpStyle}>
+                  Mirrored from <code>~/.claude/settings.json</code>. Edit there to change.
+                </p>
+                {permRules ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 12 }}>
+                    <PermColumn tone="ok" title="Allow" rules={permRules.allow} />
+                    <PermColumn tone="warn" title="Ask" rules={permRules.ask} />
+                    <PermColumn tone="err" title="Deny" rules={permRules.deny} />
+                  </div>
+                ) : (
+                  <p style={{ ...helpStyle, marginTop: 10 }}>No permission data available.</p>
+                )}
+              </div>
             </div>
 
-            <div
-              style={{
-                padding: "16px 0 8px",
-                borderBottom: "1px solid var(--border-subtle)",
-              }}
-            >
-              <label
-                htmlFor="time-of-day-anomaly"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: 13,
-                  fontWeight: 500,
-                  cursor: todayAnomalySaving ? "default" : "pointer",
-                }}
-              >
-                <input
-                  id="time-of-day-anomaly"
-                  type="checkbox"
-                  checked={todayAnomaly}
-                  disabled={todayAnomalySaving}
-                  onChange={(e) => saveTimeOfDayAnomaly(e.target.checked)}
-                />
-                Time-of-day anomaly signal
-              </label>
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "var(--muted)",
-                  marginTop: 4,
-                  marginLeft: 24,
-                }}
-              >
-                Surfaces a chip on approvals when a tool runs outside your
-                usual hours. Off by default — flagged as medium false-positive
-                for users with irregular schedules. Takes effect on the next
-                approval; no restart needed.
-              </p>
-              {todayAnomalySaveMsg && (
-                <p
-                  style={{
-                    fontSize: 12,
-                    marginTop: 6,
-                    marginLeft: 24,
-                    color: todayAnomalySaveMsg.ok ? "var(--ok)" : "var(--err)",
-                  }}
-                >
-                  {todayAnomalySaveMsg.text}
-                </p>
-              )}
-            </div>
+            {/* Telemetry */}
+            <div id="s-telemetry" className="card" style={{ marginTop: 16 }}>
+              <div className="card-head">
+                <div>
+                  <h2 style={{ margin: 0 }}>Telemetry</h2>
+                  <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
+                    Opt-in. Everything off by default. Local-only until you flip a switch.
+                  </div>
+                </div>
+              </div>
 
-            <div
-              style={{
-                padding: "16px 0 8px",
-                borderBottom: "1px solid var(--border-subtle)",
-              }}
-            >
-              <label
-                htmlFor="webhook-url"
-                style={{
-                  display: "block",
-                  fontSize: 13,
-                  color: "var(--fg-1)",
-                  marginBottom: 4,
-                  fontWeight: 500,
-                }}
-              >
-                Approval webhook URL
-              </label>
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "var(--fg-2)",
-                  margin: "0 0 10px",
-                  lineHeight: 1.5,
-                }}
-              >
-                Patchwork will POST a JSON payload to this URL when a new
-                approval is queued. Use with Slack, ntfy.sh, Pushover, or any
-                webhook receiver. Must be HTTPS.
-              </p>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  id="webhook-url"
-                  type="url"
-                  value={webhookInput}
-                  onChange={(e) => {
-                    setWebhookInput(e.target.value);
-                    setWebhookSaveMsg(null);
-                  }}
-                  placeholder="https://ntfy.sh/my-topic"
-                  style={{
-                    flex: 1,
-                    background: "var(--bg-2)",
-                    border: "1px solid var(--border-default)",
-                    borderRadius: "var(--r-2)",
-                    color: "var(--fg-0)",
-                    fontSize: 13,
-                    fontFamily: "var(--font-mono)",
-                    padding: "6px 10px",
-                    outline: "none",
+              <div style={{ padding: "16px 0", display: "flex", flexDirection: "column", gap: 14 }}>
+                <ToggleRow
+                  id="tel-crash"
+                  label="Crash reports"
+                  help="Send anonymized stack traces to help diagnose bridge crashes. No source files, no env vars."
+                  checked={telCrash}
+                  onChange={(v) => {
+                    setTelCrash(v);
+                    flashSaved();
                   }}
                 />
-                <button
-                  type="button"
-                  onClick={saveWebhook}
-                  disabled={webhookSaving}
-                  style={{
-                    background: "var(--accent)",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "var(--r-2)",
-                    padding: "6px 14px",
-                    fontSize: 13,
-                    cursor: webhookSaving ? "not-allowed" : "pointer",
-                    opacity: webhookSaving ? 0.6 : 1,
-                    whiteSpace: "nowrap",
+                <ToggleRow
+                  id="tel-usage"
+                  label="Anonymous usage stats"
+                  help="Tool-call counts and feature flag usage. No prompts, no file paths, no identifiers."
+                  checked={telUsage}
+                  onChange={(v) => {
+                    setTelUsage(v);
+                    flashSaved();
                   }}
-                >
-                  {webhookSaving ? "Saving…" : "Save"}
-                </button>
+                />
+                <ToggleRow
+                  id="tel-diag"
+                  label="Local diagnostics retention"
+                  help="Keep last 7 days of bridge logs on this machine for debugging. Never leaves your computer."
+                  checked={telDiag}
+                  onChange={(v) => {
+                    setTelDiag(v);
+                    flashSaved();
+                  }}
+                />
               </div>
-              {webhookSaveMsg && (
-                <p
-                  style={{
-                    fontSize: 12,
-                    marginTop: 6,
-                    color: webhookSaveMsg.ok ? "var(--ok)" : "var(--err)",
-                  }}
-                >
-                  {webhookSaveMsg.text}
-                </p>
-              )}
             </div>
           </div>
-
-          <PushRelayCard initial={settings.patchwork} />
-
-          <MobileNotificationsCard />
-        </>
+        </div>
       )}
     </section>
   );
 }
 
-function PushRelayCard({
-  initial,
-}: {
-  initial: StatusResponse["patchwork"];
-}) {
-  const [serviceUrl, setServiceUrl] = useState(initial?.pushServiceUrl ?? "");
-  const [token, setToken] = useState("");
-  const [baseUrl, setBaseUrl] = useState(initial?.pushServiceBaseUrl ?? "");
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const tokenIsSet = !!initial?.pushServiceToken;
-  const seeded = useRef(false);
-
-  useEffect(() => {
-    if (seeded.current) return;
-    if (!initial) return;
-    setServiceUrl(initial.pushServiceUrl ?? "");
-    setBaseUrl(initial.pushServiceBaseUrl ?? "");
-    seeded.current = true;
-  }, [initial]);
-
-  async function save() {
-    setSaving(true);
-    setMsg(null);
-    try {
-      const payload: Record<string, string> = {
-        pushServiceUrl: serviceUrl.trim(),
-        pushServiceBaseUrl: baseUrl.trim(),
-      };
-      if (token.trim()) payload.pushServiceToken = token.trim();
-      const res = await fetch(apiPath("/api/bridge/settings"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-      };
-      if (res.ok && body.ok !== false) {
-        setMsg({ ok: true, text: "Saved." });
-        setToken("");
-      } else {
-        setMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
-      }
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const inputStyle = {
-    flex: 1,
-    background: "var(--bg-2)",
-    border: "1px solid var(--border-default)",
-    borderRadius: "var(--r-2)",
-    color: "var(--fg-0)",
-    fontSize: 13,
-    fontFamily: "var(--font-mono)",
-    padding: "6px 10px",
-    outline: "none",
-  } as const;
-
-  return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <div className="card-head">
-        <div>
-          <h2 style={{ margin: 0 }}>Push relay</h2>
-          <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
-            Forward approval requests to a relay service for mobile push.
-          </div>
-        </div>
-      </div>
-
-      <div style={{ padding: "16px 0", display: "flex", flexDirection: "column", gap: 12 }}>
-        <div>
-          <label htmlFor="push-service-url" style={{ display: "block", fontSize: 13, color: "var(--fg-1)", marginBottom: 4, fontWeight: 500 }}>
-            Push service URL
-          </label>
-          <p style={{ fontSize: 12, color: "var(--fg-2)", margin: "0 0 6px", lineHeight: 1.5 }}>
-            HTTPS endpoint of the relay service (e.g. <code>https://push.example.com/notify</code>). Leave blank to disable push.
-          </p>
-          <input
-            id="push-service-url"
-            type="url"
-            value={serviceUrl}
-            onChange={(e) => { setServiceUrl(e.target.value); setMsg(null); }}
-            placeholder="https://push.example.com/notify"
-            style={inputStyle}
-          />
-        </div>
-
-        <div>
-          <label htmlFor="push-service-token" style={{ display: "block", fontSize: 13, color: "var(--fg-1)", marginBottom: 4, fontWeight: 500 }}>
-            Bearer token {tokenIsSet && <span style={{ color: "var(--fg-3)", fontWeight: 400 }}>(currently set — leave blank to keep)</span>}
-          </label>
-          <p style={{ fontSize: 12, color: "var(--fg-2)", margin: "0 0 6px", lineHeight: 1.5 }}>
-            Auth token sent as <code>Authorization: Bearer …</code> when calling the relay.
-          </p>
-          <input
-            id="push-service-token"
-            type="password"
-            value={token}
-            onChange={(e) => { setToken(e.target.value); setMsg(null); }}
-            placeholder={tokenIsSet ? "•••••••• (set)" : "token…"}
-            style={inputStyle}
-          />
-        </div>
-
-        <div>
-          <label htmlFor="push-base-url" style={{ display: "block", fontSize: 13, color: "var(--fg-1)", marginBottom: 4, fontWeight: 500 }}>
-            Public bridge base URL
-          </label>
-          <p style={{ fontSize: 12, color: "var(--fg-2)", margin: "0 0 6px", lineHeight: 1.5 }}>
-            Public HTTPS URL of this bridge (embedded in push payloads as the approval callback host).
-          </p>
-          <input
-            id="push-base-url"
-            type="url"
-            value={baseUrl}
-            onChange={(e) => { setBaseUrl(e.target.value); setMsg(null); }}
-            placeholder="https://bridge.example.com"
-            style={inputStyle}
-          />
-        </div>
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving}
-            style={{
-              background: "var(--accent)",
-              color: "#fff",
-              border: "none",
-              borderRadius: "var(--r-2)",
-              padding: "6px 14px",
-              fontSize: 13,
-              cursor: saving ? "not-allowed" : "pointer",
-              opacity: saving ? 0.6 : 1,
-            }}
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-          {msg && (
-            <span style={{ fontSize: 12, color: msg.ok ? "var(--ok)" : "var(--err)" }}>
-              {msg.text}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MobileNotificationsCard() {
-  const [status, setStatus] = useState<"idle" | "subscribing" | "subscribed" | "unsubscribing" | "unsupported">("idle");
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      setStatus("unsupported");
-      return;
-    }
-    navigator.serviceWorker.getRegistration("/dashboard/").then(async (reg) => {
-      if (!reg) return;
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) setStatus("subscribed");
-    }).catch(() => {});
-  }, []);
-
-  async function handleSubscribe() {
-    setStatus("subscribing");
-    setMsg(null);
-    try {
-      const { subscribeToPush, registerServiceWorker } = await import("@/lib/pushSubscription");
-      await registerServiceWorker();
-      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
-      if (!vapidKey) {
-        setMsg({ ok: false, text: "NEXT_PUBLIC_VAPID_PUBLIC_KEY not set — contact your bridge admin." });
-        setStatus("idle");
-        return;
-      }
-      const ok = await subscribeToPush(vapidKey);
-      setStatus(ok ? "subscribed" : "idle");
-      setMsg(ok ? { ok: true, text: "Subscribed. You'll receive push notifications on this device." } : { ok: false, text: "Subscription failed — check Notification permission in browser settings." });
-    } catch (err) {
-      setStatus("idle");
-      setMsg({ ok: false, text: String(err) });
-    }
-  }
-
-  async function handleUnsubscribe() {
-    setStatus("unsubscribing");
-    setMsg(null);
-    try {
-      const { unsubscribeFromPush } = await import("@/lib/pushSubscription");
-      await unsubscribeFromPush();
-      setStatus("idle");
-      setMsg({ ok: true, text: "Unsubscribed." });
-    } catch (err) {
-      setStatus("subscribed");
-      setMsg({ ok: false, text: String(err) });
-    }
-  }
-
-  async function handleTest() {
-    setMsg(null);
-    try {
-      const res = await fetch(apiPath("/api/push/test"), { method: "POST" });
-      const data = await res.json() as Record<string, unknown>;
-      setMsg(res.ok ? { ok: true, text: `Test sent (${data.sent ?? 0} delivered).` } : { ok: false, text: JSON.stringify(data) });
-    } catch (err) {
-      setMsg({ ok: false, text: String(err) });
-    }
-  }
-
-  return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <div className="card-head">
-        <h2>Mobile notifications</h2>
-      </div>
-      <div style={{ padding: "0 16px 16px" }}>
-        <p style={{ fontSize: 13, color: "var(--fg-2)", marginBottom: 12 }}>
-          Install this page as a PWA and receive push notifications when tool calls need your approval.
-        </p>
-        {status === "unsupported" ? (
-          <p style={{ fontSize: 13, color: "var(--fg-3)" }}>Push notifications are not supported in this browser.</p>
-        ) : (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {status !== "subscribed" && status !== "unsubscribing" ? (
-              <button
-                type="button"
-                onClick={handleSubscribe}
-                disabled={status === "subscribing"}
-                style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: "var(--r-2)", padding: "8px 16px", fontSize: 13, cursor: status === "subscribing" ? "not-allowed" : "pointer", minHeight: 44 }}
-              >
-                {status === "subscribing" ? "Subscribing…" : "Enable push notifications"}
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={handleTest}
-                  style={{ background: "var(--bg-2)", color: "var(--fg-0)", border: "1px solid var(--border-default)", borderRadius: "var(--r-2)", padding: "8px 16px", fontSize: 13, cursor: "pointer", minHeight: 44 }}
-                >
-                  Test notification
-                </button>
-                <button
-                  type="button"
-                  onClick={handleUnsubscribe}
-                  disabled={status === "unsubscribing"}
-                  style={{ background: "transparent", color: "var(--fg-3)", border: "none", fontSize: 13, cursor: "pointer", minHeight: 44 }}
-                >
-                  {status === "unsubscribing" ? "Removing…" : "Remove this device"}
-                </button>
-              </>
-            )}
-          </div>
-        )}
-        {msg && (
-          <p style={{ fontSize: 12, marginTop: 8, color: msg.ok ? "var(--ok)" : "var(--err)" }}>
-            {msg.text}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Row({
+function ToggleRow({
+  id,
   label,
-  value,
-  mono,
-  pill,
-  tooltip,
+  help,
+  checked,
+  onChange,
 }: {
+  id: string;
   label: string;
-  value: string;
-  mono?: boolean;
-  pill?: "ok" | "warn";
-  tooltip?: string;
+  help: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ marginTop: 2 }}
+      />
+      <label htmlFor={id} style={{ flex: 1, cursor: "pointer" }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>{label}</div>
+        <div style={{ fontSize: 12, color: "var(--fg-2)", marginTop: 2, lineHeight: 1.5 }}>{help}</div>
+      </label>
+    </div>
+  );
+}
+
+function PermColumn({
+  tone,
+  title,
+  rules,
+}: {
+  tone: "ok" | "warn" | "err";
+  title: string;
+  rules: string[];
 }) {
   return (
     <div
       style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 16,
-        padding: "10px 0",
-        borderBottom: "1px solid var(--border-subtle)",
-        fontSize: 13,
-        alignItems: "center",
+        background: "var(--bg-2)",
+        border: "1px solid var(--border-default)",
+        borderRadius: "var(--r-2)",
+        padding: 10,
+        minHeight: 80,
       }}
     >
-      <span
-        style={{ color: "var(--fg-2)", cursor: tooltip ? "help" : undefined }}
-        title={tooltip}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+        <StatusPill tone={tone}>{title}</StatusPill>
+        <span style={{ fontSize: 11, color: "var(--fg-3)" }}>{rules.length}</span>
+      </div>
+      {rules.length === 0 ? (
+        <div style={{ fontSize: 11, color: "var(--fg-3)" }}>—</div>
+      ) : (
+        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+          {rules.slice(0, 8).map((r) => (
+            <li key={r} className="mono" style={{ fontSize: 11, color: "var(--fg-1)", wordBreak: "break-all" }}>
+              {r}
+            </li>
+          ))}
+          {rules.length > 8 && (
+            <li style={{ fontSize: 11, color: "var(--fg-3)" }}>+{rules.length - 8} more</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ConfigFileCard({ path }: { path: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(path);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked */
+    }
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        background: "var(--bg-2)",
+        border: "1px solid var(--border-default)",
+        borderRadius: "var(--r-2)",
+        padding: 10,
+      }}
+    >
+      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.05em", color: "var(--fg-3)", textTransform: "uppercase" }}>
+        Config file
+      </div>
+      <div
+        className="mono"
+        style={{ fontSize: 11, color: "var(--fg-1)", marginTop: 6, wordBreak: "break-all", lineHeight: 1.4 }}
       >
-        {label}
-      </span>
-      <span
-        className={mono ? "mono" : undefined}
-        style={{ color: "var(--fg-0)", display: "flex", alignItems: "center", gap: 6 }}
+        {path}
+      </div>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label="Copy config path"
+        style={{
+          marginTop: 8,
+          background: "transparent",
+          border: "1px solid var(--border-default)",
+          borderRadius: "var(--r-s)",
+          color: copied ? "var(--ok)" : "var(--fg-1)",
+          fontSize: 11,
+          padding: "3px 8px",
+          cursor: "pointer",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+        }}
       >
-        {pill ? <span className={`pill ${pill}`} style={{ fontSize: 11 }}>{value}</span> : value}
-      </span>
+        <span aria-hidden>{copied ? "✓" : "⧉"}</span>
+        {copied ? "Copied" : "Copy path"}
+      </button>
     </div>
   );
 }

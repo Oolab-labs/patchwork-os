@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { ErrorState } from "@/components/patchwork";
+import { AnalyticsTabs } from "@/components/AnalyticsTabs";
 
 interface ToolInsight {
   toolName: string;
@@ -136,6 +138,10 @@ export default function InsightsPage() {
   const tools = data?.tools ?? [];
 
   useEffect(() => {
+    document.title = "Insights — Patchwork OS";
+  }, []);
+
+  useEffect(() => {
     if (tools.length === 0) return;
     // Fetch rule explanations for all tools in parallel via the Next.js bridge proxy.
     void Promise.all(
@@ -159,13 +165,14 @@ export default function InsightsPage() {
 
   return (
     <section>
+      <AnalyticsTabs />
       <div className="page-head">
         <div>
-          <h1>Approval Insights</h1>
-          <div className="page-head-sub">
-            Your personal approval history — how the bridge interprets your
-            past decisions. Same signals surfaced per-call in the approval
-            modal, now shown in aggregate. Read-only.
+          <h1 className="editorial-h1">
+            Insights — <span className="accent">how the bridge reads your decisions.</span>
+          </h1>
+          <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+            Your personal approval history in aggregate. Same signals shown per-call in the approval modal. Read-only.
           </div>
         </div>
         <div
@@ -196,7 +203,17 @@ export default function InsightsPage() {
       {loading && tools.length === 0 && (
         <p style={{ color: "var(--fg-2)" }}>Loading…</p>
       )}
-      {error && <div className="alert-err">Unreachable: {error}</div>}
+      {error && tools.length === 0 && (
+        <ErrorState
+          title="Couldn't load insights"
+          description="The bridge isn't responding to /approval-insights."
+          error={error}
+          onRetry={() => window.location.reload()}
+        />
+      )}
+      {error && tools.length > 0 && (
+        <div className="alert-err">Refresh failed — {error}</div>
+      )}
 
       {!loading && !error && tools.length === 0 && (
         <div className="empty-state">

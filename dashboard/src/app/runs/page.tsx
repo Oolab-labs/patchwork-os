@@ -2,13 +2,33 @@
 import React from "react";
 import { apiPath } from "@/lib/api";
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { LivePill } from "@/components/patchwork/LivePill";
+import { ErrorState } from "@/components/patchwork";
+import { ActivityTabs } from "@/components/ActivityTabs";
 
 interface AssertionFailure {
   assertion: string;
   expected?: unknown;
   actual?: unknown;
   message: string;
+}
+
+function formatRecipeName(name: string, trigger: string): string {
+  // Already has colon variant
+  if (name.includes(":")) return name;
+  const norm = normaliseTrigger(trigger);
+  if (norm === "manual") return name;
+  // Map to short variant suffix: webhook→hook, recipe→agent, cron→cron, git_hook→git
+  const suffix =
+    norm === "webhook"
+      ? "hook"
+      : norm === "recipe"
+        ? "agent"
+        : norm === "git_hook"
+          ? "git"
+          : norm;
+  return `${name}:${suffix}`;
 }
 
 function normaliseTrigger(t: string): string {
@@ -72,18 +92,11 @@ const RUNS_PAGE_SIZE = 100;
 export default function RunsPage() {
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [err, setErr] = useState<string>();
-  const [trigger, setTrigger] = useState<TriggerFilter>("all");
+  const [trigger] = useState<TriggerFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [recipeFilter, setRecipeFilter] = useState("");
-  const [recipeQuery, setRecipeQuery] = useState("");
+  const [recipeQuery] = useState("");
   const [limit, setLimit] = useState(RUNS_PAGE_SIZE);
   const [expanded, setExpanded] = useState<string | null>(null);
-
-  // Debounce recipe filter input so we don't refetch on every keystroke.
-  useEffect(() => {
-    const id = setTimeout(() => setRecipeQuery(recipeFilter.trim()), 300);
-    return () => clearTimeout(id);
-  }, [recipeFilter]);
 
   useEffect(() => {
     const load = async () => {
@@ -129,196 +142,90 @@ export default function RunsPage() {
     return Math.max(...runs.map((r) => r.durationMs), 1);
   }, [runs]);
 
-  const triggerChips: { k: TriggerFilter; label: string }[] = [
-    { k: "all", label: "All" },
-    { k: "cron", label: "Cron" },
-    { k: "webhook", label: "Webhook" },
-    { k: "recipe", label: "Manual" },
-  ];
-  const statusChips: { k: StatusFilter; label: string }[] = [
-    { k: "all", label: "Any" },
-    { k: "running", label: "Running" },
-    { k: "done", label: "Done" },
-    { k: "error", label: "Error" },
-    { k: "cancelled", label: "Cancelled" },
-    { k: "interrupted", label: "Interrupted" },
-  ];
-
   return (
     <section>
+      <ActivityTabs />
       <div className="page-head">
         <div>
-          <h1>Runs</h1>
-          <div className="page-head-sub">
-            Every recipe execution — cron, webhook, and manual.
+          <h1 className="editorial-h1">
+            Runs — <span className="accent">every patch your agents stitched.</span>
+          </h1>
+          <div className="editorial-sub">
+            {runs ? `${runs.length} runs` : "— runs"} · last 24h · avg {fmtDur(stats.avgMs)}
           </div>
         </div>
-        {runs && <span className="pill muted">{runs.length} shown</span>}
+        <LivePill label="5s" />
       </div>
 
-      {/* hero strip */}
-      <div
-        className="card"
-        style={{
-          padding: "18px 22px",
-          marginBottom: "var(--s-5)",
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--s-5)",
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 180 }}>
-          <div
-            style={{
-              fontSize: 10,
-              color: "var(--ink-2)",
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.07em",
-              marginBottom: 4,
-            }}
-          >
-            Recipe runs
-          </div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "var(--ink-0)" }}>
-            {stats.total} execution{stats.total !== 1 ? "s" : ""} in window
-          </div>
-        </div>
-        {[
-          { label: "Passed", n: stats.ok, color: "var(--green)" },
-          { label: "Failed", n: stats.err, color: "var(--red)" },
-          { label: "Other", n: stats.other, color: "var(--ink-3)" },
-          {
-            label: "Avg",
-            n: stats.avgMs ? fmtDur(stats.avgMs) : "—",
-            color: "var(--ink-0)",
-          },
-        ].map((it, i) => (
-          <Fragment key={it.label}>
-            <div
-              aria-hidden
-              style={{ width: 1, height: 32, background: "var(--line-2)" }}
-            />
-            <div style={{ textAlign: "center", minWidth: 72 }}>
-              <div
-                style={{
-                  fontSize: 22,
-                  fontWeight: 800,
-                  fontFamily: "var(--font-mono)",
-                  color:
-                    typeof it.n === "number" && it.n === 0
-                      ? "var(--ink-3)"
-                      : it.color,
-                  lineHeight: 1,
-                }}
-              >
-                {it.n}
-              </div>
-              <div
-                style={{
-                  fontSize: 10,
-                  color: "var(--ink-2)",
-                  marginTop: 4,
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                {it.label}
-              </div>
-            </div>
-          </Fragment>
-        ))}
+      {/* stat cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "var(--s-4)", marginBottom: "var(--s-5)" }}>
+        <button
+          type="button"
+          className="card"
+          onClick={() => setStatus("all")}
+          style={{
+            textAlign: "left",
+            padding: "20px 24px",
+            borderLeft: "3px solid var(--orange)",
+            cursor: "pointer",
+            borderColor: status === "all" ? "var(--orange)" : undefined,
+            background: "transparent",
+          }}
+          aria-pressed={status === "all"}
+        >
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 8 }}>All runs</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>{stats.total}</div>
+          <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}>Last 24h</div>
+        </button>
+        <button
+          type="button"
+          className="card"
+          onClick={() => setStatus("done")}
+          style={{
+            textAlign: "left",
+            padding: "20px 24px",
+            borderLeft: "3px solid var(--ok)",
+            cursor: "pointer",
+            borderColor: status === "done" ? "var(--ok)" : undefined,
+            background: "transparent",
+          }}
+          aria-pressed={status === "done"}
+        >
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ok)", marginBottom: 8 }}>✓ Successful</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>{stats.ok}</div>
+          <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}>{stats.total > 0 ? Math.round(stats.ok / stats.total * 100) + "%" : "—"} success rate</div>
+        </button>
+        <button
+          type="button"
+          className="card"
+          onClick={() => setStatus("error")}
+          style={{
+            textAlign: "left",
+            padding: "20px 24px",
+            borderLeft: "3px solid var(--err)",
+            cursor: "pointer",
+            borderColor: status === "error" ? "var(--err)" : undefined,
+            background: "transparent",
+          }}
+          aria-pressed={status === "error"}
+        >
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--err)", marginBottom: 8 }}>⚠ Errored</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: stats.err > 0 ? "var(--err)" : "var(--ink-0)", lineHeight: 1 }}>{stats.err}</div>
+          <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}>{stats.total > 0 ? Math.round(stats.err / stats.total * 100) + "%" : "—"} error rate</div>
+        </button>
       </div>
 
-      {/* filter chips */}
-      <div
-        style={{
-          display: "flex",
-          gap: "var(--s-4)",
-          marginBottom: "var(--s-4)",
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: 10,
-              color: "var(--ink-2)",
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              marginBottom: 4,
-            }}
-          >
-            Trigger
-          </div>
-          <div className="filter-chips" style={{ marginBottom: 0 }}>
-            {triggerChips.map((c) => (
-              <button
-                type="button"
-                key={c.k}
-                onClick={() => setTrigger(c.k)}
-                className={`filter-chip${trigger === c.k ? " active" : ""}`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <div
-            style={{
-              fontSize: 10,
-              color: "var(--ink-2)",
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              marginBottom: 4,
-            }}
-          >
-            Status
-          </div>
-          <div className="filter-chips" style={{ marginBottom: 0 }}>
-            {statusChips.map((c) => (
-              <button
-                type="button"
-                key={c.k}
-                onClick={() => setStatus(c.k)}
-                className={`filter-chip${status === c.k ? " active" : ""}`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{ flex: 1, minWidth: 220 }}>
-          <div
-            style={{
-              fontSize: 10,
-              color: "var(--ink-2)",
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              marginBottom: 4,
-            }}
-          >
-            Recipe
-          </div>
-          <input
-            type="search"
-            className="input"
-            placeholder="Filter by recipe name…"
-            value={recipeFilter}
-            onChange={(e) => setRecipeFilter(e.target.value)}
-            style={{ width: "100%", maxWidth: 320 }}
-          />
-        </div>
-      </div>
-
-      {err && <div className="alert-err">Unreachable: {err}</div>}
+      {err && (!runs || runs.length === 0) && (
+        <ErrorState
+          title="Couldn't load runs"
+          description="The bridge isn't responding to /runs."
+          error={err}
+          onRetry={() => window.location.reload()}
+        />
+      )}
+      {err && runs && runs.length > 0 && (
+        <div className="alert-err">Refresh failed — {err}</div>
+      )}
 
       {runs === null && !err ? (
         <div className="empty-state">
@@ -342,7 +249,7 @@ export default function RunsPage() {
                 <th>Recipe</th>
                 <th style={{ width: 90 }}>Trigger</th>
                 <th style={{ width: 110 }}>Status</th>
-                <th style={{ width: 200 }}>Duration</th>
+                <th style={{ width: 200, textAlign: "right" }}>Duration</th>
                 <th style={{ width: 80 }}>Task</th>
               </tr>
             </thead>
@@ -382,7 +289,7 @@ export default function RunsPage() {
                           onClick={(e) => e.stopPropagation()}
                           style={{ fontWeight: 600 }}
                         >
-                          {r.recipeName}
+                          {formatRecipeName(r.recipeName, r.trigger)}
                         </Link>
                       </td>
                       <td>
@@ -438,8 +345,8 @@ export default function RunsPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="mono muted">
-                        <Link href="/tasks">{r.taskId?.slice(0, 8) ?? "—"}</Link>
+                      <td className="mono muted" title={r.taskId ?? undefined}>
+                        {r.taskId?.slice(0, 8) ?? "—"}
                       </td>
                     </tr>
                     {isExpanded && (

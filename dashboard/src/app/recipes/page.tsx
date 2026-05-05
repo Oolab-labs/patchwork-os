@@ -2,156 +2,23 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
+import { SkeletonList } from "@/components/Skeleton";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import {
+  CodeBlock,
+  ErrorState,
+  LivePill,
+  PatchCard,
+  RunSparkBars,
+  StatusPill,
+} from "@/components/patchwork";
 
 interface BridgeStatusForRecipes {
   patchwork?: { port?: number };
   port?: number;
-}
-
-/** Build the full URL a webhook recipe accepts POSTs at. The bridge
- * exposes webhooks under /hooks/<path>. We always default to localhost —
- * for remote bridges users adjust the host themselves; the strategic plan
- * §4 emphasizes "anything that can send HTTP," not deployment topology. */
-function buildWebhookUrl(port: number | undefined, path: string): string {
-  const p = port ?? 3101;
-  const cleanPath = path.startsWith("/") ? path : `/${path}`;
-  return `http://localhost:${p}/hooks${cleanPath}`;
-}
-
-function buildCurlExample(port: number | undefined, path: string): string {
-  const url = buildWebhookUrl(port, path);
-  return `curl -X POST ${url} \\\n  -H 'Content-Type: application/json' \\\n  -d '{"hello":"world"}'`;
-}
-
-interface WebhookPayloadEntry {
-  receivedAt: number;
-  payload: unknown;
-  ok: boolean;
-  error?: string;
-  taskId?: string;
-  recipeName?: string;
-}
-interface WebhookPayloadsResponse {
-  path: string;
-  entries: WebhookPayloadEntry[];
-}
-
-function WebhookPayloadsCard({ webhookPath }: { webhookPath: string }) {
-  const { data, error, loading } = useBridgeFetch<WebhookPayloadsResponse>(
-    `/api/bridge/webhook-payloads${webhookPath}`,
-    { intervalMs: 5000 },
-  );
-  const entries = data?.entries ?? [];
-  return (
-    <div style={{ gridColumn: "1 / -1", marginTop: 8 }}>
-      <span className="muted">Last payloads</span>
-      {loading && entries.length === 0 && (
-        <p style={{ fontSize: 11, color: "var(--fg-2)", margin: "4px 0 0" }}>
-          Loading…
-        </p>
-      )}
-      {error && (
-        <p style={{ fontSize: 11, color: "var(--err)", margin: "4px 0 0" }}>
-          {error}
-        </p>
-      )}
-      {!loading && !error && entries.length === 0 && (
-        <p style={{ fontSize: 11, color: "var(--fg-2)", margin: "4px 0 0" }}>
-          No payloads received yet. Send a test or fire from your trigger
-          source — recent bodies will appear here.
-        </p>
-      )}
-      {entries.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-            marginTop: 4,
-          }}
-        >
-          {entries.map((e) => (
-            <details
-              key={`${e.receivedAt}-${e.taskId ?? "anon"}`}
-              style={{
-                background: "var(--bg-1)",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: "var(--r-2)",
-              }}
-            >
-              <summary
-                style={{
-                  fontSize: 11,
-                  padding: "6px 10px",
-                  cursor: "pointer",
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <span
-                  className={`pill ${e.ok ? "ok" : "err"}`}
-                  style={{ fontSize: 10 }}
-                >
-                  {e.ok ? "ok" : "err"}
-                </span>
-                <span className="muted">{relTime(e.receivedAt)}</span>
-                {e.taskId && (
-                  <code style={{ fontSize: 11 }}>
-                    task {e.taskId.slice(0, 8)}
-                  </code>
-                )}
-                {e.error && (
-                  <span style={{ color: "var(--err)" }}>{e.error}</span>
-                )}
-              </summary>
-              <pre
-                style={{
-                  fontSize: 11,
-                  margin: 0,
-                  padding: "0 10px 8px",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  overflowX: "auto",
-                }}
-              >
-                {typeof e.payload === "string"
-                  ? e.payload
-                  : JSON.stringify(e.payload, null, 2)}
-              </pre>
-            </details>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      className="btn sm ghost"
-      style={{ fontSize: 11, padding: "2px 8px" }}
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        } catch {
-          // clipboard API blocked (insecure origin etc.) — silently no-op
-        }
-      }}
-    >
-      {copied ? "Copied" : label}
-    </button>
-  );
 }
 
 // Tool prefix → connector name mapping
@@ -172,11 +39,6 @@ const TOOL_PREFIX_MAP: Record<string, string> = {
 function detectConnectors(recipes: Recipe[]): string[] {
   const found = new Set<string>();
   for (const recipe of recipes) {
-    // Inspect steps via the raw recipe fields we have. The bridge returns
-    // stepCount but not step details, so we scan the name/description for
-    // tool mentions as a best-effort heuristic. Full step data would require
-    // a separate fetch per recipe; for now we match any known prefix in name
-    // + description text to avoid an N+1 request pattern.
     const haystack = `${recipe.name} ${recipe.description ?? ""}`.toLowerCase();
     for (const [prefix, connector] of Object.entries(TOOL_PREFIX_MAP)) {
       if (haystack.includes(prefix)) {
@@ -192,11 +54,22 @@ function relTime(ms: number): string {
   const sec = Math.floor(diff / 1000);
   if (sec < 60) return "just now";
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} min ago`;
+  if (min < 60) return `${min}m ago`;
   const hrs = Math.floor(min / 60);
-  if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
   const d = new Date(ms);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function formatDuration(ms: number | undefined): string {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return "—";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.round((ms % 60_000) / 1000);
+  return `${m}m ${s}s`;
 }
 
 interface RecipeVar {
@@ -213,33 +86,6 @@ type TrustLevel =
   | "ask_novel"
   | "mostly_trusted"
   | "fully_trusted";
-
-const TRUST_LEVEL_LABELS: Record<TrustLevel, string> = {
-  draft: "Draft",
-  manual_run: "Manual run",
-  ask_every_time: "Ask every time",
-  ask_novel: "Ask on novel cases",
-  mostly_trusted: "Mostly trusted",
-  fully_trusted: "Fully trusted",
-};
-
-const TRUST_LEVEL_COLORS: Record<TrustLevel, string> = {
-  draft: "var(--fg-3)",
-  manual_run: "var(--fg-2)",
-  ask_every_time: "var(--warn, #e6a817)",
-  ask_novel: "var(--warn, #e6a817)",
-  mostly_trusted: "var(--ok, #22c55e)",
-  fully_trusted: "var(--ok, #22c55e)",
-};
-
-const TRUST_LEVELS: TrustLevel[] = [
-  "draft",
-  "manual_run",
-  "ask_every_time",
-  "ask_novel",
-  "mostly_trusted",
-  "fully_trusted",
-];
 
 interface Recipe {
   id?: string;
@@ -269,10 +115,23 @@ interface RunRecord {
   recipeName?: string;
   startedAt: number;
   status: string;
+  durationMs?: number;
+  toolCount?: number;
+  taskId?: string;
 }
 
 interface RunModalState {
   recipe: Recipe;
+}
+
+interface RecipeContentResponse {
+  name?: string;
+  content?: string;
+  yaml?: string;
+  raw?: string;
+  text?: string;
+  steps?: unknown[];
+  [k: string]: unknown;
 }
 
 function RunModal({
@@ -335,73 +194,36 @@ function RunModal({
             marginBottom: "var(--s-4)",
           }}
         >
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 16,
-              fontWeight: 600,
-              color: "var(--fg-0)",
-            }}
-          >
-            Run{" "}
-            <code
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 14,
-                background: "var(--bg-2)",
-                padding: "1px 6px",
-                borderRadius: "var(--r-1)",
-              }}
-            >
-              {state.recipe.name}
-            </code>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
+            Run <code>{state.recipe.name}</code>
           </h2>
           <button
             type="button"
             className="btn sm ghost"
             onClick={onClose}
             aria-label="Close"
-            style={{ padding: "0 var(--s-2)", fontSize: 16 }}
           >
-            &#x2715;
+            ×
           </button>
         </div>
-
         <form
           onSubmit={(e) => {
             e.preventDefault();
             onConfirm(values);
           }}
         >
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}
-          >
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
             {vars.map((v) => (
               <div key={v.name}>
                 <label
                   htmlFor={`run-var-${v.name}`}
-                  style={{
-                    display: "block",
-                    marginBottom: "var(--s-1)",
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: "var(--fg-1)",
-                    fontFamily: "var(--font-mono)",
-                  }}
+                  style={{ display: "block", marginBottom: 4, fontSize: 13, fontFamily: "var(--font-mono)" }}
                 >
                   {v.name}
-                  {v.required && (
-                    <span style={{ color: "var(--err)", marginLeft: 4 }}>*</span>
-                  )}
+                  {v.required && <span style={{ color: "var(--err)", marginLeft: 4 }}>*</span>}
                 </label>
                 {v.description && (
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "var(--fg-3)",
-                      marginBottom: "var(--s-1)",
-                    }}
-                  >
+                  <div style={{ fontSize: 12, color: "var(--fg-3)", marginBottom: 4 }}>
                     {v.description}
                   </div>
                 )}
@@ -410,27 +232,15 @@ function RunModal({
                   type="text"
                   required={v.required}
                   value={values[v.name] ?? ""}
-                  placeholder={v.description ?? v.default ?? ""}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setValues((prev) => ({ ...prev, [v.name]: val }));
-                  }}
-                  style={{
-                    width: "100%",
-                    background: "var(--bg-2)",
-                    border: "1px solid var(--border-default)",
-                    borderRadius: "var(--r-2)",
-                    color: "var(--fg-0)",
-                    fontSize: 13,
-                    padding: "var(--s-2) var(--s-3)",
-                    outline: "none",
-                    fontFamily: "var(--font-mono)",
-                  }}
+                  onChange={(e) =>
+                    setValues((prev) => ({ ...prev, [v.name]: e.target.value }))
+                  }
+                  className="input"
+                  style={{ width: "100%" }}
                 />
               </div>
             ))}
           </div>
-
           <div
             style={{
               display: "flex",
@@ -439,12 +249,7 @@ function RunModal({
               justifyContent: "flex-end",
             }}
           >
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={onClose}
-              disabled={running}
-            >
+            <button type="button" className="btn ghost" onClick={onClose} disabled={running}>
               Cancel
             </button>
             <button type="submit" className="btn" disabled={running}>
@@ -457,19 +262,346 @@ function RunModal({
   );
 }
 
+/** Small donut ring showing success rate (0-100). */
+function SuccessRing({
+  pct,
+  size = 28,
+  stroke = 4,
+}: {
+  pct: number | null;
+  size?: number;
+  stroke?: number;
+}) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const safePct = pct == null ? 0 : Math.max(0, Math.min(100, pct));
+  const dash = (safePct / 100) * c;
+  const color =
+    pct == null
+      ? "var(--line-3)"
+      : safePct >= 90
+        ? "var(--ok, #22c55e)"
+        : safePct >= 60
+          ? "var(--warn, #e6a817)"
+          : "var(--err, #ef4444)";
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      style={{ display: "block", flexShrink: 0 }}
+      aria-label={pct == null ? "no run data" : `${Math.round(safePct)}% success`}
+    >
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="var(--line-3)"
+        strokeWidth={stroke}
+      />
+      {pct != null && (
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth={stroke}
+          strokeDasharray={`${dash} ${c - dash}`}
+          strokeDashoffset={c / 4}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      )}
+      <text
+        x="50%"
+        y="50%"
+        textAnchor="middle"
+        dominantBaseline="central"
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: size <= 28 ? 8 : 10,
+          fontWeight: 700,
+          fill: "var(--ink-1)",
+        }}
+      >
+        {pct == null ? "—" : `${Math.round(safePct)}`}
+      </text>
+    </svg>
+  );
+}
+
+/** Lightweight YAML coloriser — keys, values, comments. */
+function highlightYaml(yaml: string): React.ReactNode {
+  const lines = yaml.split("\n");
+  return lines.map((line, i) => {
+    const commentIdx = line.indexOf("#");
+    let codePart = line;
+    let comment = "";
+    if (commentIdx >= 0) {
+      // Naively avoid splitting inside quoted strings; good enough for recipes.
+      const before = line.slice(0, commentIdx);
+      const quoteOpen = (before.match(/"/g) ?? []).length % 2 === 1;
+      if (!quoteOpen) {
+        codePart = before;
+        comment = line.slice(commentIdx);
+      }
+    }
+    const m = codePart.match(/^(\s*-?\s*)([A-Za-z0-9_./-]+)(\s*:)(\s*)(.*)$/);
+    let body: React.ReactNode = codePart;
+    if (m) {
+      const [, lead, key, colon, ws, rest] = m;
+      body = (
+        <>
+          <span>{lead}</span>
+          <span className="yaml-key" style={{ color: "var(--accent, #7aa2f7)" }}>{key}</span>
+          <span>{colon}</span>
+          <span>{ws}</span>
+          {rest && (
+            <span className="yaml-string" style={{ color: "var(--ok, #9ece6a)" }}>{rest}</span>
+          )}
+        </>
+      );
+    }
+    return (
+      <div key={i}>
+        {body}
+        {comment && (
+          <span className="yaml-comment" style={{ color: "var(--ink-3)", fontStyle: "italic" }}>
+            {comment}
+          </span>
+        )}
+        {!line && " "}
+      </div>
+    );
+  });
+}
+
+/** Build a presentable YAML string from recipe metadata when raw isn't available. */
+function fallbackYaml(recipe: Recipe): string {
+  const lines: string[] = [];
+  lines.push(`name: ${recipe.name}`);
+  if (recipe.version) lines.push(`version: ${recipe.version}`);
+  if (recipe.description) lines.push(`description: ${recipe.description}`);
+  lines.push(`trigger: ${recipe.trigger ?? "manual"}`);
+  if (recipe.webhookPath) lines.push(`webhookPath: ${recipe.webhookPath}`);
+  if (recipe.stepCount != null) lines.push(`# ${recipe.stepCount} step(s)`);
+  if (recipe.path) lines.push(`# path: ${recipe.path}`);
+  if (recipe.vars && recipe.vars.length > 0) {
+    lines.push("vars:");
+    for (const v of recipe.vars) {
+      lines.push(`  - name: ${v.name}`);
+      if (v.required) lines.push(`    required: true`);
+      if (v.default !== undefined) lines.push(`    default: ${v.default}`);
+      if (v.description) lines.push(`    description: ${v.description}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function RecipeYamlPanel({ recipe }: { recipe: Recipe }) {
+  const [yaml, setYaml] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setYaml(null);
+    (async () => {
+      try {
+        const res = await fetch(
+          apiPath(`/api/bridge/recipes/${encodeURIComponent(recipe.name)}`),
+        );
+        if (!res.ok) throw new Error(`fetch ${res.status}`);
+        const data = (await res.json()) as RecipeContentResponse;
+        if (cancelled) return;
+        const raw =
+          (typeof data.content === "string" && data.content) ||
+          (typeof data.yaml === "string" && data.yaml) ||
+          (typeof data.raw === "string" && data.raw) ||
+          (typeof data.text === "string" && data.text) ||
+          "";
+        setYaml(raw || fallbackYaml(recipe));
+      } catch {
+        if (!cancelled) setYaml(fallbackYaml(recipe));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [recipe]);
+
+  return (
+    <CodeBlock
+      style={{
+        background: "var(--recess)",
+        border: "1px solid var(--line-2)",
+        borderRadius: "var(--r-2)",
+        padding: "10px 12px",
+        fontSize: 11,
+        lineHeight: 1.55,
+        maxHeight: 360,
+        overflow: "auto",
+        fontFamily: "var(--font-mono)",
+      }}
+    >
+      {loading && !yaml ? "Loading…" : highlightYaml(yaml ?? fallbackYaml(recipe))}
+    </CodeBlock>
+  );
+}
+
+function RecipeDetailPanel({
+  recipe,
+  recentRuns,
+  onClose,
+  onRun,
+  running,
+  isLive,
+}: {
+  recipe: Recipe;
+  recentRuns: RunRecord[];
+  onClose: () => void;
+  onRun: () => void;
+  running: Record<string, string>;
+  isLive: boolean;
+}) {
+  return (
+    <PatchCard
+      className="recipes-detail-panel"
+      style={{
+        position: "sticky",
+        top: 80,
+        overflowY: "auto",
+        maxHeight: "calc(100vh - 100px)",
+        padding: "var(--s-4)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontWeight: 700,
+            fontSize: 13,
+            flex: 1,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={recipe.name}
+        >
+          {recipe.name}
+        </span>
+        {isLive && <LivePill tone="ok" />}
+        <button type="button" onClick={onRun} className="btn sm primary" style={{ fontSize: 11 }}>
+          ▶ Run
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close detail panel"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--ink-3)",
+            fontSize: 18,
+            lineHeight: 1,
+          }}
+        >
+          ×
+        </button>
+      </div>
+
+      {running[recipe.name] && (
+        <div style={{ marginBottom: 10 }}>
+          <StatusPill tone="warn">{running[recipe.name]}</StatusPill>
+        </div>
+      )}
+
+      <div style={{ marginBottom: 14 }}>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            color: "var(--ink-3)",
+            marginBottom: 6,
+          }}
+        >
+          Recipe YAML
+        </div>
+        <RecipeYamlPanel recipe={recipe} />
+      </div>
+
+      <div>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            color: "var(--ink-3)",
+            marginBottom: 6,
+          }}
+        >
+          Recent runs
+        </div>
+        {recentRuns.length === 0 ? (
+          <div style={{ fontSize: 12, color: "var(--ink-3)" }}>No runs yet.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {recentRuns.map((run, i) => {
+              const ok = run.status === "done" || run.status === "success";
+              const fail = run.status === "error" || run.status === "failed";
+              const tone = ok ? "ok" : fail ? "err" : "warn";
+              return (
+                <div
+                  key={`${run.startedAt}-${i}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 11,
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
+                  <StatusPill tone={tone}>{ok ? "ok" : run.status}</StatusPill>
+                  <span style={{ color: "var(--ink-3)", flex: 1 }}>{relTime(run.startedAt)}</span>
+                  <span style={{ color: "var(--ink-2)" }}>{formatDuration(run.durationMs)}</span>
+                  {typeof run.toolCount === "number" && (
+                    <span style={{ color: "var(--ink-3)" }}>{run.toolCount} tools</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </PatchCard>
+  );
+}
+
 export default function RecipesPage() {
   const { data: bridgeStatus } = useBridgeFetch<BridgeStatusForRecipes>(
     "/api/bridge/status",
     { intervalMs: 10000 },
   );
-  const bridgePort = bridgeStatus?.patchwork?.port ?? bridgeStatus?.port;
+  // bridgePort retained for parity with prior page (used by webhook helpers in callers).
+  void bridgeStatus;
   const router = useRouter();
+  void router;
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [runMap, setRunMap] = useState<Map<string, RunRecord>>(new Map());
+  const [recentRunsMap, setRecentRunsMap] = useState<Map<string, RunRecord[]>>(new Map());
+  const [allRunsMap, setAllRunsMap] = useState<Map<string, RunRecord[]>>(new Map());
   const [err, setErr] = useState<string>();
   const [unsupported, setUnsupported] = useState(false);
   const [running, setRunning] = useState<Record<string, string>>({});
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [selectedName, setSelectedName] = useState<string | null>(null);
   const [modal, setModal] = useState<RunModalState | null>(null);
   const [modalRunning, setModalRunning] = useState(false);
   const [search, setSearch] = useState("");
@@ -497,23 +629,37 @@ export default function RecipesPage() {
       if (runsRes?.ok) {
         const runsData = (await runsRes.json()) as { runs?: RunRecord[] };
         const runs = runsData.runs ?? [];
-        const map = new Map<string, RunRecord>();
+        const latest = new Map<string, RunRecord>();
+        const recent = new Map<string, RunRecord[]>();
+        const all = new Map<string, RunRecord[]>();
         for (const run of runs) {
-          // recipeName may have ":agent" suffix from orchestrator — strip it for matching
           const key = (run.recipeName ?? run.recipe ?? "").replace(/:agent$/, "");
-          const existing = map.get(key);
+          const existing = latest.get(key);
           if (!existing || run.startedAt > existing.startedAt) {
-            map.set(key, run);
+            latest.set(key, run);
           }
+          const r = recent.get(key) ?? [];
+          r.push(run);
+          recent.set(key, r);
+          const a = all.get(key) ?? [];
+          a.push(run);
+          all.set(key, a);
         }
-        setRunMap(map);
-        // Clear "queued …" / "running…" badges for recipes whose latest run has settled
+        for (const [k, l] of recent) {
+          recent.set(k, l.sort((a, b) => b.startedAt - a.startedAt).slice(0, 5));
+        }
+        for (const [k, l] of all) {
+          all.set(k, l.sort((a, b) => b.startedAt - a.startedAt).slice(0, 14));
+        }
+        setRunMap(latest);
+        setRecentRunsMap(recent);
+        setAllRunsMap(all);
         setRunning((prev) => {
           const next = { ...prev };
           let changed = false;
           for (const name of Object.keys(next)) {
-            const latest = map.get(name);
-            if (latest && latest.status !== "running") {
+            const l = latest.get(name);
+            if (l && l.status !== "running") {
               delete next[name];
               changed = true;
             }
@@ -545,16 +691,9 @@ export default function RecipesPage() {
           body: JSON.stringify(body),
         },
       );
-      const data = (await res.json()) as {
-        ok: boolean;
-        taskId?: string;
-        error?: string;
-      };
+      const data = (await res.json()) as { ok: boolean; taskId?: string; error?: string };
       if (data.ok && data.taskId) {
-        setRunning((p) => ({
-          ...p,
-          [name]: `queued ${data.taskId?.slice(0, 8)}`,
-        }));
+        setRunning((p) => ({ ...p, [name]: `queued ${data.taskId?.slice(0, 8)}` }));
       } else {
         const errMsg =
           data.error === "already_in_flight"
@@ -580,90 +719,17 @@ export default function RecipesPage() {
     setModalRunning(false);
   }
 
-  async function handleDuplicate(name: string) {
+  async function handleToggleEnabled(recipe: Recipe) {
     try {
-      const res = await fetch(
-        apiPath(`/api/bridge/recipes/${encodeURIComponent(name)}/duplicate`),
-        { method: "POST" },
-      );
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        variantName?: string;
-        error?: string;
-      };
-      if (!res.ok || !body.ok) {
-        setErr(body.error ?? `duplicate failed: ${res.status}`);
-        return;
-      }
-      if (body.variantName) {
-        router.push(
-          `/recipes/compare?a=${encodeURIComponent(name)}&b=${encodeURIComponent(body.variantName)}`,
-        );
-      } else {
-        void load();
-      }
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
-  }
-
-  async function handleDelete(name: string) {
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm(`Delete recipe "${name}"? This removes the file from disk.`)
-    ) {
-      return;
-    }
-    try {
-      const res = await fetch(
-        apiPath(`/api/bridge/recipes/${encodeURIComponent(name)}`),
-        { method: "DELETE" },
-      );
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setErr(body.error ?? `delete failed: ${res.status}`);
-        return;
-      }
-      void load();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
-  }
-
-  async function handleSendTestWebhook(recipe: Recipe) {
-    const path = recipe.webhookPath;
-    if (!path) return;
-    setRunning((p) => ({ ...p, [recipe.name]: "sending test…" }));
-    try {
-      const res = await fetch(apiPath(`/api/bridge/hooks${path}`), {
-        method: "POST",
+      await fetch(apiPath(`/api/bridge/recipes/${encodeURIComponent(recipe.name)}`), {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ test: true, sentAt: new Date().toISOString() }),
+        body: JSON.stringify({ enabled: recipe.enabled === false }),
       });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        taskId?: string;
-      };
-      if (res.ok && body.ok !== false) {
-        setRunning((p) => ({
-          ...p,
-          [recipe.name]: body.taskId
-            ? `test queued ${body.taskId.slice(0, 8)}`
-            : "test sent",
-        }));
-      } else {
-        setRunning((p) => ({
-          ...p,
-          [recipe.name]: `test error: ${body.error ?? res.status}`,
-        }));
-      }
     } catch (e) {
-      setRunning((p) => ({
-        ...p,
-        [recipe.name]: `test error: ${e instanceof Error ? e.message : String(e)}`,
-      }));
+      setErr(e instanceof Error ? e.message : String(e));
     }
+    void load();
   }
 
   async function handleModalConfirm(vars: Record<string, string>) {
@@ -681,15 +747,43 @@ export default function RecipesPage() {
   const filteredRecipes = (recipes ?? []).filter((r) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
-    return r.name.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q);
+    return (
+      r.name.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q)
+    );
   });
 
-  function recipeStatus(r: Recipe): "idle" | "running" | "failed" {
-    const run = runMap.get(r.name);
-    if (!run) return "idle";
-    if (run.status === "running") return "running";
-    if (run.status === "error" || run.status === "failed") return "failed";
-    return "idle";
+  const enabledCount = (recipes ?? []).filter((r) => r.enabled !== false).length;
+  const installedCount = recipes?.length ?? 0;
+
+  const selectedRecipe = useMemo(
+    () => filteredRecipes.find((r) => r.name === selectedName) ?? null,
+    [filteredRecipes, selectedName],
+  );
+
+  function successPct(name: string): number | null {
+    const runs = allRunsMap.get(name);
+    if (!runs || runs.length === 0) return null;
+    const settled = runs.filter(
+      (r) => r.status !== "running" && r.status !== "queued" && r.status !== "pending",
+    );
+    if (settled.length === 0) return null;
+    const ok = settled.filter((r) => r.status === "done" || r.status === "success").length;
+    return (ok / settled.length) * 100;
+  }
+
+  function avgDuration(name: string): number | undefined {
+    const runs = allRunsMap.get(name);
+    if (!runs || runs.length === 0) return undefined;
+    const ds = runs
+      .map((r) => r.durationMs)
+      .filter((d): d is number => typeof d === "number" && d > 0);
+    if (ds.length === 0) return undefined;
+    return ds.reduce((s, d) => s + d, 0) / ds.length;
+  }
+
+  function isLive(name: string): boolean {
+    const latest = runMap.get(name);
+    return latest?.status === "running";
   }
 
   return (
@@ -705,22 +799,30 @@ export default function RecipesPage() {
 
       <div className="page-head">
         <div>
-          <h1>Recipes</h1>
-          <div className="page-head-sub">
-            Your automation recipes and their run status.
+          <h1 className="editorial-h1">
+            Recipes — <span className="accent">YAML, declarative, yours.</span>
+          </h1>
+          <div className="editorial-sub">
+            {recipes
+              ? `templates/recipes · ${installedCount} installed · ${enabledCount} enabled`
+              : "Loading…"}
           </div>
         </div>
-        <div
-          style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}
-        >
-          {recipes && (
-            <span className="pill muted">{filteredRecipes.length} installed</span>
-          )}
-          <Link href="/marketplace" className="btn sm ghost" style={{ textDecoration: "none" }}>
-            Browse marketplace →
-          </Link>
-          <Link href="/recipes/new" className="btn primary" style={{ textDecoration: "none" }}>
-            New recipe
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => void load()}
+            title="Reload recipes"
+          >
+            ↻ Reload
+          </button>
+          <Link
+            href="/recipes/new"
+            className="btn primary"
+            style={{ textDecoration: "none" }}
+          >
+            + Add recipe
           </Link>
         </div>
       </div>
@@ -736,12 +838,20 @@ export default function RecipesPage() {
         />
       </div>
 
-      {err && <div className="alert-err">Unreachable: {err}</div>}
+      {err && (recipes === null || recipes.length === 0) && (
+        <ErrorState
+          title="Couldn't load recipes"
+          description="The bridge isn't responding to /recipes. Check that the bridge is running."
+          error={err}
+          onRetry={() => window.location.reload()}
+        />
+      )}
+      {err && recipes && recipes.length > 0 && (
+        <div className="alert-err">Refresh failed — {err}</div>
+      )}
 
       {recipes === null && !err ? (
-        <div className="empty-state">
-          <p>Loading…</p>
-        </div>
+        <SkeletonList rows={4} columns={3} />
       ) : recipes === null || recipes.length === 0 ? (
         <div className="empty-state">
           <h3>No recipes installed</h3>
@@ -761,411 +871,164 @@ export default function RecipesPage() {
           )}
         </div>
       ) : (
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th style={{ width: 100 }}>Trigger</th>
-                <th style={{ width: 70 }}>Steps</th>
-                <th>Description</th>
-                <th style={{ width: 100 }}>Last Run</th>
-                <th style={{ width: 90 }}>Status</th>
-                <th style={{ width: 220 }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRecipes.map((r, i) => {
-                const state = running[r.name];
-                const lastRun = runMap.get(r.name);
-                const status = recipeStatus(r);
-                return (
-                  <React.Fragment key={r.path ?? r.id ?? `${r.name}:${i}`}>
-                    <tr>
-                      <td className="mono">
-                        <button
-                          type="button"
-                          style={{
-                            background: "none",
-                            border: "none",
-                            padding: 0,
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                            fontSize: "inherit",
-                            color: "inherit",
-                            userSelect: "none",
-                            textAlign: "left",
-                          }}
-                          onClick={() =>
-                            setExpanded((prev) => {
-                              const next = new Set(prev);
-                              next.has(r.name)
-                                ? next.delete(r.name)
-                                : next.add(r.name);
-                              return next;
-                            })
-                          }
-                        >
-                          {expanded.has(r.name) ? "▾" : "▸"} {r.name}
-                        </button>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                          <span className="pill muted">{r.trigger ?? "—"}</span>
-                          {r.lint && !r.lint.ok && (
-                            <span
-                              className="pill err"
-                              style={{ fontSize: 10 }}
-                              title={r.lint.firstError ?? "Recipe has lint errors"}
-                            >
-                              ✗ {r.lint.errorCount} error{r.lint.errorCount === 1 ? "" : "s"}
-                            </span>
-                          )}
-                          {r.lint?.ok && r.lint.warningCount > 0 && (
-                            <span
-                              className="pill warn"
-                              style={{ fontSize: 10 }}
-                              title={`${r.lint.warningCount} lint warning${r.lint.warningCount === 1 ? "" : "s"}`}
-                            >
-                              ⚠ {r.lint.warningCount}
-                            </span>
-                          )}
-                          {r.trustLevel && r.trustLevel !== "draft" && (
+        <div
+          className={`recipes-grid${selectedRecipe ? " has-detail" : ""}`}
+          style={{
+            display: "grid",
+            gap: "var(--s-4)",
+            alignItems: "start",
+            transition: "grid-template-columns 0.18s ease",
+            minWidth: 0,
+          }}
+        >
+          <PatchCard padded={false} style={{ overflow: "hidden", minWidth: 0 }}>
+            <div className="table-wrap" style={{ minWidth: 0, overflow: "auto" }}>
+              <table className="table" style={{ width: "100%", tableLayout: "fixed" }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 48, textAlign: "center" }}>%</th>
+                    <th style={{ minWidth: 160 }}>RECIPE</th>
+                    <th style={{ width: 120 }}>TRIGGER</th>
+                    <th style={{ width: 90, textAlign: "center" }}>LAST 14 RUNS</th>
+                    <th style={{ width: 80 }}>AVG</th>
+                    <th style={{ width: 100 }}>LAST</th>
+                    <th style={{ width: 110, textAlign: "right" }}>&nbsp;</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRecipes.map((r, i) => {
+                    const live = isLive(r.name);
+                    const last = runMap.get(r.name);
+                    const sel = selectedName === r.name;
+                    const pct = successPct(r.name);
+                    const avg = avgDuration(r.name);
+                    const enabled = r.enabled !== false;
+                    return (
+                      <tr
+                        key={r.path ?? r.id ?? `${r.name}:${i}`}
+                        onClick={() =>
+                          setSelectedName((prev) => (prev === r.name ? null : r.name))
+                        }
+                        style={{
+                          cursor: "pointer",
+                          background: sel ? "var(--bg-2)" : undefined,
+                        }}
+                      >
+                        <td style={{ textAlign: "center" }}>
+                          <SuccessRing pct={pct} />
+                        </td>
+                        <td className="mono" style={{ overflow: "hidden" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <span
                               style={{
-                                background: `color-mix(in srgb, ${TRUST_LEVEL_COLORS[r.trustLevel]} 12%, transparent)`,
-                                border: `1px solid ${TRUST_LEVEL_COLORS[r.trustLevel]}`,
-                                borderRadius: 4,
-                                color: TRUST_LEVEL_COLORS[r.trustLevel],
-                                fontSize: 10,
-                                fontWeight: 600,
-                                padding: "1px 5px",
                                 whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                fontWeight: sel ? 700 : 500,
                               }}
-                              title={`Trust level: ${TRUST_LEVEL_LABELS[r.trustLevel]}`}
+                              title={r.description ?? r.name}
                             >
-                              {TRUST_LEVEL_LABELS[r.trustLevel]}
+                              {r.name}
                             </span>
+                            {live && <LivePill tone="ok" />}
+                            {!enabled && <StatusPill tone="muted">off</StatusPill>}
+                          </div>
+                          {r.description && (
+                            <div
+                              className="muted"
+                              style={{
+                                fontSize: 11,
+                                marginTop: 2,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {r.description}
+                            </div>
                           )}
-                        </div>
-                      </td>
-                      <td className="mono muted">{r.stepCount ?? "—"}</td>
-                      <td
-                        style={{
-                          // Clamp long descriptions to two lines so a single
-                          // verbose recipe (e.g. ctx-loop-test) doesn't push
-                          // every other row into a vertical pile. Hover/focus
-                          // the row to read the full text via the title attr.
-                          maxWidth: 480,
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical" as const,
-                          overflow: "hidden",
-                        }}
-                        title={r.description ?? ""}
-                      >
-                        {r.description ?? <span className="muted">—</span>}
-                      </td>
-                      <td className="muted" style={{ fontSize: 12 }}>
-                        {lastRun ? relTime(lastRun.startedAt) : "—"}
-                      </td>
-                      <td>
-                        {r.enabled === false ? (
-                          <span className="pill muted">Disabled</span>
-                        ) : status === "running" ? (
-                          <span className="pill warn">Running</span>
-                        ) : status === "failed" ? (
-                          <span className="pill err">Failed</span>
-                        ) : (
-                          <span className="pill muted">Idle</span>
-                        )}
-                      </td>
-                      <td>
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 8,
-                            alignItems: "center",
-                          }}
+                        </td>
+                        <td>
+                          <StatusPill tone="muted">{r.trigger ?? "manual"}</StatusPill>
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <RunSparkBars
+                            runs={(allRunsMap.get(r.name) ?? []).slice(0, 14)}
+                            width={90}
+                            height={20}
+                          />
+                        </td>
+                        <td className="mono muted" style={{ fontSize: 12 }}>
+                          {formatDuration(avg)}
+                        </td>
+                        <td className="muted" style={{ fontSize: 12 }}>
+                          {last ? relTime(last.startedAt) : "—"}
+                        </td>
+                        <td
+                          style={{ textAlign: "right" }}
+                          onClick={(e) => e.stopPropagation()}
                         >
                           <button
                             type="button"
-                            className="btn"
+                            role="switch"
+                            aria-checked={enabled}
+                            aria-label={`${enabled ? "Disable" : "Enable"} ${r.name}`}
+                            onClick={() => void handleToggleEnabled(r)}
+                            style={{
+                              position: "relative",
+                              width: 36,
+                              height: 20,
+                              borderRadius: 999,
+                              border: "1px solid var(--line-2)",
+                              background: enabled ? "var(--ok, #22c55e)" : "var(--bg-2)",
+                              cursor: "pointer",
+                              padding: 0,
+                              transition: "background 0.15s",
+                            }}
+                          >
+                            <span
+                              aria-hidden="true"
+                              style={{
+                                position: "absolute",
+                                top: 1,
+                                left: enabled ? 17 : 1,
+                                width: 16,
+                                height: 16,
+                                borderRadius: "50%",
+                                background: "white",
+                                transition: "left 0.15s",
+                                boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                              }}
+                            />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn sm"
+                            style={{ marginLeft: 8, fontSize: 11 }}
                             onClick={() => handleRunClick(r)}
-                            disabled={r.enabled === false}
+                            disabled={!enabled}
                           >
                             Run{r.vars && r.vars.length > 0 ? "…" : ""}
                           </button>
-                          <button
-                            type="button"
-                            className="btn sm ghost"
-                            style={{
-                              fontSize: 11,
-                              padding: "2px 8px",
-                            }}
-                            title={r.enabled === false ? "Enable recipe" : "Disable recipe"}
-                            onClick={async () => {
-                              try {
-                                await fetch(
-                                  apiPath(`/api/bridge/recipes/${encodeURIComponent(r.name)}`),
-                                  {
-                                    method: "PATCH",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ enabled: r.enabled === false }),
-                                  },
-                                );
-                              } catch (e) {
-                                setErr(e instanceof Error ? e.message : String(e));
-                              }
-                              void load();
-                            }}
-                          >
-                            {r.enabled === false ? "Enable" : "Disable"}
-                          </button>
-                          <select
-                            value={r.trustLevel ?? "draft"}
-                            title="Trust level"
-                            style={{
-                              background: "var(--bg-2)",
-                              border: "1px solid var(--border-default)",
-                              borderRadius: "var(--r-1)",
-                              color: "var(--fg-1)",
-                              cursor: "pointer",
-                              fontSize: 11,
-                              padding: "2px 4px",
-                            }}
-                            onChange={async (e) => {
-                              try {
-                                await fetch(
-                                  apiPath(`/api/bridge/recipes/${encodeURIComponent(r.name)}/trust`),
-                                  {
-                                    method: "PATCH",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ level: e.target.value }),
-                                  },
-                                );
-                              } catch (e) {
-                                setErr(e instanceof Error ? e.message : String(e));
-                              }
-                              void load();
-                            }}
-                          >
-                            {TRUST_LEVELS.map((lvl) => (
-                              <option key={lvl} value={lvl}>
-                                {TRUST_LEVEL_LABELS[lvl]}
-                              </option>
-                            ))}
-                          </select>
-                          {r.webhookPath && (
-                            <button
-                              type="button"
-                              className="btn sm ghost"
-                              style={{ fontSize: 11, padding: "2px 8px" }}
-                              title={`Send test POST to ${r.webhookPath}`}
-                              onClick={() => void handleSendTestWebhook(r)}
-                            >
-                              Test
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="btn sm ghost"
-                            style={{ fontSize: 11, padding: "2px 8px" }}
-                            title="Duplicate recipe as variant"
-                            onClick={() => void handleDuplicate(r.name)}
-                          >
-                            Fork
-                          </button>
-                          <button
-                            type="button"
-                            className="btn sm ghost"
-                            style={{ fontSize: 11, padding: "2px 8px", color: "var(--err)" }}
-                            title="Delete recipe file"
-                            onClick={() => void handleDelete(r.name)}
-                          >
-                            Delete
-                          </button>
-                          {state && (
-                            <span
-                              className="pill muted"
-                              style={{ fontSize: 11 }}
-                            >
-                              {state}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                    {expanded.has(r.name) && (
-                      <tr key={`${r.path ?? r.id ?? `${r.name}:${i}`}-detail`}>
-                        <td
-                          colSpan={7}
-                          style={{
-                            padding: "8px 16px 16px",
-                            background: "var(--bg-2)",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns:
-                                "repeat(auto-fill, minmax(240px, 1fr))",
-                              gap: "8px 24px",
-                              fontSize: 12,
-                            }}
-                          >
-                            <div>
-                              <span className="muted">Path</span>
-                              <br />
-                              <code>{r.path ?? "—"}</code>
-                            </div>
-                            <div>
-                              <span className="muted">Installed</span>
-                              <br />
-                              {r.installedAt !== undefined
-                                ? relTime(r.installedAt)
-                                : "—"}
-                            </div>
-                            <div>
-                              <span className="muted">Source</span>
-                              <br />
-                              <span className="pill muted">
-                                {r.source ?? "—"}
-                              </span>
-                            </div>
-                            <div style={{ gridColumn: "1 / -1" }}>
-                              <span className="muted" style={{ fontSize: 11 }}>
-                                Patchwork does not enforce per-recipe
-                                permissions; configure tool gating in
-                                {" "}
-                                <code>~/.claude/settings.json</code>.
-                              </span>
-                            </div>
-                            {r.webhookPath && (
-                              <div style={{ gridColumn: "1 / -1" }}>
-                                <span className="muted">Webhook URL</span>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    gap: 8,
-                                    alignItems: "center",
-                                    marginTop: 4,
-                                  }}
-                                >
-                                  <code
-                                    style={{
-                                      fontSize: 12,
-                                      flex: 1,
-                                      overflowX: "auto",
-                                      whiteSpace: "nowrap",
-                                    }}
-                                  >
-                                    {buildWebhookUrl(bridgePort, r.webhookPath)}
-                                  </code>
-                                  <CopyButton
-                                    text={buildWebhookUrl(bridgePort, r.webhookPath)}
-                                    label="Copy URL"
-                                  />
-                                </div>
-                                <div
-                                  style={{
-                                    marginTop: 8,
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "flex-start",
-                                    gap: 8,
-                                  }}
-                                >
-                                  <span className="muted">Example request</span>
-                                  <CopyButton
-                                    text={buildCurlExample(bridgePort, r.webhookPath)}
-                                    label="Copy curl"
-                                  />
-                                </div>
-                                <pre
-                                  style={{
-                                    fontSize: 11,
-                                    background: "var(--bg-1)",
-                                    border: "1px solid var(--border-subtle)",
-                                    borderRadius: "var(--r-2)",
-                                    padding: "8px 10px",
-                                    margin: "4px 0 0",
-                                    overflowX: "auto",
-                                    whiteSpace: "pre",
-                                  }}
-                                >
-                                  {buildCurlExample(bridgePort, r.webhookPath)}
-                                </pre>
-                                <p
-                                  style={{
-                                    marginTop: 6,
-                                    fontSize: 11,
-                                    color: "var(--fg-2)",
-                                    lineHeight: 1.4,
-                                  }}
-                                >
-                                  Anything that can send HTTP can trigger this:
-                                  iPhone Shortcut, Stream Deck, Home Assistant,
-                                  NFC tag, cron job, or another service.
-                                </p>
-                                <WebhookPayloadsCard webhookPath={r.webhookPath} />
-                              </div>
-                            )}
-                            {r.lint && (r.lint.errorCount > 0 || r.lint.warningCount > 0) && (
-                              <div style={{ gridColumn: "1 / -1" }}>
-                                <span className="muted">Lint</span>
-                                <br />
-                                {r.lint.firstError && (
-                                  <span style={{ color: "var(--err)", fontSize: 12 }}>
-                                    {r.lint.firstError}
-                                  </span>
-                                )}
-                                {!r.lint.firstError && r.lint.warningCount > 0 && (
-                                  <span style={{ color: "var(--warn, var(--ink-2))", fontSize: 12 }}>
-                                    {r.lint.warningCount} warning{r.lint.warningCount === 1 ? "" : "s"} — open the editor for details
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                            {r.vars && r.vars.length > 0 && (
-                              <div style={{ gridColumn: "1 / -1" }}>
-                                <span className="muted">Variables</span>
-                                <br />
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    flexWrap: "wrap",
-                                    gap: "4px 8px",
-                                    marginTop: 4,
-                                  }}
-                                >
-                                  {r.vars.map((v) => (
-                                    <span
-                                      key={v.name}
-                                      className="pill muted"
-                                      style={{ fontFamily: "var(--font-mono)" }}
-                                      title={v.description}
-                                    >
-                                      {v.name}
-                                      {v.required ? (
-                                        <span style={{ color: "var(--err)" }}>
-                                          *
-                                        </span>
-                                      ) : null}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
                         </td>
                       </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </PatchCard>
+
+          {selectedRecipe && (
+            <RecipeDetailPanel
+              recipe={selectedRecipe}
+              recentRuns={recentRunsMap.get(selectedRecipe.name) ?? []}
+              onClose={() => setSelectedName(null)}
+              onRun={() => handleRunClick(selectedRecipe)}
+              running={running}
+              isLive={isLive(selectedRecipe.name)}
+            />
+          )}
         </div>
       )}
 

@@ -1,10 +1,12 @@
 "use client";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
+import { DecisionsTabs } from "@/components/DecisionsTabs";
+import { ErrorState, LivePill } from "@/components/patchwork";
 
 interface DecisionTrace {
   traceType: "decision";
@@ -109,6 +111,11 @@ function DecisionsContent() {
   const traces = data?.traces ?? [];
 
   // Collect tag universe from the current result set for click-to-filter pills.
+  // Stabilise the array reference: only return a fresh array when the set of
+  // tags actually changes. The page polls every 5s and creates a new traces
+  // array each tick — without this, the pill row remounts on every poll and
+  // briefly flickers.
+  const tagsRef = useRef<string[]>([]);
   const allTags = useMemo(() => {
     const set = new Set<string>();
     for (const t of traces) {
@@ -118,7 +125,13 @@ function DecisionsContent() {
         }
       }
     }
-    return [...set].sort();
+    const next = [...set].sort();
+    const prev = tagsRef.current;
+    if (prev.length === next.length && prev.every((v, i) => v === next[i])) {
+      return prev;
+    }
+    tagsRef.current = next;
+    return next;
   }, [traces]);
 
   // Classify a decision into an accent variant based on tag/ref hints.
@@ -131,116 +144,30 @@ function DecisionsContent() {
     return "info";
   };
 
-  const variantCounts = useMemo(() => {
-    const c = { accent: 0, info: 0, warn: 0, err: 0 };
-    for (const t of traces) c[variantFor(t)]++;
-    return c;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [traces]);
-
   return (
     <section>
+      <DecisionsTabs />
       <div className="page-head">
         <div>
-          <h1>Decisions</h1>
-          <div className="page-head-sub">
-            Knowledge saved by agents across sessions.
+          <h1 className="editorial-h1">
+            Decisions — <span className="accent">the knowledge base your agents wrote.</span>
+          </h1>
+          <div className="editorial-sub" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>{traces.length} trace{traces.length !== 1 ? "s" : ""} · ctxSaveTrace persists · ctxQueryTraces recalls</span>
+            <LivePill label="5s" tone="muted" />
           </div>
         </div>
-        <span className="pill muted">
-          {traces.length} decision{traces.length !== 1 ? "s" : ""}
-        </span>
-      </div>
-
-      {/* Sub-header: counts per variant */}
-      {traces.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--s-2)",
-            marginBottom: "var(--s-3)",
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <span style={{ fontSize: 12, color: "var(--ink-3)", marginRight: 4 }}>
-            Grouped by kind:
-          </span>
-          <span
-            className="pill"
-            style={{ fontSize: 11, borderLeft: "3px solid var(--orange)" }}
-            title="Feature work and shipped releases"
-          >
-            Feature &middot; {variantCounts.accent}
-          </span>
-          <span className="pill info" style={{ fontSize: 11 }} title="General notes and context">
-            General &middot; {variantCounts.info}
-          </span>
-          <span className="pill warn" style={{ fontSize: 11 }} title="Risks, flaky tests, security concerns">
-            Risk &middot; {variantCounts.warn}
-          </span>
-          <span className="pill err" style={{ fontSize: 11 }} title="Bugs, incidents, regressions">
-            Bug &middot; {variantCounts.err}
-          </span>
-        </div>
-      )}
-
-      <div
-        style={{
-          display: "flex",
-          gap: "var(--s-3)",
-          marginBottom: "var(--s-3)",
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        <select
-          value={since}
-          onChange={(e) => setSince(e.target.value as SinceFilter)}
-          aria-label="Time range"
-          style={{
-            padding: "6px 10px",
-            fontSize: 13,
-            background: "var(--recess)",
-            border: "1px solid var(--line-2)",
-            borderRadius: "var(--r-s)",
-            color: "var(--ink-0)",
-            cursor: "pointer",
-          }}
-        >
-          {SINCE_OPTIONS.map((o) => (
-            <option key={o.k} value={o.k}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <input
-          type="text"
-          value={tag}
-          onChange={(e) => setTag(e.target.value)}
-          placeholder="filter by tag"
-          className="input"
-          style={{ minWidth: 160, fontFamily: "var(--font-mono)" }}
-        />
-        <input
-          type="text"
-          value={keyQuery}
-          onChange={(e) => setKeyQuery(e.target.value)}
-          placeholder="filter by ref (#42, sha, etc.)"
-          className="input"
-          style={{ flex: 1, minWidth: 200, fontFamily: "var(--font-mono)" }}
-        />
         <input
           type="text"
           value={textQuery}
           onChange={(e) => setTextQuery(e.target.value)}
-          placeholder="search problem + solution"
+          placeholder="Search problems & solutions…"
           className="input"
-          style={{ flex: 1, minWidth: 200 }}
+          style={{ minWidth: 280, width: 320 }}
         />
       </div>
 
-      {allTags.length > 0 && !tag && (
+      {allTags.length > 0 && (
         <div
           style={{
             display: "flex",
@@ -252,13 +179,15 @@ function DecisionsContent() {
             alignItems: "center",
           }}
         >
-          <span>tags:</span>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)" }}>
+            Tags
+          </span>
           {allTags.map((t) => (
             <button
               key={t}
               type="button"
-              onClick={() => setTag(t)}
-              className="pill muted"
+              onClick={() => setTag(tag === t ? "" : t)}
+              className={tag === t ? "pill accent" : "pill muted"}
               style={{ cursor: "pointer", fontFamily: "var(--font-mono)" }}
             >
               {t}
@@ -271,12 +200,20 @@ function DecisionsContent() {
         <p style={{ color: "var(--fg-2)" }}>Loading…</p>
       )}
 
-      {error && (
-        <div className="alert-err">
-          {error.startsWith("/traces")
-            ? `Response shape unexpected (bridge version mismatch?): ${error}`
-            : `Unreachable: ${error}`}
-        </div>
+      {error && traces.length === 0 && (
+        <ErrorState
+          title={error.startsWith("/traces") ? "Bridge version mismatch" : "Couldn't load decisions"}
+          description={
+            error.startsWith("/traces")
+              ? "The /traces response didn't match the schema this dashboard expects."
+              : "The bridge isn't responding. Decisions will reload on the next tick."
+          }
+          error={error}
+          onRetry={() => window.location.reload()}
+        />
+      )}
+      {error && traces.length > 0 && (
+        <div className="alert-err">Refresh failed — {error}</div>
       )}
 
       {!loading && traces.length === 0 && !error ? (
@@ -331,11 +268,19 @@ function DecisionsContent() {
                   }}
                 >
                   <span
+                    className={`chip chip-${
+                      variant === "err" ? "red" : variant === "warn" ? "amber" : variant === "info" ? "blue" : "accent"
+                    }`}
+                    style={{ textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "var(--font-mono)", fontSize: 10 }}
+                  >
+                    {variant === "err" ? "bug" : variant === "warn" ? "risk" : variant === "info" ? "decision" : "feature"}
+                  </span>
+                  <span
                     style={{
                       fontFamily: "var(--font-mono)",
                       fontSize: 12,
                       fontWeight: 600,
-                      color: "var(--purple)",
+                      color: "var(--ink-1)",
                       flexShrink: 0,
                     }}
                   >
@@ -369,14 +314,14 @@ function DecisionsContent() {
                     {b.problem && (
                       <div
                         style={{
-                          padding: "8px 12px",
-                          background: "var(--recess)",
+                          padding: "10px 14px",
+                          background: "var(--orange-soft)",
                           borderRadius: "var(--r-s)",
-                          borderTop: "2px solid var(--amber)",
+                          border: "1px solid var(--orange-tint)",
                         }}
                       >
-                        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--amber)", letterSpacing: "0.06em", marginBottom: 5, textTransform: "uppercase" }}>
-                          Problem
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "var(--orange)", letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase" }}>
+                          ✻ Problem
                         </div>
                         <div style={{ fontSize: 13, color: "var(--ink-1)", lineHeight: 1.55 }}>
                           {b.problem as string}
@@ -386,14 +331,14 @@ function DecisionsContent() {
                     {b.solution && (
                       <div
                         style={{
-                          padding: "8px 12px",
-                          background: "var(--recess)",
+                          padding: "10px 14px",
+                          background: "var(--green-soft)",
                           borderRadius: "var(--r-s)",
-                          borderTop: "2px solid var(--green)",
+                          border: "1px solid color-mix(in srgb, var(--green) 30%, transparent)",
                         }}
                       >
-                        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--green)", letterSpacing: "0.06em", marginBottom: 5, textTransform: "uppercase" }}>
-                          Solution
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "var(--green)", letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase" }}>
+                          ✻ Solution
                         </div>
                         <div style={{ fontSize: 13, color: "var(--ink-0)", lineHeight: 1.55 }}>
                           {b.solution as string}

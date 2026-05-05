@@ -73,6 +73,30 @@ const CATALOG: ConnectorDef[] = [
 ];
 
 
+// ------------------------------------------------------------------ OAuth scope hints (per connector — surface what we requested)
+
+const CONNECTOR_SCOPES: Record<string, string[]> = {
+  slack:            ["channels:read", "chat:write", "users:read"],
+  jira:             ["read:jira", "write:jira"],
+  confluence:       ["read:confluence", "write:confluence"],
+  github:           ["repo:read", "issues:read", "pulls:read"],
+  gitlab:           ["read_api", "read_repository"],
+  linear:           ["read", "write"],
+  asana:            ["tasks:read", "projects:read"],
+  notion:           ["read_content", "update_content"],
+  discord:          ["messages.read", "guilds.read"],
+  zendesk:          ["tickets:read", "users:read"],
+  intercom:         ["conversations:read", "users:read"],
+  hubspot:          ["contacts:read", "deals:read"],
+  pagerduty:        ["incidents:read", "services:read"],
+  datadog:          ["monitors_read", "events_read"],
+  stripe:           ["read_only"],
+  sentry:           ["event:read", "project:read"],
+  gmail:            ["gmail.readonly"],
+  "google-calendar":["calendar.readonly"],
+  "google-drive":   ["drive.readonly"],
+};
+
 // ------------------------------------------------------------------ icon SVG components (kept for modals)
 
 function IconEnvelope() {
@@ -616,10 +640,32 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
           </div>
         )}
 
-        {/* Tool count */}
-        <div style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 400 }}>
-          {def.tools} available tools
-        </div>
+        {/* Scopes (when connected/degraded) — otherwise show tool count */}
+        {(isConnected || isDegraded) && CONNECTOR_SCOPES[def.id] ? (
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {CONNECTOR_SCOPES[def.id].map((s) => (
+              <span
+                key={s}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                  background: "rgba(99,91,255,0.08)",
+                  border: "1px solid rgba(99,91,255,0.18)",
+                  color: "#5048c8",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {s}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 400 }}>
+            {def.tools} available tools
+          </div>
+        )}
 
         {/* Test result */}
         {testResult && (
@@ -671,7 +717,42 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
               </span>
             )}
           </div>
-          <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
+            {isConnected && (
+              <button
+                type="button"
+                onClick={onDisconnect}
+                disabled={loading}
+                role="switch"
+                aria-checked={true}
+                aria-label={`Toggle ${def.name} off`}
+                title="Toggle off (disconnect)"
+                style={{
+                  width: 28,
+                  height: 16,
+                  borderRadius: 999,
+                  border: "none",
+                  background: "var(--ok)",
+                  position: "relative",
+                  cursor: loading ? "wait" : "pointer",
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 2,
+                    left: 14,
+                    width: 12,
+                    height: 12,
+                    borderRadius: "50%",
+                    background: "#fff",
+                    transition: "left 0.15s ease",
+                  }}
+                />
+              </button>
+            )}
             {isConnected && (
               <button
                 type="button"
@@ -951,7 +1032,8 @@ export default function ConnectionsPage() {
   }
 
   // ---- derived state
-  const [waveFilter, setWaveFilter] = useState<0 | 1 | 2 | 3>(0); // 0 = all
+  const [statusFilter, setStatusFilter] = useState<"all" | "connected" | "available" | "coming_soon">("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const hasAnyConnected = connectors.some((c) => c.status === "connected" || c.status === "needs_reauth");
 
@@ -961,15 +1043,26 @@ export default function ConnectionsPage() {
     .sort((a, b) => Date.parse(b.entry.lastSync!) - Date.parse(a.entry.lastSync!))
     .slice(0, 4);
 
-  const WAVE_LABELS: Record<1 | 2 | 3, string> = { 1: "MVP", 2: "Core", 3: "Expand" };
-
-  function waveProgress(wave: 1 | 2 | 3) {
-    const defs = CATALOG.filter((d) => d.wave === wave);
-    const connected = defs.filter((d) => getConnector(d.id).status === "connected").length;
-    return { total: defs.length, connected };
+  function defStatus(def: ConnectorDef): "connected" | "available" | "coming_soon" {
+    const entry = getConnector(def.id);
+    if (entry.status === "connected" || entry.status === "needs_reauth") return "connected";
+    if (!SUPPORTED_CONNECTORS.has(def.id)) return "coming_soon";
+    return "available";
   }
 
-  const visibleCatalog = waveFilter === 0 ? CATALOG : CATALOG.filter((d) => d.wave === waveFilter);
+  const counts = {
+    all: CATALOG.length,
+    connected: CATALOG.filter((d) => defStatus(d) === "connected").length,
+    available: CATALOG.filter((d) => defStatus(d) === "available").length,
+    coming_soon: CATALOG.filter((d) => defStatus(d) === "coming_soon").length,
+  };
+
+  const q = searchQuery.trim().toLowerCase();
+  const visibleCatalog = CATALOG.filter((d) => {
+    if (statusFilter !== "all" && defStatus(d) !== statusFilter) return false;
+    if (q && !d.name.toLowerCase().includes(q) && !d.id.toLowerCase().includes(q)) return false;
+    return true;
+  });
 
   // ---- render
 
@@ -977,13 +1070,36 @@ export default function ConnectionsPage() {
     <section>
       <div className="page-head">
         <div>
-          <h1>Connections</h1>
-          <div className="page-head-sub">Link your accounts so Patchwork can act on your behalf.</div>
+          <h1 className="editorial-h1">
+            Connections — <span className="accent">writes are gated. Reads are not.</span>
+          </h1>
+          <div className="editorial-sub">
+            oauth · scoped to your machine · tokens in ~/.patchwork/secrets
+          </div>
         </div>
-        {!loading && !bridgeOffline && hasAnyConnected && (
-          <button type="button" className="btn sm primary" onClick={() => setModalOpen(true)}>
-            Add connection
-          </button>
+        {!loading && !bridgeOffline && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search connectors…"
+              className="input"
+              style={{ minWidth: 220 }}
+            />
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => {
+                connectors
+                  .filter((c) => c.status === "connected" || c.status === "needs_reauth")
+                  .forEach((c) => handleConnect(c.id));
+              }}
+              title="Re-authorize all connected providers"
+            >
+              ↻ Re-auth all
+            </button>
+          </div>
         )}
       </div>
 
@@ -1027,79 +1143,39 @@ export default function ConnectionsPage() {
             </div>
           )}
 
-          {/* Wave filter tabs */}
+          {/* Status filter pills */}
           <div style={{ display: "flex", gap: 8, marginBottom: "var(--s-4)", flexWrap: "wrap" }}>
-            {([0, 1, 2, 3] as const).map((w) => {
-              const label = w === 0 ? "All" : `Wave ${w} — ${WAVE_LABELS[w]}`;
-              const prog = w !== 0 ? waveProgress(w) : null;
-              return (
-                <button
-                  key={w}
-                  type="button"
-                  className={`btn sm${waveFilter === w ? " primary" : " ghost"}`}
-                  onClick={() => setWaveFilter(w)}
-                  style={{ gap: 6 }}
-                >
-                  {label}
-                  {prog && (
-                    <span style={{ fontSize: 10, opacity: 0.75 }}>
-                      {prog.connected}/{prog.total}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+            {([
+              ["all", `All [${counts.all}]`],
+              ["connected", `Connected [${counts.connected}]`],
+              ["available", `Available [${counts.available}]`],
+              ["coming_soon", `Coming soon [${counts.coming_soon}]`],
+            ] as const).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setStatusFilter(k)}
+                className={statusFilter === k ? "pill accent" : "pill muted"}
+                style={{ cursor: "pointer", border: "none", fontSize: 12 }}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-          {/* Connectors — grouped by wave when showing all, flat when filtered */}
-          {waveFilter === 0 ? (
-            ([1, 2, 3] as const).map((wave) => {
-              const defs = CATALOG.filter((d) => d.wave === wave);
-              const prog = waveProgress(wave);
-              return (
-                <div key={wave} style={{ marginBottom: "var(--s-6)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
-                      Wave {wave} — {WAVE_LABELS[wave]}
-                    </span>
-                    <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
-                      {prog.connected}/{prog.total} connected
-                    </span>
-                    <div style={{ flex: 1, height: 2, background: "var(--border)", borderRadius: 1 }}>
-                      <div style={{ height: 2, borderRadius: 1, background: "var(--ok)", width: `${prog.total ? (prog.connected / prog.total) * 100 : 0}%`, transition: "width 0.3s ease" }} />
-                    </div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
-                    {defs.map((def) => (
-                      <ConnectorGridCard
-                        key={def.id}
-                        def={def}
-                        statusEntry={getConnector(def.id)}
-                        onConnect={() => handleConnect(def.id)}
-                        onDisconnect={() => handleDisconnect(def.id)}
-                        onTest={() => handleTest(def.id)}
-                        loading={acting === def.id}
-                      />
-                    ))}
-                  </div>
-                </div>
-              );
-            })
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12, marginBottom: "var(--s-6)" }}>
-              {visibleCatalog.map((def) => (
-                <ConnectorGridCard
-                  key={def.id}
-                  def={def}
-                  statusEntry={getConnector(def.id)}
-                  onConnect={() => handleConnect(def.id)}
-                  onDisconnect={() => handleDisconnect(def.id)}
-                  onTest={() => handleTest(def.id)}
-                  loading={acting === def.id}
-                />
-              ))}
-            </div>
-          )}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12, marginBottom: "var(--s-6)" }}>
+            {visibleCatalog.map((def) => (
+              <ConnectorGridCard
+                key={def.id}
+                def={def}
+                statusEntry={getConnector(def.id)}
+                onConnect={() => handleConnect(def.id)}
+                onDisconnect={() => handleDisconnect(def.id)}
+                onTest={() => handleTest(def.id)}
+                loading={acting === def.id}
+              />
+            ))}
+          </div>
         </>
       )}
 

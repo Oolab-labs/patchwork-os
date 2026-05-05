@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { ErrorState } from "@/components/patchwork";
 
 interface TransactionEdit {
   filePath: string;
@@ -38,6 +39,29 @@ function ttlRemaining(expiresAt: number): string {
   const min = Math.floor(ms / 60000);
   const sec = Math.floor((ms % 60000) / 1000);
   return `${min}m ${sec.toString().padStart(2, "0")}s`;
+}
+
+// Self-ticking TTL pill: amber > 1m, red 30s-1m, red+pulsing < 30s, expired = err.
+function TtlPill({ expiresAt }: { expiresAt: number }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const ms = Math.max(0, expiresAt - Date.now());
+  const expired = ms === 0;
+  const critical = !expired && ms < 30_000;
+  const warning = !expired && !critical && ms < 60_000;
+  const cls = expired || critical || warning ? "pill err" : "pill warn";
+  return (
+    <span
+      className={cls}
+      title={`expires ${new Date(expiresAt).toISOString()}`}
+      style={critical ? { animation: "pulse-dot 0.8s ease-in-out infinite", fontWeight: 700 } : undefined}
+    >
+      TTL {ttlRemaining(expiresAt)}
+    </span>
+  );
 }
 
 function formatBytes(n: number): string {
@@ -77,8 +101,10 @@ export default function TransactionsPage() {
     <section>
       <div className="page-head">
         <div>
-          <h1>Transactions</h1>
-          <div className="page-head-sub">
+          <h1 className="editorial-h1">
+            Transactions — <span className="accent">staged edits, awaiting your nod.</span>
+          </h1>
+          <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
             Active staged multi-file edits — review, then commit from the agent
             (MCP <code>commitTransaction</code>) or discard from here. See{" "}
             <a
@@ -100,7 +126,17 @@ export default function TransactionsPage() {
       {loading && transactions.length === 0 && (
         <p style={{ color: "var(--fg-2)" }}>Loading…</p>
       )}
-      {error && <div className="alert-err">Unreachable: {error}</div>}
+      {error && transactions.length === 0 && (
+        <ErrorState
+          title="Couldn't load transactions"
+          description="The bridge isn't responding to /transactions."
+          error={error}
+          onRetry={() => window.location.reload()}
+        />
+      )}
+      {error && transactions.length > 0 && (
+        <div className="alert-err">Refresh failed — {error}</div>
+      )}
 
       {!loading && transactions.length === 0 && (
         <div className="empty-state">
@@ -130,9 +166,7 @@ export default function TransactionsPage() {
                 <span className="pill muted" title={new Date(tx.createdAt).toISOString()}>
                   staged {relTime(tx.createdAt)}
                 </span>
-                <span className="pill warn" title={`expires ${new Date(tx.expiresAt).toISOString()}`}>
-                  TTL {ttlRemaining(tx.expiresAt)}
-                </span>
+                <TtlPill expiresAt={tx.expiresAt} />
                 <span className="pill muted">
                   {tx.edits.length} file{tx.edits.length === 1 ? "" : "s"}
                 </span>
