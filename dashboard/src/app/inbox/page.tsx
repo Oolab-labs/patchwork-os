@@ -1,9 +1,16 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import rehypeSanitize from "rehype-sanitize";
-import remarkGfm from "remark-gfm";
+import dynamic from "next/dynamic";
 import { apiPath } from "@/lib/api";
+
+// react-markdown + its rehype/remark plugins ship ~80KB gzipped of
+// mdast/hast/micromark machinery. They're only needed to render the
+// currently-selected message body — split into a lazy chunk so the
+// inbox list view loads without them.
+const MessageMarkdown = dynamic(() => import("@/components/MessageMarkdown"), {
+  ssr: false,
+  loading: () => <div aria-busy="true" />,
+});
 
 type FilterCategory = "All" | "Morning Briefs" | "Recipe Outputs" | "Agent Reports";
 
@@ -724,13 +731,10 @@ const filteredItems = items.filter((item) => {
                     aria-label={`Message: ${slugToTitle(selected.name)}`}
                     style={{ fontSize: 14, lineHeight: 1.7, color: "var(--ink-1)", outline: "none" }}
                   >
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeSanitize]}
+                    <MessageMarkdown
+                      content={selected.content}
                       components={markdownComponents}
-                    >
-                      {selected.content}
-                    </ReactMarkdown>
+                    />
                   </div>
 
                   {/* Italic byline */}

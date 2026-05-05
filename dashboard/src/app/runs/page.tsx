@@ -178,7 +178,7 @@ export default function RunsPage() {
           placeholder="Filter by recipe…"
           aria-label="Filter by recipe"
           className="input"
-          style={{ minWidth: 200, width: 240 }}
+          style={{ minWidth: "min(200px, 100%)", width: 240, maxWidth: "100%" }}
         />
         <select
           value={trigger}

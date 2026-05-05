@@ -845,7 +845,7 @@ export default function RunDetailPage() {
           flexWrap: "wrap",
         }}
       >
-        <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ flex: 1, minWidth: "min(200px, 100%)" }}>
           <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 2 }}>
             <Link href="/runs" style={{ color: "var(--ink-2)" }}>Runs</Link>
             {" / "}
