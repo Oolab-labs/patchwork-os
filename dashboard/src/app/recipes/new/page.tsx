@@ -211,7 +211,13 @@ const NAME_RE = /^[a-z0-9][a-z0-9_\- ]{0,63}$/i;
 
 export default function NewRecipePage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense
+      fallback={
+        <div className="empty-state" role="status" aria-live="polite">
+          <p>Loading recipe editor…</p>
+        </div>
+      }
+    >
       <NewRecipePageInner />
     </Suspense>
   );

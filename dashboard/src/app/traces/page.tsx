@@ -225,7 +225,7 @@ function TraceDetail({
                   color: theme.fg,
                   fontWeight: 600,
                   fontSize: 11,
-                  background: i % 2 === 0 ? "rgba(0,0,0,0.06)" : "transparent",
+                  background: i % 2 === 0 ? "var(--recess)" : "transparent",
                   borderRight: "1px solid var(--line-2)",
                   whiteSpace: "nowrap",
                 }}
@@ -238,7 +238,7 @@ function TraceDetail({
                   fontFamily: "var(--font-mono)",
                   color: "var(--ink-1)",
                   fontSize: 11,
-                  background: i % 2 === 0 ? "rgba(0,0,0,0.06)" : "transparent",
+                  background: i % 2 === 0 ? "var(--recess)" : "transparent",
                   wordBreak: "break-all",
                 }}
               >
