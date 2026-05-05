@@ -1,9 +1,11 @@
 "use client";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import { relTime } from "@/components/time";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
+import { ErrorState, LivePill } from "@/components/patchwork";
+import { ActivityTabs } from "@/components/ActivityTabs";
 
 type TraceType = "approval" | "enrichment" | "recipe_run" | "decision";
 
@@ -45,13 +47,6 @@ const validateTraces: ShapeCheck<TracesResponse> = shape(
   },
 );
 
-const TYPE_LABELS: Record<TraceType, string> = {
-  approval: "Approval",
-  enrichment: "Enrichment",
-  recipe_run: "Recipe run",
-  decision: "Decision",
-};
-
 const TYPE_THEME: Record<
   TraceType,
   { fg: string; bg: string; pill: string }
@@ -62,16 +57,128 @@ const TYPE_THEME: Record<
   decision: { fg: "var(--purple)", bg: "var(--purple-soft)", pill: "purp" },
 };
 
+function traceStatus(t: DecisionTrace): "done" | "error" | "running" {
+  const s = String(t.body?.status ?? t.body?.outcome ?? "").toLowerCase();
+  if (s === "ok" || s === "done" || s === "success" || s === "approved") return "done";
+  if (s === "error" || s === "failed" || s === "rejected" || s === "errored") return "error";
+  return "running";
+}
+
 // ------------------------------------------------------------------ detail panel
 
 const SCALAR_KEYS_FIRST = ["status", "trigger", "recipeName", "taskId", "durationMs", "seq"];
 
+function TraceActions({
+  traceType,
+  body,
+}: {
+  traceType: TraceType;
+  body: Record<string, unknown>;
+}) {
+  const [replaying, setReplaying] = useState(false);
+  const [replayMsg, setReplayMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const recipeName = typeof body.recipeName === "string" ? body.recipeName : null;
+
+  const cliCmd = useMemo(() => {
+    if (traceType === "recipe_run" && recipeName) {
+      return `patchwork recipe run ${recipeName}`;
+    }
+    if (traceType === "approval" && typeof body.callId === "string") {
+      return `patchwork approve ${body.callId}`;
+    }
+    return null;
+  }, [traceType, recipeName, body]);
+
+  const handleReplay = useCallback(async () => {
+    if (!recipeName) return;
+    setReplaying(true);
+    setReplayMsg(null);
+    try {
+      const res = await fetch(apiPath(`/api/bridge/recipes/${encodeURIComponent(recipeName)}/run`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trigger: "manual" }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; taskId?: string; error?: string };
+      if (res.ok && data.ok !== false) {
+        setReplayMsg({ ok: true, text: data.taskId ? `Queued → task ${data.taskId.slice(0, 8)}` : "Queued" });
+      } else {
+        setReplayMsg({ ok: false, text: data.error ?? `Error ${res.status}` });
+      }
+    } catch (e) {
+      setReplayMsg({ ok: false, text: e instanceof Error ? e.message : "Failed" });
+    } finally {
+      setReplaying(false);
+    }
+  }, [recipeName]);
+
+  const handleCopyCli = useCallback(() => {
+    if (!cliCmd) return;
+    void navigator.clipboard.writeText(cliCmd).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [cliCmd]);
+
+  if (traceType !== "recipe_run" && !cliCmd) return null;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--s-2)",
+        padding: "8px 12px",
+        borderTop: "1px solid var(--line-2)",
+        background: "var(--recess)",
+      }}
+    >
+      {traceType === "recipe_run" && recipeName && (
+        <button
+          type="button"
+          className="btn sm primary"
+          style={{ fontSize: 11, background: "var(--orange)", border: "none" }}
+          disabled={replaying}
+          onClick={() => void handleReplay()}
+        >
+          {replaying ? "Running…" : "↺ Replay"}
+        </button>
+      )}
+      {cliCmd && (
+        <button
+          type="button"
+          className="btn sm ghost"
+          style={{ fontSize: 11, fontFamily: "var(--font-mono)" }}
+          onClick={handleCopyCli}
+        >
+          {copied ? "Copied ✓" : "⌗ Open in CLI"}
+        </button>
+      )}
+      {replayMsg && (
+        <span
+          style={{
+            fontSize: 11,
+            color: replayMsg.ok ? "var(--ok)" : "var(--err)",
+            fontFamily: "var(--font-mono)",
+          }}
+        >
+          {replayMsg.text}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function TraceDetail({
   body,
   theme,
+  traceType,
 }: {
   body: Record<string, unknown>;
   theme: { fg: string; bg: string };
+  traceType: TraceType;
 }) {
   const entries = Object.entries(body);
   const scalars = entries.filter(
@@ -184,16 +291,10 @@ function TraceDetail({
           </pre>
         </details>
       ))}
+      <TraceActions traceType={traceType} body={body} />
     </div>
   );
 }
-
-const GROUP_ORDER: TraceType[] = [
-  "approval",
-  "decision",
-  "recipe_run",
-  "enrichment",
-];
 
 type SinceFilter = "1h" | "24h" | "7d" | "30d" | "all";
 
@@ -205,7 +306,7 @@ const SINCE_OPTIONS: { k: SinceFilter; label: string; ms: number | null }[] = [
   { k: "all", label: "All time", ms: null },
 ];
 
-function ExportButton() {
+function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [passphrase, setPassphrase] = useState("");
   const [downloading, setDownloading] = useState(false);
@@ -246,7 +347,13 @@ function ExportButton() {
 
   return (
     <div style={{ position: "relative" }}>
-      <button type="button" className="btn sm" onClick={() => setOpen((v) => !v)}>
+      <button
+        type="button"
+        className="btn sm"
+        onClick={() => setOpen((v) => !v)}
+        disabled={outerDisabled}
+        style={{ opacity: outerDisabled ? 0.4 : 1 }}
+      >
         Export
       </button>
       {open && (
@@ -312,28 +419,25 @@ function ExportButton() {
 }
 
 export default function TracesPage() {
-  const [filter, setFilter] = useState<TraceType | "all">("all");
-  const [keyQuery, setKeyQuery] = useState("");
-  const [textQuery, setTextQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "done" | "errors">("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [since, setSince] = useState<SinceFilter>("24h");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<TraceType>>(
-    new Set(),
-  );
 
   const qs = useMemo(() => {
     const params = new URLSearchParams();
-    if (filter !== "all") params.set("traceType", filter);
-    if (keyQuery.trim()) params.set("key", keyQuery.trim());
-    if (textQuery.trim()) params.set("q", textQuery.trim());
+    if (searchQuery.trim()) {
+      params.set("key", searchQuery.trim());
+      params.set("q", searchQuery.trim());
+    }
     const sinceMs = SINCE_OPTIONS.find((o) => o.k === since)?.ms;
     if (sinceMs != null) {
       params.set("since", String(Date.now() - sinceMs));
     }
-    params.set("limit", "200");
+    params.set("limit", "50");
     const s = params.toString();
     return s ? `?${s}` : "";
-  }, [filter, keyQuery, textQuery, since]);
+  }, [searchQuery, since]);
 
   const { data, error, loading } = useBridgeFetch<TracesResponse>(
     `/api/bridge/traces${qs}`,
@@ -341,17 +445,21 @@ export default function TracesPage() {
   );
 
   const traces = data?.traces ?? [];
-  const sources = data?.sources;
 
-  const grouped = useMemo(() => {
-    const m = new Map<TraceType, DecisionTrace[]>();
-    for (const t of traces) {
-      const list = m.get(t.traceType) ?? [];
-      list.push(t);
-      m.set(t.traceType, list);
-    }
-    return m;
-  }, [traces]);
+  const flatSorted = useMemo(() => [...traces].sort((a, b) => b.ts - a.ts), [traces]);
+
+  const visible = useMemo(() => {
+    if (statusFilter === "all") return flatSorted;
+    return flatSorted.filter(t => {
+      const s = traceStatus(t);
+      if (statusFilter === "done") return s === "done";
+      if (statusFilter === "errors") return s === "error";
+      return true;
+    });
+  }, [flatSorted, statusFilter]);
+
+  const doneCount = flatSorted.filter(t => traceStatus(t) === "done").length;
+  const errorCount = flatSorted.filter(t => traceStatus(t) === "error").length;
 
   const toggle = (rowKey: string) => {
     setExpanded((prev) => {
@@ -362,37 +470,37 @@ export default function TracesPage() {
     });
   };
 
-  const toggleGroup = (t: TraceType) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(t)) next.delete(t);
-      else next.add(t);
-      return next;
-    });
-  };
-
-  const filterChips: { k: TraceType | "all"; label: string }[] = [
-    { k: "all", label: "All" },
-    { k: "approval", label: "Approval" },
-    { k: "decision", label: "Decision" },
-    { k: "recipe_run", label: "Recipe run" },
-    { k: "enrichment", label: "Enrichment" },
-  ];
-
   return (
     <section>
+      <ActivityTabs />
       <div className="page-head">
         <div>
-          <h1>Traces</h1>
-          <div className="page-head-sub">
-            Approval history, recipe runs, and enrichment links.
+          <h1 className="editorial-h1">
+            Traces — <em className="accent" style={{ fontStyle: "italic" }}>recipe runs and their decision logs.</em>
+          </h1>
+          <div className="editorial-sub" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>{traces.length} traces · {doneCount} done · {errorCount} errors</span>
+            <LivePill label="3s" tone="muted" />
           </div>
         </div>
         <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}>
-          <span className="pill muted">
-            {traces.length} trace{traces.length !== 1 ? "s" : ""}
-          </span>
-          <ExportButton />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filter recipe or trace id…"
+            style={{
+              minWidth: 260,
+              padding: "6px 10px",
+              fontSize: 13,
+              fontFamily: "var(--font-mono)",
+              background: "var(--recess)",
+              border: "1px solid var(--line-2)",
+              borderRadius: "var(--r-s)",
+              color: "var(--ink-0)",
+            }}
+          />
+          <ExportButton disabled={traces.length === 0} />
         </div>
       </div>
 
@@ -407,290 +515,174 @@ export default function TracesPage() {
         }}
       >
         <div className="filter-chips" style={{ marginBottom: 0 }}>
-          {filterChips.map((c) => (
+          {(["all", "done", "errors"] as const).map(k => (
             <button
+              key={k}
               type="button"
-              key={c.k}
-              onClick={() => setFilter(c.k)}
-              className={`filter-chip${filter === c.k ? " active" : ""}`}
+              onClick={() => setStatusFilter(k)}
+              className={statusFilter === k ? "pill accent" : "pill muted"}
+              style={{ cursor: "pointer", border: "none", fontSize: 12 }}
             >
-              {c.label}
+              {k === "all" ? `All (${traces.length})` : k === "done" ? `Done (${doneCount})` : `Errors (${errorCount})`}
             </button>
           ))}
         </div>
-        <select
-          value={since}
-          onChange={(e) => setSince(e.target.value as SinceFilter)}
-          aria-label="Time range"
-          style={{
-            padding: "6px 10px",
-            fontSize: 13,
-            background: "var(--recess)",
-            border: "1px solid var(--line-2)",
-            borderRadius: "var(--r-s)",
-            color: "var(--ink-0)",
-            cursor: "pointer",
-          }}
-        >
-          {SINCE_OPTIONS.map((o) => (
-            <option key={o.k} value={o.k}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <input
-          type="text"
-          value={keyQuery}
-          onChange={(e) => setKeyQuery(e.target.value)}
-          placeholder="filter by key (sessionId, sha, taskId…)"
-          style={{
-            flex: 1,
-            minWidth: 220,
-            padding: "6px 10px",
-            fontSize: 13,
-            fontFamily: "var(--font-mono)",
-            background: "var(--recess)",
-            border: "1px solid var(--line-2)",
-            borderRadius: "var(--r-s)",
-            color: "var(--ink-0)",
-          }}
-        />
-        <input
-          type="text"
-          value={textQuery}
-          onChange={(e) => setTextQuery(e.target.value)}
-          placeholder="search summary + body"
-          style={{
-            flex: 1,
-            minWidth: 220,
-            padding: "6px 10px",
-            fontSize: 13,
-            background: "var(--recess)",
-            border: "1px solid var(--line-2)",
-            borderRadius: "var(--r-s)",
-            color: "var(--ink-0)",
-          }}
-        />
       </div>
-
-      {sources && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--s-2)",
-            marginBottom: "var(--s-3)",
-            fontSize: 12,
-            color: "var(--ink-2)",
-            flexWrap: "wrap",
-          }}
-        >
-          <span style={{ color: "var(--ink-3)" }}>Recording from:</span>
-          {(Object.entries(sources) as [TraceType, boolean][]).map(
-            ([t, avail]) => (
-              <span
-                key={t}
-                className={`pill ${avail ? TYPE_THEME[t].pill : "muted"}`}
-                style={{
-                  fontSize: 11,
-                  opacity: avail ? 1 : 0.5,
-                }}
-                title={
-                  avail
-                    ? `${TYPE_LABELS[t]} traces are being captured`
-                    : `${TYPE_LABELS[t]} traces are not being captured yet`
-                }
-              >
-                {TYPE_LABELS[t]}
-                {!avail && " (off)"}
-              </span>
-            ),
-          )}
-        </div>
-      )}
 
       {loading && traces.length === 0 && (
         <p style={{ color: "var(--fg-2)" }}>Loading…</p>
       )}
 
-      {error && (
+      {error && traces.length === 0 && (
+        <ErrorState
+          title={error.startsWith("/traces") ? "Bridge version mismatch" : "Couldn't load traces"}
+          description={
+            error.startsWith("/traces")
+              ? "The /traces response didn't match the schema this dashboard expects. Check that the bridge and dashboard versions match."
+              : "The bridge isn't responding. Traces will reload on its next tick."
+          }
+          error={error}
+          onRetry={() => window.location.reload()}
+        />
+      )}
+      {error && traces.length > 0 && (
         <div className="alert-err">
           {error.startsWith("/traces")
             ? `Response shape unexpected (bridge version mismatch?): ${error}`
-            : `Unreachable: ${error}`}
+            : `Refresh failed — ${error}`}
         </div>
       )}
 
-      {!loading && traces.length === 0 && !error ? (
+      {visible.length === 0 && !loading ? (
         <div className="empty-state">
-          <h3>
-            {filter === "all" && !keyQuery && !textQuery
-              ? "No traces yet"
-              : "No matching traces"}
-          </h3>
-          <p>
-            {filter === "all" && !keyQuery && !textQuery
-              ? "Nothing has been recorded yet. A trace appears here every time the bridge approves an action, links an enrichment, runs a recipe, or an agent saves a decision."
-              : `No ${filter === "all" ? "traces" : TYPE_LABELS[filter as TraceType].toLowerCase()} traces${keyQuery ? ` with key matching "${keyQuery}"` : ""}${textQuery ? ` containing "${textQuery}"` : ""}.`}
-          </p>
+          <h3>No traces</h3>
+          <p>Traces appear as recipes run and approvals are processed.</p>
         </div>
       ) : (
-        <div
-          style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}
-        >
-          {GROUP_ORDER.filter((g) => grouped.has(g)).map((g) => {
-            const items = grouped.get(g) ?? [];
-            const theme = TYPE_THEME[g];
-            const collapsed = collapsedGroups.has(g);
+        <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: "var(--s-5)" }}>
+          {visible.map(t => {
+            const rowKey = `${t.traceType}:${t.ts}:${t.key}`;
+            const isOpen = expanded.has(rowKey);
+            const status = traceStatus(t);
+            const theme = TYPE_THEME[t.traceType];
+            const statusColor = status === "done" ? "var(--ok)" : status === "error" ? "var(--err)" : "var(--ink-3)";
+            const statusLabel = status === "done" ? "done" : status === "error" ? "error" : "running";
             return (
-              <div
-                key={g}
-                className="card"
-                style={{ padding: 0, overflow: "hidden" }}
-              >
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(g)}
+              <div key={rowKey} style={{ borderBottom: "1px solid var(--line-3)" }}>
+                <div
                   style={{
-                    width: "100%",
-                    background: "transparent",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: "12px 16px",
-                    display: "flex",
+                    display: "grid",
+                    gridTemplateColumns: "20px 18px minmax(280px, auto) 1fr 100px 80px 28px",
                     alignItems: "center",
                     gap: "var(--s-3)",
-                    borderBottom: collapsed
-                      ? "none"
-                      : "1px solid var(--line-3)",
-                    borderLeft: `3px solid ${theme.fg}`,
-                    textAlign: "left",
-                    color: "inherit",
+                    width: "100%",
+                    padding: "10px 16px",
+                    minHeight: 44,
                   }}
                 >
-                  <span
-                    aria-hidden
+                  <button
+                    type="button"
+                    onClick={() => toggle(rowKey)}
+                    aria-label={isOpen ? "Collapse" : "Expand"}
                     style={{
-                      display: "inline-block",
-                      width: 8,
-                      textAlign: "center",
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
                       color: "var(--ink-3)",
-                      fontSize: 10,
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 12,
+                      padding: 0,
+                      textAlign: "left",
                     }}
                   >
-                    {collapsed ? "▸" : "▾"}
-                  </span>
+                    {isOpen ? "v" : ">"}
+                  </button>
                   <span
-                    className={`pill ${theme.pill}`}
-                    style={{ fontSize: 10, fontWeight: 600 }}
+                    aria-hidden="true"
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: 3,
+                      background: theme.bg,
+                      border: `1px solid ${theme.fg}`,
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggle(rowKey)}
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      color: theme.fg,
+                      background: "transparent",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
                   >
-                    {TYPE_LABELS[g]}
-                  </span>
-                  <span
+                    {t.key}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggle(rowKey)}
                     style={{
                       fontSize: 13,
-                      fontWeight: 600,
-                      color: "var(--ink-0)",
+                      color: "var(--ink-1)",
+                      background: "transparent",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    {items.length} trace{items.length !== 1 ? "s" : ""}
+                    {String(t.body?.recipeName ?? t.key)}
+                  </button>
+                  <span style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "right" }}>
+                    {relTime(t.ts)}
                   </span>
-                  <span style={{ flex: 1 }} />
-                  <span
-                    style={{ fontSize: 11, color: "var(--ink-3)" }}
-                  >
-                    latest {relTime(items[0]?.ts ?? Date.now())}
+                  <span style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <span className="pill" style={{ background: statusColor + "22", color: statusColor, fontSize: 10, fontWeight: 700 }}>
+                      {statusLabel}
+                    </span>
                   </span>
-                </button>
-
-                {!collapsed && (
-                  <div
-                    style={{ display: "flex", flexDirection: "column" }}
+                  <button
+                    type="button"
+                    aria-label="Copy trace id"
+                    onClick={() => { void navigator.clipboard.writeText(t.key); }}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "var(--ink-3)",
+                      padding: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "flex-end",
+                    }}
                   >
-                    {items.map((t) => {
-                      const rowKey = `${t.traceType}:${t.ts}:${t.key}`;
-                      const isOpen = expanded.has(rowKey);
-                      return (
-                        <div
-                          key={rowKey}
-                          style={{
-                            borderBottom: "1px solid var(--line-3)",
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => toggle(rowKey)}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "var(--s-3)",
-                              width: "100%",
-                              background: "transparent",
-                              border: "none",
-                              padding: "9px 16px",
-                              cursor: "pointer",
-                              textAlign: "left",
-                              color: "inherit",
-                            }}
-                          >
-                            <span
-                              aria-hidden
-                              style={{
-                                width: 8,
-                                textAlign: "center",
-                                color: "var(--ink-3)",
-                                fontSize: 10,
-                              }}
-                            >
-                              {isOpen ? "▾" : "▸"}
-                            </span>
-                            <span
-                              className="mono"
-                              style={{
-                                fontSize: 11.5,
-                                color: theme.fg,
-                                flexShrink: 0,
-                                fontWeight: 600,
-                                minWidth: 140,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
-                              title={t.key}
-                            >
-                              {t.key.length > 28
-                                ? `${t.key.slice(0, 26)}…`
-                                : t.key}
-                            </span>
-                            <span
-                              style={{
-                                flex: 1,
-                                fontSize: 13,
-                                color: "var(--ink-1)",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                minWidth: 0,
-                              }}
-                            >
-                              {t.summary}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: 11,
-                                color: "var(--ink-3)",
-                                flexShrink: 0,
-                              }}
-                            >
-                              {relTime(t.ts)}
-                            </span>
-                          </button>
-                          {isOpen && (
-                            <TraceDetail body={t.body} theme={theme} />
-                          )}
-                        </div>
-                      );
-                    })}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                  </button>
+                </div>
+                {isOpen && (
+                  <div style={{ padding: "0 16px 12px 16px", borderTop: "1px solid var(--line-3)", background: "var(--recess)" }}>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-2)", margin: "8px 0 4px", wordBreak: "break-all" }}>
+                      {t.key}
+                    </div>
+                    {t.summary && (
+                      <div style={{ fontSize: 12, color: "var(--ink-1)", marginBottom: 8 }}>{t.summary}</div>
+                    )}
+                    <TraceActions traceType={t.traceType} body={t.body} />
+                    <TraceDetail body={t.body} theme={theme} traceType={t.traceType} />
                   </div>
                 )}
               </div>

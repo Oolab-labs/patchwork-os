@@ -1,7 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StatCard } from "@/components/StatCard";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { AreaChart, ErrorState } from "@/components/patchwork";
+import { AnalyticsTabs } from "@/components/AnalyticsTabs";
+import type { AreaChartSeries } from "@/components/patchwork";
 
 interface ToolStat {
   tool: string;
@@ -15,7 +18,7 @@ interface AutomationTask {
   id: string;
   name?: string;
   status: string;
-  startedAt: number;
+  startedAt?: number;
   completedAt?: number;
 }
 
@@ -25,7 +28,8 @@ interface AnalyticsData {
   recentAutomationTasks: AutomationTask[];
 }
 
-function relTime(ms: number): string {
+function relTime(ms: number | undefined): string {
+  if (ms == null || !Number.isFinite(ms)) return "—";
   const diff = Date.now() - ms;
   const sec = Math.floor(diff / 1000);
   if (sec < 60) return "just now";
@@ -46,13 +50,6 @@ function fmtDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-const WINDOWS: { label: string; value: number }[] = [
-  { label: "1h", value: 1 },
-  { label: "6h", value: 6 },
-  { label: "24h", value: 24 },
-  { label: "7d", value: 168 },
-];
-
 function taskStatusPill(status: string) {
   if (status === "done" || status === "completed") {
     return <span className="pill ok">{status}</span>;
@@ -64,7 +61,9 @@ function taskStatusPill(status: string) {
 }
 
 export default function AnalyticsPage() {
-  const [windowHours, setWindowHours] = useState(24);
+  const windowHours = 24;
+  const [clientNow, setClientNow] = useState(0);
+  useEffect(() => { setClientNow(Date.now()); }, []);
 
   const { data, error, loading } = useBridgeFetch<AnalyticsData>(
     `/api/bridge/analytics?windowHours=${windowHours}`,
@@ -74,53 +73,85 @@ export default function AnalyticsPage() {
   const topTools = (data?.topTools ?? []).slice(0, 15);
   const totalCalls = topTools.reduce((s, t) => s + t.calls, 0);
   const totalErrors = topTools.reduce((s, t) => s + t.errors, 0);
+  const errorRate = totalCalls > 0 ? (totalErrors / totalCalls) * 100 : 0;
+  const hooksFired = data?.hooksLast24h ?? 0;
   const maxCalls = topTools.length > 0 ? topTools[0].calls : 1;
-  const errorRate =
-    totalCalls > 0 ? `${((totalErrors / totalCalls) * 100).toFixed(1)}%` : "—";
 
   const recentTasks = (data?.recentAutomationTasks ?? []).slice(0, 20);
 
+  interface RunBrief { createdAt: number; status: string; durationMs: number }
+  const { data: runsData } = useBridgeFetch<{ runs?: RunBrief[] }>(
+    `/api/bridge/runs?limit=500`,
+    { intervalMs: 60000 },
+  );
+
+  const { areaSeries, areaLabels } = useMemo<{ areaSeries: AreaChartSeries[]; areaLabels: string[] }>(() => {
+    const runs = runsData?.runs ?? [];
+    const buckets = windowHours;
+    const now = clientNow;
+    const slotMs = 3_600_000;
+    const callsPerHour = Array<number>(buckets).fill(0);
+    const errorsPerHour = Array<number>(buckets).fill(0);
+    if (now !== 0) {
+      for (const r of runs) {
+        const hoursAgo = (now - r.createdAt) / slotMs;
+        if (hoursAgo < 0 || hoursAgo >= buckets) continue;
+        const slot = buckets - 1 - Math.floor(hoursAgo);
+        callsPerHour[slot]++;
+        if (r.status === "error") errorsPerHour[slot]++;
+      }
+    }
+    // Show only 00:00, 06:00, 12:00, 18:00, now on the 24h axis.
+    const labels = Array.from({ length: buckets }, (_, i) => {
+      if (now === 0) return "";
+      if (i === buckets - 1) return "now";
+      const t = new Date(now - (buckets - 1 - i) * slotMs);
+      const h = t.getHours();
+      if (h === 0 || h === 6 || h === 12 || h === 18) {
+        return `${String(h).padStart(2, "0")}:00`;
+      }
+      return "";
+    });
+    return {
+      areaSeries: [
+        { values: callsPerHour, color: "var(--orange)", label: "Runs" },
+        { values: errorsPerHour, color: "var(--red)", label: "Errors" },
+      ],
+      areaLabels: labels,
+    };
+  }, [runsData, windowHours, clientNow]);
+
   return (
     <section>
+      <AnalyticsTabs />
       <div className="page-head">
         <div>
-          <h1>Analytics</h1>
-          <div className="page-head-sub">
-            Tool usage, hook activity, and automation task history.
+          <h1 className="editorial-h1">
+            Analytics — <span className="accent">what your agents actually do.</span>
+          </h1>
+          <div className="editorial-sub">
+            tool usage · hook activity · automation history
           </div>
-        </div>
-        <div style={{ display: "flex", gap: "var(--s-1)" }}>
-          {WINDOWS.map((w) => (
-            <button
-              key={w.value}
-              type="button"
-              className="btn sm"
-              onClick={() => setWindowHours(w.value)}
-              style={
-                windowHours === w.value
-                  ? {
-                      borderColor: "var(--accent)",
-                      color: "var(--accent)",
-                      background: "var(--accent-soft)",
-                    }
-                  : undefined
-              }
-            >
-              {w.label}
-            </button>
-          ))}
         </div>
       </div>
 
-      {error ? <div className="alert-err">Bridge offline — {error}</div> : null}
+      {error && !data && (
+        <ErrorState
+          title="Couldn't load analytics"
+          description="The bridge isn't responding. Once it's back, this view will refresh on its own."
+          error={error}
+          onRetry={() => window.location.reload()}
+        />
+      )}
+      {error && data && <div className="alert-err">Refresh failed — {error}</div>}
 
-      {!error && (
+      {(!error || data) && (
         <>
           <div className="stat-grid">
             <StatCard
               label="Total tool calls"
               value={loading ? "—" : totalCalls.toLocaleString()}
-              foot={`Last ${windowHours >= 168 ? "7 days" : `${windowHours}h`}`}
+              foot="Last 24h"
               icon={
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(var(--orange-rgb), 0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--orange)" }}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
@@ -138,28 +169,45 @@ export default function AnalyticsPage() {
               }
             />
             <StatCard
-              label="Hooks last 24h"
-              value={loading ? "—" : (data?.hooksLast24h ?? 0).toLocaleString()}
+              label="Hooks fired"
+              value={loading ? "—" : hooksFired.toLocaleString()}
               foot="Automation hook triggers"
               icon={
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(13,138,94,0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "#0d8a5e" }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(34,197,94,0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--green)" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
                 </div>
               }
             />
             <StatCard
               label="Error rate"
-              value={loading ? "—" : errorRate}
+              value={loading ? "—" : `${errorRate.toFixed(1)}%`}
               foot="Errors / total calls"
               icon={
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: totalErrors > 0 ? "rgba(220,38,38,0.12)" : "rgba(180,83,9,0.10)", display: "flex", alignItems: "center", justifyContent: "center", color: totalErrors > 0 ? "var(--err)" : "#b45309" }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(var(--red-rgb, 239 68 68), 0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--red)" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                 </div>
               }
             />
           </div>
 
-          <div className="page-head" style={{ marginTop: "var(--s-4)" }}>
+          {/* Area chart — runs per hour */}
+          <div className="card" style={{ padding: "14px 20px 10px", marginTop: "var(--s-4)", marginBottom: "var(--s-4)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)", marginBottom: 8 }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)" }}>
+                Calls — last 24 hours
+              </span>
+              <span style={{ flex: 1 }} />
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 8, height: 3, background: "var(--orange)", borderRadius: 2, display: "inline-block" }} />
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-2)" }}>runs</span>
+                <span style={{ width: 8, height: 3, background: "var(--red)", borderRadius: 2, display: "inline-block", marginLeft: 8 }} />
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-2)" }}>errors</span>
+              </span>
+            </div>
+            <AreaChart series={areaSeries} xLabels={areaLabels} height={100} yTicks={3} />
+          </div>
+
+          <div className="page-head" style={{ marginTop: "var(--s-2)" }}>
             <div>
               <h2>Top tools</h2>
             </div>
@@ -182,170 +230,20 @@ export default function AnalyticsPage() {
             </div>
           ) : (
             <div className="card" style={{ padding: "var(--s-5)" }}>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "var(--s-3)",
-                }}
-              >
-                {topTools.map((t) => {
-                  const fillPct = (t.calls / maxCalls) * 100;
-                  const errPct = t.calls > 0 ? (t.errors / t.calls) * 100 : 0;
-                  return (
-                    <div
-                      key={t.tool}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "200px 1fr auto",
-                        alignItems: "center",
-                        gap: "var(--s-3)",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          color: "var(--fg-1)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                        title={t.tool}
-                      >
-                        {t.tool}
-                      </span>
-                      <div
-                        style={{
-                          position: "relative",
-                          height: 10,
-                          background: "var(--bg-3)",
-                          borderRadius: "var(--r-full)",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            position: "absolute",
-                            inset: 0,
-                            width: `${fillPct}%`,
-                            background: "var(--accent)",
-                            borderRadius: "var(--r-full)",
-                          }}
-                        />
-                        {errPct > 0 && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              top: 0,
-                              left: 0,
-                              height: "100%",
-                              width: `${(errPct / 100) * fillPct}%`,
-                              background: "var(--err)",
-                              borderRadius: "var(--r-full)",
-                            }}
-                          />
-                        )}
-                      </div>
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          color: "var(--fg-3)",
-                          whiteSpace: "nowrap",
-                          minWidth: 80,
-                          textAlign: "right",
-                        }}
-                      >
-                        {t.calls.toLocaleString()} calls
-                        {t.errors > 0 && (
-                          <span style={{ color: "var(--err)", marginLeft: 6 }}>
-                            {t.errors} err
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div
-                style={{
-                  marginTop: "var(--s-4)",
-                  paddingTop: "var(--s-3)",
-                  borderTop: "1px solid var(--border-subtle)",
-                  display: "flex",
-                  gap: "var(--s-6)",
-                  flexWrap: "wrap",
-                }}
-              >
-                <span style={{ fontSize: 12, color: "var(--fg-3)" }}>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      width: 10,
-                      height: 10,
-                      background: "var(--accent)",
-                      borderRadius: 2,
-                      marginRight: 6,
-                      verticalAlign: "middle",
-                    }}
-                  />
-                  Success
-                </span>
-                <span style={{ fontSize: 12, color: "var(--fg-3)" }}>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      width: 10,
-                      height: 10,
-                      background: "var(--err)",
-                      borderRadius: 2,
-                      marginRight: 6,
-                      verticalAlign: "middle",
-                    }}
-                  />
-                  Errors
-                </span>
-                <span
-                  style={{
-                    fontSize: 12,
-                    color: "var(--fg-3)",
-                    marginLeft: "auto",
-                  }}
-                >
-                  p50 / p95 latency shown below
-                </span>
-              </div>
-
-              <table
-                className="table"
-                style={{ marginTop: "var(--s-4)", fontSize: 12 }}
-              >
-                <thead>
-                  <tr>
-                    <th>Tool</th>
-                    <th>Calls</th>
-                    <th>Errors</th>
-                    <th>p50</th>
-                    <th>p95</th>
-                  </tr>
-                </thead>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <tbody>
                   {topTools.map((t) => (
-                    <tr key={t.tool}>
-                      <td className="mono">{t.tool}</td>
-                      <td className="mono">{t.calls.toLocaleString()}</td>
-                      <td
-                        className="mono"
-                        style={
-                          t.errors > 0 ? { color: "var(--err)" } : undefined
-                        }
-                      >
-                        {t.errors}
+                    <tr key={t.tool} style={{ borderBottom: "1px solid var(--line-3)" }}>
+                      <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--ink-0)", whiteSpace: "nowrap" }}>{t.tool}</td>
+                      <td style={{ padding: "7px 8px", width: "100%" }}>
+                        <div style={{ background: "var(--line-3)", borderRadius: 2, height: 5, width: "100%" }}>
+                          <div style={{ background: "var(--orange)", borderRadius: 2, height: 5, width: `${(t.calls / maxCalls) * 100}%` }} />
+                        </div>
                       </td>
-                      <td className="mono">{fmtDuration(t.p50Ms)}</td>
-                      <td className="mono">{fmtDuration(t.p95Ms)}</td>
+                      <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11.5, whiteSpace: "nowrap" }}>{t.calls}</td>
+                      <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11.5, color: t.errors > 0 ? "var(--err)" : "var(--ink-3)", whiteSpace: "nowrap" }}>{t.errors} err</td>
+                      <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--ink-3)", whiteSpace: "nowrap" }} title="p50 latency">{fmtDuration(t.p50Ms)}</td>
+                      <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--ink-3)", whiteSpace: "nowrap" }} title="p95 latency">{fmtDuration(t.p95Ms)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -353,71 +251,58 @@ export default function AnalyticsPage() {
             </div>
           )}
 
-          <div
-            className="page-head"
-            style={{ marginTop: "var(--s-8)", marginBottom: "var(--s-4)" }}
-          >
-            <div>
-              <h2>Recent automation tasks</h2>
-            </div>
-          </div>
+          {recentTasks.length > 0 && (
+            <>
+              <div
+                className="page-head"
+                style={{ marginTop: "var(--s-8)", marginBottom: "var(--s-4)" }}
+              >
+                <div>
+                  <h2>Recent automation tasks</h2>
+                </div>
+              </div>
 
-          {loading ? (
-            <div
-              className="card"
-              style={{ color: "var(--fg-3)", fontSize: 13 }}
-            >
-              Loading…
-            </div>
-          ) : recentTasks.length === 0 ? (
-            <div className="empty-state">
-              <h3>No automation tasks yet</h3>
-              <p style={{ marginTop: "var(--s-2)", fontSize: 13 }}>
-                Automation task history accumulates over time as hooks trigger
-                recipes.
-              </p>
-            </div>
-          ) : (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Name / ID</th>
-                    <th>Status</th>
-                    <th>Duration</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentTasks.map((task) => {
-                    const duration =
-                      task.completedAt != null
-                        ? fmtDuration(task.completedAt - task.startedAt)
-                        : "—";
-                    return (
-                      <tr key={task.id}>
-                        <td className="muted" style={{ whiteSpace: "nowrap" }}>
-                          {relTime(task.startedAt)}
-                        </td>
-                        <td className="mono">
-                          {task.name ?? task.id}
-                          {task.name && (
-                            <span
-                              className="muted"
-                              style={{ marginLeft: 8, fontSize: 11 }}
-                            >
-                              {task.id}
-                            </span>
-                          )}
-                        </td>
-                        <td>{taskStatusPill(task.status)}</td>
-                        <td className="mono">{duration}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Name / ID</th>
+                      <th>Status</th>
+                      <th>Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentTasks.map((task) => {
+                      const duration =
+                        task.completedAt != null && task.startedAt != null
+                          ? fmtDuration(task.completedAt - task.startedAt)
+                          : "—";
+                      return (
+                        <tr key={task.id}>
+                          <td className="muted" style={{ whiteSpace: "nowrap" }}>
+                            {relTime(task.startedAt)}
+                          </td>
+                          <td className="mono">
+                            {task.name ?? task.id}
+                            {task.name && (
+                              <span
+                                className="muted"
+                                style={{ marginLeft: 8, fontSize: 11 }}
+                              >
+                                {task.id}
+                              </span>
+                            )}
+                          </td>
+                          <td>{taskStatusPill(task.status)}</td>
+                          <td className="mono">{duration}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </>
       )}

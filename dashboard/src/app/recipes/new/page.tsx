@@ -1,6 +1,6 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
 
 interface Step {
@@ -210,6 +210,14 @@ function buildRecipeYaml(form: FormState, safeName: string): string {
 const NAME_RE = /^[a-z0-9][a-z0-9_\- ]{0,63}$/i;
 
 export default function NewRecipePage() {
+  return (
+    <Suspense fallback={null}>
+      <NewRecipePageInner />
+    </Suspense>
+  );
+}
+
+function NewRecipePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
