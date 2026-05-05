@@ -177,7 +177,7 @@ export default function SettingsPage() {
     let cancel = false;
     (async () => {
       try {
-        const res = await fetch(apiPath("/api/cc-permissions"));
+        const res = await fetch(apiPath("/api/bridge/cc-permissions"));
         if (!res.ok) return;
         const data = (await res.json()) as { allow?: string[]; ask?: string[]; deny?: string[] };
         if (cancel) return;

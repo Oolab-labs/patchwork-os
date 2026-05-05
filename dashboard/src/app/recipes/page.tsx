@@ -905,6 +905,16 @@ export default function RecipesPage() {
                         onClick={() =>
                           setSelectedName((prev) => (prev === r.name ? null : r.name))
                         }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedName((prev) => (prev === r.name ? null : r.name));
+                          }
+                        }}
+                        tabIndex={0}
+                        role="button"
+                        aria-pressed={sel}
+                        aria-label={`Select recipe ${r.name}`}
                         style={{
                           cursor: "pointer",
                           background: sel ? "var(--bg-2)" : undefined,
@@ -915,17 +925,21 @@ export default function RecipesPage() {
                         </td>
                         <td className="mono" style={{ overflow: "hidden" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span
+                            <Link
+                              href={`/recipes/${encodeURIComponent(r.name)}/edit`}
+                              onClick={(e) => e.stopPropagation()}
                               style={{
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
                                 fontWeight: sel ? 700 : 500,
+                                color: "inherit",
+                                textDecoration: "none",
                               }}
                               title={r.description ?? r.name}
                             >
                               {r.name}
-                            </span>
+                            </Link>
                             {live && <LivePill tone="ok" />}
                             {!enabled && <StatusPill tone="muted">off</StatusPill>}
                           </div>

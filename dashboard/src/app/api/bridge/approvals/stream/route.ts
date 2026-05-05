@@ -88,6 +88,24 @@ export async function GET(req: Request): Promise<Response> {
     );
   }
 
+  if (!upstream.ok) {
+    // Upstream bridge doesn't speak /approvals/stream (older version) or is
+    // erroring. Surface as a `bridge-error` SSE event with a 200 status so
+    // EventSource treats it as a clean signal — not a fatal error that
+    // triggers immediate browser-side reconnect.
+    return new Response(
+      `event: bridge-error\ndata: {"error":"upstream ${upstream.status}"}\n\n: retry\n\n`,
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      },
+    );
+  }
+
   return new Response(upstream.body, {
     status: upstream.status,
     headers: {

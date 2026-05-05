@@ -29,9 +29,14 @@ export function useBridgeFetch<T>(
 ): UseBridgeFetchResult<T> {
   const intervalMs = options?.intervalMs ?? 5000;
   const enabled = options?.enabled ?? true;
-  const unsupportedValue = options?.unsupportedValue ?? null;
   const transformRef = useRef(options?.transform);
   transformRef.current = options?.transform;
+  // Hold unsupportedValue in a ref so the effect doesn't restart when callers
+  // pass an inline literal (object/array) — that triggered a fetch storm.
+  const unsupportedValueRef = useRef<T | null>(
+    (options?.unsupportedValue ?? null) as T | null,
+  );
+  unsupportedValueRef.current = (options?.unsupportedValue ?? null) as T | null;
 
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -54,7 +59,7 @@ export function useBridgeFetch<T>(
 
         if (res.status === 404) {
           setUnsupported(true);
-          setData(unsupportedValue as T | null);
+          setData(unsupportedValueRef.current);
           setError(undefined);
           setLoading(false);
           failures = 0;
@@ -106,7 +111,7 @@ export function useBridgeFetch<T>(
       alive = false;
       if (timerId !== null) clearTimeout(timerId);
     };
-  }, [path, intervalMs, enabled, unsupportedValue]);
+  }, [path, intervalMs, enabled]);
 
   return { data, error, loading, status, unsupported };
 }
