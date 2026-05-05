@@ -41,13 +41,33 @@ function ttlRemaining(expiresAt: number): string {
   return `${min}m ${sec.toString().padStart(2, "0")}s`;
 }
 
-// Self-ticking TTL pill: amber > 1m, red 30s-1m, red+pulsing < 30s, expired = err.
+// Single shared 1Hz tick for every TTL pill on the page. The previous
+// implementation set up one setInterval per TtlPill — fine at 3 rows,
+// wasteful at 30. Now there's one tick on the module scope and pills
+// subscribe via a tiny pub/sub.
+type Subscriber = () => void;
+const tickSubscribers = new Set<Subscriber>();
+let tickIntervalId: ReturnType<typeof setInterval> | null = null;
+function subscribeTtlTick(fn: Subscriber): () => void {
+  tickSubscribers.add(fn);
+  if (tickIntervalId === null && typeof window !== "undefined") {
+    tickIntervalId = setInterval(() => {
+      for (const sub of tickSubscribers) sub();
+    }, 1000);
+  }
+  return () => {
+    tickSubscribers.delete(fn);
+    if (tickSubscribers.size === 0 && tickIntervalId !== null) {
+      clearInterval(tickIntervalId);
+      tickIntervalId = null;
+    }
+  };
+}
+
+// Ticking TTL pill: amber > 1m, red 30s-1m, red+pulsing < 30s, expired = err.
 function TtlPill({ expiresAt }: { expiresAt: number }) {
   const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
+  useEffect(() => subscribeTtlTick(() => setTick((t) => t + 1)), []);
   const ms = Math.max(0, expiresAt - Date.now());
   const expired = ms === 0;
   const critical = !expired && ms < 30_000;

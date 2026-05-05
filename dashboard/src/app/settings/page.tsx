@@ -55,11 +55,15 @@ const DRIVER_ROWS: DriverRow[] = [
   { id: "openai", name: "OpenAI GPT-4o", detail: "OpenAI · requires API key", driverValue: "openai" },
 ];
 
+// Inline style objects intentionally use the canonical --ink/--line tokens
+// (not the legacy --fg-*/--border-* aliases). The aliases are kept in
+// globals.css for back-compat but new surfaces should pick the canonical
+// names so future palette work stays in one set.
 const inputStyle = {
-  background: "var(--bg-2)",
-  border: "1px solid var(--border-default)",
+  background: "var(--recess)",
+  border: "1px solid var(--line-2)",
   borderRadius: "var(--r-2)",
-  color: "var(--fg-0)",
+  color: "var(--ink-0)",
   fontSize: 13,
   fontFamily: "var(--font-mono)",
   padding: "6px 10px",
@@ -71,14 +75,14 @@ const inputStyle = {
 const labelStyle = {
   display: "block",
   fontSize: 13,
-  color: "var(--fg-1)",
+  color: "var(--ink-1)",
   marginBottom: 4,
   fontWeight: 500,
 };
 
 const helpStyle = {
   fontSize: 12,
-  color: "var(--fg-2)",
+  color: "var(--ink-2)",
   margin: "4px 0 0",
   lineHeight: 1.5,
 };
