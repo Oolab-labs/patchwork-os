@@ -16,18 +16,13 @@ import {
   type PatchworkConfig,
   saveConfig as savePatchworkConfig,
 } from "./patchworkConfig.js";
+import {
+  disabledMarkerPath,
+  getConfigDisabledNames,
+  isInstallDirDisabled,
+} from "./recipes/disabledMarkers.js";
 import { RECIPE_NAME_RE } from "./recipes/names.js";
 import { validateRecipeDefinition } from "./recipes/validation.js";
-
-/**
- * Per-recipe disabled marker — must match the constant in
- * `src/commands/recipeInstall.ts` and `src/recipes/scheduler.ts` (kept inline
- * here to avoid a circular import via commands → recipesHttp → commands).
- *
- * Absence on a recipe's install dir = enabled (legacy default).
- * Presence = disabled — `runRecipeInstall` writes one on every fresh install.
- */
-const DISABLED_MARKER = ".disabled";
 
 /**
  * Returns true unless `filePath` lives inside an install dir whose
@@ -48,7 +43,7 @@ export function isRecipeFileEnabled(
   const installDirName = rel.split(path.sep)[0];
   if (!installDirName) return true;
   const installDir = path.join(recipesDir, installDirName);
-  return !existsSync(path.join(installDir, DISABLED_MARKER));
+  return !isInstallDirDisabled(installDir);
 }
 
 /**
@@ -85,7 +80,7 @@ function* iterateInstallDirs(
       continue;
     }
     if (!isDir) continue;
-    const enabled = !existsSync(path.join(fullPath, DISABLED_MARKER));
+    const enabled = !isInstallDirDisabled(fullPath);
     if (!enabled && !includeDisabled) continue;
 
     let entrypoint: string | null = null;
@@ -175,7 +170,7 @@ export function setRecipeEnabled(
   try {
     const installDir = findInstallDirByRecipeName(recipesDir, name);
     if (installDir) {
-      const markerPath = path.join(installDir, DISABLED_MARKER);
+      const markerPath = disabledMarkerPath(installDir);
       if (enabled) {
         if (existsSync(markerPath)) rmSync(markerPath);
       } else {
@@ -186,8 +181,8 @@ export function setRecipeEnabled(
 
     // Legacy top-level path — fall back to config-file disabled list
     const cfg = (options.loadConfigFn ?? loadConfig)();
-    const disabled = new Set<string>(
-      (cfg as { recipes?: { disabled?: string[] } }).recipes?.disabled ?? [],
+    const disabled = getConfigDisabledNames(
+      cfg as { recipes?: { disabled?: string[] } },
     );
     if (enabled) disabled.delete(name);
     else disabled.add(name);
