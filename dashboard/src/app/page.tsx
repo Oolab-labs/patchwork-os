@@ -79,6 +79,117 @@ function withAt(e: ActivityEvent): ActivityEvent {
   return { ...e, at: Date.now() };
 }
 
+/**
+ * Tool calls — last 60 minutes widget. Polls /metrics every 5s and
+ * renders the per-minute delta. Pre-empty-state-pass this rendered an
+ * AreaChart unconditionally — when the bridge has had no tool calls
+ * yet (the common first-run state), the curve is a flat line at zero
+ * and the "0" badge in the top-right looks like a broken reading
+ * rather than an intentional empty state. Now the chart only renders
+ * when there's actual signal; otherwise we show a one-line hint
+ * explaining what populates the curve.
+ */
+function ToolCallsWidget({
+  series,
+  peak,
+  uniqueTools,
+  activeRecipesCount,
+  toolCallTotal,
+  bridgeOk,
+}: {
+  series: number[];
+  peak: number;
+  uniqueTools: number;
+  activeRecipesCount: number;
+  toolCallTotal: number;
+  bridgeOk: boolean;
+}): React.JSX.Element {
+  const total = series.reduce((a, b) => a + b, 0);
+  const hasActivity = peak > 0 || total > 0 || toolCallTotal > 0;
+  return (
+    <div
+      className="card"
+      style={{
+        padding: "16px 20px 12px",
+        marginBottom: "var(--s-5)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: 10,
+          marginBottom: 4,
+        }}
+      >
+        <span
+          style={{
+            fontSize: "var(--fs-m)",
+            fontWeight: 700,
+            color: "var(--ink-0)",
+            flex: 1,
+          }}
+        >
+          Tool calls — last 60 minutes
+        </span>
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--fs-xs)",
+            color: hasActivity ? "var(--orange)" : "var(--ink-3)",
+            fontWeight: 700,
+          }}
+        >
+          {total}
+        </span>
+      </div>
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "var(--fs-xs)",
+          color: "var(--ink-3)",
+          marginBottom: 10,
+        }}
+      >
+        peak {peak} / {uniqueTools} unique-tools / {activeRecipesCount}{" "}
+        active-recipes
+      </div>
+      {hasActivity ? (
+        <AreaChart
+          series={[{ values: series, color: "var(--orange)" }]}
+          height={120}
+        />
+      ) : (
+        <div
+          role="status"
+          style={{
+            alignItems: "center",
+            border: "1px dashed var(--line-2)",
+            borderRadius: "var(--r-2)",
+            color: "var(--ink-3)",
+            display: "flex",
+            flexDirection: "column",
+            fontSize: "var(--fs-xs)",
+            gap: 4,
+            height: 120,
+            justifyContent: "center",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+            No tool calls in the last hour
+          </div>
+          <div style={{ maxWidth: 480 }}>
+            {bridgeOk
+              ? "Connect a Claude Code session to the bridge and call any MCP tool — the curve fills in within a tick."
+              : "Bridge offline. Once it's running, tool calls from connected agents show up here."}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function activityLabel(e: ActivityEvent): string {
   if (e.kind === "tool") return e.tool ?? "unknown";
   if (e.kind === "lifecycle" && e.event) return e.event.replace(/_/g, " ");
@@ -162,8 +273,20 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
       </div>
 
       {events.length === 0 ? (
-        <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", padding: "var(--s-4) 0" }}>
-          No recent events.
+        <div
+          style={{
+            color: "var(--ink-3)",
+            fontSize: "var(--fs-s)",
+            padding: "var(--s-3) 0 var(--s-4)",
+          }}
+        >
+          <div style={{ color: "var(--ink-2)", marginBottom: 4 }}>
+            No recent events.
+          </div>
+          <div style={{ fontSize: "var(--fs-xs)" }}>
+            Tool calls and lifecycle events from connected agents will
+            appear here in real time.
+          </div>
         </div>
       ) : (
         <div
@@ -791,57 +914,14 @@ export default function HomePage() {
       {/* ------------------------------------------------------------------ */}
       {/* Tool calls — last 60 min (smooth filled curve)                       */}
       {/* ------------------------------------------------------------------ */}
-      <div
-        className="card"
-        style={{
-          padding: "16px 20px 12px",
-          marginBottom: "var(--s-5)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "baseline",
-            gap: 10,
-            marginBottom: 4,
-          }}
-        >
-          <span
-            style={{
-              fontSize: "var(--fs-m)",
-              fontWeight: 700,
-              color: "var(--ink-0)",
-              flex: 1,
-            }}
-          >
-            Tool calls — last 60 minutes
-          </span>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "var(--fs-xs)",
-              color: "var(--orange)",
-              fontWeight: 700,
-            }}
-          >
-            {curveSeries.reduce((a, b) => a + b, 0)}
-          </span>
-        </div>
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--fs-xs)",
-            color: "var(--ink-3)",
-            marginBottom: 10,
-          }}
-        >
-          peak {peak} / {uniqueTools} unique-tools / {activeRecipesCount} active-recipes
-        </div>
-        <AreaChart
-          series={[{ values: curveSeries, color: "var(--orange)" }]}
-          height={120}
-        />
-      </div>
+      <ToolCallsWidget
+        series={curveSeries}
+        peak={peak}
+        uniqueTools={uniqueTools}
+        activeRecipesCount={activeRecipesCount}
+        toolCallTotal={toolCallTotal}
+        bridgeOk={bridgeStatus.ok}
+      />
 
       {/* ------------------------------------------------------------------ */}
       {/* Activity thread + Active recipe                                      */}
