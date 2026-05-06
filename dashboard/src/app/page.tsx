@@ -21,6 +21,15 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
+interface TokenTotals {
+  input: number;
+  output: number;
+  cacheCreate: number;
+  cacheRead: number;
+  total: number;
+  messages: number;
+}
+
 interface BridgeHealth {
   status: string;
   uptimeMs: number;
@@ -28,6 +37,7 @@ interface BridgeHealth {
   extensionConnected: boolean;
   extensionVersion: string | null;
   activeSessions: number;
+  tokens?: TokenTotals;
 }
 
 interface Pending {
@@ -742,8 +752,18 @@ export default function HomePage() {
             />
             <StatCard
               label="Tokens burnt"
-              value="—"
-              foot={`${sess} session${sess === 1 ? "" : "s"} · ${conns} connection${conns === 1 ? "" : "s"}`}
+              value={
+                health?.tokens ? (
+                  <AnimatedNumber value={health.tokens.total} />
+                ) : (
+                  "—"
+                )
+              }
+              foot={
+                health?.tokens && health.tokens.messages > 0
+                  ? `${health.tokens.messages} msg${health.tokens.messages === 1 ? "" : "s"} · ${sess} session${sess === 1 ? "" : "s"}`
+                  : `${sess} session${sess === 1 ? "" : "s"} · ${conns} connection${conns === 1 ? "" : "s"}`
+              }
               href="/metrics"
             />
           </>
