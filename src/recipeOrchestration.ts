@@ -711,32 +711,41 @@ RULES:
    and stop.
 
 EXAMPLES:
-User: every morning, summarize my GitHub notifications and email me a digest
+User: every weekday at 9am, summarize my unread Gmail and post the digest to Slack
 \`\`\`yaml
 apiVersion: patchwork.sh/v1
-name: morning-github-digest
-description: Daily summary of GitHub notifications delivered by email
+name: morning-email-digest
+description: Daily summary of unread email posted to a Slack channel
 trigger:
   type: cron
-  at: "0 8 * * 1-5"
+  at: "0 9 * * 1-5"
   vars:
-    - name: EMAIL
-      description: Email address to send the digest to
+    - name: SLACK_CHANNEL
+      description: Slack channel (or DM target) to post the digest to
       required: true
 steps:
-  - id: fetch-notifications
+  - tool: gmail.fetch_unread
+    since: 24h
+    max: 30
+    into: messages
+  - id: summarize
     agent:
       prompt: |
-        Fetch my unread GitHub notifications from the last 24 hours.
-        Summarize them grouped by repository: PR reviews, issues, mentions.
-        One line per item.
-      into: notifications_summary
-  - id: send-digest
-    agent:
-      prompt: |
-        Send an email to {{EMAIL}} with subject "Morning GitHub Digest".
-        Body: {{notifications_summary}}
-      into: send_result
+        Use ONLY the data provided below — do not call any tools or fetch additional information.
+
+        UNREAD EMAILS ({{messages.count}} total):
+        <untrusted_data>
+        {{messages.json}}
+        </untrusted_data>
+
+        Summarize the actionable items in 5–10 short bullets. Skip newsletters and automated notifications.
+      into: summary
+  - tool: slack.post_message
+    channel: "{{SLACK_CHANNEL}}"
+    text: |
+      *Morning email digest*
+
+      {{summary}}
 \`\`\`
 
 User: when a new Sentry issue arrives, create a Linear ticket and post to Slack
