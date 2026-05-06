@@ -3,9 +3,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
 import { apiPath } from "@/lib/api";
-import { KeyChip, RiskPill, CodeBlock, type RiskLevel } from "@/components/patchwork";
+import { KeyChip, CodeBlock } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
+import { CountdownTimer } from "./_components/CountdownTimer";
+import { Spinner } from "./_components/Spinner";
+import { RiskMeter } from "./_components/RiskMeter";
 
 interface RiskSignal {
   kind: "destructive_flag" | "domain_reputation" | "path_escape" | "chaining";
@@ -109,62 +112,6 @@ const SUGGESTION_MIN_APPROVED = 3;
 
 // --- CountdownTimer component ---
 
-function CountdownTimer({ expiresAt }: { expiresAt: number }) {
-  const [remaining, setRemaining] = useState(() =>
-    Math.max(0, expiresAt - Date.now()),
-  );
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setRemaining(Math.max(0, expiresAt - Date.now()));
-    }, 1000);
-    return () => clearInterval(id);
-  }, [expiresAt]);
-
-  if (remaining === 0) {
-    return (
-      <span
-        className="countdown urgent"
-        style={{ color: "var(--err)", fontWeight: 600 }}
-        title="Expired"
-      >
-        Expired
-      </span>
-    );
-  }
-
-  const totalSecs = Math.floor(remaining / 1000);
-  const mins = Math.floor(totalSecs / 60);
-  const secs = totalSecs % 60;
-  // Two-tier urgency: amber 30-60s (warning), red+pulsing <30s (critical).
-  const critical = remaining < 30_000;
-  const warning = !critical && remaining < 60_000;
-  const label =
-    mins > 0
-      ? `${mins}m ${secs}s remaining`
-      : `${secs}s remaining`;
-
-  return (
-    <span
-      className={`countdown${critical ? " urgent" : warning ? " warn" : ""}`}
-      style={
-        critical
-          ? {
-              color: "var(--err)",
-              fontWeight: 600,
-              animation: "pulse-dot 0.8s ease-in-out infinite",
-            }
-          : warning
-            ? { color: "var(--warn)", fontWeight: 600 }
-            : undefined
-      }
-      title={`Expires at ${new Date(expiresAt).toLocaleTimeString()}`}
-    >
-      {label}
-    </span>
-  );
-}
-
 // --- EmptyState component ---
 
 function EmptyState({
@@ -209,26 +156,6 @@ function EmptyState({
         <p>No pending approvals. All tool calls handled by policy or already decided.</p>
       )}
     </div>
-  );
-}
-
-// --- Spinner ---
-
-function Spinner() {
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        width: 14,
-        height: 14,
-        border: "2px solid currentColor",
-        borderTopColor: "transparent",
-        borderRadius: "50%",
-        animation: "spin 0.6s linear infinite",
-        verticalAlign: "middle",
-      }}
-      aria-hidden="true"
-    />
   );
 }
 
@@ -1379,29 +1306,6 @@ function ApprovalsContent() {
       )}
 
     </section>
-  );
-}
-
-function RiskMeter({ level }: { level: "low" | "medium" | "high" }) {
-  const filled = level === "high" ? 4 : level === "medium" ? 3 : 2;
-  const color = level === "high" ? "var(--red)" : level === "medium" ? "var(--amber)" : "var(--green)";
-  return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }} aria-label={`${level} risk`}>
-      <span style={{ display: "inline-flex", gap: 2 }} aria-hidden="true">
-        {[0, 1, 2, 3].map((i) => (
-          <span
-            key={i}
-            style={{
-              width: 10,
-              height: 6,
-              borderRadius: 1,
-              background: i < filled ? color : "var(--line-2)",
-            }}
-          />
-        ))}
-      </span>
-      <RiskPill level={level as RiskLevel} label={level.toUpperCase()} />
-    </div>
   );
 }
 
