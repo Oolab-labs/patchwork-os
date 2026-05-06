@@ -16,6 +16,7 @@ import {
   type PatchworkConfig,
   saveConfig as savePatchworkConfig,
 } from "./patchworkConfig.js";
+import { RECIPE_NAME_RE } from "./recipes/names.js";
 import { validateRecipeDefinition } from "./recipes/validation.js";
 
 /**
@@ -346,7 +347,7 @@ export function saveRecipe(
   draft: RecipeDraft,
 ): { ok: boolean; path?: string; error?: string } {
   const safeName = draft.name.toLowerCase().replace(/\s+/g, "-");
-  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) {
+  if (!RECIPE_NAME_RE.test(safeName)) {
     return { ok: false, error: "Invalid recipe name" };
   }
   const candidate = path.resolve(recipesDir, `${safeName}.json`);
@@ -459,7 +460,7 @@ export function loadRecipeContent(
   name: string,
 ): RecipeContentResult | null {
   const safeName = name.toLowerCase();
-  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) return null;
+  if (!RECIPE_NAME_RE.test(safeName)) return null;
 
   const yamlPath = findYamlRecipePath(recipesDir, safeName);
   if (yamlPath) {
@@ -494,7 +495,7 @@ export function saveRecipeContent(
   content: string,
 ): { ok: boolean; path?: string; error?: string } {
   const safeName = name.toLowerCase();
-  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) {
+  if (!RECIPE_NAME_RE.test(safeName)) {
     return { ok: false, error: "Invalid recipe name" };
   }
   if (!content.trim()) {
@@ -526,6 +527,28 @@ export function saveRecipeContent(
     };
   }
 
+  // If the parsed body's `name:` field disagrees with the filename
+  // (e.g. caller PUT to /recipes/myrecipe with a body whose `name:` is
+  // `MyRecipe`), rewrite it to match. The filename is the source of
+  // truth for routing, dashboard list keys, and webhook resolution;
+  // body drift just causes silent confusion. Same `^name:\s*.+$/m`
+  // pattern that `duplicateRecipe` and `promoteRecipeVariant` already
+  // use to rewrite `name:` lines.
+  let normalizedContent = content;
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    !Array.isArray(parsed) &&
+    typeof (parsed as Record<string, unknown>).name === "string" &&
+    (parsed as Record<string, unknown>).name !== safeName
+  ) {
+    const oldName = (parsed as Record<string, unknown>).name as string;
+    normalizedContent = content.replace(/^name:\s*.+$/m, `name: ${safeName}`);
+    warnings.push(
+      `Recipe body name "${oldName}" was rewritten to "${safeName}" to match the filename.`,
+    );
+  }
+
   try {
     mkdirSync(recipesDir, { recursive: true });
     const base = path.resolve(recipesDir);
@@ -537,7 +560,9 @@ export function saveRecipeContent(
     }
     writeFileSync(
       candidate,
-      content.endsWith("\n") ? content : `${content}\n`,
+      normalizedContent.endsWith("\n")
+        ? normalizedContent
+        : `${normalizedContent}\n`,
       "utf-8",
     );
     return {
@@ -562,7 +587,7 @@ export function deleteRecipeContent(
   name: string,
 ): { ok: boolean; path?: string; error?: string } {
   const safeName = name.toLowerCase();
-  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) {
+  if (!RECIPE_NAME_RE.test(safeName)) {
     return { ok: false, error: "Invalid recipe name" };
   }
   const base = path.resolve(recipesDir);
@@ -613,7 +638,7 @@ export function duplicateRecipe(
   error?: string;
 } {
   const safeName = sourceName.toLowerCase();
-  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) {
+  if (!RECIPE_NAME_RE.test(safeName)) {
     return { ok: false, error: "Invalid recipe name" };
   }
   const source = loadRecipeContent(recipesDir, safeName);
@@ -692,8 +717,7 @@ export async function promoteRecipeVariant(
 }> {
   const safeVariant = variantName.toLowerCase();
   const safeTarget = targetName.toLowerCase();
-  const nameRe = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-  if (!nameRe.test(safeVariant) || !nameRe.test(safeTarget)) {
+  if (!RECIPE_NAME_RE.test(safeVariant) || !RECIPE_NAME_RE.test(safeTarget)) {
     return { ok: false, error: "Invalid recipe name" };
   }
   if (safeVariant === safeTarget) {
@@ -1122,7 +1146,7 @@ export function findYamlRecipePath(
   name: string,
 ): string | null {
   const safeName = name.toLowerCase();
-  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) return null;
+  if (!RECIPE_NAME_RE.test(safeName)) return null;
 
   const base = path.resolve(recipesDir);
   const matches = new Set<string>();
@@ -1263,7 +1287,7 @@ export function loadRecipePrompt(
   name: string,
 ): { prompt: string; path: string } | null {
   const safeName = name.toLowerCase();
-  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) return null;
+  if (!RECIPE_NAME_RE.test(safeName)) return null;
 
   const recipePath = resolveJsonRecipePathByName(recipesDir, safeName);
   if (!recipePath) {
