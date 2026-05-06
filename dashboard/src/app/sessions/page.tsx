@@ -1,9 +1,8 @@
 "use client";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { apiPath } from "@/lib/api";
-import { Spinner } from "@/components/patchwork/Spinner";
 import { ErrorState } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
@@ -25,8 +24,8 @@ function recipeFor(s: SessionSummary): string {
 }
 
 function descriptionFor(recipe: string, hasRealRecipe: boolean): string {
-  if (!hasRealRecipe) return "no recipe metadata reported";
-  return `${recipe} — running …`;
+  if (!hasRealRecipe) return "no first tool reported";
+  return `first tool · ${recipe}`;
 }
 
 function activityState(
@@ -41,24 +40,33 @@ function activityState(
 
 // ----------------------------------------------------------- log panel
 
-function SessionLogPanel({
+function SessionSummaryPanel({
+  session,
   shortId,
-  recipe,
-  toolCount,
 }: {
+  session: SessionSummary;
   shortId: string;
-  recipe: string;
-  toolCount: number;
 }) {
-  const lines = [
-    `$ patchwork run ${recipe}`,
-    `→ resolving recipe templates/recipes/${recipe}.yaml`,
-    `→ session ${shortId} streaming · live tail not yet wired`,
+  const firstTool = session.firstTool ?? "—";
+  const connectedRel = relTime(new Date(session.connectedAt).getTime());
+  const lastActivity =
+    session.lastActivityAt !== undefined
+      ? relTime(typeof session.lastActivityAt === "number" ? session.lastActivityAt : new Date(session.lastActivityAt).getTime())
+      : "—";
+  const rows: { k: string; v: string }[] = [
+    { k: "session", v: shortId },
+    { k: "client", v: session.clientType ?? "unknown" },
+    { k: "connected", v: connectedRel },
+    { k: "last activity", v: lastActivity },
+    { k: "first tool", v: firstTool },
+    { k: "tools called", v: String(session.toolCount ?? 0) },
+    { k: "open files", v: String(session.openedFileCount) },
+    { k: "pending approvals", v: String(session.pendingApprovals) },
   ];
+  if (session.remoteAddr) rows.push({ k: "remote", v: session.remoteAddr });
 
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-      {/* header */}
       <div
         style={{
           display: "flex",
@@ -73,66 +81,36 @@ function SessionLogPanel({
         }}
       >
         <span>
-          <span style={{ color: "var(--ink-2)" }}>&gt;_</span> {shortId} ·{" "}
-          <span style={{ color: "var(--orange)" }}>{recipe}</span>
+          <span style={{ color: "var(--ink-2)" }}>session</span> · {shortId}
         </span>
-        <span
-          className="chip chip-accent"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: "var(--fs-2xs)",
-            textTransform: "uppercase",
-            letterSpacing: "0.07em",
-          }}
+        <a
+          href={`/dashboard/sessions/${session.id}`}
+          className="btn sm ghost"
+          style={{ fontSize: "var(--fs-xs)" }}
         >
-          <span className="dot-live" aria-hidden />
-          streaming
-        </span>
+          Open detail →
+        </a>
       </div>
-
-      {/* terminal body */}
       <div
         style={{
-          background: "var(--terminal-bg)",
-          color: "var(--terminal-fg)",
           fontFamily: "var(--font-mono)",
-          fontSize: 12.5,
-          lineHeight: 1.65,
-          padding: "16px 18px",
-          minHeight: 260,
-          maxHeight: "calc(100vh - 280px)",
-          overflowY: "auto",
+          fontSize: "var(--fs-s)",
+          padding: "14px 18px",
+          display: "grid",
+          gridTemplateColumns: "auto 1fr",
+          columnGap: 16,
+          rowGap: 6,
         }}
       >
-        {lines.map((l, i) => (
-          <div
-            key={i}
-            style={{
-              color: l.startsWith("$")
-                ? "var(--terminal-prompt)"
-                : "var(--terminal-comment)",
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {l}
-          </div>
+        {rows.map((r) => (
+          <Fragment key={r.k}>
+            <span style={{ color: "var(--ink-3)" }}>{r.k}</span>
+            <span style={{ color: "var(--ink-0)" }}>{r.v}</span>
+          </Fragment>
         ))}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            marginTop: 14,
-            color: "var(--terminal-fg)",
-          }}
-        >
-          <Spinner size={12} />
-          <span>
-            composing brief… ( {toolCount} tools called)
-          </span>
-        </div>
+      </div>
+      <div style={{ padding: "10px 18px 14px", fontSize: "var(--fs-xs)", color: "var(--ink-3)", borderTop: "1px solid var(--line-3)" }}>
+        Live event stream available on the session detail page.
       </div>
     </div>
   );
@@ -141,7 +119,7 @@ function SessionLogPanel({
 // ----------------------------------------------------------- page
 
 export default function SessionsPage() {
-  const { data, error, loading } = useBridgeFetch<SessionSummary[]>(
+  const { data, error, loading, refetch } = useBridgeFetch<SessionSummary[]>(
     "/api/bridge/sessions",
     { intervalMs: 3000 },
   );
@@ -201,7 +179,7 @@ export default function SessionsPage() {
           title="Couldn't load sessions"
           description="The bridge isn't responding to /sessions."
           error={error}
-          onRetry={() => window.location.reload()}
+          onRetry={refetch}
         />
       )}
       {error && sessions.length > 0 && (
@@ -227,9 +205,7 @@ export default function SessionsPage() {
           <button
             type="button"
             className="btn sm ghost"
-            onClick={() => {
-              void fetch(apiPath("/api/bridge/sessions")).then(() => window.location.reload());
-            }}
+            onClick={refetch}
           >
             Refresh
           </button>
@@ -446,10 +422,9 @@ export default function SessionsPage() {
           {/* right: log panel */}
           <div style={{ position: "sticky", top: 80 }}>
             {selectedId && selectedSession ? (
-              <SessionLogPanel
+              <SessionSummaryPanel
                 shortId={`s${selectedIndex + 1}`}
-                recipe={recipeFor(selectedSession)}
-                toolCount={selectedSession.toolCount ?? 0}
+                session={selectedSession}
               />
             ) : (
               <div

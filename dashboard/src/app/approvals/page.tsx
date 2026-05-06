@@ -6,6 +6,7 @@ import { apiPath } from "@/lib/api";
 import { KeyChip, CodeBlock } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
+import { useToast } from "@/components/Toast";
 import { CountdownTimer } from "./_components/CountdownTimer";
 import { Spinner } from "./_components/Spinner";
 import { RiskMeter } from "./_components/RiskMeter";
@@ -186,7 +187,7 @@ function ApprovalCard({
 }: ApprovalCardProps) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const toast = useToast();
   const [editCopied, setEditCopied] = useState(false);
   const [cliCopied, setCliCopied] = useState(false);
   const [paramsCopied, setParamsCopied] = useState(false);
@@ -197,13 +198,14 @@ function ApprovalCard({
   const match = matchRule(p.toolName, rules);
 
   async function handleDecide(decision: "approve" | "reject") {
-    setActionError(null);
     if (decision === "approve") setApproving(true);
     else setRejecting(true);
     try {
       await onDecide(p.callId, decision);
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      toast.error(
+        `${decision === "approve" ? "Approve" : "Reject"} failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
       setApproving(false);
       setRejecting(false);
     }
@@ -456,15 +458,6 @@ function ApprovalCard({
         </button>
       </div>
 
-      {actionError && (
-        <div
-          className="alert-err"
-          style={{ marginTop: "var(--s-3)", marginBottom: 0 }}
-          role="alert"
-        >
-          {actionError}
-        </div>
-      )}
     </article>
   );
 }
@@ -554,7 +547,20 @@ function ApprovalsContent() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
-  const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
+  const riskFromUrl = searchParams.get("risk");
+  const [riskFilter, setRiskFilterState] = useState<RiskFilter>(
+    riskFromUrl === "low" || riskFromUrl === "medium" || riskFromUrl === "high"
+      ? riskFromUrl
+      : "all",
+  );
+  const setRiskFilter = (next: RiskFilter) => {
+    setRiskFilterState(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "all") params.delete("risk");
+    else params.set("risk", next);
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+  };
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [fadingOut, setFadingOut] = useState<Set<string>>(new Set());
   const [batchApproving, setBatchApproving] = useState(false);
@@ -757,6 +763,13 @@ function ApprovalsContent() {
 
   async function batchDecide(decision: "approve" | "reject") {
     const ids = selectedInView.map((p) => p.callId);
+    if (ids.length >= 3) {
+      const verb = decision === "approve" ? "Approve" : "Reject";
+      const proceed = window.confirm(
+        `${verb} ${ids.length} approvals at once? This action can't be undone.`,
+      );
+      if (!proceed) return;
+    }
     if (decision === "approve") setBatchApproving(true);
     else setBatchRejecting(true);
     setBatchErr(null);

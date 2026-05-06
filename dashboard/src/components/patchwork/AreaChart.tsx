@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 export interface AreaChartSeries {
   values: number[];
@@ -37,6 +37,7 @@ export function AreaChart({
   height?: number;
   yTicks?: number;
 }) {
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
   const { maxVal, n, tickVals, paths } = useMemo(() => {
     const allVals = series.flatMap((s) => s.values);
     const rawMax = Math.max(...allVals, 0);
@@ -78,6 +79,7 @@ export function AreaChart({
         width: "100%",
         height,
         margin: 0,
+        overflow: "hidden",
       }}
     >
       <svg
@@ -125,6 +127,10 @@ export function AreaChart({
         {series.map((s, si) => {
           const { line, area } = paths[si];
           if (!line) return null;
+          const safeMax = Math.max(maxVal, 1);
+          const yTop = PAD.top;
+          const yBottom = height - PAD.bottom;
+          const chartH = yBottom - yTop;
           return (
             <g key={si}>
               <path d={area} fill={`url(#acGrad${si})`} />
@@ -137,6 +143,49 @@ export function AreaChart({
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
               />
+              {/* focusable data points */}
+              {s.values.map((v, vi) => {
+                const px = (vi / Math.max(n - 1, 1)) * 100;
+                const py = yTop + chartH - (v / safeMax) * chartH;
+                const lbl = xLabels?.[vi] ?? `${vi}`;
+                const tip = `${s.label ?? ""} ${lbl}: ${v}`.trim();
+                return (
+                  <circle
+                    key={vi}
+                    cx={px}
+                    cy={py}
+                    r={3}
+                    fill={colors[si]}
+                    stroke="var(--surface)"
+                    strokeWidth={1}
+                    vectorEffect="non-scaling-stroke"
+                    style={{ opacity: 0, transition: "opacity 100ms", cursor: "default" }}
+                    tabIndex={0}
+                    role="img"
+                    aria-label={tip}
+                    onFocus={(e) => {
+                      const rect = (e.currentTarget.closest("figure") as HTMLElement)?.getBoundingClientRect();
+                      const cr = (e.currentTarget as SVGCircleElement).getBoundingClientRect();
+                      if (rect) setTooltip({ x: cr.left - rect.left, y: cr.top - rect.top, text: tip });
+                      (e.currentTarget as SVGCircleElement).style.opacity = "1";
+                    }}
+                    onBlur={(e) => {
+                      setTooltip(null);
+                      (e.currentTarget as SVGCircleElement).style.opacity = "0";
+                    }}
+                    onMouseEnter={(e) => {
+                      const rect = (e.currentTarget.closest("figure") as HTMLElement)?.getBoundingClientRect();
+                      const cr = (e.currentTarget as SVGCircleElement).getBoundingClientRect();
+                      if (rect) setTooltip({ x: cr.left - rect.left, y: cr.top - rect.top, text: tip });
+                      (e.currentTarget as SVGCircleElement).style.opacity = "1";
+                    }}
+                    onMouseLeave={(e) => {
+                      setTooltip(null);
+                      (e.currentTarget as SVGCircleElement).style.opacity = "0";
+                    }}
+                  />
+                );
+              })}
             </g>
           );
         })}
@@ -217,6 +266,64 @@ export function AreaChart({
           );
         })}
       </div>
+      {/* hover/focus tooltip */}
+      {tooltip && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: tooltip.x,
+            top: tooltip.y - 28,
+            transform: "translateX(-50%)",
+            background: "var(--surface)",
+            border: "1px solid var(--line-2)",
+            borderRadius: 6,
+            padding: "2px 7px",
+            fontSize: "var(--fs-2xs)",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-1)",
+            pointerEvents: "none",
+            whiteSpace: "nowrap",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+            zIndex: 10,
+          }}
+        >
+          {tooltip.text}
+        </div>
+      )}
+
+      {/* <table> fallback — visually hidden, read by screen readers */}
+      <table
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          overflow: "hidden",
+          clip: "rect(0,0,0,0)",
+          whiteSpace: "nowrap",
+          border: 0,
+        }}
+      >
+        <caption>{summary || "chart data"}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Time</th>
+            {series.map((s, si) => (
+              <th key={si} scope="col">{s.label ?? `Series ${si + 1}`}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: n }, (_, i) => (
+            <tr key={i}>
+              <td>{xLabels?.[i] ?? i}</td>
+              {series.map((s, si) => (
+                <td key={si}>{s.values[i] ?? 0}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </figure>
   );
 }

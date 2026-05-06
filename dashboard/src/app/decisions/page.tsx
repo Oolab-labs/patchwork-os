@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
 import { ErrorState, LivePill } from "@/components/patchwork";
@@ -90,21 +91,24 @@ function DecisionsContent() {
     router.replace(qs ? `/decisions?${qs}` : "/decisions", { scroll: false });
   }, [tag, keyQuery, textQuery, since, router]);
 
+  const debouncedKey = useDebounced(keyQuery, 250);
+  const debouncedText = useDebounced(textQuery, 250);
+
   const qs = useMemo(() => {
     const params = new URLSearchParams();
     params.set("traceType", "decision");
     if (tag.trim()) params.set("tag", tag.trim());
-    if (keyQuery.trim()) params.set("key", keyQuery.trim());
-    if (textQuery.trim()) params.set("q", textQuery.trim());
+    if (debouncedKey.trim()) params.set("key", debouncedKey.trim());
+    if (debouncedText.trim()) params.set("q", debouncedText.trim());
     const sinceMs = SINCE_OPTIONS.find((o) => o.k === since)?.ms;
     if (sinceMs != null) {
       params.set("since", String(Date.now() - sinceMs));
     }
     params.set("limit", "200");
     return `?${params.toString()}`;
-  }, [tag, keyQuery, textQuery, since]);
+  }, [tag, debouncedKey, debouncedText, since]);
 
-  const { data, error, loading } = useBridgeFetch<TracesResponse>(
+  const { data, error, loading, refetch } = useBridgeFetch<TracesResponse>(
     `/api/bridge/traces${qs}`,
     { intervalMs: 5000, transform: validateTraces },
   );
@@ -256,7 +260,7 @@ function DecisionsContent() {
               : "The bridge isn't responding. Decisions will reload on the next tick."
           }
           error={error}
-          onRetry={() => window.location.reload()}
+          onRetry={refetch}
         />
       )}
       {error && traces.length > 0 && (

@@ -3,6 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { relTime } from "@/components/time";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 import { ErrorState, LivePill } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
@@ -295,6 +296,136 @@ function TraceDetail({
   );
 }
 
+// ------------------------------------------------------------------ span tree
+
+type SpanGroup = {
+  root: DecisionTrace;
+  children: DecisionTrace[];
+};
+
+function buildSpanGroups(traces: DecisionTrace[]): SpanGroup[] {
+  const roots = traces.filter((t) => t.traceType === "recipe_run");
+  const nonRoots = traces.filter((t) => t.traceType !== "recipe_run");
+
+  // Group roots by recipeName
+  const rootsByRecipe = new Map<string, DecisionTrace[]>();
+  for (const r of roots) {
+    const name = typeof r.body.recipeName === "string" ? r.body.recipeName : r.key;
+    const arr = rootsByRecipe.get(name) ?? [];
+    arr.push(r);
+    rootsByRecipe.set(name, arr);
+  }
+
+  const groups: SpanGroup[] = [];
+  const assignedKeys = new Set<string>();
+
+  for (const r of roots) {
+    if (assignedKeys.has(r.key)) continue;
+    assignedKeys.add(r.key);
+
+    const recipeName = typeof r.body.recipeName === "string" ? r.body.recipeName : null;
+    let children: DecisionTrace[] = [];
+
+    if (recipeName !== null) {
+      // Find children: same recipeName, not a root, not already assigned
+      const candidates = nonRoots.filter(
+        (t) => typeof t.body.recipeName === "string" && t.body.recipeName === recipeName && !assignedKeys.has(t.key),
+      );
+      // Find the root closest in time for each child
+      const rootsForRecipe = rootsByRecipe.get(recipeName) ?? [r];
+      children = candidates.filter((child) => {
+        const closest = rootsForRecipe.reduce((best, candidate) =>
+          Math.abs(candidate.ts - child.ts) < Math.abs(best.ts - child.ts) ? candidate : best,
+        );
+        return closest.key === r.key;
+      });
+      for (const c of children) assignedKeys.add(c.key);
+    }
+
+    children.sort((a, b) => a.ts - b.ts);
+    groups.push({ root: r, children });
+  }
+
+  // Remaining traces become singletons
+  for (const t of traces) {
+    if (!assignedKeys.has(t.key)) {
+      groups.push({ root: t, children: [] });
+    }
+  }
+
+  // Sort groups by root.ts descending
+  groups.sort((a, b) => b.root.ts - a.root.ts);
+  return groups;
+}
+
+// ------------------------------------------------------------------ waterfall bar
+
+function SpanBar({
+  startMs,
+  durationMs,
+  groupStartMs,
+  groupEndMs,
+  color,
+}: {
+  startMs: number;
+  durationMs: number;
+  groupStartMs: number;
+  groupEndMs: number;
+  color: string;
+  label?: string;
+}) {
+  const range = groupEndMs - groupStartMs;
+
+  if (range <= 0) {
+    // Full-width bar
+    return (
+      <div style={{ position: "relative", width: "100%", height: 4, background: "var(--line-3)", borderRadius: 2 }}>
+        <div style={{ position: "absolute", inset: 0, background: color, borderRadius: 2 }} />
+      </div>
+    );
+  }
+
+  const leftPct = ((startMs - groupStartMs) / range) * 100;
+
+  if (durationMs <= 0) {
+    // Tick mark
+    return (
+      <div style={{ position: "relative", width: "100%", height: 4, background: "var(--line-3)", borderRadius: 2 }}>
+        <div
+          style={{
+            position: "absolute",
+            left: `${Math.min(leftPct, 98)}%`,
+            top: -2,
+            width: 2,
+            height: 8,
+            background: color,
+            borderRadius: 1,
+          }}
+        />
+      </div>
+    );
+  }
+
+  const widthPct = Math.max(2, (durationMs / range) * 100);
+
+  return (
+    <div style={{ position: "relative", width: "100%", height: 4, background: "var(--line-3)", borderRadius: 2 }}>
+      <div
+        style={{
+          position: "absolute",
+          left: `${Math.min(leftPct, 96)}%`,
+          width: `${Math.min(widthPct, 100 - Math.min(leftPct, 96))}%`,
+          height: "100%",
+          background: color,
+          borderRadius: 2,
+        }}
+      />
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ since filter
+
 type SinceFilter = "1h" | "24h" | "7d" | "30d" | "all";
 
 const SINCE_OPTIONS: { k: SinceFilter; label: string; ms: number | null }[] = [
@@ -439,14 +570,16 @@ function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
 export default function TracesPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "done" | "errors">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearch = useDebounced(searchQuery, 250);
   const [since, setSince] = useState<SinceFilter>("24h");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [view, setView] = useState<"flat" | "tree">("tree");
 
   const qs = useMemo(() => {
     const params = new URLSearchParams();
-    if (searchQuery.trim()) {
-      params.set("key", searchQuery.trim());
-      params.set("q", searchQuery.trim());
+    if (debouncedSearch.trim()) {
+      params.set("key", debouncedSearch.trim());
+      params.set("q", debouncedSearch.trim());
     }
     const sinceMs = SINCE_OPTIONS.find((o) => o.k === since)?.ms;
     if (sinceMs != null) {
@@ -455,9 +588,9 @@ export default function TracesPage() {
     params.set("limit", "50");
     const s = params.toString();
     return s ? `?${s}` : "";
-  }, [searchQuery, since]);
+  }, [debouncedSearch, since]);
 
-  const { data, error, loading } = useBridgeFetch<TracesResponse>(
+  const { data, error, loading, refetch } = useBridgeFetch<TracesResponse>(
     `/api/bridge/traces${qs}`,
     { intervalMs: 3000, transform: validateTraces },
   );
@@ -548,6 +681,41 @@ export default function TracesPage() {
             </button>
           ))}
         </div>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
+          <span>since</span>
+          <select
+            value={since}
+            onChange={(e) => setSince(e.target.value as SinceFilter)}
+            style={{
+              fontSize: "var(--fs-s)",
+              fontFamily: "var(--font-mono)",
+              background: "var(--recess)",
+              border: "1px solid var(--line-2)",
+              borderRadius: "var(--r-s)",
+              color: "var(--ink-0)",
+              padding: "4px 8px",
+              cursor: "pointer",
+            }}
+          >
+            {SINCE_OPTIONS.map((o) => (
+              <option key={o.k} value={o.k}>{o.label}</option>
+            ))}
+          </select>
+        </label>
+        <div className="filter-chips" style={{ marginBottom: 0 }}>
+          <span style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginRight: 2 }}>View:</span>
+          {(["flat", "tree"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              className={view === v ? "pill accent" : "pill muted"}
+              style={{ cursor: "pointer", border: "none", fontSize: "var(--fs-s)", textTransform: "capitalize" }}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading && traces.length === 0 && (
@@ -563,7 +731,7 @@ export default function TracesPage() {
               : "The bridge isn't responding. Traces will reload on its next tick."
           }
           error={error}
-          onRetry={() => window.location.reload()}
+          onRetry={refetch}
         />
       )}
       {error && traces.length > 0 && (
@@ -579,7 +747,7 @@ export default function TracesPage() {
           <h3>No traces</h3>
           <p>Traces appear as recipes run and approvals are processed.</p>
         </div>
-      ) : (
+      ) : view === "flat" ? (
         <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: "var(--s-5)" }}>
           {visible.map(t => {
             const rowKey = `${t.traceType}:${t.ts}:${t.key}`;
@@ -706,6 +874,244 @@ export default function TracesPage() {
                     <TraceActions traceType={t.traceType} body={t.body} />
                     <TraceDetail body={t.body} theme={theme} traceType={t.traceType} />
                   </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        // Tree view
+        <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: "var(--s-5)" }}>
+          {buildSpanGroups(visible).map((group) => {
+            const { root, children } = group;
+            const rootKey = `${root.traceType}:${root.ts}:${root.key}`;
+            const isOpen = expanded.has(rootKey);
+            const rootStatus = traceStatus(root);
+            const rootTheme = TYPE_THEME[root.traceType];
+            const rootStatusColor = rootStatus === "done" ? "var(--ok)" : rootStatus === "error" ? "var(--err)" : "var(--ink-3)";
+            const rootStatusBg = rootStatus === "done" ? "var(--ok-soft)" : rootStatus === "error" ? "var(--err-soft)" : "var(--recess)";
+            const rootStatusLabel = rootStatus === "done" ? "done" : rootStatus === "error" ? "error" : "running";
+
+            // Compute group time range for waterfall
+            const rootDuration = typeof root.body.durationMs === "number" ? root.body.durationMs : 0;
+            const childrenEnd = children.reduce((max, c) => {
+              const cd = typeof c.body.durationMs === "number" ? c.body.durationMs : 0;
+              return Math.max(max, c.ts + cd);
+            }, root.ts);
+            const groupStartMs = root.ts;
+            const groupEndMs = rootDuration > 0 ? root.ts + rootDuration : childrenEnd;
+
+            return (
+              <div key={rootKey} style={{ borderBottom: "1px solid var(--line-3)" }}>
+                {/* Root row */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "20px 18px minmax(280px, auto) 1fr 100px 80px",
+                    alignItems: "center",
+                    gap: "var(--s-3)",
+                    width: "100%",
+                    padding: "10px 16px 6px 16px",
+                    minHeight: 44,
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggle(rootKey)}
+                    aria-label={isOpen ? "Collapse" : "Expand"}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "var(--ink-3)",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "var(--fs-s)",
+                      padding: 0,
+                      textAlign: "left",
+                    }}
+                  >
+                    {isOpen ? "v" : ">"}
+                  </button>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: 3,
+                      background: rootTheme.bg,
+                      border: `1px solid ${rootTheme.fg}`,
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggle(rootKey)}
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "var(--fs-xs)",
+                      color: rootTheme.fg,
+                      background: "transparent",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {root.key}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggle(rootKey)}
+                    style={{
+                      fontSize: "var(--fs-m)",
+                      color: "var(--ink-1)",
+                      background: "transparent",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {String(root.body?.recipeName ?? root.key)}
+                  </button>
+                  <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", textAlign: "right" }}>
+                    {relTime(root.ts)}
+                  </span>
+                  <span style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <span className="pill" style={{ background: rootStatusBg, color: rootStatusColor, fontSize: "var(--fs-2xs)", fontWeight: 700 }}>
+                      {rootStatusLabel}
+                    </span>
+                  </span>
+                </div>
+                {/* Waterfall bar row for root */}
+                <div style={{ padding: "0 16px 8px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <SpanBar
+                        startMs={groupStartMs}
+                        durationMs={rootDuration}
+                        groupStartMs={groupStartMs}
+                        groupEndMs={groupEndMs}
+                        color={rootTheme.fg}
+                        label={rootDuration > 0 ? `${rootDuration}ms` : undefined}
+                      />
+                    </div>
+                    {rootDuration > 0 && (
+                      <span style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-3)", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>
+                        {rootDuration}ms
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {/* Expanded detail for root */}
+                {isOpen && (
+                  <>
+                    <div style={{ padding: "0 16px 12px 16px", borderTop: "1px solid var(--line-3)", background: "var(--recess)" }}>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: "var(--ink-2)", margin: "8px 0 4px", wordBreak: "break-all" }}>
+                        {root.key}
+                      </div>
+                      {root.summary && (
+                        <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-1)", marginBottom: 8 }}>{root.summary}</div>
+                      )}
+                      <TraceActions traceType={root.traceType} body={root.body} />
+                      <TraceDetail body={root.body} theme={rootTheme} traceType={root.traceType} />
+                    </div>
+                    {/* Children rows */}
+                    {children.map((child) => {
+                      const childStatus = traceStatus(child);
+                      const childTheme = TYPE_THEME[child.traceType];
+                      const childStatusColor = childStatus === "done" ? "var(--ok)" : childStatus === "error" ? "var(--err)" : "var(--ink-3)";
+                      const childStatusBg = childStatus === "done" ? "var(--ok-soft)" : childStatus === "error" ? "var(--err-soft)" : "var(--recess)";
+                      const childStatusLabel = childStatus === "done" ? "done" : childStatus === "error" ? "error" : "running";
+                      const childDuration = typeof child.body.durationMs === "number" ? child.body.durationMs : 0;
+                      return (
+                        <div
+                          key={`${child.traceType}:${child.ts}:${child.key}`}
+                          style={{ borderTop: "1px solid var(--line-3)", background: "var(--recess)", paddingLeft: 24 }}
+                        >
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "18px minmax(200px, auto) 1fr 100px 80px",
+                              alignItems: "center",
+                              gap: "var(--s-3)",
+                              padding: "6px 16px 4px 0",
+                              minHeight: 34,
+                              boxSizing: "border-box",
+                            }}
+                          >
+                            <span
+                              aria-hidden="true"
+                              style={{
+                                width: 12,
+                                height: 12,
+                                borderRadius: 2,
+                                background: childTheme.bg,
+                                border: `1px solid ${childTheme.fg}`,
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span
+                              style={{
+                                fontFamily: "var(--font-mono)",
+                                fontSize: "var(--fs-xs)",
+                                color: childTheme.fg,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {child.key}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: "var(--fs-xs)",
+                                color: "var(--ink-2)",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {String(child.body?.recipeName ?? child.key)}
+                            </span>
+                            <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", textAlign: "right" }}>
+                              {relTime(child.ts)}
+                            </span>
+                            <span style={{ display: "flex", justifyContent: "flex-end" }}>
+                              <span className="pill" style={{ background: childStatusBg, color: childStatusColor, fontSize: "var(--fs-2xs)", fontWeight: 700 }}>
+                                {childStatusLabel}
+                              </span>
+                            </span>
+                          </div>
+                          {/* Waterfall bar for child */}
+                          <div style={{ padding: "0 16px 6px 0" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ flex: 1 }}>
+                                <SpanBar
+                                  startMs={child.ts}
+                                  durationMs={childDuration}
+                                  groupStartMs={groupStartMs}
+                                  groupEndMs={groupEndMs}
+                                  color={childTheme.fg}
+                                />
+                              </div>
+                              {childDuration > 0 && (
+                                <span style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-3)", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>
+                                  {childDuration}ms
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
                 )}
               </div>
             );

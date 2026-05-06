@@ -695,6 +695,17 @@ export default function RecipesPage() {
 
   async function handleToggleEnabled(recipe: Recipe) {
     const target = recipe.enabled === false;
+    // Disabling a non-manual trigger (cron/webhook/event) silently stops a
+    // recurring job — confirm before the optimistic flip so the operator
+    // doesn't kill a production schedule with a stray click.
+    const trigger = recipe.trigger ?? "manual";
+    const isAutonomous = trigger !== "manual";
+    if (!target && isAutonomous) {
+      const proceed = window.confirm(
+        `Disable "${recipe.name}"? Trigger "${trigger}" will stop firing until you re-enable.`,
+      );
+      if (!proceed) return;
+    }
     // Optimistic flip — the toggle was tap-then-wait-2s before, which felt
     // unresponsive. Roll back to the previous state if the PATCH fails.
     setRecipes((prev) =>
@@ -839,7 +850,7 @@ export default function RecipesPage() {
           title="Couldn't load recipes"
           description="The bridge isn't responding to /recipes. Check that the bridge is running."
           error={err}
-          onRetry={() => window.location.reload()}
+          onRetry={() => void load()}
         />
       )}
       {err && recipes && recipes.length > 0 && (
@@ -975,51 +986,74 @@ export default function RecipesPage() {
                           {last ? relTime(last.startedAt) : "—"}
                         </td>
                         <td
-                          style={{ textAlign: "right" }}
+                          style={{ textAlign: "right", whiteSpace: "nowrap" }}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={enabled}
-                            aria-label={`${enabled ? "Disable" : "Enable"} ${r.name}`}
-                            onClick={() => void handleToggleEnabled(r)}
+                          <div
                             style={{
-                              position: "relative",
-                              width: 36,
-                              height: 20,
-                              borderRadius: 999,
-                              border: "1px solid var(--line-2)",
-                              background: enabled ? "var(--ok)" : "var(--bg-2)",
-                              cursor: "pointer",
-                              padding: 0,
-                              transition: "background 0.15s",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 8,
+                              opacity: enabled ? 1 : 0.85,
                             }}
                           >
-                            <span
-                              aria-hidden="true"
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={enabled}
+                              aria-label={`${enabled ? "Disable" : "Enable"} ${r.name}`}
+                              title={enabled ? "Enabled — click to disable" : "Disabled — click to enable"}
+                              onClick={() => void handleToggleEnabled(r)}
                               style={{
-                                position: "absolute",
-                                top: 1,
-                                left: enabled ? 17 : 1,
-                                width: 16,
-                                height: 16,
-                                borderRadius: "50%",
-                                background: "var(--surface)",
-                                transition: "left 0.15s",
-                                boxShadow: "var(--shadow-s, 0 1px 2px rgba(0,0,0,0.2))",
+                                position: "relative",
+                                width: 26,
+                                height: 14,
+                                borderRadius: 999,
+                                border: `1px solid ${enabled ? "var(--ok)" : "var(--line-2)"}`,
+                                background: enabled ? "var(--green-soft)" : "var(--bg-2)",
+                                cursor: "pointer",
+                                padding: 0,
+                                flexShrink: 0,
+                                transition: "background 0.15s, border-color 0.15s",
                               }}
-                            />
-                          </button>
-                          <button
-                            type="button"
-                            className="btn sm"
-                            style={{ marginLeft: 8, fontSize: "var(--fs-xs)" }}
-                            onClick={() => handleRunClick(r)}
-                            disabled={!enabled}
-                          >
-                            Run{r.vars && r.vars.length > 0 ? "…" : ""}
-                          </button>
+                            >
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  position: "absolute",
+                                  top: 1,
+                                  left: 1,
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: "50%",
+                                  background: enabled ? "var(--ok)" : "var(--ink-3)",
+                                  transform: enabled ? "translateX(12px)" : "translateX(0)",
+                                  transition: "transform 0.18s ease, background 0.15s",
+                                  boxShadow: "0 1px 1px rgba(0,0,0,0.12)",
+                                }}
+                              />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn sm"
+                              style={{
+                                fontSize: "var(--fs-xs)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4,
+                              }}
+                              onClick={() => handleRunClick(r)}
+                              disabled={!enabled}
+                            >
+                              <span
+                                aria-hidden="true"
+                                style={{ fontSize: 8, lineHeight: 1, color: "var(--accent)" }}
+                              >
+                                ▶
+                              </span>
+                              Run{r.vars && r.vars.length > 0 ? "…" : ""}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

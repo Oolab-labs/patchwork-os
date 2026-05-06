@@ -146,7 +146,7 @@ describe("useBridgeFetch — enabled flag", () => {
 });
 
 describe("useBridgeFetch — initial state", () => {
-  it("starts as { data: null, loading: true, status: null, unsupported: false }", () => {
+  it("starts as { data: null, loading: true, status: null, unsupported: false, refetch: fn }", () => {
     fetchMock.mockImplementation(() => new Promise(() => {}));
     const { result } = renderHook(() => useBridgeFetch("/api/x"));
     expect(result.current).toEqual({
@@ -155,6 +155,7 @@ describe("useBridgeFetch — initial state", () => {
       loading: true,
       status: null,
       unsupported: false,
+      refetch: expect.any(Function),
     });
   });
 });

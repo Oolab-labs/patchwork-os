@@ -405,9 +405,9 @@ export default function SettingsPage() {
                     id="bridge-workspace"
                     type="text"
                     value={workspacePath}
-                    onChange={(e) => setWorkspacePath(e.target.value)}
+                    readOnly
                     placeholder="/Users/you/Projects/your-repo"
-                    style={inputStyle}
+                    style={{ ...inputStyle, background: "var(--bg-2)", cursor: "not-allowed" }}
                   />
                   <p style={helpStyle}>
                     Absolute path to the project Patchwork operates in. Tools resolve paths relative to this root.
@@ -422,9 +422,9 @@ export default function SettingsPage() {
                     id="bridge-inbox"
                     type="text"
                     value={inboxDir}
-                    onChange={(e) => setInboxDir(e.target.value)}
+                    readOnly
                     placeholder="~/.patchwork/inbox"
-                    style={inputStyle}
+                    style={{ ...inputStyle, background: "var(--bg-2)", cursor: "not-allowed" }}
                   />
                   <p style={helpStyle}>
                     Where queued tasks, drafts, and pending approvals live on disk.
@@ -440,9 +440,9 @@ export default function SettingsPage() {
                       id="bridge-http-port"
                       type="number"
                       value={httpPort}
-                      onChange={(e) => setHttpPort(e.target.value)}
+                      readOnly
                       placeholder="3101"
-                      style={inputStyle}
+                      style={{ ...inputStyle, background: "var(--bg-2)", cursor: "not-allowed" }}
                     />
                     <p style={helpStyle}>Dashboard + REST API listen here.</p>
                   </div>
@@ -454,9 +454,9 @@ export default function SettingsPage() {
                       id="bridge-ws-port"
                       type="number"
                       value={wsPort}
-                      onChange={(e) => setWsPort(e.target.value)}
+                      readOnly
                       placeholder="3100"
-                      style={inputStyle}
+                      style={{ ...inputStyle, background: "var(--bg-2)", cursor: "not-allowed" }}
                     />
                     <p style={helpStyle}>Claude Code IDE bridge transport.</p>
                   </div>

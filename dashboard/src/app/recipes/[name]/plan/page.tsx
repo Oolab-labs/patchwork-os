@@ -60,6 +60,37 @@ function RiskBadge({ risk }: { risk?: string }) {
   );
 }
 
+// Mirrors src/claudeOrchestrator.ts: ~4 chars per token for English/code.
+// Steps without a prompt (raw tool calls) still consume a small request-
+// envelope baseline, so we charge a flat 40 tokens to avoid implying free
+// execution for tool-only steps.
+const TOKENS_PER_CHAR = 0.25;
+const TOOL_STEP_BASELINE_TOKENS = 40;
+
+function estimateStepTokens(step: PlanStep): number {
+  if (step.prompt) return Math.ceil(step.prompt.length * TOKENS_PER_CHAR);
+  return TOOL_STEP_BASELINE_TOKENS;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`;
+  return n.toLocaleString();
+}
+
+// Rough lower-bound cost using Claude Sonnet input pricing ($3 / 1M tokens).
+// Output tokens cost more, but we have no way to estimate output size from
+// a static plan. Surfacing the input-only floor keeps users honest about
+// "approximately, at least this much" without overpromising.
+const INPUT_COST_PER_TOKEN = 3 / 1_000_000;
+
+function formatCost(tokens: number): string {
+  const usd = tokens * INPUT_COST_PER_TOKEN;
+  if (usd < 0.001) return "<$0.001";
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
 function TypeBadge({ type }: { type: string }) {
   const colors: Record<string, string> = {
     tool: "var(--accent)",
@@ -193,7 +224,12 @@ export default function RecipePlanPage({
         </div>
       )}
 
-      {plan && (
+      {plan && (() => {
+        const totalTokens = plan.steps.reduce(
+          (sum, s) => sum + estimateStepTokens(s),
+          0,
+        );
+        return (
         <div
           style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)" }}
         >
@@ -217,6 +253,22 @@ export default function RecipePlanPage({
               Steps:{" "}
               <strong style={{ color: "var(--fg-0)" }}>
                 {plan.steps.length}
+              </strong>
+            </span>
+            <span
+              title={`Est. ${totalTokens.toLocaleString()} input tokens (≈4 chars/token, +${TOOL_STEP_BASELINE_TOKENS} baseline per tool-only step). Output tokens not counted.`}
+            >
+              Est. tokens:{" "}
+              <strong style={{ color: "var(--fg-0)" }}>
+                ~{formatTokens(totalTokens)}
+              </strong>
+            </span>
+            <span
+              title="Lower-bound input-only cost @ $3/M (Sonnet pricing). Output tokens & cache effects not modelled — actual bill will be higher."
+            >
+              Min. cost:{" "}
+              <strong style={{ color: "var(--fg-0)" }}>
+                ≥ {formatCost(totalTokens)}
               </strong>
             </span>
             {plan.hasWriteSteps && (
@@ -493,7 +545,8 @@ export default function RecipePlanPage({
             </div>
           )}
         </div>
-      )}
+        );
+      })()}
     </section>
   );
 }

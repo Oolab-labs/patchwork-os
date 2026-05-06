@@ -1,9 +1,8 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
-import { relTime } from "@/components/time";
+import { relTime, fmtDuration } from "@/components/time";
 import { MetricsDonut, HBarList, ErrorState, AnimatedNumber } from "@/components/patchwork";
-import { AnalyticsTabs } from "@/components/AnalyticsTabs";
 import type { DonutSegment, HBarItem } from "@/components/patchwork";
 
 interface Metric {
@@ -27,6 +26,8 @@ export default function MetricsPage() {
   const [err, setErr] = useState<string>();
   const [updatedAt, setUpdatedAt] = useState<number>();
 
+  const tickRef = useRef<() => void>(() => {});
+
   useEffect(() => {
     const tick = async () => {
       try {
@@ -40,9 +41,22 @@ export default function MetricsPage() {
         setErr(e instanceof Error ? e.message : String(e));
       }
     };
+    tickRef.current = () => void tick();
     tick();
-    const id = setInterval(tick, 3000);
-    return () => clearInterval(id);
+    let id: ReturnType<typeof setInterval> | null = setInterval(tick, 3000);
+    const onVisible = () => {
+      if (document.hidden) {
+        if (id !== null) { clearInterval(id); id = null; }
+      } else if (id === null) {
+        tick();
+        id = setInterval(tick, 3000);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      if (id !== null) clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   const totalCalls = useMemo(() => {
@@ -141,14 +155,13 @@ export default function MetricsPage() {
 
   return (
     <section>
-      <AnalyticsTabs />
       <div className="page-head">
         <div>
           <h1 className="editorial-h1">
             Metrics — <span className="accent">Prometheus counters, exposed locally.</span>
           </h1>
           <div className="editorial-sub">
-            polled every 3s · uptime {uptimeSeconds != null ? Math.round(uptimeSeconds) + "s" : "—"} · rate-limits {rateLimitCount}
+            polled every 3s · uptime {uptimeSeconds != null ? fmtDuration(uptimeSeconds * 1000) : "—"} · rate-limits {rateLimitCount}
           </div>
         </div>
         {updatedAt && (
@@ -196,7 +209,7 @@ export default function MetricsPage() {
             <span style={{ color: "var(--blue)", marginRight: 6 }}>◎</span>Uptime
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-display)", fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
-            {uptimeSeconds != null ? `${Math.round(uptimeSeconds)}s` : "—"}
+            {uptimeSeconds != null ? fmtDuration(uptimeSeconds * 1000) : "—"}
           </div>
         </div>
       </div>
@@ -206,7 +219,7 @@ export default function MetricsPage() {
           title="Couldn't load metrics"
           description="The bridge isn't responding to /metrics."
           error={err}
-          onRetry={() => window.location.reload()}
+          onRetry={() => tickRef.current()}
         />
       )}
       {err && metrics.length > 0 && (

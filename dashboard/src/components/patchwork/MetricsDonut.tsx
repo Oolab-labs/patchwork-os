@@ -46,9 +46,20 @@ export function MetricsDonut({
     return { ...seg, start, end: cursor };
   });
 
+  const svgLabel =
+    (label ? `${label}: ` : "") +
+    arcs.map((a) => `${a.label} ${a.value.toLocaleString()} (${((a.value / total) * 100).toFixed(0)}%)`).join(", ");
+
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-      <svg viewBox="0 0 100 100" width={size} height={size} style={{ flexShrink: 0 }}>
+      <svg
+        viewBox="0 0 100 100"
+        width={size}
+        height={size}
+        style={{ flexShrink: 0 }}
+        role="img"
+        aria-label={svgLabel}
+      >
         {/* track */}
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--line-3)" strokeWidth={strokeWidth} />
         {arcs.map((arc, i) => (
@@ -59,9 +70,8 @@ export function MetricsDonut({
             stroke={arc.color}
             strokeWidth={strokeWidth}
             strokeLinecap="butt"
-          >
-            <title>{arc.label}: {arc.value.toLocaleString()}</title>
-          </path>
+            aria-hidden="true"
+          />
         ))}
         {label && (
           <text
@@ -69,18 +79,24 @@ export function MetricsDonut({
             y={cy + 1}
             textAnchor="middle"
             dominantBaseline="middle"
+            aria-hidden="true"
             style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fill: "var(--ink-2)", fontWeight: 700 }}
           >
             {label}
           </text>
         )}
       </svg>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <div role="list" style={{ display: "flex", flexDirection: "column", gap: 5, listStyle: "none", padding: 0, margin: 0 }}>
         {arcs.map((arc) => (
-          <div key={arc.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: arc.color, flexShrink: 0 }} />
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", color: "var(--ink-1)" }}>{arc.label}</span>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", color: "var(--ink-3)", marginLeft: 4 }}>
+          <div
+            key={arc.label}
+            role="listitem"
+            aria-label={`${arc.label}: ${arc.value.toLocaleString()}, ${((arc.value / total) * 100).toFixed(0)}%`}
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: arc.color, flexShrink: 0 }} />
+            <span aria-hidden="true" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", color: "var(--ink-1)" }}>{arc.label}</span>
+            <span aria-hidden="true" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", color: "var(--ink-3)", marginLeft: 4 }}>
               {((arc.value / total) * 100).toFixed(0)}%
             </span>
           </div>

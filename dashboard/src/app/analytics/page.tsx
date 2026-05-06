@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { StatCard } from "@/components/StatCard";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { AreaChart, ErrorState } from "@/components/patchwork";
-import { AnalyticsTabs } from "@/components/AnalyticsTabs";
 import type { AreaChartSeries } from "@/components/patchwork";
 
 interface ToolStat {
@@ -68,7 +67,7 @@ export default function AnalyticsPage() {
   const [clientNow, setClientNow] = useState(0);
   useEffect(() => { setClientNow(Date.now()); }, []);
 
-  const { data, error, loading } = useBridgeFetch<AnalyticsData>(
+  const { data, error, loading, refetch } = useBridgeFetch<AnalyticsData>(
     `/api/bridge/analytics?windowHours=${windowHours}`,
     { intervalMs: 30000 },
   );
@@ -133,7 +132,6 @@ export default function AnalyticsPage() {
 
   return (
     <section>
-      <AnalyticsTabs />
       <div className="page-head">
         <div>
           <h1 className="editorial-h1">
@@ -150,7 +148,7 @@ export default function AnalyticsPage() {
           title="Couldn't load analytics"
           description="The bridge isn't responding. Once it's back, this view will refresh on its own."
           error={error}
-          onRetry={() => window.location.reload()}
+          onRetry={refetch}
         />
       )}
       {error && data && <div className="alert-err">Refresh failed — {error}</div>}

@@ -1431,20 +1431,6 @@ button.topbar-search {
   box-shadow: var(--shadow-s);
 }
 .theme-toggle:hover { background: var(--recess); color: var(--ink-0); border-color: var(--line-2); }
-.theme-toggle-auto {
-  position: absolute;
-  right: -3px;
-  bottom: -3px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--pressed);
-  color: var(--ink-2);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  line-height: 1;
-  padding: 2px 3px;
-  pointer-events: none;
-}
 
 /* ---- Animations ---- */
 

@@ -5,6 +5,7 @@ import { Shell } from "@/components/Shell";
 import { DemoBanner } from "@/components/DemoBanner";
 import { BridgeBanner } from "@/components/BridgeBanner";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
+import { ToastProvider } from "@/components/Toast";
 
 const albertSans = Albert_Sans({
   subsets: ["latin"],
@@ -85,12 +86,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <a href="#main-content" className="skip-nav">
           Skip to main content
         </a>
-        <div data-app-root>
-          <DemoBanner />
-          <BridgeBanner />
-          <Shell>{children}</Shell>
-          <MobileBottomNav />
-        </div>
+        <ToastProvider>
+          <div data-app-root>
+            <DemoBanner />
+            <BridgeBanner />
+            <Shell>{children}</Shell>
+            <MobileBottomNav />
+          </div>
+        </ToastProvider>
         <script
           dangerouslySetInnerHTML={{
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/dashboard/sw.js',{scope:'/dashboard/'}).catch(()=>{})}`,

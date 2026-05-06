@@ -1,11 +1,17 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
 import { isDemoMode } from "@/lib/demoMode";
 import { EventsHistogram, HBarList } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
+
+const TABS: readonly Tab[] = ["all", "tools", "recipe_start", "recipe_end"];
+function isTab(v: string | null): v is Tab {
+  return v !== null && (TABS as readonly string[]).includes(v);
+}
 
 type Tab = "all" | "tools" | "recipe_start" | "recipe_end";
 
@@ -72,7 +78,18 @@ export default function ActivityPage() {
   const [seeded, setSeeded] = useState(false);
   const [connected, setConnected] = useState(false);
   const [err, setErr] = useState<string>();
-  const [tab, setTab] = useState<Tab>("all");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabFromUrl = searchParams?.get("tab");
+  const [tab, setTabState] = useState<Tab>(isTab(tabFromUrl) ? tabFromUrl : "all");
+  const setTab = (next: Tab) => {
+    setTabState(next);
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (next === "all") params.delete("tab");
+    else params.set("tab", next);
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+  };
   const [, setTick] = useState(0);
   const esRef = useRef<EventSource | null>(null);
 
