@@ -1342,7 +1342,7 @@ export class Server extends EventEmitter<ServerEvents> {
             const configPath = patchworkConfigPath();
             const cfg = loadPatchworkConfig(configPath);
             cfg.dashboard = {
-              port: cfg.dashboard?.port ?? 3000,
+              port: cfg.dashboard?.port ?? 3200,
               requireApproval: cfg.dashboard?.requireApproval ?? ["high"],
               pushNotifications: cfg.dashboard?.pushNotifications ?? false,
               webhookUrl: hasWebhookUpdate

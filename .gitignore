@@ -4,6 +4,9 @@ dist/
 # Old design mockups / local archives
 patchwork 2.0/
 patchwork 2.0.zip
+
+# Patchwork runtime output (recipe artifacts, daily status, etc.)
+.patchwork/
 *.tsbuildinfo
 vscode-extension/out/
 vscode-extension/*.vsix

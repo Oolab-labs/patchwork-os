@@ -46,7 +46,7 @@ export interface PatchworkConfig {
 const DEFAULTS: PatchworkConfig = {
   model: "claude",
   dashboard: {
-    port: 3000,
+    port: 3200,
     requireApproval: ["high"],
     pushNotifications: false,
   },
