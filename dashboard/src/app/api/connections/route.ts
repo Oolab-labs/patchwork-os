@@ -3,16 +3,6 @@ import { bridgeFetch } from "@/lib/bridge";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export interface ConnectorStatus {
-  id: string;
-  status: "connected" | "disconnected";
-  lastSync?: string;
-}
-
-export interface ConnectionsResponse {
-  connectors: ConnectorStatus[];
-}
-
 export async function GET(): Promise<Response> {
   try {
     const res = await bridgeFetch("/connections");
