@@ -1,4 +1,5 @@
 import { Ajv, type ErrorObject } from "ajv";
+import cron from "node-cron";
 import { FLAG_SCHEMA_LINT, isEnabled } from "../featureFlags.js";
 import {
   defaultDeprecationWarn,
@@ -75,6 +76,28 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
           level: "warning",
           message: "cron trigger should have 'at' (cron expression)",
         });
+      }
+      if (trigger.type === "cron" && typeof trigger.at === "string") {
+        // Reject bogus expressions early so users see the error at save
+        // time, not when the scheduler silently fails to register the
+        // recipe and it never fires. Mirrors the parse path in
+        // src/recipes/scheduler.ts:parseSchedule.
+        const at = trigger.at.trim();
+        const isInterval = /^@every\s+\d+\s*(ms|s|m|h)$/i.test(at);
+        const isCron5 = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+$/.test(at);
+        if (!isInterval && !isCron5) {
+          issues.push({
+            level: "error",
+            message: `trigger.at "${at}" is not a valid schedule — expected 5-field cron (e.g. "0 9 * * 1-5") or "@every Ns|Nm|Nh"`,
+          });
+        } else if (isCron5 && !cron.validate(at)) {
+          // node-cron catches range/step typos a field-count check
+          // misses — e.g. "0 25 * * *", "* / 5 * * *".
+          issues.push({
+            level: "error",
+            message: `trigger.at "${at}" is not a valid 5-field cron expression`,
+          });
+        }
       }
     }
 
