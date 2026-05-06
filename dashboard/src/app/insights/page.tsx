@@ -126,7 +126,7 @@ function RuleCell({ explanation }: { explanation: RuleExplanation | null | undef
 }
 
 export default function InsightsPage() {
-  const { data, error, loading } = useBridgeFetch<InsightsResponse>(
+  const { data, error, loading, refetch } = useBridgeFetch<InsightsResponse>(
     "/api/bridge/approval-insights",
     { intervalMs: 30000 },
   );
@@ -211,7 +211,7 @@ export default function InsightsPage() {
           title="Couldn't load insights"
           description="The bridge isn't responding to /approval-insights."
           error={error}
-          onRetry={() => window.location.reload()}
+          onRetry={refetch}
         />
       )}
       {error && tools.length > 0 && (
