@@ -39,6 +39,7 @@ import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
 import { StreamableHttpHandler } from "./streamableHttp.js";
 import { initTelemetry, shutdownTelemetry } from "./telemetry.js";
+import { TokenUsageTracker } from "./tokenUsageTracker.js";
 import { createCtxQueryTracesTool } from "./tools/ctxQueryTraces.js";
 import { readNote, writeNote } from "./tools/handoffNote.js";
 import { registerAllTools } from "./tools/index.js";
@@ -158,6 +159,7 @@ export class Bridge {
   /** ISO timestamp of last getProjectContext cache write — drives status-bar "context X min ago". */
   private _lastContextCachedAt: string | null = null;
   private wsHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private tokenUsageTracker: TokenUsageTracker;
 
   constructor(private config: Config) {
     this.logger = new Logger(config.verbose, config.jsonl);
@@ -181,6 +183,10 @@ export class Bridge {
       this.logger.info(`Audit log: ${config.auditLogPath}`);
     }
     this.extensionClient = new ExtensionClient(this.logger);
+    this.tokenUsageTracker = new TokenUsageTracker({
+      workspace: config.workspace,
+      logger: { warn: (m) => this.logger.warn(m) },
+    });
 
     // Handle new Claude Code connections
     this.server.on("connection", async (ws: WebSocket) => {
@@ -882,6 +888,8 @@ export class Bridge {
     this.probes = await probeAll(this.config.workspace);
     this.ready = true;
 
+    this.tokenUsageTracker.start();
+
     // 2. Load plugins (after probes, before accepting sessions)
     this.pluginTools = await loadPlugins(
       this.config.plugins,
@@ -1075,6 +1083,7 @@ export class Bridge {
         extensionCircuitBreaker: this.extensionClient.getCircuitBreakerState(),
         extensionDisconnectCount: this.extensionDisconnectCount,
         recentActivity: this.activityLog.query({ last: 10 }),
+        tokens: this.tokenUsageTracker.getTotals(),
       };
     };
     this.server.metricsFn = () =>
@@ -1719,6 +1728,7 @@ export class Bridge {
     this.stopped = true;
     this.logger.info("Shutting down...");
     this._stopPeriodicSnapshots();
+    this.tokenUsageTracker.stop();
     this.automationHooks?.destroy();
     this.recipeScheduler?.stop();
     this.recipeScheduler = null;
