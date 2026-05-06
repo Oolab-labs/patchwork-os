@@ -11,7 +11,7 @@ import {
   loadCcPermissions,
   loadCcPermissionsAttributed,
 } from "./ccPermissions.js";
-import { captureForRunlog } from "./recipes/captureForRunlog.js";
+import { captureForRunlog } from "./recipes/stepObservation.js";
 import { classifyTool } from "./riskTier.js";
 
 // Tools CC allows in plan mode (read-only — no filesystem or network writes).
