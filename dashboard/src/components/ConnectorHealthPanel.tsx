@@ -4,13 +4,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 
-interface ConnectorStatus {
+interface ConnectorHealth {
   name: string;
   status: "connected" | "degraded" | "error" | "missing" | string;
   message?: string;
 }
 
-type StatusMap = Record<string, ConnectorStatus>;
+type StatusMap = Record<string, ConnectorHealth>;
 type DotColor = "green" | "yellow" | "red" | "gray";
 
 function resolveColor(status: string | undefined): DotColor {
@@ -67,14 +67,14 @@ export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
         return;
       }
       const data = (await res.json()) as
-        | ConnectorStatus[]
-        | { connectors?: ConnectorStatus[] };
-      const list: ConnectorStatus[] = Array.isArray(data)
+        | ConnectorHealth[]
+        | { connectors?: ConnectorHealth[] };
+      const list: ConnectorHealth[] = Array.isArray(data)
         ? data
         : Array.isArray(
-              (data as { connectors?: ConnectorStatus[] }).connectors,
+              (data as { connectors?: ConnectorHealth[] }).connectors,
             )
-          ? (data as { connectors: ConnectorStatus[] }).connectors
+          ? (data as { connectors: ConnectorHealth[] }).connectors
           : [];
       const map: StatusMap = {};
       for (const c of list) {

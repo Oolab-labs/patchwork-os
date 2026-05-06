@@ -3,12 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import AddConnectionModal from "./AddConnectionModal";
 import { Dialog } from "@/components/Dialog";
-
-interface ConnectorStatus {
-  id: string;
-  status: "connected" | "disconnected" | "needs_reauth";
-  lastSync?: string;
-}
+import type { ConnectorStatus } from "./types";
 
 // ------------------------------------------------------------------ helpers
 
