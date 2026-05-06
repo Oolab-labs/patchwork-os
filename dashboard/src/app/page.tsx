@@ -761,8 +761,8 @@ export default function HomePage() {
               }
               foot={
                 health?.tokens && health.tokens.messages > 0
-                  ? `${health.tokens.messages} msg${health.tokens.messages === 1 ? "" : "s"} · ${sess} session${sess === 1 ? "" : "s"}`
-                  : `${sess} session${sess === 1 ? "" : "s"} · ${conns} connection${conns === 1 ? "" : "s"}`
+                  ? `${health.tokens.messages.toLocaleString()} msg${health.tokens.messages === 1 ? "" : "s"}`
+                  : undefined
               }
               title={
                 health?.tokens
