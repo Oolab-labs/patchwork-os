@@ -103,6 +103,19 @@ function validateForm(form: FormState): ValidationState {
       errors.vars[i] = "Variable name is required.";
       continue;
     }
+    if (!VAR_NAME_RE.test(name)) {
+      // Mirror the runtime template-reference regex
+      // (src/recipes/validation.ts: extractTemplateDottedPaths). Names that
+      // can't match `{{...}}` will silently never resolve at runtime —
+      // reject them at save time instead.
+      errors.vars[i] =
+        "Variable name must start with a letter or underscore, then letters, digits, or underscores only.";
+      continue;
+    }
+    if (RESERVED_VAR_NAMES.has(name)) {
+      errors.vars[i] = `'${name}' is a reserved built-in context key.`;
+      continue;
+    }
     const existingIndex = firstVarIndexByName.get(name);
     if (existingIndex !== undefined) {
       errors.vars[i] = "Variable name must be unique.";
@@ -114,6 +127,43 @@ function validateForm(form: FormState): ValidationState {
 
   return errors;
 }
+
+// Mirrors the runtime template-reference regex root group in
+// src/recipes/validation.ts:extractTemplateDottedPaths. Var names that
+// don't match this can never resolve as `{{name}}` at runtime — silently
+// rendering as empty string. Reject at save time.
+const VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+
+// Built-in context keys reserved by the runtime — declaring a var with
+// any of these names would shadow trigger-emitted data silently. The
+// list is the simple-identifier subset from registerRecipeContextKeys
+// + extractTemplateExpressions builtinKeys (src/recipes/validation.ts).
+const RESERVED_VAR_NAMES = new Set([
+  "date",
+  "time",
+  "YYYY",
+  "ISO_NOW",
+  "HH",
+  "MM",
+  "SS",
+  "this",
+  "hash",
+  "message",
+  "branch",
+  "payload",
+  "webhook_payload",
+  "hook_path",
+  "webhook_path",
+  "file",
+  "file_ext",
+  "file_basename",
+  "runner",
+  "failed",
+  "passed",
+  "total",
+  "failures",
+  "event",
+]);
 
 function hasValidationErrors(errors: ValidationState): boolean {
   return Boolean(
@@ -130,8 +180,18 @@ const RECIPE_API_VERSION = "patchwork.sh/v1";
 const SIMPLE_YAML_VALUE_RE = /^[A-Za-z0-9_./:@%+-]+$/;
 const AMBIGUOUS_YAML_VALUE_RE = /^(true|false|null|~|-?\d+(\.\d+)?)$/i;
 
+/**
+ * Slugify a free-form name into the canonical kebab-case shape that the
+ * server, schema, and filesystem all agree on (`^[a-z0-9][a-z0-9-]{0,63}$`).
+ * Lowercase, fold whitespace and underscores to dashes, strip leading/
+ * trailing dashes. Empty input → empty (caller treats as missing).
+ */
 function normalizeRecipeName(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, "-");
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function yamlScalar(value: string): string {
@@ -232,7 +292,13 @@ function buildRecipeYaml(form: FormState, safeName: string): string {
   return lines.join("\n");
 }
 
-const NAME_RE = /^[a-z0-9][a-z0-9_\- ]{0,63}$/i;
+// Loose form-side check that mirrors the canonical server regex AFTER
+// `normalizeRecipeName` runs. We accept uppercase/spaces/underscores in
+// the input so users can type naturally; the slug shown in the YAML
+// preview and used for the file path is the normalized form. The error
+// only fires when normalization can't produce a valid slug at all
+// (empty, leading dash, too long, or non-letter/digit chars left over).
+const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 export default function NewRecipePage() {
   return (
@@ -294,9 +360,14 @@ function NewRecipePageInner() {
 
   const setName = useCallback((v: string) => {
     setForm((f) => ({ ...f, name: v }));
-    if (v && !NAME_RE.test(v)) {
+    // Validate the *slug* (after normalization), not the raw input.
+    // Users may type "My Recipe" and that's fine — the form will save
+    // it as `my-recipe.yaml`. Only reject if the normalized result
+    // can't satisfy the canonical kebab-case rule.
+    const slug = normalizeRecipeName(v);
+    if (v.trim() && !NAME_RE.test(slug)) {
       setNameError(
-        "Name must start with a letter or digit and contain only letters, digits, spaces, hyphens, or underscores (max 64 chars).",
+        "Name must produce a slug starting with a letter or digit and containing only letters, digits, or hyphens (max 64 chars).",
       );
     } else {
       setNameError(null);

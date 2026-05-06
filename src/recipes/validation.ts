@@ -5,6 +5,7 @@ import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
 } from "./legacyRecipeCompat.js";
+import { RECIPE_VAR_NAME_RE, RESERVED_VAR_NAMES } from "./names.js";
 import { generateSchemaSet } from "./schemaGenerator.js";
 import { listToolOutputContextKeys } from "./toolRegistry.js";
 
@@ -99,6 +100,9 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
           });
         }
       }
+
+      validateTriggerVarsList(trigger.vars, "vars", issues);
+      validateTriggerVarsList(trigger.inputs, "inputs", issues);
     }
 
     if (!Array.isArray(r.steps) || r.steps.length === 0) {
@@ -148,6 +152,52 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
     warnings,
     errors,
   };
+}
+
+/**
+ * Validate `trigger.vars` / `trigger.inputs` array entries. Catches names
+ * the runtime template engine can't resolve as `{{var}}` (e.g. spaces,
+ * dots, leading digits) and shadowing of built-in context keys
+ * (`payload`, `file`, `hash`, `date`, etc.). Both classes save HTTP 200
+ * silently today and only blow up at run time.
+ */
+function validateTriggerVarsList(
+  list: unknown,
+  fieldName: "vars" | "inputs",
+  issues: LintIssue[],
+): void {
+  if (!Array.isArray(list)) return;
+  for (let i = 0; i < list.length; i++) {
+    const entry = list[i];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      issues.push({
+        level: "error",
+        message: `trigger.${fieldName}[${i}] must be an object with at least a 'name' field`,
+      });
+      continue;
+    }
+    const name = (entry as Record<string, unknown>).name;
+    if (typeof name !== "string" || name.length === 0) {
+      issues.push({
+        level: "error",
+        message: `trigger.${fieldName}[${i}].name is required and must be a non-empty string`,
+      });
+      continue;
+    }
+    if (!RECIPE_VAR_NAME_RE.test(name)) {
+      issues.push({
+        level: "error",
+        message: `trigger.${fieldName}[${i}].name "${name}" is invalid — must start with a letter or underscore, then letters, digits, or underscores only (max 64 chars). Names not matching this can never resolve as {{${name}}} at runtime.`,
+      });
+      continue;
+    }
+    if (RESERVED_VAR_NAMES.has(name)) {
+      issues.push({
+        level: "error",
+        message: `trigger.${fieldName}[${i}].name "${name}" shadows a reserved built-in context key — pick a different name`,
+      });
+    }
+  }
 }
 
 function normalizeRecipeForValidation(recipe: unknown): unknown {
