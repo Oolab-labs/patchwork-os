@@ -178,18 +178,21 @@ function buildRecipeYaml(form: FormState, safeName: string): string {
     lines.push("  type: manual");
   }
 
+  // vars nest under trigger — validator (src/recipes/validation.ts) only
+  // reads trigger.vars when building available template-ref roots; a
+  // top-level `vars:` is not in schemas/recipe.v1.json.
   if (form.vars.length > 0) {
-    lines.push("vars:");
+    lines.push("  vars:");
     for (const variable of form.vars) {
-      lines.push(`  - name: ${yamlScalar(variable.name.trim() || "(name)")}`);
+      lines.push(`    - name: ${yamlScalar(variable.name.trim() || "(name)")}`);
       if (variable.description.trim()) {
-        pushYamlField(lines, 4, "description", variable.description.trim());
+        pushYamlField(lines, 6, "description", variable.description.trim());
       }
       if (variable.required) {
-        lines.push("    required: true");
+        lines.push("      required: true");
       }
       if (variable.default) {
-        pushYamlField(lines, 4, "default", variable.default);
+        pushYamlField(lines, 6, "default", variable.default);
       }
     }
   }

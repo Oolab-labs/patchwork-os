@@ -580,11 +580,11 @@ SCHEMA:
     type: manual | cron | webhook
     at: "<cron expression>"             # only when type=cron
     path: "/hooks/<slug>"               # only when type=webhook
-  vars:                                 # optional
-    - name: VAR_NAME
-      description: hint for caller
-      required: true | false
-      default: "value"
+    vars:                               # optional — MUST be nested under trigger
+      - name: VAR_NAME
+        description: hint for caller
+        required: true | false
+        default: "value"
   steps:
     - id: step-1
       agent:
@@ -608,10 +608,10 @@ description: Daily summary of GitHub notifications delivered by email
 trigger:
   type: cron
   at: "0 8 * * 1-5"
-vars:
-  - name: EMAIL
-    description: Email address to send the digest to
-    required: true
+  vars:
+    - name: EMAIL
+      description: Email address to send the digest to
+      required: true
 steps:
   - id: fetch-notifications
     agent:
@@ -636,11 +636,11 @@ description: Triage new Sentry issues to Linear and Slack
 trigger:
   type: webhook
   path: "/hooks/sentry-issues"
-vars:
-  - name: SLACK_CHANNEL
-    description: Slack channel to notify
-    required: false
-    default: "#incidents"
+  vars:
+    - name: SLACK_CHANNEL
+      description: Slack channel to notify
+      required: false
+      default: "#incidents"
 steps:
   - id: create-linear-ticket
     agent:
