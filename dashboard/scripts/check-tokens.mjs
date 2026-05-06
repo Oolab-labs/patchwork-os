@@ -16,19 +16,26 @@ const CSS_PATH = join(ROOT, "src/app/globals.css");
 const JSON_PATH = join(ROOT, "tokens.json");
 
 function parseVarsBlock(css, selector) {
-  // Match the first occurrence of `selector { ... }` at top-level and pull
-  // every `--name: value;` declaration. The selector regex is intentionally
-  // anchored at line start to skip nested rules like `[data-theme="dark"] .x`.
-  const re = new RegExp(`^${selector}\\s*{([^}]*)}`, "m");
-  const m = css.match(re);
-  if (!m) throw new Error(`could not find selector block: ${selector}`);
-  const body = m[1];
+  // Match every top-level `selector { ... }` block and merge their custom
+  // properties. globals.css splits :root into two blocks (colors near the top,
+  // layout/radii/spacing further down); both must be collected. The selector
+  // regex is anchored at line start to skip nested rules like
+  // `[data-theme="dark"] .x`.
+  const re = new RegExp(`^${selector}\\s*{([^}]*)}`, "gm");
   const vars = {};
   const declRe = /--([\w-]+)\s*:\s*([^;]+?)\s*;/g;
-  let d;
-  while ((d = declRe.exec(body)) !== null) {
-    vars[d[1]] = d[2].trim();
+  let m;
+  let found = false;
+  while ((m = re.exec(css)) !== null) {
+    found = true;
+    const body = m[1];
+    let d;
+    declRe.lastIndex = 0;
+    while ((d = declRe.exec(body)) !== null) {
+      vars[d[1]] = d[2].trim();
+    }
   }
+  if (!found) throw new Error(`could not find selector block: ${selector}`);
   return vars;
 }
 
@@ -79,6 +86,17 @@ const RENAMES = {
   "font.sans": "font-sans",
   "font.serif": "font-serif",
   "font.mono": "font-mono",
+  "fontSize.3xs": "fs-3xs",
+  "fontSize.2xs": "fs-2xs",
+  "fontSize.xs": "fs-xs",
+  "fontSize.s": "fs-s",
+  "fontSize.m": "fs-m",
+  "fontSize.base": "fs-base",
+  "fontSize.l": "fs-l",
+  "fontSize.xl": "fs-xl",
+  "fontSize.2xl": "fs-2xl",
+  "fontSize.3xl": "fs-3xl",
+  "fontSize.display": "fs-display",
 };
 
 for (const { name: themeName, json, css: cssVars } of themes) {
