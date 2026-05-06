@@ -153,7 +153,7 @@ export function AreaChart({
           height: "100%",
           pointerEvents: "none",
           fontFamily: "var(--font-mono)",
-          fontSize: 10,
+          fontSize: "var(--fs-2xs)",
           color: "var(--ink-3)",
         }}
       >
@@ -190,7 +190,7 @@ export function AreaChart({
           height: PAD.bottom - 4,
           pointerEvents: "none",
           fontFamily: "var(--font-mono)",
-          fontSize: 10,
+          fontSize: "var(--fs-2xs)",
           color: "var(--ink-3)",
         }}
       >

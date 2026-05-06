@@ -215,14 +215,14 @@ export default function ApprovalDetailPage() {
     <section>
       <div className="page-head">
         <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>
+          <div style={{ fontSize: "var(--fs-s)", marginBottom: 4 }}>
             <Link href="/approvals" style={{ color: "var(--fg-2)" }}>
               ← Approvals
             </Link>
           </div>
           <h1>{toolName}</h1>
           <div className="page-head-sub">
-            <code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+            <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}>
               {callId}
             </code>
           </div>
@@ -295,7 +295,7 @@ export default function ApprovalDetailPage() {
           />
           <p
             style={{
-              fontSize: 13,
+              fontSize: "var(--fs-m)",
               color: "var(--fg-1)",
               marginTop: 10,
               lineHeight: 1.5,
@@ -319,11 +319,11 @@ export default function ApprovalDetailPage() {
         >
           <div className="card-head">
             <h2>Decide</h2>
-            <span className="pill warn" style={{ fontSize: 11 }}>
+            <span className="pill warn" style={{ fontSize: "var(--fs-xs)" }}>
               <span className="pill-dot" /> awaiting you
             </span>
           </div>
-          <p style={{ fontSize: 13, color: "var(--ink-2)", marginBottom: "var(--s-3)" }}>
+          <p style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)", marginBottom: "var(--s-3)" }}>
             Still in the queue. Approve or reject to unblock the caller.
           </p>
           <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
@@ -431,12 +431,12 @@ export default function ApprovalDetailPage() {
             <h2>Session</h2>
           </div>
           <div style={{ display: "flex", gap: "var(--s-3)", flexWrap: "wrap" }}>
-            <code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+            <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}>
               {sessionId}
             </code>
             <Link
               href={`/approvals?session=${sessionId}`}
-              style={{ fontSize: 13, color: "var(--accent)" }}
+              style={{ fontSize: "var(--fs-m)", color: "var(--accent)" }}
             >
               All approvals for this session →
             </Link>
@@ -535,7 +535,7 @@ function Row({
         gap: 16,
         padding: "10px 0",
         borderBottom: "1px solid var(--border-subtle)",
-        fontSize: 13,
+        fontSize: "var(--fs-m)",
       }}
     >
       <span style={{ color: "var(--fg-2)" }}>{label}</span>

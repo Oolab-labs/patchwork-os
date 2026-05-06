@@ -659,20 +659,20 @@ function NewRecipePageInner() {
             borderBottom: aiOpen ? "1px solid var(--border-default)" : "none",
             color: "var(--fg-1)",
             cursor: "pointer",
-            fontSize: 13,
+            fontSize: "var(--fs-m)",
             fontWeight: 500,
             padding: "var(--s-3) var(--s-4)",
             textAlign: "left",
           }}
         >
-          <span style={{ fontSize: 16 }}>{aiOpen ? "▾" : "▸"}</span>
+          <span style={{ fontSize: "var(--fs-xl)" }}>{aiOpen ? "▾" : "▸"}</span>
           Generate with AI
           <span
             style={{
               background: "var(--accent)",
               borderRadius: 4,
               color: "var(--on-accent)",
-              fontSize: 10,
+              fontSize: "var(--fs-2xs)",
               fontWeight: 700,
               letterSpacing: "0.05em",
               padding: "1px 5px",
@@ -695,7 +695,7 @@ function NewRecipePageInner() {
             <p
               style={{
                 color: "var(--fg-2)",
-                fontSize: 13,
+                fontSize: "var(--fs-m)",
                 margin: 0,
               }}
             >
@@ -713,7 +713,7 @@ function NewRecipePageInner() {
                 border: "1px solid var(--border-default)",
                 borderRadius: "var(--r-2)",
                 color: "var(--fg-0)",
-                fontSize: 13,
+                fontSize: "var(--fs-m)",
                 fontFamily: "var(--font-sans)",
                 outline: "none",
                 padding: "var(--s-2) var(--s-3)",
@@ -733,7 +733,7 @@ function NewRecipePageInner() {
                   color: "var(--on-accent)",
                   cursor:
                     aiLoading || !aiPrompt.trim() ? "not-allowed" : "pointer",
-                  fontSize: 13,
+                  fontSize: "var(--fs-m)",
                   fontWeight: 500,
                   opacity: aiLoading || !aiPrompt.trim() ? 0.6 : 1,
                   padding: "var(--s-2) var(--s-4)",
@@ -750,7 +750,7 @@ function NewRecipePageInner() {
                   border: "1px solid var(--err)",
                   borderRadius: "var(--r-2)",
                   color: "var(--err)",
-                  fontSize: 12,
+                  fontSize: "var(--fs-s)",
                   margin: 0,
                   padding: "var(--s-2) var(--s-3)",
                 }}
@@ -760,7 +760,7 @@ function NewRecipePageInner() {
             )}
 
             {aiResult?.warnings && aiResult.warnings.length > 0 && (
-              <details style={{ fontSize: 12 }}>
+              <details style={{ fontSize: "var(--fs-s)" }}>
                 <summary
                   style={{
                     color: "var(--warn)",
@@ -794,7 +794,7 @@ function NewRecipePageInner() {
                     border: "1px solid var(--border-default)",
                     borderRadius: "var(--r-2)",
                     color: "var(--fg-0)",
-                    fontSize: 12,
+                    fontSize: "var(--fs-s)",
                     fontFamily: "var(--font-mono)",
                     margin: 0,
                     maxHeight: 300,
@@ -815,7 +815,7 @@ function NewRecipePageInner() {
                       borderRadius: "var(--r-2)",
                       color: "var(--on-accent)",
                       cursor: "pointer",
-                      fontSize: 13,
+                      fontSize: "var(--fs-m)",
                       fontWeight: 500,
                       padding: "var(--s-2) var(--s-4)",
                     }}
@@ -834,7 +834,7 @@ function NewRecipePageInner() {
                       borderRadius: "var(--r-2)",
                       color: "var(--fg-1)",
                       cursor: "pointer",
-                      fontSize: 13,
+                      fontSize: "var(--fs-m)",
                       padding: "var(--s-2) var(--s-4)",
                     }}
                   >
@@ -879,7 +879,7 @@ function NewRecipePageInner() {
                   display: "block",
                   marginBottom: "var(--s-2)",
                   color: "var(--fg-1)",
-                  fontSize: 13,
+                  fontSize: "var(--fs-m)",
                   fontWeight: 500,
                 }}
               >
@@ -898,7 +898,7 @@ function NewRecipePageInner() {
                   border: `1px solid ${nameError ? "var(--err)" : "var(--border-default)"}`,
                   borderRadius: "var(--r-2)",
                   color: "var(--fg-0)",
-                  fontSize: 14,
+                  fontSize: "var(--fs-base)",
                   padding: "var(--s-2) var(--s-3)",
                   outline: "none",
                   fontFamily: "var(--font-mono)",
@@ -908,7 +908,7 @@ function NewRecipePageInner() {
                 <div
                   style={{
                     marginTop: "var(--s-1)",
-                    fontSize: 12,
+                    fontSize: "var(--fs-s)",
                     color: "var(--err)",
                   }}
                 >
@@ -925,7 +925,7 @@ function NewRecipePageInner() {
                   display: "block",
                   marginBottom: "var(--s-2)",
                   color: "var(--fg-1)",
-                  fontSize: 13,
+                  fontSize: "var(--fs-m)",
                   fontWeight: 500,
                 }}
               >
@@ -946,7 +946,7 @@ function NewRecipePageInner() {
                   border: "1px solid var(--border-default)",
                   borderRadius: "var(--r-2)",
                   color: "var(--fg-0)",
-                  fontSize: 14,
+                  fontSize: "var(--fs-base)",
                   padding: "var(--s-2) var(--s-3)",
                   outline: "none",
                   resize: "vertical",
@@ -963,7 +963,7 @@ function NewRecipePageInner() {
                   display: "block",
                   marginBottom: "var(--s-2)",
                   color: "var(--fg-1)",
-                  fontSize: 13,
+                  fontSize: "var(--fs-m)",
                   fontWeight: 500,
                 }}
               >
@@ -983,7 +983,7 @@ function NewRecipePageInner() {
                   border: "1px solid var(--border-default)",
                   borderRadius: "var(--r-2)",
                   color: "var(--fg-0)",
-                  fontSize: 14,
+                  fontSize: "var(--fs-base)",
                   padding: "var(--s-2) var(--s-3)",
                   outline: "none",
                   cursor: "pointer",
@@ -1001,7 +1001,7 @@ function NewRecipePageInner() {
                     style={{
                       display: "block",
                       marginBottom: "var(--s-2)",
-                      fontSize: 12,
+                      fontSize: "var(--fs-s)",
                       color: "var(--fg-2)",
                     }}
                   >
@@ -1017,7 +1017,7 @@ function NewRecipePageInner() {
                         borderRight: "none",
                         borderRadius: "var(--r-2) 0 0 var(--r-2)",
                         padding: "var(--s-2) var(--s-3)",
-                        fontSize: 13,
+                        fontSize: "var(--fs-m)",
                         color: "var(--fg-2)",
                         fontFamily: "var(--font-mono)",
                         whiteSpace: "nowrap",
@@ -1037,7 +1037,7 @@ function NewRecipePageInner() {
                         border: `1px solid ${validation.triggerPath ? "var(--err)" : "var(--border-default)"}`,
                         borderRadius: "0 var(--r-2) var(--r-2) 0",
                         color: "var(--fg-0)",
-                        fontSize: 13,
+                        fontSize: "var(--fs-m)",
                         padding: "var(--s-2) var(--s-3)",
                         outline: "none",
                         fontFamily: "var(--font-mono)",
@@ -1048,7 +1048,7 @@ function NewRecipePageInner() {
                     <div
                       style={{
                         marginTop: "var(--s-1)",
-                        fontSize: 12,
+                        fontSize: "var(--fs-s)",
                         color: "var(--err)",
                       }}
                     >
@@ -1065,7 +1065,7 @@ function NewRecipePageInner() {
                     style={{
                       display: "block",
                       marginBottom: "var(--s-2)",
-                      fontSize: 12,
+                      fontSize: "var(--fs-s)",
                       color: "var(--fg-2)",
                     }}
                   >
@@ -1083,7 +1083,7 @@ function NewRecipePageInner() {
                       border: `1px solid ${validation.cron ? "var(--err)" : "var(--border-default)"}`,
                       borderRadius: "var(--r-2)",
                       color: "var(--fg-0)",
-                      fontSize: 13,
+                      fontSize: "var(--fs-m)",
                       padding: "var(--s-2) var(--s-3)",
                       outline: "none",
                       fontFamily: "var(--font-mono)",
@@ -1093,7 +1093,7 @@ function NewRecipePageInner() {
                     <div
                       style={{
                         marginTop: "var(--s-1)",
-                        fontSize: 12,
+                        fontSize: "var(--fs-s)",
                         color: "var(--err)",
                       }}
                     >
@@ -1115,7 +1115,7 @@ function NewRecipePageInner() {
                 }}
               >
                 <span
-                  style={{ color: "var(--fg-1)", fontSize: 13, fontWeight: 500 }}
+                  style={{ color: "var(--fg-1)", fontSize: "var(--fs-m)", fontWeight: 500 }}
                 >
                   Variables{" "}
                   <span style={{ color: "var(--fg-3)", fontWeight: 400 }}>
@@ -1130,7 +1130,7 @@ function NewRecipePageInner() {
               {form.vars.length === 0 && (
                 <div
                   style={{
-                    fontSize: 12,
+                    fontSize: "var(--fs-s)",
                     color: "var(--fg-3)",
                     padding: "var(--s-2) 0",
                   }}
@@ -1179,7 +1179,7 @@ function NewRecipePageInner() {
                             border: `1px solid ${validation.vars[i] ? "var(--err)" : "var(--border-subtle)"}`,
                             borderRadius: "var(--r-2)",
                             color: "var(--fg-0)",
-                            fontSize: 13,
+                            fontSize: "var(--fs-m)",
                             padding: "var(--s-2) var(--s-3)",
                             outline: "none",
                             fontFamily: "var(--font-mono)",
@@ -1198,7 +1198,7 @@ function NewRecipePageInner() {
                             border: "1px solid var(--border-subtle)",
                             borderRadius: "var(--r-2)",
                             color: "var(--fg-0)",
-                            fontSize: 13,
+                            fontSize: "var(--fs-m)",
                             padding: "var(--s-2) var(--s-3)",
                             outline: "none",
                             fontFamily: "var(--font-sans)",
@@ -1217,7 +1217,7 @@ function NewRecipePageInner() {
                       {validation.vars[i] && (
                         <div
                           style={{
-                            fontSize: 12,
+                            fontSize: "var(--fs-s)",
                             color: "var(--err)",
                           }}
                         >
@@ -1237,7 +1237,7 @@ function NewRecipePageInner() {
                             display: "flex",
                             alignItems: "center",
                             gap: "var(--s-2)",
-                            fontSize: 12,
+                            fontSize: "var(--fs-s)",
                             color: "var(--fg-2)",
                             cursor: "pointer",
                             userSelect: "none",
@@ -1265,7 +1265,7 @@ function NewRecipePageInner() {
                             border: "1px solid var(--border-subtle)",
                             borderRadius: "var(--r-2)",
                             color: "var(--fg-0)",
-                            fontSize: 12,
+                            fontSize: "var(--fs-s)",
                             padding: "var(--s-1) var(--s-3)",
                             outline: "none",
                             fontFamily: "var(--font-mono)",
@@ -1291,7 +1291,7 @@ function NewRecipePageInner() {
                 <span
                   style={{
                     color: "var(--fg-1)",
-                    fontSize: 13,
+                    fontSize: "var(--fs-m)",
                     fontWeight: 500,
                   }}
                 >
@@ -1331,7 +1331,7 @@ function NewRecipePageInner() {
                       <label
                         htmlFor={`step-prompt-${i}`}
                         style={{
-                          fontSize: 12,
+                          fontSize: "var(--fs-s)",
                           color: "var(--fg-2)",
                           fontWeight: 500,
                         }}
@@ -1386,7 +1386,7 @@ function NewRecipePageInner() {
                         border: `1px solid ${validation.steps[i] ? "var(--err)" : "var(--border-subtle)"}`,
                         borderRadius: "var(--r-2)",
                         color: "var(--fg-0)",
-                        fontSize: 13,
+                        fontSize: "var(--fs-m)",
                         padding: "var(--s-2) var(--s-3)",
                         outline: "none",
                         resize: "vertical",
@@ -1397,7 +1397,7 @@ function NewRecipePageInner() {
                       <div
                         style={{
                           marginTop: "var(--s-1)",
-                          fontSize: 12,
+                          fontSize: "var(--fs-s)",
                           color: "var(--err)",
                         }}
                       >
@@ -1435,7 +1435,7 @@ function NewRecipePageInner() {
           <div>
             <div
               style={{
-                fontSize: 12,
+                fontSize: "var(--fs-s)",
                 color: "var(--fg-2)",
                 fontWeight: 500,
                 marginBottom: "var(--s-2)",
@@ -1447,7 +1447,7 @@ function NewRecipePageInner() {
             </div>
             <div
               style={{
-                fontSize: 12,
+                fontSize: "var(--fs-s)",
                 color: "var(--fg-3)",
                 marginBottom: "var(--s-2)",
               }}
@@ -1460,7 +1460,7 @@ function NewRecipePageInner() {
                 border: "1px solid var(--border-subtle)",
                 borderRadius: "var(--r-3)",
                 padding: "var(--s-4)",
-                fontSize: 12,
+                fontSize: "var(--fs-s)",
                 fontFamily: "var(--font-mono)",
                 color: "var(--fg-1)",
                 overflowX: "auto",

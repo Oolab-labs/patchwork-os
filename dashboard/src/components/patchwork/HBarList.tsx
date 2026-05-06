@@ -26,7 +26,7 @@ export function HBarList({
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: 11,
+                  fontSize: "var(--fs-xs)",
                   color: "var(--ink-1)",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -36,7 +36,7 @@ export function HBarList({
                 {item.label}
               </span>
               {item.sub && (
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-3)" }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", color: "var(--ink-3)" }}>
                   {item.sub}
                 </span>
               )}
@@ -57,7 +57,7 @@ export function HBarList({
             <span
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: 11,
+                fontSize: "var(--fs-xs)",
                 color: "var(--ink-2)",
                 textAlign: "right",
                 minWidth: 36,

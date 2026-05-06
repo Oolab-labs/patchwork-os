@@ -3,7 +3,7 @@ export function LivePill({ label = "live", tone = "accent" }: { label?: string; 
   return (
     <span
       className={`chip ${cls}`}
-      style={{ textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600 }}
+      style={{ textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 600 }}
     >
       <span className="dot-live" aria-hidden="true" />
       {label}

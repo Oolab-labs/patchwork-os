@@ -74,7 +74,7 @@ export default function ReplayPage() {
         <div>
           <Link
             href="/insights"
-            style={{ fontSize: 12, color: "var(--fg-2)", textDecoration: "none" }}
+            style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", textDecoration: "none" }}
           >
             ← Approval Insights
           </Link>
@@ -86,7 +86,7 @@ export default function ReplayPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <label htmlFor="since-days" style={{ fontSize: 12, color: "var(--fg-2)" }}>
+          <label htmlFor="since-days" style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
             Lookback
           </label>
           <select
@@ -98,7 +98,7 @@ export default function ReplayPage() {
               border: "1px solid var(--border-default)",
               borderRadius: "var(--r-2)",
               color: "var(--fg-0)",
-              fontSize: 12,
+              fontSize: "var(--fs-s)",
               padding: "4px 8px",
               outline: "none",
             }}
@@ -149,7 +149,7 @@ export default function ReplayPage() {
                 borderRadius: "var(--r-2)",
                 background: "var(--ok-soft)",
                 border: "1px solid var(--ok)",
-                fontSize: 13,
+                fontSize: "var(--fs-m)",
                 marginBottom: "var(--s-4)",
               }}
             >
@@ -170,7 +170,7 @@ export default function ReplayPage() {
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  fontSize: 12,
+                  fontSize: "var(--fs-s)",
                   color: "var(--fg-2)",
                   cursor: "pointer",
                 }}
@@ -185,21 +185,21 @@ export default function ReplayPage() {
             </div>
 
             {visible.length === 0 && !showUnchanged && (
-              <p style={{ fontSize: 13, color: "var(--fg-2)", margin: "12px 0" }}>
+              <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: "12px 0" }}>
                 No changed decisions in this window. Toggle "Show unchanged" to
                 see all rows.
               </p>
             )}
 
             {visible.length > 0 && (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-m)" }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border-default)" }}>
-                    <th style={{ textAlign: "left", padding: "6px 0", fontWeight: 500, color: "var(--fg-2)", fontSize: 11 }}>Tool</th>
-                    <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 500, color: "var(--fg-2)", fontSize: 11 }}>Was</th>
-                    <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 500, color: "var(--fg-2)", fontSize: 11 }}>Would be</th>
-                    <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 500, color: "var(--fg-2)", fontSize: 11 }}>Change</th>
-                    <th style={{ textAlign: "right", padding: "6px 0", fontWeight: 500, color: "var(--fg-2)", fontSize: 11 }}>When</th>
+                    <th style={{ textAlign: "left", padding: "6px 0", fontWeight: 500, color: "var(--fg-2)", fontSize: "var(--fs-xs)" }}>Tool</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 500, color: "var(--fg-2)", fontSize: "var(--fs-xs)" }}>Was</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 500, color: "var(--fg-2)", fontSize: "var(--fs-xs)" }}>Would be</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 500, color: "var(--fg-2)", fontSize: "var(--fs-xs)" }}>Change</th>
+                    <th style={{ textAlign: "right", padding: "6px 0", fontWeight: 500, color: "var(--fg-2)", fontSize: "var(--fs-xs)" }}>When</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -213,11 +213,11 @@ export default function ReplayPage() {
                     >
                       <td style={{ padding: "9px 0", verticalAlign: "middle" }}>
                         <div>
-                          <code style={{ fontSize: 12 }}>{row.toolName}</code>
+                          <code style={{ fontSize: "var(--fs-s)" }}>{row.toolName}</code>
                           {row.specifier && (
                             <div
                               style={{
-                                fontSize: 10,
+                                fontSize: "var(--fs-2xs)",
                                 color: "var(--fg-3)",
                                 marginTop: 2,
                                 maxWidth: 260,
@@ -233,7 +233,7 @@ export default function ReplayPage() {
                           {row.incomplete && (
                             <span
                               className="pill muted"
-                              style={{ fontSize: 9, marginTop: 2 }}
+                              style={{ fontSize: "var(--fs-3xs)", marginTop: 2 }}
                               title="Row predates specifier capture — matched on tool name only"
                             >
                               name-only
@@ -244,7 +244,7 @@ export default function ReplayPage() {
                       <td style={{ padding: "9px 8px", verticalAlign: "middle" }}>
                         <span
                           className={`pill ${DECISION_PILL[row.originalDecision] ?? "muted"}`}
-                          style={{ fontSize: 10 }}
+                          style={{ fontSize: "var(--fs-2xs)" }}
                         >
                           {row.originalDecision}
                         </span>
@@ -252,7 +252,7 @@ export default function ReplayPage() {
                       <td style={{ padding: "9px 8px", verticalAlign: "middle" }}>
                         <span
                           className={`pill ${DECISION_PILL[row.replayDecision] ?? "muted"}`}
-                          style={{ fontSize: 10 }}
+                          style={{ fontSize: "var(--fs-2xs)" }}
                         >
                           {row.replayDecision}
                         </span>
@@ -261,12 +261,12 @@ export default function ReplayPage() {
                         {row.changeKind ? (
                           <span
                             className={`pill ${CHANGE_PILL[row.changeKind]}`}
-                            style={{ fontSize: 10 }}
+                            style={{ fontSize: "var(--fs-2xs)" }}
                           >
                             {CHANGE_LABEL[row.changeKind]}
                           </span>
                         ) : (
-                          <span style={{ fontSize: 11, color: "var(--fg-3)" }}>—</span>
+                          <span style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>—</span>
                         )}
                       </td>
                       <td
@@ -276,7 +276,7 @@ export default function ReplayPage() {
                           color: "var(--fg-3)",
                           verticalAlign: "middle",
                           whiteSpace: "nowrap",
-                          fontSize: 11,
+                          fontSize: "var(--fs-xs)",
                         }}
                       >
                         {relativeTime(row.timestamp)}
@@ -289,9 +289,9 @@ export default function ReplayPage() {
           </div>
 
           {data.workspace && (
-            <p style={{ fontSize: 11, color: "var(--fg-2)", marginTop: "var(--s-5)" }}>
+            <p style={{ fontSize: "var(--fs-xs)", color: "var(--fg-2)", marginTop: "var(--s-5)" }}>
               Rules loaded from workspace:{" "}
-              <code style={{ fontSize: 10 }}>{data.workspace}</code>.
+              <code style={{ fontSize: "var(--fs-2xs)" }}>{data.workspace}</code>.
               Generated at {new Date(data.generatedAt).toLocaleTimeString()}.
             </p>
           )}

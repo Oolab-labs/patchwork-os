@@ -123,7 +123,7 @@ export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
           <h3
             style={{
               margin: 0,
-              fontSize: 11,
+              fontSize: "var(--fs-xs)",
               color: "var(--ink-2)",
               fontWeight: 700,
               textTransform: "uppercase",
@@ -132,16 +132,16 @@ export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
           >
             Required connectors
           </h3>
-          <span className="pill muted" style={{ fontSize: 10 }}>{total}</span>
-          {okCount > 0 && <span className="pill ok" style={{ fontSize: 10 }}>{okCount} ok</span>}
-          {degCount > 0 && <span className="pill warn" style={{ fontSize: 10 }}>{degCount} degraded</span>}
-          {errCount > 0 && <span className="pill err" style={{ fontSize: 10 }}>{errCount} issue{errCount !== 1 ? "s" : ""}</span>}
+          <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }}>{total}</span>
+          {okCount > 0 && <span className="pill ok" style={{ fontSize: "var(--fs-2xs)" }}>{okCount} ok</span>}
+          {degCount > 0 && <span className="pill warn" style={{ fontSize: "var(--fs-2xs)" }}>{degCount} degraded</span>}
+          {errCount > 0 && <span className="pill err" style={{ fontSize: "var(--fs-2xs)" }}>{errCount} issue{errCount !== 1 ? "s" : ""}</span>}
         </div>
         {fetchErr && (
-          <span style={{ fontSize: 11, color: "var(--err)" }}>{fetchErr}</span>
+          <span style={{ fontSize: "var(--fs-xs)", color: "var(--err)" }}>{fetchErr}</span>
         )}
         {statusMap === null && !fetchErr && (
-          <span style={{ fontSize: 11, color: "var(--fg-3)" }}>Loading…</span>
+          <span style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>Loading…</span>
         )}
       </div>
 
@@ -164,7 +164,7 @@ export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
                 padding: "7px 10px",
                 borderRadius: "var(--r-s)",
                 background: "var(--recess)",
-                fontSize: 13,
+                fontSize: "var(--fs-m)",
               }}
             >
               {/* Status dot — uses .connector-dot class + inline bg for color */}
@@ -178,16 +178,16 @@ export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
                   flex: 1,
                   color: "var(--fg-1)",
                   fontFamily: "var(--font-mono)",
-                  fontSize: 12,
+                  fontSize: "var(--fs-s)",
                 }}
               >
                 {name}
               </span>
-              <span style={{ fontSize: 11, color: cssColor }}>{label}</span>
+              <span style={{ fontSize: "var(--fs-xs)", color: cssColor }}>{label}</span>
               {info?.message && (
                 <span
                   style={{
-                    fontSize: 11,
+                    fontSize: "var(--fs-xs)",
                     color: "var(--fg-3)",
                     marginLeft: "var(--s-1)",
                     maxWidth: 200,

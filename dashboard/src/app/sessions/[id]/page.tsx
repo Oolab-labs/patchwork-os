@@ -121,20 +121,20 @@ export default function SessionDetailPage() {
     <section>
       <div className="page-head">
         <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>
+          <div style={{ fontSize: "var(--fs-s)", marginBottom: 4 }}>
             <Link href="/sessions" style={{ color: "var(--fg-2)" }}>
               ← Sessions
             </Link>
           </div>
           <h1>
-            <code style={{ fontFamily: "var(--font-mono)", fontSize: 20 }}>
+            <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-3xl)" }}>
               {id.slice(0, 8)}
             </code>
           </h1>
           <div
             className="page-head-sub"
             title={id}
-            style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
+            style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}
           >
             {id}
           </div>
@@ -193,7 +193,7 @@ export default function SessionDetailPage() {
           <div>
             <div
               style={{
-                fontSize: 10,
+                fontSize: "var(--fs-2xs)",
                 color: "var(--ink-2)",
                 fontWeight: 600,
                 textTransform: "uppercase",
@@ -204,7 +204,7 @@ export default function SessionDetailPage() {
               Connected
             </div>
             <div
-              style={{ fontSize: 13, color: "var(--ink-0)", fontWeight: 500 }}
+              style={{ fontSize: "var(--fs-m)", color: "var(--ink-0)", fontWeight: 500 }}
               title={new Date(summary.connectedAt).toLocaleString()}
             >
               {relTime(new Date(summary.connectedAt).getTime())}
@@ -213,7 +213,7 @@ export default function SessionDetailPage() {
           <div>
             <div
               style={{
-                fontSize: 10,
+                fontSize: "var(--fs-2xs)",
                 color: "var(--ink-2)",
                 fontWeight: 600,
                 textTransform: "uppercase",
@@ -237,7 +237,7 @@ export default function SessionDetailPage() {
           <div>
             <div
               style={{
-                fontSize: 10,
+                fontSize: "var(--fs-2xs)",
                 color: "var(--ink-2)",
                 fontWeight: 600,
                 textTransform: "uppercase",
@@ -264,7 +264,7 @@ export default function SessionDetailPage() {
           <div>
             <div
               style={{
-                fontSize: 10,
+                fontSize: "var(--fs-2xs)",
                 color: "var(--ink-2)",
                 fontWeight: 600,
                 textTransform: "uppercase",
@@ -316,14 +316,14 @@ export default function SessionDetailPage() {
                 >
                   {a.tier}
                 </span>
-                <span className="mono" style={{ fontSize: 13 }}>
+                <span className="mono" style={{ fontSize: "var(--fs-m)" }}>
                   {a.toolName}
                 </span>
                 <span
                   style={{
                     flex: 1,
                     color: "var(--fg-2)",
-                    fontSize: 13,
+                    fontSize: "var(--fs-m)",
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -331,7 +331,7 @@ export default function SessionDetailPage() {
                 >
                   {a.summary ?? "—"}
                 </span>
-                <span style={{ color: "var(--fg-3)", fontSize: 12 }}>
+                <span style={{ color: "var(--fg-3)", fontSize: "var(--fs-s)" }}>
                   {relTime(a.requestedAt)}
                 </span>
               </Link>
@@ -368,7 +368,7 @@ export default function SessionDetailPage() {
                   <span
                     style={{
                       fontFamily: "var(--font-mono)",
-                      fontSize: 12,
+                      fontSize: "var(--fs-s)",
                       color: "var(--purple)",
                       flexShrink: 0,
                     }}
@@ -378,7 +378,7 @@ export default function SessionDetailPage() {
                   <span
                     style={{
                       flex: 1,
-                      fontSize: 13,
+                      fontSize: "var(--fs-m)",
                       color: "var(--fg-1)",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
@@ -390,7 +390,7 @@ export default function SessionDetailPage() {
                   {tags.length > 0 && (
                     <span
                       style={{
-                        fontSize: 11,
+                        fontSize: "var(--fs-xs)",
                         fontFamily: "var(--font-mono)",
                         color: "var(--fg-3)",
                         flexShrink: 0,
@@ -401,7 +401,7 @@ export default function SessionDetailPage() {
                   )}
                   <span
                     style={{
-                      fontSize: 12,
+                      fontSize: "var(--fs-s)",
                       color: "var(--fg-3)",
                       flexShrink: 0,
                     }}
@@ -424,7 +424,7 @@ export default function SessionDetailPage() {
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 5,
-                fontSize: 11,
+                fontSize: "var(--fs-xs)",
                 color: "var(--green)",
                 fontWeight: 600,
               }}
@@ -467,7 +467,7 @@ export default function SessionDetailPage() {
                             {t.tool}
                           </span>
                         </td>
-                        <td style={{ fontSize: 13 }}>
+                        <td style={{ fontSize: "var(--fs-m)" }}>
                           {t.status === "error" && t.errorMessage
                             ? t.errorMessage
                             : `${t.durationMs}ms`}
@@ -504,7 +504,7 @@ export default function SessionDetailPage() {
                           {e.event}
                         </span>
                       </td>
-                      <td style={{ fontSize: 13 }}>{detail}</td>
+                      <td style={{ fontSize: "var(--fs-m)" }}>{detail}</td>
                     </tr>
                   );
                 })}

@@ -142,7 +142,7 @@ function H2WithCopy({ children }: { children?: React.ReactNode }) {
     <h2
       ref={headingRef}
       style={{
-        fontSize: 15,
+        fontSize: "var(--fs-l)",
         fontWeight: 600,
         margin: "24px 0 8px",
         color: "var(--ink-0)",
@@ -183,7 +183,7 @@ const markdownComponents = {
   h3: ({ children }: { children?: React.ReactNode }) => (
     <h3
       style={{
-        fontSize: 12,
+        fontSize: "var(--fs-s)",
         fontWeight: 700,
         margin: "16px 0 4px",
         color: "var(--ink-3)",
@@ -197,7 +197,7 @@ const markdownComponents = {
   p: ({ children }: { children?: React.ReactNode }) => (
     <p
       style={{
-        fontSize: 14,
+        fontSize: "var(--fs-base)",
         lineHeight: 1.75,
         margin: "0 0 10px",
         color: "var(--ink-1)",
@@ -450,11 +450,11 @@ const filteredItems = items.filter((item) => {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {unseen > 0 && (
-              <span className="pill info" style={{ fontSize: 11 }}>
+              <span className="pill info" style={{ fontSize: "var(--fs-xs)" }}>
                 {unseen} new
               </span>
             )}
-            <span className="pill muted" style={{ fontSize: 11 }}>
+            <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>
               {items.length} item{items.length !== 1 ? "s" : ""}
             </span>
             <button
@@ -471,7 +471,7 @@ const filteredItems = items.filter((item) => {
                 border: "1px solid var(--line-2)",
                 background: "transparent",
                 color: "var(--ink-2)",
-                fontSize: 12,
+                fontSize: "var(--fs-s)",
                 fontWeight: 600,
                 cursor: refreshing ? "default" : "pointer",
                 opacity: refreshing ? 0.6 : 1,
@@ -497,7 +497,7 @@ const filteredItems = items.filter((item) => {
             <button
               type="button"
               onClick={() => fetchList(true)}
-              style={{ fontSize: 11, fontWeight: 600, color: "inherit", background: "none", border: "1px solid currentColor", borderRadius: "var(--r-full)", padding: "2px 10px", cursor: "pointer", opacity: 0.8, flexShrink: 0 }}
+              style={{ fontSize: "var(--fs-xs)", fontWeight: 600, color: "inherit", background: "none", border: "1px solid currentColor", borderRadius: "var(--r-full)", padding: "2px 10px", cursor: "pointer", opacity: 0.8, flexShrink: 0 }}
             >
               Retry
             </button>
@@ -517,8 +517,8 @@ const filteredItems = items.filter((item) => {
                 <path d="M2 7l10 7 10-7"/>
               </svg>
             </div>
-            <p style={{ color: "var(--ink-1)", fontSize: 15, fontWeight: 600, margin: 0 }}>No items yet</p>
-            <p style={{ color: "var(--ink-3)", fontSize: 13, margin: 0 }}>Run a recipe to generate your first brief.</p>
+            <p style={{ color: "var(--ink-1)", fontSize: "var(--fs-l)", fontWeight: 600, margin: 0 }}>No items yet</p>
+            <p style={{ color: "var(--ink-3)", fontSize: "var(--fs-m)", margin: 0 }}>Run a recipe to generate your first brief.</p>
           </div>
         ) : (
           <div style={{ display: "flex", flex: 1, minHeight: 0, border: "1px solid var(--line-1)", borderRadius: "var(--r-l)", overflow: "hidden", background: "var(--surface)" }}>
@@ -530,18 +530,18 @@ const filteredItems = items.filter((item) => {
               <div style={{ padding: "10px 10px 10px 14px", borderBottom: "1px solid var(--line-1)", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                 {sidebarOpen ? (
                   <>
-                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ink-3)", flex: 1 }}>
+                    <span style={{ fontSize: "var(--fs-xs)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ink-3)", flex: 1 }}>
                       Messages
                     </span>
                     {unseen > 0 && (
-                      <span className="pill info" style={{ fontSize: 10, padding: "2px 7px" }}>{unseen} new</span>
+                      <span className="pill info" style={{ fontSize: "var(--fs-2xs)", padding: "2px 7px" }}>{unseen} new</span>
                     )}
                     <button
                       type="button"
                       onClick={() => setSidebarOpen(false)}
                       title="Collapse sidebar"
                       aria-label="Collapse message sidebar"
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", padding: "3px 5px", borderRadius: "var(--r-s)", fontSize: 11, lineHeight: 1 }}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", padding: "3px 5px", borderRadius: "var(--r-s)", fontSize: "var(--fs-xs)", lineHeight: 1 }}
                     >
                       <span aria-hidden="true">◀</span>
                     </button>
@@ -552,7 +552,7 @@ const filteredItems = items.filter((item) => {
                     onClick={() => setSidebarOpen(true)}
                     title="Expand sidebar"
                     aria-label="Expand message sidebar"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", padding: "3px 5px", borderRadius: "var(--r-s)", fontSize: 11, lineHeight: 1, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", padding: "3px 5px", borderRadius: "var(--r-s)", fontSize: "var(--fs-xs)", lineHeight: 1, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <rect x="2" y="4" width="20" height="16" rx="2"/>
@@ -576,7 +576,7 @@ const filteredItems = items.filter((item) => {
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       aria-label="Search inbox"
-                      style={{ width: "100%", fontSize: 12 }}
+                      style={{ width: "100%", fontSize: "var(--fs-s)" }}
                     />
                   </div>
 
@@ -590,7 +590,7 @@ const filteredItems = items.filter((item) => {
                         style={{
                           padding: "3px 10px",
                           borderRadius: "var(--r-full)",
-                          fontSize: 11,
+                          fontSize: "var(--fs-xs)",
                           fontWeight: 600,
                           cursor: "pointer",
                           border: "1px solid",
@@ -610,7 +610,7 @@ const filteredItems = items.filter((item) => {
                   {/* Item list */}
                   <div style={{ overflowY: "auto", flex: 1 }}>
                     {filteredItems.length === 0 ? (
-                      <div style={{ padding: "20px 16px", textAlign: "center", color: "var(--ink-3)", fontSize: 12 }}>
+                      <div style={{ padding: "20px 16px", textAlign: "center", color: "var(--ink-3)", fontSize: "var(--fs-s)" }}>
                         No items match
                       </div>
                     ) : (
@@ -646,28 +646,28 @@ const filteredItems = items.filter((item) => {
                               <span style={{ color: senderBadgeColor(item.name), lineHeight: 1, flexShrink: 0 }}>
                                 <RecipeIcon name={item.name} />
                               </span>
-                              <span style={{ flex: 1, fontWeight: isNew ? 700 : 500, fontSize: 13, color: "var(--ink-0)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              <span style={{ flex: 1, fontWeight: isNew ? 700 : 500, fontSize: "var(--fs-m)", color: "var(--ink-0)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {title}
                               </span>
                               {shortDate && (
-                                <span style={{ fontSize: 10, color: "var(--ink-3)", flexShrink: 0 }}>{shortDate}</span>
+                                <span style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-3)", flexShrink: 0 }}>{shortDate}</span>
                               )}
                             </div>
 
                             {/* Row 2: preview */}
                             {plainPreview && (
-                              <div style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 4 }}>
+                              <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 4 }}>
                                 {plainPreview}
                               </div>
                             )}
 
                             {/* Row 3: timestamp + new badge */}
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                              <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>
                                 <RelativeTime iso={item.modifiedAt} />
                               </span>
                               {isNew && (
-                                <span className="pill info" style={{ fontSize: 9, padding: "1px 6px" }}>new</span>
+                                <span className="pill info" style={{ fontSize: "var(--fs-3xs)", padding: "1px 6px" }}>new</span>
                               )}
                             </div>
                           </button>
@@ -696,7 +696,7 @@ const filteredItems = items.filter((item) => {
                   }}
                 >
                   <Spinner />
-                  <span style={{ fontSize: 13, color: "var(--ink-2)" }}>Loading message…</span>
+                  <span style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)" }}>Loading message…</span>
                 </div>
               ) : selected ? (
                 <div style={{ padding: "28px 40px 48px", maxWidth: 700 }}>
@@ -706,10 +706,10 @@ const filteredItems = items.filter((item) => {
                       <RecipeIcon name={selected.name} />
                     </span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <div style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--ink-0)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {slugToTitle(selected.name)}
                       </div>
-                      <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
+                      <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 2 }}>
                         {new Date(selected.modifiedAt).toLocaleString()} &middot; <span style={{ fontFamily: "var(--font-mono)" }}>{selected.name}</span>
                       </div>
                     </div>
@@ -718,7 +718,7 @@ const filteredItems = items.filter((item) => {
                       onClick={() => setSelected(null)}
                       title="Close"
                       aria-label="Close detail"
-                      style={{ background: "none", border: "1px solid var(--line-2)", cursor: "pointer", color: "var(--ink-3)", fontSize: 13, lineHeight: 1, padding: "4px 8px", borderRadius: "var(--r-s)", flexShrink: 0, transition: "background 120ms" }}
+                      style={{ background: "none", border: "1px solid var(--line-2)", cursor: "pointer", color: "var(--ink-3)", fontSize: "var(--fs-m)", lineHeight: 1, padding: "4px 8px", borderRadius: "var(--r-s)", flexShrink: 0, transition: "background 120ms" }}
                     >
                       ✕
                     </button>
@@ -729,7 +729,7 @@ const filteredItems = items.filter((item) => {
                     ref={detailRef}
                     tabIndex={-1}
                     aria-label={`Message: ${slugToTitle(selected.name)}`}
-                    style={{ fontSize: 14, lineHeight: 1.7, color: "var(--ink-1)", outline: "none" }}
+                    style={{ fontSize: "var(--fs-base)", lineHeight: 1.7, color: "var(--ink-1)", outline: "none" }}
                   >
                     <MessageMarkdown
                       content={selected.content}
@@ -741,7 +741,7 @@ const filteredItems = items.filter((item) => {
                   <p
                     style={{
                       fontStyle: "italic",
-                      fontSize: 12,
+                      fontSize: "var(--fs-s)",
                       color: "var(--ink-3)",
                       marginTop: 24,
                       marginBottom: 20,
@@ -759,7 +759,7 @@ const filteredItems = items.filter((item) => {
                         <button
                           type="button"
                           className="btn sm primary"
-                          style={{ background: "var(--orange)", border: "none", fontSize: 11 }}
+                          style={{ background: "var(--orange)", border: "none", fontSize: "var(--fs-xs)" }}
                           disabled={replayingFor === selected.name}
                           onClick={async () => {
                             setActionErr(null);
@@ -788,14 +788,14 @@ const filteredItems = items.filter((item) => {
                         <a
                           href={`/traces?q=${encodeURIComponent(recipeNameForSelected)}`}
                           className="btn sm ghost"
-                          style={{ fontSize: 11, textDecoration: "none" }}
+                          style={{ fontSize: "var(--fs-xs)", textDecoration: "none" }}
                         >
                           View trace
                         </a>
                         <button
                           type="button"
                           className="btn sm ghost"
-                          style={{ fontSize: 11, color: "var(--ink-3)" }}
+                          style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}
                           onClick={async () => {
                             setActionErr(null);
                             try {
@@ -824,7 +824,7 @@ const filteredItems = items.filter((item) => {
                         <div
                           role="alert"
                           className="alert-err"
-                          style={{ marginTop: 8, fontSize: 12 }}
+                          style={{ marginTop: 8, fontSize: "var(--fs-s)" }}
                         >
                           {actionErr}
                         </div>
@@ -839,11 +839,11 @@ const filteredItems = items.filter((item) => {
                     <rect x="2" y="4" width="20" height="16" rx="2"/>
                     <path d="M2 7l10 7 10-7"/>
                   </svg>
-                  <p style={{ fontSize: 13, color: "var(--ink-2)", margin: 0, fontWeight: 500 }}>
+                  <p style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)", margin: 0, fontWeight: 500 }}>
                     Select a message to read it
                   </p>
                   {filteredItems.length > 0 && (
-                    <p style={{ fontSize: 12, color: "var(--ink-3)", margin: 0 }}>
+                    <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", margin: 0 }}>
                       {filteredItems.length} message{filteredItems.length !== 1 ? "s" : ""} in this view
                     </p>
                   )}

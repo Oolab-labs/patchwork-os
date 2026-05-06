@@ -165,37 +165,37 @@ export default function MetricsPage() {
         }}
       >
         <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--orange)" }}>
-          <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
+          <div style={{ fontSize: "var(--fs-2xs)", fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
             <span style={{ color: "var(--orange)", marginRight: 6 }}>{">_"}</span>Total calls
           </div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 28, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-display)", fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
             {metrics.length === 0 ? "—" : <AnimatedNumber value={totalCalls} />}
           </div>
         </div>
         <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--err)" }}>
-          <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
+          <div style={{ fontSize: "var(--fs-2xs)", fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
             <span style={{ color: "var(--err)", marginRight: 6 }}>△</span>Errors
           </div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 28, fontWeight: 800, color: totalErrors > 0 ? "var(--err)" : "var(--ink-0)", lineHeight: 1 }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-display)", fontWeight: 800, color: totalErrors > 0 ? "var(--err)" : "var(--ink-0)", lineHeight: 1 }}>
             {metrics.length === 0 ? "—" : <AnimatedNumber value={totalErrors} />}
           </div>
         </div>
         <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--green)" }}>
-          <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
+          <div style={{ fontSize: "var(--fs-2xs)", fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
             <span style={{ color: "var(--green)", marginRight: 6 }}>✓</span>Success rate
           </div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 28, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-display)", fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
             {successRate !== null ? `${successRate}%` : "—"}
           </div>
           {successRate === null && (
-            <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}>no calls yet</div>
+            <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 4 }}>no calls yet</div>
           )}
         </div>
         <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--blue)" }}>
-          <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
+          <div style={{ fontSize: "var(--fs-2xs)", fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
             <span style={{ color: "var(--blue)", marginRight: 6 }}>◎</span>Uptime
           </div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 28, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-display)", fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
             {uptimeSeconds != null ? `${Math.round(uptimeSeconds)}s` : "—"}
           </div>
         </div>
@@ -229,7 +229,7 @@ export default function MetricsPage() {
               <div
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: 10,
+                  fontSize: "var(--fs-2xs)",
                   fontWeight: 700,
                   letterSpacing: "0.08em",
                   textTransform: "uppercase",
@@ -241,7 +241,7 @@ export default function MetricsPage() {
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "var(--s-4)", alignItems: "center" }}>
                 <MetricsDonut segments={toolCallDonut} size={110} strokeWidth={16} label="calls" />
-                <ul style={{ listStyle: "none", margin: 0, padding: 0, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-1)", display: "flex", flexDirection: "column", gap: 4 }}>
+                <ul style={{ listStyle: "none", margin: 0, padding: 0, fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)", color: "var(--ink-1)", display: "flex", flexDirection: "column", gap: 4 }}>
                   {callsByToolStatus.map((row, i) => (
                     <li key={`${row.tool}-${row.status}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, borderBottom: "1px dashed var(--line-2)", paddingBottom: 3 }}>
                       <span style={{ color: "var(--ink-2)" }}>
@@ -260,7 +260,7 @@ export default function MetricsPage() {
               <div
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: 10,
+                  fontSize: "var(--fs-2xs)",
                   fontWeight: 700,
                   letterSpacing: "0.08em",
                   textTransform: "uppercase",
@@ -291,7 +291,7 @@ export default function MetricsPage() {
           }}
         >
           <h3 style={{ color: "var(--ink-1)", marginBottom: 8 }}>No metrics yet</h3>
-          <p style={{ color: "var(--ink-3)", fontSize: 13, maxWidth: 380, margin: 0 }}>
+          <p style={{ color: "var(--ink-3)", fontSize: "var(--fs-m)", maxWidth: 380, margin: 0 }}>
             Metrics appear once the bridge begins serving tool calls. Make a tool call or wait for the next scrape interval.
           </p>
         </div>

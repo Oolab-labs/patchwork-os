@@ -39,7 +39,7 @@ export function ErrorState({
       </div>
       <h3 style={{ color: "var(--ink-1)", marginBottom: 8 }}>{title}</h3>
       {description && (
-        <p style={{ color: "var(--ink-2)", fontSize: 13, maxWidth: 420, margin: "0 auto 12px" }}>
+        <p style={{ color: "var(--ink-2)", fontSize: "var(--fs-m)", maxWidth: 420, margin: "0 auto 12px" }}>
           {description}
         </p>
       )}
@@ -47,7 +47,7 @@ export function ErrorState({
         <pre
           style={{
             fontFamily: "var(--font-mono)",
-            fontSize: 11,
+            fontSize: "var(--fs-xs)",
             color: "var(--ink-3)",
             background: "var(--recess)",
             border: "1px solid var(--line-1)",
@@ -77,7 +77,7 @@ export function ErrorState({
                   border: "none",
                   borderRadius: "var(--r-2)",
                   padding: "6px 14px",
-                  fontSize: 13,
+                  fontSize: "var(--fs-m)",
                   cursor: "pointer",
                 }}
               >

@@ -51,7 +51,7 @@ export function SearchInput({
           background: "transparent",
           color: "var(--ink-0)",
           font: "inherit",
-          fontSize: 13,
+          fontSize: "var(--fs-m)",
         }}
       />
     </label>

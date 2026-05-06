@@ -92,7 +92,7 @@ function GraduateButton({ recipeName }: { recipeName: string }) {
   }
   if (state === "done") {
     return (
-      <span style={{ color: "var(--ok)", fontSize: 13 }} role="status">
+      <span style={{ color: "var(--ok)", fontSize: "var(--fs-m)" }} role="status">
         <span aria-hidden="true">✓ </span>Graduated to mostly trusted
       </span>
     );
@@ -114,7 +114,7 @@ function GraduateButton({ recipeName }: { recipeName: string }) {
             : "Graduate trust"}
       </button>
       {state === "error" && errorMsg && (
-        <span role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
+        <span role="alert" style={{ fontSize: "var(--fs-s)", color: "var(--err)" }}>
           {errorMsg}
         </span>
       )}
@@ -170,7 +170,7 @@ export default function SuggestionsPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <label htmlFor="since-days" style={{ fontSize: 12, color: "var(--fg-2)" }}>
+          <label htmlFor="since-days" style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
             Lookback
           </label>
           <select
@@ -182,7 +182,7 @@ export default function SuggestionsPage() {
               border: "1px solid var(--border-default)",
               borderRadius: "var(--r-2)",
               color: "var(--fg-0)",
-              fontSize: 12,
+              fontSize: "var(--fs-s)",
               padding: "4px 8px",
               outline: "none",
             }}
@@ -273,7 +273,7 @@ export default function SuggestionsPage() {
       {data?.generatedAt && (
         <p
           style={{
-            fontSize: 11,
+            fontSize: "var(--fs-xs)",
             color: "var(--fg-2)",
             marginTop: "var(--s-5)",
           }}
@@ -307,7 +307,7 @@ function SuggestionGroup({
         <h2>{title}</h2>
         <span className="pill muted">{items.length}</span>
       </div>
-      <p style={{ fontSize: 12, color: "var(--fg-2)", margin: "0 0 var(--s-3)" }}>
+      <p style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", margin: "0 0 var(--s-3)" }}>
         {subtitle}
       </p>
       <ul role="list" aria-label={title} style={{ listStyle: "none", padding: 0, margin: 0 }}>
@@ -334,10 +334,10 @@ function SuggestionGroup({
                 borderBottom: "1px solid var(--border-subtle)",
               }}
             >
-              <span className={`pill ${meta.pillClass}`} style={{ fontSize: 10 }}>
+              <span className={`pill ${meta.pillClass}`} style={{ fontSize: "var(--fs-2xs)" }}>
                 {meta.label}
               </span>
-              <span style={{ flex: 1, fontSize: 13 }}>{s.label}</span>
+              <span style={{ flex: 1, fontSize: "var(--fs-m)" }}>{s.label}</span>
               {action}
             </li>
           );
@@ -348,7 +348,7 @@ function SuggestionGroup({
           type="button"
           className="btn sm ghost"
           onClick={() => setShowAll(true)}
-          style={{ marginTop: "var(--s-3)", fontSize: 12 }}
+          style={{ marginTop: "var(--s-3)", fontSize: "var(--fs-s)" }}
         >
           Show {hidden} more
         </button>
