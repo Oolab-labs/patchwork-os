@@ -1246,15 +1246,15 @@ button.topbar-search {
   50%      { opacity: 0.4; transform: scale(0.7); }
 }
 
-/* Prototype color name aliases */
-.pill.green  { background: var(--green-soft);  color: var(--green);  border-color: transparent; }
-.pill.amber  { background: var(--amber-soft);  color: var(--amber);  border-color: transparent; }
+/* .pill.purp — used by traces page for `decision` event tone. Other
+   color-named aliases (.green/.amber/.red/.blue) and .round were
+   prototype leftovers with no callsites; the canonical state names
+   (.ok/.warn/.err/.info) cover those tones. */
 .pill.purp   { background: var(--purple-soft); color: var(--purple); border-color: transparent; }
-.pill.red    { background: var(--red-soft);    color: var(--red);    border-color: transparent; }
-.pill.blue   { background: var(--blue-soft);   color: var(--blue);   border-color: transparent; }
 
-/* round variant for nav/count chips */
-.pill.round { border-radius: 999px; }
+/* Active filter / accent state — used by traces filter buttons
+   (`pill accent` / `pill muted` toggle). */
+.pill.accent { background: var(--orange-soft); color: var(--orange); border-color: var(--orange-tint); }
 
 /* ---- Connector dot (marketplace + health panel) ---- */
 .connector-dot {
