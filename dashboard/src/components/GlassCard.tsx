@@ -12,6 +12,7 @@ interface GlassCardProps {
    */
   padding?: string;
   style?: CSSProperties;
+  title?: string;
 }
 
 export function GlassCard({
@@ -20,6 +21,7 @@ export function GlassCard({
   hover = true,
   padding = "var(--s-5)",
   style,
+  title,
 }: GlassCardProps) {
   const classes = [
     "glass-card",
@@ -34,7 +36,7 @@ export function GlassCard({
     : { ...style };
 
   return (
-    <div className={classes} style={merged}>
+    <div className={classes} style={merged} title={title}>
       {children}
     </div>
   );
