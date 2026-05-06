@@ -247,6 +247,7 @@ function NewRecipePageInner() {
     emptyValidationState(initialForm),
   );
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitNotice, setSubmitNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const [aiOpen, setAiOpen] = useState(false);
@@ -419,16 +420,32 @@ function NewRecipePageInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: aiPrompt }),
       });
-      const data = (await res.json()) as {
-        ok: boolean;
+      const text = await res.text();
+      let data: {
+        ok?: boolean;
         yaml?: string;
         warnings?: string[];
         error?: string;
         unavailable?: boolean;
-      };
+      } = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setAiResult({
+          error: `Generation failed: HTTP ${res.status} ${res.statusText || ""}`.trim(),
+        });
+        return;
+      }
+      if (!res.ok && !data.error && !data.unavailable) {
+        setAiResult({
+          error: `Generation failed: HTTP ${res.status} ${res.statusText || ""}`.trim(),
+        });
+        return;
+      }
       if (data.unavailable) {
         setAiResult({
           error:
+            data.error ??
             "AI generation is not available — start the bridge with --claude-driver subprocess.",
         });
       } else if (data.ok && data.yaml) {
@@ -603,6 +620,7 @@ function NewRecipePageInner() {
     const content = buildRecipeYaml(form, safeName);
 
     setSaving(true);
+    setSubmitNotice(null);
     try {
       const res = await fetch(
         apiPath(`/api/bridge/recipes/${encodeURIComponent(safeName)}`),
@@ -612,9 +630,19 @@ function NewRecipePageInner() {
           body: JSON.stringify({ content }),
         },
       );
-      const data = (await res.json()) as { ok?: boolean; error?: string };
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        demo?: boolean;
+      };
       if (res.ok && data.ok !== false) {
-        router.push(`/recipes/${encodeURIComponent(safeName)}/edit`);
+        if (data.demo) {
+          setSubmitNotice(
+            "Demo mode — recipe was not persisted. Disable demo mode to save real recipes.",
+          );
+        } else {
+          router.push(`/recipes/${encodeURIComponent(safeName)}/edit`);
+        }
       } else if (data.error === "Invalid recipe name") {
         setNameError(data.error);
       } else {
@@ -1411,6 +1439,21 @@ function NewRecipePageInner() {
 
             {/* Actions */}
             {submitError && <div className="alert-err">{submitError}</div>}
+            {submitNotice && (
+              <div
+                role="status"
+                style={{
+                  background: "var(--bg-2)",
+                  border: "1px solid var(--border-default)",
+                  borderRadius: "var(--r-2)",
+                  color: "var(--fg-1)",
+                  fontSize: "var(--fs-s)",
+                  padding: "var(--s-2) var(--s-3)",
+                }}
+              >
+                {submitNotice}
+              </div>
+            )}
             <div
               style={{
                 display: "flex",
