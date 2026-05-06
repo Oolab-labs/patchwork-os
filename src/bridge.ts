@@ -1256,6 +1256,35 @@ export class Bridge {
     this.server.streamFn = (listener) => this.activityLog.subscribe(listener);
     this.server.cancelTaskFn = (id: string) =>
       this.orchestrator?.cancel(id, "user") ?? false;
+    // Wire `/sessions` for the dashboard's Sessions page. The same Map is
+    // already iterated by `statusFn` for the bridge-status payload — exposing
+    // it as a list-only endpoint lets the dashboard render per-session cards
+    // without coupling to the rest of the status payload. Without this the
+    // page returns 404 forever (sessionsFn was declared but never assigned),
+    // even when sessions are connected.
+    this.server.sessionsFn = () => {
+      const approvals = getApprovalQueue().list();
+      const pendingBySession = new Map<string, number>();
+      for (const a of approvals) {
+        if (!a.sessionId) continue;
+        // Match by 8-char prefix because the dashboard's session id is
+        // the same prefix shape (statusFn emits `s.id.slice(0, 8)`).
+        const prefix = a.sessionId.slice(0, 8);
+        pendingBySession.set(prefix, (pendingBySession.get(prefix) ?? 0) + 1);
+      }
+      const out = [];
+      for (const s of this.sessions.values()) {
+        const id = s.id.slice(0, 8);
+        out.push({
+          id,
+          connectedAt: new Date(s.connectedAt).toISOString(),
+          openedFileCount: s.openedFiles.size,
+          pendingApprovals: pendingBySession.get(id) ?? 0,
+          ...(s.remoteAddr ? { remoteAddr: s.remoteAddr } : {}),
+        });
+      }
+      return out;
+    };
     this.server.tasksFn = () => ({
       tasks: (this.orchestrator?.list() ?? []).map((t) => ({
         taskId: t.id,
