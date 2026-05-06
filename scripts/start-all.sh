@@ -379,12 +379,39 @@ tmux send-keys -t "${SESSION}:0.3" "$REMOTE_CMD" Enter
 # Pane 4: Dashboard (only if not --no-dashboard and dashboard dir exists)
 DASHBOARD_DIR="$BRIDGE_DIR/dashboard"
 if [[ -z "$NO_DASHBOARD" ]] && [[ -d "$DASHBOARD_DIR" ]]; then
+  # First-run guard: missing node_modules silently breaks `npm run dev` with
+  # an unhelpful error in pane 4. Surface a concrete remediation step in the
+  # orchestrator pane so the user knows what to do.
+  if [[ ! -d "$DASHBOARD_DIR/node_modules" ]]; then
+    echo "" >&2
+    echo "Error: dashboard/node_modules not found." >&2
+    echo "Run: cd $(printf '%q' "$DASHBOARD_DIR") && npm install" >&2
+    echo "Then re-run start-all (or pass --no-dashboard to skip)." >&2
+    exit 1
+  fi
   BRIDGE_PORT=$(basename "$LOCK_FILE" .lock)
-  DASHBOARD_CMD="cd $(printf '%q' "$DASHBOARD_DIR") && PATCHWORK_BRIDGE_PORT=${BRIDGE_PORT} npm run dev"
+  # Call `next dev -p` directly. `npm run dev` hardcodes `-p 3200`, so
+  # `--dashboard-port` previously only changed the printed URL while
+  # Next.js stayed on 3200. Bypassing the npm script makes the flag
+  # actually configure the dev server end-to-end.
+  DASHBOARD_CMD="cd $(printf '%q' "$DASHBOARD_DIR") && PATCHWORK_BRIDGE_PORT=${BRIDGE_PORT} npx next dev -p ${DASHBOARD_PORT}"
   notify "Starting dashboard on http://localhost:${DASHBOARD_PORT}"
   tmux send-keys -t "${SESSION}:0.4" "$DASHBOARD_CMD" Enter
-  # Open dashboard in browser after a short delay to let Next.js start
-  (sleep 8 && open "http://localhost:${DASHBOARD_PORT}" 2>/dev/null || xdg-open "http://localhost:${DASHBOARD_PORT}" 2>/dev/null || true) &
+  # Poll the dashboard port until Next.js answers, then open the browser.
+  # Replaces a fixed 8s sleep that opened a not-yet-ready page on slow
+  # machines and added unnecessary delay on fast ones. Times out at 60s.
+  (
+    for _ in $(seq 1 60); do
+      if curl -sS -o /dev/null --max-time 1 \
+          "http://localhost:${DASHBOARD_PORT}/" 2>/dev/null; then
+        open "http://localhost:${DASHBOARD_PORT}" 2>/dev/null || \
+          xdg-open "http://localhost:${DASHBOARD_PORT}" 2>/dev/null || true
+        exit 0
+      fi
+      sleep 1
+    done
+    notify "Dashboard didn't respond on port ${DASHBOARD_PORT} within 60s — open it manually."
+  ) &
 fi
 
 # Pane 5: SSH reverse tunnel (only if --vps was set)
