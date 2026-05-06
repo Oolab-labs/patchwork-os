@@ -166,7 +166,7 @@ export async function runPatchworkInit(
       model: ollamaDetected ? "local" : "claude",
       recipesDir,
       dashboard: {
-        port: 3000,
+        port: 3200,
         requireApproval: ["high"],
         pushNotifications: false,
       },
@@ -215,7 +215,8 @@ export async function runPatchworkInit(
 
   log(`${restartLine}\nNext:
   1. patchwork-os recipe run morning-brief     # AI digest: Gmail + calendar + tasks
-  2. patchwork-os                              # launch terminal dashboard → http://localhost:3100
+  2. patchwork-os                              # launch terminal dashboard (TUI)
+  2b. cd dashboard && npm run dev              # launch web dashboard → http://localhost:3200
   3. patchwork-os recipe list                  # browse installed recipes\n`);
 
   return {
