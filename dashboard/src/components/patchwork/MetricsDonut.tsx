@@ -32,7 +32,7 @@ export function MetricsDonut({
   if (total === 0) {
     return (
       <div style={{ width: size, height: size, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-3)" }}>no data</span>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>no data</span>
       </div>
     );
   }
@@ -69,7 +69,7 @@ export function MetricsDonut({
             y={cy + 1}
             textAnchor="middle"
             dominantBaseline="middle"
-            style={{ fontFamily: "var(--font-mono)", fontSize: 10, fill: "var(--ink-2)", fontWeight: 700 }}
+            style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fill: "var(--ink-2)", fontWeight: 700 }}
           >
             {label}
           </text>
@@ -79,8 +79,8 @@ export function MetricsDonut({
         {arcs.map((arc) => (
           <div key={arc.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 8, height: 8, borderRadius: 2, background: arc.color, flexShrink: 0 }} />
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-1)" }}>{arc.label}</span>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-3)", marginLeft: 4 }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", color: "var(--ink-1)" }}>{arc.label}</span>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", color: "var(--ink-3)", marginLeft: 4 }}>
               {((arc.value / total) * 100).toFixed(0)}%
             </span>
           </div>

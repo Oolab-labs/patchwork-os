@@ -221,7 +221,7 @@ export default function RecipeEditPage({
             className={`pill ${t.kind === "ok" ? "ok" : "err"}`}
             style={{
               padding: "var(--s-2) var(--s-4)",
-              fontSize: 13,
+              fontSize: "var(--fs-m)",
               borderRadius: "var(--r-2)",
               background: t.kind === "ok" ? "var(--ok-soft)" : "var(--err-soft)",
               border: `1px solid ${t.kind === "ok" ? "var(--ok)" : "var(--err)"}`,
@@ -243,7 +243,7 @@ export default function RecipeEditPage({
               href="/recipes"
               style={{
                 color: "var(--fg-3)",
-                fontSize: 13,
+                fontSize: "var(--fs-m)",
                 textDecoration: "none",
                 display: "inline-flex",
                 alignItems: "center",
@@ -310,14 +310,14 @@ export default function RecipeEditPage({
             justifyContent: "space-between",
             alignItems: "flex-start",
             gap: "var(--s-3)",
-            fontSize: 13,
+            fontSize: "var(--fs-m)",
           }}
         >
           <div>
             <strong style={{ display: "block", marginBottom: 2 }}>
               Save failed
             </strong>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}>
               {saveError}
             </span>
           </div>
@@ -330,7 +330,7 @@ export default function RecipeEditPage({
               border: "none",
               color: "inherit",
               cursor: "pointer",
-              fontSize: 16,
+              fontSize: "var(--fs-xl)",
               lineHeight: 1,
               padding: 0,
             }}
@@ -351,13 +351,13 @@ export default function RecipeEditPage({
             background: "var(--err-soft)",
             border: "1px solid var(--err)",
             color: "var(--err)",
-            fontSize: 13,
+            fontSize: "var(--fs-m)",
           }}
         >
           <strong style={{ display: "block", marginBottom: 4 }}>
             {lintErrors.length} lint error{lintErrors.length === 1 ? "" : "s"}
           </strong>
-          <ul style={{ margin: 0, paddingLeft: 18, fontFamily: "var(--font-mono)", fontSize: 12 }}>
+          <ul style={{ margin: 0, paddingLeft: 18, fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}>
             {lintErrors.map((msg, idx) => (
               <li key={`lint-err-${idx}`}>{msg}</li>
             ))}
@@ -376,14 +376,14 @@ export default function RecipeEditPage({
             background: "var(--warn-soft)",
             border: "1px solid var(--warn)",
             color: "var(--warn)",
-            fontSize: 13,
+            fontSize: "var(--fs-m)",
           }}
         >
           <strong style={{ display: "block", marginBottom: 4 }}>
             {lintWarnings.length} lint warning
             {lintWarnings.length === 1 ? "" : "s"}
           </strong>
-          <ul style={{ margin: 0, paddingLeft: 18, fontFamily: "var(--font-mono)", fontSize: 12 }}>
+          <ul style={{ margin: 0, paddingLeft: 18, fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}>
             {lintWarnings.map((msg, idx) => (
               <li key={`lint-warn-${idx}`}>{msg}</li>
             ))}
@@ -415,7 +415,7 @@ export default function RecipeEditPage({
               border: "1px solid var(--line-2)",
               borderRadius: "var(--r-2)",
               fontFamily: "var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace)",
-              fontSize: 13,
+              fontSize: "var(--fs-m)",
               lineHeight: 1.6,
               padding: "var(--s-4)",
               resize: "vertical",
@@ -457,7 +457,7 @@ export default function RecipeEditPage({
         <div
           style={{
             marginTop: "var(--s-3)",
-            fontSize: 12,
+            fontSize: "var(--fs-s)",
             color: "var(--fg-3)",
             display: "flex",
             justifyContent: "space-between",

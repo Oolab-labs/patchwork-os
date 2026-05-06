@@ -67,7 +67,7 @@ function SessionLogPanel({
           padding: "12px 16px",
           borderBottom: "1px solid var(--line-3)",
           fontFamily: "var(--font-mono)",
-          fontSize: 13,
+          fontSize: "var(--fs-m)",
           color: "var(--ink-0)",
           fontWeight: 600,
         }}
@@ -82,7 +82,7 @@ function SessionLogPanel({
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
-            fontSize: 10,
+            fontSize: "var(--fs-2xs)",
             textTransform: "uppercase",
             letterSpacing: "0.07em",
           }}
@@ -215,10 +215,10 @@ export default function SessionsPage() {
       {!loading && sessions.length === 0 && !error ? (
         <div className="empty">
           <h3 style={{ color: "var(--ink-1)", marginBottom: 8 }}>No active sessions</h3>
-          <p style={{ color: "var(--ink-2)", fontSize: 13, maxWidth: 420, margin: "0 auto 12px" }}>
+          <p style={{ color: "var(--ink-2)", fontSize: "var(--fs-m)", maxWidth: 420, margin: "0 auto 12px" }}>
             No Claude Code agents are currently connected to the bridge.
           </p>
-          <p style={{ color: "var(--ink-3)", fontSize: 13, maxWidth: 420, margin: "0 auto 16px" }}>
+          <p style={{ color: "var(--ink-3)", fontSize: "var(--fs-m)", maxWidth: 420, margin: "0 auto 16px" }}>
             Connect a Claude Code session to the bridge to see live activity here.{" "}
             <a href="https://docs.anthropic.com/claude-code" target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>
               Learn more →
@@ -291,7 +291,7 @@ export default function SessionsPage() {
                       <div
                         style={{
                           fontFamily: "var(--font-mono)",
-                          fontSize: 14,
+                          fontSize: "var(--fs-base)",
                           fontWeight: 700,
                           color: "var(--ink-0)",
                           overflow: "hidden",
@@ -314,7 +314,7 @@ export default function SessionsPage() {
                         flexShrink: 0,
                         textTransform: "uppercase",
                         fontFamily: "var(--font-mono)",
-                        fontSize: 10,
+                        fontSize: "var(--fs-2xs)",
                         letterSpacing: "0.06em",
                       }}
                     >
@@ -326,7 +326,7 @@ export default function SessionsPage() {
                   {/* description */}
                   <div
                     style={{
-                      fontSize: 12,
+                      fontSize: "var(--fs-s)",
                       color: "var(--ink-2)",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -360,7 +360,7 @@ export default function SessionsPage() {
                       </div>
                       <div
                         style={{
-                          fontSize: 10,
+                          fontSize: "var(--fs-2xs)",
                           color: "var(--ink-2)",
                           marginTop: 3,
                           fontWeight: 600,
@@ -385,7 +385,7 @@ export default function SessionsPage() {
                       </div>
                       <div
                         style={{
-                          fontSize: 10,
+                          fontSize: "var(--fs-2xs)",
                           color: "var(--ink-2)",
                           marginTop: 3,
                           fontWeight: 600,
@@ -411,7 +411,7 @@ export default function SessionsPage() {
                       </div>
                       <div
                         style={{
-                          fontSize: 10,
+                          fontSize: "var(--fs-2xs)",
                           color: "var(--ink-2)",
                           marginTop: 3,
                           fontWeight: 600,
@@ -429,7 +429,7 @@ export default function SessionsPage() {
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
-                      fontSize: 11,
+                      fontSize: "var(--fs-xs)",
                       color: "var(--ink-3)",
                     }}
                   >
@@ -455,7 +455,7 @@ export default function SessionsPage() {
               <div
                 style={{
                   color: "var(--ink-3)",
-                  fontSize: 13,
+                  fontSize: "var(--fs-m)",
                   padding: 24,
                   textAlign: "center",
                 }}

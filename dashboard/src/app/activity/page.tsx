@@ -212,7 +212,7 @@ export default function ActivityPage() {
           <div
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: 10,
+              fontSize: "var(--fs-2xs)",
               fontWeight: 700,
               letterSpacing: "0.08em",
               textTransform: "uppercase",
@@ -229,7 +229,7 @@ export default function ActivityPage() {
             <div
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: 10,
+                fontSize: "var(--fs-2xs)",
                 fontWeight: 700,
                 letterSpacing: "0.08em",
                 textTransform: "uppercase",
@@ -283,7 +283,7 @@ export default function ActivityPage() {
               onClick={() => setTab(t)}
               style={{
                 padding: "6px 16px",
-                fontSize: 12,
+                fontSize: "var(--fs-s)",
                 fontWeight: 500,
                 cursor: "pointer",
                 color: tab === t ? "var(--fg-0)" : "var(--fg-2)",
@@ -298,7 +298,7 @@ export default function ActivityPage() {
               {labels[t]}{" "}
               <span
                 style={{
-                  fontSize: 11,
+                  fontSize: "var(--fs-xs)",
                   color: tab === t ? "var(--accent)" : "var(--fg-3)",
                   fontFamily: "var(--font-mono)",
                 }}

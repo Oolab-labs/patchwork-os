@@ -113,7 +113,7 @@ export function EventsHistogram({
           justifyContent: "space-between",
           marginTop: 3,
           fontFamily: "var(--font-mono)",
-          fontSize: 9,
+          fontSize: "var(--fs-3xs)",
           color: "var(--ink-3)",
         }}
       >

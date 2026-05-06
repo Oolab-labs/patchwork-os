@@ -20,7 +20,7 @@ export function EmptyState({
       )}
       <h3 style={{ color: "var(--ink-1)", marginBottom: 8 }}>{title}</h3>
       {description && (
-        <p style={{ color: "var(--ink-2)", fontSize: 13, maxWidth: 420, margin: "0 auto 16px" }}>
+        <p style={{ color: "var(--ink-2)", fontSize: "var(--fs-m)", maxWidth: 420, margin: "0 auto 16px" }}>
           {description}
         </p>
       )}
