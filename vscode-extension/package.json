@@ -2,7 +2,7 @@
   "name": "claude-ide-bridge-extension",
   "displayName": "Claude IDE Bridge",
   "description": "MCP bridge between Claude Code and your IDE. 170+ tools — diagnostics, LSP, debugger, terminal, git. Optional Patchwork OS layer adds recipes, oversight, and approval queue.",
-  "version": "1.4.11",
+  "version": "1.4.12",
   "extensionKind": [
     "workspace"
   ],
@@ -64,7 +64,7 @@
           {
             "id": "checkConnection",
             "title": "Verify bridge is running",
-            "description": "Run `claude-ide-bridge start` in your terminal, then click Reconnect.\n\n[Reconnect](command:claudeIdeBridge.reconnect)",
+            "description": "Run `claude-ide-bridge start-all` in your terminal, then click Reconnect.\n\n[Reconnect](command:claudeIdeBridge.reconnect)",
             "completionEvents": [
               "onCommand:claudeIdeBridge.reconnect"
             ],
