@@ -35,6 +35,12 @@ const LOCAL_ONLY_RECIPES: ReadonlySet<string> = new Set([
   "watch-failing-tests.yaml",
 ]);
 
+// Dev/dogfood fixtures that aren't user-facing and shouldn't be seeded by
+// either init mode. Skipped silently regardless of --with-connectors.
+const DEV_FIXTURE_RECIPES: ReadonlySet<string> = new Set([
+  "ctx-loop-test.yaml",
+]);
+
 function printHelp(): void {
   process.stdout.write(`patchwork-os init — Set up ~/.patchwork on this machine
 
@@ -133,6 +139,7 @@ export async function runPatchworkInit(
   if (templatesDir) {
     for (const name of readdirSync(templatesDir)) {
       if (!name.endsWith(".yaml")) continue;
+      if (DEV_FIXTURE_RECIPES.has(name)) continue;
       if (!parsed.withConnectors && !LOCAL_ONLY_RECIPES.has(name)) {
         recipesGated++;
         continue;
