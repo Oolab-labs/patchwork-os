@@ -7,7 +7,6 @@
  *   - Dry-run mode
  */
 
-import { captureForRunlog } from "./captureForRunlog.js";
 import type { ExecutionOptions, StepExecutor } from "./dependencyGraph.js";
 import {
   buildDependencyGraph,
@@ -26,6 +25,7 @@ import type { OutputRegistry } from "./outputRegistry.js";
 import { createOutputRegistry } from "./outputRegistry.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import type { ErrorPolicy } from "./schema.js";
+import { captureForRunlog } from "./stepObservation.js";
 import type { TemplateContext, TemplateError } from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
 

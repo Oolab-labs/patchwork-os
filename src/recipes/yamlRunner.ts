@@ -42,13 +42,13 @@ import {
   executeAgent as _executeAgent,
   type AgentExecutorDeps,
 } from "./agentExecutor.js";
-import { detectSilentFail } from "./detectSilentFail.js";
 import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
 } from "./legacyRecipeCompat.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import type { ErrorPolicy } from "./schema.js";
+import { detectSilentFail } from "./stepObservation.js";
 
 // Import tool registry and trigger tool self-registration
 import {
