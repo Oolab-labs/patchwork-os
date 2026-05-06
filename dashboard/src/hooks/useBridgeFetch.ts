@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 
 export interface UseBridgeFetchResult<T> {
@@ -8,6 +8,7 @@ export interface UseBridgeFetchResult<T> {
   loading: boolean;
   status: number | null;
   unsupported: boolean;
+  refetch: () => void;
 }
 
 const MAX_BACKOFF_MS = 30_000;
@@ -43,6 +44,9 @@ export function useBridgeFetch<T>(
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<number | null>(null);
   const [unsupported, setUnsupported] = useState(false);
+  // Caller-triggered re-fetch token; bumping it triggers an immediate tick.
+  const [refetchToken, setRefetchToken] = useState(0);
+  const refetch = useCallback(() => setRefetchToken((n) => n + 1), []);
 
   useEffect(() => {
     if (!enabled) return;
@@ -111,7 +115,7 @@ export function useBridgeFetch<T>(
       alive = false;
       if (timerId !== null) clearTimeout(timerId);
     };
-  }, [path, intervalMs, enabled]);
+  }, [path, intervalMs, enabled, refetchToken]);
 
-  return { data, error, loading, status, unsupported };
+  return { data, error, loading, status, unsupported, refetch };
 }

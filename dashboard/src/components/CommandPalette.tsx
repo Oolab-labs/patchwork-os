@@ -123,16 +123,13 @@ export function CommandPalette({
     const actionCmds: Command[] = [
       {
         id: "action:toggle-theme",
-        label: "Toggle theme (paper / dark / system)",
+        label: "Toggle theme (paper / dark)",
         group: "Actions",
         perform: () => {
-          const order = ["paper", "dark", "system"] as const;
-          const current = (localStorage.getItem("patchwork-theme") ??
-            "system") as (typeof order)[number];
-          const idx = order.indexOf(current);
-          const next = order[(idx + 1) % order.length];
-          localStorage.setItem("patchwork-theme", next);
-          window.dispatchEvent(new Event("patchwork-theme-change"));
+          const current = localStorage.getItem("patchwork.theme") === "paper" ? "paper" : "dark";
+          const next = current === "dark" ? "paper" : "dark";
+          localStorage.setItem("patchwork.theme", next);
+          window.dispatchEvent(new StorageEvent("storage", { key: "patchwork.theme", newValue: next }));
         },
       },
       {

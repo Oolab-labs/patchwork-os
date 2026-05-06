@@ -6,11 +6,13 @@ import { apiPath } from "@/lib/api";
 import {
   assertValidInstallSource,
   type ApprovalBehavior,
+  type RegistryBundle,
   type RegistryData,
   type RegistryRecipe,
   type RiskLevel,
   shortName,
 } from "@/lib/registry";
+import { useToast } from "@/components/Toast";
 
 // ------------------------------------------------------------------ fallback data (shown when bridge offline)
 
@@ -146,41 +148,6 @@ function connectorColor(id: string): string {
 }
 
 
-// ------------------------------------------------------------------ toast
-
-function Toast({ message, onDone }: { message: string; onDone: () => void }) {
-  useEffect(() => {
-    const id = setTimeout(onDone, 3000);
-    return () => clearTimeout(id);
-  }, [onDone]);
-
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        position: "fixed",
-        bottom: 24,
-        right: 24,
-        background: "var(--bg-3)",
-        border: "1px solid var(--border-default)",
-        borderRadius: "var(--r-3)",
-        padding: "12px 18px",
-        fontSize: "var(--fs-m)",
-        color: "var(--fg-0)",
-        boxShadow: "0 8px 32px var(--overlay-bg)",
-        zIndex: 9999,
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-      }}
-    >
-      <span style={{ color: "var(--ok)", fontSize: "var(--fs-xl)" }}>&#10003;</span>
-      {message}
-    </div>
-  );
-}
-
 // ------------------------------------------------------------------ card
 
 function RecipeCard({
@@ -201,6 +168,26 @@ function RecipeCard({
   const isInstalled = installed || justInstalled;
 
   async function handleInstall() {
+    // Risk-aware confirmation. Low-risk recipes can install on a single click
+    // (preserves the existing one-click flow); medium/high or any recipe that
+    // requests network/file access shows a summary dialog so the operator
+    // sees what they're agreeing to before the bridge fetches it.
+    const elevated =
+      recipe.risk_level === "medium" ||
+      recipe.risk_level === "high" ||
+      recipe.network_access ||
+      recipe.file_access;
+    if (elevated) {
+      const summary: string[] = [];
+      if (recipe.risk_level) summary.push(`Risk: ${recipe.risk_level}`);
+      if (recipe.connectors?.length) summary.push(`Connectors: ${recipe.connectors.join(", ")}`);
+      if (recipe.network_access) summary.push("Network access");
+      if (recipe.file_access) summary.push("File access");
+      const proceed = window.confirm(
+        `Install ${shortName(recipe.name)}?\n\n${summary.join("\n")}\n\nThe recipe YAML will be fetched from ${recipe.install} and stored locally.`,
+      );
+      if (!proceed) return;
+    }
     setLoading(true);
     setErr(null);
     try {
@@ -378,16 +365,65 @@ function RecipeCard({
   );
 }
 
+// ------------------------------------------------------------------ bundle card
+
+function BundleCard({ bundle }: { bundle: RegistryBundle }) {
+  const href = `/marketplace/bundle/${encodeURIComponent(bundle.name)}`;
+  return (
+    <Link
+      href={href}
+      style={{ textDecoration: "none" }}
+      className="template-card glass-card"
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "18px 18px 16px", height: "100%" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--fs-xs)",
+              fontWeight: 600,
+              color: "var(--accent)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {shortName(bundle.name)}
+          </span>
+          <span className="pill info" style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}>bundle</span>
+        </div>
+        <p style={{ margin: 0, fontSize: "var(--fs-m)", color: "var(--ink-1)", lineHeight: 1.5 }}>
+          {bundle.description}
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: "auto" }}>
+          {bundle.connectors.slice(0, 4).map((c) => (
+            <span key={c} className="pill" style={{ fontSize: "var(--fs-2xs)" }}>{c}</span>
+          ))}
+          {bundle.connectors.length > 4 && (
+            <span className="pill" style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-3)" }}>+{bundle.connectors.length - 4}</span>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 12, fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 4 }}>
+          {bundle.recipe_count != null && <span>{bundle.recipe_count} recipes</span>}
+          {bundle.has_plugin && <span>+ plugin</span>}
+          {bundle.has_policy && <span>+ policy</span>}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 // ------------------------------------------------------------------ page
 
 export default function MarketplacePage() {
   const [registry, setRegistry] = useState<RegistryRecipe[] | null>(null);
+  const [bundles, setBundles] = useState<RegistryBundle[]>([]);
   const [installedNames, setInstalledNames] = useState<Set<string>>(new Set());
   const [bridgeOnline, setBridgeOnline] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const toast = useToast();
 
   useEffect(() => {
     async function load() {
@@ -422,16 +458,20 @@ export default function MarketplacePage() {
       };
 
       let recipes: RegistryRecipe[] | null = null;
+      let registryBundles: RegistryBundle[] = [];
 
       try {
         const res = await fetchWithTimeout(apiPath("/api/bridge/templates"), 4000);
         if (res.ok) {
-          const data = (await res.json()) as { recipes?: RegistryRecipe[] } | RegistryRecipe[];
+          const data = (await res.json()) as { recipes?: RegistryRecipe[]; bundles?: RegistryBundle[] } | RegistryRecipe[];
           recipes = Array.isArray(data)
             ? data
             : Array.isArray(data?.recipes)
               ? (data.recipes ?? null)
               : null;
+          if (!Array.isArray(data) && Array.isArray(data?.bundles)) {
+            registryBundles = data.bundles ?? [];
+          }
         }
       } catch {
         // bridge offline / timed out — try GitHub
@@ -446,6 +486,7 @@ export default function MarketplacePage() {
           if (res.ok) {
             const data = (await res.json()) as RegistryData;
             recipes = data.recipes ?? null;
+            registryBundles = data.bundles ?? [];
           }
         } catch {
           // GitHub also failed / timed out — use hardcoded fallback
@@ -453,6 +494,7 @@ export default function MarketplacePage() {
       }
 
       setRegistry(recipes ?? FALLBACK_REGISTRY.recipes);
+      setBundles(registryBundles);
     }
 
     load().catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));
@@ -492,7 +534,7 @@ export default function MarketplacePage() {
     }
 
     setInstalledNames((prev) => new Set([...prev, recipe.name]));
-    setToast("Recipe installed successfully");
+    toast.success("Recipe installed successfully");
   }
 
   const filtered = (registry ?? []).filter((r) => {
@@ -513,8 +555,6 @@ export default function MarketplacePage() {
 
   return (
     <section>
-      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
-
       {/* offline banner */}
       {!bridgeOnline && (
         <div
@@ -634,6 +674,20 @@ export default function MarketplacePage() {
         </div>
       ) : (
         <>
+          {bundles.length > 0 && (
+            <>
+              <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
+                Capability bundles
+              </h2>
+              <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginBottom: "var(--s-4)", marginTop: "-var(--s-2)" }}>
+                Recipes + connectors + policy templates — install as one unit.
+              </p>
+              <div className="marketplace-grid" style={{ marginBottom: "var(--s-8)" }}>
+                {bundles.map((b) => <BundleCard key={b.name} bundle={b} />)}
+              </div>
+            </>
+          )}
+
           {featured && (
             <>
               <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>

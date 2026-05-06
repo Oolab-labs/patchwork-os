@@ -1,7 +1,13 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { apiPath } from "@/lib/api";
+import { useToast } from "@/components/Toast";
+
+function isFilterCategory(v: string | null): v is FilterCategory {
+  return v === "All" || v === "Morning Briefs" || v === "Recipe Outputs" || v === "Agent Reports";
+}
 
 // react-markdown + its rehype/remark plugins ship ~80KB gzipped of
 // mdast/hast/micromark machinery. They're only needed to render the
@@ -217,18 +223,6 @@ const markdownComponents = {
       {children}
     </ul>
   ),
-  li: ({ children }: { children?: React.ReactNode }) => (
-    <li
-      style={{
-        fontSize: 13.5,
-        lineHeight: 1.65,
-        marginBottom: 4,
-        color: "var(--ink-1)",
-      }}
-    >
-      {children}
-    </li>
-  ),
   hr: () => (
     <hr
       style={{
@@ -241,6 +235,59 @@ const markdownComponents = {
   strong: ({ children }: { children?: React.ReactNode }) => (
     <strong style={{ color: "var(--fg-0)" }}>{children}</strong>
   ),
+  li: ({ children }: { children?: React.ReactNode }) => (
+    <li
+      style={{
+        fontSize: 13.5,
+        lineHeight: 1.65,
+        marginBottom: 4,
+        color: "var(--ink-1)",
+        overflowWrap: "break-word",
+        wordBreak: "break-word",
+      }}
+    >
+      {children}
+    </li>
+  ),
+  pre: ({ children }: { children?: React.ReactNode }) => (
+    <pre
+      style={{
+        background: "var(--recess)",
+        border: "1px solid var(--line-2)",
+        borderRadius: "var(--r-s)",
+        padding: "10px 14px",
+        margin: "8px 0 12px",
+        fontSize: "var(--fs-xs)",
+        fontFamily: "var(--font-mono)",
+        lineHeight: 1.6,
+        overflowX: "auto",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-all",
+      }}
+    >
+      {children}
+    </pre>
+  ),
+  code: ({ children, className }: { children?: React.ReactNode; className?: string }) => {
+    const isBlock = !!className;
+    return isBlock ? (
+      <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)" }}>{children}</code>
+    ) : (
+      <code
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "0.875em",
+          background: "var(--recess)",
+          border: "1px solid var(--line-1)",
+          borderRadius: 4,
+          padding: "1px 5px",
+          wordBreak: "break-all",
+        }}
+      >
+        {children}
+      </code>
+    );
+  },
 };
 
 // ------------------------------------------------------------------ relative time (live)
@@ -312,12 +359,25 @@ export default function InboxPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [err, setErr] = useState<string | undefined>();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activeFilter, setActiveFilter] = useState<FilterCategory>("All");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const filterFromUrl = searchParams?.get("filter");
+  const [activeFilter, setActiveFilterState] = useState<FilterCategory>(
+    isFilterCategory(filterFromUrl) ? filterFromUrl : "All",
+  );
+  const setActiveFilter = (next: FilterCategory) => {
+    setActiveFilterState(next);
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (next === "All") params.delete("filter");
+    else params.set("filter", next);
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+  };
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [seenNames] = useState<Set<string>>(() => new Set());
   const [replayingFor, setReplayingFor] = useState<string | null>(null);
-  const [actionErr, setActionErr] = useState<string | null>(null);
+  const toast = useToast();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detailRef = useRef<HTMLDivElement | null>(null);
   const selectedRef = useRef<InboxDetail | null>(null);
@@ -362,8 +422,18 @@ export default function InboxPage() {
   useEffect(() => {
     fetchList();
     pollRef.current = setInterval(() => fetchList(), 30_000);
+    const onVisible = () => {
+      if (document.hidden) {
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      } else if (!pollRef.current) {
+        void fetchList();
+        pollRef.current = setInterval(() => fetchList(), 30_000);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [fetchList]);
 
@@ -729,7 +799,7 @@ const filteredItems = items.filter((item) => {
                     ref={detailRef}
                     tabIndex={-1}
                     aria-label={`Message: ${slugToTitle(selected.name)}`}
-                    style={{ fontSize: "var(--fs-base)", lineHeight: 1.7, color: "var(--ink-1)", outline: "none" }}
+                    style={{ fontSize: "var(--fs-base)", lineHeight: 1.7, color: "var(--ink-1)", outline: "none", overflowWrap: "break-word", wordBreak: "break-word" }}
                   >
                     <MessageMarkdown
                       content={selected.content}
@@ -762,7 +832,6 @@ const filteredItems = items.filter((item) => {
                           style={{ background: "var(--orange)", border: "none", fontSize: "var(--fs-xs)" }}
                           disabled={replayingFor === selected.name}
                           onClick={async () => {
-                            setActionErr(null);
                             const itemName = selected.name;
                             setReplayingFor(itemName);
                             try {
@@ -772,10 +841,12 @@ const filteredItems = items.filter((item) => {
                               );
                               if (!res.ok) {
                                 const text = await res.text().catch(() => res.statusText);
-                                setActionErr(`Replay failed: ${text || res.status}`);
+                                toast.error(`Replay failed: ${text || res.status}`);
+                              } else {
+                                toast.success(`Replayed “${recipeNameForSelected}”`);
                               }
                             } catch (e) {
-                              setActionErr(e instanceof Error ? e.message : String(e));
+                              toast.error(e instanceof Error ? e.message : String(e));
                             } finally {
                               setTimeout(() => {
                                 setReplayingFor((cur) => (cur === itemName ? null : cur));
@@ -797,7 +868,10 @@ const filteredItems = items.filter((item) => {
                           className="btn sm ghost"
                           style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}
                           onClick={async () => {
-                            setActionErr(null);
+                            const proceed = window.confirm(
+                              `Archive "${selected.name}"? This permanently deletes the inbox item.`,
+                            );
+                            if (!proceed) return;
                             try {
                               const res = await fetch(
                                 apiPath(`/api/bridge/inbox/${encodeURIComponent(selected.name)}`),
@@ -805,13 +879,14 @@ const filteredItems = items.filter((item) => {
                               );
                               if (!res.ok) {
                                 const text = await res.text().catch(() => res.statusText);
-                                setActionErr(`Archive failed: ${text || res.status}`);
+                                toast.error(`Archive failed: ${text || res.status}`);
                                 return;
                               }
+                              toast.success(`Archived “${selected.name}”`);
                               fetchList(true);
                               setSelected(null);
                             } catch (e) {
-                              setActionErr(
+                              toast.error(
                                 e instanceof Error ? e.message : String(e),
                               );
                             }
@@ -820,15 +895,6 @@ const filteredItems = items.filter((item) => {
                           Archive
                         </button>
                       </div>
-                      {actionErr && (
-                        <div
-                          role="alert"
-                          className="alert-err"
-                          style={{ marginTop: 8, fontSize: "var(--fs-s)" }}
-                        >
-                          {actionErr}
-                        </div>
-                      )}
                     </>
                     );
                   })()}

@@ -48,7 +48,7 @@ function DeltaBadge({ delta }: { delta: string }) {
       }}
     >
       {arrow && <span aria-hidden="true">{arrow}</span>}
-      {delta.replace(/^[+-]/, (m) => m)}
+      {delta.replace(/^[+-]/, "")}
     </span>
   );
 }

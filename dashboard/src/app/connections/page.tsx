@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import AddConnectionModal from "./AddConnectionModal";
 import { Dialog } from "@/components/Dialog";
+import { useToast } from "@/components/Toast";
 import type { ConnectorStatus } from "./types";
 
 // ------------------------------------------------------------------ helpers
@@ -265,6 +266,7 @@ interface TokenModalConfig {
   instructions: React.ReactNode;
   placeholder: string;
   tokenKey: string;
+  extraFields?: { key: string; label: string; placeholder: string; type?: "text" | "email" | "url"; required?: boolean }[];
 }
 
 // Connectors that have a backend wired in the bridge — anything not listed
@@ -306,6 +308,9 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     ),
     placeholder: "Atlassian API token",
     tokenKey: "token",
+    extraFields: [
+      { key: "baseUrl", label: "Atlassian base URL", placeholder: "https://your-org.atlassian.net", type: "url", required: true },
+    ],
   },
   datadog: {
     name: "Datadog",
@@ -366,6 +371,10 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     ),
     placeholder: "Atlassian API token",
     tokenKey: "token",
+    extraFields: [
+      { key: "baseUrl", label: "Atlassian base URL", placeholder: "https://your-org.atlassian.net", type: "url", required: true },
+      { key: "email", label: "Atlassian account email", placeholder: "you@your-org.com", type: "email", required: true },
+    ],
   },
   pagerduty: {
     name: "PagerDuty",
@@ -411,6 +420,10 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     ),
     placeholder: "Zendesk API token",
     tokenKey: "token",
+    extraFields: [
+      { key: "subdomain", label: "Zendesk subdomain", placeholder: "your-org", type: "text", required: true },
+      { key: "email", label: "Agent email", placeholder: "you@your-org.com", type: "email", required: true },
+    ],
   },
 };
 
@@ -847,7 +860,8 @@ export default function ConnectionsPage() {
   const [err, setErr] = useState<string>();
   const [bridgeOffline, setBridgeOffline] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
-  const [actionErr, setActionErr] = useState<string | null>(null);
+  const toast = useToast();
+  const [confirmDisconnectId, setConfirmDisconnectId] = useState<string | null>(null);
   // Notion modal
   const [notionModalOpen, setNotionModalOpen] = useState(false);
   const [notionToken, setNotionToken] = useState("");
@@ -856,6 +870,7 @@ export default function ConnectionsPage() {
   // Generic token modal
   const [tokenModal, setTokenModal] = useState<string | null>(null);
   const [tokenValue, setTokenValue] = useState("");
+  const [tokenExtras, setTokenExtras] = useState<Record<string, string>>({});
   const [tokenConnecting, setTokenConnecting] = useState(false);
   const [tokenErr, setTokenErr] = useState<string | null>(null);
   // Add connection modal
@@ -924,11 +939,23 @@ export default function ConnectionsPage() {
     setTokenConnecting(true);
     setTokenErr(null);
     const cfg = TOKEN_MODAL_CONNECTORS[tokenModal];
+    const missing = (cfg.extraFields ?? [])
+      .filter((f) => f.required && !tokenExtras[f.key]?.trim())
+      .map((f) => f.label);
+    if (missing.length > 0) {
+      setTokenErr(`Missing required field${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}`);
+      return;
+    }
+    const payload: Record<string, string> = { [cfg.tokenKey]: tokenValue };
+    for (const f of cfg.extraFields ?? []) {
+      const v = tokenExtras[f.key]?.trim();
+      if (v) payload[f.key] = v;
+    }
     try {
       const res = await fetch(apiPath(`/api/connections/${tokenModal}/connect`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [cfg.tokenKey]: tokenValue }),
+        body: JSON.stringify(payload),
       });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || !body.ok) {
@@ -936,6 +963,7 @@ export default function ConnectionsPage() {
         return;
       }
       setTokenValue("");
+      setTokenExtras({});
       setTokenModal(null);
       await fetchConnectors();
     } catch (e) {
@@ -954,6 +982,7 @@ export default function ConnectionsPage() {
     if (id in TOKEN_MODAL_CONNECTORS) {
       setTokenModal(id);
       setTokenValue("");
+      setTokenExtras({});
       setTokenErr(null);
       return Promise.resolve("connected");
     }
@@ -1026,9 +1055,18 @@ export default function ConnectionsPage() {
     function onMessage(e: MessageEvent) {
       if (e.origin !== window.location.origin) return;
       if (typeof e.data !== "string") return;
-      const m = /^patchwork:([a-z-]+):connected$/.exec(e.data);
-      if (!m) return;
-      fetchConnectors();
+      const ok = /^patchwork:([a-z-]+):connected$/.exec(e.data);
+      if (ok) {
+        fetchConnectors();
+        return;
+      }
+      const errMatch = /^patchwork:([a-z-]+):error(?::(.*))?$/.exec(e.data);
+      if (errMatch) {
+        const [, connectorId, reason] = errMatch;
+        const decoded = reason ? decodeURIComponent(reason) : "Authorization failed";
+        toast.error(`${connectorId}: ${decoded}`);
+        return;
+      }
     }
     window.addEventListener("message", onMessage);
     return () => {
@@ -1042,19 +1080,19 @@ export default function ConnectionsPage() {
 
   async function handleDisconnect(id: string) {
     setActing(id);
-    setActionErr(null);
     try {
       const res = await fetch(apiPath(`/api/connections/${id}`), { method: "DELETE" });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setActionErr(body.error ?? `Error ${res.status}`);
+        toast.error(body.error ?? `Error ${res.status}`);
         return;
       }
       setConnectors((prev) =>
         prev.map((c) => (c.id === id ? { ...c, status: "disconnected", lastSync: undefined } : c)),
       );
+      toast.success(`Disconnected ${id}`);
     } catch (e) {
-      setActionErr(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setActing(null);
     }
@@ -1147,7 +1185,6 @@ export default function ConnectionsPage() {
       </div>
 
       {err && <div className="alert-err" role="alert">{err}</div>}
-      {actionErr && <div className="alert-err" role="alert">{actionErr}</div>}
 
       {bridgeOffline ? (
         <div className="empty-state" role="status">
@@ -1213,7 +1250,7 @@ export default function ConnectionsPage() {
                 def={def}
                 statusEntry={getConnector(def.id)}
                 onConnect={() => handleConnect(def.id)}
-                onDisconnect={() => handleDisconnect(def.id)}
+                onDisconnect={() => setConfirmDisconnectId(def.id)}
                 onTest={() => handleTest(def.id)}
                 loading={acting === def.id}
               />
@@ -1273,7 +1310,7 @@ export default function ConnectionsPage() {
       {/* Generic token-paste modal */}
       <Dialog
         open={Boolean(tokenModal && TOKEN_MODAL_CONNECTORS[tokenModal])}
-        onClose={() => { setTokenModal(null); setTokenValue(""); setTokenErr(null); }}
+        onClose={() => { setTokenModal(null); setTokenValue(""); setTokenExtras({}); setTokenErr(null); }}
         ariaLabelledBy="token-modal-title"
         maxWidth={440}
       >
@@ -1292,13 +1329,30 @@ export default function ConnectionsPage() {
               value={tokenValue}
               onChange={(e) => setTokenValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") void handleTokenConnect(); }}
+              aria-label={`${TOKEN_MODAL_CONNECTORS[tokenModal].name} ${TOKEN_MODAL_CONNECTORS[tokenModal].placeholder}`}
               style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-m)", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-0)", color: "var(--fg-1)", width: "100%", boxSizing: "border-box" }}
             />
+            {(TOKEN_MODAL_CONNECTORS[tokenModal].extraFields ?? []).map((f) => (
+              <div key={f.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label htmlFor={`token-extra-${f.key}`} style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
+                  {f.label}{f.required ? " *" : ""}
+                </label>
+                <input
+                  id={`token-extra-${f.key}`}
+                  type={f.type ?? "text"}
+                  placeholder={f.placeholder}
+                  value={tokenExtras[f.key] ?? ""}
+                  onChange={(e) => setTokenExtras((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") void handleTokenConnect(); }}
+                  style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-m)", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-0)", color: "var(--fg-1)", width: "100%", boxSizing: "border-box" }}
+                />
+              </div>
+            ))}
             {tokenErr && <div className="alert-err" role="alert" style={{ fontSize: "var(--fs-s)" }}>{tokenErr}</div>}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button
                 type="button"
-                onClick={() => { setTokenModal(null); setTokenValue(""); setTokenErr(null); }}
+                onClick={() => { setTokenModal(null); setTokenValue(""); setTokenExtras({}); setTokenErr(null); }}
                 style={{ padding: "6px 16px", fontSize: "var(--fs-m)", cursor: "pointer", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-1)", color: "var(--fg-1)" }}
               >
                 Cancel
@@ -1324,6 +1378,71 @@ export default function ConnectionsPage() {
         onConnect={handleConnect}
         providers={PROVIDERS}
       />
+
+      <Dialog
+        open={confirmDisconnectId !== null}
+        onClose={() => setConfirmDisconnectId(null)}
+        ariaLabelledBy="disconnect-confirm-title"
+        maxWidth={420}
+      >
+        {(() => {
+          const id = confirmDisconnectId;
+          const def = id ? CATALOG.find((d) => d.id === id) : undefined;
+          const displayName = def?.name ?? id ?? "this connector";
+          const busy = id ? acting === id : false;
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <strong id="disconnect-confirm-title" style={{ fontSize: "var(--fs-l)" }}>
+                Disconnect {displayName}?
+              </strong>
+              <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: 0, lineHeight: 1.5 }}>
+                Recipes and automations that use {displayName} will fail until you reconnect.
+                Patchwork will keep your existing recipe definitions; only the auth token is removed.
+              </p>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDisconnectId(null)}
+                  disabled={busy}
+                  style={{
+                    padding: "6px 14px",
+                    fontSize: "var(--fs-m)",
+                    cursor: busy ? "wait" : "pointer",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-default)",
+                    background: "var(--card-bg)",
+                    color: "var(--ink-1)",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!id) return;
+                    await handleDisconnect(id);
+                    setConfirmDisconnectId(null);
+                  }}
+                  disabled={busy}
+                  style={{
+                    padding: "6px 14px",
+                    fontSize: "var(--fs-m)",
+                    cursor: busy ? "wait" : "pointer",
+                    borderRadius: 6,
+                    border: "none",
+                    background: "var(--err)",
+                    color: "#fff",
+                    fontWeight: 600,
+                    opacity: busy ? 0.6 : 1,
+                  }}
+                >
+                  {busy ? "Disconnecting…" : "Disconnect"}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Dialog>
     </section>
   );
 }

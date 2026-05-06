@@ -11,9 +11,6 @@ import {
   QuiltHero,
   WeatherRing,
   AreaChart,
-  CodeBlock,
-  YamlLine,
-  Spinner,
   AnimatedNumber,
 } from "@/components/patchwork";
 
@@ -287,7 +284,11 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
 // Active recipe (live YAML + spinner)
 // ---------------------------------------------------------------------------
 
-function ActiveRecipeCard() {
+function RecentRecipesCard({ recipes }: { recipes: Recipe[] }) {
+  const top = [...recipes]
+    .filter((r) => r.enabled !== false)
+    .sort((a, b) => (b.lastRun ?? 0) - (a.lastRun ?? 0))
+    .slice(0, 6);
   return (
     <div className="card" style={{ padding: "18px 20px" }}>
       <div
@@ -309,42 +310,54 @@ function ActiveRecipeCard() {
             letterSpacing: "0.06em",
           }}
         >
-          Active recipe
+          Recent recipes
         </h3>
-        <span
-          className="pill muted"
-          style={{ fontSize: "var(--fs-2xs)" }}
-          title="Live wiring pending — preview only"
+        <Link
+          href="/recipes"
+          style={{
+            fontSize: "var(--fs-xs)",
+            color: "var(--accent)",
+            textDecoration: "none",
+          }}
         >
-          preview
-        </span>
+          all →
+        </Link>
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 10,
-          fontSize: "var(--fs-s)",
-          color: "var(--ink-1)",
-        }}
-      >
-        <Spinner size={12} />
-        <span style={{ fontStyle: "italic" }}>
-          assembling Slack digest…
-        </span>
-      </div>
-
-      <CodeBlock>
-        <YamlLine k="name" v="slack-digest" />
-        <YamlLine k="trigger" v="cron 0 9 * * *" />
-        <YamlLine k="steps" />
-        <YamlLine k="- fetch" v="slack.channels.history" indent={1} />
-        <YamlLine k="- summarize" v="claude.haiku" indent={1} />
-        <YamlLine k="- post" v="slack.chat.postMessage" indent={1} />
-        <YamlLine k="status" v="running" comment="3/5 steps" />
-      </CodeBlock>
+      {top.length === 0 ? (
+        <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", padding: "8px 0" }}>
+          No enabled recipes yet.{" "}
+          <Link href="/recipes/new" style={{ color: "var(--accent)" }}>
+            Create one →
+          </Link>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {top.map((r) => (
+            <Link
+              key={r.id ?? r.name}
+              href={`/recipes/${encodeURIComponent(r.name)}/edit`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "6px 8px",
+                borderRadius: "var(--r-sm)",
+                textDecoration: "none",
+                color: "var(--ink-1)",
+                fontSize: "var(--fs-s)",
+              }}
+            >
+              <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink-0)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {r.name}
+              </span>
+              <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>
+                {r.lastRun ? relTime(r.lastRun) : "never run"}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -842,7 +855,7 @@ export default function HomePage() {
         }}
       >
         <ActivityThread events={activityEvents.slice(-8).reverse()} />
-        <ActiveRecipeCard />
+        <RecentRecipesCard recipes={recipes} />
       </div>
 
       {/* ------------------------------------------------------------------ */}
