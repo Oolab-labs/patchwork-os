@@ -103,7 +103,7 @@ export default function AddConnectionModal({
           zIndex: 1,
         }}
       >
-        <h2 id="add-connection-title" style={{ fontSize: 16, margin: 0 }}>
+        <h2 id="add-connection-title" style={{ fontSize: "var(--fs-xl)", margin: 0 }}>
           Add connection
         </h2>
         <button
@@ -115,7 +115,7 @@ export default function AddConnectionModal({
             border: "none",
             cursor: "pointer",
             color: "var(--fg-2)",
-            fontSize: 20,
+            fontSize: "var(--fs-3xl)",
             lineHeight: 1,
             padding: "4px 6px",
             borderRadius: "var(--r-2)",
@@ -170,7 +170,7 @@ export default function AddConnectionModal({
                     marginBottom: 2,
                   }}
                 >
-                  <span style={{ fontWeight: 600, fontSize: 13, color: "var(--fg-0)" }}>
+                  <span style={{ fontWeight: 600, fontSize: "var(--fs-m)", color: "var(--fg-0)" }}>
                     {name}
                   </span>
                   <span
@@ -205,7 +205,7 @@ export default function AddConnectionModal({
                 <div
                   title={description}
                   style={{
-                    fontSize: 12,
+                    fontSize: "var(--fs-s)",
                     color: "var(--fg-2)",
                     lineHeight: 1.4,
                     whiteSpace: "nowrap",
@@ -268,7 +268,7 @@ export default function AddConnectionModal({
               border: "none",
               padding: 0,
               cursor: "pointer",
-              fontSize: 12,
+              fontSize: "var(--fs-s)",
               color: "var(--fg-2)",
               textDecoration: "underline",
             }}
@@ -278,7 +278,7 @@ export default function AddConnectionModal({
         )}
 
         {reqSuccess && (
-          <p role="status" style={{ fontSize: 12, color: "var(--ok)", margin: 0 }}>
+          <p role="status" style={{ fontSize: "var(--fs-s)", color: "var(--ok)", margin: 0 }}>
             <span aria-hidden="true">✓ </span>Request submitted. We&apos;ll add
             it to the roadmap.
           </p>
@@ -300,7 +300,7 @@ export default function AddConnectionModal({
               style={{
                 width: "100%",
                 padding: "6px 10px",
-                fontSize: 13,
+                fontSize: "var(--fs-m)",
                 background: "var(--bg-1)",
                 border: "1px solid var(--line-2)",
                 borderRadius: "var(--r-2)",
@@ -318,7 +318,7 @@ export default function AddConnectionModal({
               style={{
                 width: "100%",
                 padding: "6px 10px",
-                fontSize: 13,
+                fontSize: "var(--fs-m)",
                 background: "var(--bg-1)",
                 border: "1px solid var(--line-2)",
                 borderRadius: "var(--r-2)",
@@ -328,7 +328,7 @@ export default function AddConnectionModal({
               }}
             />
             {reqError && (
-              <p role="alert" style={{ fontSize: 12, color: "var(--err)", margin: 0 }}>
+              <p role="alert" style={{ fontSize: "var(--fs-s)", color: "var(--err)", margin: 0 }}>
                 {reqError}
               </p>
             )}
@@ -348,7 +348,7 @@ export default function AddConnectionModal({
                   border: "none",
                   padding: 0,
                   cursor: "pointer",
-                  fontSize: 12,
+                  fontSize: "var(--fs-s)",
                   color: "var(--fg-2)",
                   textDecoration: "underline",
                 }}

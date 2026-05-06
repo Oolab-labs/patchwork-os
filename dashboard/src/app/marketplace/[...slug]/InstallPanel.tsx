@@ -99,7 +99,7 @@ export default function InstallPanel({ install, name }: Props) {
   return (
     <div className="glass-card" style={{ padding: "var(--s-5)", display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 13, color: "var(--ink-1)" }}>
+        <div style={{ fontSize: "var(--fs-m)", color: "var(--ink-1)" }}>
           {installed ? (
             <>
               <span style={{ color: "var(--ok)", marginRight: 6 }}>✓</span>
@@ -131,7 +131,7 @@ export default function InstallPanel({ install, name }: Props) {
             background: "var(--recess)",
             padding: "10px 12px",
             borderRadius: "var(--r-2)",
-            fontSize: 12,
+            fontSize: "var(--fs-s)",
             fontFamily: "var(--font-mono, ui-monospace, monospace)",
             overflowX: "auto",
             color: "var(--ink-1)",
@@ -151,7 +151,7 @@ export default function InstallPanel({ install, name }: Props) {
       </div>
 
       {err && (
-        <div className="alert-err" role="alert" style={{ fontSize: 12 }}>
+        <div className="alert-err" role="alert" style={{ fontSize: "var(--fs-s)" }}>
           {err}
         </div>
       )}

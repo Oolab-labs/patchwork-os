@@ -204,7 +204,7 @@ export default function TransactionsPage() {
           >
             <div className="card-head">
               <h2>
-                <code style={{ fontSize: 14 }}>{tx.id}</code>
+                <code style={{ fontSize: "var(--fs-base)" }}>{tx.id}</code>
               </h2>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <span className="pill muted" title={new Date(tx.createdAt).toISOString()}>
@@ -273,7 +273,7 @@ export default function TransactionsPage() {
               >
                 {state === "rolling-back" ? "Discarding…" : "Discard"}
               </button>
-              <span style={{ fontSize: 12, color: "var(--fg-2)" }}>
+              <span style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
                 Commit happens from the agent — call{" "}
                 <code>commitTransaction</code> with this ID. Discard is safe;
                 nothing has touched disk.

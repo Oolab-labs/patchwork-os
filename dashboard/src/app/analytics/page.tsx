@@ -203,15 +203,15 @@ export default function AnalyticsPage() {
           {/* Area chart — runs per hour */}
           <div className="card" style={{ padding: "14px 20px 10px", marginTop: "var(--s-4)", marginBottom: "var(--s-4)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)", marginBottom: 8 }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)" }}>
                 Calls — last 24 hours
               </span>
               <span style={{ flex: 1 }} />
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <span style={{ width: 8, height: 3, background: "var(--orange)", borderRadius: 2, display: "inline-block" }} />
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-2)" }}>runs</span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", color: "var(--ink-2)" }}>runs</span>
                 <span style={{ width: 8, height: 3, background: "var(--red)", borderRadius: 2, display: "inline-block", marginLeft: 8 }} />
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-2)" }}>errors</span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", color: "var(--ink-2)" }}>errors</span>
               </span>
             </div>
             {clientNow === 0 ? (
@@ -230,21 +230,21 @@ export default function AnalyticsPage() {
           {loading ? (
             <div
               className="card"
-              style={{ color: "var(--fg-3)", fontSize: 13 }}
+              style={{ color: "var(--fg-3)", fontSize: "var(--fs-m)" }}
             >
               Loading…
             </div>
           ) : topTools.length === 0 ? (
             <div className="empty-state">
               <h3>No tool call data yet</h3>
-              <p style={{ marginTop: "var(--s-2)", fontSize: 13 }}>
+              <p style={{ marginTop: "var(--s-2)", fontSize: "var(--fs-m)" }}>
                 Analytics data accumulates over time. Make a few tool calls and
                 refresh.
               </p>
             </div>
           ) : (
             <div className="card" style={{ padding: "var(--s-5)" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-s)" }}>
                 <tbody>
                   {topTools.map((t) => (
                     <tr key={t.tool} style={{ borderBottom: "1px solid var(--line-3)" }}>
@@ -302,7 +302,7 @@ export default function AnalyticsPage() {
                             {task.name && (
                               <span
                                 className="muted"
-                                style={{ marginLeft: 8, fontSize: 11 }}
+                                style={{ marginLeft: 8, fontSize: "var(--fs-xs)" }}
                               >
                                 {task.id}
                               </span>

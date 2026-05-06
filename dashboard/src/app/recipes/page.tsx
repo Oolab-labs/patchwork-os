@@ -175,7 +175,7 @@ function RunModal({
               marginBottom: "var(--s-4)",
             }}
           >
-            <h2 id="run-modal-title" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>
+            <h2 id="run-modal-title" style={{ margin: 0, fontSize: "var(--fs-xl)", fontWeight: 600 }}>
               Run <code>{state.recipe.name}</code>
             </h2>
             <button
@@ -198,13 +198,13 @@ function RunModal({
                 <div key={v.name}>
                   <label
                     htmlFor={`run-var-${v.name}`}
-                    style={{ display: "block", marginBottom: 4, fontSize: 13, fontFamily: "var(--font-mono)" }}
+                    style={{ display: "block", marginBottom: 4, fontSize: "var(--fs-m)", fontFamily: "var(--font-mono)" }}
                   >
                     {v.name}
                     {v.required && <span style={{ color: "var(--err)", marginLeft: 4 }}>*</span>}
                   </label>
                   {v.description && (
-                    <div style={{ fontSize: 12, color: "var(--fg-3)", marginBottom: 4 }}>
+                    <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)", marginBottom: 4 }}>
                       {v.description}
                     </div>
                   )}
@@ -423,7 +423,7 @@ function RecipeYamlPanel({ recipe }: { recipe: Recipe }) {
         border: "1px solid var(--line-2)",
         borderRadius: "var(--r-2)",
         padding: "10px 12px",
-        fontSize: 11,
+        fontSize: "var(--fs-xs)",
         lineHeight: 1.55,
         maxHeight: 360,
         overflow: "auto",
@@ -466,7 +466,7 @@ function RecipeDetailPanel({
           style={{
             fontFamily: "var(--font-mono)",
             fontWeight: 700,
-            fontSize: 13,
+            fontSize: "var(--fs-m)",
             flex: 1,
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -477,7 +477,7 @@ function RecipeDetailPanel({
           {recipe.name}
         </span>
         {isLive && <LivePill tone="ok" />}
-        <button type="button" onClick={onRun} className="btn sm primary" style={{ fontSize: 11 }}>
+        <button type="button" onClick={onRun} className="btn sm primary" style={{ fontSize: "var(--fs-xs)" }}>
           ▶ Run
         </button>
         <button
@@ -489,7 +489,7 @@ function RecipeDetailPanel({
             border: "none",
             cursor: "pointer",
             color: "var(--ink-3)",
-            fontSize: 18,
+            fontSize: "var(--fs-2xl)",
             lineHeight: 1,
           }}
         >
@@ -506,7 +506,7 @@ function RecipeDetailPanel({
       <div style={{ marginBottom: 14 }}>
         <div
           style={{
-            fontSize: 10,
+            fontSize: "var(--fs-2xs)",
             fontWeight: 700,
             textTransform: "uppercase",
             letterSpacing: "0.08em",
@@ -522,7 +522,7 @@ function RecipeDetailPanel({
       <div>
         <div
           style={{
-            fontSize: 10,
+            fontSize: "var(--fs-2xs)",
             fontWeight: 700,
             textTransform: "uppercase",
             letterSpacing: "0.08em",
@@ -533,7 +533,7 @@ function RecipeDetailPanel({
           Recent runs
         </div>
         {recentRuns.length === 0 ? (
-          <div style={{ fontSize: 12, color: "var(--ink-3)" }}>No runs yet.</div>
+          <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)" }}>No runs yet.</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {recentRuns.map((run, i) => {
@@ -547,7 +547,7 @@ function RecipeDetailPanel({
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
-                    fontSize: 11,
+                    fontSize: "var(--fs-xs)",
                     fontFamily: "var(--font-mono)",
                   }}
                 >
@@ -861,7 +861,7 @@ export default function RecipesPage() {
             </Link>
           </div>
           {unsupported && (
-            <p style={{ marginTop: 12, fontSize: 12 }}>
+            <p style={{ marginTop: 12, fontSize: "var(--fs-s)" }}>
               Recipe listing endpoint not available on this bridge version.
             </p>
           )}
@@ -947,7 +947,7 @@ export default function RecipesPage() {
                             <div
                               className="muted"
                               style={{
-                                fontSize: 11,
+                                fontSize: "var(--fs-xs)",
                                 marginTop: 2,
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
@@ -968,10 +968,10 @@ export default function RecipesPage() {
                             height={20}
                           />
                         </td>
-                        <td className="mono muted" style={{ fontSize: 12 }}>
+                        <td className="mono muted" style={{ fontSize: "var(--fs-s)" }}>
                           {formatDuration(avg)}
                         </td>
-                        <td className="muted" style={{ fontSize: 12 }}>
+                        <td className="muted" style={{ fontSize: "var(--fs-s)" }}>
                           {last ? relTime(last.startedAt) : "—"}
                         </td>
                         <td
@@ -1014,7 +1014,7 @@ export default function RecipesPage() {
                           <button
                             type="button"
                             className="btn sm"
-                            style={{ marginLeft: 8, fontSize: 11 }}
+                            style={{ marginLeft: 8, fontSize: "var(--fs-xs)" }}
                             onClick={() => handleRunClick(r)}
                             disabled={!enabled}
                           >
