@@ -1443,6 +1443,7 @@ function NewRecipePageInner() {
                       value={step.prompt}
                       onChange={(e) => updateStep(i, e.target.value)}
                       placeholder="Describe what Claude should do in this step…"
+                      aria-label={`Step ${i + 1} prompt`}
                       rows={3}
                       style={{
                         width: "100%",
