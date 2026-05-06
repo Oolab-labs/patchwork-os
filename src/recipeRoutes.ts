@@ -1177,6 +1177,216 @@ export function tryHandleRecipeRoute(
           res.end(JSON.stringify({ ok: false, error: "Missing source field" }));
           return;
         }
+
+        // -----------------------------------------------------------------
+        // BUNDLE INSTALL DISPATCH (#130 PR A).
+        //
+        // `github:patchworkos/recipes/bundles/<name>` installs every recipe
+        // listed in the bundle's `patchwork-bundle.json`. Plugin (`plugin`)
+        // and policy template (`policy_template`) declared in the manifest
+        // are surfaced as advisory-only — wiring those needs separate
+        // decisions (npm-install surface, policy application UX) tracked
+        // outside this PR. See the #130 scoping comment.
+        // -----------------------------------------------------------------
+        const bundlePrefix = "github:patchworkos/recipes/bundles/";
+        if (source.startsWith(bundlePrefix)) {
+          const bundleName = source.slice(bundlePrefix.length);
+          const { isSafeBasename } = await import(
+            "./commands/recipeInstall.js"
+          );
+          if (!isSafeBasename(bundleName)) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: "Invalid bundle name in source",
+                code: "invalid_bundle_name",
+              }),
+            );
+            return;
+          }
+          const manifestUrl = `https://raw.githubusercontent.com/patchworkos/recipes/main/bundles/${bundleName}/patchwork-bundle.json`;
+
+          const ctl = new AbortController();
+          const timeout = setTimeout(() => ctl.abort(), 30_000);
+          let manifestRes: Response;
+          try {
+            manifestRes = await fetch(manifestUrl, {
+              signal: ctl.signal,
+              redirect: "follow",
+            });
+          } catch (err) {
+            clearTimeout(timeout);
+            res.writeHead(502, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: `Bundle manifest fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+                code: "bundle_fetch_network_error",
+              }),
+            );
+            return;
+          }
+          clearTimeout(timeout);
+          if (!manifestRes.ok) {
+            const outStatus = manifestRes.status === 404 ? 404 : 502;
+            res.writeHead(outStatus, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: `Bundle manifest at ${manifestUrl} returned ${manifestRes.status}`,
+                code: "bundle_fetch_upstream_error",
+                upstreamStatus: manifestRes.status,
+              }),
+            );
+            return;
+          }
+          // 64 KB hard cap on manifest body — real `patchwork-bundle.json`
+          // is single-digit KB; anything past 64 KB is hostile or malformed.
+          const manifestBuf = await manifestRes.arrayBuffer();
+          if (manifestBuf.byteLength > 64 * 1024) {
+            res.writeHead(413, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: "Bundle manifest exceeds 64 KB cap",
+                code: "bundle_manifest_too_large",
+              }),
+            );
+            return;
+          }
+          let manifest: {
+            name?: unknown;
+            recipes?: unknown;
+            plugin?: unknown;
+            policy_template?: unknown;
+          };
+          try {
+            manifest = JSON.parse(Buffer.from(manifestBuf).toString("utf-8"));
+          } catch (err) {
+            res.writeHead(502, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: `Bundle manifest is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+                code: "bundle_manifest_invalid_json",
+              }),
+            );
+            return;
+          }
+          if (
+            !Array.isArray(manifest.recipes) ||
+            manifest.recipes.length === 0 ||
+            !manifest.recipes.every(
+              (r) => typeof r === "string" && isSafeBasename(r),
+            )
+          ) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error:
+                  "Bundle manifest must declare a non-empty `recipes` array of safe recipe names",
+                code: "bundle_manifest_invalid_recipes",
+              }),
+            );
+            return;
+          }
+
+          // Install each declared recipe. Errors are collected but don't
+          // abort the loop — partial bundle install is more useful than
+          // all-or-nothing when one of N recipes is broken.
+          const installed: Array<{
+            name: string;
+            action: "created" | "replaced";
+          }> = [];
+          const failures: Array<{ name: string; error: string }> = [];
+          const { writeFileSync, mkdirSync, unlinkSync } = await import(
+            "node:fs"
+          );
+          const { installRecipeFromFile } = await import(
+            "./recipes/installer.js"
+          );
+          const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+          mkdirSync(recipesDir, { recursive: true });
+
+          for (const r of manifest.recipes as string[]) {
+            const recipeUrl = `https://raw.githubusercontent.com/patchworkos/recipes/main/recipes/${r}/${r}.yaml`;
+            const recipeCtl = new AbortController();
+            const recipeTimeout = setTimeout(() => recipeCtl.abort(), 30_000);
+            try {
+              const recipeRes = await fetch(recipeUrl, {
+                signal: recipeCtl.signal,
+                redirect: "follow",
+              });
+              clearTimeout(recipeTimeout);
+              if (!recipeRes.ok) {
+                failures.push({
+                  name: r,
+                  error: `Upstream returned ${recipeRes.status}`,
+                });
+                continue;
+              }
+              const recipeBuf = await recipeRes.arrayBuffer();
+              if (recipeBuf.byteLength > 1024 * 1024) {
+                failures.push({
+                  name: r,
+                  error: "Recipe body exceeded 1 MB cap",
+                });
+                continue;
+              }
+              const yamlText = Buffer.from(recipeBuf).toString("utf-8");
+              const tmpFile = path.join(
+                os.tmpdir(),
+                `patchwork-bundle-install-${Date.now()}-${r}.yaml`,
+              );
+              writeFileSync(tmpFile, yamlText, "utf-8");
+              try {
+                const installResult = installRecipeFromFile(tmpFile, {
+                  recipesDir,
+                });
+                installed.push({ name: r, action: installResult.action });
+              } finally {
+                try {
+                  unlinkSync(tmpFile);
+                } catch {
+                  // best-effort cleanup
+                }
+              }
+            } catch (err) {
+              clearTimeout(recipeTimeout);
+              failures.push({
+                name: r,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+
+          // Plugin / policy_template surfaced advisory-only.
+          const advisory: Record<string, string> = {};
+          if (typeof manifest.plugin === "string") {
+            advisory.plugin = `Bundle declares plugin "${manifest.plugin}" — not installed; run \`npm install -g ${manifest.plugin}\` separately.`;
+          }
+          if (typeof manifest.policy_template === "string") {
+            advisory.policy_template = `Bundle declares policy template "${manifest.policy_template}" — not applied; review and apply manually.`;
+          }
+          // 200 if any recipe installed; 502 otherwise. Always include both
+          // arrays so callers (CLI + dashboard) can render partial-success.
+          const status = installed.length > 0 ? 200 : 502;
+          res.writeHead(status, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: installed.length > 0,
+              kind: "bundle",
+              bundleName,
+              installed,
+              failures,
+              ...(Object.keys(advisory).length > 0 && { advisory }),
+            }),
+          );
+          return;
+        }
+
         const githubPrefix = "github:patchworkos/recipes/recipes/";
         let fetchUrl: string;
         let recipeName: string;
