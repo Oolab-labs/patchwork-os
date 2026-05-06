@@ -783,6 +783,36 @@ function NewRecipePageInner() {
         </div>
       </div>
 
+      {/*
+        Scope banner — the structured form covers the common case (agent
+        steps with manual/webhook/cron triggers). The schema also supports
+        `tool:` steps, `recipe:`/`chain:` nested recipes, `parallel:` groups,
+        and `file_watch`/`git_hook`/`on_file_save`/`on_test_run`/`chained`
+        triggers. None of those have UI here yet — production recipes that
+        use them (morning-brief, branch-health, etc.) are authored in the
+        YAML editor directly. This banner tells the user that's the path
+        rather than letting them assume the form is exhaustive.
+      */}
+      <div
+        role="note"
+        style={{
+          background: "var(--bg-2)",
+          border: "1px solid var(--border-subtle)",
+          borderRadius: "var(--r-2)",
+          color: "var(--fg-2)",
+          fontSize: "var(--fs-s)",
+          marginBottom: "var(--s-4)",
+          padding: "var(--s-3) var(--s-4)",
+        }}
+      >
+        <strong style={{ color: "var(--fg-1)" }}>Form scope:</strong> agent
+        steps with manual, webhook, or schedule triggers. For advanced shapes
+        — <code>tool:</code> steps, <code>parallel:</code> groups, nested
+        recipes, or file-watch / git-hook / test-run triggers — save a stub
+        here and continue in the YAML editor, or use{" "}
+        <strong>Generate with AI</strong> below.
+      </div>
+
       <div
         style={{
           border: "1px solid var(--border-default)",
