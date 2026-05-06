@@ -170,7 +170,7 @@ function DecisionsContent() {
               placeholder="Search problems & solutions…"
               className="input"
               aria-label="Search decisions"
-              style={{ minWidth: 240, width: 280 }}
+              style={{ minWidth: "min(240px, 100%)", width: 280, maxWidth: "100%" }}
             />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
