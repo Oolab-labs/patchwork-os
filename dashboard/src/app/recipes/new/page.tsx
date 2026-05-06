@@ -346,6 +346,7 @@ function NewRecipePageInner() {
   const [aiOpen, setAiOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiSaving, setAiSaving] = useState(false);
   const [aiResult, setAiResult] = useState<{
     yaml?: string;
     warnings?: string[];
@@ -576,131 +577,102 @@ function NewRecipePageInner() {
     }
   }
 
-  function applyAiYaml(yamlText: string) {
-    // Parse the AI-generated YAML into the form's structured shape using a
-    // real parser. The previous hand-rolled line-scan dropped vars,
-    // rewrote step `into:` keys, and matched the first indented `at:`/`path:`
-    // anywhere — pulling step-level fields into `trigger`. On parse failure
-    // we leave the form alone so the user can copy YAML manually.
-    type RawStep = {
-      id?: unknown;
-      agent?: { prompt?: unknown; into?: unknown } | unknown;
-      prompt?: unknown;
-    };
-    type RawTrigger = {
-      type?: unknown;
-      at?: unknown;
-      path?: unknown;
-      vars?: unknown;
-      inputs?: unknown;
-    };
-    type RawRecipe = {
-      name?: unknown;
-      description?: unknown;
-      trigger?: RawTrigger | unknown;
-      vars?: unknown;
-      steps?: unknown;
-    };
-
-    let recipe: RawRecipe;
+  async function applyAiYaml(yamlText: string) {
+    // Save the AI-generated YAML verbatim and open it in the YAML editor.
+    // The previous flow funneled it through `applyAiYaml` → form state →
+    // `buildRecipeYaml`, but the form models only `agent:` steps — any
+    // `tool:` step the generator emitted (gmail.fetch_unread, github.list_*,
+    // file.write, etc.) was silently rewritten to an empty agent step.
+    // The structured form wizard is for hand-authoring; AI output goes
+    // straight to the raw YAML editor where the bridge's lint warnings
+    // surface and the user can review the full content unmodified.
+    let parsed: unknown;
     try {
-      recipe = (parseYaml(yamlText) ?? {}) as RawRecipe;
-      if (typeof recipe !== "object") return;
+      parsed = parseYaml(yamlText) ?? {};
     } catch {
+      setAiResult((cur) =>
+        cur ? { ...cur, error: "Generated YAML is not valid YAML." } : cur,
+      );
+      return;
+    }
+    let recipeName = "";
+    if (parsed && typeof parsed === "object") {
+      const rawName = (parsed as { name?: unknown }).name;
+      if (typeof rawName === "string") {
+        recipeName = normalizeRecipeName(rawName);
+      }
+    }
+    if (!recipeName || !NAME_RE.test(recipeName)) {
+      setAiResult((cur) =>
+        cur
+          ? {
+              ...cur,
+              error:
+                "Generated recipe is missing a valid name — regenerate or copy the YAML and create the recipe by hand.",
+            }
+          : cur,
+      );
       return;
     }
 
-    const asString = (v: unknown): string =>
-      typeof v === "string" ? v : "";
-    const asBool = (v: unknown): boolean =>
-      typeof v === "boolean" ? v : v === "true";
-
-    const trigger: RawTrigger =
-      recipe.trigger && typeof recipe.trigger === "object"
-        ? (recipe.trigger as RawTrigger)
-        : {};
-
-    const rawType = asString(trigger.type);
-    const normalizedType: "manual" | "webhook" | "schedule" =
-      rawType === "cron" || rawType === "schedule"
-        ? "schedule"
-        : rawType === "webhook"
-          ? "webhook"
-          : "manual";
-
-    const parsedCron = asString(trigger.at);
-    const parsedPath = asString(trigger.path).replace(/^\/hooks\//, "");
-
-    // vars may live under trigger.vars (canonical) or trigger.inputs
-    // (alias the validator also accepts). The AI sometimes emits top-level
-    // `vars:` despite the system prompt — accept that too as a fallback so
-    // the user doesn't lose declarations on "Use this".
-    const rawVars =
-      (Array.isArray(trigger.vars) && trigger.vars) ||
-      (Array.isArray(trigger.inputs) && trigger.inputs) ||
-      (Array.isArray(recipe.vars) && recipe.vars) ||
-      [];
-    const parsedVars: RecipeVar[] = (rawVars as unknown[])
-      .filter((v): v is Record<string, unknown> =>
-        Boolean(v) && typeof v === "object",
-      )
-      .map((v) => ({
-        name: asString(v.name),
-        description: asString(v.description),
-        required: asBool(v.required),
-        default: asString(v.default),
-      }))
-      .filter((v) => v.name);
-
-    const rawSteps = Array.isArray(recipe.steps) ? recipe.steps : [];
-    const parsedSteps: Step[] = rawSteps
-      .filter((s): s is RawStep =>
-        Boolean(s) && typeof s === "object",
-      )
-      .map((s, i) => {
-        // Step shapes we accept:
-        //   - id: foo            ← schema-canonical
-        //     agent:
-        //       prompt: ...
-        //       into: foo_output
-        //   - agent: { prompt: ..., into: ... }   ← id is optional in schema
-        //   - prompt: ...                           ← shorthand
-        const agentBlock =
-          s.agent && typeof s.agent === "object"
-            ? (s.agent as { prompt?: unknown; into?: unknown })
-            : null;
-        const prompt = agentBlock
-          ? asString(agentBlock.prompt)
-          : asString(s.prompt);
-        const into = agentBlock ? asString(agentBlock.into) : "";
-        const step: Step = {
-          id: asString(s.id) || makeStepId(i),
-          agent: true,
-          prompt: prompt.trim(),
-        };
-        if (into) step.into = into;
-        return step;
-      });
-
-    setForm((f) => ({
-      ...f,
-      name: asString(recipe.name) || f.name,
-      description: asString(recipe.description) || f.description,
-      trigger: {
-        type: normalizedType,
-        cron: parsedCron,
-        path: parsedPath,
-      },
-      vars: parsedVars.length > 0 ? parsedVars : f.vars,
-      steps: parsedSteps.length > 0 ? parsedSteps : f.steps,
-    }));
-    setValidation((cur) => ({
-      ...cur,
-      steps: parsedSteps.length > 0 ? parsedSteps.map(() => null) : cur.steps,
-      vars: parsedVars.length > 0 ? parsedVars.map(() => null) : cur.vars,
-    }));
-    setAiOpen(false);
-    setAiResult(null);
+    setAiSaving(true);
+    try {
+      const res = await fetch(
+        apiPath(`/api/bridge/recipes/${encodeURIComponent(recipeName)}`),
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: yamlText }),
+        },
+      );
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        demo?: boolean;
+        warnings?: string[];
+      };
+      if (!res.ok || data.ok === false) {
+        setAiResult((cur) =>
+          cur ? { ...cur, error: data.error ?? "Failed to save recipe." } : cur,
+        );
+        return;
+      }
+      if (data.demo) {
+        // Demo mode persists nothing, so /edit would 404. Surface in place.
+        setAiResult((cur) =>
+          cur
+            ? {
+                ...cur,
+                error:
+                  "Demo mode — recipe was not persisted. Disable demo mode to save real recipes.",
+              }
+            : cur,
+        );
+        return;
+      }
+      if (data.warnings && data.warnings.length > 0) {
+        try {
+          sessionStorage.setItem(
+            `recipe-save-warnings:${recipeName}`,
+            JSON.stringify(data.warnings),
+          );
+        } catch {
+          // sessionStorage unavailable — non-fatal; edit page re-lints.
+        }
+      }
+      router.push(`/recipes/${encodeURIComponent(recipeName)}/edit`);
+    } catch (err) {
+      setAiResult((cur) =>
+        cur
+          ? {
+              ...cur,
+              error: err instanceof Error ? err.message : String(err),
+            }
+          : cur,
+      );
+    } finally {
+      setAiSaving(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -986,18 +958,20 @@ function NewRecipePageInner() {
                   <button
                     type="button"
                     onClick={() => applyAiYaml(aiResult.yaml!)}
+                    disabled={aiSaving}
                     style={{
                       background: "var(--accent)",
                       border: "none",
                       borderRadius: "var(--r-2)",
                       color: "var(--on-accent)",
-                      cursor: "pointer",
+                      cursor: aiSaving ? "not-allowed" : "pointer",
                       fontSize: "var(--fs-m)",
                       fontWeight: 500,
+                      opacity: aiSaving ? 0.6 : 1,
                       padding: "var(--s-2) var(--s-4)",
                     }}
                   >
-                    Use this
+                    {aiSaving ? "Saving…" : "Save and edit"}
                   </button>
                   <button
                     type="button"
@@ -1005,13 +979,15 @@ function NewRecipePageInner() {
                       setAiResult(null);
                       setAiOpen(false);
                     }}
+                    disabled={aiSaving}
                     style={{
                       background: "var(--bg-2)",
                       border: "1px solid var(--border-default)",
                       borderRadius: "var(--r-2)",
                       color: "var(--fg-1)",
-                      cursor: "pointer",
+                      cursor: aiSaving ? "not-allowed" : "pointer",
                       fontSize: "var(--fs-m)",
+                      opacity: aiSaving ? 0.6 : 1,
                       padding: "var(--s-2) var(--s-4)",
                     }}
                   >
