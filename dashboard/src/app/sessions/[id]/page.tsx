@@ -225,7 +225,7 @@ export default function SessionDetailPage() {
             </div>
             <div
               style={{
-                fontSize: 17,
+                fontSize: "var(--fs-stat)",
                 fontFamily: "var(--font-mono)",
                 fontWeight: 700,
                 color: "var(--ink-0)",
@@ -249,7 +249,7 @@ export default function SessionDetailPage() {
             </div>
             <div
               style={{
-                fontSize: 17,
+                fontSize: "var(--fs-stat)",
                 fontFamily: "var(--font-mono)",
                 fontWeight: 700,
                 color:
@@ -276,7 +276,7 @@ export default function SessionDetailPage() {
             </div>
             <div
               style={{
-                fontSize: 17,
+                fontSize: "var(--fs-stat)",
                 fontFamily: "var(--font-mono)",
                 fontWeight: 700,
                 color: "var(--ink-0)",
