@@ -349,7 +349,7 @@ export default function SessionsPage() {
                     <div>
                       <div
                         style={{
-                          fontSize: 17,
+                          fontSize: "var(--fs-stat)",
                           fontWeight: 700,
                           fontFamily: "var(--font-mono)",
                           color: "var(--ink-0)",
@@ -374,7 +374,7 @@ export default function SessionsPage() {
                     <div>
                       <div
                         style={{
-                          fontSize: 17,
+                          fontSize: "var(--fs-stat)",
                           fontWeight: 700,
                           fontFamily: "var(--font-mono)",
                           color: "var(--ink-0)",
@@ -399,7 +399,7 @@ export default function SessionsPage() {
                     <div>
                       <div
                         style={{
-                          fontSize: 17,
+                          fontSize: "var(--fs-stat)",
                           fontWeight: 700,
                           fontFamily: "var(--font-mono)",
                           color:

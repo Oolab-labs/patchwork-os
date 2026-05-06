@@ -97,6 +97,7 @@ const RENAMES = {
   "fontSize.2xl": "fs-2xl",
   "fontSize.3xl": "fs-3xl",
   "fontSize.display": "fs-display",
+  "fontSize.stat": "fs-stat",
 };
 
 for (const { name: themeName, json, css: cssVars } of themes) {

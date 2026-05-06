@@ -84,6 +84,8 @@
   --fs-2xl:    18px;
   --fs-3xl:    20px;
   --fs-display: 28px;
+  /* role-named: stat-number displays in sessions/inbox cards */
+  --fs-stat:   17px;
 
   /* Visually-hidden until focused; surfaces for keyboard users only. */
 }
