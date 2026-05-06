@@ -239,9 +239,9 @@ export async function runPatchworkInit(
       : "";
 
   log(`${restartLine}\nNext:
-  1. patchwork-os recipe run daily-status      # zero-config: yesterday's commits + today's hints
-  2. patchwork-os                              # launch terminal dashboard (TUI)
-  3. cd dashboard && npm run dev               # launch web dashboard → http://localhost:3200
+  1. patchwork start                           # launch bridge + Claude + dashboard (one command)
+  2. patchwork-os recipe run daily-status      # zero-config: yesterday's commits + today's hints
+  3. patchwork-os                              # terminal dashboard (TUI, alternative to web)
   4. patchwork-os recipe list                  # browse installed recipes
   5. patchwork-os init --with-connectors       # add gmail/github/linear/etc. recipes\n`);
 
