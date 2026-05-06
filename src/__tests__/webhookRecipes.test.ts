@@ -510,10 +510,13 @@ describe("saveRecipe", () => {
       readFileSync(path.join(tmp, "trimmed-fields.json"), "utf-8"),
     ) as {
       steps?: Array<{ id: string }>;
-      vars?: Array<{ name: string }>;
+      trigger?: { vars?: Array<{ name: string }> };
     };
     expect(saved.steps?.[0]?.id).toBe("step-1");
-    expect(saved.vars?.[0]?.name).toBe("ticket_id");
+    // `vars` are now nested under `trigger.vars` (canonical shape; see
+    // PR #259's vars-nesting fix and the post-review legacy-path
+    // alignment).
+    expect(saved.trigger?.vars?.[0]?.name).toBe("ticket_id");
   });
 });
 
