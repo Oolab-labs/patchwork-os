@@ -30,7 +30,7 @@ function DeltaBadge({ delta }: { delta: string }) {
         display: "inline-flex",
         alignItems: "center",
         gap: 2,
-        fontSize: 11,
+        fontSize: "var(--fs-xs)",
         fontWeight: 600,
         color,
         background: isPositive

@@ -313,7 +313,7 @@ export function Shell({ children }: { children: ReactNode }) {
             aria-label="Open terminal"
             title="Terminal"
           >
-            <span aria-hidden="true" style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, letterSpacing: "-0.05em" }}>
+            <span aria-hidden="true" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)", fontWeight: 700, letterSpacing: "-0.05em" }}>
               {">_"}
             </span>
           </button>

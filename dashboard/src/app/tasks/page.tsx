@@ -56,7 +56,7 @@ function DriverBadge({ name }: { name: string }) {
     <span
       className="pill"
       style={{
-        fontSize: 10,
+        fontSize: "var(--fs-2xs)",
         background: c.bg,
         color: c.fg,
         border: "none",
@@ -120,14 +120,14 @@ function TaskDetail({ task, onCancel, cancelling }: {
           flexWrap: "wrap",
         }}
       >
-        <span className={`pill ${statusClass(task.status)}`} style={{ fontSize: 11 }}>
+        <span className={`pill ${statusClass(task.status)}`} style={{ fontSize: "var(--fs-xs)" }}>
           <span className="pill-dot" />
           {task.status}
         </span>
-        <span className="mono" style={{ fontSize: 12, color: "var(--ink-1)" }}>
+        <span className="mono" style={{ fontSize: "var(--fs-s)", color: "var(--ink-1)" }}>
           {task.taskId.slice(0, 8)}
         </span>
-        <span style={{ fontSize: 12, color: "var(--ink-2)", marginLeft: "auto" }}>
+        <span style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginLeft: "auto" }}>
           <span className="mono">{dur}</span>
           <span style={{ margin: "0 6px", color: "var(--ink-3)" }}>·</span>
           <span className="mono">{model}</span>
@@ -138,7 +138,7 @@ function TaskDetail({ task, onCancel, cancelling }: {
       <div style={{ marginBottom: 14 }}>
         <div
           style={{
-            fontSize: 10,
+            fontSize: "var(--fs-2xs)",
             color: "var(--ink-2)",
             fontWeight: 600,
             textTransform: "uppercase",
@@ -168,7 +168,7 @@ function TaskDetail({ task, onCancel, cancelling }: {
           </pre>
         ) : (
           !errText && (
-            <div style={{ color: "var(--ink-3)", fontSize: 12, padding: "8px 0" }}>
+            <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-s)", padding: "8px 0" }}>
               No output yet.
             </div>
           )
@@ -180,7 +180,7 @@ function TaskDetail({ task, onCancel, cancelling }: {
         <div style={{ marginBottom: 14 }}>
           <div
             style={{
-              fontSize: 10,
+              fontSize: "var(--fs-2xs)",
               color: "var(--ink-2)",
               fontWeight: 600,
               textTransform: "uppercase",
@@ -195,7 +195,7 @@ function TaskDetail({ task, onCancel, cancelling }: {
               <span
                 key={f}
                 className="pill muted mono"
-                style={{ fontSize: 11 }}
+                style={{ fontSize: "var(--fs-xs)" }}
               >
                 {f}
               </span>
@@ -217,7 +217,7 @@ function TaskDetail({ task, onCancel, cancelling }: {
         <button
           type="button"
           className="btn sm ghost"
-          style={{ fontSize: 12 }}
+          style={{ fontSize: "var(--fs-s)" }}
           onClick={async () => {
             await navigator.clipboard.writeText(`patchwork task resume ${task.taskId}`);
             flash("term");
@@ -228,7 +228,7 @@ function TaskDetail({ task, onCancel, cancelling }: {
         <button
           type="button"
           className="btn sm ghost"
-          style={{ fontSize: 12 }}
+          style={{ fontSize: "var(--fs-s)" }}
           onClick={async () => {
             try {
               const res = await fetch(
@@ -247,7 +247,7 @@ function TaskDetail({ task, onCancel, cancelling }: {
           type="button"
           className="btn sm ghost"
           aria-label="Copy task ID"
-          style={{ fontSize: 12 }}
+          style={{ fontSize: "var(--fs-s)" }}
           onClick={async () => {
             await navigator.clipboard.writeText(task.taskId);
             flash("id");
@@ -263,7 +263,7 @@ function TaskDetail({ task, onCancel, cancelling }: {
           <button
             type="button"
             className="btn sm ghost"
-            style={{ fontSize: 12, color: "var(--red)", marginLeft: "auto" }}
+            style={{ fontSize: "var(--fs-s)", color: "var(--red)", marginLeft: "auto" }}
             disabled={!!cancelling[task.taskId]}
             onClick={() => onCancel(task.taskId)}
           >
@@ -459,7 +459,7 @@ export default function TasksPage() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search id, session, driver, output…"
             className="input"
-            style={{ flex: "1 1 280px", maxWidth: 360, fontSize: 13 }}
+            style={{ flex: "1 1 280px", maxWidth: 360, fontSize: "var(--fs-m)" }}
             aria-label="Filter tasks"
           />
           <div style={{ display: "flex", gap: 4 }} role="group" aria-label="Status filter">
@@ -475,14 +475,14 @@ export default function TasksPage() {
                 aria-pressed={statusFilter === k}
                 onClick={() => setStatusFilter(k)}
                 className={`btn sm ${statusFilter === k ? "primary" : "ghost"}`}
-                style={{ fontSize: 12 }}
+                style={{ fontSize: "var(--fs-s)" }}
               >
                 {label} <span style={{ opacity: 0.7, marginLeft: 4 }}>{n}</span>
               </button>
             ))}
           </div>
           {(search || statusFilter !== "all") && (
-            <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
+            <span style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)" }}>
               {filteredTasks.length} of {tasks.length}
             </span>
           )}
@@ -527,7 +527,7 @@ export default function TasksPage() {
             />
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {filteredTasks.length === 0 && (
-              <div style={{ padding: "var(--s-4)", color: "var(--ink-3)", fontSize: 13 }}>
+              <div style={{ padding: "var(--s-4)", color: "var(--ink-3)", fontSize: "var(--fs-m)" }}>
                 No tasks match this filter.
               </div>
             )}
@@ -597,7 +597,7 @@ export default function TasksPage() {
                     }}
                   />
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-2)", fontWeight: 500 }}>
+                    <span className="mono" style={{ fontSize: "var(--fs-xs)", color: "var(--ink-2)", fontWeight: 500 }}>
                       {t.taskId.slice(0, 8)}
                     </span>
                     <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
@@ -623,7 +623,7 @@ export default function TasksPage() {
                         />
                       </span>
                       <DriverBadge name={driver} />
-                      <span className={`pill ${statusClass(t.status)}`} style={{ fontSize: 10 }}>
+                      <span className={`pill ${statusClass(t.status)}`} style={{ fontSize: "var(--fs-2xs)" }}>
                         <span className="pill-dot" />
                         {t.status}
                       </span>
@@ -631,7 +631,7 @@ export default function TasksPage() {
                   </div>
                   <div
                     style={{
-                      fontSize: 12,
+                      fontSize: "var(--fs-s)",
                       color: isSelected ? "var(--ink-1)" : "var(--ink-2)",
                       lineHeight: 1.5,
                       display: "-webkit-box",
@@ -643,7 +643,7 @@ export default function TasksPage() {
                   >
                     {firstOutputLine || <span style={{ color: "var(--ink-3)" }}>(running…)</span>}
                   </div>
-                  <div style={{ fontSize: 11, color: isLive ? "var(--blue)" : "var(--ink-3)", fontFamily: "var(--font-mono)", marginTop: 4 }}>
+                  <div style={{ fontSize: "var(--fs-xs)", color: isLive ? "var(--blue)" : "var(--ink-3)", fontFamily: "var(--font-mono)", marginTop: 4 }}>
                     {dur}
                   </div>
                 </button>
@@ -664,7 +664,7 @@ export default function TasksPage() {
               <div
                 style={{
                   color: "var(--ink-3)",
-                  fontSize: 13,
+                  fontSize: "var(--fs-m)",
                   padding: 24,
                   textAlign: "center",
                 }}

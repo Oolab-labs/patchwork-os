@@ -135,7 +135,7 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
       >
         <h3
           style={{
-            fontSize: 13,
+            fontSize: "var(--fs-m)",
             fontWeight: 700,
             margin: 0,
             color: "var(--ink-0)",
@@ -148,14 +148,14 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
         </h3>
         <Link
           href="/activity"
-          style={{ fontSize: 11, color: "var(--orange)", textDecoration: "none" }}
+          style={{ fontSize: "var(--fs-xs)", color: "var(--orange)", textDecoration: "none" }}
         >
           view all →
         </Link>
       </div>
 
       {events.length === 0 ? (
-        <div style={{ fontSize: 12, color: "var(--ink-3)", padding: "var(--s-4) 0" }}>
+        <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", padding: "var(--s-4) 0" }}>
           No recent events.
         </div>
       ) : (
@@ -196,7 +196,7 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
                   gap: 10,
                   padding: "7px 0 7px 18px",
                   position: "relative",
-                  fontSize: 12,
+                  fontSize: "var(--fs-s)",
                   minWidth: 0,
                 }}
               >
@@ -217,7 +217,7 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
                 <span
                   style={{
                     fontFamily: "var(--font-mono)",
-                    fontSize: 11,
+                    fontSize: "var(--fs-xs)",
                     color: "var(--ink-3)",
                     minWidth: 56,
                     flexShrink: 0,
@@ -228,7 +228,7 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
                 <span
                   style={{
                     fontFamily: "var(--font-mono)",
-                    fontSize: 12,
+                    fontSize: "var(--fs-s)",
                     color: "var(--ink-0)",
                     fontWeight: 600,
                     flex: 1,
@@ -242,7 +242,7 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
                 </span>
                 <span
                   className="pill muted"
-                  style={{ fontSize: 9, flexShrink: 0 }}
+                  style={{ fontSize: "var(--fs-3xs)", flexShrink: 0 }}
                 >
                   {kind}
                 </span>
@@ -250,7 +250,7 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
                   <span
                     style={{
                       fontFamily: "var(--font-mono)",
-                      fontSize: 10,
+                      fontSize: "var(--fs-2xs)",
                       color: "var(--ink-2)",
                       flexShrink: 0,
                     }}
@@ -260,7 +260,7 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
                 )}
                 <span
                   className={`pill ${isErr ? "err" : "ok"}`}
-                  style={{ fontSize: 9, flexShrink: 0 }}
+                  style={{ fontSize: "var(--fs-3xs)", flexShrink: 0 }}
                 >
                   {isErr ? "err" : "ok"}
                 </span>
@@ -290,7 +290,7 @@ function ActiveRecipeCard() {
       >
         <h3
           style={{
-            fontSize: 13,
+            fontSize: "var(--fs-m)",
             fontWeight: 700,
             margin: 0,
             color: "var(--ink-0)",
@@ -303,7 +303,7 @@ function ActiveRecipeCard() {
         </h3>
         <span
           className="pill muted"
-          style={{ fontSize: 10 }}
+          style={{ fontSize: "var(--fs-2xs)" }}
           title="Live wiring pending — preview only"
         >
           preview
@@ -316,7 +316,7 @@ function ActiveRecipeCard() {
           alignItems: "center",
           gap: 8,
           marginBottom: 10,
-          fontSize: 12,
+          fontSize: "var(--fs-s)",
           color: "var(--ink-1)",
         }}
       >
@@ -379,7 +379,7 @@ function HealthCard({
       >
         <h3
           style={{
-            fontSize: 13,
+            fontSize: "var(--fs-m)",
             fontWeight: 700,
             margin: 0,
             color: "var(--ink-0)",
@@ -392,7 +392,7 @@ function HealthCard({
         </h3>
         <span
           className={`pill ${bridgeOk && extensionConnected ? "ok" : bridgeOk ? "muted" : "warn"}`}
-          style={{ fontSize: 10 }}
+          style={{ fontSize: "var(--fs-2xs)" }}
         >
           {bridgeOk && extensionConnected
             ? "all green"
@@ -664,7 +664,7 @@ export default function HomePage() {
         <span
           style={{
             fontFamily: "var(--font-mono)",
-            fontSize: 10,
+            fontSize: "var(--fs-2xs)",
             fontWeight: 700,
             letterSpacing: "0.1em",
             textTransform: "uppercase",
@@ -679,7 +679,7 @@ export default function HomePage() {
           className="btn sm ghost"
           onClick={() => tickRef.current()}
           style={{
-            fontSize: 11,
+            fontSize: "var(--fs-xs)",
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
@@ -696,7 +696,7 @@ export default function HomePage() {
           className="btn sm primary"
           style={{
             textDecoration: "none",
-            fontSize: 11,
+            fontSize: "var(--fs-xs)",
             background: "var(--orange)",
             border: "none",
           }}
@@ -770,7 +770,7 @@ export default function HomePage() {
         >
           <span
             style={{
-              fontSize: 13,
+              fontSize: "var(--fs-m)",
               fontWeight: 700,
               color: "var(--ink-0)",
               flex: 1,
@@ -781,7 +781,7 @@ export default function HomePage() {
           <span
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: 11,
+              fontSize: "var(--fs-xs)",
               color: "var(--orange)",
               fontWeight: 700,
             }}
@@ -792,7 +792,7 @@ export default function HomePage() {
         <div
           style={{
             fontFamily: "var(--font-mono)",
-            fontSize: 11,
+            fontSize: "var(--fs-xs)",
             color: "var(--ink-3)",
             marginBottom: 10,
           }}

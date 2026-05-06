@@ -14,7 +14,7 @@ export function RiskPill({ level, label }: { level: RiskLevel; label?: string })
         textTransform: "uppercase",
         letterSpacing: "0.06em",
         fontFamily: "var(--font-mono)",
-        fontSize: 10,
+        fontSize: "var(--fs-2xs)",
         fontWeight: 700,
       }}
     >

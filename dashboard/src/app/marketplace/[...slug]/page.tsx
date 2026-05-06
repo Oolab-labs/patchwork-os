@@ -83,7 +83,7 @@ export default async function RecipeDetailPage({ params }: PageProps) {
       <Link
         href="/marketplace"
         className="btn sm ghost"
-        style={{ alignSelf: "flex-start", textDecoration: "none", fontSize: 12 }}
+        style={{ alignSelf: "flex-start", textDecoration: "none", fontSize: "var(--fs-s)" }}
       >
         ← Back to marketplace
       </Link>
@@ -124,7 +124,7 @@ function Header({
         <h1 style={{ fontFamily: "var(--font-mono, ui-monospace, monospace)", letterSpacing: "-0.01em" }}>
           {shortName(recipe.name)}
         </h1>
-        <div className="page-head-sub" style={{ fontSize: 13, color: "var(--ink-2)" }}>
+        <div className="page-head-sub" style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)" }}>
           {recipe.name}
           <span style={{ margin: "0 8px", color: "var(--ink-3)" }}>·</span>
           <span>v{recipe.version}</span>
@@ -162,7 +162,7 @@ function Description({
 }) {
   const description = manifest?.description ?? recipe.description;
   return (
-    <p style={{ fontSize: 14, color: "var(--ink-1)", lineHeight: 1.6, maxWidth: 760 }}>
+    <p style={{ fontSize: "var(--fs-base)", color: "var(--ink-1)", lineHeight: 1.6, maxWidth: 760 }}>
       {description}
     </p>
   );
@@ -175,8 +175,8 @@ function Variables({ manifest }: { manifest: RecipeManifest | null }) {
   const entries = Object.entries(vars);
   return (
     <div className="glass-card" style={{ padding: "var(--s-5)" }}>
-      <h3 style={{ fontSize: 13, marginTop: 0, marginBottom: "var(--s-3)" }}>Configuration</h3>
-      <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+      <h3 style={{ fontSize: "var(--fs-m)", marginTop: 0, marginBottom: "var(--s-3)" }}>Configuration</h3>
+      <table style={{ width: "100%", fontSize: "var(--fs-s)", borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ textAlign: "left", color: "var(--ink-2)" }}>
             <th scope="col" style={{ padding: "6px 8px", borderBottom: "1px solid var(--line-1)", textAlign: "left" }}>Variable</th>
@@ -213,8 +213,8 @@ function Steps({ yaml }: { yaml: string | null }) {
 
   return (
     <div className="glass-card" style={{ padding: "var(--s-5)" }}>
-      <h3 style={{ fontSize: 13, marginTop: 0, marginBottom: "var(--s-3)" }}>Steps & risk</h3>
-      <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--ink-1)" }}>
+      <h3 style={{ fontSize: "var(--fs-m)", marginTop: 0, marginBottom: "var(--s-3)" }}>Steps & risk</h3>
+      <div style={{ display: "flex", gap: 12, fontSize: "var(--fs-s)", color: "var(--ink-1)" }}>
         <span>
           <strong>{r.steps}</strong> step{r.steps === 1 ? "" : "s"}
         </span>
@@ -249,7 +249,7 @@ function YamlPreview({
 }) {
   if (!yaml) {
     return (
-      <div className="glass-card" style={{ padding: "var(--s-5)", color: "var(--ink-2)", fontSize: 13 }}>
+      <div className="glass-card" style={{ padding: "var(--s-5)", color: "var(--ink-2)", fontSize: "var(--fs-m)" }}>
         Recipe source unavailable.
       </div>
     );
@@ -263,7 +263,7 @@ function YamlPreview({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          fontSize: 12,
+          fontSize: "var(--fs-s)",
           color: "var(--ink-2)",
         }}
       >
@@ -275,7 +275,7 @@ function YamlPreview({
             href={githubBlobUrlFor(src, mainFile)}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: "var(--accent-strong)", textDecoration: "none", fontSize: 11 }}
+            style={{ color: "var(--accent-strong)", textDecoration: "none", fontSize: "var(--fs-xs)" }}
           >
             View on GitHub →
           </a>
@@ -286,7 +286,7 @@ function YamlPreview({
           margin: 0,
           padding: "16px",
           fontFamily: "var(--font-mono, ui-monospace, monospace)",
-          fontSize: 12,
+          fontSize: "var(--fs-s)",
           lineHeight: 1.55,
           color: "var(--ink-1)",
           background: "var(--recess)",
@@ -317,7 +317,7 @@ function TrustMetadataCard({ recipe }: { recipe: RegistryRecipe }) {
     rows.push({
       label: "Risk level",
       value: (
-        <span className={`pill ${RISK_PILL_CLASS[risk_level]}`} style={{ fontSize: 11 }}>
+        <span className={`pill ${RISK_PILL_CLASS[risk_level]}`} style={{ fontSize: "var(--fs-xs)" }}>
           {risk_level}
         </span>
       ),
@@ -338,8 +338,8 @@ function TrustMetadataCard({ recipe }: { recipe: RegistryRecipe }) {
 
   return (
     <div className="glass-card" style={{ padding: "var(--s-5)" }}>
-      <h3 style={{ fontSize: 13, marginTop: 0, marginBottom: "var(--s-3)" }}>Trust &amp; permissions</h3>
-      <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+      <h3 style={{ fontSize: "var(--fs-m)", marginTop: 0, marginBottom: "var(--s-3)" }}>Trust &amp; permissions</h3>
+      <table style={{ width: "100%", fontSize: "var(--fs-s)", borderCollapse: "collapse" }}>
         <tbody>
           {rows.map(({ label, value }) => (
             <tr key={label} style={{ borderBottom: "1px solid var(--line-1)" }}>
@@ -361,7 +361,7 @@ function TrustNote() {
         background: "var(--warn-soft)",
         border: "1px solid var(--warn)",
         borderRadius: "var(--r-3)",
-        fontSize: 12,
+        fontSize: "var(--fs-s)",
         color: "var(--ink-2)",
         lineHeight: 1.6,
       }}

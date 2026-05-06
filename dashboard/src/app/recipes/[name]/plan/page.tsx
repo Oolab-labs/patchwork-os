@@ -48,7 +48,7 @@ function RiskBadge({ risk }: { risk?: string }) {
         border: `1px solid ${RISK_COLORS[risk] ?? "var(--border-default)"}`,
         borderRadius: 4,
         color: RISK_COLORS[risk] ?? "var(--fg-3)",
-        fontSize: 11,
+        fontSize: "var(--fs-xs)",
         fontWeight: 600,
         letterSpacing: "0.04em",
         padding: "1px 6px",
@@ -74,7 +74,7 @@ function TypeBadge({ type }: { type: string }) {
         border: `1px solid ${color}`,
         borderRadius: 4,
         color,
-        fontSize: 11,
+        fontSize: "var(--fs-xs)",
         fontWeight: 600,
         letterSpacing: "0.04em",
         padding: "1px 6px",
@@ -136,7 +136,7 @@ export default function RecipePlanPage({
               href={`/recipes/${encodeURIComponent(name)}/edit`}
               style={{
                 color: "var(--fg-3)",
-                fontSize: 13,
+                fontSize: "var(--fs-m)",
                 textDecoration: "none",
                 display: "inline-flex",
                 alignItems: "center",
@@ -175,7 +175,7 @@ export default function RecipePlanPage({
       </div>
 
       {loading && (
-        <p style={{ color: "var(--fg-3)", fontSize: 14 }}>Loading plan…</p>
+        <p style={{ color: "var(--fg-3)", fontSize: "var(--fs-base)" }}>Loading plan…</p>
       )}
 
       {error && (
@@ -185,7 +185,7 @@ export default function RecipePlanPage({
             border: "1px solid var(--err)",
             borderRadius: "var(--r-2)",
             color: "var(--err)",
-            fontSize: 13,
+            fontSize: "var(--fs-m)",
             padding: "var(--s-3) var(--s-4)",
           }}
         >
@@ -203,7 +203,7 @@ export default function RecipePlanPage({
               display: "flex",
               flexWrap: "wrap",
               gap: "var(--s-4)",
-              fontSize: 13,
+              fontSize: "var(--fs-m)",
               color: "var(--fg-2)",
             }}
           >
@@ -254,7 +254,7 @@ export default function RecipePlanPage({
                     border: "1px solid var(--err)",
                     borderRadius: "var(--r-2)",
                     color: "var(--err)",
-                    fontSize: 13,
+                    fontSize: "var(--fs-m)",
                     padding: "var(--s-2) var(--s-3)",
                   }}
                 >
@@ -270,7 +270,7 @@ export default function RecipePlanPage({
                     border: "1px solid var(--warn)",
                     borderRadius: "var(--r-2)",
                     color: "var(--warn)",
-                    fontSize: 13,
+                    fontSize: "var(--fs-m)",
                     padding: "var(--s-2) var(--s-3)",
                   }}
                 >
@@ -291,7 +291,7 @@ export default function RecipePlanPage({
             <table
               style={{
                 borderCollapse: "collapse",
-                fontSize: 13,
+                fontSize: "var(--fs-m)",
                 width: "100%",
               }}
             >
@@ -309,7 +309,7 @@ export default function RecipePlanPage({
                         style={{
                           color: "var(--fg-2)",
                           fontWeight: 600,
-                          fontSize: 11,
+                          fontSize: "var(--fs-xs)",
                           letterSpacing: "0.04em",
                           padding: "var(--s-2) var(--s-3)",
                           textAlign: "left",
@@ -350,7 +350,7 @@ export default function RecipePlanPage({
                     <td
                       style={{
                         fontFamily: "var(--font-mono)",
-                        fontSize: 12,
+                        fontSize: "var(--fs-s)",
                         padding: "var(--s-2) var(--s-3)",
                         color: "var(--fg-0)",
                       }}
@@ -360,7 +360,7 @@ export default function RecipePlanPage({
                         <span
                           style={{
                             color: "var(--fg-3)",
-                            fontSize: 11,
+                            fontSize: "var(--fs-xs)",
                             marginLeft: 4,
                           }}
                         >
@@ -390,7 +390,7 @@ export default function RecipePlanPage({
                             <span
                               style={{
                                 color: "var(--err)",
-                                fontSize: 11,
+                                fontSize: "var(--fs-xs)",
                                 marginLeft: 6,
                               }}
                             >
@@ -399,7 +399,7 @@ export default function RecipePlanPage({
                           )}
                         </>
                       ) : step.recipe ? (
-                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}>
                           recipe: {step.recipe}
                         </span>
                       ) : step.prompt ? (
@@ -422,7 +422,7 @@ export default function RecipePlanPage({
                       style={{
                         color: "var(--fg-3)",
                         fontFamily: "var(--font-mono)",
-                        fontSize: 11,
+                        fontSize: "var(--fs-xs)",
                         padding: "var(--s-2) var(--s-3)",
                         whiteSpace: "nowrap",
                       }}
@@ -435,7 +435,7 @@ export default function RecipePlanPage({
                     <td
                       style={{
                         color: "var(--fg-3)",
-                        fontSize: 12,
+                        fontSize: "var(--fs-s)",
                         padding: "var(--s-2) var(--s-3)",
                         whiteSpace: "nowrap",
                       }}
@@ -460,7 +460,7 @@ export default function RecipePlanPage({
               <h3
                 style={{
                   color: "var(--fg-1)",
-                  fontSize: 13,
+                  fontSize: "var(--fs-m)",
                   fontWeight: 600,
                   margin: "0 0 var(--s-2) 0",
                 }}
@@ -481,7 +481,7 @@ export default function RecipePlanPage({
                       background: "var(--bg-2)",
                       border: "1px solid var(--border-default)",
                       borderRadius: "var(--r-2)",
-                      fontSize: 12,
+                      fontSize: "var(--fs-s)",
                       fontFamily: "var(--font-mono)",
                       padding: "var(--s-1) var(--s-3)",
                     }}
