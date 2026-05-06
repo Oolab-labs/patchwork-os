@@ -112,7 +112,9 @@ function validateForm(form: FormState): ValidationState {
         "Variable name must start with a letter or underscore, then letters, digits, or underscores only.";
       continue;
     }
-    if (RESERVED_VAR_NAMES.has(name)) {
+    if (RESERVED_VAR_NAMES.has(name.toLowerCase())) {
+      // Case-insensitive — VAR_NAME_RE admits `DATE`/`Date`. Treat them
+      // the same as `date` to match the server-side gate.
       errors.vars[i] = `'${name}' is a reserved built-in context key.`;
       continue;
     }

@@ -5,7 +5,11 @@ import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
 } from "./legacyRecipeCompat.js";
-import { RECIPE_VAR_NAME_RE, RESERVED_VAR_NAMES } from "./names.js";
+import {
+  RECIPE_NAME_RE,
+  RECIPE_VAR_NAME_RE,
+  RESERVED_VAR_NAMES,
+} from "./names.js";
 import { generateSchemaSet } from "./schemaGenerator.js";
 import { listToolOutputContextKeys } from "./toolRegistry.js";
 
@@ -37,11 +41,17 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
         level: "error",
         message: "Missing or invalid 'name' field",
       });
-    } else if (!/^[a-z0-9-]+$/.test(r.name)) {
+    } else if (
+      !RECIPE_NAME_RE.test(r.name) &&
+      // Registry recipes use scoped `@scope/name` form — accept those
+      // the same way the JSON Schema does. Anything else is a real
+      // shape error worth flagging.
+      !/^@[a-z0-9-]+\/[a-z0-9][a-z0-9-]{0,63}$/.test(r.name)
+    ) {
       issues.push({
         level: "warning",
         message:
-          "Recipe name should use kebab-case (lowercase letters, numbers, hyphens)",
+          "Recipe name should use kebab-case (lowercase letters, numbers, hyphens; max 64 chars; must start with a letter or digit)",
       });
     }
 
@@ -191,7 +201,10 @@ function validateTriggerVarsList(
       });
       continue;
     }
-    if (RESERVED_VAR_NAMES.has(name)) {
+    // Case-insensitive — `RECIPE_VAR_NAME_RE` admits `DATE`/`Date` but
+    // the reserved set is lowercase. Future-proof the gate against
+    // contributors flipping the renderer to case-insensitive lookups.
+    if (RESERVED_VAR_NAMES.has(name.toLowerCase())) {
       issues.push({
         level: "error",
         message: `trigger.${fieldName}[${i}].name "${name}" shadows a reserved built-in context key — pick a different name`,

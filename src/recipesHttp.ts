@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import * as path from "node:path";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   loadConfig,
   type PatchworkConfig,
@@ -361,31 +361,42 @@ export function saveRecipe(
   }
   try {
     mkdirSync(recipesDir, { recursive: true });
-    const payload = {
-      name: safeName,
-      description: draft.description,
-      trigger: normalizeRecipeDraftTrigger(draft.trigger),
-      steps: draft.steps.map((s) => ({
-        id: s.id.trim(),
-        agent: s.agent,
-        prompt: s.prompt,
-      })),
-      ...(draft.vars && draft.vars.length > 0
+    // Nest `vars` under `trigger.vars` (validator only reads it there;
+    // top-level was the same shape bug PR #259 fixed for the YAML path).
+    const baseTrigger = normalizeRecipeDraftTrigger(draft.trigger) as Record<
+      string,
+      unknown
+    >;
+    const trigger =
+      draft.vars && draft.vars.length > 0
         ? {
+            ...baseTrigger,
             vars: draft.vars.map((item) => ({
               ...item,
               name: item.name.trim(),
             })),
           }
-        : {}),
+        : baseTrigger;
+    const payload = {
+      name: safeName,
+      description: draft.description,
+      trigger,
+      steps: draft.steps.map((s) => ({
+        id: s.id.trim(),
+        agent: s.agent,
+        prompt: s.prompt,
+      })),
       createdAt: Date.now(),
     };
+    // Surface the FIRST error from `validateRecipeDefinition` — earlier
+    // versions filtered to only "Unknown template reference" issues,
+    // which silently bypassed cron validation, var-name regex, and
+    // reserved-name shadowing on this legacy JSON path. Anyone scripting
+    // against the bridge's `POST /recipes` endpoint was getting much
+    // weaker validation than the dashboard's YAML PUT path.
     const deepValidation = validateRecipeDefinition(payload);
     const deepError = deepValidation.issues.find(
-      (issue) =>
-        issue.level === "error" &&
-        issue.message.startsWith("Step ") &&
-        issue.message.includes("Unknown template reference"),
+      (issue) => issue.level === "error",
     );
     if (deepError) {
       return { ok: false, error: deepError.message };
@@ -531,9 +542,17 @@ export function saveRecipeContent(
   // (e.g. caller PUT to /recipes/myrecipe with a body whose `name:` is
   // `MyRecipe`), rewrite it to match. The filename is the source of
   // truth for routing, dashboard list keys, and webhook resolution;
-  // body drift just causes silent confusion. Same `^name:\s*.+$/m`
-  // pattern that `duplicateRecipe` and `promoteRecipeVariant` already
-  // use to rewrite `name:` lines.
+  // body drift just causes silent confusion.
+  //
+  // Earlier versions used a `^name:\s*.+$/m` text replace, but that:
+  //   (a) only handled the FIRST top-level `name:` (YAML duplicate keys
+  //       — which the parser resolves to the LAST — would survive in
+  //       the file even after rewrite), and
+  //   (b) didn't recognize quoted forms like `name: "MyRecipe"` cleanly
+  //       across all whitespace shapes.
+  // Parse → mutate → stringify is robust against both: the YAML
+  // serializer normalizes the entire document, so any duplicate/quoted
+  // name disappears.
   let normalizedContent = content;
   if (
     parsed &&
@@ -543,10 +562,21 @@ export function saveRecipeContent(
     (parsed as Record<string, unknown>).name !== safeName
   ) {
     const oldName = (parsed as Record<string, unknown>).name as string;
-    normalizedContent = content.replace(/^name:\s*.+$/m, `name: ${safeName}`);
-    warnings.push(
-      `Recipe body name "${oldName}" was rewritten to "${safeName}" to match the filename.`,
-    );
+    const recipe = { ...(parsed as Record<string, unknown>), name: safeName };
+    try {
+      normalizedContent = stringifyYaml(recipe);
+      warnings.push(
+        `Recipe body name "${oldName}" was rewritten to "${safeName}" to match the filename.`,
+      );
+    } catch {
+      // Re-stringify failed (e.g. cyclic structure); fall back to the
+      // text replace so save still succeeds. Safe because the parse
+      // above already validated the document.
+      normalizedContent = content.replace(/^name:\s*.+$/m, `name: ${safeName}`);
+      warnings.push(
+        `Recipe body name "${oldName}" was rewritten to "${safeName}" to match the filename (text-replace fallback).`,
+      );
+    }
   }
 
   try {
