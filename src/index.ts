@@ -189,7 +189,7 @@ const __invokedSubcommand = (() => {
 })();
 
 const __invokedBareBinaryDashboard = (() => {
-  if (process.argv[2]) return false;
+  if (process.argv[2] && process.argv[2] !== "dashboard") return false;
   const binName = path.basename(process.argv[1] ?? "");
   return (
     binName === "patchwork-os" ||
@@ -3115,7 +3115,7 @@ if (process.argv[2] === "launchd") {
     binName === "patchwork-os" ||
     binName === "patchwork" ||
     binName === "patchwork.js";
-  if (isPatchworkBin && !process.argv[2]) {
+  if (isPatchworkBin && (!process.argv[2] || process.argv[2] === "dashboard")) {
     (async () => {
       const { runDashboard } = await import("./commands/dashboard.js");
       await runDashboard();
