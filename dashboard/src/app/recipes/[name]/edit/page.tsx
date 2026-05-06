@@ -72,6 +72,29 @@ export default function RecipeEditPage({
       }
     }
     void load();
+    // The new-recipe form stashes any save-time `warnings` in
+    // sessionStorage so we can show them once on first paint here.
+    // (The debounced lint pass below will re-derive its own list a few
+    // hundred ms later — this just avoids a "saved successfully ✓"
+    // moment that hides server-side feedback.)
+    try {
+      const key = `recipe-save-warnings:${name}`;
+      const stashed = sessionStorage.getItem(key);
+      if (stashed) {
+        sessionStorage.removeItem(key);
+        const parsed = JSON.parse(stashed) as unknown;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          toast.info(
+            `Saved with ${parsed.length} warning${parsed.length === 1 ? "" : "s"}: ${parsed
+              .filter((w): w is string => typeof w === "string")
+              .slice(0, 3)
+              .join("; ")}${parsed.length > 3 ? "…" : ""}`,
+          );
+        }
+      }
+    } catch {
+      // sessionStorage parse failure is benign — lint will re-derive.
+    }
     return () => {
       cancelled = true;
     };
