@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
 
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { recordRecipeRun } from "./activationMetrics.js";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import type { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
@@ -468,17 +468,26 @@ export class RecipeOrchestration {
         return { ok: false, error: "no_yaml_in_output" };
       }
 
-      const lint = lintRecipeContent(rawYaml);
+      // The model frequently emits `vars:` at the top level despite the
+      // system prompt teaching the nested form. The validator only reads
+      // `trigger.vars`/`trigger.inputs`, so a top-level `vars:` would be
+      // silently dropped at runtime and any `{{VAR_NAME}}` references in
+      // step prompts would fail with "Unknown template reference". Hoist
+      // the block under `trigger:` here so the lint and the saved file
+      // see a schema-correct shape regardless of model drift.
+      const normalizedYaml = hoistTopLevelVarsUnderTrigger(rawYaml);
+
+      const lint = lintRecipeContent(normalizedYaml);
       if (!lint.ok) {
         return {
           ok: false,
-          yaml: rawYaml,
+          yaml: normalizedYaml,
           warnings: [...lint.errors, ...lint.warnings],
           error: "invalid_yaml_generated",
         };
       }
 
-      return { ok: true, yaml: rawYaml, warnings: lint.warnings };
+      return { ok: true, yaml: normalizedYaml, warnings: lint.warnings };
     };
   }
 
@@ -657,12 +666,59 @@ steps:
 \`\`\``;
 
 function extractYamlBlock(text: string): string | null {
-  const fenced = /```(?:yaml)?\n([\s\S]*?)```/.exec(text);
+  // Accept ```yaml, ```yml, ```YAML, ~~~yaml, or unfenced YAML starting
+  // with a recognizable header. Tolerates surrounding prose ("Here's
+  // your recipe:" before the fence) and CRLF line endings.
+  const fenced =
+    /(?:^|\n)\s*(?:```|~~~)(?:[ \t]*(?:yaml|yml|YAML))?\s*\r?\n([\s\S]*?)(?:```|~~~)/i.exec(
+      text,
+    );
   if (fenced?.[1]) return fenced[1].trim();
   const trimmed = text.trim();
   if (/^(?:apiVersion:|name:|#\s*yaml-language-server)/.test(trimmed))
     return trimmed;
   return null;
+}
+
+/**
+ * The recipe schema only allows `vars:` (and `inputs:`) under `trigger:`.
+ * The Claude generator drifts and frequently emits `vars:` at the top
+ * level — those declarations are silently dropped by the validator, then
+ * any `{{VAR_NAME}}` reference in a step prompt is flagged as Unknown.
+ * Parse the YAML, move a top-level `vars` array under `trigger.vars`
+ * (without overwriting an existing nested vars array), and re-emit. On
+ * any parse error we return the input untouched so lint can surface the
+ * underlying problem.
+ */
+function hoistTopLevelVarsUnderTrigger(yaml: string): string {
+  let doc: unknown;
+  try {
+    doc = parseYaml(yaml);
+  } catch {
+    return yaml;
+  }
+  if (!doc || typeof doc !== "object") return yaml;
+  const recipe = doc as Record<string, unknown>;
+  const topVars = recipe.vars;
+  if (!Array.isArray(topVars) || topVars.length === 0) return yaml;
+  const trigger =
+    recipe.trigger && typeof recipe.trigger === "object"
+      ? (recipe.trigger as Record<string, unknown>)
+      : {};
+  if (Array.isArray(trigger.vars) && trigger.vars.length > 0) {
+    // Caller emitted both — prefer the (correctly-placed) nested form
+    // and just drop the top-level dupe.
+    delete recipe.vars;
+  } else {
+    trigger.vars = topVars;
+    delete recipe.vars;
+  }
+  recipe.trigger = trigger;
+  try {
+    return stringifyYaml(recipe);
+  } catch {
+    return yaml;
+  }
 }
 
 /**

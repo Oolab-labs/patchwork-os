@@ -1,12 +1,18 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useMemo, useState } from "react";
+import { parse as parseYaml } from "yaml";
 import { apiPath } from "@/lib/api";
 
 interface Step {
   id: string;
   agent: boolean;
   prompt: string;
+  // When present, used verbatim instead of deriving from `id` via
+  // `makeStepOutputKey`. Lets us preserve the AI generator's semantic
+  // `into:` keys (e.g. `notifications_summary`) so step→step references
+  // like `{{notifications_summary}}` keep resolving.
+  into?: string;
 }
 
 interface RecipeVar {
@@ -68,8 +74,20 @@ function validateForm(form: FormState): ValidationState {
     errors.triggerPath = "Webhook path is required.";
   }
 
-  if (form.trigger.type === "schedule" && !form.trigger.cron.trim()) {
-    errors.cron = "Cron expression is required.";
+  if (form.trigger.type === "schedule") {
+    const at = form.trigger.cron.trim();
+    if (!at) {
+      errors.cron = "Cron expression is required.";
+    } else if (
+      !/^@every\s+\d+\s*(ms|s|m|h)$/i.test(at) &&
+      !/^\S+\s+\S+\s+\S+\s+\S+\s+\S+$/.test(at)
+    ) {
+      // Cheap shape check — server runs node-cron's full validator. Catches
+      // obvious typos ("bogus", 3-field, 6-field) without pulling node-cron
+      // into the bundle.
+      errors.cron =
+        'Expected 5-field cron (e.g. "0 9 * * 1-5") or "@every Ns|Nm|Nh".';
+    }
   }
 
   for (let i = 0; i < form.steps.length; i++) {
@@ -204,7 +222,11 @@ function buildRecipeYaml(form: FormState, safeName: string): string {
     lines.push(`  - id: ${yamlScalar(stepId)}`);
     lines.push("    agent:");
     pushYamlField(lines, 6, "prompt", step?.prompt.trim() || "(empty)");
-    lines.push(`      into: ${yamlScalar(makeStepOutputKey(stepId))}`);
+    // Preserve a parsed `into:` (e.g. from AI-generated YAML) verbatim;
+    // otherwise derive a slug from the step id. This keeps semantic keys
+    // like `notifications_summary` intact across the form round-trip.
+    const intoKey = step?.into?.trim() || makeStepOutputKey(stepId);
+    lines.push(`      into: ${yamlScalar(intoKey)}`);
   }
 
   return lines.join("\n");
@@ -471,137 +493,131 @@ function NewRecipePageInner() {
     }
   }
 
-  function applyAiYaml(yaml: string) {
-    // Best-effort parse into form fields. On failure, keep the YAML visible
-    // so the user can copy it manually.
+  function applyAiYaml(yamlText: string) {
+    // Parse the AI-generated YAML into the form's structured shape using a
+    // real parser. The previous hand-rolled line-scan dropped vars,
+    // rewrote step `into:` keys, and matched the first indented `at:`/`path:`
+    // anywhere — pulling step-level fields into `trigger`. On parse failure
+    // we leave the form alone so the user can copy YAML manually.
+    type RawStep = {
+      id?: unknown;
+      agent?: { prompt?: unknown; into?: unknown } | unknown;
+      prompt?: unknown;
+    };
+    type RawTrigger = {
+      type?: unknown;
+      at?: unknown;
+      path?: unknown;
+      vars?: unknown;
+      inputs?: unknown;
+    };
+    type RawRecipe = {
+      name?: unknown;
+      description?: unknown;
+      trigger?: RawTrigger | unknown;
+      vars?: unknown;
+      steps?: unknown;
+    };
+
+    let recipe: RawRecipe;
     try {
-      const lines = yaml.split("\n");
-      const nameMatch = lines.find((l) => /^name:\s/.test(l));
-      const descMatch = lines.find((l) => /^description:\s/.test(l));
-      const triggerTypeMatch = lines.find((l) => /^\s+type:\s/.test(l));
-      const triggerAtMatch = lines.find((l) => /^\s+at:\s/.test(l));
-      const triggerPathMatch = lines.find((l) => /^\s+path:\s/.test(l));
-
-      const parsedName = nameMatch
-        ? (nameMatch.replace(/^name:\s*/, "").trim().replace(/^"|"$/g, "") ?? "")
-        : "";
-      const parsedDesc = descMatch
-        ? (descMatch
-            .replace(/^description:\s*/, "")
-            .trim()
-            .replace(/^"|"$/g, "") ?? "")
-        : "";
-      const parsedTriggerType = triggerTypeMatch
-        ? (triggerTypeMatch.replace(/^\s+type:\s*/, "").trim() as
-            | "manual"
-            | "webhook"
-            | "schedule"
-            | "cron")
-        : "manual";
-      const normalizedType: "manual" | "webhook" | "schedule" =
-        parsedTriggerType === "cron" ? "schedule" : parsedTriggerType === "webhook" ? "webhook" : "manual";
-      const parsedCron = triggerAtMatch
-        ? triggerAtMatch
-            .replace(/^\s+at:\s*/, "")
-            .trim()
-            .replace(/^"|"$/g, "")
-        : "";
-      const parsedPath = triggerPathMatch
-        ? triggerPathMatch
-            .replace(/^\s+path:\s*/, "")
-            .trim()
-            .replace(/^"|"$/g, "")
-            .replace(/^\/hooks\//, "")
-        : "";
-
-      // Parse steps: collect prompt strings from `- id: step-X` blocks under
-      // the top-level `steps:` key. We don't pull a full YAML parser in just
-      // for this — the AI generator emits a predictable shape.
-      const parsedSteps: Step[] = [];
-      const stepsIdx = lines.findIndex((l) => /^steps:\s*$/.test(l));
-      if (stepsIdx >= 0) {
-        let i = stepsIdx + 1;
-        let current: Partial<Step> | null = null;
-        // Multiline prompt buffer for `prompt: |` block scalars.
-        let promptBuf: string[] | null = null;
-        let promptBaseIndent = 0;
-        const flush = () => {
-          if (current && current.id) {
-            parsedSteps.push({
-              id: current.id,
-              agent: current.agent ?? true,
-              prompt: (current.prompt ?? "").trim(),
-            });
-          }
-          current = null;
-          promptBuf = null;
-        };
-        while (i < lines.length) {
-          const raw = lines[i] ?? "";
-          // Stop at a new top-level key (no leading space and ends with `:`).
-          if (/^[a-zA-Z_]/.test(raw)) break;
-          if (promptBuf) {
-            const indent = raw.match(/^(\s*)/)?.[1].length ?? 0;
-            if (raw.trim() === "" || indent > promptBaseIndent) {
-              promptBuf.push(raw.slice(Math.min(promptBaseIndent + 2, indent)));
-              i++;
-              continue;
-            }
-            current = { ...current, prompt: promptBuf.join("\n").trim() };
-            promptBuf = null;
-            // fall through to handle this line as a new key
-          }
-          const itemMatch = raw.match(/^\s*-\s*id:\s*(.+?)\s*$/);
-          if (itemMatch) {
-            flush();
-            current = { id: itemMatch[1]?.replace(/^"|"$/g, "") };
-            i++;
-            continue;
-          }
-          const kvMatch = raw.match(/^\s+([a-zA-Z_]+):\s*(.*)$/);
-          if (kvMatch && current) {
-            const key = kvMatch[1];
-            const value = kvMatch[2]?.trim() ?? "";
-            if (key === "agent") {
-              current.agent = value === "true";
-            } else if (key === "prompt") {
-              if (value === "|" || value === ">" || value === "|-" || value === ">-") {
-                promptBuf = [];
-                promptBaseIndent =
-                  (raw.match(/^(\s*)/)?.[1].length ?? 0);
-              } else {
-                current.prompt = value.replace(/^"|"$/g, "").replace(/^'|'$/g, "");
-              }
-            }
-          }
-          i++;
-        }
-        flush();
-      }
-
-      setForm((f) => ({
-        ...f,
-        name: parsedName || f.name,
-        description: parsedDesc || f.description,
-        trigger: {
-          type: normalizedType,
-          cron: parsedCron,
-          path: parsedPath,
-        },
-        steps: parsedSteps.length > 0 ? parsedSteps : f.steps,
-      }));
-      setValidation((cur) => ({
-        ...cur,
-        steps:
-          parsedSteps.length > 0
-            ? parsedSteps.map(() => null)
-            : cur.steps,
-      }));
-      setAiOpen(false);
-      setAiResult(null);
+      recipe = (parseYaml(yamlText) ?? {}) as RawRecipe;
+      if (typeof recipe !== "object") return;
     } catch {
-      // If parsing fails, leave everything as-is — user can see the YAML
+      return;
     }
+
+    const asString = (v: unknown): string =>
+      typeof v === "string" ? v : "";
+    const asBool = (v: unknown): boolean =>
+      typeof v === "boolean" ? v : v === "true";
+
+    const trigger: RawTrigger =
+      recipe.trigger && typeof recipe.trigger === "object"
+        ? (recipe.trigger as RawTrigger)
+        : {};
+
+    const rawType = asString(trigger.type);
+    const normalizedType: "manual" | "webhook" | "schedule" =
+      rawType === "cron" || rawType === "schedule"
+        ? "schedule"
+        : rawType === "webhook"
+          ? "webhook"
+          : "manual";
+
+    const parsedCron = asString(trigger.at);
+    const parsedPath = asString(trigger.path).replace(/^\/hooks\//, "");
+
+    // vars may live under trigger.vars (canonical) or trigger.inputs
+    // (alias the validator also accepts). The AI sometimes emits top-level
+    // `vars:` despite the system prompt — accept that too as a fallback so
+    // the user doesn't lose declarations on "Use this".
+    const rawVars =
+      (Array.isArray(trigger.vars) && trigger.vars) ||
+      (Array.isArray(trigger.inputs) && trigger.inputs) ||
+      (Array.isArray(recipe.vars) && recipe.vars) ||
+      [];
+    const parsedVars: RecipeVar[] = (rawVars as unknown[])
+      .filter((v): v is Record<string, unknown> =>
+        Boolean(v) && typeof v === "object",
+      )
+      .map((v) => ({
+        name: asString(v.name),
+        description: asString(v.description),
+        required: asBool(v.required),
+        default: asString(v.default),
+      }))
+      .filter((v) => v.name);
+
+    const rawSteps = Array.isArray(recipe.steps) ? recipe.steps : [];
+    const parsedSteps: Step[] = rawSteps
+      .filter((s): s is RawStep =>
+        Boolean(s) && typeof s === "object",
+      )
+      .map((s, i) => {
+        // Step shapes we accept:
+        //   - id: foo            ← schema-canonical
+        //     agent:
+        //       prompt: ...
+        //       into: foo_output
+        //   - agent: { prompt: ..., into: ... }   ← id is optional in schema
+        //   - prompt: ...                           ← shorthand
+        const agentBlock =
+          s.agent && typeof s.agent === "object"
+            ? (s.agent as { prompt?: unknown; into?: unknown })
+            : null;
+        const prompt = agentBlock
+          ? asString(agentBlock.prompt)
+          : asString(s.prompt);
+        const into = agentBlock ? asString(agentBlock.into) : "";
+        const step: Step = {
+          id: asString(s.id) || makeStepId(i),
+          agent: true,
+          prompt: prompt.trim(),
+        };
+        if (into) step.into = into;
+        return step;
+      });
+
+    setForm((f) => ({
+      ...f,
+      name: asString(recipe.name) || f.name,
+      description: asString(recipe.description) || f.description,
+      trigger: {
+        type: normalizedType,
+        cron: parsedCron,
+        path: parsedPath,
+      },
+      vars: parsedVars.length > 0 ? parsedVars : f.vars,
+      steps: parsedSteps.length > 0 ? parsedSteps : f.steps,
+    }));
+    setValidation((cur) => ({
+      ...cur,
+      steps: parsedSteps.length > 0 ? parsedSteps.map(() => null) : cur.steps,
+      vars: parsedVars.length > 0 ? parsedVars.map(() => null) : cur.vars,
+    }));
+    setAiOpen(false);
+    setAiResult(null);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -637,12 +653,29 @@ function NewRecipePageInner() {
         ok?: boolean;
         error?: string;
         demo?: boolean;
+        warnings?: string[];
       };
       if (res.ok && data.ok !== false) {
         if (data.demo) {
           setSubmitNotice(
             "Demo mode — recipe was not persisted. Disable demo mode to save real recipes.",
           );
+        } else if (data.warnings && data.warnings.length > 0) {
+          // Forward warnings to the edit page via sessionStorage so the
+          // user sees them on first paint there. The edit page does its
+          // own lint pass on mount, but that runs ~400ms after content
+          // settles and uses different copy — handing off here avoids a
+          // confusing flash.
+          try {
+            sessionStorage.setItem(
+              `recipe-save-warnings:${safeName}`,
+              JSON.stringify(data.warnings),
+            );
+          } catch {
+            // sessionStorage unavailable — non-fatal, edit page will
+            // re-derive warnings on its own lint pass.
+          }
+          router.push(`/recipes/${encodeURIComponent(safeName)}/edit`);
         } else {
           router.push(`/recipes/${encodeURIComponent(safeName)}/edit`);
         }
