@@ -36,9 +36,11 @@ function semverGte(a: string, b: string): boolean {
 }
 
 /**
- * Handles detection and silent global install/upgrade of `claude-ide-bridge`.
- * Compares the installed semver against BRIDGE_VERSION (bundled at build time)
- * and runs `npm install -g claude-ide-bridge@<version>` when needed.
+ * Handles detection and silent global install/upgrade of the bridge.
+ * The npm package is `patchwork-os` (which provides the `claude-ide-bridge`
+ * binary as one of its bin aliases). Compares the installed semver against
+ * BRIDGE_VERSION (bundled at build time) and runs
+ * `npm install -g patchwork-os@<version>` when needed.
  */
 export class BridgeInstaller {
   constructor(private readonly output: vscode.OutputChannel) {}
@@ -82,21 +84,21 @@ export class BridgeInstaller {
   }
 
   /**
-   * Run `npm install -g claude-ide-bridge@<version>` and pipe output to the
+   * Run `npm install -g patchwork-os@<version>` and pipe output to the
    * output channel. Rejects on non-zero exit.
    */
   async installOrUpgrade(version: string): Promise<void> {
-    this.log(`Installing claude-ide-bridge@${version} globally...`);
+    this.log(`Installing patchwork-os@${version} globally...`);
     const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
     try {
       const { stdout, stderr } = await execFileAsync(
         npmCmd,
-        ["install", "-g", `claude-ide-bridge@${version}`],
+        ["install", "-g", `patchwork-os@${version}`],
         { timeout: 120_000 },
       );
       if (stdout) this.log(stdout.trim());
       if (stderr) this.log(stderr.trim());
-      this.log(`Installed claude-ide-bridge@${version} successfully.`);
+      this.log(`Installed patchwork-os@${version} successfully.`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       // Surface npm-not-found as a distinct, actionable error.
@@ -105,7 +107,7 @@ export class BridgeInstaller {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === "ENOENT" || msg.includes("ENOENT")) {
         const notice = "Node.js/npm is required to auto-install the bridge.";
-        const action = "Install manually: npm install -g claude-ide-bridge";
+        const action = "Install manually: npm install -g patchwork-os";
         void vscode.window.showWarningMessage(`${notice} ${action}`);
         throw new Error(`npm not found: ${msg}`);
       }
@@ -124,14 +126,14 @@ export class BridgeInstaller {
 
     if (installed !== null && semverGte(installed, required)) {
       this.log(
-        `claude-ide-bridge@${installed} already installed (>= required ${required}) — no action needed.`,
+        `patchwork-os (claude-ide-bridge@${installed}) already installed (>= required ${required}) — no action needed.`,
       );
       return;
     }
 
     const isFirstInstall = installed === null;
     const verb = isFirstInstall ? "Installing" : `Upgrading ${installed} →`;
-    this.log(`${verb} claude-ide-bridge@${required}...`);
+    this.log(`${verb} patchwork-os@${required}...`);
 
     await vscode.window.withProgress(
       {

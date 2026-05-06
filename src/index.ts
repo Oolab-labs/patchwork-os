@@ -176,6 +176,7 @@ const KNOWN_SUBCOMMANDS = [
   "suggest",
   "dashboard",
   "launchd",
+  "start",
 ] as const;
 
 const __invokedSubcommand = (() => {
@@ -189,7 +190,7 @@ const __invokedSubcommand = (() => {
 })();
 
 const __invokedBareBinaryDashboard = (() => {
-  if (process.argv[2]) return false;
+  if (process.argv[2] && process.argv[2] !== "dashboard") return false;
   const binName = path.basename(process.argv[1] ?? "");
   return (
     binName === "patchwork-os" ||
@@ -233,6 +234,54 @@ if (isStartAll) {
     "start-all.sh",
   );
   const result = spawnSync("bash", [scriptPath, ...startAllArgs], {
+    stdio: "inherit",
+  });
+  process.exit(result.status ?? 1);
+}
+
+// `patchwork start` — opinionated front door over start-all.
+// Defaults to full mode (all tools registered) and the web dashboard, so the
+// doc-promised "patchwork start → everything works" path actually works.
+// Pass-through args still go to start-all.sh; --help short-circuits.
+if (process.argv[2] === "start") {
+  const passthrough = process.argv.slice(3);
+  if (passthrough.includes("--help") || passthrough.includes("-h")) {
+    process.stdout.write(`patchwork start — Launch the full Patchwork stack
+
+Starts bridge + Claude Code + dashboard in a tmux session.
+Defaults to full mode so all bridge tools are registered.
+
+Usage: patchwork start [options]
+
+Options:
+  --workspace <path>    Directory to open (default: current directory)
+  --no-dashboard        Skip the web dashboard
+  --dashboard-port <N>  Dashboard port (default: 3200)
+  --notify <topic>      Push notifications via ntfy.sh
+  --vps <user@host>     SSH reverse tunnel for stable claude.ai URL
+  --slim                Slim mode (27 IDE-exclusive tools only — overrides default)
+  --help, -h            Show this help
+
+This is a thin wrapper over \`start-all\`. For advanced flags see:
+  patchwork start-all --help
+`);
+    process.exit(0);
+  }
+  // Default to --full unless caller opted into slim explicitly.
+  const args = [...passthrough];
+  const slimIdx = args.indexOf("--slim");
+  if (slimIdx >= 0) {
+    args.splice(slimIdx, 1); // strip — start-all.sh has no --slim flag, slim is its default
+  } else if (!args.includes("--full")) {
+    args.push("--full");
+  }
+  const scriptPath = path.resolve(
+    __dirnameTop,
+    "..",
+    "scripts",
+    "start-all.sh",
+  );
+  const result = spawnSync("bash", [scriptPath, ...args], {
     stdio: "inherit",
   });
   process.exit(result.status ?? 1);
@@ -3115,7 +3164,7 @@ if (process.argv[2] === "launchd") {
     binName === "patchwork-os" ||
     binName === "patchwork" ||
     binName === "patchwork.js";
-  if (isPatchworkBin && !process.argv[2]) {
+  if (isPatchworkBin && (!process.argv[2] || process.argv[2] === "dashboard")) {
     (async () => {
       const { runDashboard } = await import("./commands/dashboard.js");
       await runDashboard();
