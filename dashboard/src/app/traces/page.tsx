@@ -139,7 +139,7 @@ function TraceActions({
         <button
           type="button"
           className="btn sm primary"
-          style={{ fontSize: 11, background: "var(--orange)", border: "none" }}
+          style={{ fontSize: "var(--fs-xs)", background: "var(--orange)", border: "none" }}
           disabled={replaying}
           onClick={() => void handleReplay()}
         >
@@ -150,7 +150,7 @@ function TraceActions({
         <button
           type="button"
           className="btn sm ghost"
-          style={{ fontSize: 11, fontFamily: "var(--font-mono)" }}
+          style={{ fontSize: "var(--fs-xs)", fontFamily: "var(--font-mono)" }}
           onClick={handleCopyCli}
         >
           {copied ? "Copied ✓" : "⌗ Open in CLI"}
@@ -159,7 +159,7 @@ function TraceActions({
       {replayMsg && (
         <span
           style={{
-            fontSize: 11,
+            fontSize: "var(--fs-xs)",
             color: replayMsg.ok ? "var(--ok)" : "var(--err)",
             fontFamily: "var(--font-mono)",
           }}
@@ -204,7 +204,7 @@ function TraceDetail({
         borderRadius: "var(--r-s)",
         border: "1px solid var(--line-2)",
         overflow: "hidden",
-        fontSize: 12,
+        fontSize: "var(--fs-s)",
       }}
     >
       {/* scalar fields as key/value grid */}
@@ -224,7 +224,7 @@ function TraceDetail({
                   fontFamily: "var(--font-mono)",
                   color: theme.fg,
                   fontWeight: 600,
-                  fontSize: 11,
+                  fontSize: "var(--fs-xs)",
                   background: i % 2 === 0 ? "var(--recess)" : "transparent",
                   borderRight: "1px solid var(--line-2)",
                   whiteSpace: "nowrap",
@@ -237,7 +237,7 @@ function TraceDetail({
                   padding: "5px 12px",
                   fontFamily: "var(--font-mono)",
                   color: "var(--ink-1)",
-                  fontSize: 11,
+                  fontSize: "var(--fs-xs)",
                   background: i % 2 === 0 ? "var(--recess)" : "transparent",
                   wordBreak: "break-all",
                 }}
@@ -255,7 +255,7 @@ function TraceDetail({
             style={{
               padding: "5px 12px",
               fontFamily: "var(--font-mono)",
-              fontSize: 11,
+              fontSize: "var(--fs-xs)",
               fontWeight: 600,
               color: theme.fg,
               cursor: "pointer",
@@ -266,7 +266,7 @@ function TraceDetail({
               gap: 6,
             }}
           >
-            <span style={{ color: "var(--ink-3)", fontSize: 9 }}>▸</span>
+            <span style={{ color: "var(--ink-3)", fontSize: "var(--fs-3xs)" }}>▸</span>
             {k}
             {Array.isArray(v) && (
               <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>
@@ -279,7 +279,7 @@ function TraceDetail({
               margin: 0,
               padding: "8px 12px 10px 24px",
               background: "var(--bg-0)",
-              fontSize: 11,
+              fontSize: "var(--fs-xs)",
               fontFamily: "var(--font-mono)",
               overflow: "auto",
               whiteSpace: "pre-wrap",
@@ -389,7 +389,7 @@ function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
             boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
           }}
         >
-          <p style={{ margin: "0 0 var(--s-3)", fontSize: 12, color: "var(--fg-2)" }}>
+          <p style={{ margin: "0 0 var(--s-3)", fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
             Optional: encrypt with a passphrase (AES-256-GCM). Leave blank for a
             plain <code>.jsonl.gz</code>.
           </p>
@@ -408,12 +408,12 @@ function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
               border: "1px solid var(--border-default)",
               borderRadius: 6,
               color: "var(--fg-1)",
-              fontSize: 13,
+              fontSize: "var(--fs-m)",
             }}
             autoFocus
           />
           {error && (
-            <p style={{ margin: "0 0 var(--s-3)", fontSize: 12, color: "var(--red)" }}>
+            <p style={{ margin: "0 0 var(--s-3)", fontSize: "var(--fs-s)", color: "var(--red)" }}>
               {error}
             </p>
           )}
@@ -426,7 +426,7 @@ function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
             </button>
           </div>
           {passphrase.trim() && (
-            <p style={{ margin: "var(--s-3) 0 0", fontSize: 11, color: "var(--fg-3)" }}>
+            <p style={{ margin: "var(--s-3) 0 0", fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>
               Import: <code>patchwork traces import bundle.enc --passphrase …</code>
             </p>
           )}
@@ -513,7 +513,7 @@ export default function TracesPage() {
             style={{
               minWidth: "min(260px, 100%)",
               padding: "6px 10px",
-              fontSize: 13,
+              fontSize: "var(--fs-m)",
               fontFamily: "var(--font-mono)",
               background: "var(--recess)",
               border: "1px solid var(--line-2)",
@@ -542,7 +542,7 @@ export default function TracesPage() {
               type="button"
               onClick={() => setStatusFilter(k)}
               className={statusFilter === k ? "pill accent" : "pill muted"}
-              style={{ cursor: "pointer", border: "none", fontSize: 12 }}
+              style={{ cursor: "pointer", border: "none", fontSize: "var(--fs-s)" }}
             >
               {k === "all" ? `All (${traces.length})` : k === "done" ? `Done (${doneCount})` : `Errors (${errorCount})`}
             </button>
@@ -612,7 +612,7 @@ export default function TracesPage() {
                       cursor: "pointer",
                       color: "var(--ink-3)",
                       fontFamily: "var(--font-mono)",
-                      fontSize: 12,
+                      fontSize: "var(--fs-s)",
                       padding: 0,
                       textAlign: "left",
                     }}
@@ -634,7 +634,7 @@ export default function TracesPage() {
                     onClick={() => toggle(rowKey)}
                     style={{
                       fontFamily: "var(--font-mono)",
-                      fontSize: 11,
+                      fontSize: "var(--fs-xs)",
                       color: theme.fg,
                       background: "transparent",
                       border: "none",
@@ -652,7 +652,7 @@ export default function TracesPage() {
                     type="button"
                     onClick={() => toggle(rowKey)}
                     style={{
-                      fontSize: 13,
+                      fontSize: "var(--fs-m)",
                       color: "var(--ink-1)",
                       background: "transparent",
                       border: "none",
@@ -666,11 +666,11 @@ export default function TracesPage() {
                   >
                     {String(t.body?.recipeName ?? t.key)}
                   </button>
-                  <span style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "right" }}>
+                  <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", textAlign: "right" }}>
                     {relTime(t.ts)}
                   </span>
                   <span style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <span className="pill" style={{ background: statusBg, color: statusColor, fontSize: 10, fontWeight: 700 }}>
+                    <span className="pill" style={{ background: statusBg, color: statusColor, fontSize: "var(--fs-2xs)", fontWeight: 700 }}>
                       {statusLabel}
                     </span>
                   </span>
@@ -697,11 +697,11 @@ export default function TracesPage() {
                 </div>
                 {isOpen && (
                   <div style={{ padding: "0 16px 12px 16px", borderTop: "1px solid var(--line-3)", background: "var(--recess)" }}>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-2)", margin: "8px 0 4px", wordBreak: "break-all" }}>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: "var(--ink-2)", margin: "8px 0 4px", wordBreak: "break-all" }}>
                       {t.key}
                     </div>
                     {t.summary && (
-                      <div style={{ fontSize: 12, color: "var(--ink-1)", marginBottom: 8 }}>{t.summary}</div>
+                      <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-1)", marginBottom: 8 }}>{t.summary}</div>
                     )}
                     <TraceActions traceType={t.traceType} body={t.body} />
                     <TraceDetail body={t.body} theme={theme} traceType={t.traceType} />

@@ -326,14 +326,14 @@ function ApprovalCard({
             borderRadius: 6,
             background: "var(--recess)",
             border: "1px solid var(--line-1)",
-            fontSize: 14,
+            fontSize: "var(--fs-base)",
             flexShrink: 0,
           }}
         >
           {icon}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h3 style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 700, color: "var(--ink-0)", wordBreak: "break-all" }}>
+          <h3 style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: "var(--fs-base)", fontWeight: 700, color: "var(--ink-0)", wordBreak: "break-all" }}>
             {heading}
           </h3>
         </div>
@@ -354,7 +354,7 @@ function ApprovalCard({
       </div>
 
       {p.summary && (
-        <p style={{ margin: "10px 0 0 52px", fontSize: 13, color: "var(--ink-2)", lineHeight: 1.5 }}>
+        <p style={{ margin: "10px 0 0 52px", fontSize: "var(--fs-m)", color: "var(--ink-2)", lineHeight: 1.5 }}>
           {p.summary}
         </p>
       )}
@@ -443,7 +443,7 @@ function ApprovalCard({
                   position: "absolute",
                   top: 6,
                   right: 6,
-                  fontSize: 11,
+                  fontSize: "var(--fs-xs)",
                   padding: "3px 8px",
                   borderRadius: 4,
                   background: "var(--surface)",
@@ -579,7 +579,7 @@ function BatchActionBar({
       role="toolbar"
       aria-label="Batch actions"
     >
-      <span style={{ fontSize: 13, color: "var(--fg-1)", fontWeight: 500 }}>
+      <span style={{ fontSize: "var(--fs-m)", color: "var(--fg-1)", fontWeight: 500 }}>
         {selectedCount} selected
       </span>
       <span className="approval-spacer" />
@@ -993,7 +993,7 @@ function ApprovalsContent() {
               alignItems: "center",
               gap: 14,
               marginTop: 8,
-              fontSize: 11,
+              fontSize: "var(--fs-xs)",
               color: "var(--ink-3)",
               flexWrap: "wrap",
             }}
@@ -1049,7 +1049,7 @@ function ApprovalsContent() {
         <div style={{ flex: 1, minWidth: 180 }}>
           <div
             style={{
-              fontSize: 10,
+              fontSize: "var(--fs-2xs)",
               color: "var(--ink-2)",
               fontWeight: 600,
               textTransform: "uppercase",
@@ -1059,7 +1059,7 @@ function ApprovalsContent() {
           >
             Queue
           </div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1.1 }}>
+          <div style={{ fontSize: "var(--fs-3xl)", fontWeight: 800, color: "var(--ink-0)", lineHeight: 1.1 }}>
             {pending.length === 0 ? "All clear" : `${pending.length} awaiting decision`}
           </div>
         </div>
@@ -1088,7 +1088,7 @@ function ApprovalsContent() {
                 </div>
                 <div
                   style={{
-                    fontSize: 10,
+                    fontSize: "var(--fs-2xs)",
                     color: "var(--ink-2)",
                     marginTop: 4,
                     fontWeight: 600,
@@ -1126,20 +1126,20 @@ function ApprovalsContent() {
                 borderLeft: "1px solid var(--line-2)",
               }}
             >
-              <div style={{ fontSize: 10, color: "var(--ink-2)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              <div style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-2)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em" }}>
                 Historical rate
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <span
                   className="pill ok"
-                  style={{ fontSize: 11, fontFamily: "var(--font-mono)", fontWeight: 700 }}
+                  style={{ fontSize: "var(--fs-xs)", fontFamily: "var(--font-mono)", fontWeight: 700 }}
                   title={`${totalApproved} approved`}
                 >
                   {approvePct}% approved
                 </span>
                 <span
                   className="pill err"
-                  style={{ fontSize: 11, fontFamily: "var(--font-mono)", fontWeight: 700 }}
+                  style={{ fontSize: "var(--fs-xs)", fontFamily: "var(--font-mono)", fontWeight: 700 }}
                   title={`${totalRejected} rejected`}
                 >
                   {rejectPct}% rejected
@@ -1161,7 +1161,7 @@ function ApprovalsContent() {
                   <div style={{ flex: 1, background: "var(--err)", borderRadius: "0 3px 3px 0" }} />
                 )}
               </div>
-              <div style={{ fontSize: 10, color: "var(--ink-3)" }}>
+              <div style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-3)" }}>
                 {total} decision{total !== 1 ? "s" : ""} this session
               </div>
             </div>
@@ -1248,7 +1248,7 @@ function ApprovalsContent() {
                 aria-label="Select all approvals"
                 style={{ cursor: "pointer", accentColor: "var(--accent)" }}
               />
-              <span style={{ fontSize: 12, color: "var(--fg-2)" }}>
+              <span style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
                 Select all
               </span>
             </div>
@@ -1295,7 +1295,7 @@ function ApprovalsContent() {
           </div>
           <p
             style={{
-              fontSize: 13,
+              fontSize: "var(--fs-m)",
               color: "var(--fg-2)",
               marginBottom: "var(--s-4)",
             }}
@@ -1327,7 +1327,7 @@ function ApprovalsContent() {
                 <code
                   style={{
                     fontFamily: "var(--font-mono)",
-                    fontSize: 13,
+                    fontSize: "var(--fs-m)",
                     color: "var(--fg-0)",
                     flex: 1,
                     minWidth: 140,
@@ -1336,7 +1336,7 @@ function ApprovalsContent() {
                   {toolName}
                 </code>
                 <span
-                  style={{ fontSize: 13, color: "var(--fg-2)", flexShrink: 0 }}
+                  style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", flexShrink: 0 }}
                 >
                   approved {p.approved}&times;
                 </span>

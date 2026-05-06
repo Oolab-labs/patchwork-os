@@ -598,10 +598,10 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
 
         {/* Name + category */}
         <div style={{ marginBottom: 10 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color: "var(--ink-0)", lineHeight: 1.25, marginBottom: 2 }}>
+          <div style={{ fontWeight: 700, fontSize: "var(--fs-base)", color: "var(--ink-0)", lineHeight: 1.25, marginBottom: 2 }}>
             {def.name}
           </div>
-          <div style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 400 }}>{def.category}</div>
+          <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", fontWeight: 400 }}>{def.category}</div>
         </div>
 
         {/* Status badge */}
@@ -610,7 +610,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
             display: "inline-flex", alignItems: "center", gap: 5,
             padding: "3px 9px", borderRadius: 999,
             background: "var(--ok-soft)", border: "1px solid var(--ok)",
-            fontSize: 10, fontWeight: 700, color: "var(--ok)",
+            fontSize: "var(--fs-2xs)", fontWeight: 700, color: "var(--ok)",
             textTransform: "uppercase", letterSpacing: "0.07em",
             marginBottom: 10,
           }}>
@@ -621,7 +621,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
             display: "inline-flex", alignItems: "center", gap: 5,
             padding: "3px 9px", borderRadius: 999,
             background: "var(--warn-soft)", border: "1px solid var(--warn)",
-            fontSize: 10, fontWeight: 700, color: "var(--warn)",
+            fontSize: "var(--fs-2xs)", fontWeight: 700, color: "var(--warn)",
             textTransform: "uppercase", letterSpacing: "0.07em",
             marginBottom: 10,
           }}>
@@ -633,7 +633,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
             padding: "3px 9px", borderRadius: 999,
             background: isComingSoon ? "var(--purple-soft)" : "var(--recess)",
             border: `1px solid ${isComingSoon ? "var(--purple)" : "var(--line-2)"}`,
-            fontSize: 10, fontWeight: 700, color: isComingSoon ? "var(--purple)" : "var(--ink-3)",
+            fontSize: "var(--fs-2xs)", fontWeight: 700, color: isComingSoon ? "var(--purple)" : "var(--ink-3)",
             textTransform: "uppercase", letterSpacing: "0.07em",
             marginBottom: 10,
           }}>
@@ -649,7 +649,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
                 key={s}
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: 10,
+                  fontSize: "var(--fs-2xs)",
                   padding: "2px 6px",
                   borderRadius: 4,
                   background: "var(--purple-soft)",
@@ -663,7 +663,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
             ))}
           </div>
         ) : (
-          <div style={{ fontSize: 12, color: "var(--ink-3)", fontWeight: 400 }}>
+          <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", fontWeight: 400 }}>
             {def.tools} available tools
           </div>
         )}
@@ -677,7 +677,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
               marginTop: 8,
               padding: "6px 10px",
               borderRadius: "var(--r-2)",
-              fontSize: 11,
+              fontSize: "var(--fs-xs)",
               background: testResult.ok ? "var(--ok-soft)" : "var(--err-soft)",
               color: testResult.ok ? "var(--ok)" : "var(--err)",
             }}
@@ -702,7 +702,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
             gap: 6,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: isDegraded ? "var(--warn)" : "var(--ink-2)", minWidth: 0, overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "var(--fs-s)", color: isDegraded ? "var(--warn)" : "var(--ink-2)", minWidth: 0, overflow: "hidden" }}>
             <span
               style={{
                 width: 6, height: 6, borderRadius: "50%",
@@ -761,7 +761,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
                 disabled={testing || loading}
                 aria-label={`Test ${def.name} connection`}
                 style={{
-                  fontSize: 11, fontWeight: 500, padding: "3px 9px",
+                  fontSize: "var(--fs-xs)", fontWeight: 500, padding: "3px 9px",
                   borderRadius: 5, border: "1px solid var(--border-default)",
                   background: "var(--card-bg)", color: "var(--ink-1)",
                   cursor: testing ? "wait" : "pointer",
@@ -777,7 +777,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
               disabled={loading}
               aria-label={isDegraded ? `Reconnect ${def.name}` : `Disconnect ${def.name}`}
               style={{
-                fontSize: 11, fontWeight: 500, padding: "3px 9px",
+                fontSize: "var(--fs-xs)", fontWeight: 500, padding: "3px 9px",
                 borderRadius: 5, border: "none",
                 background: isDegraded ? "var(--warn-soft)" : "var(--err-soft)",
                 color: isDegraded ? "var(--warn)" : "var(--err)",
@@ -800,7 +800,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
             disabled={loading}
             aria-label={`Connect ${def.name}`}
             style={{
-              width: "100%", fontSize: 12, fontWeight: 600, padding: "7px 0",
+              width: "100%", fontSize: "var(--fs-s)", fontWeight: 600, padding: "7px 0",
               borderRadius: 6, border: "none",
               background: "var(--accent)", color: "var(--on-accent)",
               cursor: loading ? "wait" : "pointer",
@@ -834,8 +834,8 @@ function RecentCard({ def, lastSync }: { def: ConnectorDef; lastSync: string }) 
     >
       <LogoTile def={def} size={40} />
       <div>
-        <div style={{ fontWeight: 700, fontSize: 13, color: "var(--ink-0)" }}>{def.name}</div>
-        <div style={{ fontSize: 11, color: "var(--ok)", marginTop: 2, fontWeight: 500 }}>
+        <div style={{ fontWeight: 700, fontSize: "var(--fs-m)", color: "var(--ink-0)" }}>{def.name}</div>
+        <div style={{ fontSize: "var(--fs-xs)", color: "var(--ok)", marginTop: 2, fontWeight: 500 }}>
           ✓ {relativeTime(lastSync)}
         </div>
       </div>
@@ -1143,7 +1143,7 @@ export default function ConnectionsPage() {
               {reAuthing ? "Re-authing…" : "↻ Re-auth all"}
             </button>
             {reAuthMsg && (
-              <span role="status" style={{ fontSize: 12, color: "var(--warn)" }}>
+              <span role="status" style={{ fontSize: "var(--fs-s)", color: "var(--warn)" }}>
                 {reAuthMsg}
               </span>
             )}
@@ -1168,7 +1168,7 @@ export default function ConnectionsPage() {
           {/* Recently used strip */}
           {recentlyUsed.length > 0 && (
             <div style={{ marginBottom: "var(--s-5)" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
+              <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
                 Recently used
               </div>
               <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
@@ -1182,7 +1182,7 @@ export default function ConnectionsPage() {
           {/* Empty state CTA */}
           {!hasAnyConnected && (
             <div style={{ textAlign: "center", padding: "var(--s-6) 0", marginBottom: "var(--s-5)" }}>
-              <p style={{ color: "var(--ink-2)", fontSize: 14, marginBottom: "var(--s-4)" }}>
+              <p style={{ color: "var(--ink-2)", fontSize: "var(--fs-base)", marginBottom: "var(--s-4)" }}>
                 No connections yet. Add one to get started.
               </p>
               <button type="button" className="btn primary" onClick={() => setModalOpen(true)}>
@@ -1204,7 +1204,7 @@ export default function ConnectionsPage() {
                 type="button"
                 onClick={() => setStatusFilter(k)}
                 className={statusFilter === k ? "pill accent" : "pill muted"}
-                style={{ cursor: "pointer", border: "none", fontSize: 12 }}
+                style={{ cursor: "pointer", border: "none", fontSize: "var(--fs-s)" }}
               >
                 {label}
               </button>
@@ -1237,9 +1237,9 @@ export default function ConnectionsPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <IconNotion />
-            <strong id="notion-modal-title" style={{ fontSize: 15 }}>Connect Notion</strong>
+            <strong id="notion-modal-title" style={{ fontSize: "var(--fs-l)" }}>Connect Notion</strong>
           </div>
-          <p style={{ fontSize: 13, color: "var(--fg-2)", margin: 0 }}>
+          <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: 0 }}>
             Create an internal integration at{" "}
             <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
               notion.so/my-integrations
@@ -1252,14 +1252,14 @@ export default function ConnectionsPage() {
             value={notionToken}
             onChange={(e) => setNotionToken(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void handleNotionConnect(); }}
-            style={{ fontFamily: "var(--font-mono)", fontSize: 13, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-0)", color: "var(--fg-1)", width: "100%", boxSizing: "border-box" }}
+            style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-m)", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-0)", color: "var(--fg-1)", width: "100%", boxSizing: "border-box" }}
           />
-          {notionErr && <div className="alert-err" role="alert" style={{ fontSize: 12 }}>{notionErr}</div>}
+          {notionErr && <div className="alert-err" role="alert" style={{ fontSize: "var(--fs-s)" }}>{notionErr}</div>}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button
               type="button"
               onClick={() => { setNotionModalOpen(false); setNotionToken(""); setNotionErr(null); }}
-              style={{ padding: "6px 16px", fontSize: 13, cursor: "pointer", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-1)", color: "var(--fg-1)" }}
+              style={{ padding: "6px 16px", fontSize: "var(--fs-m)", cursor: "pointer", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-1)", color: "var(--fg-1)" }}
             >
               Cancel
             </button>
@@ -1267,7 +1267,7 @@ export default function ConnectionsPage() {
               type="button"
               onClick={() => void handleNotionConnect()}
               disabled={notionConnecting || !notionToken}
-              style={{ padding: "6px 16px", fontSize: 13, cursor: notionConnecting ? "wait" : "pointer", borderRadius: 6, border: "none", background: "var(--fg-1)", color: "var(--bg-0)", opacity: !notionToken ? 0.5 : 1 }}
+              style={{ padding: "6px 16px", fontSize: "var(--fs-m)", cursor: notionConnecting ? "wait" : "pointer", borderRadius: 6, border: "none", background: "var(--fg-1)", color: "var(--bg-0)", opacity: !notionToken ? 0.5 : 1 }}
             >
               {notionConnecting ? "Connecting…" : "Connect"}
             </button>
@@ -1286,9 +1286,9 @@ export default function ConnectionsPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {TOKEN_MODAL_CONNECTORS[tokenModal].icon}
-              <strong id="token-modal-title" style={{ fontSize: 15 }}>Connect {TOKEN_MODAL_CONNECTORS[tokenModal].name}</strong>
+              <strong id="token-modal-title" style={{ fontSize: "var(--fs-l)" }}>Connect {TOKEN_MODAL_CONNECTORS[tokenModal].name}</strong>
             </div>
-            <p style={{ fontSize: 13, color: "var(--fg-2)", margin: 0, lineHeight: 1.6 }}>
+            <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: 0, lineHeight: 1.6 }}>
               {TOKEN_MODAL_CONNECTORS[tokenModal].instructions}
             </p>
             <input
@@ -1297,14 +1297,14 @@ export default function ConnectionsPage() {
               value={tokenValue}
               onChange={(e) => setTokenValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") void handleTokenConnect(); }}
-              style={{ fontFamily: "var(--font-mono)", fontSize: 13, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-0)", color: "var(--fg-1)", width: "100%", boxSizing: "border-box" }}
+              style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-m)", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-0)", color: "var(--fg-1)", width: "100%", boxSizing: "border-box" }}
             />
-            {tokenErr && <div className="alert-err" role="alert" style={{ fontSize: 12 }}>{tokenErr}</div>}
+            {tokenErr && <div className="alert-err" role="alert" style={{ fontSize: "var(--fs-s)" }}>{tokenErr}</div>}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button
                 type="button"
                 onClick={() => { setTokenModal(null); setTokenValue(""); setTokenErr(null); }}
-                style={{ padding: "6px 16px", fontSize: 13, cursor: "pointer", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-1)", color: "var(--fg-1)" }}
+                style={{ padding: "6px 16px", fontSize: "var(--fs-m)", cursor: "pointer", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-1)", color: "var(--fg-1)" }}
               >
                 Cancel
               </button>
@@ -1312,7 +1312,7 @@ export default function ConnectionsPage() {
                 type="button"
                 onClick={() => void handleTokenConnect()}
                 disabled={tokenConnecting || !tokenValue.trim()}
-                style={{ padding: "6px 16px", fontSize: 13, cursor: tokenConnecting ? "wait" : "pointer", borderRadius: 6, border: "none", background: "var(--fg-1)", color: "var(--bg-0)", opacity: !tokenValue.trim() ? 0.5 : 1 }}
+                style={{ padding: "6px 16px", fontSize: "var(--fs-m)", cursor: tokenConnecting ? "wait" : "pointer", borderRadius: 6, border: "none", background: "var(--fg-1)", color: "var(--bg-0)", opacity: !tokenValue.trim() ? 0.5 : 1 }}
               >
                 {tokenConnecting ? "Connecting…" : "Connect"}
               </button>

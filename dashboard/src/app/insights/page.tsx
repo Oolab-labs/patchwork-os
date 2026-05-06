@@ -107,18 +107,18 @@ function relativeTime(iso: string | null): string {
 
 function RuleCell({ explanation }: { explanation: RuleExplanation | null | undefined }) {
   if (explanation === undefined) {
-    return <span style={{ color: "var(--fg-3)", fontSize: 11 }}>…</span>;
+    return <span style={{ color: "var(--fg-3)", fontSize: "var(--fs-xs)" }}>…</span>;
   }
   if (explanation === null) {
-    return <span style={{ color: "var(--fg-3)", fontSize: 11 }}>no rule</span>;
+    return <span style={{ color: "var(--fg-3)", fontSize: "var(--fs-xs)" }}>no rule</span>;
   }
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-      <code style={{ fontSize: 11, color: "var(--fg-1)" }}>{explanation.matchedRule}</code>
-      <span className={`pill ${TIER_PILL[explanation.tier]}`} style={{ fontSize: 10 }}>
+      <code style={{ fontSize: "var(--fs-xs)", color: "var(--fg-1)" }}>{explanation.matchedRule}</code>
+      <span className={`pill ${TIER_PILL[explanation.tier]}`} style={{ fontSize: "var(--fs-2xs)" }}>
         {explanation.tier}
       </span>
-      <span className="pill muted" style={{ fontSize: 10 }}>
+      <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }}>
         {SOURCE_LABEL[explanation.source]}
       </span>
     </div>
@@ -236,7 +236,7 @@ export default function InsightsPage() {
             <span className="pill muted">{tools.length}</span>
           </div>
           <table
-            style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}
+            style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-m)" }}
           >
             <thead>
               <tr
@@ -248,7 +248,7 @@ export default function InsightsPage() {
                     padding: "8px 0",
                     fontWeight: 500,
                     color: "var(--fg-2)",
-                    fontSize: 11,
+                    fontSize: "var(--fs-xs)",
                   }}
                 >
                   Tool
@@ -259,7 +259,7 @@ export default function InsightsPage() {
                     padding: "8px 8px",
                     fontWeight: 500,
                     color: "var(--fg-2)",
-                    fontSize: 11,
+                    fontSize: "var(--fs-xs)",
                   }}
                 >
                   Heuristic
@@ -270,7 +270,7 @@ export default function InsightsPage() {
                     padding: "8px 8px",
                     fontWeight: 500,
                     color: "var(--fg-2)",
-                    fontSize: 11,
+                    fontSize: "var(--fs-xs)",
                   }}
                 >
                   Matched rule
@@ -281,7 +281,7 @@ export default function InsightsPage() {
                     padding: "8px 8px",
                     fontWeight: 500,
                     color: "var(--fg-2)",
-                    fontSize: 11,
+                    fontSize: "var(--fs-xs)",
                   }}
                 >
                   ✓
@@ -292,7 +292,7 @@ export default function InsightsPage() {
                     padding: "8px 8px",
                     fontWeight: 500,
                     color: "var(--fg-2)",
-                    fontSize: 11,
+                    fontSize: "var(--fs-xs)",
                   }}
                 >
                   ✗
@@ -303,7 +303,7 @@ export default function InsightsPage() {
                     padding: "8px 8px",
                     fontWeight: 500,
                     color: "var(--fg-2)",
-                    fontSize: 11,
+                    fontSize: "var(--fs-xs)",
                   }}
                 >
                   Rate
@@ -314,7 +314,7 @@ export default function InsightsPage() {
                     padding: "8px 0",
                     fontWeight: 500,
                     color: "var(--fg-2)",
-                    fontSize: 11,
+                    fontSize: "var(--fs-xs)",
                   }}
                 >
                   Last
@@ -331,11 +331,11 @@ export default function InsightsPage() {
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span
                         className={`pill ${SEVERITY_PILL[t.severity]}`}
-                        style={{ fontSize: 10 }}
+                        style={{ fontSize: "var(--fs-2xs)" }}
                       >
                         {SEVERITY_LABEL[t.severity]}
                       </span>
-                      <code style={{ fontSize: 12 }}>{t.toolName}</code>
+                      <code style={{ fontSize: "var(--fs-s)" }}>{t.toolName}</code>
                     </div>
                   </td>
                   <td
@@ -412,7 +412,7 @@ export default function InsightsPage() {
       {data?.generatedAt && (
         <p
           style={{
-            fontSize: 11,
+            fontSize: "var(--fs-xs)",
             color: "var(--fg-2)",
             marginTop: "var(--s-5)",
           }}

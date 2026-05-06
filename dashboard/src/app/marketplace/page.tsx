@@ -166,7 +166,7 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
         border: "1px solid var(--border-default)",
         borderRadius: "var(--r-3)",
         padding: "12px 18px",
-        fontSize: 13,
+        fontSize: "var(--fs-m)",
         color: "var(--fg-0)",
         boxShadow: "0 8px 32px var(--overlay-bg)",
         zIndex: 9999,
@@ -175,7 +175,7 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
         gap: 10,
       }}
     >
-      <span style={{ color: "var(--ok)", fontSize: 16 }}>&#10003;</span>
+      <span style={{ color: "var(--ok)", fontSize: "var(--fs-xl)" }}>&#10003;</span>
       {message}
     </div>
   );
@@ -221,7 +221,7 @@ function RecipeCard({
           href={`/marketplace/${recipe.name}`}
           style={{
             fontWeight: 600,
-            fontSize: 14,
+            fontSize: "var(--fs-base)",
             color: "var(--fg-0)",
             wordBreak: "break-word",
             lineHeight: 1.4,
@@ -236,7 +236,7 @@ function RecipeCard({
       {/* middle: description */}
       <p
         style={{
-          fontSize: 12,
+          fontSize: "var(--fs-s)",
           color: "var(--fg-2)",
           lineHeight: 1.55,
           flex: 1,
@@ -256,7 +256,7 @@ function RecipeCard({
           {recipe.risk_level && (
             <span
               className={`pill ${RISK_PILL_CLASS[recipe.risk_level]}`}
-              style={{ fontSize: 9 }}
+              style={{ fontSize: "var(--fs-3xs)" }}
               title={`Risk level: ${recipe.risk_level}`}
             >
               {recipe.risk_level} risk
@@ -265,19 +265,19 @@ function RecipeCard({
           {recipe.approval_behavior && (
             <span
               className="pill muted"
-              style={{ fontSize: 9 }}
+              style={{ fontSize: "var(--fs-3xs)" }}
               title={`Approval: ${recipe.approval_behavior}`}
             >
               {APPROVAL_LABEL[recipe.approval_behavior]}
             </span>
           )}
           {recipe.network_access && (
-            <span className="pill muted" style={{ fontSize: 9 }} title="Makes outbound network requests">
+            <span className="pill muted" style={{ fontSize: "var(--fs-3xs)" }} title="Makes outbound network requests">
               network
             </span>
           )}
           {recipe.file_access && (
-            <span className="pill muted" style={{ fontSize: 9 }} title="Reads or writes local files">
+            <span className="pill muted" style={{ fontSize: "var(--fs-3xs)" }} title="Reads or writes local files">
               file I/O
             </span>
           )}
@@ -309,7 +309,7 @@ function RecipeCard({
           {recipe.downloads > 0 && (
             <span
               style={{
-                fontSize: 11,
+                fontSize: "var(--fs-xs)",
                 color: "var(--ink-3)",
                 marginLeft: 2,
               }}
@@ -330,7 +330,7 @@ function RecipeCard({
                 background: "var(--ok-soft)",
                 color: "var(--ok)",
                 border: "1px solid var(--ok)",
-                fontSize: 11,
+                fontSize: "var(--fs-xs)",
               }}
             >
               &#10003; Installed
@@ -365,7 +365,7 @@ function RecipeCard({
         <div
           style={{
             marginTop: "var(--s-2)",
-            fontSize: 11,
+            fontSize: "var(--fs-xs)",
             color: "var(--err)",
             lineHeight: 1.5,
           }}
@@ -528,7 +528,7 @@ export default function MarketplacePage() {
             alignItems: "center",
             justifyContent: "space-between",
             gap: 12,
-            fontSize: 13,
+            fontSize: "var(--fs-m)",
           }}
         >
           <span style={{ color: "var(--fg-2)" }}>
@@ -540,7 +540,7 @@ export default function MarketplacePage() {
             rel="noopener noreferrer"
             style={{
               flexShrink: 0,
-              fontSize: 12,
+              fontSize: "var(--fs-s)",
               fontWeight: 600,
               padding: "4px 14px",
               borderRadius: "var(--r-full)",
@@ -569,7 +569,7 @@ export default function MarketplacePage() {
             type="button"
             onClick={() => setSearchOpen((v) => !v)}
             className="btn sm ghost"
-            style={{ fontSize: 12 }}
+            style={{ fontSize: "var(--fs-s)" }}
             aria-label="Toggle search"
             aria-expanded={searchOpen}
           >
@@ -580,7 +580,7 @@ export default function MarketplacePage() {
             target="_blank"
             rel="noopener noreferrer"
             className="btn sm"
-            style={{ textDecoration: "none", fontSize: 12 }}
+            style={{ textDecoration: "none", fontSize: "var(--fs-s)" }}
             aria-label="Submit a recipe to the marketplace"
           >
             + Submit recipe
@@ -636,7 +636,7 @@ export default function MarketplacePage() {
         <>
           {featured && (
             <>
-              <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
+              <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
                 Featured this week
               </h2>
               <div
@@ -662,7 +662,7 @@ export default function MarketplacePage() {
                       top: 12,
                       right: 12,
                       zIndex: 2,
-                      fontSize: 10,
+                      fontSize: "var(--fs-2xs)",
                       fontFamily: "var(--font-mono)",
                       letterSpacing: "0.06em",
                       background: "var(--accent-soft)",
@@ -686,7 +686,7 @@ export default function MarketplacePage() {
 
           {rest.length > 0 && (
             <>
-              <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
+              <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
                 All recipes
               </h2>
               <div className="marketplace-grid">

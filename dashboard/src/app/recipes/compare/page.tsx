@@ -40,22 +40,22 @@ function StepRow({ step, highlight }: { step: PlanStep; highlight?: boolean }) {
         background: highlight ? "color-mix(in srgb, var(--warn) 8%, transparent)" : undefined,
       }}
     >
-      <td style={{ padding: "8px 0", fontSize: 12, fontFamily: "monospace" }}>
+      <td style={{ padding: "8px 0", fontSize: "var(--fs-s)", fontFamily: "monospace" }}>
         {step.tool ?? step.type}
       </td>
       <td style={{ padding: "8px 6px", textAlign: "center" }}>
         {step.risk && (
-          <span className={`pill ${RISK_PILL[step.risk]}`} style={{ fontSize: 10 }}>
+          <span className={`pill ${RISK_PILL[step.risk]}`} style={{ fontSize: "var(--fs-2xs)" }}>
             {step.risk}
           </span>
         )}
       </td>
-      <td style={{ padding: "8px 6px", textAlign: "center", fontSize: 11, color: "var(--fg-2)" }}>
+      <td style={{ padding: "8px 6px", textAlign: "center", fontSize: "var(--fs-xs)", color: "var(--fg-2)" }}>
         {step.isWrite ? "write" : "read"}
       </td>
       <td style={{ padding: "8px 0", textAlign: "center" }}>
         {step.resolved === false && (
-          <span className="pill err" style={{ fontSize: 10 }}>unresolved</span>
+          <span className="pill err" style={{ fontSize: "var(--fs-2xs)" }}>unresolved</span>
         )}
       </td>
     </tr>
@@ -105,19 +105,19 @@ function PlanColumn({
           gap: 8,
         }}
       >
-        <code style={{ flex: 1, fontSize: 13 }}>{name}</code>
+        <code style={{ flex: 1, fontSize: "var(--fs-m)" }}>{name}</code>
         {plan && (
           <>
-            <span className="pill muted" style={{ fontSize: 10 }}>
+            <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }}>
               {plan.steps.length} steps
             </span>
             {addedSteps.length > 0 && (
-              <span className="pill ok" style={{ fontSize: 10 }}>
+              <span className="pill ok" style={{ fontSize: "var(--fs-2xs)" }}>
                 +{addedSteps.length} new
               </span>
             )}
             {removedCount > 0 && (
-              <span className="pill err" style={{ fontSize: 10 }}>
+              <span className="pill err" style={{ fontSize: "var(--fs-2xs)" }}>
                 -{removedCount} removed
               </span>
             )}
@@ -135,13 +135,13 @@ function PlanColumn({
       </div>
 
       <div style={{ padding: "12px 16px" }}>
-        {loading && <p style={{ color: "var(--fg-2)", fontSize: 13 }}>Loading plan…</p>}
-        {error && <div className="alert-err" style={{ fontSize: 12 }}>{error}</div>}
+        {loading && <p style={{ color: "var(--fg-2)", fontSize: "var(--fs-m)" }}>Loading plan…</p>}
+        {error && <div className="alert-err" style={{ fontSize: "var(--fs-s)" }}>{error}</div>}
 
         {plan && (
           <>
             {plan.lint.errors.length > 0 && (
-              <div className="alert-err" style={{ marginBottom: 8, fontSize: 12 }}>
+              <div className="alert-err" style={{ marginBottom: 8, fontSize: "var(--fs-s)" }}>
                 {plan.lint.errors.join(" · ")}
               </div>
             )}
@@ -152,7 +152,7 @@ function PlanColumn({
                   border: "1px solid color-mix(in srgb, var(--warn) 30%, transparent)",
                   borderRadius: "var(--r-2)",
                   padding: "6px 10px",
-                  fontSize: 11,
+                  fontSize: "var(--fs-xs)",
                   color: "var(--fg-1)",
                   marginBottom: 8,
                 }}
@@ -163,10 +163,10 @@ function PlanColumn({
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border-default)" }}>
-                  <th style={{ textAlign: "left", fontSize: 10, color: "var(--fg-2)", fontWeight: 500, padding: "4px 0" }}>Step</th>
-                  <th style={{ textAlign: "center", fontSize: 10, color: "var(--fg-2)", fontWeight: 500, padding: "4px 6px" }}>Risk</th>
-                  <th style={{ textAlign: "center", fontSize: 10, color: "var(--fg-2)", fontWeight: 500, padding: "4px 6px" }}>Mode</th>
-                  <th style={{ textAlign: "center", fontSize: 10, color: "var(--fg-2)", fontWeight: 500, padding: "4px 0" }} />
+                  <th style={{ textAlign: "left", fontSize: "var(--fs-2xs)", color: "var(--fg-2)", fontWeight: 500, padding: "4px 0" }}>Step</th>
+                  <th style={{ textAlign: "center", fontSize: "var(--fs-2xs)", color: "var(--fg-2)", fontWeight: 500, padding: "4px 6px" }}>Risk</th>
+                  <th style={{ textAlign: "center", fontSize: "var(--fs-2xs)", color: "var(--fg-2)", fontWeight: 500, padding: "4px 6px" }}>Mode</th>
+                  <th style={{ textAlign: "center", fontSize: "var(--fs-2xs)", color: "var(--fg-2)", fontWeight: 500, padding: "4px 0" }} />
                 </tr>
               </thead>
               <tbody>
@@ -180,7 +180,7 @@ function PlanColumn({
               </tbody>
             </table>
             {plan.connectorNamespaces && plan.connectorNamespaces.length > 0 && (
-              <p style={{ fontSize: 11, color: "var(--fg-2)", marginTop: 8 }}>
+              <p style={{ fontSize: "var(--fs-xs)", color: "var(--fg-2)", marginTop: 8 }}>
                 Connectors: {plan.connectorNamespaces.join(", ")}
               </p>
             )}
@@ -305,7 +305,7 @@ function CompareInner() {
     <section>
       <div className="page-head">
         <div>
-          <Link href="/recipes" style={{ fontSize: 12, color: "var(--fg-2)", textDecoration: "none" }}>
+          <Link href="/recipes" style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", textDecoration: "none" }}>
             ← Recipes
           </Link>
           <h1 style={{ marginTop: 4 }}>Compare variants</h1>
@@ -326,7 +326,7 @@ function CompareInner() {
             background:
               promoteResultKind === "ok" ? "var(--ok-soft)" : "var(--err-soft)",
             border: `1px solid ${promoteResultKind === "ok" ? "var(--ok)" : "var(--err)"}`,
-            fontSize: 13,
+            fontSize: "var(--fs-m)",
           }}
         >
           <span aria-hidden="true">
@@ -336,7 +336,7 @@ function CompareInner() {
           {promoteResultKind === "ok" && (
             <>
               {" "}
-              <Link href="/recipes" style={{ color: "var(--ok)", fontSize: 12 }}>
+              <Link href="/recipes" style={{ color: "var(--ok)", fontSize: "var(--fs-s)" }}>
                 Back to recipes →
               </Link>
             </>
@@ -378,7 +378,7 @@ function CompareInner() {
             <h3 id="promote-confirm-heading" style={{ marginTop: 0, marginBottom: 8 }}>
               Overwrite <code>{baseName}</code>?
             </h3>
-            <p style={{ fontSize: 13, color: "var(--ink-2)", margin: "0 0 16px", lineHeight: 1.5 }}>
+            <p style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)", margin: "0 0 16px", lineHeight: 1.5 }}>
               <code>{baseName}</code> already exists. Promoting{" "}
               <code>{confirm.variantName}</code> will replace it. The existing
               recipe file will be overwritten.

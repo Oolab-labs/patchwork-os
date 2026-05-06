@@ -209,12 +209,12 @@ function DecisionsContent() {
             gap: 6,
             flexWrap: "wrap",
             marginBottom: "var(--s-3)",
-            fontSize: 12,
+            fontSize: "var(--fs-s)",
             color: "var(--fg-3)",
             alignItems: "center",
           }}
         >
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)" }}>
             Tags
           </span>
           {(showAllTags ? allTags : allTags.slice(0, 20)).map((t) => (
@@ -321,14 +321,14 @@ function DecisionsContent() {
                     className={`chip chip-${
                       variant === "err" ? "red" : variant === "warn" ? "amber" : variant === "info" ? "blue" : "accent"
                     }`}
-                    style={{ textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "var(--font-mono)", fontSize: 10 }}
+                    style={{ textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)" }}
                   >
                     {variant === "err" ? "bug" : variant === "warn" ? "risk" : variant === "info" ? "decision" : "feature"}
                   </span>
                   <span
                     style={{
                       fontFamily: "var(--font-mono)",
-                      fontSize: 12,
+                      fontSize: "var(--fs-s)",
                       fontWeight: 600,
                       color: "var(--ink-1)",
                       flexShrink: 0,
@@ -341,13 +341,13 @@ function DecisionsContent() {
                     <Link
                       href={`/sessions/${b.sessionId}`}
                       className="pill muted"
-                      style={{ fontFamily: "var(--font-mono)", fontSize: 10, textDecoration: "none" }}
+                      style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", textDecoration: "none" }}
                       title={`session ${b.sessionId}`}
                     >
                       {b.sessionId.slice(0, 8)}
                     </Link>
                   )}
-                  <span style={{ fontSize: 11, color: "var(--ink-3)", flexShrink: 0 }}>
+                  <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", flexShrink: 0 }}>
                     {relTime(t.ts)}
                   </span>
                 </div>
@@ -370,10 +370,10 @@ function DecisionsContent() {
                           border: "1px solid var(--orange-tint)",
                         }}
                       >
-                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "var(--orange)", letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase" }}>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 700, color: "var(--orange)", letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase" }}>
                           ✻ Problem
                         </div>
-                        <div style={{ fontSize: 13, color: "var(--ink-1)", lineHeight: 1.55 }}>
+                        <div style={{ fontSize: "var(--fs-m)", color: "var(--ink-1)", lineHeight: 1.55 }}>
                           {b.problem as string}
                         </div>
                       </div>
@@ -387,10 +387,10 @@ function DecisionsContent() {
                           border: "1px solid color-mix(in srgb, var(--green) 30%, transparent)",
                         }}
                       >
-                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "var(--green)", letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase" }}>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 700, color: "var(--green)", letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase" }}>
                           ✻ Solution
                         </div>
-                        <div style={{ fontSize: 13, color: "var(--ink-0)", lineHeight: 1.55 }}>
+                        <div style={{ fontSize: "var(--fs-m)", color: "var(--ink-0)", lineHeight: 1.55 }}>
                           {b.solution as string}
                         </div>
                       </div>

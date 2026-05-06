@@ -64,7 +64,7 @@ const inputStyle = {
   border: "1px solid var(--line-2)",
   borderRadius: "var(--r-2)",
   color: "var(--ink-0)",
-  fontSize: 13,
+  fontSize: "var(--fs-m)",
   fontFamily: "var(--font-mono)",
   padding: "6px 10px",
   outline: "none",
@@ -74,14 +74,14 @@ const inputStyle = {
 
 const labelStyle = {
   display: "block",
-  fontSize: 13,
+  fontSize: "var(--fs-m)",
   color: "var(--ink-1)",
   marginBottom: 4,
   fontWeight: 500,
 };
 
 const helpStyle = {
-  fontSize: 12,
+  fontSize: "var(--fs-s)",
   color: "var(--ink-2)",
   margin: "4px 0 0",
   lineHeight: 1.5,
@@ -304,7 +304,7 @@ export default function SettingsPage() {
           aria-live="polite"
           aria-atomic="true"
           style={{
-            fontSize: 12,
+            fontSize: "var(--fs-s)",
             color: saveState === "saved" ? "var(--ok)" : "var(--fg-2)",
             display: "flex",
             alignItems: "center",
@@ -317,7 +317,7 @@ export default function SettingsPage() {
         >
           {saveState !== "idle" && (
             <>
-              <span aria-hidden style={{ fontSize: 13 }}>
+              <span aria-hidden style={{ fontSize: "var(--fs-m)" }}>
                 {saveState === "saved" ? "✓" : "…"}
               </span>
               {saveState === "saved" ? "Saved" : "Saving…"}
@@ -362,7 +362,7 @@ export default function SettingsPage() {
                     href={`#${id}`}
                     onClick={() => setActive(id)}
                     style={{
-                      fontSize: 13,
+                      fontSize: "var(--fs-m)",
                       fontWeight: isActive ? 600 : 500,
                       color: isActive ? "var(--ink-0)" : "var(--ink-2)",
                       background: isActive ? "var(--bg-2)" : "transparent",
@@ -387,7 +387,7 @@ export default function SettingsPage() {
               <div className="card-head">
                 <div>
                   <h2 style={{ margin: 0 }}>Bridge</h2>
-                  <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
+                  <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginTop: 2 }}>
                     Runtime ports, workspace binding, inbox path
                   </div>
                 </div>
@@ -474,20 +474,20 @@ export default function SettingsPage() {
                       border: "1px solid var(--border-default)",
                       borderRadius: "var(--r-2)",
                       padding: "6px 14px",
-                      fontSize: 13,
+                      fontSize: "var(--fs-m)",
                       cursor: "not-allowed",
                       opacity: 0.6,
                     }}
                   >
                     Apply
                   </button>
-                  <span id="bridge-apply-help" style={{ fontSize: 12, color: "var(--fg-3)" }}>
+                  <span id="bridge-apply-help" style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)" }}>
                     Read-only — edit the config file directly and restart the bridge.
                   </span>
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: 16, paddingTop: 12, borderTop: "1px solid var(--border-subtle)", fontSize: 12, color: "var(--fg-2)" }}>
+              <div style={{ display: "flex", gap: 16, paddingTop: 12, borderTop: "1px solid var(--border-subtle)", fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
                 <span>Mode: <span style={{ color: "var(--fg-0)" }}>{settings.patchwork?.fullMode === false ? "slim" : "full"}</span></span>
                 <span>Sessions: <span className="mono" style={{ color: "var(--fg-0)" }}>{settings.activeSessions ?? 0}</span></span>
                 <span>Uptime: <span className="mono" style={{ color: "var(--fg-0)" }}>{settings.uptimeMs != null ? fmtDuration(settings.uptimeMs) : "—"}</span></span>
@@ -499,7 +499,7 @@ export default function SettingsPage() {
               <div className="card-head">
                 <div>
                   <h2 style={{ margin: 0 }}>AI drivers</h2>
-                  <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
+                  <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginTop: 2 }}>
                     Configure the models available for recipes and orchestrated tasks.
                   </div>
                 </div>
@@ -524,13 +524,13 @@ export default function SettingsPage() {
                     >
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-0)" }}>{row.name}</span>
+                          <span style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-0)" }}>{row.name}</span>
                           {isPrimary && <StatusPill tone="ok">primary</StatusPill>}
                           <StatusPill tone={activeDriver ? "ok" : "muted"}>
                             {activeDriver ? "active" : "inactive"}
                           </StatusPill>
                         </div>
-                        <div style={{ fontSize: 12, color: "var(--fg-2)", marginTop: 2 }}>{row.detail}</div>
+                        <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", marginTop: 2 }}>{row.detail}</div>
                       </div>
                       <button
                         type="button"
@@ -542,7 +542,7 @@ export default function SettingsPage() {
                           border: "1px solid var(--border-default)",
                           borderRadius: "var(--r-2)",
                           padding: "5px 10px",
-                          fontSize: 12,
+                          fontSize: "var(--fs-s)",
                           cursor: isPrimary ? "default" : "pointer",
                           opacity: isPrimary ? 0.5 : 1,
                         }}
@@ -559,7 +559,7 @@ export default function SettingsPage() {
                           border: "1px solid var(--border-default)",
                           borderRadius: "var(--r-2)",
                           padding: "5px 10px",
-                          fontSize: 12,
+                          fontSize: "var(--fs-s)",
                           cursor: "not-allowed",
                           opacity: 0.5,
                         }}
@@ -570,7 +570,7 @@ export default function SettingsPage() {
                   );
                 })}
                 {driverMsg && (
-                  <p style={{ fontSize: 12, marginTop: 4, color: driverMsg.ok ? "var(--ok)" : "var(--err)" }}>
+                  <p style={{ fontSize: "var(--fs-s)", marginTop: 4, color: driverMsg.ok ? "var(--ok)" : "var(--err)" }}>
                     {driverMsg.text}
                   </p>
                 )}
@@ -582,7 +582,7 @@ export default function SettingsPage() {
               <div className="card-head">
                 <div>
                   <h2 style={{ margin: 0 }}>Approval policy</h2>
-                  <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
+                  <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginTop: 2 }}>
                     Autopilot rules and Claude Code permission tiers.
                   </div>
                 </div>
@@ -616,7 +616,7 @@ export default function SettingsPage() {
                     disabled={gateSaving || gatePending === gateValue}
                     onClick={() => saveGate(gatePending)}
                     style={{
-                      fontSize: 12,
+                      fontSize: "var(--fs-s)",
                       fontWeight: 600,
                       padding: "6px 12px",
                       borderRadius: "var(--r-2)",
@@ -630,7 +630,7 @@ export default function SettingsPage() {
                     {gateSaving ? "Saving…" : "Save"}
                   </button>
                   {gateSaveMsg && (
-                    <span style={{ fontSize: 12, color: gateSaveMsg.ok ? "var(--ok)" : "var(--err)" }}>
+                    <span style={{ fontSize: "var(--fs-s)", color: gateSaveMsg.ok ? "var(--ok)" : "var(--err)" }}>
                       {gateSaveMsg.text}
                     </span>
                   )}
@@ -640,7 +640,7 @@ export default function SettingsPage() {
               <div style={{ padding: "16px 0", borderBottom: "1px solid var(--border-subtle)" }}>
                 <label
                   htmlFor="time-of-day-anomaly"
-                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 500, cursor: "pointer" }}
+                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-m)", fontWeight: 500, cursor: "pointer" }}
                 >
                   <input
                     id="time-of-day-anomaly"
@@ -678,14 +678,14 @@ export default function SettingsPage() {
               <div className="card-head">
                 <div>
                   <h2 style={{ margin: 0 }}>Telemetry</h2>
-                  <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
+                  <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginTop: 2 }}>
                     Opt-in. Everything off by default. Local-only until you flip a switch.
                   </div>
                 </div>
               </div>
 
               <div style={{ padding: "16px 0", display: "flex", flexDirection: "column", gap: 14 }}>
-                <div role="status" style={{ fontSize: 12, color: "var(--fg-3)", marginBottom: 4 }}>
+                <div role="status" style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)", marginBottom: 4 }}>
                   Preview only — toggles do not yet persist between reloads.
                 </div>
                 <ToggleRow
@@ -741,8 +741,8 @@ function ToggleRow({
         style={{ marginTop: 2 }}
       />
       <label htmlFor={id} style={{ flex: 1, cursor: "pointer" }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>{label}</div>
-        <div style={{ fontSize: 12, color: "var(--fg-2)", marginTop: 2, lineHeight: 1.5 }}>{help}</div>
+        <div style={{ fontSize: "var(--fs-m)", fontWeight: 500, color: "var(--fg-0)" }}>{label}</div>
+        <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", marginTop: 2, lineHeight: 1.5 }}>{help}</div>
       </label>
     </div>
   );
@@ -769,19 +769,19 @@ function PermColumn({
     >
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
         <StatusPill tone={tone}>{title}</StatusPill>
-        <span style={{ fontSize: 11, color: "var(--fg-3)" }}>{rules.length}</span>
+        <span style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>{rules.length}</span>
       </div>
       {rules.length === 0 ? (
-        <div style={{ fontSize: 11, color: "var(--fg-3)" }}>—</div>
+        <div style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>—</div>
       ) : (
         <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 3 }}>
           {rules.slice(0, 8).map((r) => (
-            <li key={r} className="mono" style={{ fontSize: 11, color: "var(--fg-1)", wordBreak: "break-all" }}>
+            <li key={r} className="mono" style={{ fontSize: "var(--fs-xs)", color: "var(--fg-1)", wordBreak: "break-all" }}>
               {r}
             </li>
           ))}
           {rules.length > 8 && (
-            <li style={{ fontSize: 11, color: "var(--fg-3)" }}>+{rules.length - 8} more</li>
+            <li style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>+{rules.length - 8} more</li>
           )}
         </ul>
       )}
@@ -812,12 +812,12 @@ function ConfigFileCard({ path }: { path: string }) {
         padding: 10,
       }}
     >
-      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.05em", color: "var(--fg-3)", textTransform: "uppercase" }}>
+      <div style={{ fontSize: "var(--fs-2xs)", fontWeight: 600, letterSpacing: "0.05em", color: "var(--fg-3)", textTransform: "uppercase" }}>
         Config file
       </div>
       <div
         className="mono"
-        style={{ fontSize: 11, color: "var(--fg-1)", marginTop: 6, wordBreak: "break-all", lineHeight: 1.4 }}
+        style={{ fontSize: "var(--fs-xs)", color: "var(--fg-1)", marginTop: 6, wordBreak: "break-all", lineHeight: 1.4 }}
       >
         {path}
       </div>
@@ -831,7 +831,7 @@ function ConfigFileCard({ path }: { path: string }) {
           border: "1px solid var(--border-default)",
           borderRadius: "var(--r-s)",
           color: copied ? "var(--ok)" : "var(--fg-1)",
-          fontSize: 11,
+          fontSize: "var(--fs-xs)",
           padding: "3px 8px",
           cursor: "pointer",
           display: "inline-flex",

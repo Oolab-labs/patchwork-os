@@ -223,9 +223,9 @@ export default function RunsPage() {
           }}
           aria-pressed={status === "all"}
         >
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 8 }}>All runs</div>
+          <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 8 }}>All runs</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>{stats.total}</div>
-          <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}>Last 24h</div>
+          <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 4 }}>Last 24h</div>
         </button>
         <button
           type="button"
@@ -240,9 +240,9 @@ export default function RunsPage() {
           }}
           aria-pressed={status === "done"}
         >
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ok)", marginBottom: 8 }}>✓ Successful</div>
+          <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ok)", marginBottom: 8 }}>✓ Successful</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>{stats.ok}</div>
-          <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}>{stats.total > 0 ? Math.round(stats.ok / stats.total * 100) + "%" : "—"} success rate</div>
+          <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 4 }}>{stats.total > 0 ? Math.round(stats.ok / stats.total * 100) + "%" : "—"} success rate</div>
         </button>
         <button
           type="button"
@@ -257,9 +257,9 @@ export default function RunsPage() {
           }}
           aria-pressed={status === "error"}
         >
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--err)", marginBottom: 8 }}>⚠ Errored</div>
+          <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--err)", marginBottom: 8 }}>⚠ Errored</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: stats.err > 0 ? "var(--err)" : "var(--ink-0)", lineHeight: 1 }}>{stats.err}</div>
-          <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}>{stats.total > 0 ? Math.round(stats.err / stats.total * 100) + "%" : "—"} error rate</div>
+          <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 4 }}>{stats.total > 0 ? Math.round(stats.err / stats.total * 100) + "%" : "—"} error rate</div>
         </button>
       </div>
 
@@ -353,7 +353,7 @@ export default function RunsPage() {
                       <td>
                         <span
                           className={`pill ${sClass}`}
-                          style={{ fontSize: 11 }}
+                          style={{ fontSize: "var(--fs-xs)" }}
                         >
                           {sClass !== "running" && (
                             <span className="pill-dot" />
@@ -388,7 +388,7 @@ export default function RunsPage() {
                           <span
                             className="mono"
                             style={{
-                              fontSize: 11,
+                              fontSize: "var(--fs-xs)",
                               color: "var(--ink-2)",
                               minWidth: 42,
                               textAlign: "right",
@@ -410,7 +410,7 @@ export default function RunsPage() {
                           <div
                             style={{
                               padding: "12px 14px",
-                              fontSize: 12,
+                              fontSize: "var(--fs-s)",
                               display: "flex",
                               flexDirection: "column",
                               gap: 8,
@@ -446,7 +446,7 @@ export default function RunsPage() {
                               <div>
                                 <div
                                   style={{
-                                    fontSize: 10,
+                                    fontSize: "var(--fs-2xs)",
                                     color: "var(--red)",
                                     fontWeight: 600,
                                     textTransform: "uppercase",
@@ -469,7 +469,7 @@ export default function RunsPage() {
                                 <div>
                                   <div
                                     style={{
-                                      fontSize: 10,
+                                      fontSize: "var(--fs-2xs)",
                                       color: "var(--red)",
                                       fontWeight: 600,
                                       textTransform: "uppercase",
@@ -494,7 +494,7 @@ export default function RunsPage() {
                                       <li
                                         key={i}
                                         style={{
-                                          fontSize: 12,
+                                          fontSize: "var(--fs-s)",
                                           color: "var(--red)",
                                         }}
                                       >
@@ -515,7 +515,7 @@ export default function RunsPage() {
                               <div>
                                 <div
                                   style={{
-                                    fontSize: 10,
+                                    fontSize: "var(--fs-2xs)",
                                     color: "var(--ink-2)",
                                     fontWeight: 600,
                                     textTransform: "uppercase",
