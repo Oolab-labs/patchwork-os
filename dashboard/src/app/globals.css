@@ -1884,10 +1884,12 @@ button.topbar-search {
 .toggle.on::after { transform: translateX(14px); }
 
 
-/* ---- Editorial demo banner (2.0 style) ---- */
+/* ---- Editorial demo banner (2.0 style) ----
+   Not sticky: it would overlap the sticky `.app-header` (both pinned at
+   top:0, same scroll container) and obscure the menu/theme toggle. The
+   "Demo" pill in the header keeps the indicator persistent on scroll. */
 .demo-banner {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 100;
   display: flex;
   align-items: center;
@@ -2191,10 +2193,11 @@ button.topbar-search {
 .app-sidebar-bridge-version { color: var(--ink-2); }
 .app-sidebar-bridge-port { color: var(--ink-3); }
 
-/* ---- Bridge offline banner (global, sticky) ------------------------- */
+/* ---- Bridge offline banner (global) ---------------------------------
+   Not sticky for the same reason as `.demo-banner` — would collide with
+   the sticky `.app-header`. Bridge errors are loud enough on first paint. */
 .bridge-banner {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 60;
   display: flex;
   align-items: center;
@@ -2517,9 +2520,11 @@ button.topbar-search {
     width: 20px;
     height: 20px;
   }
-  /* Make room for the bottom bar so content isn't hidden underneath */
+  /* Make room for the bottom bar so content isn't hidden underneath.
+     Bottom-nav is ~56px + 6px top + 6px bottom + safe-area; we want a
+     little extra so the form's primary CTA isn't tight against the nav. */
   .app-main {
-    padding-bottom: 64px;
+    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   }
 }
 
