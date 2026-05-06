@@ -331,9 +331,20 @@ export default function TasksPage() {
     refetchRef.current = () => void tick();
     tick();
     fastId = setInterval(tick, 2000);
+    const onVisible = () => {
+      if (document.hidden) {
+        if (fastId !== null) { clearInterval(fastId); fastId = null; }
+        if (slowId !== null) { clearInterval(slowId); slowId = null; }
+      } else if (fastId === null && slowId === null) {
+        void tick();
+        fastId = setInterval(tick, 2000);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       if (fastId !== null) clearInterval(fastId);
       if (slowId !== null) clearInterval(slowId);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
