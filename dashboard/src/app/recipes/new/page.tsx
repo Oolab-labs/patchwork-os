@@ -1,6 +1,6 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { parse as parseYaml } from "yaml";
 import { apiPath } from "@/lib/api";
 
@@ -284,6 +284,14 @@ function NewRecipePageInner() {
     error?: string;
   } | null>(null);
 
+  // Refs used to focus newly-appended rows on mount.
+  // Keys are list indexes; the matching ref callback consumes pendingFocus when it attaches.
+  const varNameRefs = useRef<Map<number, HTMLInputElement | null>>(new Map());
+  const stepPromptRefs = useRef<Map<number, HTMLTextAreaElement | null>>(new Map());
+  const pendingFocus = useRef<{ kind: "var" | "step"; index: number } | null>(
+    null,
+  );
+
   const setName = useCallback((v: string) => {
     setForm((f) => ({ ...f, name: v }));
     if (v && !NAME_RE.test(v)) {
@@ -344,6 +352,7 @@ function NewRecipePageInner() {
         ...f.steps,
         { id: makeNextStepId(f.steps), agent: true, prompt: "" },
       ];
+      pendingFocus.current = { kind: "step", index: steps.length - 1 };
       return { ...f, steps };
     });
     setValidation((current) => ({ ...current, steps: [...current.steps, null] }));
@@ -386,13 +395,14 @@ function NewRecipePageInner() {
   }, []);
 
   const addVar = useCallback(() => {
-    setForm((f) => ({
-      ...f,
-      vars: [
+    setForm((f) => {
+      const vars = [
         ...f.vars,
         { name: "", description: "", required: false, default: "" },
-      ],
-    }));
+      ];
+      pendingFocus.current = { kind: "var", index: vars.length - 1 };
+      return { ...f, vars };
+    });
     setValidation((current) => ({ ...current, vars: [...current.vars, null] }));
     setSubmitError(null);
   }, []);
@@ -1233,6 +1243,20 @@ function NewRecipePageInner() {
                         }}
                       >
                         <input
+                          ref={(node) => {
+                            if (node) varNameRefs.current.set(i, node);
+                            else varNameRefs.current.delete(i);
+                            const target = pendingFocus.current;
+                            if (
+                              node &&
+                              target &&
+                              target.kind === "var" &&
+                              target.index === i
+                            ) {
+                              pendingFocus.current = null;
+                              node.focus();
+                            }
+                          }}
                           type="text"
                           value={v.name}
                           onChange={(e) => updateVar(i, "name", e.target.value)}
@@ -1439,6 +1463,20 @@ function NewRecipePageInner() {
                       </div>
                     </div>
                     <textarea
+                      ref={(node) => {
+                        if (node) stepPromptRefs.current.set(i, node);
+                        else stepPromptRefs.current.delete(i);
+                        const target = pendingFocus.current;
+                        if (
+                          node &&
+                          target &&
+                          target.kind === "step" &&
+                          target.index === i
+                        ) {
+                          pendingFocus.current = null;
+                          node.focus();
+                        }
+                      }}
                       id={`step-prompt-${i}`}
                       value={step.prompt}
                       onChange={(e) => updateStep(i, e.target.value)}
