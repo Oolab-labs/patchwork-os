@@ -1,9 +1,79 @@
 "use client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
+
+const MessageMarkdown = dynamic(() => import("@/components/MessageMarkdown"), {
+  ssr: false,
+  loading: () => null,
+});
+
+// Inline markdown for the narrow "Detail" column: keeps paragraphs flush
+// (no top/bottom margins), styles inline code as a soft pill, and lets
+// long unbroken tokens (paths, hashes) wrap instead of overflowing.
+const detailMarkdownComponents = {
+  p: ({ children }: { children?: React.ReactNode }) => (
+    <span
+      style={{
+        display: "inline",
+        overflowWrap: "break-word",
+        wordBreak: "break-word",
+      }}
+    >
+      {children}
+    </span>
+  ),
+  code: ({ children, className }: { children?: React.ReactNode; className?: string }) => {
+    const isBlock = !!className;
+    return isBlock ? (
+      <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)" }}>{children}</code>
+    ) : (
+      <code
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "0.875em",
+          background: "var(--recess)",
+          border: "1px solid var(--line-1)",
+          borderRadius: 4,
+          padding: "1px 5px",
+          wordBreak: "break-all",
+        }}
+      >
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children }: { children?: React.ReactNode }) => (
+    <pre
+      style={{
+        background: "var(--recess)",
+        border: "1px solid var(--line-2)",
+        borderRadius: "var(--r-s)",
+        padding: "8px 10px",
+        margin: "4px 0 0",
+        fontSize: "var(--fs-xs)",
+        fontFamily: "var(--font-mono)",
+        lineHeight: 1.55,
+        overflowX: "auto",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-all",
+      }}
+    >
+      {children}
+    </pre>
+  ),
+  a: ({ children, href }: { children?: React.ReactNode; href?: string }) => (
+    <a href={href} style={{ color: "var(--accent)" }} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  ),
+  strong: ({ children }: { children?: React.ReactNode }) => (
+    <strong style={{ color: "var(--fg-0)" }}>{children}</strong>
+  ),
+};
 
 interface SessionSummary {
   id: string;
@@ -468,9 +538,14 @@ export default function SessionDetailPage() {
                           </span>
                         </td>
                         <td style={{ fontSize: "var(--fs-m)" }}>
-                          {t.status === "error" && t.errorMessage
-                            ? t.errorMessage
-                            : `${t.durationMs}ms`}
+                          {t.status === "error" && t.errorMessage ? (
+                            <MessageMarkdown
+                              content={t.errorMessage}
+                              components={detailMarkdownComponents}
+                            />
+                          ) : (
+                            `${t.durationMs}ms`
+                          )}
                         </td>
                       </tr>
                     );
@@ -504,7 +579,16 @@ export default function SessionDetailPage() {
                           {e.event}
                         </span>
                       </td>
-                      <td style={{ fontSize: "var(--fs-m)" }}>{detail}</td>
+                      <td style={{ fontSize: "var(--fs-m)" }}>
+                        {detail === "—" ? (
+                          detail
+                        ) : (
+                          <MessageMarkdown
+                            content={detail}
+                            components={detailMarkdownComponents}
+                          />
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
