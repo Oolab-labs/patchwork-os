@@ -62,19 +62,6 @@ export function SkeletonRow({ columns = 3 }: { columns?: number }) {
   );
 }
 
-export function SkeletonCard({ lines = 3 }: { lines?: number }) {
-  return (
-    <div className="card" aria-hidden="true" style={{ padding: 16 }}>
-      <SkeletonText width="40%" size="lg" />
-      <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-        {Array.from({ length: lines }).map((_, i) => (
-          <SkeletonText key={i} width={`${100 - i * 12}%`} size="sm" />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export function SkeletonList({ rows = 4, columns = 3 }: { rows?: number; columns?: number }) {
   return (
     <div className="card" aria-hidden="true" style={{ padding: 0, overflow: "hidden" }}>
