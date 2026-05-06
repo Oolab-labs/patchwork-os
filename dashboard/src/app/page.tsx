@@ -764,6 +764,11 @@ export default function HomePage() {
                   ? `${health.tokens.messages} msg${health.tokens.messages === 1 ? "" : "s"} · ${sess} session${sess === 1 ? "" : "s"}`
                   : `${sess} session${sess === 1 ? "" : "s"} · ${conns} connection${conns === 1 ? "" : "s"}`
               }
+              title={
+                health?.tokens
+                  ? `Input: ${health.tokens.input.toLocaleString()}\nOutput: ${health.tokens.output.toLocaleString()}\nCache create: ${health.tokens.cacheCreate.toLocaleString()}\nCache read: ${health.tokens.cacheRead.toLocaleString()}\nMessages: ${health.tokens.messages.toLocaleString()}`
+                  : undefined
+              }
               href="/metrics"
             />
           </>

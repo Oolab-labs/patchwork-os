@@ -12,6 +12,8 @@ interface StatCardProps {
   foot?: React.ReactNode;
   href?: string;
   className?: string;
+  /** Native tooltip shown on hover. Newlines are preserved by browsers. */
+  title?: string;
 }
 
 function DeltaBadge({ delta }: { delta: string }) {
@@ -107,6 +109,7 @@ export function StatCard({
   foot,
   href,
   className,
+  title,
 }: StatCardProps) {
   const inner = (
     <CardInner
@@ -120,7 +123,11 @@ export function StatCard({
 
   if (href) {
     return (
-      <Link href={href} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
+      <Link
+        href={href}
+        title={title}
+        style={{ display: "block", textDecoration: "none", color: "inherit" }}
+      >
         <GlassCard className={`stat-card ${className ?? ""}`.trim()}>
           {inner}
         </GlassCard>
@@ -129,7 +136,10 @@ export function StatCard({
   }
 
   return (
-    <GlassCard className={`stat-card ${className ?? ""}`.trim()}>
+    <GlassCard
+      className={`stat-card ${className ?? ""}`.trim()}
+      title={title}
+    >
       {inner}
     </GlassCard>
   );
