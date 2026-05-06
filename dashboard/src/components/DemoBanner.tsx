@@ -13,7 +13,7 @@ export function DemoBanner() {
   if (!demo) return null;
 
   return (
-    <div role="status" className="demo-banner" style={{ position: "sticky", top: 0 }}>
+    <div role="status" className="demo-banner">
       <span className="demo-banner-dot" aria-hidden="true" />
       <span className="demo-banner-text">
         <strong>Demo</strong>
