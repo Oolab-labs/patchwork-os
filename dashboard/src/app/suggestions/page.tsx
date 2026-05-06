@@ -1,10 +1,18 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
 import { ErrorState } from "@/components/patchwork";
+
+const SINCE_DAYS_OPTIONS = [1, 7, 30, 90] as const;
+type SinceDays = (typeof SINCE_DAYS_OPTIONS)[number];
+function parseSinceDays(v: string | null): SinceDays {
+  const n = v ? Number(v) : NaN;
+  return SINCE_DAYS_OPTIONS.includes(n as SinceDays) ? (n as SinceDays) : 7;
+}
 
 interface CoOccurringPairDetails {
   pair: [string, string];
@@ -139,8 +147,18 @@ function isTrustDetails(
 }
 
 export default function SuggestionsPage() {
-  const [sinceDays, setSinceDays] = useState(7);
-  const { data, error, loading } = useBridgeFetch<SuggestionsResponse>(
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [sinceDays, setSinceDaysState] = useState<SinceDays>(() => parseSinceDays(searchParams?.get("since")));
+  const setSinceDays = (next: SinceDays) => {
+    setSinceDaysState(next);
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (next === 7) params.delete("since");
+    else params.set("since", String(next));
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+  };
+  const { data, error, loading, refetch } = useBridgeFetch<SuggestionsResponse>(
     `/api/bridge/suggestions?sinceDays=${sinceDays}`,
     { intervalMs: 30000 },
   );
@@ -176,7 +194,7 @@ export default function SuggestionsPage() {
           <select
             id="since-days"
             value={sinceDays}
-            onChange={(e) => setSinceDays(Number.parseInt(e.target.value, 10))}
+            onChange={(e) => setSinceDays(parseSinceDays(e.target.value))}
             style={{
               background: "var(--bg-2)",
               border: "1px solid var(--border-default)",
@@ -206,7 +224,7 @@ export default function SuggestionsPage() {
           title="Couldn't load suggestions"
           description="The bridge isn't responding to /suggestions."
           error={error}
-          onRetry={() => window.location.reload()}
+          onRetry={refetch}
         />
       )}
       {error && suggestions.length > 0 && (

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { LivePill } from "@/components/patchwork/LivePill";
 import { ErrorState } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
+import { useDebounced } from "@/hooks/useDebounced";
 
 interface AssertionFailure {
   assertion: string;
@@ -95,6 +96,7 @@ export default function RunsPage() {
   const [trigger, setTrigger] = useState<TriggerFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [recipeQuery, setRecipeQuery] = useState("");
+  const debouncedRecipeQuery = useDebounced(recipeQuery, 250);
   const [limit, setLimit] = useState(RUNS_PAGE_SIZE);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -106,7 +108,7 @@ export default function RunsPage() {
         const params = new URLSearchParams({ limit: String(limit) });
         if (trigger !== "all") params.set("trigger", trigger);
         if (status !== "all") params.set("status", status);
-        if (recipeQuery) params.set("recipe", recipeQuery);
+        if (debouncedRecipeQuery) params.set("recipe", debouncedRecipeQuery);
         const res = await fetch(apiPath(`/api/bridge/runs?${params}`));
         if (!res.ok) throw new Error(`/runs ${res.status}`);
         const data = (await res.json()) as { runs?: Run[] };
@@ -120,12 +122,12 @@ export default function RunsPage() {
     load();
     const id = setInterval(load, 5000);
     return () => clearInterval(id);
-  }, [trigger, status, recipeQuery, limit]);
+  }, [trigger, status, debouncedRecipeQuery, limit]);
 
   // Reset page size when filters change so we don't accidentally hold a giant fetch.
   useEffect(() => {
     setLimit(RUNS_PAGE_SIZE);
-  }, [trigger, status, recipeQuery]);
+  }, [trigger, status, debouncedRecipeQuery]);
 
   const stats = useMemo(() => {
     const list = runs ?? [];
