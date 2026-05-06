@@ -334,6 +334,16 @@ export default function ActivityPage() {
           <div className="empty-state">
             <h3>No activity yet</h3>
             <p>Tool calls and bridge events will appear here — most recent first.</p>
+            <p
+              style={{
+                color: "var(--ink-3)",
+                fontSize: "var(--fs-s)",
+                marginTop: "var(--s-3)",
+              }}
+            >
+              Connect a Claude Code session to the bridge and call any
+              MCP tool to see your first event.
+            </p>
           </div>
         ) : (
           <SkeletonList rows={5} columns={4} />
