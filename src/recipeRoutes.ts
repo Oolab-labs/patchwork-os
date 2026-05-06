@@ -34,6 +34,11 @@ import {
   computeSummary as computeActivationSummary,
   loadMetrics as loadActivationMetrics,
 } from "./activationMetrics.js";
+import {
+  consumeToken,
+  refillBucket,
+  type TokenBucketState,
+} from "./fp/tokenBucket.js";
 import type { RecipeDraft } from "./recipesHttp.js";
 import { validateSafeUrl } from "./ssrfGuard.js";
 
@@ -41,6 +46,34 @@ import { validateSafeUrl } from "./ssrfGuard.js";
 // GitHub repo. Process-wide; hoisted out of Server class state.
 let templatesCache: unknown = null;
 let templatesCacheTs = 0;
+
+/**
+ * Per-process token bucket guarding `/recipes/generate`. Every call to the
+ * route enqueues a Claude subprocess via the orchestrator — without a cap a
+ * scripted attacker holding a bridge token can DoS the queue or run up
+ * subscription costs. The bridge's existing `--tool-rate-limit` token bucket
+ * is per-session and gates MCP tool calls, not HTTP routes; this is a
+ * separate, route-scoped cap.
+ *
+ * Default: 10 req/min — generous for a feature that takes 5–10s per call.
+ * Process-wide because the bridge HTTP transport doesn't expose a stable
+ * per-caller identity beyond "valid bearer token", and the Claude
+ * subprocess queue is the actual bottleneck regardless of caller.
+ *
+ * Exported `_resetGenerateRateLimitForTests` lets tests start each case
+ * with a full bucket.
+ */
+const RECIPE_GENERATE_LIMIT_PER_MIN = 10;
+let recipeGenerateBucket: TokenBucketState = {
+  tokens: RECIPE_GENERATE_LIMIT_PER_MIN,
+  lastRefill: 0,
+};
+export function _resetGenerateRateLimitForTests(): void {
+  recipeGenerateBucket = {
+    tokens: RECIPE_GENERATE_LIMIT_PER_MIN,
+    lastRefill: 0,
+  };
+}
 
 // G-security R2 C-3 / I-3 / F-02: HTTP `vars` validation.
 //
@@ -600,6 +633,35 @@ export function tryHandleRecipeRoute(
 
   if (parsedUrl.pathname === "/recipes/generate" && req.method === "POST") {
     void (async () => {
+      // Refill + try-consume one token. 429 if bucket is empty — `Retry-After`
+      // in seconds rounds up to the next refill of one whole token.
+      const now = Date.now();
+      const refilled = refillBucket(
+        recipeGenerateBucket,
+        now,
+        RECIPE_GENERATE_LIMIT_PER_MIN,
+      );
+      const consumed = consumeToken(refilled);
+      recipeGenerateBucket = consumed.nextState;
+      if (!consumed.allowed) {
+        const secondsToOneToken = Math.ceil(
+          ((1 - consumed.nextState.tokens) / RECIPE_GENERATE_LIMIT_PER_MIN) *
+            60,
+        );
+        res.writeHead(429, {
+          "Content-Type": "application/json",
+          "Retry-After": String(Math.max(1, secondsToOneToken)),
+        });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: `Rate limit exceeded — max ${RECIPE_GENERATE_LIMIT_PER_MIN} requests per minute`,
+            retryAfterSeconds: Math.max(1, secondsToOneToken),
+          }),
+        );
+        return;
+      }
+
       const parsedBody = await readJsonBody<{ prompt?: unknown }>(
         req,
         RECIPE_ROUTE_BODY_CAPS.generate,
