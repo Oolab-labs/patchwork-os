@@ -84,6 +84,28 @@ describe("RECIPE_GENERATION_SYSTEM_PROMPT", () => {
     const unregistered = ids.filter((id) => !hasTool(id));
     expect(unregistered).toEqual([]);
   });
+
+  it("worked examples reference only registered tool IDs", () => {
+    // Audit (2026-05-06) follow-up: the original example #1 promised
+    // GitHub-notification fetching and email delivery via agent: prose,
+    // implying tools that don't exist in the registry. Going forward,
+    // every `- tool: <id>` line in the EXAMPLES block must resolve to a
+    // registered tool, so the worked examples can't drift back into
+    // making promises the runtime can't keep.
+    const examplesStart = RECIPE_GENERATION_SYSTEM_PROMPT.indexOf("EXAMPLES:");
+    expect(examplesStart).toBeGreaterThan(0);
+    const examples = RECIPE_GENERATION_SYSTEM_PROMPT.slice(examplesStart);
+    const ids = [
+      ...examples.matchAll(
+        /^\s*-\s*tool:\s*([a-z][a-z0-9_]*\.[a-z][a-z0-9_]*)/gim,
+      ),
+    ].map((m) => m[1] as string);
+    // Examples must use at least one tool: step (otherwise we've regressed
+    // to the agent-only bias that motivated the audit fix).
+    expect(ids.length).toBeGreaterThan(0);
+    const unregistered = ids.filter((id) => !hasTool(id));
+    expect(unregistered).toEqual([]);
+  });
 });
 
 describe("collectUnknownToolIds", () => {

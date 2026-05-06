@@ -853,7 +853,7 @@ function NewRecipePageInner() {
             </p>
             <textarea
               rows={3}
-              placeholder="e.g. every morning, summarize my GitHub notifications and email me a digest"
+              placeholder="e.g. every weekday at 9am, summarize my unread Gmail and post the digest to Slack"
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
               disabled={aiLoading}
