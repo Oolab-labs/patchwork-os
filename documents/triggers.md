@@ -23,7 +23,7 @@ The rest of this doc focuses on **webhooks** — the trigger that opens the door
 ## The webhook contract
 
 ```
-POST http://localhost:3100/hooks/<your-path-here>
+POST http://localhost:<bridge-port>/hooks/<your-path-here>
 Authorization: Bearer <your-bridge-token>
 Content-Type: application/json
 
@@ -102,7 +102,7 @@ iPhone Shortcuts can do this from anywhere — Lock Screen, Action Button, Siri,
    - Input Type: Text
    - Prompt: "What's the thought?"
 4. Add action: **Get Contents of URL**
-   - URL: `https://your-bridge.example.com/hooks/thought` (or `http://192.168.x.x:3100/hooks/thought` for LAN)
+   - URL: `https://your-bridge.example.com/hooks/thought` (or `http://192.168.x.x:<bridge-port>/hooks/thought` for LAN)
    - Method: POST
    - Headers:
      - `Authorization` → `Bearer YOUR-BRIDGE-TOKEN`
@@ -305,7 +305,7 @@ Webhooks don't bypass anything. Specifically:
 
 - **Delegation policy still fires.** A webhook recipe that writes to disk or calls a connector still goes through `--approval-gate` (the CLI flag is preserved for back-compat; the user-facing concept is the delegation policy — see [`templates/policies/`](../templates/policies/) for persona presets). Risk-tier escalation works the same way.
 - **Trace memory still records.** Every webhook-triggered run lands in `~/.patchwork/runs.jsonl` with the full lifecycle. `patchwork traces export` includes it.
-- **The dashboard shows in-flight runs.** Open `http://localhost:3100/runs` to watch a webhook-fired recipe execute step by step.
+- **The dashboard shows in-flight runs.** Open `http://localhost:3200/runs` to watch a webhook-fired recipe execute step by step.
 - **The dashboard surfaces the URL + curl + last payload per recipe.** Expand any webhook recipe row at `/recipes` to copy the full URL, copy a runnable `curl` example, and inspect the last 5 payloads received (most recent on top, with ok/err status, timestamps, and pretty-printed JSON bodies). The Test button fires a sample POST so you can confirm the wiring before configuring an external trigger.
 - **Replay works.** Webhook-fired runs can be mocked-replayed via `POST /runs/:seq/replay` like any other run.
 
@@ -314,7 +314,7 @@ Webhooks don't bypass anything. Specifically:
 ## Operational notes
 
 - **Bridge must be running.** Webhooks fail with 503 if the orchestrator isn't up. `patchwork start-all` is the reliable launcher.
-- **Public exposure requires `--issuer-url`.** For webhooks from the public internet (iPhone Shortcut over LTE, GitHub Actions, etc.), deploy the bridge with a reverse proxy + TLS and set `--issuer-url` to enable OAuth-bearer auth on the same `/hooks/*` endpoint. Local-network use (`http://192.168.x.x:3100`) doesn't need OAuth — the static bridge token is enough.
+- **Public exposure requires `--issuer-url`.** For webhooks from the public internet (iPhone Shortcut over LTE, GitHub Actions, etc.), deploy the bridge with a reverse proxy + TLS and set `--issuer-url` to enable OAuth-bearer auth on the same `/hooks/*` endpoint. Local-network use (`http://192.168.x.x:<bridge-port>`) doesn't need OAuth — the static bridge token is enough.
 - **Multiple recipes, one path.** First match wins; the orchestrator scans `~/.patchwork/recipes/` alphabetically. Keep webhook paths unique.
 - **Path namespace:** prefix your hooks (e.g. `/hooks/myname/thought` instead of `/hooks/thought`) if you share a bridge with others or use plugins that ship example recipes.
 

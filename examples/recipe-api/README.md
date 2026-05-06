@@ -6,16 +6,21 @@ apps, Python scripts, or any HTTP client.
 No OAuth required when calling from the same machine as the bridge.
 Just grab the bearer token and start calling.
 
-## Get the bearer token
+## Get the bearer token + bridge port
+
+The bridge picks an ephemeral port at startup and writes it to its lock
+file. Read both at once:
+
+```bash
+LOCK=$(ls -t ~/.claude/ide/*.lock | head -1)
+BRIDGE_TOKEN=$(jq -r '.authToken' "$LOCK")
+BRIDGE_PORT=$(basename "$LOCK" .lock)
+```
+
+`patchwork print-token` works too if you only need the token:
 
 ```bash
 BRIDGE_TOKEN=$(patchwork print-token)
-```
-
-Or read it directly:
-
-```bash
-BRIDGE_TOKEN=$(cat ~/.claude/ide/*.lock | jq -r '.authToken' | head -1)
 ```
 
 For remote deployments, set `--fixed-token <uuid>` at bridge start so
@@ -42,25 +47,25 @@ All endpoints require `Authorization: Bearer <token>`.
 
 ```bash
 # List recipes
-curl -s -H "Authorization: Bearer $BRIDGE_TOKEN" http://localhost:3100/recipes | jq '.recipes[].name'
+curl -s -H "Authorization: Bearer $BRIDGE_TOKEN" http://localhost:${BRIDGE_PORT}/recipes | jq '.recipes[].name'
 
 # Run a recipe
 curl -s -X POST \
   -H "Authorization: Bearer $BRIDGE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name": "morning-brief"}' \
-  http://localhost:3100/recipes/run | jq .
+  http://localhost:${BRIDGE_PORT}/recipes/run | jq .
 
 # Run with variables
 curl -s -X POST \
   -H "Authorization: Bearer $BRIDGE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name": "capture-thought", "vars": {"thought": "Ship dark mode"}}' \
-  http://localhost:3100/recipes/run
+  http://localhost:${BRIDGE_PORT}/recipes/run
 
 # Check recent runs
 curl -s -H "Authorization: Bearer $BRIDGE_TOKEN" \
-  "http://localhost:3100/runs?limit=5" | jq '.[].status'
+  "http://localhost:${BRIDGE_PORT}/runs?limit=5" | jq '.[].status'
 ```
 
 See [curl-examples.sh](curl-examples.sh) for the full script.
@@ -68,7 +73,8 @@ See [curl-examples.sh](curl-examples.sh) for the full script.
 ### Node.js
 
 ```js
-const res = await fetch("http://localhost:3100/recipes/run", {
+const port = process.env.BRIDGE_PORT;
+const res = await fetch(`http://localhost:${port}/recipes/run`, {
   method: "POST",
   headers: {
     Authorization: `Bearer ${process.env.BRIDGE_TOKEN}`,
@@ -86,8 +92,9 @@ See [client.mjs](client.mjs) for list, run, poll-until-done, and approval handli
 ```python
 import urllib.request, json, os
 
+port = os.environ["BRIDGE_PORT"]
 req = urllib.request.Request(
-    "http://localhost:3100/recipes/run",
+    f"http://localhost:{port}/recipes/run",
     data=json.dumps({"name": "morning-brief"}).encode(),
     method="POST",
     headers={
