@@ -384,7 +384,7 @@ function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
             border: "1px solid var(--border-default)",
             borderRadius: 8,
             padding: "var(--s-4)",
-            minWidth: 280,
+            minWidth: "min(280px, 100%)",
             zIndex: 10,
             boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
           }}
@@ -511,7 +511,7 @@ export default function TracesPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Filter recipe or trace id…"
             style={{
-              minWidth: 260,
+              minWidth: "min(260px, 100%)",
               padding: "6px 10px",
               fontSize: 13,
               fontFamily: "var(--font-mono)",

@@ -1303,7 +1303,10 @@ button.topbar-search {
   -webkit-backdrop-filter: var(--card-blur);
   border: 1px solid var(--line-1);
   border-radius: var(--r-l);
-  overflow: hidden;
+  /* Allow horizontal scroll on narrow viewports rather than clipping the
+     table. `overflow: hidden` here was hiding columns at <360px. */
+  overflow-x: auto;
+  overflow-y: hidden;
   box-shadow: var(--card-shadow);
 }
 .table {
@@ -2358,15 +2361,16 @@ button.topbar-search {
   .topbar-brand span:not(.topbar-local) {
     display: none;
   }
-  .topbar-local,
-  .topbar-search,
-  .demo-toggle,
-  .bridge-status-pill,
-  .identity-pill {
-    display: none;
-  }
-  .topbar-icon-btn,
-  .topbar-avatar {
+  /* Specificity bumped via .app-header ancestor — the base rules for these
+     elements are declared *after* this @media block in source order, so the
+     bare class selectors lose without the ancestor. */
+  .app-header .topbar-local,
+  .app-header .topbar-search,
+  .app-header .demo-toggle,
+  .app-header .bridge-status-pill,
+  .app-header .identity-pill,
+  .app-header .topbar-icon-btn,
+  .app-header .topbar-avatar {
     display: none;
   }
   .app-header-title {
