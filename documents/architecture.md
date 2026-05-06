@@ -26,7 +26,7 @@ flowchart LR
     %% Right side
     Transports["<b>MCP Transports</b><br/>WebSocket · stdio shim<br/>Streamable HTTP"]
     OAuth["<b>OAuth Surface</b><br/>/.well-known/* · /oauth/*<br/>PKCE S256 · CIMD<br/><i>Optional. Activate with --issuer-url.</i>"]
-    Dashboard["<b>Dashboard + Mobile PWA</b><br/>localhost:3100<br/>push approvals"]
+    Dashboard["<b>Dashboard + Mobile PWA</b><br/>localhost:3200<br/>push approvals"]
     External["<b>External Targets</b><br/>Connectors (Slack, GitHub,<br/>Linear, Gmail, …)<br/>filesystem · terminal"]
 
     %% Inputs

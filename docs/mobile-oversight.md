@@ -86,10 +86,12 @@ patchwork start \
   --push-service-base-url https://your-bridge-domain.example.com
 ```
 
-Or set at runtime without restarting — POST to the bridge settings endpoint:
+Or set at runtime without restarting — POST to the bridge settings endpoint
+(the bridge picks an ephemeral port at startup; read it from the lock file):
 
 ```bash
-curl -X POST http://localhost:3100/settings \
+BRIDGE_PORT=$(ls -t ~/.claude/ide/*.lock | head -1 | xargs -I {} basename {} .lock)
+curl -X POST "http://localhost:${BRIDGE_PORT}/settings" \
   -H "Authorization: Bearer $(patchwork print-token)" \
   -H "Content-Type: application/json" \
   -d '{

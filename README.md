@@ -105,7 +105,7 @@ patchwork-os connections connect google-calendar
 patchwork-os recipe run morning-brief
 ```
 
-The brief lands in `~/.patchwork/inbox/` as a Markdown file. Open the dashboard (`http://localhost:3100`) to read it, approve any drafted replies, or let it auto-send at 08:00 via the built-in cron trigger.
+The brief lands in `~/.patchwork/inbox/` as a Markdown file. Open the dashboard (`http://localhost:3200`) to read it, approve any drafted replies, or let it auto-send at 08:00 via the built-in cron trigger.
 
 No connectors yet? Run with `--local` using Ollama — it summarises your clipboard and last-touched files instead.
 
@@ -125,7 +125,7 @@ Think of it as a background agent that acts on your behalf — but asks before s
 
 **Models** are yours. Claude, GPT, Gemini, Grok, or local Ollama. Swap at any time. Nothing phones home.
 
-**Oversight** is non-negotiable. Every write or external action lands in `~/.patchwork/inbox/` for approval. The web UI at `http://localhost:3100` shows pending approvals, live sessions, recipe run history, and analytics.
+**Oversight** is non-negotiable. Every write or external action lands in `~/.patchwork/inbox/` for approval. The web UI at `http://localhost:3200` shows pending approvals, live sessions, recipe run history, and analytics.
 
 ### Patchwork commands
 
@@ -141,7 +141,7 @@ patchwork tools list                      # browse 170+ tools
 patchwork                                 # open terminal dashboard
 
 # Web UI — bridge + extension watcher in tmux
-patchwork start-all                       # then http://localhost:3100
+patchwork start-all                       # then http://localhost:3200
 ```
 
 ### Starter recipes
@@ -208,7 +208,7 @@ patchwork-os (npm package)
     ├── Connectors             Linear, Sentry, Slack, Google Calendar, +
     ├── Orchestrator           Claude subprocess tasks, automation hooks
     ├── Oversight inbox        ~/.patchwork/inbox/ — approval queue
-    └── Web dashboard          http://localhost:3100 — approvals, sessions, analytics
+    └── Web dashboard          http://localhost:3200 — approvals, sessions, analytics
 ```
 
 The npm package ships **three CLI binaries** that share the same code:

@@ -20,10 +20,13 @@ against your own Patchwork OS bridge using **OAuth 2.0 with PKCE**.
      --cors-origin https://your-app-origin.com
    ```
 
-   For local development:
+   For local development (`--port` pins the bridge to a known port so it
+   matches `--issuer-url`; without it, the bridge picks an ephemeral port
+   the issuer URL would no longer match):
 
    ```bash
    claude-ide-bridge --full \
+     --port 3100 \
      --issuer-url http://localhost:3100 \
      --cors-origin http://localhost:8080
    ```
