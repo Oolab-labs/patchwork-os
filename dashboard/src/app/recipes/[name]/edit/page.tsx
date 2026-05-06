@@ -3,28 +3,18 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { useToast } from "@/components/Toast";
+import dynamic from "next/dynamic";
 
-interface Toast {
-  id: number;
-  message: string;
-  kind: "ok" | "err";
-}
+const YamlEditor = dynamic(() => import("./_components/YamlEditor"), {
+  ssr: false,
+  loading: () => (
+    <div style={{ minHeight: 400, background: "var(--recess)", borderRadius: "var(--r-2)", border: "1px solid var(--line-2)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ink-3)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)" }}>
+      Loading editor…
+    </div>
+  ),
+});
 
-let toastSeq = 0;
-
-function useToasts() {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
-  function push(message: string, kind: Toast["kind"]) {
-    const id = ++toastSeq;
-    setToasts((prev) => [...prev, { id, message, kind }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
-  }
-
-  return { toasts, push };
-}
 
 export default function RecipeEditPage({
   params,
@@ -33,6 +23,7 @@ export default function RecipeEditPage({
 }) {
   const name = decodeURIComponent(params.name);
   const [content, setContent] = useState<string>("");
+  const [savedContent, setSavedContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
@@ -40,8 +31,7 @@ export default function RecipeEditPage({
   const [lintErrors, setLintErrors] = useState<string[]>([]);
   const [lintWarnings, setLintWarnings] = useState<string[]>([]);
   const [linting, setLinting] = useState(false);
-  const { toasts, push } = useToasts();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const toast = useToast();
   const lintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lintReqIdRef = useRef(0);
 
@@ -61,16 +51,22 @@ export default function RecipeEditPage({
               : typeof data === "object" && data !== null && "content" in data
                 ? (data.content ?? "")
                 : "";
-          if (!cancelled) setContent(text);
+          if (!cancelled) {
+            setContent(text);
+            setSavedContent(text);
+          }
         } else if (res.status === 404) {
-          if (!cancelled) setContent("");
+          if (!cancelled) {
+            setContent("");
+            setSavedContent("");
+          }
         } else {
           const err = await res.text().catch(() => "unknown error");
-          if (!cancelled) push(`Load failed: ${err}`, "err");
+          if (!cancelled) toast.error(`Load failed: ${err}`);
         }
       } catch (e) {
         if (!cancelled)
-          push(`Load failed: ${e instanceof Error ? e.message : String(e)}`, "err");
+          toast.error(`Load failed: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -151,29 +147,60 @@ export default function RecipeEditPage({
       if (res.ok) {
         setLintWarnings(warnings);
         setLintErrors([]);
-        push(
+        setSavedContent(content);
+        toast.success(
           warnings.length > 0
             ? `Saved with ${warnings.length} warning${warnings.length === 1 ? "" : "s"}.`
             : "Saved.",
-          "ok",
         );
       } else {
         const message =
           (data as { error?: string }).error ?? res.statusText ?? "Save failed";
         setSaveError(message);
         setLintWarnings(warnings);
-        push(`Save failed: ${message}`, "err");
+        toast.error(`Save failed: ${message}`);
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setSaveError(message);
-      push(`Save failed: ${message}`, "err");
+      toast.error(`Save failed: ${message}`);
     } finally {
       setSaving(false);
     }
   }
 
+  const dirty = content !== savedContent;
+
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
+  // Global Cmd/Ctrl+S to save when dirty — works even if textarea isn't focused.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        if (!saving && !loading && dirty) void handleSave();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, saving, loading]);
+
   async function handleRun() {
+    if (dirty) {
+      const proceed = window.confirm(
+        "You have unsaved changes. Run will execute the SAVED version, not your edits. Continue?",
+      );
+      if (!proceed) return;
+    }
     setRunning(true);
     try {
       const res = await fetch(
@@ -182,19 +209,17 @@ export default function RecipeEditPage({
       );
       if (res.ok) {
         const data = (await res.json()) as { taskId?: string; ok?: boolean };
-        push(
+        toast.success(
           data.taskId ? `Queued task ${data.taskId.slice(0, 8)}` : "Recipe started.",
-          "ok",
         );
       } else {
         const data = await res.json().catch(() => ({ error: res.statusText }));
-        push(
+        toast.error(
           `Run failed: ${(data as { error?: string }).error ?? res.statusText}`,
-          "err",
         );
       }
     } catch (e) {
-      push(`Run failed: ${e instanceof Error ? e.message : String(e)}`, "err");
+      toast.error(`Run failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setRunning(false);
     }
@@ -202,39 +227,6 @@ export default function RecipeEditPage({
 
   return (
     <section>
-      {/* Toast container */}
-      <div
-        style={{
-          position: "fixed",
-          bottom: "var(--s-6)",
-          right: "var(--s-6)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--s-2)",
-          zIndex: 9000,
-          pointerEvents: "none",
-        }}
-      >
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={`pill ${t.kind === "ok" ? "ok" : "err"}`}
-            style={{
-              padding: "var(--s-2) var(--s-4)",
-              fontSize: "var(--fs-m)",
-              borderRadius: "var(--r-2)",
-              background: t.kind === "ok" ? "var(--ok-soft)" : "var(--err-soft)",
-              border: `1px solid ${t.kind === "ok" ? "var(--ok)" : "var(--err)"}`,
-              color: t.kind === "ok" ? "var(--ok)" : "var(--err)",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-              pointerEvents: "auto",
-            }}
-          >
-            {t.message}
-          </div>
-        ))}
-      </div>
-
       {/* Header */}
       <div className="page-head">
         <div>
@@ -288,9 +280,10 @@ export default function RecipeEditPage({
             type="button"
             className="btn primary"
             onClick={() => void handleSave()}
-            disabled={saving || loading}
+            disabled={saving || loading || !dirty}
+            title={!dirty && !saving ? "No unsaved changes" : undefined}
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : dirty ? "Save •" : "Save"}
           </button>
         </div>
       </div>
@@ -398,60 +391,14 @@ export default function RecipeEditPage({
             <p>Loading…</p>
           </div>
         ) : (
-          <textarea
-            ref={textareaRef}
+          <YamlEditor
             value={content}
-            onChange={(e) => {
-              setContent(e.target.value);
+            onChange={(v) => {
+              setContent(v);
               if (saveError) setSaveError(null);
             }}
-            spellCheck={false}
-            aria-label={`YAML content for recipe ${name}`}
-            style={{
-              width: "100%",
-              minHeight: 400,
-              background: "var(--recess)",
-              color: "var(--ink-0)",
-              border: "1px solid var(--line-2)",
-              borderRadius: "var(--r-2)",
-              fontFamily: "var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace)",
-              fontSize: "var(--fs-m)",
-              lineHeight: 1.6,
-              padding: "var(--s-4)",
-              resize: "vertical",
-              outline: "none",
-              boxSizing: "border-box",
-              tabSize: 2,
-            }}
-            onFocus={(e) => {
-              e.currentTarget.style.borderColor = "var(--accent)";
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = "var(--line-2)";
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Tab" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
-                e.preventDefault();
-                const ta = e.currentTarget;
-                const start = ta.selectionStart;
-                const end = ta.selectionEnd;
-                const newContent =
-                  content.substring(0, start) + "  " + content.substring(end);
-                setContent(newContent);
-                requestAnimationFrame(() => {
-                  ta.selectionStart = start + 2;
-                  ta.selectionEnd = start + 2;
-                });
-              }
-              if (e.key === "Escape") {
-                e.currentTarget.blur();
-                return;
-              }
-              if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-                e.preventDefault();
-                void handleSave();
-              }
-            }}
+            onSave={() => void handleSave()}
+            minHeight={400}
           />
         )}
         <div
