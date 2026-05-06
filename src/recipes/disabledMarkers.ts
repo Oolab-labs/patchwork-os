@@ -22,7 +22,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import type { PatchworkConfig } from "../config.js";
+import type { PatchworkConfig } from "../patchworkConfig.js";
 
 /**
  * Filename of the per-install-dir disable marker. Lives in this module
