@@ -11,8 +11,8 @@
   "properties": {
     "name": {
       "type": "string",
-      "description": "Recipe name (kebab-case recommended)",
-      "pattern": "^[a-z0-9-]+$"
+      "description": "Recipe name (kebab-case, 1-64 chars). Scoped names like @scope/name are accepted for registry recipes.",
+      "pattern": "^(@[a-z0-9-]+/)?[a-z0-9][a-z0-9-]{0,63}$"
     },
     "description": {
       "type": "string",
@@ -100,6 +100,37 @@
           "type": "string",
           "enum": ["event"],
           "description": "Original trigger type preserved during legacy normalization"
+        },
+        "vars": {
+          "type": "array",
+          "description": "Caller-supplied variables. Referenced in step prompts as {{NAME}}.",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+                "description": "Variable identifier — letters, digits, underscores only. Must start with a letter or underscore."
+              },
+              "description": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "default": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "description": "Alias of `vars` accepted by the runtime. Same shape, same semantics.",
+          "items": {
+            "$ref": "#/properties/trigger/properties/vars/items"
+          }
         }
       }
     },
