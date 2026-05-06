@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
+import { isDemoMode, onDemoModeChange, setDemoMode } from "@/lib/demoMode";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
 
@@ -117,6 +118,10 @@ function useApprovalCount(): number {
     };
 
     const tick = async () => {
+      if (typeof document !== "undefined" && document.hidden) {
+        schedule(BASE);
+        return;
+      }
       let ok = false;
       try {
         const res = await fetch(apiPath("/api/bridge/approvals"));
@@ -132,10 +137,18 @@ function useApprovalCount(): number {
       schedule(ok ? BASE : exp * (0.8 + Math.random() * 0.4));
     };
 
+    const onVisible = () => {
+      if (!document.hidden && alive) {
+        if (timerId !== null) clearTimeout(timerId);
+        tick();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
     tick();
     return () => {
       alive = false;
       if (timerId !== null) clearTimeout(timerId);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
   return count;
@@ -157,54 +170,58 @@ function useIdentity(status: BridgeStatus): { user: string; host: string; port: 
   return { user, host: `${user}@${wsName}`, port };
 }
 
+// ------------------------------------------------------------------ demo mode
+
+function useDemo() {
+  const [demo, setDemo] = useState(false);
+  useEffect(() => {
+    setDemo(isDemoMode());
+    return onDemoModeChange(setDemo);
+  }, []);
+  const toggle = () => setDemoMode(!demo);
+  return { demo, toggle };
+}
+
 // ------------------------------------------------------------------ theme
 
-type ThemePref = "system" | "dark" | "paper";
+type ThemePref = "dark" | "paper";
 
 function normalizeTheme(value: string | null): ThemePref {
-  if (value === "dark" || value === "paper" || value === "system") return value;
-  if (value === "light") return "paper";
-  return "system";
+  if (value === "paper" || value === "light") return "paper";
+  return "dark";
 }
 
-function systemTheme(): Exclude<ThemePref, "system"> {
-  return window.matchMedia("(prefers-color-scheme: light)").matches ? "paper" : "dark";
-}
-
-function applyTheme(theme: Exclude<ThemePref, "system">) {
+function applyTheme(theme: ThemePref) {
   document.documentElement.setAttribute("data-theme", theme);
   document.body.dataset.theme = theme;
 }
 
 function useTheme() {
-  const [pref, setPref] = useState<ThemePref>("system");
-  const [active, setActive] = useState<Exclude<ThemePref, "system">>("dark");
+  const [active, setActive] = useState<ThemePref>("dark");
   useEffect(() => {
-    const stored = normalizeTheme(localStorage.getItem("patchwork.theme") ?? localStorage.getItem("pw-theme"));
-    const resolved = stored === "system" ? systemTheme() : stored;
-    setPref(stored);
-    setActive(resolved);
-    applyTheme(resolved);
-    const media = window.matchMedia("(prefers-color-scheme: light)");
-    const onChange = () => {
-      if (localStorage.getItem("patchwork.theme") === "system" || !localStorage.getItem("patchwork.theme")) {
-        const next = systemTheme();
-        setActive(next);
-        applyTheme(next);
-      }
+    const stored = normalizeTheme(
+      localStorage.getItem("patchwork.theme") ?? localStorage.getItem("pw-theme"),
+    );
+    setActive(stored);
+    applyTheme(stored);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== "patchwork.theme") return;
+      const next = normalizeTheme(e.newValue);
+      setActive(next);
+      applyTheme(next);
     };
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
   const toggle = () => {
-    const nextPref: ThemePref = pref === "system" ? "dark" : pref === "dark" ? "paper" : "system";
-    const resolved = nextPref === "system" ? systemTheme() : nextPref;
-    setPref(nextPref);
-    setActive(resolved);
-    applyTheme(resolved);
-    localStorage.setItem("patchwork.theme", nextPref);
+    const next: ThemePref = active === "dark" ? "paper" : "dark";
+    setActive(next);
+    applyTheme(next);
+    localStorage.setItem("patchwork.theme", next);
   };
-  return { active, pref, toggle };
+  return { active, toggle };
 }
 
 // ------------------------------------------------------------------ shell
@@ -213,12 +230,11 @@ export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const status = useBridgeStatus();
   const approvalCount = useApprovalCount();
-  const { active, pref, toggle } = useTheme();
+  const { active, toggle } = useTheme();
+  const { demo, toggle: toggleDemo } = useDemo();
   const identity = useIdentity(status);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(() =>
-    MORE_ITEMS.some((it) => typeof window !== "undefined" && window.location?.pathname?.startsWith(it.href))
-  );
+  const [moreOpen, setMoreOpen] = useState(false);
   // Demo: replace with real notification count when available
   const hasNotifications = approvalCount > 0;
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -290,10 +306,44 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="app-header-actions">
           <IdentityPill ok={status.ok} host={identity.host} port={identity.port} />
           <button
+            type="button"
+            onClick={toggleDemo}
+            title={demo ? "Disable demo mode" : "Enable demo mode (sample data)"}
+            aria-label="Toggle demo mode"
+            aria-pressed={demo}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: "var(--fs-2xs)",
+              fontWeight: 600,
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: `1px solid ${demo ? "var(--orange)" : "var(--line-2)"}`,
+              background: demo ? "color-mix(in srgb, var(--orange) 12%, transparent)" : "transparent",
+              color: demo ? "var(--orange)" : "var(--ink-2)",
+              cursor: "pointer",
+              transition: "background 150ms, border-color 150ms, color 150ms",
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: demo ? "var(--orange)" : "var(--ink-3)",
+                display: "inline-block",
+                flexShrink: 0,
+              }}
+            />
+            Demo
+          </button>
+          <button
             className="theme-toggle"
             onClick={toggle}
-            title={`Theme: ${pref}${pref === "system" ? ` (${active})` : ""}`}
-            aria-label="Cycle theme"
+            title={`Theme: ${active} — click for ${active === "dark" ? "paper" : "dark"}`}
+            aria-label={`Switch to ${active === "dark" ? "paper" : "dark"} theme`}
           >
             {active === "paper" ? (
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">
@@ -305,38 +355,27 @@ export function Shell({ children }: { children: ReactNode }) {
                 <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
               </svg>
             )}
-            {pref === "system" && <span className="theme-toggle-auto" aria-hidden="true">auto</span>}
           </button>
-          <button
-            type="button"
-            className="topbar-icon-btn"
-            aria-label="Open terminal"
-            title="Terminal"
-          >
-            <span aria-hidden="true" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)", fontWeight: 700, letterSpacing: "-0.05em" }}>
-              {">_"}
-            </span>
-          </button>
-          <button
-            type="button"
+          <Link
+            href="/approvals"
             className="topbar-icon-btn topbar-bell"
-            aria-label={hasNotifications ? "Notifications (unread)" : "Notifications"}
-            title="Notifications"
+            aria-label={hasNotifications ? `Notifications: ${approvalCount} pending approval${approvalCount === 1 ? "" : "s"}` : "Notifications"}
+            title={hasNotifications ? `${approvalCount} pending approval${approvalCount === 1 ? "" : "s"}` : "No pending approvals"}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.73 21a2 2 0 01-3.46 0" />
             </svg>
             {hasNotifications && <span className="topbar-bell-dot" aria-hidden="true" />}
-          </button>
-          <button
-            type="button"
+          </Link>
+          <Link
+            href="/settings"
             className="topbar-avatar"
-            aria-label="Account"
+            aria-label="Settings"
             title={identity.host}
           >
             <span aria-hidden="true">{(identity.user[0] ?? "?").toUpperCase()}</span>
-          </button>
+          </Link>
         </div>
       </header>
       <aside className="app-sidebar" aria-label="Primary navigation">
