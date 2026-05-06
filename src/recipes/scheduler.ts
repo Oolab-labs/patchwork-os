@@ -5,13 +5,10 @@ import { parse as parseYaml } from "yaml";
 import type { Logger } from "../logger.js";
 import { loadConfig } from "../patchworkConfig.js";
 import { findYamlRecipePath, loadRecipePrompt } from "../recipesHttp.js";
-
-/**
- * Per-recipe disabled marker — must match the constant in
- * src/commands/recipeInstall.ts (kept inline here to avoid a circular
- * import via commands → recipes back to commands).
- */
-const DISABLED_MARKER = ".disabled";
+import {
+  getConfigDisabledNames,
+  isInstallDirDisabled,
+} from "./disabledMarkers.js";
 
 /**
  * RecipeScheduler — runs cron-triggered recipes on a simple interval or
@@ -69,10 +66,7 @@ export class RecipeScheduler {
     // Load disabled list from config
     let disabled: Set<string> = new Set();
     try {
-      const cfg = loadConfig();
-      if (cfg.recipes?.disabled) {
-        disabled = new Set(cfg.recipes.disabled);
-      }
+      disabled = getConfigDisabledNames(loadConfig());
     } catch {
       // non-fatal — proceed with empty disabled set
     }
@@ -106,7 +100,7 @@ export class RecipeScheduler {
 
       if (isDir) {
         // Honor the per-recipe `.disabled` marker written by recipeInstall.
-        if (existsSync(path.join(fullPath, DISABLED_MARKER))) {
+        if (isInstallDirDisabled(fullPath)) {
           this.opts.logger?.info?.(
             `[scheduler] skipping recipe in "${f}" — .disabled marker present`,
           );
@@ -292,9 +286,7 @@ export class RecipeScheduler {
     // case is handled inside findYamlRecipePath / loadRecipePrompt
     // (skip disabled install dirs) thanks to PR #49.
     try {
-      const cfg = loadConfig();
-      const disabled = new Set<string>(cfg.recipes?.disabled ?? []);
-      if (disabled.has(name)) {
+      if (getConfigDisabledNames(loadConfig()).has(name)) {
         this.opts.logger?.info?.(
           `[scheduler] skipping "${name}" — disabled via config (TOCTOU re-check)`,
         );

@@ -25,6 +25,10 @@ import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 import {
+  disabledMarkerPath,
+  isInstallDirDisabled,
+} from "../recipes/disabledMarkers.js";
+import {
   getManifestRecipeFiles,
   loadManifestFromDir,
   parseManifest,
@@ -36,15 +40,6 @@ export const INSTALL_RECIPES_DIR = path.join(
   ".patchwork",
   "recipes",
 );
-
-/**
- * Marker file written into a recipe install dir to mark it as disabled.
- * Absence = enabled (the default for legacy installs predating this marker).
- * `runRecipeInstall` writes one on every fresh install so new recipes start
- * disabled per the wave2 plan's safety story; user runs `patchwork recipe
- * enable <name>` to remove it.
- */
-const DISABLED_MARKER = ".disabled";
 
 /**
  * Reject path components that aren't a single safe basename — used at every
@@ -497,9 +492,7 @@ export async function runRecipeInstall(
     // and snapshot the existing enabled state so the upgrade doesn't
     // silently re-disable a recipe the user explicitly opted into.
     const isReinstall = existsSync(installDir);
-    const wasEnabled = isReinstall
-      ? !existsSync(path.join(installDir, DISABLED_MARKER))
-      : false;
+    const wasEnabled = isReinstall ? !isInstallDirDisabled(installDir) : false;
 
     if (isReinstall) {
       // Clear stale files from the previous version so files dropped from
@@ -531,7 +524,7 @@ export async function runRecipeInstall(
     //     If the recipe was enabled before, leave it enabled; if disabled,
     //     leave it disabled. Don't silently revoke an explicit user opt-in.
     if (!isReinstall || !wasEnabled) {
-      writeFileSync(path.join(installDir, DISABLED_MARKER), "");
+      writeFileSync(disabledMarkerPath(installDir), "");
     }
 
     return {
@@ -614,7 +607,7 @@ export interface InstalledRecipeEntry {
  * therefore considered enabled — preserves backwards compatibility.
  */
 export function isRecipeEnabled(installDir: string): boolean {
-  return !existsSync(path.join(installDir, DISABLED_MARKER));
+  return !isInstallDirDisabled(installDir);
 }
 
 /**
@@ -719,7 +712,7 @@ export function runRecipeEnable(
       `No installed recipe named "${name}". Run \`patchwork recipe list\` to see installed recipes.`,
     );
   }
-  const markerPath = path.join(installDir, DISABLED_MARKER);
+  const markerPath = disabledMarkerPath(installDir);
   if (!existsSync(markerPath)) {
     return { name, installDir, alreadyEnabled: true };
   }
@@ -742,7 +735,7 @@ export function runRecipeDisable(
       `No installed recipe named "${name}". Run \`patchwork recipe list\` to see installed recipes.`,
     );
   }
-  const markerPath = path.join(installDir, DISABLED_MARKER);
+  const markerPath = disabledMarkerPath(installDir);
   if (existsSync(markerPath)) {
     return { name, installDir, alreadyDisabled: true };
   }
