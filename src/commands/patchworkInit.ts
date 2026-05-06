@@ -12,6 +12,7 @@ import { registerPreToolUseHook } from "../preToolUseHook.js";
 interface InitOptions {
   force: boolean;
   skipOllama: boolean;
+  withConnectors: boolean;
 }
 
 function parseArgs(argv: string[]): InitOptions | { help: true } {
@@ -19,8 +20,20 @@ function parseArgs(argv: string[]): InitOptions | { help: true } {
   return {
     force: argv.includes("--force"),
     skipOllama: argv.includes("--no-ollama"),
+    withConnectors: argv.includes("--with-connectors"),
   };
 }
+
+// Recipes that run with no external service credentials (local file/git only).
+// Anything not in this set requires a connector (gmail, github, linear, slack,
+// sentry, calendar, …) and is skipped on first init unless --with-connectors.
+const LOCAL_ONLY_RECIPES: ReadonlySet<string> = new Set([
+  "ambient-journal.yaml",
+  "daily-status.yaml",
+  "lint-on-save.yaml",
+  "stale-branches.yaml",
+  "watch-failing-tests.yaml",
+]);
 
 function printHelp(): void {
   process.stdout.write(`patchwork-os init — Set up ~/.patchwork on this machine
@@ -28,13 +41,15 @@ function printHelp(): void {
 Usage: patchwork-os init [options]
 
 Options:
-  --force      Overwrite existing config (default: merge, preserve)
-  --no-ollama  Skip Ollama detection
-  --help, -h   Show this help
+  --force             Overwrite existing config (default: merge, preserve)
+  --no-ollama         Skip Ollama detection
+  --with-connectors   Also copy connector-dependent recipes (gmail, github, …)
+  --help, -h          Show this help
 
 What it does:
   1. Create ~/.patchwork/{config.json,recipes,inbox,journal}
-  2. Copy 5 local-only recipe templates to ~/.patchwork/recipes/
+  2. Copy local-only recipe templates to ~/.patchwork/recipes/
+     (add --with-connectors to also copy gmail/github/etc. recipes)
   3. Detect Ollama at localhost:11434 → set provider to ollama-local
   4. Register the Patchwork PreToolUse hook in ~/.claude/settings.json
      so Claude Code routes tool calls through your delegation policy
@@ -114,9 +129,14 @@ export async function runPatchworkInit(
   const templatesDir = findTemplatesDir();
   let recipesCopied = 0;
   let recipesSkipped = 0;
+  let recipesGated = 0;
   if (templatesDir) {
     for (const name of readdirSync(templatesDir)) {
       if (!name.endsWith(".yaml")) continue;
+      if (!parsed.withConnectors && !LOCAL_ONLY_RECIPES.has(name)) {
+        recipesGated++;
+        continue;
+      }
       const dest = join(recipesDir, name);
       if (existsSync(dest) && !parsed.force) {
         recipesSkipped++;
@@ -125,7 +145,12 @@ export async function runPatchworkInit(
       copyFileSync(join(templatesDir, name), dest);
       recipesCopied++;
     }
-    log(`  ✓ recipes: ${recipesCopied} copied, ${recipesSkipped} preserved\n`);
+    const gatedNote = recipesGated
+      ? ` (${recipesGated} connector-recipes skipped — re-run with --with-connectors)`
+      : "";
+    log(
+      `  ✓ recipes: ${recipesCopied} copied, ${recipesSkipped} preserved${gatedNote}\n`,
+    );
   } else {
     log(`  ! recipe templates not found (expected templates/recipes/)\n`);
   }
@@ -214,10 +239,11 @@ export async function runPatchworkInit(
       : "";
 
   log(`${restartLine}\nNext:
-  1. patchwork-os recipe run morning-brief     # AI digest: Gmail + calendar + tasks
+  1. patchwork-os recipe run daily-status      # zero-config: yesterday's commits + today's hints
   2. patchwork-os                              # launch terminal dashboard (TUI)
-  2b. cd dashboard && npm run dev              # launch web dashboard → http://localhost:3200
-  3. patchwork-os recipe list                  # browse installed recipes\n`);
+  3. cd dashboard && npm run dev               # launch web dashboard → http://localhost:3200
+  4. patchwork-os recipe list                  # browse installed recipes
+  5. patchwork-os init --with-connectors       # add gmail/github/linear/etc. recipes\n`);
 
   return {
     configPath,
