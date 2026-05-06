@@ -383,6 +383,8 @@ if [[ -z "$NO_DASHBOARD" ]] && [[ -d "$DASHBOARD_DIR" ]]; then
   DASHBOARD_CMD="cd $(printf '%q' "$DASHBOARD_DIR") && PATCHWORK_BRIDGE_PORT=${BRIDGE_PORT} npm run dev"
   notify "Starting dashboard on http://localhost:${DASHBOARD_PORT}"
   tmux send-keys -t "${SESSION}:0.4" "$DASHBOARD_CMD" Enter
+  # Open dashboard in browser after a short delay to let Next.js start
+  (sleep 8 && open "http://localhost:${DASHBOARD_PORT}" 2>/dev/null || xdg-open "http://localhost:${DASHBOARD_PORT}" 2>/dev/null || true) &
 fi
 
 # Pane 5: SSH reverse tunnel (only if --vps was set)
