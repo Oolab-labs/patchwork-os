@@ -1,0 +1,215 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json
+apiVersion: patchwork.sh/v1
+name: approval-queue-ui-test
+description: |
+  End-to-end UI test for the dashboard Approval queue page. Drives a real
+  browser via the Playwright MCP server to exercise every button on
+  /approvals, verifies the expected side effects (network calls, clipboard
+  writes, DOM state, keyboard shortcuts), and writes a PASS/FAIL report to
+  ~/.patchwork/inbox/.
+
+  Coverage:
+    Header — DecisionsTabs (Pending / Suggested / History), Sync inbox
+    Risk filters — All / Low / Medium / High chips
+    Card body — params toggle (▸/▾), Copy JSON, Approve (E), Reject (X),
+                Edit & approve (clipboard), Open in terminal (clipboard)
+    Selection — per-card checkbox, Select all, batch Approve, batch Reject
+    Empty state — Clear filter (filtered) and Clear filter (session banner)
+    Suggestions card — Copy allow rule, Dismiss (×), Clear all patterns
+    Keyboard — J / K (focus), E / X (decide)
+
+  PREREQUISITES
+    1. Bridge running with --claude-driver subprocess so the agent has MCP
+       access to the Playwright server.
+    2. Dashboard reachable at DASHBOARD_URL (defaults to localhost:3000;
+       Patchwork's Next.js dev typically mounts under /dashboard, so the
+       page at $DASHBOARD_URL/approvals must respond 200).
+    3. approvalGate must be "all" or "high" — if "off", every POST
+       /approvals auto-allows ({decision:"allow",reason:"gate_off"}) and
+       the queue stays empty. The agent toggles it on at the start of the
+       run and restores it at the end.
+    4. Seeded pending approvals — the agent creates them via POST
+       /api/bridge/approvals with nohup+disown durability (so the curl
+       process survives shell exit; see seeding step). Default TTL is
+       5 min, so all UI work must finish before re-seeding.
+    5. Trigger from the dashboard Recipes page (NOT `patchwork recipe run`)
+       — the local subprocess shell has no MCP context.
+
+  IMPLEMENTATION NOTES (learned from 2026-05-07 dogfood)
+    - Click via mcp__playwright__browser_click (real Playwright clicks),
+      NOT browser_evaluate(.click()) — Chromium's clipboard.writeText
+      requires "transient activation" which programmatic clicks don't
+      provide. Edit & approve / Open in terminal silently fail otherwise.
+    - Same goes for checkboxes — programmatic input.click() doesn't
+      always trigger React's onChange synthetic event reliably.
+    - Use the URL ?session= param to force the session-banner branch;
+      no need to find a real session.
+    - Use the "Low (0)" filter to hit the empty-state branch deterministically
+      (without rejecting cards mid-test).
+trigger:
+  type: manual
+  vars:
+    - name: DASHBOARD_URL
+      description: "Base URL where the dashboard is reachable from the agent's browser"
+      required: false
+      default: "http://localhost:3000"
+steps:
+  - id: collect_baseline
+    parallel:
+      - id: now
+        tool: time.now
+      - id: recent_commits
+        tool: git.log_since
+        since: 1h
+
+  - id: drive_browser
+    awaits: [collect_baseline]
+    agent:
+      driver: claude-code
+      model: claude-haiku-4-5-20251001
+      prompt: |
+        You are running an end-to-end UI test of the Patchwork Approval
+        queue page. Use the Playwright MCP tools (mcp__playwright__*) to
+        drive a real browser. Do not skip steps. If a tool call errors,
+        record the failure and continue — every checkpoint must be
+        attempted so the report is complete.
+
+        BASE_URL: {{DASHBOARD_URL}}
+        TARGET:   {{DASHBOARD_URL}}/approvals
+
+        Use mcp__playwright__browser_snapshot between actions to confirm
+        DOM state. Use mcp__playwright__browser_evaluate to read
+        navigator.clipboard.readText() (after granting clipboard-read
+        permission via browser_evaluate of the appropriate Permissions
+        API call) to verify clipboard-writing buttons.
+
+        ## Checklist — record PASS / FAIL + a one-line note for each
+
+        ### A. Page load + tabs (DecisionsTabs)
+        A1. browser_navigate to TARGET. Snapshot. Confirm h1 contains
+            "Approval queue".
+        A2. Click the "Suggested" tab. Confirm URL becomes /suggestions.
+        A3. browser_navigate_back. Confirm URL returns to /approvals.
+        A4. Click the "History" tab. Confirm URL becomes /decisions.
+        A5. browser_navigate_back to /approvals.
+
+        ### B. Header controls
+        B1. Click "Sync inbox". Use browser_network_requests to confirm a
+            GET request to /api/bridge/approvals fired within 2s.
+
+        ### C. Risk filter chips (All / Low / Medium / High)
+        For each label in [All, Low, Medium, High]:
+          C{n}. Click the filter chip with text starting with that label.
+                Confirm aria-pressed="true" on the clicked chip and
+                aria-pressed="false" on the others. Confirm the URL
+                ?risk= param matches (or is absent for "All").
+
+        ### D. Per-card controls — pick the FIRST visible approval card
+        Skip section D with a clear note if the queue is empty.
+        D1. Click the card's "Full params" toggle (▸). Confirm it
+            switches to ▾ and the params JSON region expands.
+        D2. Click "Copy JSON". Read clipboard; confirm it parses as JSON
+            and equals the card's params.
+        D3. Click "Edit & approve". Read clipboard; confirm it starts
+            with "patchwork approve --edit ".
+        D4. Click "› Open in terminal". Read clipboard; confirm it
+            starts with "patchwork approve " (no --edit).
+        D5. Note the card's callId, then click the per-card checkbox.
+            Confirm the checkbox is checked and the BatchActionBar
+            renders with "1 selected".
+        D6. Uncheck the same checkbox. Confirm BatchActionBar disappears.
+
+        ### E. Select-all + batch (only if filtered.length > 1)
+        Skip with a note if there are fewer than 2 cards.
+        E1. Click "Select all". Confirm every visible card checkbox is
+            checked.
+        E2. Confirm BatchActionBar shows "Approve selected (N)" and
+            "Reject selected (N)" with N === visible card count.
+        E3. Do NOT click batch Approve / Reject in this run — they fire
+            real POSTs and would mutate state. Just record that the
+            buttons render and are not disabled.
+        E4. Uncheck "Select all". Confirm all card checkboxes clear.
+
+        ### F. Empty-state "Clear filter"
+        F1. Click the "High" risk filter. If the resulting list is empty,
+            confirm the EmptyState renders with a "Clear filter" button.
+            Click it; confirm the filter resets to All.
+            If the High filter still has cards, record SKIP with reason.
+
+        ### G. Keyboard shortcuts
+        G1. Press "j" via browser_press_key. Confirm focus advances to
+            the next card (outline: 2px solid var(--accent) on the
+            second card).
+        G2. Press "k". Confirm focus returns to the first card.
+        G3. Do NOT press E or X — they fire real decisions. Record only
+            that the keyboard hint row renders KeyChip pills for J, K,
+            E, X, ⌘K.
+
+        ### H. Suggestions card (best-effort)
+        H1. Scroll to bottom. If "Pattern suggestions" card is visible
+            (depends on local approval history, may not exist), click
+            "Copy allow rule" on the first row and confirm clipboard
+            contains JSON like {"allow":["<toolName>"]}. Otherwise
+            record SKIP: "no suggestions in queue".
+
+        ### I. Session-filter banner
+        I1. browser_navigate to {{DASHBOARD_URL}}/approvals?session=test1234.
+            Confirm the info banner renders with text containing
+            "Showing approvals for session". Click the banner's
+            "Clear filter" link; confirm URL becomes /approvals.
+
+        ## Final step — write the report
+        Output ONLY the markdown block below, nothing else:
+
+        ```
+        # approval-queue-ui-test — {{date}} {{time}}
+
+        Base URL: {{DASHBOARD_URL}}
+        Browser: <user-agent from snapshot>
+
+        ## Result: PASS / FAIL  (FAIL if any checkpoint failed)
+
+        ### A. Page load + tabs
+        - A1 ... A5 — PASS / FAIL / SKIP — <note>
+
+        ### B. Header controls
+        - B1 — ...
+
+        ### C. Risk filters
+        - All — ...
+        - Low — ...
+        - Medium — ...
+        - High — ...
+
+        ### D. Per-card controls
+        - D1 ... D6 — ...
+
+        ### E. Select-all + batch
+        - E1 ... E4 — ...
+
+        ### F. Empty-state Clear filter
+        - F1 — ...
+
+        ### G. Keyboard shortcuts
+        - G1 ... G3 — ...
+
+        ### H. Suggestions card
+        - H1 — ...
+
+        ### I. Session-filter banner
+        - I1 — ...
+
+        ### Failures
+        <bullet list of every FAIL with the full error / screenshot ref;
+         "none" if clean>
+
+        ### Verdict
+        <one sentence>
+        ```
+      into: report
+
+  - id: write_report
+    awaits: [drive_browser]
+    tool: file.write
+    path: ~/.patchwork/inbox/approval-queue-ui-test-{{date}}.md
+    content: "{{report}}\n"
