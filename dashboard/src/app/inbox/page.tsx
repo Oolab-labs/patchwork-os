@@ -869,13 +869,15 @@ const filteredItems = items.filter((item) => {
                           style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}
                           onClick={async () => {
                             const proceed = window.confirm(
-                              `Archive "${selected.name}"? This permanently deletes the inbox item.`,
+                              `Archive "${selected.name}"? It will be moved to ~/.patchwork/inbox/.archive and hidden from the list.`,
                             );
                             if (!proceed) return;
                             try {
                               const res = await fetch(
-                                apiPath(`/api/bridge/inbox/${encodeURIComponent(selected.name)}`),
-                                { method: "DELETE" },
+                                apiPath(
+                                  `/api/bridge/inbox/${encodeURIComponent(selected.name)}/archive`,
+                                ),
+                                { method: "POST" },
                               );
                               if (!res.ok) {
                                 const text = await res.text().catch(() => res.statusText);
@@ -893,6 +895,37 @@ const filteredItems = items.filter((item) => {
                           }}
                         >
                           Archive
+                        </button>
+                        <button
+                          type="button"
+                          className="btn sm ghost"
+                          style={{ fontSize: "var(--fs-xs)", color: "var(--err)" }}
+                          onClick={async () => {
+                            const proceed = window.confirm(
+                              `Permanently delete "${selected.name}"? This cannot be undone.`,
+                            );
+                            if (!proceed) return;
+                            try {
+                              const res = await fetch(
+                                apiPath(`/api/bridge/inbox/${encodeURIComponent(selected.name)}`),
+                                { method: "DELETE" },
+                              );
+                              if (!res.ok) {
+                                const text = await res.text().catch(() => res.statusText);
+                                toast.error(`Delete failed: ${text || res.status}`);
+                                return;
+                              }
+                              toast.success(`Deleted “${selected.name}”`);
+                              fetchList(true);
+                              setSelected(null);
+                            } catch (e) {
+                              toast.error(
+                                e instanceof Error ? e.message : String(e),
+                              );
+                            }
+                          }}
+                        >
+                          Delete permanently
                         </button>
                       </div>
                     </>
