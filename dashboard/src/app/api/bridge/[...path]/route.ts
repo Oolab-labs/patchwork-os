@@ -50,7 +50,7 @@ function demoStream(req: Request): Response {
 async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
   const qs = req.nextUrl.search;
   const target = `/${segments.join("/")}${qs}`;
-  const demo = isDemoModeServer();
+  const demo = await isDemoModeServer();
 
   // SSE passthrough for /stream — stream the response body back to the client.
   // Browsers only initiate EventSource over GET; reject other methods up-front
@@ -181,33 +181,26 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
   });
 }
 
-export async function GET(
-  req: NextRequest,
-  ctx: { params: { path: string[] } },
-) {
-  return proxy(req, ctx.params.path);
+// Next 15: dynamic route params arrive as a Promise.
+type RouteContext = { params: Promise<{ path: string[] }> };
+
+export async function GET(req: NextRequest, ctx: RouteContext) {
+  const { path } = await ctx.params;
+  return proxy(req, path);
 }
-export async function POST(
-  req: NextRequest,
-  ctx: { params: { path: string[] } },
-) {
-  return proxy(req, ctx.params.path);
+export async function POST(req: NextRequest, ctx: RouteContext) {
+  const { path } = await ctx.params;
+  return proxy(req, path);
 }
-export async function DELETE(
-  req: NextRequest,
-  ctx: { params: { path: string[] } },
-) {
-  return proxy(req, ctx.params.path);
+export async function DELETE(req: NextRequest, ctx: RouteContext) {
+  const { path } = await ctx.params;
+  return proxy(req, path);
 }
-export async function PUT(
-  req: NextRequest,
-  ctx: { params: { path: string[] } },
-) {
-  return proxy(req, ctx.params.path);
+export async function PUT(req: NextRequest, ctx: RouteContext) {
+  const { path } = await ctx.params;
+  return proxy(req, path);
 }
-export async function PATCH(
-  req: NextRequest,
-  ctx: { params: { path: string[] } },
-) {
-  return proxy(req, ctx.params.path);
+export async function PATCH(req: NextRequest, ctx: RouteContext) {
+  const { path } = await ctx.params;
+  return proxy(req, path);
 }

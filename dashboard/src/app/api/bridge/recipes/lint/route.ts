@@ -18,7 +18,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       headers: { "content-type": "application/json" },
     });
   }
-  if (isDemoModeServer()) {
+  if (await isDemoModeServer()) {
     return new Response(
       JSON.stringify({ ok: true, demo: true, errors: [], warnings: [] }),
       { status: 200, headers: { "content-type": "application/json" } },

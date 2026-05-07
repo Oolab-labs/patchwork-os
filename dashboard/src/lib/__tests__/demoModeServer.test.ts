@@ -40,45 +40,45 @@ afterEach(() => {
 });
 
 describe("isDemoModeServer", () => {
-  it("returns false by default (no cookie, no env var)", () => {
-    expect(isDemoModeServer()).toBe(false);
+  it("returns false by default (no cookie, no env var)", async () => {
+    expect(await isDemoModeServer()).toBe(false);
   });
 
-  it("returns true when the pw-demo cookie is 'true'", () => {
+  it("returns true when the pw-demo cookie is 'true'", async () => {
     (cookieStore as Map<string, { value: string }>).set("pw-demo", {
       value: "true",
     });
-    expect(isDemoModeServer()).toBe(true);
+    expect(await isDemoModeServer()).toBe(true);
   });
 
-  it("cookie 'false' wins over env var 'true' (explicit user override)", () => {
+  it("cookie 'false' wins over env var 'true' (explicit user override)", async () => {
     process.env.NEXT_PUBLIC_DEMO_MODE = "true";
     (cookieStore as Map<string, { value: string }>).set("pw-demo", {
       value: "false",
     });
-    expect(isDemoModeServer()).toBe(false);
+    expect(await isDemoModeServer()).toBe(false);
   });
 
-  it("falls back to env var when no cookie is set", () => {
+  it("falls back to env var when no cookie is set", async () => {
     process.env.NEXT_PUBLIC_DEMO_MODE = "true";
-    expect(isDemoModeServer()).toBe(true);
+    expect(await isDemoModeServer()).toBe(true);
   });
 
-  it("only accepts the literal 'true' env value (not '1' / 'TRUE')", () => {
+  it("only accepts the literal 'true' env value (not '1' / 'TRUE')", async () => {
     process.env.NEXT_PUBLIC_DEMO_MODE = "1";
-    expect(isDemoModeServer()).toBe(false);
+    expect(await isDemoModeServer()).toBe(false);
     process.env.NEXT_PUBLIC_DEMO_MODE = "TRUE";
-    expect(isDemoModeServer()).toBe(false);
+    expect(await isDemoModeServer()).toBe(false);
   });
 
-  it("falls back to env var when cookies() throws (outside request context, e.g. build)", () => {
+  it("falls back to env var when cookies() throws (outside request context, e.g. build)", async () => {
     cookieStore = { throws: true };
     process.env.NEXT_PUBLIC_DEMO_MODE = "true";
-    expect(isDemoModeServer()).toBe(true);
+    expect(await isDemoModeServer()).toBe(true);
   });
 
-  it("returns false when cookies() throws and env var is unset", () => {
+  it("returns false when cookies() throws and env var is unset", async () => {
     cookieStore = { throws: true };
-    expect(isDemoModeServer()).toBe(false);
+    expect(await isDemoModeServer()).toBe(false);
   });
 });

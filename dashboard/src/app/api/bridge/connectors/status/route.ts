@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  if (isDemoModeServer()) {
+  if (await isDemoModeServer()) {
     const mock = mockBridgeResponse("/connectors/status", "GET");
     if (mock) return mock;
   }

@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(req: Request): Promise<Response> {
-  if (isDemoModeServer()) {
+  if (await isDemoModeServer()) {
     // In demo mode there's no live bridge — emit a snapshot built from
     // mockBridgeResponse('/approvals') so the page shows seeded approvals
     // instead of the empty all-clear state.

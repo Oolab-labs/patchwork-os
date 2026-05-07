@@ -17,7 +17,7 @@ export async function POST(req: Request): Promise<Response> {
       headers: { "content-type": "application/json" },
     });
   }
-  if (isDemoModeServer()) {
+  if (await isDemoModeServer()) {
     return new Response(
       JSON.stringify({
         ok: false,
