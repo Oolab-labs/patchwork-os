@@ -642,6 +642,7 @@ function ApprovalsContent() {
           const r = await fetch(approvalsUrl);
           if (!r.ok) throw new Error(`/approvals ${r.status}`);
           setPending((await r.json()) as Pending[]);
+          setHasLoaded(true);
           setErr(undefined);
           // Bridge HTTP is reachable. Only try to re-establish SSE if we
           // haven't already exhausted retries — otherwise polling is fine
