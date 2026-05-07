@@ -8,7 +8,9 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
 } from "react";
+import { createPortal } from "react-dom";
 
 type DialogProps = {
   open: boolean;
@@ -50,6 +52,13 @@ export function Dialog({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const previousActiveRef = useRef<HTMLElement | null>(null);
   const fallbackId = useId();
+  // Portal into document.body so the dialog escapes the [data-app-root] subtree
+  // that gets `inert` + `aria-hidden` while the dialog is open. Without this,
+  // the dialog's own buttons would be inert and unclickable.
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setPortalTarget(document.body);
+  }, []);
 
   // Capture the previously-focused element BEFORE the dialog renders so that
   // a rapid open/close/open sequence doesn't end up storing the dialog itself
@@ -131,9 +140,9 @@ export function Dialog({
     [onClose],
   );
 
-  if (!open) return null;
+  if (!open || !portalTarget) return null;
 
-  return (
+  return createPortal(
     <div
       role="presentation"
       onClick={(e) => {
@@ -175,6 +184,7 @@ export function Dialog({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    portalTarget,
   );
 }
