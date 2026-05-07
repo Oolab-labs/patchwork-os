@@ -251,7 +251,7 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
           marginBottom: 14,
         }}
       >
-        <h3
+        <h2
           style={{
             fontSize: "var(--fs-m)",
             fontWeight: 700,
@@ -263,7 +263,7 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
           }}
         >
           Activity thread
-        </h3>
+        </h2>
         <Link
           href="/activity"
           style={{ fontSize: "var(--fs-xs)", color: "var(--orange)", textDecoration: "none" }}
@@ -422,7 +422,7 @@ function RecentRecipesCard({ recipes }: { recipes: Recipe[] }) {
           marginBottom: 14,
         }}
       >
-        <h3
+        <h2
           style={{
             fontSize: "var(--fs-m)",
             fontWeight: 700,
@@ -434,7 +434,7 @@ function RecentRecipesCard({ recipes }: { recipes: Recipe[] }) {
           }}
         >
           Recent recipes
-        </h3>
+        </h2>
         <Link
           href="/recipes"
           style={{
@@ -523,7 +523,7 @@ function HealthCard({
           marginBottom: 12,
         }}
       >
-        <h3
+        <h2
           style={{
             fontSize: "var(--fs-m)",
             fontWeight: 700,
@@ -535,7 +535,7 @@ function HealthCard({
           }}
         >
           Health
-        </h3>
+        </h2>
         <span
           className={`pill ${bridgeOk && extensionConnected ? "ok" : bridgeOk ? "muted" : "warn"}`}
           style={{ fontSize: "var(--fs-2xs)" }}
