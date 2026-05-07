@@ -54,16 +54,7 @@ trigger:
       required: false
       default: "http://localhost:3000"
 steps:
-  - id: collect_baseline
-    parallel:
-      - id: now
-        tool: time.now
-      - id: recent_commits
-        tool: git.log_since
-        since: 1h
-
   - id: drive_browser
-    awaits: [collect_baseline]
     agent:
       driver: claude-code
       model: claude-haiku-4-5-20251001
@@ -209,7 +200,6 @@ steps:
       into: report
 
   - id: write_report
-    awaits: [drive_browser]
     tool: file.write
     path: ~/.patchwork/inbox/approval-queue-ui-test-{{date}}.md
     content: "{{report}}\n"
