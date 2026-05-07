@@ -141,7 +141,7 @@ Under the hood: `quick-task` POSTs to `/launch-quick-task` with bearer auth from
 The official Docker image includes all probes pre-installed:
 
 ```dockerfile
-FROM ghcr.io/oolab-labs/claude-ide-bridge:latest
+FROM ghcr.io/oolab-labs/patchwork-os:latest
 ```
 
 Or build your own Dockerfile (Alpine base):
@@ -166,7 +166,7 @@ docker run \
   -v /your/project:/workspace \
   -v ~/.claude:/root/.claude \
   -p 18765:18765 \
-  ghcr.io/oolab-labs/claude-ide-bridge:latest \
+  ghcr.io/oolab-labs/patchwork-os:latest \
   --workspace /workspace --bind 0.0.0.0
 ```
 
@@ -181,7 +181,7 @@ claude-ide-bridge print-token --port 18765
 ```yaml
 services:
   bridge:
-    image: ghcr.io/oolab-labs/claude-ide-bridge:latest
+    image: ghcr.io/oolab-labs/patchwork-os:latest
     ports:
       - "18765:18765"
     volumes:

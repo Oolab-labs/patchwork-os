@@ -83,7 +83,7 @@ restarts and upgrades.
 ## Upgrading
 
 ```bash
-docker pull ghcr.io/oolab-labs/claude-ide-bridge:latest
+docker pull ghcr.io/oolab-labs/patchwork-os:latest
 docker rm -f claude-ide-bridge
 bash scripts/provision-demo.sh   # re-runs with existing token
 ```
