@@ -45,7 +45,7 @@ jobs:
             --title "${{ github.ref_name }}" \
             --prerelease \
             --generate-notes \
-            --repo Oolab-labs/claude-ide-bridge
+            --repo Oolab-labs/patchwork-os
 
   publish-beta:
     # Mirror of publish-alpha but uses --tag beta. Beta is the active
@@ -80,7 +80,7 @@ jobs:
             --title "${{ github.ref_name }}" \
             --prerelease \
             --generate-notes \
-            --repo Oolab-labs/claude-ide-bridge
+            --repo Oolab-labs/patchwork-os
 
   publish:
     # Stable publish runs only on manual workflow_dispatch. Without this guard
@@ -146,4 +146,4 @@ jobs:
           gh release create "v${{ env.VERSION }}" \
             --title "v${{ env.VERSION }}" \
             --generate-notes \
-            --repo Oolab-labs/claude-ide-bridge
+            --repo Oolab-labs/patchwork-os
