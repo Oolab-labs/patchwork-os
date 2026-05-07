@@ -46,14 +46,6 @@ function slugToTitle(name: string): string {
     .join(" ");
 }
 
-function slugToShortDate(name: string): string {
-  const base = name.replace(/\.md$/, "");
-  const m = base.match(/-(\d{4}-\d{2}-\d{2})$/);
-  if (!m) return "";
-  const d = new Date(m[1] + "T00:00:00");
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-}
-
 function RecipeIcon({ name }: { name: string }) {
   const lower = name.toLowerCase();
   if (lower.includes("brief") || lower.includes("triage"))
@@ -688,7 +680,6 @@ const filteredItems = items.filter((item) => {
                         const isActive = selected?.name === item.name;
                         const isNew = !seenNames.has(item.name);
                         const title = slugToTitle(item.name);
-                        const shortDate = slugToShortDate(item.name);
                         const plainPreview = stripMarkdown(item.preview);
                         return (
                           <button
@@ -719,9 +710,6 @@ const filteredItems = items.filter((item) => {
                               <span style={{ flex: 1, fontWeight: isNew ? 700 : 500, fontSize: "var(--fs-m)", color: "var(--ink-0)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {title}
                               </span>
-                              {shortDate && (
-                                <span style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-3)", flexShrink: 0 }}>{shortDate}</span>
-                              )}
                             </div>
 
                             {/* Row 2: preview */}
@@ -780,7 +768,7 @@ const filteredItems = items.filter((item) => {
                         {slugToTitle(selected.name)}
                       </div>
                       <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 2 }}>
-                        {new Date(selected.modifiedAt).toLocaleString()} &middot; <span style={{ fontFamily: "var(--font-mono)" }}>{selected.name}</span>
+                        {new Date(selected.modifiedAt).toLocaleString()}
                       </div>
                     </div>
                     <button
