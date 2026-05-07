@@ -19,10 +19,11 @@ import { execSafe } from "../utils.js";
 
 const mockExecSafe = vi.mocked(execSafe);
 
+// biome-ignore lint/suspicious/noExplicitAny: tests assert nested JSON fields
 function parse(result: {
   content: Array<{ type: string; text: string }>;
   isError?: true;
-}) {
+}): any {
   const raw = JSON.parse(result.content.at(0)?.text ?? "{}") as unknown;
   // New error format: { error: "...", code?: "..." } — unwrap to the error string for backward-compat
   if (

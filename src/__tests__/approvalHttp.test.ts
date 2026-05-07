@@ -6,13 +6,14 @@ vi.mock("node:dns/promises", () => ({
   lookup: vi.fn().mockResolvedValue({ address: "93.184.216.34", family: 4 }),
 }));
 
-function emptyRules() {
+type Rules = { allow: string[]; ask: string[]; deny: string[] };
+function emptyRules(): () => Rules {
   return () => ({ allow: [], ask: [], deny: [] });
 }
-function denyRules(...names: string[]) {
+function denyRules(...names: string[]): () => Rules {
   return () => ({ allow: [], ask: [], deny: names });
 }
-function allowRules(...names: string[]) {
+function allowRules(...names: string[]): () => Rules {
   return () => ({ allow: names, ask: [], deny: [] });
 }
 
