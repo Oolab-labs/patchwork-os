@@ -875,7 +875,12 @@ export function render(template: string, ctx: RunContext): string {
         }
       }
       if (typeof val !== "object") return "";
-      val = (val as Record<string, unknown>)[part];
+      // Object.hasOwn — bracket access on a Record walks the prototype chain,
+      // which would expose Object.prototype members (toString, constructor,
+      // etc.) to attacker-controllable template paths. String(toString)
+      // renders the function source and leaks it into recipe output.
+      const obj = val as Record<string, unknown>;
+      val = Object.hasOwn(obj, part) ? obj[part] : undefined;
     }
     return val == null
       ? ""

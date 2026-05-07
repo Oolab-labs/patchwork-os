@@ -164,7 +164,10 @@ export function renderTemplate(
     const parts = expr.split(".").map((s) => s.trim());
     let cur: unknown = context;
     for (const p of parts) {
-      if (cur && typeof cur === "object" && p in (cur as object)) {
+      // Object.hasOwn — `in` walks the prototype chain, which would expose
+      // Object.prototype members (toString, constructor, etc.) to attacker-
+      // controllable template paths.
+      if (cur && typeof cur === "object" && Object.hasOwn(cur as object, p)) {
         cur = (cur as Record<string, unknown>)[p];
       } else {
         return "";
