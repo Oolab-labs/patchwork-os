@@ -17,19 +17,28 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # Promote :latest only for stable semver tags (no `-alpha`, `-beta`, `-rc`).
-      # Alpha tags publish only as `:<tag>` and `:alpha`, so `docker pull
-      # ghcr.io/.../claude-ide-bridge:latest` never silently lands on a
-      # prerelease build.
+      # Channel-aware tagging:
+      #   - Stable semver        → `:<tag>` + `:latest`
+      #   - `-alpha` prerelease  → `:<tag>` + `:alpha`
+      #   - `-beta` prerelease   → `:<tag>` + `:beta`
+      #   - `-rc` prerelease     → `:<tag>` + `:rc`
+      # `:latest` is gated on stable so `docker pull ghcr.io/.../patchwork-os:latest`
+      # never silently lands on a prerelease build. Each prerelease channel has
+      # its own moving tag so beta consumers don't get pulled back to alpha.
       - name: Compute Docker tags
         id: tags
         run: |
           REF="${{ github.ref_name }}"
-          TAGS="ghcr.io/oolab-labs/claude-ide-bridge:${REF}"
-          if [[ "$REF" =~ -(alpha|beta|rc) ]]; then
-            TAGS="${TAGS}"$'\n'"ghcr.io/oolab-labs/claude-ide-bridge:alpha"
+          IMAGE="ghcr.io/oolab-labs/patchwork-os"
+          TAGS="${IMAGE}:${REF}"
+          if [[ "$REF" =~ -alpha ]]; then
+            TAGS="${TAGS}"$'\n'"${IMAGE}:alpha"
+          elif [[ "$REF" =~ -beta ]]; then
+            TAGS="${TAGS}"$'\n'"${IMAGE}:beta"
+          elif [[ "$REF" =~ -rc ]]; then
+            TAGS="${TAGS}"$'\n'"${IMAGE}:rc"
           else
-            TAGS="${TAGS}"$'\n'"ghcr.io/oolab-labs/claude-ide-bridge:latest"
+            TAGS="${TAGS}"$'\n'"${IMAGE}:latest"
           fi
           {
             echo 'tags<<EOF'
