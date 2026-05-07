@@ -4,7 +4,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
 import { isDemoMode } from "@/lib/demoMode";
-import { EmptyState, EventsHistogram, HBarList, LivePill } from "@/components/patchwork";
+import {
+  EmptyState,
+  EventsHistogram,
+  HBarList,
+  LivePill,
+  type LivePillConnection,
+} from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 
@@ -76,7 +82,11 @@ function withAt(e: ActivityEvent): ActivityEvent {
 export default function ActivityPage() {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [seeded, setSeeded] = useState(false);
-  const [connected, setConnected] = useState(false);
+  // Tri-state: "reconnecting" while EventSource is opening or has errored
+  // and is auto-retrying; "live" once onopen fires; "offline" after we've
+  // counted MAX_SSE_FAILURES consecutive errors with no successful open
+  // in between (the bridge is gone, not just blipping).
+  const [connection, setConnection] = useState<LivePillConnection>("reconnecting");
   const [err, setErr] = useState<string>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -118,14 +128,25 @@ export default function ActivityPage() {
   }, []);
 
   useEffect(() => {
+    // Browser EventSource auto-retries forever on error. We give up on
+    // showing "reconnecting" and downgrade to "offline" after this many
+    // consecutive errors without a successful open in between.
+    const MAX_SSE_FAILURES = 5;
+    let consecutiveErrors = 0;
     const es = new EventSource(apiPath("/api/bridge/stream"));
     esRef.current = es;
     es.onopen = () => {
-      setConnected(true);
+      consecutiveErrors = 0;
+      setConnection("live");
       setErr(undefined);
     };
     es.onerror = () => {
-      setConnected(false);
+      consecutiveErrors += 1;
+      if (consecutiveErrors >= MAX_SSE_FAILURES) {
+        setConnection("offline");
+      } else {
+        setConnection("reconnecting");
+      }
       if (!isDemoMode()) setErr("Disconnected — reconnecting…");
     };
     es.onmessage = (msg) => {
@@ -210,7 +231,7 @@ export default function ActivityPage() {
             </div>
           )}
         </div>
-        <LivePill connection={connected ? "live" : "offline"} />
+        <LivePill connection={connection} />
       </div>
 
       {/* Charts row: histogram + top tools */}
@@ -324,7 +345,7 @@ export default function ActivityPage() {
         })}
       </div>
 
-      {err && !connected && <div className="alert-err">{err}</div>}
+      {err && connection !== "live" && <div className="alert-err">{err}</div>}
 
       {events.length === 0 ? (
         seeded ? (
