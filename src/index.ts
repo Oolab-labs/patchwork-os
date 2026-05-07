@@ -90,10 +90,10 @@ const OPEN_VSX_NAME = "claude-ide-bridge-extension";
 // at the bottom of this file. Re-exported here for back-compat.
 export {
   BRIDGE_BLOCK_END,
-  BRIDGE_BLOCK_RE,
   bridgeBlockStartMarker,
   extractClaudeMdBlockVersion,
   patchClaudeMdImport,
+  replaceAllBridgeBlocks,
 } from "./claudeMdPatch.js";
 
 import {
