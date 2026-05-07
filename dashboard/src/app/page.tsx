@@ -8,6 +8,7 @@ import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useBridgeStatus } from "@/hooks/useBridgeStatus";
 import {
+  ActionPill,
   QuiltHero,
   WeatherRing,
   AreaChart,
@@ -264,12 +265,9 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
         >
           Activity thread
         </h2>
-        <Link
-          href="/activity"
-          style={{ fontSize: "var(--fs-xs)", color: "var(--orange)", textDecoration: "none" }}
-        >
+        <ActionPill href="/activity" ariaLabel="View all activity">
           view all →
-        </Link>
+        </ActionPill>
       </div>
 
       {events.length === 0 ? (
@@ -435,16 +433,9 @@ function RecentRecipesCard({ recipes }: { recipes: Recipe[] }) {
         >
           Recent recipes
         </h2>
-        <Link
-          href="/recipes"
-          style={{
-            fontSize: "var(--fs-xs)",
-            color: "var(--accent)",
-            textDecoration: "none",
-          }}
-        >
+        <ActionPill href="/recipes" ariaLabel="View all recipes">
           all →
-        </Link>
+        </ActionPill>
       </div>
 
       {top.length === 0 ? (
