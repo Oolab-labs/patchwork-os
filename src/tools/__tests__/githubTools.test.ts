@@ -24,10 +24,11 @@ import { execSafe } from "../utils.js";
 const mockExecSafe = vi.mocked(execSafe);
 const ws = "/fake/workspace";
 
+// biome-ignore lint/suspicious/noExplicitAny: tests assert nested JSON fields
 function parse(r: {
   content: Array<{ type: string; text: string }>;
   isError?: true;
-}) {
+}): any {
   const raw = JSON.parse(r.content.at(0)?.text ?? "{}") as unknown;
   if (
     r.isError &&
