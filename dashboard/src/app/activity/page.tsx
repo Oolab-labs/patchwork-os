@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
 import { isDemoMode } from "@/lib/demoMode";
-import { EventsHistogram, HBarList, LivePill } from "@/components/patchwork";
+import { EmptyState, EventsHistogram, HBarList, LivePill } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 
@@ -328,28 +328,32 @@ export default function ActivityPage() {
 
       {events.length === 0 ? (
         seeded ? (
-          <div className="empty-state">
-            <h3>No activity yet</h3>
-            <p>Tool calls and bridge events will appear here — most recent first.</p>
-            <p
-              style={{
-                color: "var(--ink-3)",
-                fontSize: "var(--fs-s)",
-                marginTop: "var(--s-3)",
-              }}
-            >
-              Connect a Claude Code session to the bridge and call any
-              MCP tool to see your first event.
-            </p>
-          </div>
+          <EmptyState
+            title="No activity yet"
+            description={
+              <>
+                Tool calls and bridge events will appear here — most recent first.
+                <span
+                  style={{
+                    display: "block",
+                    color: "var(--ink-3)",
+                    fontSize: "var(--fs-s)",
+                    marginTop: "var(--s-3)",
+                  }}
+                >
+                  Connect a Claude Code session to the bridge and call any MCP tool to see your first event.
+                </span>
+              </>
+            }
+          />
         ) : (
           <SkeletonList rows={5} columns={4} />
         )
       ) : filtered.length === 0 ? (
-        <div className="empty-state">
-          <h3>No events in this view</h3>
-          <p>Try a different tab.</p>
-        </div>
+        <EmptyState
+          title="No events in this view"
+          description="Try a different tab."
+        />
       ) : (
         <div className="table-wrap">
           <table className="table">
