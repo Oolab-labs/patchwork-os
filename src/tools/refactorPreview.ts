@@ -57,6 +57,7 @@ export function createRefactorPreviewTool(
           "endColumn",
           "actionTitle",
         ],
+        additionalProperties: false as const,
       },
       outputSchema: {
         type: "object" as const,
