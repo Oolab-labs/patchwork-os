@@ -85,7 +85,8 @@ const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
   {
     title: "Insights",
     items: [
-      { href: "/analytics",  label: "Analytics",  icon: "trending" },
+      { href: "/analytics",    label: "Analytics",    icon: "trending" },
+      { href: "/transactions",  label: "Transactions", icon: "diff" },
     ],
   },
   {
@@ -97,9 +98,7 @@ const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
   },
 ];
 
-const MORE_ITEMS: NavItem[] = [
-  { href: "/transactions", label: "Transactions", icon: "diff" },
-];
+const MORE_ITEMS: NavItem[] = [];
 
 // ------------------------------------------------------------------ approval count
 

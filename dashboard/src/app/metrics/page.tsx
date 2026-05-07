@@ -179,7 +179,7 @@ export default function MetricsPage() {
       >
         <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--orange)" }}>
           <div style={{ fontSize: "var(--fs-2xs)", fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
-            <span style={{ color: "var(--orange)", marginRight: 6 }}>{">_"}</span>Total calls
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6, verticalAlign: "-1px" }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>Total calls
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-display)", fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
             {metrics.length === 0 ? "—" : <AnimatedNumber value={totalCalls} />}
@@ -187,7 +187,7 @@ export default function MetricsPage() {
         </div>
         <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--err)" }}>
           <div style={{ fontSize: "var(--fs-2xs)", fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
-            <span style={{ color: "var(--err)", marginRight: 6 }}>△</span>Errors
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--err)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6, verticalAlign: "-1px" }}><path d="M10.29 3.86 1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Errors
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-display)", fontWeight: 800, color: totalErrors > 0 ? "var(--err)" : "var(--ink-0)", lineHeight: 1 }}>
             {metrics.length === 0 ? "—" : <AnimatedNumber value={totalErrors} />}
@@ -195,7 +195,7 @@ export default function MetricsPage() {
         </div>
         <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--green)" }}>
           <div style={{ fontSize: "var(--fs-2xs)", fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
-            <span style={{ color: "var(--green)", marginRight: 6 }}>✓</span>Success rate
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6, verticalAlign: "-1px" }}><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>Success rate
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-display)", fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
             {successRate !== null ? `${successRate}%` : "—"}
