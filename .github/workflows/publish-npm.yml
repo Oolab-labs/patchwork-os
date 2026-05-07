@@ -32,7 +32,21 @@ jobs:
       - run: npm test -- --reporter=dot
         timeout-minutes: 5
 
+      # Idempotency guard — re-pushing the same tag (e.g. to re-trigger a
+      # sibling workflow on a fixed file) would otherwise fail loudly with
+      # E403 because the version is already on the registry. Skip cleanly
+      # when that's the case.
+      - name: Check if version already published
+        id: npm_check
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if npm view "patchwork-os@$V" version > /dev/null 2>&1; then
+            echo "Already published: patchwork-os@$V — skipping npm publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish alpha to npm
+        if: steps.npm_check.outputs.skip != 'true'
         run: npm publish --access public --tag alpha
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -41,6 +55,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.OOLAB_PAT }}
         run: |
+          if gh release view "${{ github.ref_name }}" --repo Oolab-labs/patchwork-os > /dev/null 2>&1; then
+            echo "Release ${{ github.ref_name }} already exists — skipping"
+            exit 0
+          fi
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
             --prerelease \
@@ -67,7 +85,18 @@ jobs:
       - run: npm test -- --reporter=dot
         timeout-minutes: 5
 
+      # Idempotency guard — see publish-alpha for rationale.
+      - name: Check if version already published
+        id: npm_check
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if npm view "patchwork-os@$V" version > /dev/null 2>&1; then
+            echo "Already published: patchwork-os@$V — skipping npm publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish beta to npm
+        if: steps.npm_check.outputs.skip != 'true'
         run: npm publish --access public --tag beta
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -76,6 +105,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.OOLAB_PAT }}
         run: |
+          if gh release view "${{ github.ref_name }}" --repo Oolab-labs/patchwork-os > /dev/null 2>&1; then
+            echo "Release ${{ github.ref_name }} already exists — skipping"
+            exit 0
+          fi
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
             --prerelease \
