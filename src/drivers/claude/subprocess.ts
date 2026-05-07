@@ -51,6 +51,17 @@ export class SubprocessDriver implements ProviderDriver {
     // Re-write before each run — /tmp may be cleared on long-running servers.
     this.settings.write();
 
+    // Defense-in-depth: reject argv-confusable user-controlled strings. Spawn
+    // is called with an array (no shell), so this is not shell-injection
+    // defense — it's argv defense for the child's flag parser, which may
+    // misinterpret a leading `-` as a new flag. Mirrors the contextFiles
+    // guard below.
+    if (input.prompt.startsWith("-")) {
+      throw new Error(
+        "[SubprocessDriver] prompt cannot start with '-' (argv injection guard)",
+      );
+    }
+
     const args = [
       "-p",
       input.prompt,
@@ -63,10 +74,16 @@ export class SubprocessDriver implements ProviderDriver {
       "--include-partial-messages",
       "--no-session-persistence",
     ];
-    if (input.model) args.push("--model", input.model);
-    if (effort) args.push("--effort", effort);
-    if (input.systemPrompt) args.push("--system-prompt", input.systemPrompt);
-    if (fallbackModel) args.push("--fallback-model", fallbackModel);
+    if (input.model && !input.model.startsWith("-")) {
+      args.push("--model", input.model);
+    }
+    if (effort && !effort.startsWith("-")) args.push("--effort", effort);
+    if (input.systemPrompt && !input.systemPrompt.startsWith("-")) {
+      args.push("--system-prompt", input.systemPrompt);
+    }
+    if (fallbackModel && !fallbackModel.startsWith("-")) {
+      args.push("--fallback-model", fallbackModel);
+    }
     if (maxBudgetUsd !== undefined)
       args.push("--max-budget-usd", String(maxBudgetUsd));
     // Always skip permissions: headless subprocesses can't respond to prompts.
