@@ -93,6 +93,16 @@ describe("render", () => {
   it("is whitespace-tolerant in braces", () => {
     expect(render("{{ date }}", { date: "2026-04-18" })).toBe("2026-04-18");
   });
+  it("does not walk Object.prototype on dotted paths", () => {
+    // RunContext is flat string-valued; the dotted-path branch only fires
+    // when an intermediate string JSON-parses to an object. Without the
+    // Object.hasOwn guard, the parsed object's prototype keys would resolve
+    // to Object.prototype methods and String() would leak function source.
+    const json = JSON.stringify({ other: "x" });
+    expect(render("{{ obj.toString }}", { obj: json })).toBe("");
+    expect(render("{{ obj.constructor }}", { obj: json })).toBe("");
+    expect(render("{{ obj.valueOf }}", { obj: json })).toBe("");
+  });
 });
 
 // ── validateYamlRecipe ────────────────────────────────────────────────────────

@@ -92,4 +92,25 @@ describe("renderTemplate", () => {
   it("leaves non-template text untouched", () => {
     expect(renderTemplate("no templates here", {})).toBe("no templates here");
   });
+
+  it("does not walk Object.prototype for top-level keys", () => {
+    // Without the Object.hasOwn guard, `"toString" in {}` is true and
+    // `{}["toString"]` returns Object.prototype.toString — a function whose
+    // source would leak into recipe output via String() coercion.
+    expect(renderTemplate("{{ toString }}", {})).toBe("");
+    expect(renderTemplate("{{ constructor }}", {})).toBe("");
+    expect(renderTemplate("{{ valueOf }}", {})).toBe("");
+    expect(renderTemplate("{{ hasOwnProperty }}", {})).toBe("");
+  });
+
+  it("does not walk Object.prototype on nested paths", () => {
+    expect(renderTemplate("{{ trigger.constructor }}", { trigger: {} })).toBe(
+      "",
+    );
+    expect(
+      renderTemplate("{{ trigger.payload.toString }}", {
+        trigger: { payload: { other: "x" } },
+      }),
+    ).toBe("");
+  });
 });
