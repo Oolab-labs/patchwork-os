@@ -26,6 +26,61 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { readBodyWithCap, respond413 } from "./recipeRoutes.js";
+
+/**
+ * Token-paste connector body cap. The legitimate payload is a small JSON
+ * envelope (`{token: "...", workspace?: "..."}`) — cap at 16 KB so an
+ * authenticated caller can't burn bridge heap streaming a multi-GB body
+ * into the unbounded `req.on("data", ...)` handlers each connector route
+ * used to have.
+ */
+const CONNECTOR_BODY_CAP = 16 * 1024;
+
+interface ConnectorHandlerResult {
+  status: number;
+  body: string;
+  contentType?: string;
+}
+
+/**
+ * Read the request body with a cap, dispatch to the connector's
+ * `handle<Vendor>Connect(body)` function, and write the result. Replaces
+ * the 8 near-identical inline blocks that previously each had an
+ * unbounded `req.on("data", ...)` accumulation.
+ *
+ * `loadHandler` is a closure that returns the handler — kept this shape
+ * so each call site preserves the lazy `await import()` of the connector
+ * module (only loaded on first call, not at bridge startup).
+ */
+async function dispatchConnectorConnect(
+  req: IncomingMessage,
+  res: ServerResponse,
+  loadHandler: () => Promise<(body: string) => Promise<ConnectorHandlerResult>>,
+): Promise<void> {
+  const read = await readBodyWithCap(req, CONNECTOR_BODY_CAP);
+  if (!read.ok) {
+    respond413(res, CONNECTOR_BODY_CAP);
+    return;
+  }
+  try {
+    const handler = await loadHandler();
+    const result = await handler(read.body);
+    res.writeHead(result.status, {
+      "Content-Type": result.contentType ?? "application/json",
+    });
+    res.end(result.body);
+  } catch (err) {
+    if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+  }
+}
 
 /**
  * Try to handle a `/connections/<vendor>/callback` route. These are
@@ -1084,32 +1139,9 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/notion/connect" &&
     req.method === "POST"
   ) {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
-      void (async () => {
-        try {
-          const { handleNotionConnect } = await import(
-            "./connectors/notion.js"
-          );
-          const result = await handleNotionConnect(
-            Buffer.concat(chunks).toString("utf-8"),
-          );
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        } catch (err) {
-          if (!res.headersSent) {
-            res.writeHead(500, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            );
-          }
-        }
-      })();
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/notion.js");
+      return m.handleNotionConnect;
     });
     return true;
   }
@@ -1168,32 +1200,9 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/confluence/connect" &&
     req.method === "POST"
   ) {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
-      void (async () => {
-        try {
-          const { handleConfluenceConnect } = await import(
-            "./connectors/confluence.js"
-          );
-          const result = await handleConfluenceConnect(
-            Buffer.concat(chunks).toString("utf-8"),
-          );
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        } catch (err) {
-          if (!res.headersSent) {
-            res.writeHead(500, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            );
-          }
-        }
-      })();
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/confluence.js");
+      return m.handleConfluenceConnect;
     });
     return true;
   }
@@ -1257,32 +1266,9 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/zendesk/connect" &&
     req.method === "POST"
   ) {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
-      void (async () => {
-        try {
-          const { handleZendeskConnect } = await import(
-            "./connectors/zendesk.js"
-          );
-          const result = await handleZendeskConnect(
-            Buffer.concat(chunks).toString("utf-8"),
-          );
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        } catch (err) {
-          if (!res.headersSent) {
-            res.writeHead(500, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            );
-          }
-        }
-      })();
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/zendesk.js");
+      return m.handleZendeskConnect;
     });
     return true;
   }
@@ -1344,32 +1330,9 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/intercom/connect" &&
     req.method === "POST"
   ) {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
-      void (async () => {
-        try {
-          const { handleIntercomConnect } = await import(
-            "./connectors/intercom.js"
-          );
-          const result = await handleIntercomConnect(
-            Buffer.concat(chunks).toString("utf-8"),
-          );
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        } catch (err) {
-          if (!res.headersSent) {
-            res.writeHead(500, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            );
-          }
-        }
-      })();
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/intercom.js");
+      return m.handleIntercomConnect;
     });
     return true;
   }
@@ -1431,32 +1394,9 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/hubspot/connect" &&
     req.method === "POST"
   ) {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
-      void (async () => {
-        try {
-          const { handleHubSpotConnect } = await import(
-            "./connectors/hubspot.js"
-          );
-          const result = await handleHubSpotConnect(
-            Buffer.concat(chunks).toString("utf-8"),
-          );
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        } catch (err) {
-          if (!res.headersSent) {
-            res.writeHead(500, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            );
-          }
-        }
-      })();
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/hubspot.js");
+      return m.handleHubSpotConnect;
     });
     return true;
   }
@@ -1518,32 +1458,9 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/datadog/connect" &&
     req.method === "POST"
   ) {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
-      void (async () => {
-        try {
-          const { handleDatadogConnect } = await import(
-            "./connectors/datadog.js"
-          );
-          const result = await handleDatadogConnect(
-            Buffer.concat(chunks).toString("utf-8"),
-          );
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        } catch (err) {
-          if (!res.headersSent) {
-            res.writeHead(500, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            );
-          }
-        }
-      })();
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/datadog.js");
+      return m.handleDatadogConnect;
     });
     return true;
   }
@@ -1605,32 +1522,9 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/pagerduty/connect" &&
     req.method === "POST"
   ) {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
-      void (async () => {
-        try {
-          const { handlePagerDutyConnect } = await import(
-            "./connectors/pagerduty.js"
-          );
-          const result = await handlePagerDutyConnect(
-            Buffer.concat(chunks).toString("utf-8"),
-          );
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        } catch (err) {
-          if (!res.headersSent) {
-            res.writeHead(500, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            );
-          }
-        }
-      })();
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/pagerduty.js");
+      return m.handlePagerDutyConnect;
     });
     return true;
   }
@@ -1694,32 +1588,9 @@ export function tryHandleConnectorRoute(
     parsedUrl.pathname === "/connections/stripe/connect" &&
     req.method === "POST"
   ) {
-    let body = "";
-    req.on("data", (chunk: Buffer) => {
-      body += chunk.toString();
-    });
-    req.on("end", () => {
-      void (async () => {
-        try {
-          const { handleStripeConnect } = await import(
-            "./connectors/stripe.js"
-          );
-          const result = await handleStripeConnect(body);
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        } catch (err) {
-          if (!res.headersSent) {
-            res.writeHead(500, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            );
-          }
-        }
-      })();
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/stripe.js");
+      return m.handleStripeConnect;
     });
     return true;
   }
