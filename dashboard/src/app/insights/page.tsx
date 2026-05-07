@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { apiPath } from "@/lib/api";
-import { ErrorState } from "@/components/patchwork";
+import { EmptyState, ErrorState } from "@/components/patchwork";
 
 interface ToolInsight {
   toolName: string;
@@ -219,14 +219,10 @@ export default function InsightsPage() {
       )}
 
       {!loading && !error && tools.length === 0 && (
-        <div className="empty-state">
-          <h3>No approval history yet</h3>
-          <p>
-            Once you start approving or rejecting tool calls in the approval
-            queue, this page will show you your patterns — "you approved this
-            27 times", "you rejected this tool before", and so on.
-          </p>
-        </div>
+        <EmptyState
+          title="No approval history yet"
+          description={`Once you start approving or rejecting tool calls in the approval queue, this page will show you your patterns — "you approved this 27 times", "you rejected this tool before", and so on.`}
+        />
       )}
 
       {tools.length > 0 && (

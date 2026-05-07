@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { EmptyState } from "@/components/patchwork";
 
 type ReplayDecision = "allow" | "deny" | "ask" | "none";
 type ChangeKind = "now_allowed" | "now_denied" | "now_asked";
@@ -131,13 +132,10 @@ export default function ReplayPage() {
       {error && <div className="alert-err">Unreachable: {error}</div>}
 
       {!loading && !error && data && data.totalRows === 0 && (
-        <div className="empty-state">
-          <h3>No approval history in this window</h3>
-          <p>
-            Widen the lookback or come back after the bridge has processed some
-            approval decisions. Every allow/deny/ask is recorded automatically.
-          </p>
-        </div>
+        <EmptyState
+          title="No approval history in this window"
+          description="Widen the lookback or come back after the bridge has processed some approval decisions. Every allow/deny/ask is recorded automatically."
+        />
       )}
 
       {data && data.totalRows > 0 && (

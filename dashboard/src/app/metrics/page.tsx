@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { relTime, fmtDuration } from "@/components/time";
-import { MetricsDonut, HBarList, ErrorState, AnimatedNumber } from "@/components/patchwork";
+import { AnimatedNumber, EmptyState, ErrorState, HBarList, MetricsDonut } from "@/components/patchwork";
 import type { DonutSegment, HBarItem } from "@/components/patchwork";
 
 interface Metric {
@@ -290,24 +290,10 @@ export default function MetricsPage() {
       )}
 
       {metrics.length === 0 && !err && (
-        <div
-          style={{
-            border: "1.5px dashed var(--line-2)",
-            borderRadius: "var(--r-card)",
-            minHeight: 200,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "var(--s-5)",
-            textAlign: "center",
-          }}
-        >
-          <h3 style={{ color: "var(--ink-1)", marginBottom: 8 }}>No metrics yet</h3>
-          <p style={{ color: "var(--ink-3)", fontSize: "var(--fs-m)", maxWidth: 380, margin: 0 }}>
-            Metrics appear once the bridge begins serving tool calls. Make a tool call or wait for the next scrape interval.
-          </p>
-        </div>
+        <EmptyState
+          title="No metrics yet"
+          description="Metrics appear once the bridge begins serving tool calls. Make a tool call or wait for the next scrape interval."
+        />
       )}
     </section>
   );
