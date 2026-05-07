@@ -357,8 +357,24 @@ function randomBase64Url(len = 48) {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
+// Reject anything that isn't http(s) — CodeQL #112 (js/xss-through-dom):
+// without this guard, a `javascript:` value in the bridge-url input ends up
+// concatenated into `window.location.href` below and runs as script.
+function isHttpUrl(value) {
+  if (typeof value !== 'string' || value.length === 0) return false;
+  try {
+    const u = new URL(value);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 const S = {
-  bridgeUrl: () => document.getElementById('bridge-url').value.replace(/\/$/, ''),
+  bridgeUrl: () => {
+    const raw = document.getElementById('bridge-url').value.replace(/\/$/, '');
+    return isHttpUrl(raw) ? raw : '';
+  },
   token: null,
   clientId: null,
 };
@@ -477,7 +493,12 @@ async function handleCallback() {
 
   const verifier = sessionStorage.getItem('pkce_verifier');
   const clientId = sessionStorage.getItem('pwa_client_id');
-  const bridgeUrl = sessionStorage.getItem('pwa_bridge') ?? S.bridgeUrl();
+  const storedBridge = sessionStorage.getItem('pwa_bridge');
+  const bridgeUrl = isHttpUrl(storedBridge) ? storedBridge : S.bridgeUrl();
+  if (!bridgeUrl) {
+    showAuthError('Bridge URL missing or invalid. Re-enter and retry.');
+    return false;
+  }
 
   // Exchange code for token
   try {

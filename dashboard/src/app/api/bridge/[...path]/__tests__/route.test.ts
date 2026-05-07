@@ -79,3 +79,34 @@ describe("catch-all bridge proxy — body cap", () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe("catch-all bridge proxy — error body does not leak internals", () => {
+  const ctx = { params: Promise.resolve({ path: ["some", "path"] }) };
+
+  it("returns generic 502 body when bridgeFetch throws (CodeQL #120)", async () => {
+    const lib = await import("@/lib/bridge");
+    const internal =
+      "ECONNREFUSED 127.0.0.1:9876 at /Users/secret/path/internal.ts:42";
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      vi.mocked(lib.bridgeFetch).mockImplementationOnce(async () => {
+        throw new Error(internal);
+      });
+      const res = await POST(
+        makeReq(JSON.stringify({ ok: true }), "16"),
+        ctx,
+      );
+      expect(res.status).toBe(502);
+      const text = await res.text();
+      expect(text).not.toContain("ECONNREFUSED");
+      expect(text).not.toContain("/Users/");
+      expect(text).not.toContain("internal.ts");
+      // The generic message that should be returned instead.
+      expect(JSON.parse(text)).toEqual({ error: "Bridge unreachable" });
+      // Detail still goes to server logs for ops visibility.
+      expect(consoleSpy).toHaveBeenCalled();
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+});

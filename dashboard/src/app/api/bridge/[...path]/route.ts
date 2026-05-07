@@ -155,8 +155,12 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
       body,
     });
   } catch (err) {
+    // Detail (ECONNREFUSED, file paths, etc.) goes to server logs only —
+    // returning err.message to the browser exposed internals (CodeQL #120,
+    // js/stack-trace-exposure). Body matches the SSE branch above.
+    console.error("[dashboard /api/bridge] proxy fetch failed:", err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+      JSON.stringify({ error: "Bridge unreachable" }),
       { status: 502, headers: { "content-type": "application/json" } },
     );
   }
