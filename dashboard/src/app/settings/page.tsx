@@ -462,28 +462,8 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <button
-                    type="button"
-                    disabled
-                    title="Editing not wired yet — change values in the config file below and restart the bridge."
-                    aria-describedby="bridge-apply-help"
-                    style={{
-                      background: "var(--bg-2)",
-                      color: "var(--fg-3)",
-                      border: "1px solid var(--border-default)",
-                      borderRadius: "var(--r-2)",
-                      padding: "6px 14px",
-                      fontSize: "var(--fs-m)",
-                      cursor: "not-allowed",
-                      opacity: 0.6,
-                    }}
-                  >
-                    Apply
-                  </button>
-                  <span id="bridge-apply-help" style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)" }}>
-                    Read-only — edit the config file directly and restart the bridge.
-                  </span>
+                <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)" }}>
+                  Read-only — edit the config file directly and restart the bridge.
                 </div>
               </div>
 

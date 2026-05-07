@@ -204,11 +204,11 @@ export default function ActivityPage() {
           <h1 className="editorial-h1">
             Activity — <span className="accent">every tool, every event, in real time.</span>
           </h1>
-          <div className="editorial-sub">
-            {events.length === 0
-              ? "No events yet"
-              : `${events.length} events · last 24h · ${stats.errors} errored`}
-          </div>
+          {events.length > 0 && (
+            <div className="editorial-sub">
+              {events.length} events · last 24h · {stats.errors} errored
+            </div>
+          )}
         </div>
         <LivePill connection={connected ? "live" : "offline"} />
       </div>
