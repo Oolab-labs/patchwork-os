@@ -1,5 +1,10 @@
 import { bridgeFetch } from "@/lib/bridge";
 import { requireSameOrigin } from "@/lib/csrf";
+import {
+  DASHBOARD_API_BODY_CAPS,
+  bodyTooLargeResponse,
+  readBodyWithCap,
+} from "@/lib/readBodyWithCap";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,12 +29,13 @@ export async function POST(
       headers: { "content-type": "application/json" },
     });
   }
+  const read = await readBodyWithCap(req, DASHBOARD_API_BODY_CAPS.connectionsConnect);
+  if (!read.ok) return bodyTooLargeResponse(DASHBOARD_API_BODY_CAPS.connectionsConnect);
   try {
-    const body = await req.text();
     const res = await bridgeFetch(`/connections/${connector}/connect`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body,
+      body: read.body,
     });
     const text = await res.text();
     return new Response(text, {
