@@ -10,6 +10,7 @@ import { useToast } from "@/components/Toast";
 import {
   CodeBlock,
   ErrorState,
+  highlightYaml,
   LivePill,
   PatchCard,
   RunSparkBars,
@@ -313,52 +314,6 @@ function SuccessRing({
       </text>
     </svg>
   );
-}
-
-/** Lightweight YAML coloriser — keys, values, comments. */
-function highlightYaml(yaml: string): React.ReactNode {
-  const lines = yaml.split("\n");
-  return lines.map((line, i) => {
-    const commentIdx = line.indexOf("#");
-    let codePart = line;
-    let comment = "";
-    if (commentIdx >= 0) {
-      // Naively avoid splitting inside quoted strings; good enough for recipes.
-      const before = line.slice(0, commentIdx);
-      const quoteOpen = (before.match(/"/g) ?? []).length % 2 === 1;
-      if (!quoteOpen) {
-        codePart = before;
-        comment = line.slice(commentIdx);
-      }
-    }
-    const m = codePart.match(/^(\s*-?\s*)([A-Za-z0-9_./-]+)(\s*:)(\s*)(.*)$/);
-    let body: React.ReactNode = codePart;
-    if (m) {
-      const [, lead, key, colon, ws, rest] = m;
-      body = (
-        <>
-          <span>{lead}</span>
-          <span className="yaml-key" style={{ color: "var(--accent)" }}>{key}</span>
-          <span>{colon}</span>
-          <span>{ws}</span>
-          {rest && (
-            <span className="yaml-string" style={{ color: "var(--ok)" }}>{rest}</span>
-          )}
-        </>
-      );
-    }
-    return (
-      <div key={i}>
-        {body}
-        {comment && (
-          <span className="yaml-comment" style={{ color: "var(--ink-3)", fontStyle: "italic" }}>
-            {comment}
-          </span>
-        )}
-        {!line && " "}
-      </div>
-    );
-  });
 }
 
 /** Build a presentable YAML string from recipe metadata when raw isn't available. */
