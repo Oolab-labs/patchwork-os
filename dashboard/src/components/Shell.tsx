@@ -421,46 +421,48 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
           ))}
 
-          <div className="app-nav-more">
-            <button
-              type="button"
-              className="app-nav-link app-nav-more-toggle"
-              aria-expanded={moreOpen}
-              onClick={() => setMoreOpen((v) => !v)}
-            >
-              <span className="app-nav-link-icon" aria-hidden="true">
-                <NavIcon path={PATHS.chevron} />
-              </span>
-              <span>More</span>
-              <span
-                className="app-nav-more-caret"
-                data-open={moreOpen ? "1" : "0"}
-                aria-hidden="true"
+          {MORE_ITEMS.length > 0 && (
+            <div className="app-nav-more">
+              <button
+                type="button"
+                className="app-nav-link app-nav-more-toggle"
+                aria-expanded={moreOpen}
+                onClick={() => setMoreOpen((v) => !v)}
               >
-                <NavIcon path={PATHS.chevron} />
-              </span>
-            </button>
-            {moreOpen && (
-              <div className="app-nav-more-items">
-                {MORE_ITEMS.map((item) => {
-                  const isActive = pathname?.startsWith(item.href);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`app-nav-link${isActive ? " is-active" : ""}`}
-                      aria-current={isActive ? "page" : undefined}
-                    >
-                      <span className="app-nav-link-icon" aria-hidden="true">
-                        <NavIcon path={PATHS[item.icon]} />
-                      </span>
-                      <span>{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                <span className="app-nav-link-icon" aria-hidden="true">
+                  <NavIcon path={PATHS.chevron} />
+                </span>
+                <span>More</span>
+                <span
+                  className="app-nav-more-caret"
+                  data-open={moreOpen ? "1" : "0"}
+                  aria-hidden="true"
+                >
+                  <NavIcon path={PATHS.chevron} />
+                </span>
+              </button>
+              {moreOpen && (
+                <div className="app-nav-more-items">
+                  {MORE_ITEMS.map((item) => {
+                    const isActive = pathname?.startsWith(item.href);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`app-nav-link${isActive ? " is-active" : ""}`}
+                        aria-current={isActive ? "page" : undefined}
+                      >
+                        <span className="app-nav-link-icon" aria-hidden="true">
+                          <NavIcon path={PATHS[item.icon]} />
+                        </span>
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </nav>
 
         <BridgeStatusBlock status={status} />
