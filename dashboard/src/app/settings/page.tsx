@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fmtDuration } from "@/components/time";
 import { apiPath } from "@/lib/api";
-import { StatusPill } from "@/components/patchwork";
+import { EmptyState, StatusPill } from "@/components/patchwork";
 
 interface StatusResponse {
   uptimeMs?: number;
@@ -329,13 +329,15 @@ export default function SettingsPage() {
       {err && <div className="alert-err">Unreachable: {err}</div>}
 
       {unsupported ? (
-        <div className="empty-state">
-          <h3>Settings endpoint coming in next phase</h3>
-          <p>
-            This bridge version does not expose <code>/status</code>. Run <code>patchwork print-token</code> for
-            connection details.
-          </p>
-        </div>
+        <EmptyState
+          title="Settings endpoint coming in next phase"
+          description={
+            <>
+              This bridge version does not expose <code>/status</code>. Run <code>patchwork print-token</code> for
+              connection details.
+            </>
+          }
+        />
       ) : !settings ? (
         <div className="empty-state">
           <p>Loading…</p>
