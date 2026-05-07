@@ -10,7 +10,8 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type RouteContext = { params: { name: string } };
+// Next 15: dynamic route params arrive as a Promise.
+type RouteContext = { params: Promise<{ name: string }> };
 
 export async function POST(
   req: NextRequest,
@@ -23,13 +24,14 @@ export async function POST(
       headers: { "content-type": "application/json" },
     });
   }
-  if (isDemoModeServer()) {
+  const { name } = await ctx.params;
+  if (await isDemoModeServer()) {
     return new Response(
       JSON.stringify({
         ok: true,
         demo: true,
         taskId: `demo-${Date.now()}`,
-        message: `Demo mode — recipe '${ctx.params.name}' run skipped (no live bridge)`,
+        message: `Demo mode — recipe '${name}' run skipped (no live bridge)`,
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
@@ -37,8 +39,8 @@ export async function POST(
   const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.run);
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.run);
   try {
-    const name = encodeURIComponent(ctx.params.name);
-    const res = await bridgeFetch(`/recipes/${name}/run`, {
+    const encodedName = encodeURIComponent(name);
+    const res = await bridgeFetch(`/recipes/${encodedName}/run`, {
       method: "POST",
       headers: { "content-type": req.headers.get("content-type") ?? "application/json" },
       body: read.body || undefined,

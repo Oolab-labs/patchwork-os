@@ -1,9 +1,14 @@
 import { cookies } from "next/headers";
 
-/** Server-side: true if demo mode is active (cookie overrides env var). */
-export function isDemoModeServer(): boolean {
+/**
+ * Server-side: true if demo mode is active (cookie overrides env var).
+ *
+ * Async since Next 15 — `cookies()` returns a Promise<ReadonlyRequestCookies>.
+ * Callers (route handlers, server components) must `await` this.
+ */
+export async function isDemoModeServer(): Promise<boolean> {
   try {
-    const jar = cookies();
+    const jar = await cookies();
     const val = jar.get("pw-demo")?.value;
     if (val !== undefined) return val === "true";
   } catch {

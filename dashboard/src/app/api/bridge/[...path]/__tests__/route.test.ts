@@ -47,7 +47,7 @@ function makeReq(body: string, contentLength?: string): NextRequest {
 }
 
 describe("catch-all bridge proxy — body cap", () => {
-  const ctx = { params: { path: ["some", "path"] } };
+  const ctx = { params: Promise.resolve({ path: ["some", "path"] }) };
 
   it("rejects Content-Length above 1 MB with 413 (security audit, 2026-05-07)", async () => {
     const res = await POST(makeReq("x", String(2 * 1024 * 1024)), ctx);

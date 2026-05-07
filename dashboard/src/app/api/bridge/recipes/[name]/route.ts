@@ -10,7 +10,8 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type RouteContext = { params: { name: string } };
+// Next 15: dynamic route params arrive as a Promise.
+type RouteContext = { params: Promise<{ name: string }> };
 
 const demoOk = () =>
   new Response(JSON.stringify({ ok: true, demo: true }), {
@@ -22,15 +23,16 @@ export async function GET(
   _req: NextRequest,
   ctx: RouteContext,
 ): Promise<Response> {
-  if (isDemoModeServer()) {
+  const { name } = await ctx.params;
+  if (await isDemoModeServer()) {
     return new Response(
-      JSON.stringify({ name: ctx.params.name, demo: true, content: "" }),
+      JSON.stringify({ name, demo: true, content: "" }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
   }
   try {
-    const name = encodeURIComponent(ctx.params.name);
-    const res = await bridgeFetch(`/recipes/${name}`);
+    const encodedName = encodeURIComponent(name);
+    const res = await bridgeFetch(`/recipes/${encodedName}`);
     const text = await res.text();
     return new Response(text, {
       status: res.status,
@@ -56,12 +58,13 @@ async function forwardWithMethod(
       headers: { "content-type": "application/json" },
     });
   }
-  if (isDemoModeServer()) return demoOk();
+  if (await isDemoModeServer()) return demoOk();
   const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.content);
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.content);
   try {
-    const name = encodeURIComponent(ctx.params.name);
-    const res = await bridgeFetch(`/recipes/${name}`, {
+    const { name } = await ctx.params;
+    const encodedName = encodeURIComponent(name);
+    const res = await bridgeFetch(`/recipes/${encodedName}`, {
       method,
       headers: { "content-type": req.headers.get("content-type") ?? "application/json" },
       body: read.body,

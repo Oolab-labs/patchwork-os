@@ -16,11 +16,13 @@ import BundleInstallPanel from "./BundleInstallPanel";
 export const revalidate = 300;
 
 interface PageProps {
-  params: { slug: string[] };
+  // Next 15: dynamic route params are Promise-typed.
+  params: Promise<{ slug: string[] }>;
 }
 
 export async function generateMetadata({ params }: PageProps) {
-  const fullName = decodeURIComponent(params.slug.join("/"));
+  const { slug } = await params;
+  const fullName = decodeURIComponent(slug.join("/"));
   const registry = await fetchRegistry();
   const bundle = registry?.bundles?.find((b) => b.name === fullName);
   if (!bundle) return { title: "Not found — Marketplace · Patchwork OS" };
@@ -31,7 +33,8 @@ export async function generateMetadata({ params }: PageProps) {
 }
 
 export default async function BundleDetailPage({ params }: PageProps) {
-  const fullName = decodeURIComponent(params.slug.join("/"));
+  const { slug } = await params;
+  const fullName = decodeURIComponent(slug.join("/"));
 
   const registry = await fetchRegistry();
   const bundle = registry?.bundles?.find((b) => b.name === fullName);

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  if (isDemoModeServer()) {
+  if (await isDemoModeServer()) {
     return new Response(
       JSON.stringify({
         error:
