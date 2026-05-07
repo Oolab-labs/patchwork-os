@@ -429,6 +429,23 @@ export class JiraConnector extends BaseConnector {
 
 // ── Token persistence ────────────────────────────────────────────────────────
 
+/**
+ * Cloud-vs-server detection by hostname (not substring match).
+ *
+ * Substring match like `url.includes("atlassian.net")` is bypassable by a
+ * hostile path or subdomain (e.g. `https://atlassian.net.evil.com/...` or
+ * `https://evil.com/atlassian.net`) and would route requests as if they were
+ * the cloud API.
+ */
+function isAtlassianCloudHost(rawUrl: string): boolean {
+  try {
+    const { hostname } = new URL(rawUrl);
+    return hostname === "atlassian.net" || hostname.endsWith(".atlassian.net");
+  } catch {
+    return false;
+  }
+}
+
 function getLegacyTokenPath(): string {
   const patchworkHome =
     process.env.PATCHWORK_HOME ?? path.join(homedir(), ".patchwork");
@@ -443,7 +460,7 @@ export function loadTokens(): JiraTokens | null {
     return {
       accessToken: envToken,
       instanceUrl: envUrl.replace(/\/$/, ""), // strip trailing slash
-      isCloud: envUrl.includes("atlassian.net"),
+      isCloud: isAtlassianCloudHost(envUrl),
       connected_at: new Date().toISOString(),
       email: process.env.JIRA_EMAIL,
     };

@@ -115,5 +115,10 @@ function normalize(e: HookEntry): NestedHook {
 }
 
 function quoteIfNeeded(p: string): string {
-  return /[\s"']/.test(p) ? `"${p.replace(/"/g, '\\"')}"` : p;
+  if (!/[\s"'\\]/.test(p)) return p;
+  // Escape `\` first, then `"` — order matters: doing `"` first would
+  // double-escape the backslashes the previous step inserted, leaving
+  // an unbalanced trailing `\` next to the closing quote.
+  const escaped = p.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${escaped}"`;
 }
