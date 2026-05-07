@@ -77,6 +77,23 @@ function semverGte(actual: string, required: string): boolean {
 
 const PREFIX_RE = /^[a-zA-Z][a-zA-Z0-9_]{1,19}$/;
 
+/**
+ * Allowlist of capability tokens that may appear in a plugin manifest's
+ * `permissions` field. Phase 9 step 1 of the FP roadmap: default-deny on
+ * unknown capability tokens at parse time. The allowlist starts empty and
+ * grows explicitly per future PRs that tie a capability to a runtime
+ * enforcement mechanism — never inferred from what existing plugins happen
+ * to declare.
+ *
+ * Today (informational only): a plugin manifest may omit `permissions`.
+ * Declaring an unknown capability now rejects the manifest at load time,
+ * preventing plugin authors from inventing tokens that won't be enforced
+ * later.
+ *
+ * Exported for tests; the validator below is the only production consumer.
+ */
+export const KNOWN_PLUGIN_CAPABILITIES: readonly string[] = Object.freeze([]);
+
 function validateManifest(
   raw: unknown,
   source: string,
@@ -110,15 +127,29 @@ function validateManifest(
   if (m.version !== undefined && typeof m.version !== "string") {
     return { ok: false, reason: '"version" must be a string if present' };
   }
-  if (
-    m.permissions !== undefined &&
-    (!Array.isArray(m.permissions) ||
-      m.permissions.some((p) => typeof p !== "string"))
-  ) {
-    return {
-      ok: false,
-      reason: '"permissions" must be an array of strings if present',
-    };
+  if (m.permissions !== undefined) {
+    if (
+      !Array.isArray(m.permissions) ||
+      m.permissions.some((p) => typeof p !== "string")
+    ) {
+      return {
+        ok: false,
+        reason: '"permissions" must be an array of strings if present',
+      };
+    }
+    const unknown = (m.permissions as string[]).filter(
+      (p) => !KNOWN_PLUGIN_CAPABILITIES.includes(p),
+    );
+    if (unknown.length > 0) {
+      const known =
+        KNOWN_PLUGIN_CAPABILITIES.length === 0
+          ? "(none yet — see KNOWN_PLUGIN_CAPABILITIES in src/pluginLoader.ts)"
+          : KNOWN_PLUGIN_CAPABILITIES.join(", ");
+      return {
+        ok: false,
+        reason: `"permissions" contains unknown capability tokens: ${unknown.map((u) => `"${u}"`).join(", ")}. Allowed tokens: ${known}.`,
+      };
+    }
   }
 
   void source; // used by caller for log context

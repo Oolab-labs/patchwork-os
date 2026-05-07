@@ -241,6 +241,80 @@ describe("loadPlugins", () => {
     ).toBe(true);
   });
 
+  it("loads when permissions field is omitted", async () => {
+    const pluginDir = path.join(tmpDir, "no-permissions");
+    fs.mkdirSync(pluginDir);
+    writePlugin(pluginDir, makeManifest(), validRegisterCode());
+
+    const log = makeLogger();
+    const tools = await loadPlugins([pluginDir], makeConfig(), log);
+
+    expect(tools).toHaveLength(1);
+    expect(log.calls.some((c) => c.level === "warn")).toBe(false);
+  });
+
+  it("loads when permissions field is an empty array", async () => {
+    const pluginDir = path.join(tmpDir, "empty-permissions");
+    fs.mkdirSync(pluginDir);
+    writePlugin(
+      pluginDir,
+      makeManifest({ permissions: [] }),
+      validRegisterCode(),
+    );
+
+    const log = makeLogger();
+    const tools = await loadPlugins([pluginDir], makeConfig(), log);
+
+    expect(tools).toHaveLength(1);
+    expect(log.calls.some((c) => c.level === "warn")).toBe(false);
+  });
+
+  it("rejects manifest with unknown capability tokens (default-deny)", async () => {
+    const pluginDir = path.join(tmpDir, "unknown-permission");
+    fs.mkdirSync(pluginDir);
+    writePlugin(
+      pluginDir,
+      makeManifest({ permissions: ["filesystem"] }),
+      validRegisterCode(),
+    );
+
+    const log = makeLogger();
+    const tools = await loadPlugins([pluginDir], makeConfig(), log);
+
+    expect(tools).toEqual([]);
+    expect(
+      log.calls.some(
+        (c) =>
+          c.level === "warn" &&
+          c.msg.includes("permissions") &&
+          c.msg.includes("filesystem"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects manifest where permissions is not an array of strings", async () => {
+    const pluginDir = path.join(tmpDir, "bad-permissions-shape");
+    fs.mkdirSync(pluginDir);
+    writePlugin(
+      pluginDir,
+      makeManifest({ permissions: "filesystem" }),
+      validRegisterCode(),
+    );
+
+    const log = makeLogger();
+    const tools = await loadPlugins([pluginDir], makeConfig(), log);
+
+    expect(tools).toEqual([]);
+    expect(
+      log.calls.some(
+        (c) =>
+          c.level === "warn" &&
+          c.msg.includes("permissions") &&
+          c.msg.includes("array of strings"),
+      ),
+    ).toBe(true);
+  });
+
   it("warns and skips when entrypoint import fails", async () => {
     const pluginDir = path.join(tmpDir, "bad-import");
     fs.mkdirSync(pluginDir);
