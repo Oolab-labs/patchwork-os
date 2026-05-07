@@ -460,7 +460,24 @@ async function startOAuthFlow() {
   sessionStorage.setItem('pwa_client_id', clientId);
   sessionStorage.setItem('pwa_bridge', bridgeUrl);
 
-  // 3. Redirect to bridge authorization endpoint
+  // 3. Redirect to bridge authorization endpoint. Build the target via the
+  // URL constructor (relative path resolved against the validated bridge
+  // origin) — CodeQL's xss-through-dom analyzer recognises this as proper
+  // sanitisation, and the constructor rejects values without a parseable
+  // origin. We re-check the protocol on the parsed URL as a belt-and-braces
+  // guard since `bridgeUrl` could in principle be a sessionStorage value
+  // poisoned out of band.
+  let target;
+  try {
+    target = new URL('/oauth/authorize', bridgeUrl);
+  } catch {
+    showAuthError('Bridge URL is not a valid origin.');
+    return;
+  }
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+    showAuthError('Bridge URL must be http(s).');
+    return;
+  }
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: clientId,
@@ -470,7 +487,8 @@ async function startOAuthFlow() {
     state,
     scope: 'mcp',
   });
-  window.location.href = `${bridgeUrl}/oauth/authorize?${params}`;
+  for (const [k, v] of params) target.searchParams.set(k, v);
+  window.location.href = target.toString();
 }
 
 async function handleCallback() {
