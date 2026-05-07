@@ -726,13 +726,13 @@ function NewRecipePageInner() {
             textAlign: "left",
           }}
         >
-          <span style={{ fontSize: "var(--fs-xl)" }}>{aiOpen ? "▾" : "▸"}</span>
+          <span style={{ fontSize: "var(--fs-xl)", color: "var(--ink-2)" }}>{aiOpen ? "▾" : "▸"}</span>
           Generate with AI
           <span
             style={{
-              background: "var(--accent)",
+              background: "var(--info)",
               borderRadius: 4,
-              color: "var(--on-accent)",
+              color: "#fff",
               fontSize: "var(--fs-2xs)",
               fontWeight: 700,
               letterSpacing: "0.05em",
