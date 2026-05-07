@@ -19,11 +19,13 @@ import InstallPanel from "./InstallPanel";
 export const revalidate = 300;
 
 interface PageProps {
-  params: { slug: string[] };
+  // Next 15: dynamic route params are Promise-typed.
+  params: Promise<{ slug: string[] }>;
 }
 
 export async function generateMetadata({ params }: PageProps) {
-  const fullName = decodeURIComponent(params.slug.join("/"));
+  const { slug } = await params;
+  const fullName = decodeURIComponent(slug.join("/"));
   const registry = await fetchRegistry();
   const recipe = registry?.recipes.find((r) => r.name === fullName);
 
@@ -50,7 +52,8 @@ export async function generateMetadata({ params }: PageProps) {
 }
 
 export default async function RecipeDetailPage({ params }: PageProps) {
-  const fullName = decodeURIComponent(params.slug.join("/"));
+  const { slug } = await params;
+  const fullName = decodeURIComponent(slug.join("/"));
 
   const registry = await fetchRegistry();
   const recipe = registry?.recipes.find((r) => r.name === fullName);

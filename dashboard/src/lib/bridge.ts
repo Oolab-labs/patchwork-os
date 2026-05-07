@@ -103,7 +103,7 @@ export async function bridgeFetch(
   pathname: string,
   init?: RequestInit,
 ): Promise<Response> {
-  if (isDemoModeServer()) {
+  if (await isDemoModeServer()) {
     const mock = mockBridgeResponse(pathname, init?.method ?? "GET");
     if (mock) return mock;
   }

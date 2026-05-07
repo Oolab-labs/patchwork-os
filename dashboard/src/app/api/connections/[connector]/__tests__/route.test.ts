@@ -39,7 +39,7 @@ describe("DELETE /api/connections/[connector]", () => {
   it("returns 404 for an unknown connector and never hits the bridge", async () => {
     const res = await deleteConnection(
       reqWithHeaders({ "sec-fetch-site": "same-origin" }),
-      { params: { connector: "not-a-thing" } },
+      { params: Promise.resolve({ connector: "not-a-thing" }) },
     );
     expect(res.status).toBe(404);
     expect(bridgeFetchMock).not.toHaveBeenCalled();
@@ -48,7 +48,7 @@ describe("DELETE /api/connections/[connector]", () => {
   it("returns 403 when CSRF guard rejects cross-site", async () => {
     const res = await deleteConnection(
       reqWithHeaders({ "sec-fetch-site": "cross-site" }),
-      { params: { connector: "gmail" } },
+      { params: Promise.resolve({ connector: "gmail" }) },
     );
     expect(res.status).toBe(403);
     expect(bridgeFetchMock).not.toHaveBeenCalled();
@@ -63,7 +63,7 @@ describe("DELETE /api/connections/[connector]", () => {
     );
     const res = await deleteConnection(
       reqWithHeaders({ "sec-fetch-site": "same-origin" }),
-      { params: { connector: "gmail" } },
+      { params: Promise.resolve({ connector: "gmail" }) },
     );
     expect(bridgeFetchMock).toHaveBeenCalledWith("/connections/gmail", {
       method: "DELETE",
@@ -77,7 +77,7 @@ describe("DELETE /api/connections/[connector]", () => {
     bridgeFetchMock.mockRejectedValueOnce(new TypeError("ECONNREFUSED"));
     const res = await deleteConnection(
       reqWithHeaders({ "sec-fetch-site": "same-origin" }),
-      { params: { connector: "gmail" } },
+      { params: Promise.resolve({ connector: "gmail" }) },
     );
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: "ECONNREFUSED" });
@@ -87,7 +87,7 @@ describe("DELETE /api/connections/[connector]", () => {
 describe("POST /api/connections/[connector]/test", () => {
   it("returns 404 for unknown connector", async () => {
     const res = await postTest(reqWithHeaders(), {
-      params: { connector: "nope" },
+      params: Promise.resolve({ connector: "nope" }),
     });
     expect(res.status).toBe(404);
     expect(bridgeFetchMock).not.toHaveBeenCalled();
@@ -96,7 +96,7 @@ describe("POST /api/connections/[connector]/test", () => {
   it("proxies to /connections/<id>/test with method=POST", async () => {
     bridgeFetchMock.mockResolvedValueOnce(jsonResponse({ healthy: true }));
     const res = await postTest(reqWithHeaders(), {
-      params: { connector: "linear" },
+      params: Promise.resolve({ connector: "linear" }),
     });
     expect(bridgeFetchMock).toHaveBeenCalledWith(
       "/connections/linear/test",
@@ -109,7 +109,7 @@ describe("POST /api/connections/[connector]/test", () => {
   it("502s on bridge throw and surfaces 'fetch failed' for non-Error rejection values", async () => {
     bridgeFetchMock.mockRejectedValueOnce("plain-string-not-an-error");
     const res = await postTest(reqWithHeaders(), {
-      params: { connector: "linear" },
+      params: Promise.resolve({ connector: "linear" }),
     });
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: "fetch failed" });
@@ -122,7 +122,7 @@ describe("GET /api/connections/[connector]/auth", () => {
   }
 
   it("returns 404 for unknown connector", async () => {
-    const res = await getAuth(getReq(), { params: { connector: "nope" } });
+    const res = await getAuth(getReq(), { params: Promise.resolve({ connector: "nope" }) });
     expect(res.status).toBe(404);
     expect(bridgeFetchMock).not.toHaveBeenCalled();
   });
@@ -132,7 +132,7 @@ describe("GET /api/connections/[connector]/auth", () => {
     bridgeFetchMock.mockResolvedValueOnce(
       new Response(null, { status: 302, headers: { location: target } }),
     );
-    const res = await getAuth(getReq(), { params: { connector: "gmail" } });
+    const res = await getAuth(getReq(), { params: Promise.resolve({ connector: "gmail" }) });
     expect(bridgeFetchMock).toHaveBeenCalledWith(
       "/connections/gmail/auth",
       { redirect: "manual" },
@@ -146,7 +146,7 @@ describe("GET /api/connections/[connector]/auth", () => {
     // Pinned because the alternative (silently passing through) would loop
     // the browser back to /api/connections/<id>/auth.
     bridgeFetchMock.mockResolvedValueOnce(new Response(null, { status: 302 }));
-    const res = await getAuth(getReq(), { params: { connector: "gmail" } });
+    const res = await getAuth(getReq(), { params: Promise.resolve({ connector: "gmail" }) });
     expect(res.status).toBe(502);
     expect((await res.json()).error).toMatch(/Location/);
   });
@@ -158,14 +158,14 @@ describe("GET /api/connections/[connector]/auth", () => {
         headers: { "content-type": "application/json" },
       }),
     );
-    const res = await getAuth(getReq(), { params: { connector: "gmail" } });
+    const res = await getAuth(getReq(), { params: Promise.resolve({ connector: "gmail" }) });
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "client_id missing" });
   });
 
   it("502s on bridge throw", async () => {
     bridgeFetchMock.mockRejectedValueOnce(new Error("dns timeout"));
-    const res = await getAuth(getReq(), { params: { connector: "gmail" } });
+    const res = await getAuth(getReq(), { params: Promise.resolve({ connector: "gmail" }) });
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: "dns timeout" });
   });
@@ -189,7 +189,7 @@ describe("POST /api/connections/[connector]/connect (token-paste)", () => {
   it("returns 403 on cross-site request", async () => {
     const res = await postConnect(
       postWithBody(JSON.stringify({ token: "x" }), "cross-site"),
-      { params: { connector: "notion" } },
+      { params: Promise.resolve({ connector: "notion" }) },
     );
     expect(res.status).toBe(403);
     expect(bridgeFetchMock).not.toHaveBeenCalled();
@@ -199,7 +199,7 @@ describe("POST /api/connections/[connector]/connect (token-paste)", () => {
     // Pinned: this allowlist is INTENTIONALLY narrower than the parent
     // route's list. OAuth providers must go through /auth, not /connect.
     const res = await postConnect(postWithBody(JSON.stringify({ token: "x" })), {
-      params: { connector: "gmail" },
+      params: Promise.resolve({ connector: "gmail" }),
     });
     expect(res.status).toBe(404);
     expect(bridgeFetchMock).not.toHaveBeenCalled();
@@ -209,7 +209,7 @@ describe("POST /api/connections/[connector]/connect (token-paste)", () => {
     bridgeFetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
     const body = JSON.stringify({ token: "secret-123" });
     const res = await postConnect(postWithBody(body), {
-      params: { connector: "notion" },
+      params: Promise.resolve({ connector: "notion" }),
     });
     expect(bridgeFetchMock).toHaveBeenCalledWith(
       "/connections/notion/connect",
@@ -225,7 +225,7 @@ describe("POST /api/connections/[connector]/connect (token-paste)", () => {
   it("502s on bridge throw with the error message", async () => {
     bridgeFetchMock.mockRejectedValueOnce(new Error("upstream down"));
     const res = await postConnect(postWithBody(JSON.stringify({ token: "x" })), {
-      params: { connector: "notion" },
+      params: Promise.resolve({ connector: "notion" }),
     });
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: "upstream down" });

@@ -22,9 +22,9 @@ const ALLOWED_CONNECTORS = new Set([
 
 export async function GET(
   _req: Request,
-  ctx: { params: { connector: string } },
+  ctx: { params: Promise<{ connector: string }> },
 ): Promise<Response> {
-  const { connector } = ctx.params;
+  const { connector } = await ctx.params;
   if (!ALLOWED_CONNECTORS.has(connector)) {
     return new Response(JSON.stringify({ error: "Unknown connector" }), {
       status: 404, headers: { "content-type": "application/json" },

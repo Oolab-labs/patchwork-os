@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import dynamic from "next/dynamic";
@@ -19,9 +19,12 @@ const YamlEditor = dynamic(() => import("./_components/YamlEditor"), {
 export default function RecipeEditPage({
   params,
 }: {
-  params: { name: string };
+  // Next 15: dynamic route params are Promise-typed; client components
+  // unwrap with React.use().
+  params: Promise<{ name: string }>;
 }) {
-  const name = decodeURIComponent(params.name);
+  const { name: rawName } = use(params);
+  const name = decodeURIComponent(rawName);
   const [content, setContent] = useState<string>("");
   const [savedContent, setSavedContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
