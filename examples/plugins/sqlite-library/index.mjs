@@ -24,12 +24,53 @@ import path from "node:path";
 
 const DEFAULT_DB_PATH = path.join(os.homedir(), "library.sqlite3");
 
-// Anchored regex: only SELECT / PRAGMA / EXPLAIN allowed, optionally
-// preceded by whitespace and an SQL comment block. Multi-statement
-// queries are rejected by `better-sqlite3.prepare()` itself; we only
-// need to gate the leading verb.
-const READ_ONLY_VERB =
-  /^\s*(?:--[^\n]*\n|\/\*[\s\S]*?\*\/|\s)*(?:SELECT|PRAGMA|EXPLAIN)\b/i;
+// Only SELECT / PRAGMA / EXPLAIN allowed, optionally preceded by whitespace
+// and SQL comment blocks. Multi-statement queries are rejected by
+// `better-sqlite3.prepare()` itself; we only need to gate the leading verb.
+//
+// Hand-rolled scanner instead of one big regex: the prior version mixed a
+// lazy `[\s\S]*?` block-comment branch with a `\s` whitespace branch under a
+// `(?:...)*` outer quantifier, which CodeQL flagged for polynomial backtracking
+// on adversarial input like `/*` repeated. indexOf-based scanning is O(n)
+// regardless of input.
+const VERB_RE = /^(?:SELECT|PRAGMA|EXPLAIN)\b/i;
+export function isReadOnlyVerb(sql) {
+  if (typeof sql !== "string") return false;
+  let i = 0;
+  const n = sql.length;
+  while (i < n) {
+    const c = sql.charCodeAt(i);
+    // whitespace: space, \t, \n, \r, \f, \v
+    if (
+      c === 0x20 ||
+      c === 0x09 ||
+      c === 0x0a ||
+      c === 0x0d ||
+      c === 0x0c ||
+      c === 0x0b
+    ) {
+      i++;
+      continue;
+    }
+    // line comment "-- … \n"
+    if (c === 0x2d && sql.charCodeAt(i + 1) === 0x2d) {
+      const nl = sql.indexOf("\n", i + 2);
+      if (nl === -1) return false;
+      i = nl + 1;
+      continue;
+    }
+    // block comment "/* … */"
+    if (c === 0x2f && sql.charCodeAt(i + 1) === 0x2a) {
+      const end = sql.indexOf("*/", i + 2);
+      if (end === -1) return false;
+      i = end + 2;
+      continue;
+    }
+    // first non-whitespace, non-comment character: must be a permitted verb.
+    return VERB_RE.test(sql.slice(i));
+  }
+  return false;
+}
 
 let cachedDb = null;
 let cachedDbPath = null;
@@ -126,7 +167,7 @@ export function register(ctx) {
               : DEFAULT_DB_PATH;
           const limit = Math.min(Math.max(1, Number(args.limit) || 200), 1000);
 
-          if (!READ_ONLY_VERB.test(sql)) {
+          if (!isReadOnlyVerb(sql)) {
             return {
               isError: true,
               content: [

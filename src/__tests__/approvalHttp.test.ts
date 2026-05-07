@@ -1066,9 +1066,17 @@ describe("push notification dispatch", () => {
       const item = queue.list()[0];
       if (item) queue.approve(item.callId);
       await pending;
-      expect(calls.filter((u) => u.includes("push.example.com"))).toHaveLength(
-        0,
-      );
+      // Hostname-exact check (not String.includes — CodeQL #109,
+      // js/incomplete-url-substring-sanitization).
+      expect(
+        calls.filter((u) => {
+          try {
+            return new URL(u).hostname === "push.example.com";
+          } catch {
+            return false;
+          }
+        }),
+      ).toHaveLength(0);
     } finally {
       globalThis.fetch = originalFetch;
     }
