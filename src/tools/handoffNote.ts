@@ -184,6 +184,7 @@ export function createSetHandoffNoteTool(
           },
         },
         required: ["note"],
+        additionalProperties: false as const,
       },
       outputSchema: {
         type: "object" as const,
@@ -238,6 +239,7 @@ export function createGetHandoffNoteTool(
         type: "object" as const,
         properties: {},
         required: [],
+        additionalProperties: false as const,
       },
       outputSchema: {
         type: "object" as const,

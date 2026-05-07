@@ -53,6 +53,7 @@ export function createResumeClaudeTaskTool(
           },
         },
         required: ["taskId"],
+        additionalProperties: false as const,
       },
       outputSchema: {
         type: "object" as const,

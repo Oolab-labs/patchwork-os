@@ -25,6 +25,7 @@ export function createGetClaudeTaskStatusTool(
           },
         },
         required: ["taskId"],
+        additionalProperties: false as const,
       },
       outputSchema: {
         type: "object",
