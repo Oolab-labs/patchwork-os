@@ -4,6 +4,7 @@ import {
   recordFailure,
   recordSuccess,
 } from "@/lib/authRateLimit";
+import { clientKey } from "@/lib/clientIp";
 
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD;
 const ALLOW_UNAUTHENTICATED =
@@ -19,22 +20,6 @@ function constantTimeEq(a: string, b: string): boolean {
     diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
   }
   return diff === 0;
-}
-
-function clientKey(req: NextRequest): string {
-  // Self-hosted Next.js typically sits behind a reverse proxy that sets
-  // x-forwarded-for. Trust the leftmost entry as the originating client.
-  // Next 15 removed NextRequest.ip; rely on forwarded headers. Fall back to
-  // "unknown" so unidentified clients share a single bucket — they can DOS
-  // themselves but not legitimate users with known IPs.
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) {
-    const first = xff.split(",")[0];
-    if (first) return first.trim();
-  }
-  const xri = req.headers.get("x-real-ip");
-  if (xri) return xri.trim();
-  return "unknown";
 }
 
 function lockedResponse(retryAfterSec: number): NextResponse {
@@ -59,7 +44,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const ip = clientKey(req);
+  const ip = clientKey(req.headers);
 
   // Check lockout BEFORE inspecting credentials so a locked-out client
   // can't keep probing.
