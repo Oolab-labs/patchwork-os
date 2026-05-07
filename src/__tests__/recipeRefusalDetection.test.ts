@@ -30,15 +30,29 @@ describe("detectRefusal — raw output", () => {
     expect(detectRefusal(output)).toEqual({ reason: "harmful" });
   });
 
-  it("matches with leading prose that ends before the marker", () => {
+  it("matches when refusal follows a prose preamble (security audit, 2026-05-07)", () => {
+    // Previously the scanner broke at the first non-refusal line, so a
+    // model that emitted "I can't help with that." then "# REFUSED:"
+    // bypassed detection. Detection now scans all top-level (col-0)
+    // lines within the bound, so the marker on line 2 is caught.
     const output = "I can't help with that.\n# REFUSED: against policy";
-    // First non-blank, non-fence line is the prose, which doesn't
-    // match REFUSED. We stop scanning to avoid false-positives on
-    // recipe bodies that legitimately contain `# REFUSED` inside a
-    // step prompt 50 lines down. So this case returns null — but the
-    // user still gets `no_yaml_in_output` downstream, which is fine.
-    // (The audit's specific bypass was the FIRST few lines being a
-    // refusal smuggled inside fences; that case IS caught.)
+    expect(detectRefusal(output)).toEqual({ reason: "against policy" });
+  });
+
+  it("matches when refusal follows a partial header (security audit, 2026-05-07)", () => {
+    // Audit-flagged bypass: model emits a top-level YAML header
+    // (`apiVersion:`) and then a refusal comment on line 2. The pre-
+    // fix detector returned null because it broke after `apiVersion:`.
+    const output =
+      "apiVersion: patchwork.sh/v1\n# REFUSED: credential harvesting\nname: foo";
+    expect(detectRefusal(output)).toEqual({ reason: "credential harvesting" });
+  });
+
+  it("does NOT match an indented `# REFUSED` deep inside a prompt body", () => {
+    // Top-level-only scanning means an indented comment inside a
+    // multi-line `prompt: |` block can't false-positive.
+    const output =
+      "name: ok\nsteps:\n  - id: s1\n    agent:\n      prompt: |\n        # REFUSED: this is text in a prompt";
     expect(detectRefusal(output)).toBeNull();
   });
 
@@ -85,10 +99,27 @@ describe("detectRefusalInYamlBody", () => {
     expect(detectRefusalInYamlBody(yaml)).toBeNull();
   });
 
-  it("only checks the first non-blank line — comments deep in the body don't false-positive", () => {
+  it("does NOT match an indented `# REFUSED` inside a prompt body", () => {
     const yaml =
       "name: ok\ntrigger:\n  type: manual\nsteps:\n  - id: s1\n    agent:\n      prompt: |\n        # REFUSED: this is text in a prompt";
     expect(detectRefusalInYamlBody(yaml)).toBeNull();
+  });
+
+  it("matches refusal on a later top-level line (security audit, 2026-05-07)", () => {
+    // Audit-flagged bypass: model emits real YAML headers first, then
+    // smuggles `# REFUSED:` on a later top-level line. Pre-fix the
+    // helper only checked the first non-blank line and missed this.
+    const yaml =
+      "apiVersion: patchwork.sh/v1\n# REFUSED: smuggled\nname: backdoor";
+    expect(detectRefusalInYamlBody(yaml)).toEqual({ reason: "smuggled" });
+  });
+
+  it("ignores top-level non-refusal comments and continues scanning", () => {
+    // A leading `# yaml-language-server` directive must not stop the
+    // scan; the refusal on the next top-level line should still match.
+    const yaml =
+      "# yaml-language-server: $schema=...\n# REFUSED: smuggled\nname: foo";
+    expect(detectRefusalInYamlBody(yaml)).toEqual({ reason: "smuggled" });
   });
 
   it("returns null on empty body", () => {
