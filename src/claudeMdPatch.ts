@@ -25,21 +25,91 @@ export function bridgeBlockStartMarker(version: string): string {
 /** Sentinel comment that closes a versioned bridge block in CLAUDE.md. */
 export const BRIDGE_BLOCK_END = "<!-- claude-ide-bridge:end -->";
 
-/** Regex that matches ANY versioned bridge block (any version). */
-export const BRIDGE_BLOCK_RE =
-  /<!-- claude-ide-bridge:start:[^\s>]+ -->[\s\S]*?<!-- claude-ide-bridge:end -->/g;
-
-/** Regex that matches a versioned bridge block with a specific version captured. */
-const BRIDGE_BLOCK_VERSION_RE =
-  /<!-- claude-ide-bridge:start:([^\s>]+) -->[\s\S]*?<!-- claude-ide-bridge:end -->/;
+/** Literal prefix of the open sentinel — everything before the version. */
+const BRIDGE_START_PREFIX = "<!-- claude-ide-bridge:start:";
+/** Literal suffix of the open sentinel — everything after the version. */
+const BRIDGE_START_SUFFIX = " -->";
+/** Defensive cap on the embedded version string. */
+const MAX_VERSION_LEN = 128;
 
 /**
- * Returns the version embedded in an existing versioned bridge block in
+ * Locates the next versioned bridge block at or after `from` and returns its
+ * exact `[blockStart, blockEnd)` indices and embedded version string.
+ *
+ * Implemented with `indexOf` rather than a regex so the parser has no
+ * backtracking surface — a malformed CLAUDE.md (missing ` -->` or missing
+ * `<!-- claude-ide-bridge:end -->`) walks the input linearly instead of
+ * triggering polynomial regex backtracking.
+ */
+function findBridgeBlock(
+  content: string,
+  from = 0,
+): { blockStart: number; blockEnd: number; version: string } | null {
+  let cursor = from;
+  // Skip past start sentinels that are malformed (no terminator, version too
+  // long, contains `\s` or `>`) without retreating, so total work stays O(n).
+  while (cursor <= content.length) {
+    const blockStart = content.indexOf(BRIDGE_START_PREFIX, cursor);
+    if (blockStart < 0) return null;
+    const versionStart = blockStart + BRIDGE_START_PREFIX.length;
+    const suffixIdx = content.indexOf(BRIDGE_START_SUFFIX, versionStart);
+    if (suffixIdx < 0) return null;
+    const version = content.slice(versionStart, suffixIdx);
+    // Reject malformed: too long, contains whitespace, or contains `>` (which
+    // would close the comment early). On rejection, skip this opener and
+    // resume the search after its `<!--` so we don't loop on the same prefix.
+    if (
+      version.length === 0 ||
+      version.length > MAX_VERSION_LEN ||
+      /[\s>]/.test(version)
+    ) {
+      cursor = blockStart + BRIDGE_START_PREFIX.length;
+      continue;
+    }
+    const contentStart = suffixIdx + BRIDGE_START_SUFFIX.length;
+    const endIdx = content.indexOf(BRIDGE_BLOCK_END, contentStart);
+    if (endIdx < 0) return null;
+    return {
+      blockStart,
+      blockEnd: endIdx + BRIDGE_BLOCK_END.length,
+      version,
+    };
+  }
+  return null;
+}
+
+/**
+ * Returns the version embedded in the first versioned bridge block in
  * CLAUDE.md content, or null if no block is present.
  */
 export function extractClaudeMdBlockVersion(content: string): string | null {
-  const m = BRIDGE_BLOCK_VERSION_RE.exec(content);
-  return m?.[1] ?? null;
+  return findBridgeBlock(content)?.version ?? null;
+}
+
+/**
+ * Replaces every versioned bridge block in `content` with `replacement`.
+ *
+ * Equivalent to `content.replace(/…start:[^\s>]+…end -->/g, replacement)` but
+ * uses linear `indexOf` scanning so a malformed CLAUDE.md cannot trigger
+ * polynomial regex backtracking.
+ */
+export function replaceAllBridgeBlocks(
+  content: string,
+  replacement: string,
+): string {
+  let out = "";
+  let cursor = 0;
+  while (cursor < content.length) {
+    const block = findBridgeBlock(content, cursor);
+    if (!block) {
+      out += content.slice(cursor);
+      return out;
+    }
+    out += content.slice(cursor, block.blockStart);
+    out += replacement;
+    cursor = block.blockEnd;
+  }
+  return out;
 }
 
 /**
@@ -85,12 +155,11 @@ export function patchClaudeMdImport(
   const existingVersion = extractClaudeMdBlockVersion(existing);
   if (existingVersion !== null) {
     if (existingVersion === version) return "already-current";
-    // Stale versioned block → replace
+    // Stale versioned block → replace (uses indexOf-based scanner, not regex).
     const newBlock = buildVersionedBlock(marker, importLine, version);
-    const patched = existing.replace(BRIDGE_BLOCK_RE, newBlock);
+    const patched = replaceAllBridgeBlocks(existing, newBlock);
     if (patched === existing) return "no-section"; // safety guard
-    const remaining = (patched.match(/<!-- claude-ide-bridge:start:/g) ?? [])
-      .length;
+    const remaining = patched.split(BRIDGE_START_PREFIX).length - 1;
     if (remaining > 1) {
       console.warn(
         `[patchClaudeMdImport] ${remaining} bridge start sentinels remain after replace — manual cleanup may be needed in ${targetPath}`,
@@ -122,8 +191,9 @@ export function patchClaudeMdImport(
       return "patched";
     }
     // marker present, import missing — replace the marker line with the full
-    // versioned block (marker included inside sentinels) so that BRIDGE_BLOCK_RE
-    // can match it on future passes. Preserves any content that follows.
+    // versioned block (marker included inside sentinels) so that
+    // findBridgeBlock can detect it on future passes. Preserves any content
+    // that follows.
     const normalised = existing.endsWith("\n") ? existing : `${existing}\n`;
     const markerIdx = normalised.indexOf(marker);
     const markerLineEnd = normalised.indexOf("\n", markerIdx);

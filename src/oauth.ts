@@ -731,6 +731,19 @@ export class OAuthServerImpl implements OAuthServer {
 
   // ── Token persistence helpers ─────────────────────────────────────────────
 
+  /**
+   * Map-key hash for persisted bearer tokens.
+   *
+   * Input is a 256-bit cryptographically random opaque token (not a
+   * user-chosen password), so a fast preimage-resistant hash is the right
+   * primitive: there is no rainbow-table or dictionary attack to defend
+   * against, only direct preimage recovery — and SHA-256 is preimage-resistant
+   * by orders of magnitude beyond a 256-bit search space.
+   *
+   * A slow KDF (scrypt/argon2) would defeat the O(1) `Map<hash, …>` lookup in
+   * `lookupToken` without adding any security: the entropy budget is the same
+   * before and after hashing.
+   */
   private hashToken(token: string): string {
     return crypto.createHash("sha256").update(token).digest("hex");
   }
