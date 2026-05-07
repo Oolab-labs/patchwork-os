@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -72,6 +73,9 @@ function* iterateInstallDirs(
     return;
   }
   for (const f of entries) {
+    // Skip dotfile-prefixed dirs (`.archive/`, `.disabled/`, …). Conventionally
+    // hidden; reserves the namespace for archive/recovery features.
+    if (f.startsWith(".")) continue;
     const fullPath = path.join(recipesDir, f);
     let isDir = false;
     try {
@@ -637,6 +641,63 @@ export function deleteRecipeContent(
       }
     }
     return { ok: true, path: resolved };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Archives a recipe by moving its file (and sidecar `.permissions.json`)
+ * into `<recipesDir>/.archive/`. The archive directory is created on demand.
+ * On filename collision the moved file is suffixed with the current
+ * timestamp so historical archives never overwrite each other.
+ *
+ * Returns the absolute archived path on success, ok=false with a 404-style
+ * error when the recipe cannot be located.
+ */
+export function archiveRecipe(
+  recipesDir: string,
+  name: string,
+): { ok: boolean; path?: string; error?: string } {
+  const safeName = name.toLowerCase();
+  if (!RECIPE_NAME_RE.test(safeName)) {
+    return { ok: false, error: "Invalid recipe name" };
+  }
+  const base = path.resolve(recipesDir);
+  const target =
+    findYamlRecipePath(recipesDir, safeName) ??
+    resolveJsonRecipePathByName(recipesDir, safeName);
+  if (!target) {
+    return { ok: false, error: "Recipe not found" };
+  }
+  const resolved = path.resolve(target);
+  if (!resolved.startsWith(base + path.sep)) {
+    return { ok: false, error: "Invalid path" };
+  }
+  const archiveDir = path.join(base, ".archive");
+  try {
+    mkdirSync(archiveDir, { recursive: true });
+    const basename = path.basename(resolved);
+    let dest = path.join(archiveDir, basename);
+    if (existsSync(dest)) {
+      const ext = path.extname(basename);
+      const stem = basename.slice(0, basename.length - ext.length);
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      dest = path.join(archiveDir, `${stem}.${stamp}${ext}`);
+    }
+    renameSync(resolved, dest);
+    const sidecar = `${resolved}.permissions.json`;
+    if (existsSync(sidecar)) {
+      try {
+        renameSync(sidecar, `${dest}.permissions.json`);
+      } catch {
+        // sidecar move best-effort — primary archive already succeeded
+      }
+    }
+    return { ok: true, path: dest };
   } catch (err) {
     return {
       ok: false,

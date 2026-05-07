@@ -6,6 +6,7 @@ import { Dialog } from "@/components/Dialog";
 import { apiPath } from "@/lib/api";
 import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
 import { SkeletonList } from "@/components/Skeleton";
+import { useToast } from "@/components/Toast";
 import {
   CodeBlock,
   ErrorState,
@@ -440,6 +441,8 @@ function RecipeDetailPanel({
   recentRuns,
   onClose,
   onRun,
+  onArchive,
+  onDelete,
   running,
   isLive,
 }: {
@@ -447,6 +450,8 @@ function RecipeDetailPanel({
   recentRuns: RunRecord[];
   onClose: () => void;
   onRun: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
   running: Record<string, string>;
   isLive: boolean;
 }) {
@@ -563,6 +568,36 @@ function RecipeDetailPanel({
           </div>
         )}
       </div>
+
+      <div
+        style={{
+          marginTop: 18,
+          paddingTop: 12,
+          borderTop: "1px solid var(--line-2)",
+          display: "flex",
+          gap: 8,
+          justifyContent: "flex-end",
+        }}
+      >
+        <button
+          type="button"
+          className="btn sm ghost"
+          style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}
+          onClick={onArchive}
+          title="Move to ~/.patchwork/recipes/.archive — hidden from this list, restorable from disk"
+        >
+          Archive
+        </button>
+        <button
+          type="button"
+          className="btn sm ghost"
+          style={{ fontSize: "var(--fs-xs)", color: "var(--err)" }}
+          onClick={onDelete}
+          title="Permanently delete the recipe file. Cannot be undone."
+        >
+          Delete permanently
+        </button>
+      </div>
     </PatchCard>
   );
 }
@@ -579,6 +614,7 @@ export default function RecipesPage() {
   const [modal, setModal] = useState<RunModalState | null>(null);
   const [modalRunning, setModalRunning] = useState(false);
   const [search, setSearch] = useState("");
+  const toast = useToast();
 
   const load = React.useCallback(async () => {
     try {
@@ -738,6 +774,54 @@ export default function RecipesPage() {
             )
           : prev,
       );
+    }
+  }
+
+  async function handleArchiveRecipe(recipe: Recipe) {
+    const proceed = window.confirm(
+      `Archive "${recipe.name}"? It will be moved to ~/.patchwork/recipes/.archive and hidden from this list. Trigger "${recipe.trigger ?? "?"}" stops firing once archived.`,
+    );
+    if (!proceed) return;
+    try {
+      const res = await fetch(
+        apiPath(
+          `/api/bridge/recipes/${encodeURIComponent(recipe.name)}/archive`,
+        ),
+        { method: "POST" },
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => res.statusText);
+        toast.error(`Archive failed: ${text || res.status}`);
+        return;
+      }
+      toast.success(`Archived “${recipe.name}”`);
+      setSelectedName(null);
+      void load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function handleDeleteRecipe(recipe: Recipe) {
+    const proceed = window.confirm(
+      `Permanently delete "${recipe.name}"? This removes the YAML file and any sidecar permissions. Cannot be undone.`,
+    );
+    if (!proceed) return;
+    try {
+      const res = await fetch(
+        apiPath(`/api/bridge/recipes/${encodeURIComponent(recipe.name)}`),
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => res.statusText);
+        toast.error(`Delete failed: ${text || res.status}`);
+        return;
+      }
+      toast.success(`Deleted “${recipe.name}”`);
+      setSelectedName(null);
+      void load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -1069,6 +1153,8 @@ export default function RecipesPage() {
               recentRuns={recentRunsMap.get(selectedRecipe.name) ?? []}
               onClose={() => setSelectedName(null)}
               onRun={() => handleRunClick(selectedRecipe)}
+              onArchive={() => void handleArchiveRecipe(selectedRecipe)}
+              onDelete={() => void handleDeleteRecipe(selectedRecipe)}
               running={running}
               isLive={isLive(selectedRecipe.name)}
             />
