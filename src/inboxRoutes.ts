@@ -21,6 +21,20 @@ import path from "node:path";
 import { respond500 } from "./httpErrorResponse.js";
 
 /**
+ * Filename guard shared by every inbox sub-route. Rejects directory
+ * separators and `..` segments so the request can never escape the inbox
+ * directory. Returns the joined absolute path on success, or null with the
+ * caller responsible for emitting a 400.
+ */
+function safeInboxPath(filename: string): string | null {
+  if (!filename) return null;
+  if (filename.includes("/") || filename.includes("\\")) return null;
+  if (filename === "." || filename === "..") return null;
+  if (filename.startsWith(".")) return null; // no dotfiles, reserves `.archive/` namespace
+  return path.join(os.homedir(), ".patchwork", "inbox", filename);
+}
+
+/**
  * Try to handle an `/inbox` or `/inbox/<filename>.md` route. Returns true
  * if the route was dispatched (caller should `return` from the request
  * handler), false if no route matched.
@@ -87,18 +101,12 @@ export function tryHandleInboxRoute(
       try {
         const { readFile, stat } = await import("node:fs/promises");
         const filename = decodeURIComponent(inboxFileMatch[1] ?? "");
-        // Prevent path traversal — filename must not contain directory separators
-        if (filename.includes("/") || filename.includes("\\")) {
+        const filePath = safeInboxPath(filename);
+        if (!filePath) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Invalid filename" }));
           return;
         }
-        const filePath = path.join(
-          os.homedir(),
-          ".patchwork",
-          "inbox",
-          filename,
-        );
         const [content, stats] = await Promise.all([
           readFile(filePath, "utf8"),
           stat(filePath),
@@ -116,6 +124,79 @@ export function tryHandleInboxRoute(
         if (code === "ENOENT") {
           res.writeHead(404, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Not found" }));
+        } else {
+          respond500(res, err);
+        }
+      }
+    })();
+    return true;
+  }
+
+  if (inboxFileMatch && req.method === "DELETE") {
+    void (async () => {
+      try {
+        const { unlink } = await import("node:fs/promises");
+        const filename = decodeURIComponent(inboxFileMatch[1] ?? "");
+        const filePath = safeInboxPath(filename);
+        if (!filePath) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Invalid filename" }));
+          return;
+        }
+        await unlink(filePath);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, path: filePath }));
+      } catch (err: unknown) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Not found" }));
+        } else {
+          respond500(res, err);
+        }
+      }
+    })();
+    return true;
+  }
+
+  // POST /inbox/<filename>.md/archive — move to ~/.patchwork/inbox/.archive/
+  const inboxArchiveMatch = parsedUrl.pathname?.match(
+    /^\/inbox\/([^/]+\.md)\/archive$/,
+  );
+  if (inboxArchiveMatch && req.method === "POST") {
+    void (async () => {
+      try {
+        const { mkdir, rename } = await import("node:fs/promises");
+        const filename = decodeURIComponent(inboxArchiveMatch[1] ?? "");
+        const filePath = safeInboxPath(filename);
+        if (!filePath) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Invalid filename" }));
+          return;
+        }
+        const archiveDir = path.join(
+          os.homedir(),
+          ".patchwork",
+          "inbox",
+          ".archive",
+        );
+        await mkdir(archiveDir, { recursive: true });
+        let dest = path.join(archiveDir, filename);
+        // Suffix with timestamp on collision so historical archives survive.
+        if (existsSync(dest)) {
+          const ext = path.extname(filename);
+          const stem = filename.slice(0, filename.length - ext.length);
+          const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+          dest = path.join(archiveDir, `${stem}.${stamp}${ext}`);
+        }
+        await rename(filePath, dest);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, path: dest }));
+      } catch (err: unknown) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Not found" }));
         } else {
           respond500(res, err);
         }
