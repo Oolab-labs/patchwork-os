@@ -202,7 +202,7 @@ function RecipeCard({
 
   return (
     <div className="template-card glass-card">
-      {/* top: name */}
+      {/* top: name + maintainer attribution */}
       <div style={{ marginBottom: "var(--s-2)" }}>
         <Link
           href={`/marketplace/${recipe.name}`}
@@ -218,6 +218,17 @@ function RecipeCard({
         >
           {shortName(recipe.name)}
         </Link>
+        {recipe.maintainer && (
+          <div
+            style={{
+              fontSize: "var(--fs-xs)",
+              color: "var(--ink-3)",
+              marginTop: 2,
+            }}
+          >
+            by {recipe.maintainer}
+          </div>
+        )}
       </div>
 
       {/* middle: description */}
@@ -325,7 +336,7 @@ function RecipeCard({
           ) : bridgeOnline ? (
             <button
               type="button"
-              className="btn sm"
+              className="btn sm primary"
               onClick={handleInstall}
               disabled={loading}
               aria-label={`Install ${shortName(recipe.name)}`}
