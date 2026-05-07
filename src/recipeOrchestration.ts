@@ -18,6 +18,7 @@ import type {
 import { RecipeScheduler } from "./recipes/scheduler.js";
 import { hasTool } from "./recipes/toolRegistry.js";
 import {
+  archiveRecipe,
   deleteRecipeContent,
   duplicateRecipe,
   findWebhookRecipe,
@@ -119,6 +120,11 @@ export class RecipeOrchestration {
     server.deleteRecipeContentFn = (name: string) => {
       const recipesDir = join(homedir(), ".patchwork", "recipes");
       return deleteRecipeContent(recipesDir, name);
+    };
+
+    server.archiveRecipeFn = (name: string) => {
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      return archiveRecipe(recipesDir, name);
     };
 
     server.duplicateRecipeFn = (name: string) => {
