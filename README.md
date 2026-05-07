@@ -86,7 +86,7 @@ Bridge-only docs: [documents/platform-docs.md](documents/platform-docs.md)
 ## 🤖 Patchwork OS — Quick Start
 
 ```bash
-npx patchwork-os@alpha patchwork-init
+npx patchwork-os@beta patchwork-init
 ```
 
 Sets up 5 local recipes, detects Ollama, and opens a terminal dashboard — under 90 seconds.
@@ -223,7 +223,7 @@ Use whichever fits your mental model.
 
 ---
 
-## Tool surface (v0.2.0-alpha.35)
+## Tool surface (v0.2.0-beta.0)
 
 170+ MCP tools across 15 categories. Highlights:
 
@@ -301,7 +301,7 @@ Systemd service and deploy scripts in [`deploy/`](deploy/). Full guide: [docs/re
 | Multi-provider LLM (Claude, Gemini, OpenAI, Grok, Ollama) | **shipped** |
 | Connectors: Linear, Sentry, Slack, Google Calendar, Intercom, HubSpot, Datadog, Stripe | **shipped** |
 | Cross-session memory (traces, handoff notes) | **shipped** |
-| Mobile oversight PWA (push approvals) | **shipped (alpha)** |
+| Mobile oversight PWA (push approvals) | **shipped (beta)** |
 | Community recipe marketplace | Q3 2026 |
 
 ---
