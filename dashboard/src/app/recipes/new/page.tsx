@@ -2,6 +2,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { highlightYaml } from "@/components/patchwork";
 import { normalizeRecipeName, prepareAndSaveAiRecipe } from "./applyAiYaml";
 
 interface Step {
@@ -287,6 +288,27 @@ function buildRecipeYaml(form: FormState, safeName: string): string {
 // only fires when normalization can't produce a valid slug at all
 // (empty, leading dash, too long, or non-letter/digit chars left over).
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+function CopyYamlButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = useCallback(() => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    });
+  }, [text]);
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      className="btn sm ghost"
+      aria-label={copied ? "YAML copied to clipboard" : "Copy YAML to clipboard"}
+      style={{ fontSize: "var(--fs-xs)" }}
+    >
+      {copied ? "Copied ✓" : "Copy"}
+    </button>
+  );
+}
 
 export default function NewRecipePage() {
   return (
@@ -1544,15 +1566,25 @@ function NewRecipePageInner() {
           <div>
             <div
               style={{
-                fontSize: "var(--fs-s)",
-                color: "var(--fg-2)",
-                fontWeight: 500,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "var(--s-2)",
                 marginBottom: "var(--s-2)",
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
               }}
             >
-              YAML preview
+              <div
+                style={{
+                  fontSize: "var(--fs-s)",
+                  color: "var(--fg-2)",
+                  fontWeight: 500,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                YAML preview
+              </div>
+              <CopyYamlButton text={previewYaml} />
             </div>
             <div
               style={{
@@ -1579,7 +1611,7 @@ function NewRecipePageInner() {
                 minHeight: 200,
               }}
             >
-              <code>{previewYaml}</code>
+              {highlightYaml(previewYaml)}
             </pre>
           </div>
         </div>

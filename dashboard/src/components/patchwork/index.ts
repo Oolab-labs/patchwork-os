@@ -17,7 +17,7 @@ export { WeatherRing } from "./WeatherRing";
 export { Sparkline } from "./Sparkline";
 export { AnimatedNumber } from "./AnimatedNumber";
 export { Spinner } from "./Spinner";
-export { CodeBlock, YamlLine } from "./CodeBlock";
+export { CodeBlock, YamlLine, highlightYaml } from "./CodeBlock";
 export { HBarList, type HBarItem } from "./HBarList";
 export { EventsHistogram } from "./EventsHistogram";
 export { MetricsDonut, type DonutSegment } from "./MetricsDonut";
