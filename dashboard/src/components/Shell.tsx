@@ -312,12 +312,16 @@ export function Shell({ children }: { children: ReactNode }) {
             aria-label="Toggle demo mode"
             aria-pressed={demo}
             style={{
+              // Min-height 32 px to satisfy WCAG 2.5.5 target size (was ~22 px).
+              // Keep the pill aesthetic — increased vertical padding + explicit
+              // min-height; horizontal stays narrow so it doesn't hog the bar.
               display: "inline-flex",
               alignItems: "center",
-              gap: 5,
+              gap: 6,
+              minHeight: 32,
               fontSize: "var(--fs-2xs)",
               fontWeight: 600,
-              padding: "4px 10px",
+              padding: "0 12px",
               borderRadius: 999,
               border: `1px solid ${demo ? "var(--orange)" : "var(--line-2)"}`,
               background: demo ? "color-mix(in srgb, var(--orange) 12%, transparent)" : "transparent",
