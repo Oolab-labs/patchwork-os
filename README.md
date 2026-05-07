@@ -33,6 +33,8 @@ Same codebase. Bridge is the foundation; Patchwork OS is the optional layer on t
 
 ## 🔌 Claude IDE Bridge — Quick Start
 
+**Prerequisites:** a supported code editor — **VS Code, Cursor, Windsurf, or Google Antigravity** (or JetBrains via the [companion plugin](#jetbrains-plugin)) — plus Node.js 20+ and the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code). The bridge's LSP, debugger, and editor-state tools run through the editor extension; without one you're limited to the headless CLI subset.
+
 ```bash
 # 1. Install the npm package
 npm install -g patchwork-os
