@@ -53,6 +53,7 @@ VPS=""
 FULL_MODE=""
 NO_DASHBOARD=""
 DASHBOARD_PORT="3200"
+BRIDGE_PORT_FLAG=""
 AUTOMATION_POLICY=""
 CLAUDE_DRIVER="subprocess"
 BRIDGE_READY_TIMEOUT="${BRIDGE_READY_TIMEOUT:-30}"
@@ -71,6 +72,7 @@ while [[ $# -gt 0 ]]; do
     --full)              FULL_MODE="--full"; shift ;;
     --no-dashboard)      NO_DASHBOARD=1; shift ;;
     --dashboard-port)    DASHBOARD_PORT="$2"; shift 2 ;;
+    --bridge-port)       BRIDGE_PORT_FLAG="--port $2"; shift 2 ;;
     --automation-policy) AUTOMATION_POLICY="$2"; shift 2 ;;
     --claude-driver)     CLAUDE_DRIVER="$2"; shift 2 ;;
     *)                   echo "Unknown option: $1" >&2; exit 1 ;;
@@ -147,7 +149,7 @@ if [[ -z "${TMUX:-}" ]]; then
   fi
   # Create session detached, re-run this script inside it, then attach
   tmux new-session -d -s "$SESSION" -x 200 -y 50
-  tmux send-keys -t "$SESSION" "\"$SCRIPT_PATH\" --workspace \"$WORKSPACE\"$([ -n "$NTFY_TOPIC" ] && echo " --notify \"$NTFY_TOPIC\"")$([ -n "$IDE_NAME" ] && echo " --ide \"$IDE_NAME\"")$([ -n "$VPS" ] && echo " --vps \"$VPS\"")$([ -n "$FULL_MODE" ] && echo " --full")" Enter
+  tmux send-keys -t "$SESSION" "\"$SCRIPT_PATH\" --workspace \"$WORKSPACE\"$([ -n "$NTFY_TOPIC" ] && echo " --notify \"$NTFY_TOPIC\"")$([ -n "$IDE_NAME" ] && echo " --ide \"$IDE_NAME\"")$([ -n "$VPS" ] && echo " --vps \"$VPS\"")$([ -n "$FULL_MODE" ] && echo " --full")$([ -n "$BRIDGE_PORT_FLAG" ] && echo " ${BRIDGE_PORT_FLAG/--port /--bridge-port }")" Enter
   exec tmux attach -t "$SESSION"
 fi
 
@@ -213,7 +215,7 @@ if [[ -f "$BRIDGE_DIR/src/index.ts" ]]; then
 else
   BRIDGE_BIN="node dist/index.js"
 fi
-BRIDGE_CMD="cd $(printf '%q' "$BRIDGE_DIR") && $BRIDGE_BIN --workspace $(printf '%q' "$WORKSPACE")${BRIDGE_IDE_FLAGS:+ $BRIDGE_IDE_FLAGS}${FULL_MODE:+ $FULL_MODE}${BRIDGE_AUTOMATION_FLAGS:+ $BRIDGE_AUTOMATION_FLAGS}"
+BRIDGE_CMD="cd $(printf '%q' "$BRIDGE_DIR") && $BRIDGE_BIN --workspace $(printf '%q' "$WORKSPACE")${BRIDGE_IDE_FLAGS:+ $BRIDGE_IDE_FLAGS}${FULL_MODE:+ $FULL_MODE}${BRIDGE_AUTOMATION_FLAGS:+ $BRIDGE_AUTOMATION_FLAGS}${BRIDGE_PORT_FLAG:+ $BRIDGE_PORT_FLAG}"
 # Derive a short display name for the Claude session from the workspace directory name.
 # This appears in Claude Code's session list, making multi-workspace tmux setups identifiable.
 WS_BASENAME=$(basename "$WORKSPACE")
