@@ -302,7 +302,8 @@ Systemd service and deploy scripts in [`deploy/`](deploy/). Full guide: [docs/re
 | Connectors: Linear, Sentry, Slack, Google Calendar, Intercom, HubSpot, Datadog, Stripe | **shipped** |
 | Cross-session memory (traces, handoff notes) | **shipped** |
 | Mobile oversight PWA (push approvals) | **shipped (beta)** |
-| Community recipe marketplace | Q3 2026 |
+| Community recipe bundles (`patchwork recipe install github:<org>/<repo>`) | **shipped** |
+| Community recipe registry / discovery UI | TBD |
 
 ---
 
