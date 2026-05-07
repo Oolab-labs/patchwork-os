@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
+import type { Logger } from "../logger.js";
 import { BACKPRESSURE_THRESHOLD, safeSend, waitForDrain } from "../wsUtils.js";
 
 function makeWs(readyState = WebSocket.OPEN, bufferedAmount = 0) {
@@ -16,7 +17,7 @@ const logger = {
   warn: vi.fn(),
   error: vi.fn(),
   debug: vi.fn(),
-};
+} as unknown as Logger;
 
 beforeEach(() => vi.clearAllMocks());
 
