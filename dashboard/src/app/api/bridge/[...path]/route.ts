@@ -2,6 +2,11 @@ import type { NextRequest } from "next/server";
 import { bridgeFetch, findBridge, resolveBridgeUrl } from "@/lib/bridge";
 import { isDemoModeServer } from "@/lib/demoModeServer";
 import { mockBridgeResponse } from "@/lib/mockData";
+import {
+  BRIDGE_BODY_CAPS,
+  bodyTooLargeResponse,
+  readBodyWithCap,
+} from "@/lib/readBodyWithCap";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -130,10 +135,12 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
     if (mock) return mock;
   }
 
-  const body =
-    req.method === "GET" || req.method === "HEAD"
-      ? undefined
-      : await req.text();
+  let body: string | undefined;
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.genericProxy);
+    if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.genericProxy);
+    body = read.body;
+  }
   const forwardHeaders: Record<string, string> = {
     "content-type": req.headers.get("content-type") ?? "",
   };
