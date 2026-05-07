@@ -1,6 +1,11 @@
 import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
 import { isDemoModeServer } from "@/lib/demoModeServer";
+import {
+  BRIDGE_BODY_CAPS,
+  bodyTooLargeResponse,
+  readBodyWithCap,
+} from "@/lib/readBodyWithCap";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,14 +24,15 @@ export async function POST(req: NextRequest): Promise<Response> {
       { status: 200, headers: { "content-type": "application/json" } },
     );
   }
+  const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.content);
+  if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.content);
   try {
-    const body = await req.text();
     const res = await bridgeFetch("/recipes/lint", {
       method: "POST",
       headers: {
         "content-type": req.headers.get("content-type") ?? "application/json",
       },
-      body,
+      body: read.body,
     });
     const text = await res.text();
     return new Response(text, {
