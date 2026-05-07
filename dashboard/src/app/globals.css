@@ -2541,3 +2541,27 @@ button.topbar-search {
   white-space: nowrap;
   border: 0;
 }
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Reduced-motion gate (audit Wave 1 / WCAG 2.3.3)
+
+   Audit found 13 keyframe animations and 0 prefers-reduced-motion guards.
+   The rule below collapses every transition + animation to instant for
+   users who've set their OS preference to "reduce motion". Targeted decay
+   to ~0.01s rather than `none` so an animation-end / transition-end event
+   still fires, in case a component depends on it. Cells in QuiltBg are
+   gated separately (cell flicker is JS-driven, not CSS-driven).
+   ────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}
