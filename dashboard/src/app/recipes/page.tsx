@@ -975,15 +975,23 @@ export default function RecipesPage() {
           <PatchCard padded={false} style={{ overflow: "hidden", minWidth: 0 }}>
             <div className="table-wrap" style={{ minWidth: 0, overflow: "auto" }}>
               <table className="table" style={{ width: "100%", tableLayout: "fixed" }}>
+                <caption className="sr-only">
+                  Installed recipes with health, trigger, last 14 runs, average duration, last run time, and actions.
+                </caption>
                 <thead>
                   <tr>
-                    <th style={{ width: 48, textAlign: "center" }}>%</th>
-                    <th style={{ minWidth: 160 }}>RECIPE</th>
-                    <th style={{ width: 120 }}>TRIGGER</th>
-                    <th style={{ width: 90, textAlign: "center" }}>LAST 14 RUNS</th>
-                    <th style={{ width: 80 }}>AVG</th>
-                    <th style={{ width: 100 }}>LAST</th>
-                    <th style={{ width: 110, textAlign: "right" }}>&nbsp;</th>
+                    <th scope="col" style={{ width: 48, textAlign: "center" }}>
+                      <span aria-hidden="true">%</span>
+                      <span className="sr-only">Health</span>
+                    </th>
+                    <th scope="col" style={{ minWidth: 160 }}>RECIPE</th>
+                    <th scope="col" style={{ width: 120 }}>TRIGGER</th>
+                    <th scope="col" style={{ width: 90, textAlign: "center" }}>LAST 14 RUNS</th>
+                    <th scope="col" style={{ width: 80 }}>AVG</th>
+                    <th scope="col" style={{ width: 100 }}>LAST</th>
+                    <th scope="col" style={{ width: 110, textAlign: "right" }}>
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

@@ -55,8 +55,16 @@ export function QuiltBg({
   const [cells, setCells] = useState<Cell[]>(initial);
 
   // After mount, splash a fresh randomised palette across the grid so
-  // the visual richness isn't just a deterministic checker pattern.
+  // the visual richness isn't just a deterministic checker pattern. Skip
+  // when the user has prefers-reduced-motion set — they get the stable
+  // deterministic layout.
   useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
     setCells((prev) =>
       prev.map((c) => ({
         ...c,
@@ -65,19 +73,56 @@ export function QuiltBg({
     );
   }, []);
 
+  // Background mosaic flicker — gated on (a) prefers-reduced-motion, and
+  // (b) document.visibilityState. Without (a), reduced-motion users still
+  // see the cells re-flip every 1.4 s. Without (b), the timer keeps firing
+  // on hidden tabs, repainting 140 cells off-screen.
   useEffect(() => {
-    const id = setInterval(() => {
-      setCells((prev) => {
-        const next = prev.slice();
-        const flips = 3 + Math.floor(Math.random() * 3);
-        for (let i = 0; i < flips; i++) {
-          const idx = Math.floor(Math.random() * next.length);
-          next[idx] = { ...next[idx], fill: PALETTE[Math.floor(Math.random() * PALETTE.length)] };
-        }
-        return next;
-      });
-    }, 1400);
-    return () => clearInterval(id);
+    if (typeof window === "undefined") return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (reduced.matches) return;
+
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (id !== null) return;
+      id = setInterval(() => {
+        setCells((prev) => {
+          const next = prev.slice();
+          const flips = 3 + Math.floor(Math.random() * 3);
+          for (let i = 0; i < flips; i++) {
+            const idx = Math.floor(Math.random() * next.length);
+            next[idx] = {
+              ...next[idx],
+              fill: PALETTE[Math.floor(Math.random() * PALETTE.length)],
+            };
+          }
+          return next;
+        });
+      }, 1400);
+    };
+    const stop = () => {
+      if (id !== null) {
+        clearInterval(id);
+        id = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") start();
+      else stop();
+    };
+    const onMotionChange = () => {
+      if (reduced.matches) stop();
+      else if (document.visibilityState === "visible") start();
+    };
+
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    reduced.addEventListener("change", onMotionChange);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+      reduced.removeEventListener("change", onMotionChange);
+    };
   }, []);
 
   return (
