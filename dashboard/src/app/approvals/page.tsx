@@ -975,7 +975,10 @@ function ApprovalsContent() {
         </button>
       </div>
 
-      {/* Hero status bar — counts by tier */}
+      {/* Hero status bar — counts by tier. When the queue is empty the
+          tier breakdown is all zeros — collapse it to avoid repeating
+          "0 pending" + "All clear" + four zero-tiles. The historical rate
+          strip (below) stays visible if there are past decisions. */}
       <div
         className="card"
         style={{
@@ -1004,45 +1007,47 @@ function ApprovalsContent() {
             {pending.length === 0 ? "All clear" : `${pending.length} awaiting decision`}
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--s-4)", flexWrap: "wrap" }}>
-          {([
-            { label: "Total", val: counts.all, color: "var(--ink-0)" },
-            { label: "High", val: counts.high, color: "var(--err)" },
-            { label: "Medium", val: counts.medium, color: "var(--warn)" },
-            { label: "Low", val: counts.low, color: "var(--ink-1)" },
-          ] as const).map((s, i) => (
-            <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "var(--s-4)" }}>
-              {i > 0 && (
-                <span aria-hidden="true" style={{ width: 1, height: 28, background: "var(--line-2)" }} />
-              )}
-              <div style={{ textAlign: "center", minWidth: 54 }}>
-                <div
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 800,
-                    fontFamily: "var(--font-mono)",
-                    color: s.color,
-                    lineHeight: 1,
-                  }}
-                >
-                  {s.val}
-                </div>
-                <div
-                  style={{
-                    fontSize: "var(--fs-2xs)",
-                    color: "var(--ink-2)",
-                    marginTop: 4,
-                    fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                  }}
-                >
-                  {s.label}
+        {pending.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s-4)", flexWrap: "wrap" }}>
+            {([
+              { label: "Total", val: counts.all, color: "var(--ink-0)" },
+              { label: "High", val: counts.high, color: "var(--err)" },
+              { label: "Medium", val: counts.medium, color: "var(--warn)" },
+              { label: "Low", val: counts.low, color: "var(--ink-1)" },
+            ] as const).map((s, i) => (
+              <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "var(--s-4)" }}>
+                {i > 0 && (
+                  <span aria-hidden="true" style={{ width: 1, height: 28, background: "var(--line-2)" }} />
+                )}
+                <div style={{ textAlign: "center", minWidth: 54 }}>
+                  <div
+                    style={{
+                      fontSize: 22,
+                      fontWeight: 800,
+                      fontFamily: "var(--font-mono)",
+                      color: s.color,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {s.val}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "var(--fs-2xs)",
+                      color: "var(--ink-2)",
+                      marginTop: 4,
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                    }}
+                  >
+                    {s.label}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         {/* Historical approval rate */}
         {(() => {
@@ -1110,20 +1115,22 @@ function ApprovalsContent() {
         })()}
       </div>
 
-      {/* Risk filter buttons */}
-      <div className="filter-chips" style={{ marginBottom: "var(--s-4)" }}>
-        {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            className={`filter-chip${riskFilter === f.value ? " active" : ""}`}
-            onClick={() => setRiskFilter(f.value)}
-            aria-pressed={riskFilter === f.value}
-          >
-            {f.label} ({counts[f.value]})
-          </button>
-        ))}
-      </div>
+      {/* Risk filter buttons — hidden when there's nothing to filter */}
+      {pending.length > 0 && (
+        <div className="filter-chips" style={{ marginBottom: "var(--s-4)" }}>
+          {FILTERS.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              className={`filter-chip${riskFilter === f.value ? " active" : ""}`}
+              onClick={() => setRiskFilter(f.value)}
+              aria-pressed={riskFilter === f.value}
+            >
+              {f.label} ({counts[f.value]})
+            </button>
+          ))}
+        </div>
+      )}
 
       {err && <div className="alert-err">Unreachable: {err}</div>}
 
