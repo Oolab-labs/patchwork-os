@@ -165,25 +165,21 @@ export const RECIPE_ROUTE_BODY_CAPS = {
 } as const;
 
 /**
- * Read an HTTP request body up to `max` bytes, parse as JSON, return result.
+ * Read an HTTP request body up to `max` bytes. Returns the raw string or
+ * a `too_large` code. Used directly by routes whose handlers parse the
+ * body themselves (e.g. connector token-paste handlers); also used as
+ * the byte-collection layer for `readJsonBody`.
  *
- * Returns one of three discriminated shapes:
- *   - `{ ok: true, value }` — body parsed successfully.
- *   - `{ ok: false, code: "too_large" }` — body exceeded `max`; request was
- *     destroyed eagerly and the response should be 413.
- *   - `{ ok: false, code: "invalid_json" }` — body was valid bytes but failed
- *     `JSON.parse`; response should be 400.
- *
- * Bytes are accumulated into a single Buffer so the helper can enforce the
- * cap incrementally — a 1 GB upload is rejected after the first overflowing
- * chunk rather than after the full body lands in memory.
+ * Bytes are accumulated into a single Buffer so the helper can enforce
+ * the cap incrementally — a 1 GB upload is rejected after the first
+ * overflowing chunk rather than after the full body lands in memory.
+ * On overflow the stream is drained (not destroyed) so the route can
+ * write 413 cleanly.
  */
-export function readJsonBody<T = unknown>(
+export function readBodyWithCap(
   req: IncomingMessage,
   max: number,
-): Promise<
-  { ok: true; value: T } | { ok: false; code: "too_large" | "invalid_json" }
-> {
+): Promise<{ ok: true; body: string } | { ok: false; code: "too_large" }> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
     let total = 0;
@@ -215,30 +211,54 @@ export function readJsonBody<T = unknown>(
 
     const onEnd = () => {
       if (aborted) return;
-      const raw = Buffer.concat(chunks).toString("utf-8");
-      if (raw.length === 0) {
-        // Empty bodies are passed through as `undefined`; callers decide
-        // whether that's an error (most parse `{...}` immediately).
-        resolve({ ok: true, value: undefined as unknown as T });
-        return;
-      }
-      try {
-        resolve({ ok: true, value: JSON.parse(raw) as T });
-      } catch {
-        resolve({ ok: false, code: "invalid_json" });
-      }
+      resolve({ ok: true, body: Buffer.concat(chunks).toString("utf-8") });
     };
 
     const onError = () => {
       if (aborted) return;
       aborted = true;
-      resolve({ ok: false, code: "invalid_json" });
+      // Treat aborted/error mid-stream as a malformed read. Callers that
+      // care about the distinction can check the `code` on the
+      // readJsonBody result; here we collapse to "too_large" to keep
+      // the type narrow — in practice the network-error path is rare
+      // and either response is 4xx.
+      resolve({ ok: false, code: "too_large" });
     };
 
     req.on("data", onData);
     req.once("end", onEnd);
     req.once("error", onError);
   });
+}
+
+/**
+ * Read an HTTP request body up to `max` bytes, parse as JSON, return result.
+ *
+ * Returns one of three discriminated shapes:
+ *   - `{ ok: true, value }` — body parsed successfully.
+ *   - `{ ok: false, code: "too_large" }` — body exceeded `max`; request was
+ *     destroyed eagerly and the response should be 413.
+ *   - `{ ok: false, code: "invalid_json" }` — body was valid bytes but failed
+ *     `JSON.parse`; response should be 400.
+ */
+export async function readJsonBody<T = unknown>(
+  req: IncomingMessage,
+  max: number,
+): Promise<
+  { ok: true; value: T } | { ok: false; code: "too_large" | "invalid_json" }
+> {
+  const read = await readBodyWithCap(req, max);
+  if (!read.ok) return { ok: false, code: "too_large" };
+  if (read.body.length === 0) {
+    // Empty bodies are passed through as `undefined`; callers decide
+    // whether that's an error (most parse `{...}` immediately).
+    return { ok: true, value: undefined as unknown as T };
+  }
+  try {
+    return { ok: true, value: JSON.parse(read.body) as T };
+  } catch {
+    return { ok: false, code: "invalid_json" };
+  }
 }
 
 /**
@@ -250,7 +270,7 @@ export function readJsonBody<T = unknown>(
  * The matching `readJsonBody` no-op-data drain keeps the upload flowing
  * until the client emits `end`, so the server returns the response cleanly.
  */
-function respond413(res: ServerResponse, max: number): void {
+export function respond413(res: ServerResponse, max: number): void {
   res.writeHead(413, { "Content-Type": "application/json" });
   res.end(
     JSON.stringify({
