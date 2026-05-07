@@ -64,7 +64,7 @@ All fields unless marked optional are required.
 | `entrypoint` | string | Relative path to the JS module that exports `register`. |
 | `toolNamePrefix` | string | **All tool names must start with this prefix.** 2–20 chars, must match `/^[a-zA-Z][a-zA-Z0-9_]{1,19}$/`. Prevents collisions with built-in tools and other plugins. |
 | `minBridgeVersion` | string? | Minimum bridge version (semver). Bridge logs a warning if older, but still loads. |
-| `permissions` | string[]? | Informational only in v1 (e.g. `["network", "filesystem"]`). |
+| `permissions` | string[]? | Capability tokens. Each must appear in `KNOWN_PLUGIN_CAPABILITIES` ([src/pluginLoader.ts](../src/pluginLoader.ts)); manifests with unknown tokens are rejected at load time. The allowlist starts empty and grows deliberately as bridge enforcement for each capability lands. Until then, omit the field. |
 
 ---
 
