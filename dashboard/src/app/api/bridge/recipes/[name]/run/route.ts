@@ -1,6 +1,11 @@
 import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
 import { isDemoModeServer } from "@/lib/demoModeServer";
+import {
+  BRIDGE_BODY_CAPS,
+  bodyTooLargeResponse,
+  readBodyWithCap,
+} from "@/lib/readBodyWithCap";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,13 +34,14 @@ export async function POST(
       { status: 200, headers: { "content-type": "application/json" } },
     );
   }
+  const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.run);
+  if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.run);
   try {
     const name = encodeURIComponent(ctx.params.name);
-    const body = await req.text();
     const res = await bridgeFetch(`/recipes/${name}/run`, {
       method: "POST",
       headers: { "content-type": req.headers.get("content-type") ?? "application/json" },
-      body: body || undefined,
+      body: read.body || undefined,
     });
     const text = await res.text();
     return new Response(text, {
