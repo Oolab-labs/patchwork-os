@@ -5,7 +5,7 @@ import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
-import { ErrorState, LivePill } from "@/components/patchwork";
+import { EmptyState, ErrorState, LivePill } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
 
 type TraceType = "approval" | "enrichment" | "recipe_run" | "decision";
@@ -743,10 +743,10 @@ export default function TracesPage() {
       )}
 
       {visible.length === 0 && !loading ? (
-        <div className="empty-state">
-          <h3>No traces</h3>
-          <p>Traces appear as recipes run and approvals are processed.</p>
-        </div>
+        <EmptyState
+          title="No traces"
+          description="Traces appear as recipes run and approvals are processed."
+        />
       ) : view === "flat" ? (
         <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: "var(--s-5)" }}>
           {visible.map(t => {
