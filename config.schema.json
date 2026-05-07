@@ -29,10 +29,33 @@
           "type": "array",
           "items": { "enum": ["low", "medium", "high"] }
         },
-        "pushNotifications": { "type": "boolean" }
+        "pushNotifications": { "type": "boolean" },
+        "webhookUrl": { "type": "string", "format": "uri" }
       }
     },
-    "recipesDir": { "type": "string" }
+    "recipesDir": { "type": "string" },
+    "approvalGate": { "type": "string", "enum": ["off", "high", "all"] },
+    "enableTimeOfDayAnomaly": { "type": "boolean" },
+    "managedSettingsPath": { "type": "string" },
+    "recipes": {
+      "type": "object",
+      "properties": {
+        "disabled": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "driver": {
+      "type": "string",
+      "enum": ["subprocess", "api", "openai", "grok", "gemini", "none"]
+    },
+    "notifications": {
+      "type": "object",
+      "properties": {
+        "slackChannel": { "type": "string" }
+      }
+    }
   },
   "additionalProperties": false
 }

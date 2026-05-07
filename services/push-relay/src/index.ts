@@ -38,10 +38,14 @@ async function main() {
     const client = createClient({ url: process.env.REDIS_URL });
     await client.connect();
     console.log("Connected to Redis:", process.env.REDIS_URL);
+    // The redis v4 client structurally satisfies what RedisRegistry needs
+    // (hSet/hDel/hGetAll/hLen) but its types are wider — `hDel` accepts a
+    // RedisCommandArgument array plus an optional CommandOptions arg, which
+    // doesn't match RedisRegistry's narrower `(key, ...fields)` signature.
+    // Cast through `unknown` is justified: the runtime contract holds, only
+    // the static signature is wider.
     registry = new RedisRegistry(
-      client as Parameters<typeof RedisRegistry>[0] extends { hSet: unknown }
-        ? typeof client
-        : never,
+      client as unknown as ConstructorParameters<typeof RedisRegistry>[0],
     );
   } else {
     console.log("No REDIS_URL — using in-memory device registry");
@@ -100,7 +104,18 @@ async function main() {
         note.topic = notification.topic;
         note.priority = notification.priority;
         note.pushType = notification.pushType;
-        return provider.send(note, tokens);
+        const result = await provider.send(note, tokens);
+        // node-apn returns ResponseFailure with `error: Error` (transport
+        // failure) and `response: { reason: string }` (APNS-side rejection
+        // like BadDeviceToken/Unregistered). Our ApnsResult contract carries
+        // the APNS reason code, not the Error message — those are different
+        // dispatch keys. Forward `response.reason` only.
+        return {
+          failed: result.failed.map((f) => ({
+            device: f.device,
+            error: f.response ? { reason: f.response.reason } : undefined,
+          })),
+        };
       },
     };
     apnsTopic = process.env.APNS_TOPIC;
