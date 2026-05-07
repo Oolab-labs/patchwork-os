@@ -498,7 +498,7 @@ export default function SettingsPage() {
                         gap: 12,
                         padding: "12px 14px",
                         background: isPrimary ? "var(--bg-3)" : "var(--bg-2)",
-                        border: isPrimary ? "1px solid var(--accent)" : "1px solid var(--border-default)",
+                        border: isPrimary ? "1px solid var(--line-1)" : "1px solid var(--border-default)",
                         borderRadius: "var(--r-2)",
                       }}
                     >
