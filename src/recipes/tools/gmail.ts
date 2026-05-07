@@ -6,6 +6,25 @@
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
 
+/**
+ * Strict Google Docs host check (not a substring match on the link).
+ *
+ * Substring match would accept URLs like `https://evil.com/?x=docs.google.com`
+ * or `https://docs.google.com.attacker.com/`, which we then fetch with the
+ * caller's Drive token — a token-redirect / data-exfil vector.
+ */
+function isDocsGoogleHost(url: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(url);
+    return (
+      (protocol === "https:" || protocol === "http:") &&
+      hostname === "docs.google.com"
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function gmailSearch(
   query: string,
   max: number,
@@ -484,7 +503,7 @@ registerTool({
           body?: string;
         };
         const links = parsed.links ?? [];
-        driveUrl = links.find((l) => l.includes("docs.google.com")) ?? "";
+        driveUrl = links.find(isDocsGoogleHost) ?? "";
         if (!driveUrl) {
           // Try extracting from body text
           const bodyMatch = /https?:\/\/docs\.google\.com\/[^\s"'<>]+/.exec(

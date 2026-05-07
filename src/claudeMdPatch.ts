@@ -25,13 +25,16 @@ export function bridgeBlockStartMarker(version: string): string {
 /** Sentinel comment that closes a versioned bridge block in CLAUDE.md. */
 export const BRIDGE_BLOCK_END = "<!-- claude-ide-bridge:end -->";
 
+// Version string is bounded to {1,128} (well above any semver/prerelease)
+// so a malformed CLAUDE.md cannot trigger polynomial backtracking when the
+// closing `-->` or end marker is missing.
 /** Regex that matches ANY versioned bridge block (any version). */
 export const BRIDGE_BLOCK_RE =
-  /<!-- claude-ide-bridge:start:[^\s>]+ -->[\s\S]*?<!-- claude-ide-bridge:end -->/g;
+  /<!-- claude-ide-bridge:start:[^\s>]{1,128} -->[\s\S]*?<!-- claude-ide-bridge:end -->/g;
 
 /** Regex that matches a versioned bridge block with a specific version captured. */
 const BRIDGE_BLOCK_VERSION_RE =
-  /<!-- claude-ide-bridge:start:([^\s>]+) -->[\s\S]*?<!-- claude-ide-bridge:end -->/;
+  /<!-- claude-ide-bridge:start:([^\s>]{1,128}) -->[\s\S]*?<!-- claude-ide-bridge:end -->/;
 
 /**
  * Returns the version embedded in an existing versioned bridge block in

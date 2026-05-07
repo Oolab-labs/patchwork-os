@@ -1929,6 +1929,9 @@ export function getPrompt(
     if (arg.required && !args[arg.name]) return null;
   }
 
+  // `name` is user-controlled; guard against prototype-chain walks
+  // (`__proto__`, `toString`, etc.) before invoking via bracket access.
+  if (!Object.hasOwn(TEMPLATES, name)) return null;
   const template = TEMPLATES[name];
   if (!template) return null;
 
