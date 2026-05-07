@@ -11,6 +11,7 @@ import {
   type RiskLevel,
   shortName,
 } from "@/lib/registry";
+import BundleInstallPanel from "./BundleInstallPanel";
 
 export const revalidate = 300;
 
@@ -66,7 +67,14 @@ export default async function BundleDetailPage({ params }: PageProps) {
         <RequiredEnvCard vars={manifest.required_env} />
       )}
 
-      <InstallInstructions bundle={bundle} manifest={manifest} />
+      <BundleInstallPanel
+        installSource={bundle.install}
+        recipes={manifest?.recipes ?? []}
+        {...(manifest?.plugin && { plugin: manifest.plugin })}
+        {...(manifest?.policy_template && {
+          policyTemplate: manifest.policy_template,
+        })}
+      />
 
       <TrustNote />
     </section>
@@ -247,67 +255,6 @@ function RequiredEnvCard({ vars }: { vars: string[] }) {
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function InstallInstructions({
-  bundle,
-  manifest,
-}: {
-  bundle: RegistryBundle;
-  manifest: BundleManifest | null;
-}) {
-  const plugin = manifest?.plugin;
-  const recipes = manifest?.recipes ?? [];
-  return (
-    <div className="glass-card" style={{ padding: "var(--s-5)" }}>
-      <h3 style={{ fontSize: "var(--fs-m)", marginTop: 0, marginBottom: "var(--s-3)" }}>Install</h3>
-      <p style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", marginTop: 0 }}>
-        Bundle install via a single command isn&apos;t wired through the
-        bridge yet. Install each constituent recipe from the Marketplace —
-        the trust + risk metadata above carries over per-recipe.
-      </p>
-      {recipes.length > 0 && (
-        <ul
-          style={{
-            listStyle: "none",
-            padding: 0,
-            margin: "var(--s-3) 0",
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-          }}
-        >
-          {recipes.map((r) => (
-            <li
-              key={r}
-              style={{
-                fontSize: "var(--fs-s)",
-                fontFamily: "var(--font-mono)",
-                color: "var(--fg-1)",
-              }}
-            >
-              <Link
-                href={`/marketplace/${encodeURIComponent(r)}`}
-                style={{
-                  color: "inherit",
-                  textDecoration: "underline",
-                  textDecorationColor: "var(--line-2)",
-                }}
-              >
-                {r}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-      {plugin && (
-        <p style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
-          Plugin: <code style={{ fontSize: "var(--fs-xs)" }}>npm install -g {plugin}</code>, then restart the bridge with{" "}
-          <code style={{ fontSize: "var(--fs-xs)" }}>--plugin {plugin}</code>.
-        </p>
-      )}
     </div>
   );
 }
