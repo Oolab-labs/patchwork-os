@@ -151,7 +151,12 @@ export function inferTierFromName(toolName: string): RiskTier {
 }
 
 export function classifyTool(toolName: string): RiskTier {
-  return TIER_MAP[toolName] ?? inferTierFromName(toolName);
+  // Object.hasOwn guards against prototype keys ("valueOf", "toString",
+  // "constructor", etc.) which would otherwise resolve to Object.prototype
+  // members instead of falling through to the heuristic.
+  return Object.hasOwn(TIER_MAP, toolName)
+    ? (TIER_MAP[toolName] as RiskTier)
+    : inferTierFromName(toolName);
 }
 
 export function requiresApproval(
