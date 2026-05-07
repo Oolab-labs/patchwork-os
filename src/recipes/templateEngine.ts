@@ -164,7 +164,11 @@ function evaluateExpression(
   if (expr.type === "env") {
     const key = parts[1];
     if (!key) return { value: "" };
-    const value = context.env[key];
+    // Object.hasOwn guards against prototype keys ("toString", "constructor",
+    // etc.) which would otherwise resolve to Object.prototype members.
+    const value = Object.hasOwn(context.env, key)
+      ? context.env[key]
+      : undefined;
     return {
       value: value ?? "",
     };
@@ -177,7 +181,9 @@ function evaluateExpression(
   if (!stepId || !dataKey) {
     return { value: "" };
   }
-  const step = context.steps[stepId];
+  const step = Object.hasOwn(context.steps, stepId)
+    ? context.steps[stepId]
+    : undefined;
 
   if (!step) {
     return {
@@ -215,7 +221,10 @@ function evaluateExpression(
       }
       value = value[index];
     } else if (typeof value === "object") {
-      value = (value as Record<string, unknown>)[key];
+      // Object.hasOwn guards against prototype keys leaking Object.prototype
+      // members (constructor, toString, valueOf, etc.) into the path walk.
+      const obj = value as Record<string, unknown>;
+      value = Object.hasOwn(obj, key) ? obj[key] : undefined;
     } else {
       return { value: "" };
     }
@@ -228,7 +237,10 @@ function evaluateExpression(
   if (typeof value === "string") {
     return { value };
   }
-  return { value: JSON.stringify(value) };
+  // Functions and other non-JSON-serializable values stringify to undefined,
+  // which would silently violate the { value: string } contract. Coerce to "".
+  const serialized = JSON.stringify(value);
+  return { value: serialized ?? "" };
 }
 
 /**
