@@ -22,9 +22,15 @@ import {
   loadConfig as loadPatchworkConfig,
   type PatchworkConfig,
   defaultConfigPath as patchworkConfigPath,
+  saveApiKeyToSecureStore,
   saveConfig as savePatchworkConfig,
 } from "./patchworkConfig.js";
-import { tryHandleRecipeRoute } from "./recipeRoutes.js";
+import {
+  readBodyWithCap,
+  readJsonBody,
+  respond413,
+  tryHandleRecipeRoute,
+} from "./recipeRoutes.js";
 import type { RecipeDraft } from "./recipesHttp.js";
 import { PACKAGE_VERSION } from "./version.js";
 
@@ -931,60 +937,60 @@ export class Server extends EventEmitter<ServerEvents> {
       }
       if (parsedUrl.pathname?.startsWith("/hooks/") && req.method === "POST") {
         const hookPath = parsedUrl.pathname.substring("/hooks".length);
-        const chunks: Buffer[] = [];
-        req.on("data", (c: Buffer) => chunks.push(c));
-        req.on("end", () => {
-          void (async () => {
-            let payload: unknown;
-            if (chunks.length > 0) {
-              const body = Buffer.concat(chunks).toString("utf-8");
-              if (body.trim()) {
-                try {
-                  payload = JSON.parse(body);
-                } catch {
-                  payload = body;
-                }
-              }
-            }
-            if (!this.webhookFn) {
-              res.writeHead(503, { "Content-Type": "application/json" });
-              res.end(
-                JSON.stringify({
-                  ok: false,
-                  error:
-                    "Webhooks unavailable — start bridge with --claude-driver subprocess",
-                }),
-              );
-              return;
-            }
-            const result = await this.webhookFn(hookPath, payload);
-            const status = result.ok
-              ? 200
-              : result.error === "not_found"
-                ? 404
-                : 400;
-            // Record in ring buffer so the dashboard can show "last
-            // payload" per recipe. Skip not_found so unknown paths don't
-            // pollute the buffer with garbage / scanner traffic.
-            if (result.error !== "not_found") {
-              const existing = this.webhookPayloads.get(hookPath) ?? [];
-              existing.unshift({
-                receivedAt: Date.now(),
-                payload,
-                ok: result.ok,
-                error: result.error,
-                taskId: result.taskId,
-                recipeName: result.name,
-              });
-              if (existing.length > Server.MAX_WEBHOOK_PAYLOADS) {
-                existing.length = Server.MAX_WEBHOOK_PAYLOADS;
-              }
-              this.webhookPayloads.set(hookPath, existing);
-            }
-            res.writeHead(status, { "Content-Type": "application/json" });
-            res.end(JSON.stringify(result));
-          })();
-        });
+        // 256 KB — webhook payloads from GitHub/Linear/etc. are typically
+        // 1–25 KB; 256 KB matches RECIPE_ROUTE_BODY_CAPS.content as a
+        // generous ceiling that still bounds an authenticated DoS vector.
+        const HOOKS_BODY_CAP = 256 * 1024;
+        const read = await readBodyWithCap(req, HOOKS_BODY_CAP);
+        if (!read.ok) {
+          respond413(res, HOOKS_BODY_CAP);
+          return;
+        }
+        let payload: unknown;
+        if (read.body.trim()) {
+          try {
+            payload = JSON.parse(read.body);
+          } catch {
+            payload = read.body;
+          }
+        }
+        if (!this.webhookFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error:
+                "Webhooks unavailable — start bridge with --claude-driver subprocess",
+            }),
+          );
+          return;
+        }
+        const result = await this.webhookFn(hookPath, payload);
+        const status = result.ok
+          ? 200
+          : result.error === "not_found"
+            ? 404
+            : 400;
+        // Record in ring buffer so the dashboard can show "last
+        // payload" per recipe. Skip not_found so unknown paths don't
+        // pollute the buffer with garbage / scanner traffic.
+        if (result.error !== "not_found") {
+          const existing = this.webhookPayloads.get(hookPath) ?? [];
+          existing.unshift({
+            receivedAt: Date.now(),
+            payload,
+            ok: result.ok,
+            error: result.error,
+            taskId: result.taskId,
+            recipeName: result.name,
+          });
+          if (existing.length > Server.MAX_WEBHOOK_PAYLOADS) {
+            existing.length = Server.MAX_WEBHOOK_PAYLOADS;
+          }
+          this.webhookPayloads.set(hookPath, existing);
+        }
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
         return;
       }
       if (
@@ -1230,25 +1236,35 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
       if (parsedUrl.pathname === "/settings" && req.method === "POST") {
-        const chunks: Buffer[] = [];
-        req.on("data", (c: Buffer) => chunks.push(c));
-        req.on("end", () => {
-          try {
-            const body = JSON.parse(
-              Buffer.concat(chunks).toString("utf-8"),
-            ) as {
-              webhookUrl?: string;
-              approvalGate?: string;
-              enableTimeOfDayAnomaly?: boolean;
-              driver?: string;
-              model?: string;
-              localEndpoint?: string;
-              localModel?: string;
-              apiKey?: { provider: string; key: string };
-              pushServiceUrl?: string;
-              pushServiceToken?: string;
-              pushServiceBaseUrl?: string;
-            };
+        // 16 KB — settings POSTs are short-string fields (URLs, API keys,
+        // gate level). 16 KB is generous; an authenticated attacker can't
+        // stream gigabytes here.
+        const SETTINGS_BODY_CAP = 16 * 1024;
+        const parsed = await readJsonBody<{
+          webhookUrl?: string;
+          approvalGate?: string;
+          enableTimeOfDayAnomaly?: boolean;
+          driver?: string;
+          model?: string;
+          localEndpoint?: string;
+          localModel?: string;
+          apiKey?: { provider: string; key: string };
+          pushServiceUrl?: string;
+          pushServiceToken?: string;
+          pushServiceBaseUrl?: string;
+        }>(req, SETTINGS_BODY_CAP);
+        if (!parsed.ok) {
+          if (parsed.code === "too_large") {
+            respond413(res, SETTINGS_BODY_CAP);
+            return;
+          }
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid request body" }));
+          return;
+        }
+        try {
+          {
+            const body = parsed.value ?? {};
             const hasWebhookUpdate = body.webhookUrl !== undefined;
             const raw = hasWebhookUpdate
               ? (body.webhookUrl?.trim() ?? "")
@@ -1367,7 +1383,13 @@ export class Server extends EventEmitter<ServerEvents> {
                 );
                 return;
               }
-              cfg.apiKeys = { ...cfg.apiKeys, [provider]: key || undefined };
+              // Provider keys go to the secure store (Keychain/DPAPI/Secret
+              // Service / AES-256-GCM file fallback) — never persisted to
+              // ~/.patchwork/config.json. Empty string clears.
+              saveApiKeyToSecureStore(
+                provider as "anthropic" | "openai" | "google" | "xai",
+                key,
+              );
             }
             savePatchworkConfig(cfg, configPath);
             if (hasWebhookUpdate) {
@@ -1397,49 +1419,52 @@ export class Server extends EventEmitter<ServerEvents> {
               body.model !== undefined;
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: true, restartRequired }));
-          } catch (err) {
-            this.logger.error(
-              `[/config/patchwork] error: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
-            );
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: "Invalid request body" }));
           }
-        });
+        } catch (err) {
+          this.logger.error(
+            `[/config/patchwork] error: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+          );
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid request body" }));
+        }
         return;
       }
       // CC hook notify endpoint — lightweight alternative to full MCP session for hook wiring.
       if (parsedUrl.pathname === "/notify" && req.method === "POST") {
-        const chunks: Buffer[] = [];
-        req.on("data", (c: Buffer) => chunks.push(c));
-        req.on("end", () => {
-          try {
-            const body = Buffer.concat(chunks).toString("utf-8");
-            const parsed = JSON.parse(body) as {
-              event?: string;
-              args?: Record<string, string>;
-            };
-            const event = parsed.event ?? "";
-            const args = parsed.args ?? {};
-            if (!this.notifyFn) {
-              res.writeHead(503, { "Content-Type": "application/json" });
-              res.end(
-                JSON.stringify({
-                  ok: false,
-                  error: "Automation not enabled",
-                }),
-              );
-              return;
-            }
-            const result = this.notifyFn(event, args);
-            res.writeHead(result.ok ? 200 : 400, {
-              "Content-Type": "application/json",
-            });
-            res.end(JSON.stringify(result));
-          } catch {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+        // 8 KB — notify payloads carry an event name + small arg map
+        // (taskId, prompt, tool name). 8 KB fits everything we send today
+        // with headroom.
+        const NOTIFY_BODY_CAP = 8 * 1024;
+        const parsed = await readJsonBody<{
+          event?: string;
+          args?: Record<string, string>;
+        }>(req, NOTIFY_BODY_CAP);
+        if (!parsed.ok) {
+          if (parsed.code === "too_large") {
+            respond413(res, NOTIFY_BODY_CAP);
+            return;
           }
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+          return;
+        }
+        const event = parsed.value?.event ?? "";
+        const args = parsed.value?.args ?? {};
+        if (!this.notifyFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "Automation not enabled",
+            }),
+          );
+          return;
+        }
+        const result = this.notifyFn(event, args);
+        res.writeHead(result.ok ? 200 : 400, {
+          "Content-Type": "application/json",
         });
+        res.end(JSON.stringify(result));
         return;
       }
       // Single-approval detail lookup for the dashboard detail page.
@@ -1480,63 +1505,67 @@ export class Server extends EventEmitter<ServerEvents> {
         parsedUrl.pathname === "/cc-permissions" ||
         /^\/(approve|reject)\/[A-Za-z0-9-]+$/.test(parsedUrl.pathname)
       ) {
-        const chunks: Buffer[] = [];
-        req.on("data", (c: Buffer) => chunks.push(c));
-        req.on("end", async () => {
-          let parsedBody: Record<string, unknown> | undefined;
-          if (chunks.length > 0) {
-            try {
-              parsedBody = JSON.parse(
-                Buffer.concat(chunks).toString("utf-8"),
-              ) as Record<string, unknown>;
-            } catch {
-              res.writeHead(400, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ error: "invalid JSON body" }));
-              return;
-            }
+        // 32 KB — approvals carry decision + reason + optional permission
+        // rule patches; 32 KB matches RECIPE_ROUTE_BODY_CAPS.run. Critical
+        // here: /approve/:id and /reject/:id are reachable via the
+        // x-approval-token phone-path bypass at line 609-612 — without a
+        // cap an unbounded body read happens *before* token validation.
+        const APPROVALS_BODY_CAP = 32 * 1024;
+        const parsed = await readJsonBody<Record<string, unknown>>(
+          req,
+          APPROVALS_BODY_CAP,
+        );
+        if (!parsed.ok) {
+          if (parsed.code === "too_large") {
+            respond413(res, APPROVALS_BODY_CAP);
+            return;
           }
-          try {
-            const result = await routeApprovalRequest(
-              {
-                method: req.method ?? "GET",
-                path: parsedUrl.pathname,
-                body: parsedBody,
-                query: parsedUrl.searchParams,
-                approvalToken: req.headers["x-approval-token"] as
-                  | string
-                  | undefined,
-              },
-              {
-                queue: getApprovalQueue(),
-                workspace: process.cwd(),
-                managedSettingsPath: this.managedSettingsPath,
-                onDecision: this.onApprovalDecision,
-                webhookUrl: this.approvalWebhookUrl,
-                approvalGate: this.approvalGate,
-                pushServiceUrl: this.pushServiceUrl,
-                pushServiceToken: this.pushServiceToken,
-                pushServiceBaseUrl: this.pushServiceBaseUrl,
-                activityLog: this.activityLog,
-                // RecipeRunLog satisfies RecipeRunQuerier structurally
-                // — the cast bridges TS contravariance: RecipeRunQuerier's
-                // narrow query interface (`status?: string`) is deliberately
-                // loose so tests can mock it; RecipeRunLog's stricter
-                // RunStatus union is a strict subset and fails the param
-                // contravariance check despite being safe at runtime.
-                recipeRunLog: this.recipeRunLog as unknown as
-                  | import("./approvalSignals.js").RecipeRunQuerier
-                  | undefined,
-                enableTimeOfDayAnomaly: this.enableTimeOfDayAnomaly,
-              },
-            );
-            res.writeHead(result.status, {
-              "Content-Type": "application/json",
-            });
-            res.end(JSON.stringify(result.body));
-          } catch (err) {
-            respond500(res, err);
-          }
-        });
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "invalid JSON body" }));
+          return;
+        }
+        const parsedBody = parsed.value;
+        try {
+          const result = await routeApprovalRequest(
+            {
+              method: req.method ?? "GET",
+              path: parsedUrl.pathname,
+              body: parsedBody,
+              query: parsedUrl.searchParams,
+              approvalToken: req.headers["x-approval-token"] as
+                | string
+                | undefined,
+            },
+            {
+              queue: getApprovalQueue(),
+              workspace: process.cwd(),
+              managedSettingsPath: this.managedSettingsPath,
+              onDecision: this.onApprovalDecision,
+              webhookUrl: this.approvalWebhookUrl,
+              approvalGate: this.approvalGate,
+              pushServiceUrl: this.pushServiceUrl,
+              pushServiceToken: this.pushServiceToken,
+              pushServiceBaseUrl: this.pushServiceBaseUrl,
+              activityLog: this.activityLog,
+              // RecipeRunLog satisfies RecipeRunQuerier structurally
+              // — the cast bridges TS contravariance: RecipeRunQuerier's
+              // narrow query interface (`status?: string`) is deliberately
+              // loose so tests can mock it; RecipeRunLog's stricter
+              // RunStatus union is a strict subset and fails the param
+              // contravariance check despite being safe at runtime.
+              recipeRunLog: this.recipeRunLog as unknown as
+                | import("./approvalSignals.js").RecipeRunQuerier
+                | undefined,
+              enableTimeOfDayAnomaly: this.enableTimeOfDayAnomaly,
+            },
+          );
+          res.writeHead(result.status, {
+            "Content-Type": "application/json",
+          });
+          res.end(JSON.stringify(result.body));
+        } catch (err) {
+          respond500(res, err);
+        }
         return;
       }
       // Quick-task launch endpoint — mirrors /notify pattern. Bearer auth already checked above.
@@ -1544,52 +1573,50 @@ export class Server extends EventEmitter<ServerEvents> {
         parsedUrl.pathname === "/launch-quick-task" &&
         req.method === "POST"
       ) {
-        const chunks: Buffer[] = [];
-        req.on("data", (c: Buffer) => chunks.push(c));
-        req.on("end", () => {
-          void (async () => {
-            try {
-              const body = Buffer.concat(chunks).toString("utf-8");
-              const parsed = JSON.parse(body) as {
-                presetId?: string;
-                source?: string;
-              };
-              const presetId = parsed.presetId;
-              const source = parsed.source ?? "cli";
-              if (typeof presetId !== "string" || !presetId) {
-                res.writeHead(400, { "Content-Type": "application/json" });
-                res.end(
-                  JSON.stringify({
-                    ok: false,
-                    error: "presetId required",
-                  }),
-                );
-                return;
-              }
-              if (!this.launchQuickTaskFn) {
-                res.writeHead(503, { "Content-Type": "application/json" });
-                res.end(
-                  JSON.stringify({
-                    ok: false,
-                    error:
-                      "Quick tasks unavailable — requires --claude-driver subprocess",
-                  }),
-                );
-                return;
-              }
-              const result = await this.launchQuickTaskFn(presetId, source);
-              res.writeHead(result.ok ? 200 : 429, {
-                "Content-Type": "application/json",
-              });
-              res.end(JSON.stringify(result));
-            } catch {
-              res.writeHead(400, { "Content-Type": "application/json" });
-              res.end(
-                JSON.stringify({ ok: false, error: "Invalid JSON body" }),
-              );
-            }
-          })();
+        // 4 KB — body is `{ presetId?: string; source?: string }`, two
+        // short strings. 4 KB is plenty.
+        const QUICK_TASK_BODY_CAP = 4 * 1024;
+        const parsed = await readJsonBody<{
+          presetId?: string;
+          source?: string;
+        }>(req, QUICK_TASK_BODY_CAP);
+        if (!parsed.ok) {
+          if (parsed.code === "too_large") {
+            respond413(res, QUICK_TASK_BODY_CAP);
+            return;
+          }
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+          return;
+        }
+        const presetId = parsed.value?.presetId;
+        const source = parsed.value?.source ?? "cli";
+        if (typeof presetId !== "string" || !presetId) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "presetId required",
+            }),
+          );
+          return;
+        }
+        if (!this.launchQuickTaskFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error:
+                "Quick tasks unavailable — requires --claude-driver subprocess",
+            }),
+          );
+          return;
+        }
+        const result = await this.launchQuickTaskFn(presetId, source);
+        res.writeHead(result.ok ? 200 : 429, {
+          "Content-Type": "application/json",
         });
+        res.end(JSON.stringify(result));
         return;
       }
       // MCP Streamable HTTP transport — POST/GET/DELETE /mcp.

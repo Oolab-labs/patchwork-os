@@ -2,6 +2,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ModelChoice } from "./adapters/index.js";
+import {
+  deleteSecretJsonSync,
+  getSecretJsonSync,
+  storeSecretJsonSync,
+} from "./connectors/tokenStorage.js";
 
 export interface PatchworkConfig {
   model: ModelChoice;
@@ -57,11 +62,95 @@ export function defaultConfigPath(): string {
   return join(homedir(), ".patchwork", "config.json");
 }
 
+type ApiKeyProvider = keyof NonNullable<PatchworkConfig["apiKeys"]>;
+const API_KEY_PROVIDERS: ApiKeyProvider[] = [
+  "anthropic",
+  "openai",
+  "google",
+  "xai",
+];
+
+function secretKeyFor(provider: ApiKeyProvider): string {
+  return `apiKey.${provider}`;
+}
+
+interface StoredApiKey {
+  key: string;
+}
+
+/**
+ * Persist a single API key to the secure store. Empty string deletes.
+ * Used by /settings POST so new keys never touch ~/.patchwork/config.json.
+ */
+export function saveApiKeyToSecureStore(
+  provider: ApiKeyProvider,
+  key: string,
+): void {
+  if (!key) {
+    deleteSecretJsonSync(secretKeyFor(provider));
+    return;
+  }
+  storeSecretJsonSync(secretKeyFor(provider), { key } satisfies StoredApiKey);
+}
+
+function loadApiKeysFromSecureStore(): NonNullable<PatchworkConfig["apiKeys"]> {
+  const out: NonNullable<PatchworkConfig["apiKeys"]> = {};
+  for (const provider of API_KEY_PROVIDERS) {
+    const stored = getSecretJsonSync<StoredApiKey>(secretKeyFor(provider));
+    if (stored?.key) out[provider] = stored.key;
+  }
+  return out;
+}
+
 export function loadConfig(path = defaultConfigPath()): PatchworkConfig {
-  if (!existsSync(path)) return { ...DEFAULTS };
+  if (!existsSync(path)) {
+    const fromStore = loadApiKeysFromSecureStore();
+    return Object.keys(fromStore).length > 0
+      ? { ...DEFAULTS, apiKeys: fromStore }
+      : { ...DEFAULTS };
+  }
   const raw = readFileSync(path, "utf8");
   const parsed = JSON.parse(raw) as Partial<PatchworkConfig>;
-  return { ...DEFAULTS, ...parsed };
+
+  // One-time migration: lift plaintext apiKeys from disk into the secure
+  // store, then rewrite the config file without them. Subsequent loads see
+  // an empty `apiKeys` on disk and read from the secure store instead.
+  let migrated = false;
+  if (parsed.apiKeys) {
+    for (const provider of API_KEY_PROVIDERS) {
+      const v = parsed.apiKeys[provider];
+      if (typeof v === "string" && v) {
+        try {
+          storeSecretJsonSync(secretKeyFor(provider), {
+            key: v,
+          } satisfies StoredApiKey);
+          migrated = true;
+        } catch {
+          // Secure store unavailable — leave plaintext in place rather than
+          // delete a working credential. User can re-enter via dashboard.
+        }
+      }
+    }
+    if (migrated) {
+      const stripped = { ...parsed };
+      delete (stripped as Partial<PatchworkConfig>).apiKeys;
+      try {
+        writeFileSync(path, JSON.stringify(stripped, null, 2), { mode: 0o600 });
+      } catch {
+        // Read-only filesystem or permissions error — non-fatal; secure
+        // store now holds a copy, plaintext stays on disk until next save.
+      }
+    }
+  }
+
+  // Merge: secure store is the source of truth; any non-migrated plaintext
+  // (in case the migration write above failed) remains as a fallback.
+  const fromStore = loadApiKeysFromSecureStore();
+  const apiKeys =
+    Object.keys(fromStore).length > 0 || parsed.apiKeys
+      ? { ...parsed.apiKeys, ...fromStore }
+      : undefined;
+  return { ...DEFAULTS, ...parsed, ...(apiKeys ? { apiKeys } : {}) };
 }
 
 export function saveConfig(
@@ -69,7 +158,12 @@ export function saveConfig(
   path = defaultConfigPath(),
 ): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(config, null, 2), { mode: 0o600 });
+  // Strip apiKeys before persisting — they belong in the secure store, never
+  // on disk. Defense in depth: even if a caller mutates cfg.apiKeys directly,
+  // we won't round-trip it back to plaintext JSON.
+  const stripped: PatchworkConfig = { ...config };
+  delete stripped.apiKeys;
+  writeFileSync(path, JSON.stringify(stripped, null, 2), { mode: 0o600 });
 }
 
 export function validateModelChoice(value: string): value is ModelChoice {

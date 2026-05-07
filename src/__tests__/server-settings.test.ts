@@ -283,4 +283,31 @@ describe("POST /settings — driver persistence to bridge config file", () => {
       error: expect.stringContaining("enableTimeOfDayAnomaly"),
     });
   });
+
+  it("returns 413 when /settings body exceeds 16 KB cap", async () => {
+    // Pad a valid-shape body past the 16 KB cap. Without the cap an
+    // authenticated caller could stream gigabytes; the cap rejects the
+    // request after the first overflowing chunk.
+    const filler = "x".repeat(17 * 1024);
+    const oversized = JSON.stringify({
+      driver: "subprocess",
+      filler,
+    });
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      oversized,
+    );
+    expect(status).toBe(413);
+    expect(JSON.parse(body)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("limit"),
+    });
+  });
 });

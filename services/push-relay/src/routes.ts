@@ -41,12 +41,19 @@ const EXPIRY_CAP_MS = 15 * 60_000;
 const REGISTER_LIMIT = 5;
 const REGISTER_WINDOW_MS = 60_000;
 
+export interface RouterOptions {
+  /** Override the replay-table hard cap. Test-only — production should use the default. */
+  replayMaxEntries?: number;
+}
+
 export function buildRouter(
   registry: DeviceRegistry,
   dispatcherDeps: Omit<DispatcherDeps, "registry">,
+  opts: RouterOptions = {},
 ): Router {
   const router = Router();
   const deps: DispatcherDeps = { registry, ...dispatcherDeps };
+  const replayMaxEntries = opts.replayMaxEntries ?? REPLAY_MAX_ENTRIES;
 
   // Per-router-instance state. Module-scoped state would leak across tests
   // and across multi-tenant relay instances if anyone ever runs more than
@@ -55,10 +62,15 @@ export function buildRouter(
   const registerCounts = new Map<string, { count: number; resetAt: number }>();
 
   function pruneReplay(now: number): void {
-    if (replaySeen.size < REPLAY_MAX_ENTRIES) return;
+    if (replaySeen.size < replayMaxEntries) return;
     for (const [key, expiry] of replaySeen) {
       if (expiry < now) replaySeen.delete(key);
     }
+  }
+
+  function replayTableFull(now: number): boolean {
+    pruneReplay(now);
+    return replaySeen.size >= replayMaxEntries;
   }
 
   // POST /push — called by bridge after queuing an approval
@@ -89,7 +101,14 @@ export function buildRouter(
       res.status(409).json({ error: "duplicate push within replay window" });
       return;
     }
-    pruneReplay(now);
+    // Hard cap: prune expired, and if still at cap (every entry unexpired
+    // under sustained authenticated flooding) refuse new entries rather
+    // than silently growing the map. Preserves replay defense semantics —
+    // never evicts non-expired entries that would re-open a replay window.
+    if (replayTableFull(now)) {
+      res.status(503).json({ error: "replay table full; retry shortly" });
+      return;
+    }
     replaySeen.set(replayKey, now + REPLAY_WINDOW_MS);
 
     // Clamp expiresAt: default to +5min, hard-cap at +15min.
@@ -172,7 +191,7 @@ export function buildRouter(
   // DELETE /devices/:token — legacy form, kept for back-compat. Tokens with
   // "/" or ":" must use the body form above.
   router.delete("/devices/:token", async (req, res) => {
-    const userId = (req as AuthedRequest).userId;
+    const userId = (req as unknown as AuthedRequest).userId;
     const token = decodeURIComponent(req.params.token as string);
     await registry.remove(userId, token);
     res.json({ ok: true });

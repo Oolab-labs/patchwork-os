@@ -281,6 +281,50 @@ describe("POST /push", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("returns 503 when replay table at hard cap and no entries expirable", async () => {
+    // Build a router with a tiny cap so we can exercise the saturation path
+    // in a test without queuing 10k requests.
+    const registry = new InMemoryRegistry();
+    const tokenStore = new EnvTokenStore("secret123:user1");
+    const app = express();
+    app.use(express.json());
+    app.use(bearerAuthMiddleware(tokenStore));
+    app.use(
+      buildRouter(
+        registry,
+        { apnsTopic: "com.patchwork.app" },
+        {
+          replayMaxEntries: 3,
+        },
+      ),
+    );
+    await req(app, "post", "/devices/register", {
+      token: "fcm-cap",
+      platform: "fcm",
+    });
+
+    // Fill to cap with three unique pushes — all unexpired (expiresAt
+    // defaults to now+5min, REPLAY_WINDOW_MS is 15min).
+    for (let i = 0; i < 3; i++) {
+      const r = await req(app, "post", "/push", {
+        ...validPayload,
+        callId: `cap-fill-${i}`,
+        approvalToken: `cap-tok-${i}`,
+      });
+      expect(r.status).toBe(200);
+    }
+
+    // Fourth unique push: prune finds nothing expired, table stays at cap,
+    // request rejected with 503.
+    const overflow = await req(app, "post", "/push", {
+      ...validPayload,
+      callId: "cap-overflow",
+      approvalToken: "cap-tok-overflow",
+    });
+    expect(overflow.status).toBe(503);
+    expect(overflow.body.error).toContain("replay table full");
+  });
 });
 
 describe("redactSecrets", () => {
