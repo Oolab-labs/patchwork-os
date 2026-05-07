@@ -376,7 +376,7 @@ If you scaffold a plugin stub and then modify the source template, re-run `gen-p
 
 ### npm publishing
 
-1. Add `"claude-ide-bridge-plugin"` to your `package.json` `keywords` — this makes it discoverable via `marketplace search`.
+1. Add `"claude-ide-bridge-plugin"` to your `package.json` `keywords` — this makes it discoverable via `npm search keywords:claude-ide-bridge-plugin`.
 2. Set `"peerDependencies": { "claude-ide-bridge": ">=2.1.24" }`.
 3. Make sure your entrypoint is an **ES module** (`.mjs` or `"type": "module"` in `package.json`) — the bridge uses dynamic `import()` to load plugins.
 4. Ship the `claude-ide-bridge-plugin.json` manifest at the package root.
@@ -403,14 +403,12 @@ npm install -g my-org-bridge-plugin
 claude-ide-bridge --plugin my-org-bridge-plugin --full
 ```
 
-### Marketplace discovery
+### Discovery
+
+Plugins are discovered via npm's keyword index. Authors add `"claude-ide-bridge-plugin"` to their package's `keywords` field; users find them with:
 
 ```bash
-# Search the bridge marketplace for plugins
-claude-ide-bridge marketplace search <query>
-
-# List all available companions/plugins
-claude-ide-bridge marketplace list
+npm search keywords:claude-ide-bridge-plugin
 ```
 
-The marketplace fetches a registry from GitHub with a bundled fallback for offline use.
+> **Note:** The earlier `claude-ide-bridge marketplace list/search/install` subcommand is deprecated as of `0.2.0-beta.0` (issue #279) and now prints a migration notice. For non-plugin community content (recipe bundles), use `patchwork recipe install github:<org>/<repo>`.

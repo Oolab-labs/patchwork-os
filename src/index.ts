@@ -479,7 +479,8 @@ if (process.argv[2] === "install") {
   process.exit(0);
 }
 
-// Handle marketplace subcommand — browse and install community skills
+// Handle marketplace subcommand — DEPRECATED, prints migration message.
+// See issue #279 and src/commands/marketplace.ts for the rationale.
 if (process.argv[2] === "marketplace") {
   const { runMarketplace } = await import("./commands/marketplace.js");
   await runMarketplace(process.argv.slice(3));
