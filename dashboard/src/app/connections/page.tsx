@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import AddConnectionModal from "./AddConnectionModal";
 import { Dialog } from "@/components/Dialog";
@@ -1030,12 +1030,22 @@ export default function ConnectionsPage() {
 
   const [reAuthing, setReAuthing] = useState(false);
   const [reAuthMsg, setReAuthMsg] = useState<string | null>(null);
+  const [reAuthConfirmOpen, setReAuthConfirmOpen] = useState(false);
 
-  async function handleReAuthAll() {
+  // Targets resolved at click-time so the confirm dialog enumerates the
+  // exact connectors that will be re-authed.
+  const reAuthTargets = useMemo(
+    () =>
+      connectors.filter(
+        (c) => c.status === "connected" || c.status === "needs_reauth",
+      ),
+    [connectors],
+  );
+
+  async function runReAuthAll() {
+    setReAuthConfirmOpen(false);
     if (reAuthing) return;
-    const targets = connectors
-      .filter((c) => c.status === "connected" || c.status === "needs_reauth")
-      .map((c) => c.id);
+    const targets = reAuthTargets.map((c) => c.id);
     if (targets.length === 0) return;
     setReAuthing(true);
     setReAuthMsg(null);
@@ -1175,8 +1185,8 @@ export default function ConnectionsPage() {
             <button
               type="button"
               className="btn sm"
-              onClick={() => void handleReAuthAll()}
-              disabled={reAuthing}
+              onClick={() => setReAuthConfirmOpen(true)}
+              disabled={reAuthing || reAuthTargets.length === 0}
               title="Re-authorize all connected providers (one at a time)"
               aria-busy={reAuthing}
             >
@@ -1265,6 +1275,59 @@ export default function ConnectionsPage() {
           </div>
         </>
       )}
+
+      {/* Re-auth-all confirmation */}
+      <Dialog
+        open={reAuthConfirmOpen}
+        onClose={() => setReAuthConfirmOpen(false)}
+        ariaLabelledBy="reauth-confirm-title"
+        maxWidth={420}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <strong id="reauth-confirm-title" style={{ fontSize: "var(--fs-l)" }}>
+            Re-authorize {reAuthTargets.length} connector
+            {reAuthTargets.length === 1 ? "" : "s"}?
+          </strong>
+          <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: 0 }}>
+            One OAuth popup will open at a time, in order. Each waits for you to
+            finish before the next one opens — you can cancel between popups by
+            closing the window.
+          </p>
+          {reAuthTargets.length > 0 && (
+            <ul
+              style={{
+                margin: 0,
+                paddingLeft: 18,
+                fontSize: "var(--fs-s)",
+                color: "var(--fg-1)",
+                maxHeight: 180,
+                overflow: "auto",
+              }}
+            >
+              {reAuthTargets.map((c) => (
+                <li key={c.id}>{c.id}</li>
+              ))}
+            </ul>
+          )}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              className="btn sm ghost"
+              onClick={() => setReAuthConfirmOpen(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => void runReAuthAll()}
+              disabled={reAuthTargets.length === 0}
+            >
+              Start re-auth
+            </button>
+          </div>
+        </div>
+      </Dialog>
 
       {/* Notion token-paste modal */}
       <Dialog
