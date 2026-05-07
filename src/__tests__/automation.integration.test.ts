@@ -16,8 +16,8 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Diagnostic } from "../automation.js";
 import { AutomationHooks } from "../automation.js";
-import type { IClaudeDriver } from "../claudeDriver.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
+import type { IClaudeDriver } from "../drivers/types.js";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
 
