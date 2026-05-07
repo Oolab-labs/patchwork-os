@@ -26,6 +26,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { respond500 } from "./httpErrorResponse.js";
 import { readBodyWithCap, respond413 } from "./recipeRoutes.js";
 
 /**
@@ -71,14 +72,7 @@ async function dispatchConnectorConnect(
     });
     res.end(result.body);
   } catch (err) {
-    if (!res.headersSent) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: err instanceof Error ? err.message : String(err),
-        }),
-      );
-    }
+    respond500(res, err);
   }
 }
 
@@ -108,14 +102,7 @@ export function tryHandlePublicConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -136,14 +123,7 @@ export function tryHandlePublicConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -164,14 +144,7 @@ export function tryHandlePublicConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -194,14 +167,7 @@ export function tryHandlePublicConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -224,14 +190,7 @@ export function tryHandlePublicConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -252,14 +211,7 @@ export function tryHandlePublicConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -280,14 +232,7 @@ export function tryHandlePublicConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -320,14 +265,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -352,14 +290,7 @@ export function tryHandleConnectorRoute(
           res.end(result.body);
         }
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -374,14 +305,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -399,14 +323,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -433,14 +350,7 @@ export function tryHandleConnectorRoute(
           res.end(result.body);
         }
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -458,14 +368,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -482,14 +385,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -516,14 +412,7 @@ export function tryHandleConnectorRoute(
           res.end(result.body);
         }
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -544,14 +433,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -569,14 +451,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -593,14 +468,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -627,14 +495,7 @@ export function tryHandleConnectorRoute(
           res.end(result.body);
         }
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -655,14 +516,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -680,14 +534,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -704,14 +551,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -737,14 +577,7 @@ export function tryHandleConnectorRoute(
           res.end(result.body);
         }
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -762,14 +595,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -784,14 +610,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -819,14 +638,7 @@ export function tryHandleConnectorRoute(
           res.end(result.body);
         }
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -849,14 +661,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -874,14 +679,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -901,14 +699,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -934,14 +725,7 @@ export function tryHandleConnectorRoute(
           res.end(result.body);
         }
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -962,14 +746,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -987,14 +764,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1009,14 +779,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1044,14 +807,7 @@ export function tryHandleConnectorRoute(
           res.end(result.body);
         }
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1072,14 +828,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1097,14 +846,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1121,14 +863,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1158,14 +893,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1182,14 +910,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1221,14 +942,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1248,14 +962,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1285,14 +992,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1312,14 +1012,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1349,14 +1042,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1376,14 +1062,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1413,14 +1092,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1440,14 +1112,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1477,14 +1142,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1504,14 +1162,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1543,14 +1194,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1570,14 +1214,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1607,14 +1244,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1631,14 +1261,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1665,14 +1288,7 @@ export function tryHandleConnectorRoute(
           res.end(result.body);
         }
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1695,14 +1311,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1722,14 +1331,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1749,14 +1351,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1783,14 +1378,7 @@ export function tryHandleConnectorRoute(
           res.end(result.body);
         }
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1813,14 +1401,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1838,14 +1419,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;
@@ -1865,14 +1439,7 @@ export function tryHandleConnectorRoute(
         });
         res.end(result.body);
       } catch (err) {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
+        respond500(res, err);
       }
     })();
     return true;

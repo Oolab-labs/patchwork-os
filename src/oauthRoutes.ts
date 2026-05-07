@@ -18,6 +18,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { respond500 } from "./httpErrorResponse.js";
 import type { OAuthServer } from "./oauth.js";
 
 export interface OAuthRouteDeps {
@@ -96,10 +97,7 @@ export function tryHandleOAuthRoute(
   if (parsedUrl.pathname === "/oauth/register") {
     if (deps.oauthServer) {
       deps.oauthServer.handleRegister(req, res).catch((err) => {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: String(err) }));
-        }
+        respond500(res, err);
       });
     } else {
       res.writeHead(404, { "Content-Type": "text/plain" });
@@ -112,10 +110,7 @@ export function tryHandleOAuthRoute(
   if (parsedUrl.pathname === "/oauth/token" && req.method === "POST") {
     if (deps.oauthServer) {
       deps.oauthServer.handleToken(req, res).catch((err) => {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: String(err) }));
-        }
+        respond500(res, err);
       });
     } else {
       res.writeHead(404, { "Content-Type": "text/plain" });

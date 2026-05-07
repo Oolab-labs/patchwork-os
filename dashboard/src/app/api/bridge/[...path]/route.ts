@@ -76,8 +76,9 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
         headers: { Authorization: `Bearer ${lock.authToken}` },
       });
     } catch (err) {
+      console.error("[dashboard /api/bridge] upstream fetch failed:", err);
       return new Response(
-        JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+        JSON.stringify({ error: "Bridge unreachable" }),
         { status: 502, headers: { "content-type": "application/json" } },
       );
     }

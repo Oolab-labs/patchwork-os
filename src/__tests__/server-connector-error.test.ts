@@ -65,6 +65,9 @@ describe("connector route IIFE error handling", () => {
     // Should get a 500 rather than a hung response
     expect(status).toBe(500);
     const parsed = JSON.parse(body);
-    expect(parsed.error).toContain("connector exploded");
+    // Generic body — never leaks the underlying err.message ("connector
+    // exploded"). Detail is logged server-side via the respond500 helper.
+    expect(parsed.error).toBe("Internal server error");
+    expect(body).not.toContain("connector exploded");
   });
 });

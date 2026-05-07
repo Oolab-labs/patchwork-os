@@ -131,7 +131,10 @@ describe("GET /traces", () => {
     const { status, body } = await get("/traces");
     expect(status).toBe(500);
     const parsed = JSON.parse(body);
-    expect(parsed.error).toContain("backend on fire");
+    // Generic body — never leaks the underlying err.message ("backend on
+    // fire"). Detail is logged server-side via the respond500 helper.
+    expect(parsed.error).toBe("Internal server error");
+    expect(body).not.toContain("backend on fire");
   });
 
   it("requires auth", async () => {
