@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
 import { isDemoMode } from "@/lib/demoMode";
-import { EventsHistogram, HBarList } from "@/components/patchwork";
+import { EventsHistogram, HBarList, LivePill } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 
@@ -210,10 +210,7 @@ export default function ActivityPage() {
               : `${events.length} events · last 24h · ${stats.errors} errored`}
           </div>
         </div>
-        <span className={`pill ${connected ? "ok" : "err"}`}>
-          <span className="pill-dot" />
-          {connected ? "Live" : "Offline"}
-        </span>
+        <LivePill connection={connected ? "live" : "offline"} />
       </div>
 
       {/* Charts row: histogram + top tools */}
