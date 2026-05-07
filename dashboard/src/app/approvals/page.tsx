@@ -3,7 +3,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
 import { apiPath } from "@/lib/api";
-import { KeyChip, CodeBlock } from "@/components/patchwork";
+import { CodeBlock, EmptyState, KeyChip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
 import { useToast } from "@/components/Toast";
@@ -112,53 +112,6 @@ function primaryParam(
 const SUGGESTION_MIN_APPROVED = 3;
 
 // --- CountdownTimer component ---
-
-// --- EmptyState component ---
-
-function EmptyState({
-  riskFilter,
-  onClearFilter,
-}: {
-  riskFilter: RiskFilter;
-  onClearFilter: () => void;
-}) {
-  const isFiltered = riskFilter !== "all";
-
-  return (
-    <div
-      className="empty-state"
-      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--s-3)" }}
-    >
-      <span
-        style={{
-          fontSize: 48,
-          lineHeight: 1,
-          color: "var(--ok)",
-          display: "block",
-        }}
-        aria-hidden="true"
-      >
-        ✓
-      </span>
-      <h3 style={{ color: "var(--fg-0)" }}>All caught up!</h3>
-      {isFiltered ? (
-        <>
-          <p>No {riskFilter} risk approvals pending.</p>
-          <button
-            type="button"
-            className="btn sm ghost"
-            onClick={onClearFilter}
-            style={{ color: "var(--accent)", borderColor: "var(--accent)" }}
-          >
-            Clear filter
-          </button>
-        </>
-      ) : (
-        <p>No pending approvals. All tool calls handled by policy or already decided.</p>
-      )}
-    </div>
-  );
-}
 
 // --- ApprovalCard ---
 
@@ -1170,8 +1123,29 @@ function ApprovalsContent() {
       {filtered.length === 0 && !err ? (
         hasLoaded ? (
           <EmptyState
-            riskFilter={riskFilter}
-            onClearFilter={() => setRiskFilter("all")}
+            icon={
+              <span style={{ fontSize: 48, lineHeight: 1, color: "var(--ok)" }} aria-hidden="true">
+                ✓
+              </span>
+            }
+            title="All caught up!"
+            description={
+              riskFilter !== "all"
+                ? `No ${riskFilter} risk approvals pending.`
+                : "No pending approvals. All tool calls handled by policy or already decided."
+            }
+            action={
+              riskFilter !== "all" ? (
+                <button
+                  type="button"
+                  className="btn sm ghost"
+                  onClick={() => setRiskFilter("all")}
+                  style={{ color: "var(--accent)", borderColor: "var(--accent)" }}
+                >
+                  Clear filter
+                </button>
+              ) : undefined
+            }
           />
         ) : (
           <SkeletonList rows={3} columns={3} />
