@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { apiPath } from "@/lib/api";
+import { EmptyState } from "@/components/patchwork";
 import { useToast } from "@/components/Toast";
 
 function isFilterCategory(v: string | null): v is FilterCategory {
@@ -572,16 +573,16 @@ const filteredItems = items.filter((item) => {
             <span>Loading…</span>
           </div>
         ) : items.length === 0 ? (
-          <div className="empty-state" role="status" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, flex: 1, minHeight: 200 }}>
-            <div className="empty-state-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="2" y="4" width="20" height="16" rx="2"/>
-                <path d="M2 7l10 7 10-7"/>
+          <EmptyState
+            icon={
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="M2 7l10 7 10-7" />
               </svg>
-            </div>
-            <p style={{ color: "var(--ink-1)", fontSize: "var(--fs-l)", fontWeight: 600, margin: 0 }}>No items yet</p>
-            <p style={{ color: "var(--ink-3)", fontSize: "var(--fs-m)", margin: 0 }}>Run a recipe to generate your first brief.</p>
-          </div>
+            }
+            title="No items yet"
+            description="Run a recipe to generate your first brief."
+          />
         ) : (
           <div style={{ display: "flex", flex: 1, minHeight: 0, border: "1px solid var(--line-1)", borderRadius: "var(--r-l)", overflow: "hidden", background: "var(--surface)" }}>
 

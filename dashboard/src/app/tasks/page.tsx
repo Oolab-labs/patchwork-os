@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { fmtDuration } from "@/components/time";
 import { SkeletonList } from "@/components/Skeleton";
-import { ErrorState } from "@/components/patchwork";
+import { EmptyState, ErrorState } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
 
 interface Task {
@@ -502,13 +502,15 @@ export default function TasksPage() {
 
       {tasks.length === 0 && !err ? (
         hasLoaded ? (
-          <div className="empty-state">
-            <h3>No tasks yet</h3>
-            <p>
-              Run one with <code>runClaudeTask</code> or{" "}
-              <code>patchwork start-task "…"</code>.
-            </p>
-          </div>
+          <EmptyState
+            title="No tasks yet"
+            description={
+              <>
+                Run one with <code>runClaudeTask</code> or{" "}
+                <code>patchwork start-task "…"</code>.
+              </>
+            }
+          />
         ) : (
           <SkeletonList rows={3} columns={3} />
         )
