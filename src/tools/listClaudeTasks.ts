@@ -32,6 +32,7 @@ export function createListClaudeTasksTool(
             description: "Filter by status. Omit for all tasks.",
           },
         },
+        additionalProperties: false as const,
       },
       outputSchema: {
         type: "object",

@@ -86,6 +86,7 @@ export function createLaunchQuickTaskTool(deps: LaunchQuickTaskDeps) {
           },
         },
         required: ["presetId"],
+        additionalProperties: false as const,
       },
       outputSchema: {
         type: "object" as const,

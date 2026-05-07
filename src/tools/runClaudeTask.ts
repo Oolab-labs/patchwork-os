@@ -81,6 +81,7 @@ export function createRunClaudeTaskTool(
           },
         },
         required: ["prompt"],
+        additionalProperties: false as const,
       },
       outputSchema: {
         type: "object",

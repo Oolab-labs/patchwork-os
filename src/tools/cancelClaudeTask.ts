@@ -25,6 +25,7 @@ export function createCancelClaudeTaskTool(
           },
         },
         required: ["taskId"],
+        additionalProperties: false as const,
       },
       outputSchema: {
         type: "object" as const,
