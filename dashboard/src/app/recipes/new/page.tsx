@@ -1,8 +1,8 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useMemo, useRef, useState } from "react";
-import { parse as parseYaml } from "yaml";
 import { apiPath } from "@/lib/api";
+import { normalizeRecipeName, prepareAndSaveAiRecipe } from "./applyAiYaml";
 
 interface Step {
   id: string;
@@ -181,20 +181,6 @@ const RECIPE_SCHEMA_HEADER =
 const RECIPE_API_VERSION = "patchwork.sh/v1";
 const SIMPLE_YAML_VALUE_RE = /^[A-Za-z0-9_./:@%+-]+$/;
 const AMBIGUOUS_YAML_VALUE_RE = /^(true|false|null|~|-?\d+(\.\d+)?)$/i;
-
-/**
- * Slugify a free-form name into the canonical kebab-case shape that the
- * server, schema, and filesystem all agree on (`^[a-z0-9][a-z0-9-]{0,63}$`).
- * Lowercase, fold whitespace and underscores to dashes, strip leading/
- * trailing dashes. Empty input → empty (caller treats as missing).
- */
-function normalizeRecipeName(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
 
 function yamlScalar(value: string): string {
   if (!value) {
@@ -578,98 +564,24 @@ function NewRecipePageInner() {
   }
 
   async function applyAiYaml(yamlText: string) {
-    // Save the AI-generated YAML verbatim and open it in the YAML editor.
-    // The previous flow funneled it through `applyAiYaml` → form state →
-    // `buildRecipeYaml`, but the form models only `agent:` steps — any
-    // `tool:` step the generator emitted (gmail.fetch_unread, github.list_*,
-    // file.write, etc.) was silently rewritten to an empty agent step.
-    // The structured form wizard is for hand-authoring; AI output goes
-    // straight to the raw YAML editor where the bridge's lint warnings
-    // surface and the user can review the full content unmodified.
-    let parsed: unknown;
-    try {
-      parsed = parseYaml(yamlText) ?? {};
-    } catch {
-      setAiResult((cur) =>
-        cur ? { ...cur, error: "Generated YAML is not valid YAML." } : cur,
-      );
-      return;
-    }
-    let recipeName = "";
-    if (parsed && typeof parsed === "object") {
-      const rawName = (parsed as { name?: unknown }).name;
-      if (typeof rawName === "string") {
-        recipeName = normalizeRecipeName(rawName);
-      }
-    }
-    if (!recipeName || !NAME_RE.test(recipeName)) {
-      setAiResult((cur) =>
-        cur
-          ? {
-              ...cur,
-              error:
-                "Generated recipe is missing a valid name — regenerate or copy the YAML and create the recipe by hand.",
-            }
-          : cur,
-      );
-      return;
-    }
-
     setAiSaving(true);
     try {
-      const res = await fetch(
-        apiPath(`/api/bridge/recipes/${encodeURIComponent(recipeName)}`),
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: yamlText }),
-        },
-      );
-      const data = (await res.json()) as {
-        ok?: boolean;
-        error?: string;
-        demo?: boolean;
-        warnings?: string[];
-      };
-      if (!res.ok || data.ok === false) {
-        setAiResult((cur) =>
-          cur ? { ...cur, error: data.error ?? "Failed to save recipe." } : cur,
-        );
+      const result = await prepareAndSaveAiRecipe(yamlText);
+      if (!result.ok) {
+        setAiResult((cur) => (cur ? { ...cur, error: result.error } : cur));
         return;
       }
-      if (data.demo) {
-        // Demo mode persists nothing, so /edit would 404. Surface in place.
-        setAiResult((cur) =>
-          cur
-            ? {
-                ...cur,
-                error:
-                  "Demo mode — recipe was not persisted. Disable demo mode to save real recipes.",
-              }
-            : cur,
-        );
-        return;
-      }
-      if (data.warnings && data.warnings.length > 0) {
+      if (result.warnings) {
         try {
           sessionStorage.setItem(
-            `recipe-save-warnings:${recipeName}`,
-            JSON.stringify(data.warnings),
+            `recipe-save-warnings:${result.recipeName}`,
+            JSON.stringify(result.warnings),
           );
         } catch {
           // sessionStorage unavailable — non-fatal; edit page re-lints.
         }
       }
-      router.push(`/recipes/${encodeURIComponent(recipeName)}/edit`);
-    } catch (err) {
-      setAiResult((cur) =>
-        cur
-          ? {
-              ...cur,
-              error: err instanceof Error ? err.message : String(err),
-            }
-          : cur,
-      );
+      router.push(`/recipes/${encodeURIComponent(result.recipeName)}/edit`);
     } finally {
       setAiSaving(false);
     }
