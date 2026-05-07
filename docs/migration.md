@@ -58,11 +58,11 @@ Check version compatibility: bridge `getBridgeStatus` reports `extensionPackageV
 
 ### Docker
 ```bash
-docker pull ghcr.io/oolab-labs/claude-ide-bridge:latest
+docker pull ghcr.io/oolab-labs/patchwork-os:latest
 ```
 Pin to a tag for stability:
 ```bash
-docker pull ghcr.io/oolab-labs/claude-ide-bridge:v2.30.1
+docker pull ghcr.io/oolab-labs/patchwork-os:v0.2.0-beta.0
 ```
 
 ---
