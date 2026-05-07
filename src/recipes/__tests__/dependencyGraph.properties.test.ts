@@ -35,16 +35,30 @@ const acyclicStepListGen = fc
   );
 
 /**
- * Generate arbitrary step lists (may contain cycles, missing deps, dupes).
- * Used for totality + crash-safety invariants.
+ * Generate arbitrary step lists (may contain cycles, self-deps, missing
+ * deps). IDs are deduplicated because the recipe parser already rejects
+ * duplicate step IDs (`src/recipes/parser.ts:35`); duplicates here would
+ * make `getReadySteps` invariants ambiguous — the function filters
+ * `graph.steps`, so a duplicate ID is ready iff *any* entry with that id
+ * has its awaits satisfied. Asserting otherwise produces seed-dependent
+ * false positives in CI.
  */
-const arbitraryStepListGen = fc.array(
-  fc.record({
-    id: stepIdGen,
-    awaits: fc.array(stepIdGen, { maxLength: 5 }),
-  }),
-  { maxLength: 8 },
-);
+const arbitraryStepListGen = fc
+  .array(
+    fc.record({
+      id: stepIdGen,
+      awaits: fc.array(stepIdGen, { maxLength: 5 }),
+    }),
+    { maxLength: 8 },
+  )
+  .map((steps) => {
+    const seen = new Set<string>();
+    return steps.filter((s) => {
+      if (seen.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    });
+  });
 
 describe("dependencyGraph properties — totality", () => {
   test("buildDependencyGraph never throws for arbitrary input", () => {
@@ -285,6 +299,9 @@ describe("dependencyGraph properties — getReadySteps", () => {
           return true;
         },
       ),
+      // Pin the seed that surfaced a duplicate-ID generator bug in CI before
+      // the dedup wrapper was added. Catches any regression of that fix.
+      { seed: 1125334550 },
     );
   });
 });
