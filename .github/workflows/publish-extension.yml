@@ -17,6 +17,9 @@ on:
         type: choice
         options: [patch, minor, major]
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
