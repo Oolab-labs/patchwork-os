@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*-alpha*'
+      - 'v*-beta*'
   workflow_dispatch:
     inputs:
       bump:
@@ -33,6 +34,41 @@ jobs:
 
       - name: Publish alpha to npm
         run: npm publish --access public --tag alpha
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub pre-release
+        env:
+          GH_TOKEN: ${{ secrets.OOLAB_PAT }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --prerelease \
+            --generate-notes \
+            --repo Oolab-labs/claude-ide-bridge
+
+  publish-beta:
+    # Mirror of publish-alpha but uses --tag beta. Beta is the active
+    # prerelease channel as of 0.2.0-beta.0; alpha path is retained so
+    # an emergency hotfix to the alpha line can still ship if needed.
+    if: startsWith(github.ref, 'refs/tags/') && contains(github.ref, '-beta')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test -- --reporter=dot
+        timeout-minutes: 5
+
+      - name: Publish beta to npm
+        run: npm publish --access public --tag beta
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
