@@ -5,7 +5,7 @@ export { StatusDot, type DotTone } from "./StatusDot";
 export { RiskPill, type RiskLevel } from "./RiskPill";
 export { TagChip } from "./TagChip";
 export { ActionPill } from "./ActionPill";
-export { LivePill } from "./LivePill";
+export { LivePill, type LivePillConnection } from "./LivePill";
 export { KeyChip } from "./KeyChip";
 export { FilterChips, type FilterOption } from "./FilterChips";
 export { SearchInput } from "./SearchInput";
