@@ -95,3 +95,34 @@ export async function PATCH(
 ): Promise<Response> {
   return forwardWithMethod(req, ctx, "PATCH");
 }
+
+export async function DELETE(
+  req: NextRequest,
+  ctx: RouteContext,
+): Promise<Response> {
+  const sfs = req.headers.get("sec-fetch-site");
+  if (sfs && sfs !== "same-origin" && sfs !== "none") {
+    return new Response(JSON.stringify({ error: "CSRF check failed" }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  if (await isDemoModeServer()) return demoOk();
+  try {
+    const { name } = await ctx.params;
+    const encodedName = encodeURIComponent(name);
+    const res = await bridgeFetch(`/recipes/${encodedName}`, {
+      method: "DELETE",
+    });
+    const text = await res.text();
+    return new Response(text, {
+      status: res.status,
+      headers: { "content-type": "application/json" },
+    });
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: err instanceof Error ? err.message : "fetch failed" }),
+      { status: 502, headers: { "content-type": "application/json" } },
+    );
+  }
+}

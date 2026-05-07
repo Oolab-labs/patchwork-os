@@ -320,6 +320,9 @@ export interface RecipeRouteDeps {
   deleteRecipeContentFn:
     | ((name: string) => { ok: boolean; path?: string; error?: string })
     | null;
+  archiveRecipeFn:
+    | ((name: string) => { ok: boolean; path?: string; error?: string })
+    | null;
   duplicateRecipeFn:
     | ((name: string) => {
         ok: boolean;
@@ -1023,6 +1026,28 @@ export function tryHandleRecipeRoute(
       return true;
     }
     const result = deps.deleteRecipeContentFn(name);
+    const status = result.ok
+      ? 200
+      : result.error === "Recipe not found"
+        ? 404
+        : 400;
+    res.writeHead(status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(result));
+    return true;
+  }
+
+  // POST /recipes/:name/archive — move recipe (+ sidecar) into <recipesDir>/.archive/
+  const archiveMatch = /^\/recipes\/([^/]+)\/archive$/.exec(parsedUrl.pathname);
+  if (archiveMatch && req.method === "POST") {
+    const name = decodeURIComponent(archiveMatch[1] ?? "");
+    if (!deps.archiveRecipeFn) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({ ok: false, error: "Recipe archive unavailable" }),
+      );
+      return true;
+    }
+    const result = deps.archiveRecipeFn(name);
     const status = result.ok
       ? 200
       : result.error === "Recipe not found"
