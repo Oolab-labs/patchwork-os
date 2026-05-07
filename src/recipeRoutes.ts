@@ -39,6 +39,7 @@ import {
   refillBucket,
   type TokenBucketState,
 } from "./fp/tokenBucket.js";
+import { respond500 } from "./httpErrorResponse.js";
 import type { RecipeDraft } from "./recipesHttp.js";
 import { validateSafeUrl } from "./ssrfGuard.js";
 
@@ -513,12 +514,7 @@ export function tryHandleRecipeRoute(
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ metrics, summary }));
     } catch (err) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: err instanceof Error ? err.message : String(err),
-        }),
-      );
+      respond500(res, err);
     }
     return true;
   }
@@ -544,12 +540,7 @@ export function tryHandleRecipeRoute(
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ runs }));
     } catch (err) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: err instanceof Error ? err.message : String(err),
-        }),
-      );
+      respond500(res, err);
     }
     return true;
   }
@@ -569,12 +560,7 @@ export function tryHandleRecipeRoute(
         res.end(JSON.stringify({ run }));
       }
     } catch (err) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: err instanceof Error ? err.message : String(err),
-        }),
-      );
+      respond500(res, err);
     }
     return true;
   }
@@ -607,9 +593,7 @@ export function tryHandleRecipeRoute(
         }
         res.end(JSON.stringify(result));
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: msg }));
+        respond500(res, err, "runs/:seq detail");
       }
     })();
     return true;
@@ -642,10 +626,13 @@ export function tryHandleRecipeRoute(
         res.end(JSON.stringify({ plan }));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        const status =
-          msg.includes("not found") || msg.includes("ENOENT") ? 404 : 500;
-        res.writeHead(status, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: msg }));
+        const isNotFound = msg.includes("not found") || msg.includes("ENOENT");
+        if (isNotFound) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Run not found" }));
+        } else {
+          respond500(res, err, "recipes plan");
+        }
       }
     })();
     return true;
@@ -724,11 +711,12 @@ export function tryHandleRecipeRoute(
         res.writeHead(status, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result));
       } catch (err) {
+        console.error(`[recipes/install] internal error:`, err);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
             ok: false,
-            error: err instanceof Error ? err.message : String(err),
+            error: "Internal server error",
           }),
         );
       }
@@ -939,10 +927,13 @@ export function tryHandleRecipeRoute(
         res.end(JSON.stringify({ plan }));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        const status =
-          msg.includes("not found") || msg.includes("ENOENT") ? 404 : 500;
-        res.writeHead(status, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: msg }));
+        const isNotFound = msg.includes("not found") || msg.includes("ENOENT");
+        if (isNotFound) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Run not found" }));
+        } else {
+          respond500(res, err, "recipes plan");
+        }
       }
     })();
     return true;
@@ -1107,11 +1098,12 @@ export function tryHandleRecipeRoute(
         res.writeHead(httpStatus, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result));
       } catch (err) {
+        console.error(`[recipes/install] internal error:`, err);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
             ok: false,
-            error: err instanceof Error ? err.message : String(err),
+            error: "Internal server error",
           }),
         );
       }
@@ -1125,12 +1117,7 @@ export function tryHandleRecipeRoute(
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(data));
     } catch (err) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: err instanceof Error ? err.message : String(err),
-        }),
-      );
+      respond500(res, err);
     }
     return true;
   }
@@ -1152,11 +1139,12 @@ export function tryHandleRecipeRoute(
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(templatesCache));
       } catch (err) {
+        console.error(`[recipes/install] upstream error:`, err);
         res.writeHead(502, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
             ok: false,
-            error: err instanceof Error ? err.message : String(err),
+            error: "Upstream fetch failed",
           }),
         );
       }
@@ -1237,11 +1225,15 @@ export function tryHandleRecipeRoute(
             });
           } catch (err) {
             clearTimeout(timeout);
+            console.error(
+              `[recipes/install] bundle manifest fetch failed:`,
+              err,
+            );
             res.writeHead(502, { "Content-Type": "application/json" });
             res.end(
               JSON.stringify({
                 ok: false,
-                error: `Bundle manifest fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+                error: "Bundle manifest fetch failed",
                 code: "bundle_fetch_network_error",
               }),
             );
@@ -1284,11 +1276,15 @@ export function tryHandleRecipeRoute(
           try {
             manifest = JSON.parse(Buffer.from(manifestBuf).toString("utf-8"));
           } catch (err) {
+            console.error(
+              `[recipes/install] bundle manifest invalid JSON:`,
+              err,
+            );
             res.writeHead(502, { "Content-Type": "application/json" });
             res.end(
               JSON.stringify({
                 ok: false,
-                error: `Bundle manifest is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+                error: "Bundle manifest is not valid JSON",
                 code: "bundle_manifest_invalid_json",
               }),
             );
@@ -1375,9 +1371,10 @@ export function tryHandleRecipeRoute(
               }
             } catch (err) {
               clearTimeout(recipeTimeout);
+              console.error(`[recipes/install] recipe "${r}" failed:`, err);
               failures.push({
                 name: r,
-                error: err instanceof Error ? err.message : String(err),
+                error: "Recipe install failed",
               });
             }
           }
@@ -1517,12 +1514,13 @@ export function tryHandleRecipeRoute(
           });
         } catch (err) {
           clearTimeout(fetchTimeout);
+          console.error(`[recipes/install] fetch failed:`, err);
           // Network-level error → 502 (upstream unreachable), not 500.
           res.writeHead(502, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
               ok: false,
-              error: `Fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+              error: "Fetch failed",
               code: "fetch_network_error",
             }),
           );
@@ -1618,11 +1616,12 @@ export function tryHandleRecipeRoute(
         res.end(JSON.stringify({ ok: true, ...result }));
       } catch (err) {
         // Truly unexpected — installer crash, manifest validation throw, etc.
+        console.error(`[recipes/install] internal install error:`, err);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
             ok: false,
-            error: err instanceof Error ? err.message : String(err),
+            error: "Internal server error",
             code: "install_internal_error",
           }),
         );

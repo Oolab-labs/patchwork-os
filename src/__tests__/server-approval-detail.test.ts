@@ -130,7 +130,10 @@ describe("GET /approvals/:callId", () => {
     });
     const { status, body } = await get("/approvals/boom");
     expect(status).toBe(500);
-    expect(JSON.parse(body).error).toContain("log on fire");
+    // Generic body — never leaks the underlying err.message ("log on
+    // fire"). Detail is logged server-side via the respond500 helper.
+    expect(JSON.parse(body).error).toBe("Internal server error");
+    expect(body).not.toContain("log on fire");
   });
 
   it("requires auth", async () => {
