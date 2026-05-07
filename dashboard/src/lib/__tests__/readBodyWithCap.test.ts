@@ -14,6 +14,7 @@ import {
   BRIDGE_BODY_CAPS,
   bodyTooLargeResponse,
   readBodyWithCap,
+  readJsonWithCap,
 } from "../readBodyWithCap";
 
 function reqWithBody(body: string, contentLength?: string): Request {
@@ -118,5 +119,50 @@ describe("bodyTooLargeResponse", () => {
     const data = (await res.json()) as { error: string; maxBytes: number };
     expect(data.error).toMatch(/too large/i);
     expect(data.maxBytes).toBe(8192);
+  });
+});
+
+describe("readJsonWithCap", () => {
+  it("parses a valid JSON body within the cap", async () => {
+    const result = await readJsonWithCap<{ x: number }>(
+      reqWithBody(JSON.stringify({ x: 42 })),
+      1024,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toEqual({ x: 42 });
+  });
+
+  it("returns reason=too_large when Content-Length exceeds the cap", async () => {
+    const result = await readJsonWithCap(
+      reqWithBody(JSON.stringify({ x: 1 }), "9999999"),
+      1024,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("too_large");
+      if (result.reason === "too_large") expect(result.maxBytes).toBe(1024);
+    }
+  });
+
+  it("returns reason=invalid_json when the body fails to parse", async () => {
+    const result = await readJsonWithCap(reqWithBody("{not json"), 1024);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("invalid_json");
+  });
+
+  it("returns value=undefined for an empty body", async () => {
+    const req = new Request("https://dashboard.local/x", { method: "POST" });
+    const result = await readJsonWithCap(req, 1024);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBeUndefined();
+  });
+});
+
+describe("DASHBOARD_API_BODY_CAPS sizing", () => {
+  it("each cap is at least 4 KB so legitimate JSON fits with overhead", async () => {
+    const { DASHBOARD_API_BODY_CAPS } = await import("../readBodyWithCap");
+    for (const [key, value] of Object.entries(DASHBOARD_API_BODY_CAPS)) {
+      expect(value, `${key} cap`).toBeGreaterThanOrEqual(4 * 1024);
+    }
   });
 });

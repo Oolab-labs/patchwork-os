@@ -3,6 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { requireSameOrigin } from "@/lib/csrf";
+import {
+  DASHBOARD_API_BODY_CAPS,
+  bodyTooLargeResponse,
+  readJsonWithCap,
+} from "@/lib/readBodyWithCap";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,12 +21,15 @@ interface ConnectorRequest {
 export async function POST(req: Request): Promise<Response> {
   const guard = requireSameOrigin(req);
   if (guard) return guard;
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
+  const parsed = await readJsonWithCap<unknown>(
+    req,
+    DASHBOARD_API_BODY_CAPS.connectorRequest,
+  );
+  if (!parsed.ok) {
+    if (parsed.reason === "too_large") return bodyTooLargeResponse(parsed.maxBytes);
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
+  const body = parsed.value;
 
   if (typeof body !== "object" || body === null) {
     return NextResponse.json({ ok: false, error: "Invalid request body" }, { status: 400 });

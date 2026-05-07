@@ -19,8 +19,9 @@
  */
 
 /**
- * Per-route body caps. Each value is 2× the corresponding bridge-side
- * cap in src/recipeRoutes.ts (RECIPE_ROUTE_BODY_CAPS) so the dashboard
+ * Per-route body caps for routes that proxy directly through to the
+ * bridge. Each value is 2× the corresponding bridge-side cap in
+ * src/recipeRoutes.ts (RECIPE_ROUTE_BODY_CAPS) so the dashboard
  * proxy rejects only obviously oversized payloads and lets the bridge
  * enforce the exact policy.
  *
@@ -42,6 +43,24 @@ export const BRIDGE_BODY_CAPS = {
 } as const;
 
 export type BridgeBodyCapKey = keyof typeof BRIDGE_BODY_CAPS;
+
+/**
+ * Per-route body caps for dashboard-native API routes (no bridge proxy).
+ * Sized for the legitimate payload shape with generous overhead — these
+ * are not 2×-bridge because there is no bridge cap to mirror.
+ */
+export const DASHBOARD_API_BODY_CAPS = {
+  /** /api/bridge/approval-insights/explain-batch — `{tools: string[]}`, ≤100 strings ≤~50 chars each. */
+  explainBatch: 16 * 1024,
+  /** /api/connector-requests POST — small connector metadata envelope. */
+  connectorRequest: 16 * 1024,
+  /** /api/push/{subscribe,unsubscribe} — PushSubscription JSON; spec is ~2 KB but allow headroom. */
+  push: 16 * 1024,
+  /** /api/connections/[connector]/connect — OAuth start: redirect target + provider state. */
+  connectionsConnect: 32 * 1024,
+} as const;
+
+export type DashboardApiBodyCapKey = keyof typeof DASHBOARD_API_BODY_CAPS;
 
 export type ReadBodyResult =
   | { ok: true; body: string }
@@ -100,4 +119,39 @@ export function bodyTooLargeResponse(maxBytes: number): Response {
     }),
     { status: 413, headers: { "content-type": "application/json" } },
   );
+}
+
+export type ReadJsonResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; reason: "too_large"; maxBytes: number }
+  | { ok: false; reason: "invalid_json" };
+
+/**
+ * Read + parse a JSON request body up to `maxBytes`. Returns a
+ * discriminated result; the caller chooses the response shape (some
+ * routes use `{ok: false, error: ...}`, others use `{error: ...}` —
+ * keeping that decision in the route preserves existing API contracts).
+ *
+ *   const r = await readJsonWithCap<MyShape>(req, CAP);
+ *   if (!r.ok) {
+ *     if (r.reason === "too_large") return bodyTooLargeResponse(r.maxBytes);
+ *     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+ *   }
+ *   // use r.value
+ *
+ * Empty bodies parse to `undefined` so callers can opt into "body
+ * required" by checking `value === undefined`.
+ */
+export async function readJsonWithCap<T = unknown>(
+  req: Request,
+  maxBytes: number,
+): Promise<ReadJsonResult<T>> {
+  const read = await readBodyWithCap(req, maxBytes);
+  if (!read.ok) return { ok: false, reason: "too_large", maxBytes };
+  if (read.body.length === 0) return { ok: true, value: undefined as T };
+  try {
+    return { ok: true, value: JSON.parse(read.body) as T };
+  } catch {
+    return { ok: false, reason: "invalid_json" };
+  }
 }
