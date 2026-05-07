@@ -12,6 +12,7 @@ import {
 } from "./connectorRoutes.js";
 import { timingSafeStringEqual } from "./crypto.js";
 import { renderDashboardHtml } from "./dashboard.js";
+import { respond500 } from "./httpErrorResponse.js";
 import { tryHandleInboxRoute } from "./inboxRoutes.js";
 import type { Logger } from "./logger.js";
 import { tryHandleMcpRoute } from "./mcpRoutes.js";
@@ -575,12 +576,7 @@ export class Server extends EventEmitter<ServerEvents> {
           });
           res.end(JSON.stringify(body, null, 2));
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -634,12 +630,7 @@ export class Server extends EventEmitter<ServerEvents> {
           });
           res.end(body);
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -654,12 +645,7 @@ export class Server extends EventEmitter<ServerEvents> {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -674,12 +660,7 @@ export class Server extends EventEmitter<ServerEvents> {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ events: data, count: data.length }));
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -716,12 +697,7 @@ export class Server extends EventEmitter<ServerEvents> {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -805,14 +781,7 @@ export class Server extends EventEmitter<ServerEvents> {
               await runTracesExportToStream(res);
             }
           } catch (err) {
-            if (!res.headersSent) {
-              res.writeHead(500, { "Content-Type": "application/json" });
-              res.end(
-                JSON.stringify({
-                  error: err instanceof Error ? err.message : String(err),
-                }),
-              );
-            }
+            respond500(res, err);
           }
         })();
         return;
@@ -836,12 +805,7 @@ export class Server extends EventEmitter<ServerEvents> {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -854,12 +818,7 @@ export class Server extends EventEmitter<ServerEvents> {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -889,12 +848,7 @@ export class Server extends EventEmitter<ServerEvents> {
             );
           }
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -950,12 +904,7 @@ export class Server extends EventEmitter<ServerEvents> {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -976,12 +925,7 @@ export class Server extends EventEmitter<ServerEvents> {
             res.end(JSON.stringify({ ok: true }));
           }
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -1266,12 +1210,7 @@ export class Server extends EventEmitter<ServerEvents> {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -1286,12 +1225,7 @@ export class Server extends EventEmitter<ServerEvents> {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -1464,12 +1398,11 @@ export class Server extends EventEmitter<ServerEvents> {
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: true, restartRequired }));
           } catch (err) {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
-              }),
+            this.logger.error(
+              `[/config/patchwork] error: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
             );
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Invalid request body" }));
           }
         });
         return;
@@ -1525,12 +1458,7 @@ export class Server extends EventEmitter<ServerEvents> {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
         } catch (err) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
         return;
       }
@@ -1606,12 +1534,7 @@ export class Server extends EventEmitter<ServerEvents> {
             });
             res.end(JSON.stringify(result.body));
           } catch (err) {
-            res.writeHead(500, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            );
+            respond500(res, err);
           }
         });
         return;
@@ -1680,13 +1603,9 @@ export class Server extends EventEmitter<ServerEvents> {
           req.method === "DELETE"
         ) {
           this.httpMcpHandler(req, res).catch((err) => {
-            this.logger.error(
-              `HTTP MCP handler error: ${err instanceof Error ? err.message : String(err)}`,
-            );
-            if (!res.headersSent) {
-              res.writeHead(500, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ error: String(err) }));
-            }
+            // respond500 logs the underlying error detail server-side; no
+            // need to also funnel it through this.logger.
+            respond500(res, err, "/mcp HTTP handler");
           });
           return;
         }

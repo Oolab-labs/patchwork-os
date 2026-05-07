@@ -18,6 +18,7 @@ import { existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { respond500 } from "./httpErrorResponse.js";
 
 /**
  * Try to handle an `/inbox` or `/inbox/<filename>.md` route. Returns true
@@ -74,12 +75,7 @@ export function tryHandleInboxRoute(
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ items }));
       } catch (err) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error: err instanceof Error ? err.message : String(err),
-          }),
-        );
+        respond500(res, err);
       }
     })();
     return true;
@@ -121,12 +117,7 @@ export function tryHandleInboxRoute(
           res.writeHead(404, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Not found" }));
         } else {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          respond500(res, err);
         }
       }
     })();

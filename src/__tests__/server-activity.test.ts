@@ -108,7 +108,10 @@ describe("GET /activity", () => {
     const { status, body } = await get("/activity");
     expect(status).toBe(500);
     const parsed = JSON.parse(body);
-    expect(parsed.error).toContain("log on fire");
+    // Generic body — must not leak the underlying err.message ("log on
+    // fire"). Detail is logged server-side via the respond500 helper.
+    expect(parsed.error).toBe("Internal server error");
+    expect(body).not.toContain("log on fire");
   });
 
   it("requires auth", async () => {

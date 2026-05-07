@@ -143,7 +143,10 @@ describe("GET /sessions/:id", () => {
     });
     const { status, body } = await get("/sessions/boom");
     expect(status).toBe(500);
-    expect(JSON.parse(body).error).toContain("oh no");
+    // Generic body — never leaks the underlying err.message ("oh no").
+    // Detail is logged server-side via the respond500 helper.
+    expect(JSON.parse(body).error).toBe("Internal server error");
+    expect(body).not.toContain("oh no");
   });
 
   it("requires auth", async () => {
