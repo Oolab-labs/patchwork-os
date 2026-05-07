@@ -15,8 +15,8 @@ import {
   checkCcHookWiring,
   loadPolicy,
 } from "../automation.js";
-import type { IClaudeDriver } from "../claudeDriver.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
+import type { IClaudeDriver } from "../drivers/types.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

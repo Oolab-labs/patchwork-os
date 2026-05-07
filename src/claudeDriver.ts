@@ -1,3 +1,22 @@
+/**
+ * @deprecated LEGACY DRIVER FILE — kept for test backward compat.
+ *
+ * Production code (src/bridge.ts, src/recipes/yamlRunner.ts) wires drivers
+ * through src/drivers/index.ts → src/drivers/claude/subprocess.ts. The
+ * SubprocessDriver / ApiDriver classes in this file are NOT in the runtime
+ * call path — only legacy tests (src/__tests__/claudeDriver.test.ts,
+ * src/__tests__/ant-driver.test.ts) still construct them directly.
+ *
+ * For new code:
+ *   - SubprocessDriver / ApiDriver  → src/drivers/claude/subprocess.ts, src/drivers/claude/api.ts
+ *   - createDriver()                 → src/drivers/index.ts
+ *   - ProviderDriver / Provider*     → src/drivers/types.ts (canonical)
+ *   - IClaudeDriver type             → src/drivers/types.ts (alias for ProviderDriver)
+ *
+ * This file should eventually be deleted once the legacy tests migrate to
+ * the new SubprocessDriver shape. Touching it for new behavior is almost
+ * always wrong — edit src/drivers/claude/ instead.
+ */
 import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -618,31 +637,6 @@ export class ApiDriver implements IClaudeDriver {
       exitCode: 0,
       durationMs: Date.now() - start,
     };
-  }
-}
-
-/**
- * ServerModeDriver — future adapter for `claude --server` stdio JSON-RPC API.
- * Stub: documents the exact extension point; throws immediately if instantiated.
- *
- * When `claude --server` is confirmed and documented:
- * 1. Spawn: `const child = spawn(binary, ["--server"], { stdio: "pipe", ... })`
- * 2. Write JSON-RPC requests to child.stdin
- * 3. Read JSON-RPC responses from child.stdout (readline + JSON.parse)
- * 4. Map streaming partial responses to onChunk callbacks
- * 5. Implement spawnForSession / killForSession for persistent-per-session lifecycle
- */
-export class ServerModeDriver implements IClaudeDriver {
-  readonly name = "server";
-
-  constructor(_binary: string, _log: (msg: string) => void) {
-    throw new Error(
-      "ServerModeDriver is not yet implemented — awaiting confirmed claude --server stdio JSON-RPC API",
-    );
-  }
-
-  run(_input: ClaudeTaskInput): Promise<ClaudeTaskOutput> {
-    throw new Error("ServerModeDriver not implemented");
   }
 }
 
