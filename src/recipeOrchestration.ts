@@ -482,10 +482,23 @@ export class RecipeOrchestration {
       // ignored the YAML constraint and dumped a megabyte of prose, etc.)
       // doesn't hand a CPU hog to `parseYaml`. 64 KB is ~10× the largest
       // production recipe in `~/.patchwork/recipes/`.
+      //
+      // Surface truncation as a warning (security audit, 2026-05-07): a
+      // silent slice can cut a `# REFUSED:` marker mid-line OR clip the
+      // closing fence of a ```yaml block, masking a refusal as
+      // "no_yaml_in_output". Telemetry on the boundary lets the
+      // dashboard distinguish "model produced 2 MB of garbage" from
+      // "model emitted a 4 KB recipe".
+      const truncationWarnings: string[] = [];
       const cappedOutput =
-        task.output.length > 64 * 1024
-          ? task.output.slice(0, 64 * 1024)
+        task.output.length > MAX_MODEL_OUTPUT_BYTES
+          ? task.output.slice(0, MAX_MODEL_OUTPUT_BYTES)
           : task.output;
+      if (task.output.length > MAX_MODEL_OUTPUT_BYTES) {
+        truncationWarnings.push(
+          `Model output exceeded ${MAX_MODEL_OUTPUT_BYTES}-byte cap (was ${task.output.length} bytes); truncated before parse. Regenerate with a shorter prompt if the recipe was cut off.`,
+        );
+      }
 
       // Honor the abuse-filter clause in the system prompt: when the model
       // refuses an unsafe request it emits `# REFUSED: <reason>`. Don't try
@@ -509,7 +522,15 @@ export class RecipeOrchestration {
 
       const rawYaml = extractYamlBlock(cappedOutput);
       if (!rawYaml) {
-        return { ok: false, error: "no_yaml_in_output" };
+        // Surface truncation here too — it's the most likely cause of a
+        // missing YAML block (the closing ``` got clipped past the cap).
+        return {
+          ok: false,
+          error: "no_yaml_in_output",
+          ...(truncationWarnings.length > 0
+            ? { warnings: truncationWarnings }
+            : {}),
+        };
       }
 
       // Defense-in-depth: also catch a refusal smuggled inside the YAML
@@ -547,7 +568,12 @@ export class RecipeOrchestration {
         return {
           ok: false,
           yaml: normalizedYaml,
-          warnings: [...lint.errors, ...lint.warnings, ...toolIdWarnings],
+          warnings: [
+            ...truncationWarnings,
+            ...lint.errors,
+            ...lint.warnings,
+            ...toolIdWarnings,
+          ],
           error: "invalid_yaml_generated",
         };
       }
@@ -555,7 +581,7 @@ export class RecipeOrchestration {
       return {
         ok: true,
         yaml: normalizedYaml,
-        warnings: [...lint.warnings, ...toolIdWarnings],
+        warnings: [...truncationWarnings, ...lint.warnings, ...toolIdWarnings],
       };
     };
   }
@@ -844,6 +870,14 @@ steps:
 export function sanitizeUserRequestTags(input: string): string {
   return input.replace(/<\s*\/?\s*user_request\b[^>]*>/gi, "[tag_removed]");
 }
+
+/**
+ * Cap on model output bytes before any parse / refusal-detection passes.
+ * 64 KB is ~10× the largest production recipe in `~/.patchwork/recipes/`;
+ * exposed for tests so they can drive the truncation path with a small
+ * synthetic payload.
+ */
+export const MAX_MODEL_OUTPUT_BYTES = 64 * 1024;
 
 const REFUSED_MARKER = /^#\s*REFUSED\b\s*[:\-—]?\s*(.*)$/i;
 // How many top-level (column-0) lines to scan before giving up. A refusal
