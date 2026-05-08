@@ -48,6 +48,13 @@ export interface SchedulerOptions {
   setInterval?: typeof setInterval;
   /** Override for tests — defaults to clearInterval. */
   clearInterval?: typeof clearInterval;
+  /**
+   * Override the disabled-recipe set. Defaults to reading from
+   * `loadConfig()` (the operator's ~/.patchwork/config.json). Tests inject
+   * an empty array so a stale disabled entry on the dev machine doesn't
+   * silently make the scheduler skip a freshly-fixtured recipe.
+   */
+  disabledRecipes?: ReadonlyArray<string>;
 }
 
 export class RecipeScheduler {
@@ -63,12 +70,19 @@ export class RecipeScheduler {
   start(): ScheduledRecipe[] {
     this.stop();
 
-    // Load disabled list from config
+    // Load disabled list — tests can inject `opts.disabledRecipes` to bypass
+    // reading the operator's real ~/.patchwork/config.json (which would
+    // otherwise silently skip a recipe whose name happens to be in the dev
+    // machine's disabled set).
     let disabled: Set<string> = new Set();
-    try {
-      disabled = getConfigDisabledNames(loadConfig());
-    } catch {
-      // non-fatal — proceed with empty disabled set
+    if (this.opts.disabledRecipes !== undefined) {
+      disabled = new Set(this.opts.disabledRecipes);
+    } else {
+      try {
+        disabled = getConfigDisabledNames(loadConfig());
+      } catch {
+        // non-fatal — proceed with empty disabled set
+      }
     }
 
     let entries: string[];

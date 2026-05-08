@@ -1026,7 +1026,10 @@ export interface WebhookRecipeMatch {
   format: "json" | "yaml";
 }
 
-export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
+export function listInstalledRecipes(
+  recipesDir: string,
+  opts: { disabledRecipes?: ReadonlyArray<string> } = {},
+): ListRecipesResult {
   let entries: string[];
   try {
     entries = readdirSync(recipesDir);
@@ -1034,10 +1037,15 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
     return { recipesDir, recipes: [] };
   }
 
-  const cfg = loadConfig();
-  const disabledSet = new Set<string>(
-    (cfg as { recipes?: { disabled?: string[] } }).recipes?.disabled ?? [],
-  );
+  // Tests inject a `disabledRecipes` list to avoid reading the user's
+  // real ~/.patchwork/config.json (which holds the operator's actual
+  // disabled set and pollutes test results when a recipe name happens to
+  // match). Default falls back to loadConfig() for production callers.
+  const disabledList =
+    opts.disabledRecipes ??
+    (loadConfig() as { recipes?: { disabled?: string[] } }).recipes?.disabled ??
+    [];
+  const disabledSet = new Set<string>(disabledList);
   const trustLevels = loadTrustLevels(recipesDir);
 
   const recipes: RecipeSummary[] = [];
