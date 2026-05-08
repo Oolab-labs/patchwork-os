@@ -27,9 +27,17 @@ interface StatusResponse {
     inboxDir?: string;
     httpPort?: number;
     configPath?: string;
+    apiKeysPresent?: {
+      anthropic?: boolean;
+      openai?: boolean;
+      google?: boolean;
+      xai?: boolean;
+    };
   };
   [k: string]: unknown;
 }
+
+type ApiKeyProvider = "anthropic" | "openai" | "google" | "xai";
 
 type SectionId = "s-bridge" | "s-ai" | "s-approval" | "s-telemetry";
 
@@ -45,15 +53,17 @@ interface DriverRow {
   name: string;
   detail: string;
   driverValue: string; // bridge driver setting that maps to this row
+  keyProvider?: ApiKeyProvider; // shows API-key input when set
 }
 
 // Names omit model versions on purpose — versions go stale fast and the
 // authoritative model id is already shown on /overview hero. Ollama hidden
 // until `local` is wired into the bridge driver allowlist (see follow-up).
 const DRIVER_ROWS: DriverRow[] = [
-  { id: "claude", name: "Claude", detail: "Anthropic · subprocess (subscription) or API", driverValue: "subprocess" },
-  { id: "gemini", name: "Gemini", detail: "Google · CLI subscription or API key", driverValue: "gemini" },
-  { id: "openai", name: "OpenAI", detail: "API key required", driverValue: "openai" },
+  { id: "claude", name: "Claude", detail: "Anthropic · subprocess (subscription) or API", driverValue: "subprocess", keyProvider: "anthropic" },
+  { id: "gemini", name: "Gemini", detail: "Google · CLI subscription or API key", driverValue: "gemini", keyProvider: "google" },
+  { id: "openai", name: "OpenAI", detail: "API key required", driverValue: "openai", keyProvider: "openai" },
+  { id: "grok", name: "Grok", detail: "xAI · API key required", driverValue: "grok", keyProvider: "xai" },
 ];
 
 // Inline style objects intentionally use the canonical --ink/--line tokens
@@ -106,6 +116,18 @@ export default function SettingsPage() {
   const [driverSaving, setDriverSaving] = useState<string | null>(null);
   const [driverMsg, setDriverMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const driverInitialized = useRef(false);
+
+  // Per-row API key entry state. Inputs are uncontrolled w.r.t. /status —
+  // the dashboard never sees the stored value (secure store is one-way),
+  // so this map only tracks the current draft text.
+  const [keyDrafts, setKeyDrafts] = useState<Record<ApiKeyProvider, string>>({
+    anthropic: "",
+    openai: "",
+    google: "",
+    xai: "",
+  });
+  const [keySaving, setKeySaving] = useState<ApiKeyProvider | null>(null);
+  const [keyMsg, setKeyMsg] = useState<{ provider: ApiKeyProvider; ok: boolean; text: string } | null>(null);
 
   // Approval policy
   const [gateValue, setGateValue] = useState<"off" | "high" | "all">("off");
@@ -223,6 +245,38 @@ export default function SettingsPage() {
     setSaveState("saving");
     setTimeout(() => setSaveState("saved"), 600);
     setTimeout(() => setSaveState("idle"), 2400);
+  }
+
+  async function saveApiKey(provider: ApiKeyProvider) {
+    const key = keyDrafts[provider];
+    setKeySaving(provider);
+    setKeyMsg(null);
+    try {
+      const res = await fetch(apiPath("/api/bridge/settings"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: { provider, key } }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (res.ok) {
+        setKeyDrafts((d) => ({ ...d, [provider]: "" }));
+        setKeyMsg({ provider, ok: true, text: key ? "Key saved." : "Key cleared." });
+        flashSaved();
+        // Refresh /status so the "key set" badge reflects the change immediately.
+        try {
+          const refreshed = await (await fetch(apiPath("/api/bridge/status"))).json();
+          setSettings(refreshed);
+        } catch {
+          /* badge will update on next poll tick */
+        }
+      } else {
+        setKeyMsg({ provider, ok: false, text: body.error ?? `Error ${res.status}` });
+      }
+    } catch (e) {
+      setKeyMsg({ provider, ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setKeySaving(null);
+    }
   }
 
   async function setPrimary(rowId: string) {
@@ -498,50 +552,117 @@ export default function SettingsPage() {
                   // hasn't switched yet, surface that as a clear pending-restart
                   // state instead of the contradictory `primary` + `inactive`.
                   const pendingRestart = isPrimary && !activeDriver;
+                  const provider = row.keyProvider;
+                  const keyPresent = provider
+                    ? Boolean(settings.patchwork?.apiKeysPresent?.[provider])
+                    : false;
                   return (
                     <div
                       key={row.id}
                       style={{
                         display: "flex",
-                        alignItems: "center",
-                        gap: 12,
+                        flexDirection: "column",
+                        gap: 10,
                         padding: "12px 14px",
                         background: isPrimary ? "var(--bg-3)" : "var(--bg-2)",
                         border: isPrimary ? "1px solid var(--line-1)" : "1px solid var(--border-default)",
                         borderRadius: "var(--r-2)",
                       }}
                     >
-                      <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-0)" }}>{row.name}</span>
+                            {isPrimary && <StatusPill tone="ok">primary</StatusPill>}
+                            {pendingRestart ? (
+                              <StatusPill tone="warn">pending restart</StatusPill>
+                            ) : (
+                              <StatusPill tone={activeDriver ? "ok" : "muted"}>
+                                {activeDriver ? "active" : "inactive"}
+                              </StatusPill>
+                            )}
+                            {provider && keyPresent && (
+                              <StatusPill tone="ok">key set</StatusPill>
+                            )}
+                          </div>
+                          <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", marginTop: 2 }}>{row.detail}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPrimary(row.id)}
+                          disabled={isPrimary || driverSaving === row.id}
+                          style={{
+                            background: "transparent",
+                            color: "var(--fg-1)",
+                            border: "1px solid var(--border-default)",
+                            borderRadius: "var(--r-2)",
+                            padding: "5px 10px",
+                            fontSize: "var(--fs-s)",
+                            cursor: isPrimary ? "default" : "pointer",
+                            opacity: isPrimary ? 0.5 : 1,
+                          }}
+                        >
+                          {driverSaving === row.id ? "Saving…" : "Set primary"}
+                        </button>
+                      </div>
+                      {provider && (
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-0)" }}>{row.name}</span>
-                          {isPrimary && <StatusPill tone="ok">primary</StatusPill>}
-                          {pendingRestart ? (
-                            <StatusPill tone="warn">pending restart</StatusPill>
-                          ) : (
-                            <StatusPill tone={activeDriver ? "ok" : "muted"}>
-                              {activeDriver ? "active" : "inactive"}
-                            </StatusPill>
+                          <input
+                            id={`api-key-${provider}`}
+                            type="password"
+                            placeholder={keyPresent ? "Replace key…" : `${provider} API key`}
+                            autoComplete="off"
+                            value={keyDrafts[provider]}
+                            onChange={(e) => setKeyDrafts((d) => ({ ...d, [provider]: e.target.value }))}
+                            style={{ ...inputStyle, flex: 1, minWidth: 200, maxWidth: 480 }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => saveApiKey(provider)}
+                            disabled={keySaving === provider || keyDrafts[provider].length === 0}
+                            style={{
+                              background: "transparent",
+                              color: "var(--fg-1)",
+                              border: "1px solid var(--border-default)",
+                              borderRadius: "var(--r-2)",
+                              padding: "5px 10px",
+                              fontSize: "var(--fs-s)",
+                              cursor: keyDrafts[provider].length === 0 ? "default" : "pointer",
+                              opacity: keyDrafts[provider].length === 0 ? 0.5 : 1,
+                            }}
+                          >
+                            {keySaving === provider ? "Saving…" : "Save"}
+                          </button>
+                          {keyPresent && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setKeyDrafts((d) => ({ ...d, [provider]: "" }));
+                                // Empty string deletes from secure store.
+                                void saveApiKey(provider);
+                              }}
+                              disabled={keySaving === provider}
+                              title="Remove the stored key from the secure store"
+                              style={{
+                                background: "transparent",
+                                color: "var(--fg-2)",
+                                border: "1px solid var(--border-default)",
+                                borderRadius: "var(--r-2)",
+                                padding: "5px 10px",
+                                fontSize: "var(--fs-s)",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Clear
+                            </button>
+                          )}
+                          {keyMsg && keyMsg.provider === provider && (
+                            <span style={{ fontSize: "var(--fs-s)", color: keyMsg.ok ? "var(--ok)" : "var(--err)" }}>
+                              {keyMsg.text}
+                            </span>
                           )}
                         </div>
-                        <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", marginTop: 2 }}>{row.detail}</div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setPrimary(row.id)}
-                        disabled={isPrimary || driverSaving === row.id}
-                        style={{
-                          background: "transparent",
-                          color: "var(--fg-1)",
-                          border: "1px solid var(--border-default)",
-                          borderRadius: "var(--r-2)",
-                          padding: "5px 10px",
-                          fontSize: "var(--fs-s)",
-                          cursor: isPrimary ? "default" : "pointer",
-                          opacity: isPrimary ? 0.5 : 1,
-                        }}
-                      >
-                        {driverSaving === row.id ? "Saving…" : "Set primary"}
-                      </button>
+                      )}
                     </div>
                   );
                 })}
