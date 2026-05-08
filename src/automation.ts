@@ -1376,10 +1376,28 @@ export class AutomationHooks {
       backend: this._interpreterBackend,
       log: this.log.bind(this),
       getLiveState: () => this._automationState,
-      mergeRetryState: (state) => {
-        this._enqueueMutation(() => {
-          this._automationState = state;
-        });
+      runRetryUnderLock: (work) => {
+        // Always chain through `_lastRunPromise` so the retry's read of
+        // `_automationState`, its `interpret()` execution, and its writeback
+        // are atomic w.r.t. other `_runInterpreter` calls. Without this
+        // chaining, a concurrent run between read and writeback would lose
+        // its updates to the retry's older snapshot. We also catch errors
+        // so a buggy retry doesn't poison the chain.
+        this._chainBusy = true;
+        this._lastRunPromise = this._lastRunPromise
+          .catch(() => {})
+          .then(async () => {
+            try {
+              const newState = await work(this._automationState);
+              this._automationState = newState;
+            } catch (e) {
+              const m = e instanceof Error ? e.message : String(e);
+              this.log(`[automation] runRetryUnderLock failed: ${m}`);
+            }
+          })
+          .finally(() => {
+            this._chainBusy = false;
+          });
       },
     };
     const result = await executeAutomationPolicy(this._programAST, ctx);
