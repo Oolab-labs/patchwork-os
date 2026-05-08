@@ -154,13 +154,14 @@ describe("ApprovalQueue — approval tokens", () => {
     expect(q.validateToken(callId, approvalToken!)).toBe(true);
   });
 
-  it("validateToken is single-use — second call returns false", () => {
+  it("validateToken is single-use on success — second call returns false", () => {
     const q = new ApprovalQueue();
     const { callId, approvalToken } = q.request(
       { toolName: "gitPush", params: {}, tier: "high" },
       { withToken: true },
     );
-    q.validateToken(callId, approvalToken!);
+    expect(q.validateToken(callId, approvalToken!)).toBe(true);
+    // Successful match consumes the token. Subsequent validations fail.
     expect(q.validateToken(callId, approvalToken!)).toBe(false);
   });
 
@@ -171,6 +172,38 @@ describe("ApprovalQueue — approval tokens", () => {
       { withToken: true },
     );
     expect(q.validateToken(callId, "deadbeef".repeat(8))).toBe(false);
+  });
+
+  it("wrong token does NOT invalidate the legitimate token (DoS regression)", () => {
+    // Regression: prior implementation cleared the token on first check
+    // regardless of outcome, so any unauthenticated POST with a syntactically-
+    // valid callId could lock out the rightful approver. Wrong-token POSTs
+    // must now leave the legit token alive for retries.
+    const q = new ApprovalQueue();
+    const { callId, approvalToken } = q.request(
+      { toolName: "gitPush", params: {}, tier: "high" },
+      { withToken: true },
+    );
+    expect(q.validateToken(callId, "deadbeef".repeat(8))).toBe(false);
+    expect(q.validateToken(callId, "ff".repeat(32))).toBe(false);
+    // The real approver still wins.
+    expect(q.validateToken(callId, approvalToken!)).toBe(true);
+  });
+
+  it("validateToken locks out after MAX_TOKEN_FAILURES wrong attempts", () => {
+    // Brute-force defense: 5 mismatches and the token is dead, even when the
+    // 6th attempt would have been correct. Bounds spray attacks at 5 ×
+    // token-TTL even if an attacker has unlimited callIds.
+    const q = new ApprovalQueue();
+    const { callId, approvalToken } = q.request(
+      { toolName: "gitPush", params: {}, tier: "high" },
+      { withToken: true },
+    );
+    for (let i = 0; i < 5; i++) {
+      expect(q.validateToken(callId, "deadbeef".repeat(8))).toBe(false);
+    }
+    // Even the correct token fails after lockout.
+    expect(q.validateToken(callId, approvalToken!)).toBe(false);
   });
 
   it("validateToken returns false for unknown callId", () => {
