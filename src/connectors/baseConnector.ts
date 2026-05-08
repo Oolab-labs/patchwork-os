@@ -414,16 +414,42 @@ export abstract class BaseConnector {
     "x-ratelimit-reset"?: string;
     "retry-after"?: string;
   }): void {
+    // Clamp + sanitize header-derived values: a buggy or malicious provider
+    // returning `Retry-After: 9999999999` overflows setTimeout's 32-bit
+    // delay (and the int*1000 silently); a NaN result poisons backoff math
+    // for every subsequent call. Cap at 10 minutes — enough for any
+    // legitimate rate-limit window, short enough that a wedged connector
+    // recovers within a single ops cycle.
+    const MAX_BACKOFF_MS = 10 * 60 * 1000;
+    const clampNonNegative = (n: number, max: number): number => {
+      if (!Number.isFinite(n) || n < 0) return 0;
+      return Math.min(n, max);
+    };
+
     if (headers["x-ratelimit-remaining"]) {
-      this.rateLimit.remaining = parseInt(headers["x-ratelimit-remaining"], 10);
-    }
-    if (headers["x-ratelimit-reset"]) {
-      this.rateLimit.resetAt = new Date(
-        parseInt(headers["x-ratelimit-reset"], 10) * 1000,
+      const parsed = parseInt(headers["x-ratelimit-remaining"], 10);
+      this.rateLimit.remaining = clampNonNegative(
+        parsed,
+        Number.MAX_SAFE_INTEGER,
       );
     }
+    if (headers["x-ratelimit-reset"]) {
+      const parsed = parseInt(headers["x-ratelimit-reset"], 10);
+      // Cap reset at "1 day from now" so a garbage-large reset doesn't pin
+      // the connector indefinitely.
+      const epochMs = clampNonNegative(parsed, Number.MAX_SAFE_INTEGER) * 1000;
+      const cappedMs = Math.min(epochMs, Date.now() + 24 * 60 * 60 * 1000);
+      this.rateLimit.resetAt = new Date(cappedMs);
+    }
     if (headers["retry-after"]) {
-      this.rateLimit.backoffMs = parseInt(headers["retry-after"], 10) * 1000;
+      // RFC 7231 allows seconds OR HTTP-date — we only handle seconds today
+      // (the connectors we ship target APIs that always return seconds).
+      // NaN guard handles HTTP-date inputs gracefully.
+      const parsed = parseInt(headers["retry-after"], 10);
+      this.rateLimit.backoffMs = clampNonNegative(
+        parsed * 1000,
+        MAX_BACKOFF_MS,
+      );
     }
   }
 

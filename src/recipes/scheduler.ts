@@ -292,15 +292,25 @@ export class RecipeScheduler {
   }
 
   private fire(name: string): void {
-    // TOCTOU defence: re-check the legacy `cfg.recipes.disabled` list at
-    // fire time. `start()` snapshots it once; if the user runs `recipe
-    // disable <name>` after start (and the recipe is a top-level legacy
-    // file, where the marker file doesn't apply), the timer would
-    // otherwise still fire until next restart(). The `.disabled` marker
-    // case is handled inside findYamlRecipePath / loadRecipePrompt
-    // (skip disabled install dirs) thanks to PR #49.
+    // TOCTOU defence: re-check the disabled list at fire time. `start()`
+    // snapshots it once; if the user runs `recipe disable <name>` after
+    // start (and the recipe is a top-level legacy file, where the marker
+    // file doesn't apply), the timer would otherwise still fire until
+    // next restart(). The `.disabled` marker case is handled inside
+    // findYamlRecipePath / loadRecipePrompt (skip disabled install dirs)
+    // thanks to PR #49.
+    //
+    // When `opts.disabledRecipes` is injected (test path), use it instead
+    // of `loadConfig()` — same reasoning as the start()-time injection in
+    // PR #375: reading the operator's real ~/.patchwork/config.json from
+    // a test process pollutes results when a fixtured recipe name
+    // collides with the dev box's disabled set.
     try {
-      if (getConfigDisabledNames(loadConfig()).has(name)) {
+      const disabled =
+        this.opts.disabledRecipes !== undefined
+          ? new Set(this.opts.disabledRecipes)
+          : getConfigDisabledNames(loadConfig());
+      if (disabled.has(name)) {
         this.opts.logger?.info?.(
           `[scheduler] skipping "${name}" — disabled via config (TOCTOU re-check)`,
         );
