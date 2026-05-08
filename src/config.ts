@@ -25,7 +25,14 @@ export interface Config {
   activeWorkspaceFolder: string;
   gracePeriodMs: number;
   autoTmux: boolean;
-  driver: "subprocess" | "api" | "openai" | "grok" | "gemini" | "none";
+  driver:
+    | "subprocess"
+    | "api"
+    | "openai"
+    | "grok"
+    | "gemini"
+    | "gemini-api"
+    | "none";
   claudeBinary: string;
   antBinary: string;
   automationEnabled: boolean;
@@ -195,9 +202,23 @@ interface ConfigFile {
   editorCommand?: string;
   ideName?: string;
   autoTmux?: boolean;
-  driver?: "subprocess" | "api" | "openai" | "grok" | "gemini" | "none";
+  driver?:
+    | "subprocess"
+    | "api"
+    | "openai"
+    | "grok"
+    | "gemini"
+    | "gemini-api"
+    | "none";
   /** @deprecated Use driver instead. */
-  claudeDriver?: "subprocess" | "api" | "openai" | "grok" | "gemini" | "none";
+  claudeDriver?:
+    | "subprocess"
+    | "api"
+    | "openai"
+    | "grok"
+    | "gemini"
+    | "gemini-api"
+    | "none";
   claudeBinary?: string;
   antBinary?: string;
   automationEnabled?: boolean;
@@ -436,6 +457,7 @@ export function parseConfig(argv: string[]): Config {
     "openai",
     "grok",
     "gemini",
+    "gemini-api",
     "none",
   ] as const;
   const rawFileDriver = (fileConfig as Record<string, unknown>).driver;
@@ -449,8 +471,14 @@ export function parseConfig(argv: string[]): Config {
       `[patchwork-os] Warning: Unknown driver value "${rawFileDriver}" in config file — falling back to "none". Valid values: ${VALID_DRIVER_MODES.join(", ")}.`,
     );
   }
-  let driver: "subprocess" | "api" | "openai" | "grok" | "gemini" | "none" =
-    fileConfig.driver ?? fileConfig.claudeDriver ?? "none";
+  let driver:
+    | "subprocess"
+    | "api"
+    | "openai"
+    | "grok"
+    | "gemini"
+    | "gemini-api"
+    | "none" = fileConfig.driver ?? fileConfig.claudeDriver ?? "none";
   let claudeBinary = fileConfig.claudeBinary ?? "claude";
   let antBinary = fileConfig.antBinary ?? "ant";
   let automationEnabled = fileConfig.automationEnabled ?? false;
@@ -629,10 +657,11 @@ export function parseConfig(argv: string[]): Config {
           driverVal !== "openai" &&
           driverVal !== "grok" &&
           driverVal !== "gemini" &&
+          driverVal !== "gemini-api" &&
           driverVal !== "none"
         ) {
           throw new Error(
-            `Invalid ${flagName} value: "${driverVal}". Must be "subprocess", "api", "openai", "grok", "gemini", or "none".`,
+            `Invalid ${flagName} value: "${driverVal}". Must be "subprocess", "api", "openai", "grok", "gemini", "gemini-api", or "none".`,
           );
         }
         driver = driverVal;
@@ -837,7 +866,7 @@ Patchwork:
   --managed-settings <path> Admin-controlled settings file (highest rule precedence, cannot be overridden by users)
 
 Automation:
-  --driver <mode>           AI driver: "subprocess" | "api" | "openai" | "grok" | "gemini" | "none" (default: "none")
+  --driver <mode>           AI driver: "subprocess" | "api" | "openai" | "grok" | "gemini" | "gemini-api" | "none" (default: "none")
   --claude-driver <mode>    Deprecated alias for --driver
   --claude-binary <path>    Path to claude binary (default: "claude")
   --automation              Enable event-driven automation hooks (requires --claude-driver != none and --automation-policy)

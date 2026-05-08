@@ -41,7 +41,14 @@ export interface PatchworkConfig {
     disabled?: string[];
   };
   /** AI driver mode — persisted so dashboard changes survive restart. */
-  driver?: "subprocess" | "api" | "openai" | "grok" | "gemini" | "none";
+  driver?:
+    | "subprocess"
+    | "api"
+    | "openai"
+    | "grok"
+    | "gemini"
+    | "gemini-api"
+    | "none";
   /** Notification channel config */
   notifications?: {
     slackChannel?: string;
