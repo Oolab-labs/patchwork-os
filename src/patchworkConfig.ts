@@ -48,6 +48,7 @@ export interface PatchworkConfig {
     | "grok"
     | "gemini"
     | "gemini-api"
+    | "local"
     | "none";
   /** Notification channel config */
   notifications?: {
