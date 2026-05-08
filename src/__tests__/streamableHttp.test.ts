@@ -960,12 +960,18 @@ describe("Streamable HTTP: session overflow eviction", () => {
       await initSession(port);
     }
 
-    // Make the first session appear idle by backdating its lastActivity
-    const sessions: Map<string, { lastActivity: number }> = (handler as any)
-      .sessions;
+    // Make the first session appear client-idle. Eviction now reads
+    // `lastClientActivity` (POST/GET/DELETE only) so server-side SSE pushes
+    // can't refresh the slot and DoS new clients — backdate that field.
+    const sessions: Map<
+      string,
+      { lastActivity: number; lastClientActivity: number }
+    > = (handler as any).sessions;
     const [firstId] = sessions.keys();
     const firstSession = sessions.get(firstId)!;
-    firstSession.lastActivity = Date.now() - 120_000; // idle for 2 minutes > 60s threshold
+    const idleTime = Date.now() - 120_000; // 2 minutes > 60s threshold
+    firstSession.lastActivity = idleTime;
+    firstSession.lastClientActivity = idleTime;
 
     // A 6th initialize should succeed (evicting the stale session) rather than return 503
     const { sid: newSid } = await initSession(port);
@@ -978,6 +984,31 @@ describe("Streamable HTTP: session overflow eviction", () => {
     expect(sessions.has(firstId)).toBe(false);
 
     // New session should be present
+    expect(sessions.has(newSid)).toBe(true);
+  });
+
+  it("eviction ignores SSE-only refresh — server-side pushes don't keep slot alive", async () => {
+    // Regression: an attacker holding 5 SSE streams open could refresh
+    // `lastActivity` via server-pushed broadcasts (notifications/tools/list_changed
+    // etc.) and indefinitely block new clients. Eviction now reads
+    // `lastClientActivity`, which only POST/GET/DELETE refresh. Simulate by
+    // backdating client-activity but keeping lastActivity recent.
+    for (let i = 0; i < 5; i++) {
+      await initSession(port);
+    }
+    const sessions: Map<
+      string,
+      { lastActivity: number; lastClientActivity: number }
+    > = (handler as any).sessions;
+    const [firstId] = sessions.keys();
+    const firstSession = sessions.get(firstId)!;
+    firstSession.lastActivity = Date.now(); // SSE-refreshed, looks fresh
+    firstSession.lastClientActivity = Date.now() - 120_000; // but no client traffic in 2min
+
+    const { sid: newSid } = await initSession(port);
+    expect(typeof newSid).toBe("string");
+    expect(sessions.size).toBe(5);
+    expect(sessions.has(firstId)).toBe(false);
     expect(sessions.has(newSid)).toBe(true);
   });
 

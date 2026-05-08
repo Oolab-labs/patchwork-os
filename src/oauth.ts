@@ -161,8 +161,20 @@ export class OAuthServerImpl implements OAuthServer {
     string,
     { count: number; windowStart: number }
   >();
+  /** Per-IP token-endpoint rate limit: IP → { count, windowStart } */
+  private readonly tokenIpCounts = new Map<
+    string,
+    { count: number; windowStart: number }
+  >();
   private static readonly REGISTER_IP_MAX = 10; // max registrations per IP per minute
   private static readonly REGISTER_IP_WINDOW_MS = 60 * 1_000;
+  /** Per-IP rate limit on /oauth/token. Code-grant verifier brute-force is
+   *  bounded by entropy, but unbounded /token traffic can stuff in-memory
+   *  maps and burn auth-code-validation CPU. 30/min/IP is generous for
+   *  legitimate clients (one /token call per authorize flow) and shuts
+   *  down trivial inflight stuffing. */
+  private static readonly TOKEN_IP_MAX = 30;
+  private static readonly TOKEN_IP_WINDOW_MS = 60 * 1_000;
   private readonly gcTimer: ReturnType<typeof setInterval>;
   /** CSRF nonces: flowId → { nonce, clientId, expiresAt } */
   private readonly csrfNonces = new Map<
@@ -226,6 +238,9 @@ export class OAuthServerImpl implements OAuthServer {
         for (const [k, v] of this.registerIpCounts)
           if (now - v.windowStart > OAuthServerImpl.REGISTER_IP_WINDOW_MS)
             this.registerIpCounts.delete(k);
+        for (const [k, v] of this.tokenIpCounts)
+          if (now - v.windowStart > OAuthServerImpl.TOKEN_IP_WINDOW_MS)
+            this.tokenIpCounts.delete(k);
         for (const [k, v] of this.cimdCache)
           if (now - v.fetchedAt > OAuthServerImpl.CIMD_CACHE_TTL_MS)
             this.cimdCache.delete(k);
@@ -575,6 +590,29 @@ export class OAuthServerImpl implements OAuthServer {
   // ── Token endpoint ────────────────────────────────────────────────────────
 
   async handleToken(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    // Per-IP rate limit. Mirrors the /oauth/register limiter: cheap window
+    // counter, GC'd alongside the registration map. Without this, an
+    // attacker can stuff CPU into auth-code-validation + PKCE verification
+    // by hammering /token with bogus codes.
+    const remoteIp = (req.socket?.remoteAddress ?? "unknown").slice(0, 64);
+    const rlNow = Date.now();
+    const tokenIpEntry = this.tokenIpCounts.get(remoteIp);
+    if (
+      tokenIpEntry &&
+      rlNow - tokenIpEntry.windowStart < OAuthServerImpl.TOKEN_IP_WINDOW_MS
+    ) {
+      tokenIpEntry.count++;
+      if (tokenIpEntry.count > OAuthServerImpl.TOKEN_IP_MAX) {
+        this.sendJson(res, 429, {
+          error: "too_many_requests",
+          error_description: "per-IP token endpoint rate limit reached",
+        });
+        return;
+      }
+    } else {
+      this.tokenIpCounts.set(remoteIp, { count: 1, windowStart: rlNow });
+    }
+
     let body: URLSearchParams;
     try {
       body = await this.readBody(req);
