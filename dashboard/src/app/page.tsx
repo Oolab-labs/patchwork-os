@@ -7,6 +7,7 @@ import { SkeletonStatCard } from "@/components/Skeleton";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useBridgeStatus } from "@/hooks/useBridgeStatus";
+import { isNoiseEvent } from "@/lib/activityNoise";
 import {
   ActionPill,
   QuiltHero,
@@ -925,7 +926,9 @@ export default function HomePage() {
           marginBottom: "var(--s-5)",
         }}
       >
-        <ActivityThread events={activityEvents.slice(-8).reverse()} />
+        <ActivityThread
+          events={activityEvents.filter((e) => !isNoiseEvent(e)).slice(-8).reverse()}
+        />
         <RecentRecipesCard recipes={recipes} />
       </div>
 
