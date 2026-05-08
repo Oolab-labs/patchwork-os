@@ -32,6 +32,7 @@ export interface Config {
     | "grok"
     | "gemini"
     | "gemini-api"
+    | "local"
     | "none";
   claudeBinary: string;
   antBinary: string;
@@ -209,6 +210,7 @@ interface ConfigFile {
     | "grok"
     | "gemini"
     | "gemini-api"
+    | "local"
     | "none";
   /** @deprecated Use driver instead. */
   claudeDriver?:
@@ -218,6 +220,7 @@ interface ConfigFile {
     | "grok"
     | "gemini"
     | "gemini-api"
+    | "local"
     | "none";
   claudeBinary?: string;
   antBinary?: string;
@@ -458,6 +461,7 @@ export function parseConfig(argv: string[]): Config {
     "grok",
     "gemini",
     "gemini-api",
+    "local",
     "none",
   ] as const;
   const rawFileDriver = (fileConfig as Record<string, unknown>).driver;
@@ -478,6 +482,7 @@ export function parseConfig(argv: string[]): Config {
     | "grok"
     | "gemini"
     | "gemini-api"
+    | "local"
     | "none" = fileConfig.driver ?? fileConfig.claudeDriver ?? "none";
   let claudeBinary = fileConfig.claudeBinary ?? "claude";
   let antBinary = fileConfig.antBinary ?? "ant";
@@ -506,6 +511,13 @@ export function parseConfig(argv: string[]): Config {
       if (pw.driver && driver === "none") {
         driver = pw.driver;
       }
+      // Seed local-LLM endpoint + model as env vars (non-destructive). The
+      // LocalApiDriver reads these at construction time, so a dashboard save
+      // round-trips through patchwork config → env → driver on next restart.
+      if (pw.localEndpoint && !process.env.LOCAL_ENDPOINT)
+        process.env.LOCAL_ENDPOINT = pw.localEndpoint;
+      if (pw.localModel && !process.env.LOCAL_MODEL)
+        process.env.LOCAL_MODEL = pw.localModel;
       // Seed API keys as env vars if not already set (non-destructive)
       if (pw.apiKeys) {
         if (pw.apiKeys.openai && !process.env.OPENAI_API_KEY)
@@ -658,10 +670,11 @@ export function parseConfig(argv: string[]): Config {
           driverVal !== "grok" &&
           driverVal !== "gemini" &&
           driverVal !== "gemini-api" &&
+          driverVal !== "local" &&
           driverVal !== "none"
         ) {
           throw new Error(
-            `Invalid ${flagName} value: "${driverVal}". Must be "subprocess", "api", "openai", "grok", "gemini", "gemini-api", or "none".`,
+            `Invalid ${flagName} value: "${driverVal}". Must be "subprocess", "api", "openai", "grok", "gemini", "gemini-api", "local", or "none".`,
           );
         }
         driver = driverVal;
@@ -866,7 +879,7 @@ Patchwork:
   --managed-settings <path> Admin-controlled settings file (highest rule precedence, cannot be overridden by users)
 
 Automation:
-  --driver <mode>           AI driver: "subprocess" | "api" | "openai" | "grok" | "gemini" | "gemini-api" | "none" (default: "none")
+  --driver <mode>           AI driver: "subprocess" | "api" | "openai" | "grok" | "gemini" | "gemini-api" | "local" | "none" (default: "none")
   --claude-driver <mode>    Deprecated alias for --driver
   --claude-binary <path>    Path to claude binary (default: "claude")
   --automation              Enable event-driven automation hooks (requires --claude-driver != none and --automation-policy)
