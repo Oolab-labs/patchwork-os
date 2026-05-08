@@ -107,7 +107,7 @@ describe('driver:"subprocess"', () => {
       deps,
     );
     expect(result).toBe("claude-cli-result");
-    expect(deps.claudeCliFn).toHaveBeenCalledWith("hello");
+    expect(deps.claudeCliFn).toHaveBeenCalledWith("hello", undefined);
     expect(deps.anthropicFn).not.toHaveBeenCalled();
     expect(deps.localFn).not.toHaveBeenCalled();
     expect(deps.probeClaudeCli).not.toHaveBeenCalled();
@@ -165,7 +165,7 @@ describe("no driver + pwCfg non-local + claude CLI available", () => {
     });
     const result = await executeAgent({ prompt: "hello" }, deps);
     expect(result).toBe("claude-cli-result");
-    expect(deps.claudeCliFn).toHaveBeenCalledWith("hello");
+    expect(deps.claudeCliFn).toHaveBeenCalledWith("hello", undefined);
     expect(deps.probeClaudeCli).toHaveBeenCalled();
     expect(deps.anthropicFn).not.toHaveBeenCalled();
   });

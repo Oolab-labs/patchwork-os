@@ -934,15 +934,16 @@ export class Bridge {
         {
           binary: this.config.claudeBinary,
           antBinary: this.config.antBinary,
-          bridgeMcp:
-            this.config.driver === "gemini"
-              ? () =>
-                  this.port > 0
-                    ? {
-                        url: `http://127.0.0.1:${this.port}/mcp`,
-                        authToken: this.authToken,
-                      }
-                    : undefined
+          // Provided to all subprocess-style drivers (claude, gemini). The
+          // claude SubprocessDriver only injects --mcp-config when the spawned
+          // task sets providerOptions.mcpAccess=true (per-recipe-step opt-in).
+          // Gemini wires it unconditionally into ~/.gemini/settings.json.
+          bridgeMcp: () =>
+            this.port > 0
+              ? {
+                  url: `http://127.0.0.1:${this.port}/mcp`,
+                  authToken: this.authToken,
+                }
               : undefined,
         },
         (msg) => this.logger.info(msg),

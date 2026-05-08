@@ -53,6 +53,13 @@ export interface ClaudeTask {
   systemPrompt?: string;
   /** If true, this task was dispatched to the ant binary instead of claude. */
   useAnt?: boolean;
+  /**
+   * If true, the spawned `claude -p` is given a temp `--mcp-config` pointing at
+   * the bridge's HTTP MCP endpoint so it can call bridge tools. Opt-in per
+   * task; default off because most subprocesses shouldn't recurse into the
+   * bridge that spawned them.
+   */
+  mcpAccess?: boolean;
   /** Set when status === "cancelled": what triggered the cancel. */
   cancelReason?: CancelReason;
   /** Last ~2KB of subprocess stderr — populated on timeout and other aborts. */
@@ -94,6 +101,11 @@ export type EnqueueOpts = {
   triggerSource?: string;
   /** If true, spawn ant binary instead of claude. */
   useAnt?: boolean;
+  /**
+   * If true, inject bridge MCP into the spawned `claude -p` so the agent can
+   * call bridge tools. Opt-in per task — see ClaudeTask.mcpAccess for details.
+   */
+  mcpAccess?: boolean;
 };
 
 /** Shape of a task entry in the v1 tasks file. */
@@ -210,6 +222,7 @@ export class ClaudeOrchestrator {
         systemPrompt: opts.systemPrompt,
       }),
       ...(opts.useAnt !== undefined && { useAnt: opts.useAnt }),
+      ...(opts.mcpAccess !== undefined && { mcpAccess: opts.mcpAccess }),
     };
 
     this.tasks.set(id, task);
@@ -403,6 +416,7 @@ export class ClaudeOrchestrator {
           fallbackModel: task.fallbackModel,
           maxBudgetUsd: task.maxBudgetUsd,
           useAnt: task.useAnt,
+          mcpAccess: task.mcpAccess,
         },
         onChunk: (chunk: string) => {
           // Per-task streaming callback (e.g. for MCP notifications/progress)
