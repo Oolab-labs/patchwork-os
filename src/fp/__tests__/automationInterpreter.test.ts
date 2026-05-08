@@ -634,13 +634,11 @@ describe("Parallel state merge", () => {
 // ── WithRetry re-execution ────────────────────────────────────────────────────
 
 describe("WithRetry re-execution", () => {
-  it("retry merges its resulting state via mergeRetryState (no state loss)", async () => {
-    // Backend that fails first enqueue but succeeds on retry. We assert that
-    // after the retry fires, the AutomationState produced by the retry's
-    // interpret() is published via mergeRetryState — and that it includes
-    // both a cleared pendingRetries entry AND a taskTimestamps entry for
-    // the retry-spawned task. Previously the retry result was discarded, so
-    // pendingRetries leaked and taskTimestamps undercounted.
+  it("retry publishes its post-state atomically via runRetryUnderLock", async () => {
+    // After the retry fires, the AutomationState produced by the retry's
+    // interpret() must be published via runRetryUnderLock — including
+    // a cleared pendingRetries entry AND a taskTimestamps entry for the
+    // retry-spawned task. Originally the retry result was discarded.
     let attempts = 0;
     const realRetryBackend = new TestBackend();
     realRetryBackend.enqueueTask = async (opts) => {
@@ -655,8 +653,8 @@ describe("WithRetry re-execution", () => {
       return () => {};
     };
 
-    const merged: import("../automationState.js").AutomationState[] = [];
     let live = EMPTY_AUTOMATION_STATE;
+    const merged: import("../automationState.js").AutomationState[] = [];
 
     const prog = withRetry(
       "retry-key",
@@ -671,31 +669,32 @@ describe("WithRetry re-execution", () => {
     const ctx = makeCtx({
       backend: realRetryBackend,
       getLiveState: () => live,
-      mergeRetryState: (s) => {
-        merged.push(s);
-        live = s;
+      runRetryUnderLock: (work) => {
+        // Mimic AutomationHooks: chain async work, write result to live.
+        void (async () => {
+          const next = await work(live);
+          live = next;
+          merged.push(next);
+        })();
       },
     });
     const result = await executeAutomationPolicy([prog], ctx);
     if (!result.ok) throw new Error("not ok");
-    // Initial run set live = post-initial state with pendingRetries entry
     live = result.value.updatedState;
-    // Allow the void async retry callback to settle
     await new Promise((r) => setTimeout(r, 20));
 
     expect(attempts).toBeGreaterThanOrEqual(2);
     expect(merged.length).toBe(1);
     const after = merged[0]!;
-    // BUG #1: pendingRetries must be cleared after a successful retry
     expect(after.pendingRetries.has("retry-key")).toBe(false);
-    // BUG #1: taskTimestamps must include the retry-spawned task
     expect(after.taskTimestamps.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("retry reads live state at fire time (not scheduling-time snapshot)", async () => {
-    // Verifies BUG #2: between scheduling and firing, live state has gained a
-    // cooldown record for the same hook. The retry MUST read live state and
-    // therefore skip on cooldown, NOT re-fire from the stale snapshot.
+  it("retry runs against state passed by the lock executor (atomicity)", async () => {
+    // Regression for the race where another _runInterpreter call landed
+    // between scheduling and firing. The lock executor passes the current
+    // live state to the work fn. The retry uses THAT state, so a cooldown
+    // recorded by a concurrent run is honoured (and the retry short-circuits).
     let attempts = 0;
     const realRetryBackend = new TestBackend();
     let firedFn: (() => void) | null = null;
@@ -706,7 +705,6 @@ describe("WithRetry re-execution", () => {
       return `task-${attempts}`;
     };
     realRetryBackend.scheduleRetry = (_key, _delayMs, fn) => {
-      // Defer firing — caller will mutate live state, then fire.
       firedFn = fn;
       return () => {};
     };
@@ -730,24 +728,70 @@ describe("WithRetry re-execution", () => {
     const ctx = makeCtx({
       backend: realRetryBackend,
       getLiveState: () => live,
-      mergeRetryState: (s) => {
-        live = s;
+      runRetryUnderLock: (work) => {
+        void (async () => {
+          // Lock executor MUST pass current live, not an older snapshot.
+          live = await work(live);
+        })();
       },
     });
     const result = await executeAutomationPolicy([prog], ctx);
     if (!result.ok) throw new Error("not ok");
     live = result.value.updatedState;
-    // Simulate another (concurrent) hook that recorded a cooldown trigger for
-    // the same key between scheduling and firing.
+    // Simulate a concurrent run that recorded the cooldown between
+    // scheduling and firing.
     live = recordTrigger(live, "cooldown-key", "task-existing", Date.now());
-    // Now fire the retry.
     expect(firedFn).not.toBeNull();
     firedFn?.();
     await new Promise((r) => setTimeout(r, 20));
-    // BUG #2: retry read the snapshot and ignored the new cooldown — would
-    // have produced a 2nd enqueueTask attempt. Live-state read means the
-    // retry sees the cooldown and short-circuits.
     expect(attempts).toBe(1);
+  });
+
+  it("clears pendingRetries even when retry's interpret() throws", async () => {
+    // Regression: prior implementation only cleared pendingRetries on the
+    // success path of the inner try. A retry whose work threw left the
+    // entry populated forever — manifest as `pendingRetries.get(key)` still
+    // truthy, blocking future retry scheduling for the same key.
+    const realRetryBackend = new TestBackend();
+    realRetryBackend.enqueueTask = async () => {
+      throw new Error("always-fail");
+    };
+    realRetryBackend.scheduleRetry = (_key, _delayMs, fn) => {
+      fn();
+      return () => {};
+    };
+
+    let live = EMPTY_AUTOMATION_STATE;
+
+    const prog = withRetry(
+      "retry-key",
+      2,
+      5000,
+      hook({
+        hookType: "onFileSave",
+        enabled: true,
+        promptSource: INLINE_SOURCE,
+      }),
+    );
+    const ctx = makeCtx({
+      backend: realRetryBackend,
+      getLiveState: () => live,
+      runRetryUnderLock: (work) => {
+        void (async () => {
+          live = await work(live);
+        })();
+      },
+    });
+    const result = await executeAutomationPolicy([prog], ctx);
+    if (!result.ok) throw new Error("not ok");
+    live = result.value.updatedState;
+    // Initial run scheduled the retry → pendingRetries.has(retry-key) = true
+    expect(live.pendingRetries.has("retry-key")).toBe(true);
+    // Let the retry callback run; it throws inside doRetry but the
+    // try/finally-style catch in WithRetry's doRetry must still emit
+    // clearPendingRetry on the way out.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(live.pendingRetries.has("retry-key")).toBe(false);
   });
 
   it("retry callback re-invokes the wrapped program on next tick", async () => {
