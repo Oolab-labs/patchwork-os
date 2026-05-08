@@ -47,11 +47,13 @@ interface DriverRow {
   driverValue: string; // bridge driver setting that maps to this row
 }
 
+// Names omit model versions on purpose — versions go stale fast and the
+// authoritative model id is already shown on /overview hero. Ollama hidden
+// until `local` is wired into the bridge driver allowlist (see follow-up).
 const DRIVER_ROWS: DriverRow[] = [
-  { id: "claude", name: "Claude 3.5 Sonnet", detail: "Anthropic · subprocess or API", driverValue: "subprocess" },
-  { id: "gemini", name: "Gemini 2.5 Flash", detail: "Google · CLI or API", driverValue: "gemini" },
-  { id: "ollama", name: "Ollama qwen2.5-coder", detail: "Local · Ollama / LM Studio", driverValue: "local" },
-  { id: "openai", name: "OpenAI GPT-4o", detail: "OpenAI · requires API key", driverValue: "openai" },
+  { id: "claude", name: "Claude", detail: "Anthropic · subprocess (subscription) or API", driverValue: "subprocess" },
+  { id: "gemini", name: "Gemini", detail: "Google · CLI subscription or API key", driverValue: "gemini" },
+  { id: "openai", name: "OpenAI", detail: "API key required", driverValue: "openai" },
 ];
 
 // Inline style objects intentionally use the canonical --ink/--line tokens
@@ -244,7 +246,7 @@ export default function SettingsPage() {
       if (res.ok) {
         setPrimaryDriver(rowId);
         const text = body.restartRequired
-          ? `${row.name} set as primary — restart the bridge to activate.`
+          ? `${row.name} set as primary. Restart Claude Code (quit and re-open, then run /ide) to activate the new driver.`
           : `${row.name} set as primary.`;
         setDriverMsg({ ok: true, text });
         flashSaved();
@@ -539,23 +541,6 @@ export default function SettingsPage() {
                         }}
                       >
                         {driverSaving === row.id ? "Saving…" : "Set primary"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled
-                        title="Per-driver configuration UI coming soon — edit the config file directly."
-                        style={{
-                          background: "transparent",
-                          color: "var(--fg-3)",
-                          border: "1px solid var(--border-default)",
-                          borderRadius: "var(--r-2)",
-                          padding: "5px 10px",
-                          fontSize: "var(--fs-s)",
-                          cursor: "not-allowed",
-                          opacity: 0.5,
-                        }}
-                      >
-                        Configure
                       </button>
                     </div>
                   );
