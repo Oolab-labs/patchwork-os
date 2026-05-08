@@ -590,27 +590,41 @@ async function interpret(
           const nextRetryAt = ctx.now + program.retryDelayMs;
 
           // Schedule retry: re-invoke the wrapped program when the timer
-          // fires. State is a snapshot of when the retry was scheduled; for
-          // typical retryDelayMs (seconds) drift is negligible. TestBackend
-          // records the call but does not actually fire the timer.
+          // fires. Read live state at fire time (not the scheduling-time
+          // snapshot) so the retry honours cooldown / dedup / rate-limit
+          // mutations that landed between scheduling and fire. Merge the
+          // retry's resulting state back via mergeRetryState so cooldown,
+          // dedup, rateLimit, pendingRetries, and taskTimestamps writes
+          // performed during the retry are not silently dropped.
+          // TestBackend records the call but does not actually fire the timer.
           const wrappedProgram = program.program;
           const retrySnapshot = innerAcc.state;
+          const liveStateFn = ctx.getLiveState;
+          const mergeFn = ctx.mergeRetryState;
           ctx.backend.scheduleRetry(program.key, program.retryDelayMs, () => {
             ctx.log(
               `[interpreter] retry attempt ${nextAttempt} for ${program.key}`,
             );
             void (async () => {
               try {
+                const liveState = liveStateFn ? liveStateFn() : retrySnapshot;
                 const retryCtx: InterpreterContext = {
                   ...ctx,
-                  state: retrySnapshot,
+                  state: liveState,
                   now: Date.now(),
                 };
-                await interpret(
+                const retryResult = await interpret(
                   wrappedProgram,
                   retryCtx,
-                  emptyAcc(retrySnapshot),
+                  emptyAcc(liveState),
                 );
+                // Always clear the pendingRetries entry — the retry has run,
+                // whether it spawned a task or not — then publish state.
+                const finalState = clearPendingRetry(
+                  retryResult.state,
+                  program.key,
+                );
+                if (mergeFn) mergeFn(finalState);
               } catch (e) {
                 const m = e instanceof Error ? e.message : String(e);
                 ctx.log(`[interpreter] retry ${program.key} failed: ${m}`);
