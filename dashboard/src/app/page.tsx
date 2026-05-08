@@ -751,8 +751,12 @@ export default function HomePage() {
   ).size;
   const activeRecipesCount = recipes.filter((r) => r.enabled !== false).length;
 
-  const bridgeVersion = bridgeStatus.patchwork?.version ?? "unknown";
-  const extensionVersion = health?.extensionVersion ?? "unknown";
+  // The bridge's /health endpoint doesn't currently expose a version
+  // string, so these are usually missing in practice. Render an em-dash
+  // (matches the "—" used elsewhere for missing values) instead of the
+  // contradictory "unknown" word next to the green "all green" pill.
+  const bridgeVersion = bridgeStatus.patchwork?.version ?? "—";
+  const extensionVersion = health?.extensionVersion ?? "—";
 
   return (
     <section>
