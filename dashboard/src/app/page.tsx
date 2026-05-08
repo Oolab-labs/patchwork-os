@@ -52,6 +52,7 @@ interface Recipe {
   name: string;
   enabled?: boolean;
   lastRun?: number;
+  installedAt?: number;
 }
 
 interface ActivityEvent {
@@ -225,6 +226,52 @@ function parseUptimeMs(text: string): number | null {
   const m = text.match(/^bridge_uptime_seconds\s+(\d+(?:\.\d+)?)/m);
   if (m) return Math.round(Number.parseFloat(m[1]) * 1000);
   return null;
+}
+
+// Telemetry-tile icons. Match the wireframe glyphs (≡ recipes, 🔒 approvals,
+// >_ tools, ☉ tokens) but rendered as 12×12 inline SVGs at --ink-3 so they
+// read as muted decoration next to the uppercase tile labels.
+const TILE_ICON_PROPS = {
+  width: 12,
+  height: 12,
+  viewBox: "0 0 24 24",
+  fill: "none" as const,
+  stroke: "currentColor",
+  strokeWidth: 1.6,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+  style: { color: "var(--ink-3)" },
+};
+function TileIconLines() {
+  return (
+    <svg {...TILE_ICON_PROPS} aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+function TileIconLock() {
+  return (
+    <svg {...TILE_ICON_PROPS} aria-hidden="true">
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+}
+function TileIconShell() {
+  return (
+    <svg {...TILE_ICON_PROPS} aria-hidden="true">
+      <path d="M5 8l4 4-4 4" />
+      <path d="M13 16h6" />
+    </svg>
+  );
+}
+function TileIconSun() {
+  return (
+    <svg {...TILE_ICON_PROPS} aria-hidden="true">
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4" />
+    </svg>
+  );
 }
 
 // Compact human-readable counts: 4_752_583_497 → "4.8B", 58_376_273 → "58M".
@@ -697,12 +744,53 @@ export default function HomePage() {
   const recipesShipped = recipes.length;
   const pendingCount = pendingApprovals.length;
   const toolsToday = toolCallTotal;
+
+  // Recipes-shipped delta vs last week. Uses recipe.installedAt; recipes
+  // missing installedAt are excluded from the delta but count toward the
+  // total. "↑ +N this week" matches the wireframe pattern.
+  const recipesThisWeekLabel = (() => {
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const shipped = recipes.filter(
+      (r) => typeof r.installedAt === "number" && r.installedAt >= weekAgo,
+    ).length;
+    if (recipesShipped === 0) return "none yet";
+    if (shipped === 0) return "no new this week";
+    return `↑ +${shipped} this week`;
+  })();
+
   const oldestApprovalLabel = (() => {
     if (pendingApprovals.length === 0) return "none pending";
     const oldest = Math.min(
       ...pendingApprovals.map((p) => p.requestedAt),
     );
-    return `oldest ${relTime(oldest)}`;
+    return `· oldest ${relTime(oldest)}`;
+  })();
+
+  // Token spend in USD using the primary-driver rate card. Sonnet defaults —
+  // matches the wireframe's "$3.42 spend" foot. Caveat: the bridge tracks
+  // tokens cumulatively since restart, not per-day, so this is "spend since
+  // restart" not "today's spend". Documented in the title tooltip on the tile.
+  // Rates from anthropic.com/pricing as of 2026:
+  //   input         $3.00 / 1M
+  //   output       $15.00 / 1M
+  //   cache write   $3.75 / 1M  (1.25× input)
+  //   cache read    $0.30 / 1M  (0.10× input)
+  const tokenSpendUsd = (() => {
+    const t = health?.tokens;
+    if (!t) return null;
+    const usd =
+      (t.input * 3) / 1_000_000 +
+      (t.output * 15) / 1_000_000 +
+      (t.cacheCreate * 3.75) / 1_000_000 +
+      (t.cacheRead * 0.3) / 1_000_000;
+    return usd;
+  })();
+  const tokenSpendLabel = (() => {
+    if (tokenSpendUsd == null) return undefined;
+    if (tokenSpendUsd < 0.01) return "· < $0.01 spend";
+    if (tokenSpendUsd < 1) return `· $${tokenSpendUsd.toFixed(2)} spend`;
+    if (tokenSpendUsd < 100) return `· $${tokenSpendUsd.toFixed(2)} spend`;
+    return `· $${Math.round(tokenSpendUsd).toLocaleString()} spend`;
   })();
 
   // LOAD widget — running tasks + connections heuristic, + 4 trend
@@ -880,24 +968,28 @@ export default function HomePage() {
           <>
             <StatCard
               label="Recipes shipped"
+              icon={<TileIconLines />}
               value={<AnimatedNumber value={recipesShipped} />}
-              foot={recipesShipped === 0 ? "none yet" : "total"}
+              foot={recipesThisWeekLabel}
               href="/recipes"
             />
             <StatCard
               label="Pending approvals"
+              icon={<TileIconLock />}
               value={<AnimatedNumber value={pendingCount} />}
               foot={oldestApprovalLabel}
               href="/approvals"
             />
             <StatCard
               label="Tools called today"
+              icon={<TileIconShell />}
               value={<AnimatedNumber value={toolsToday} />}
               foot={toolsToday === 0 ? "no calls yet" : "last 60 min"}
               href="/activity"
             />
             <StatCard
               label="Tokens burnt"
+              icon={<TileIconSun />}
               value={
                 health?.tokens ? (
                   <AnimatedNumber
@@ -919,13 +1011,7 @@ export default function HomePage() {
                   "—"
                 )
               }
-              foot={
-                health?.tokens && health.tokens.cacheRead > 0
-                  ? `+${formatCompact(health.tokens.cacheRead)} cache reads · ${formatCompact(health.tokens.messages)} msg${health.tokens.messages === 1 ? "" : "s"}`
-                  : health?.tokens && health.tokens.messages > 0
-                    ? `${formatCompact(health.tokens.messages)} msg${health.tokens.messages === 1 ? "" : "s"}`
-                    : undefined
-              }
+              foot={tokenSpendLabel}
               title={
                 health?.tokens
                   ? [
