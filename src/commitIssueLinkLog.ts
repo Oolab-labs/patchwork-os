@@ -1,4 +1,10 @@
-import { appendFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import type { Logger } from "./logger.js";
 
@@ -39,6 +45,15 @@ export interface CommitIssueLink {
 }
 
 const DEFAULT_MEMORY_CAP = 2_000;
+
+/**
+ * Disk rotation thresholds. Mirrors RecipeRunLog: without rotation a busy
+ * automation policy enriching every commit fills `~/.patchwork/` over time
+ * and OOMs the bridge at next boot via `loadExisting`'s full `readFileSync`.
+ * We rotate at either limit, keeping the most recent N lines.
+ */
+const MAX_PERSIST_BYTES = 1024 * 1024; // 1 MB
+const MAX_PERSIST_LINES = 10_000;
 
 export interface LinkLogOptions {
   /** Directory holding commit_issue_links.jsonl. Created if missing. */
@@ -171,10 +186,55 @@ export class CommitIssueLinkLog {
 
   private append(link: CommitIssueLink): void {
     try {
+      // Rotate first if over the cap. Cheap stat call; only rewrites when
+      // needed. Without this, commit_issue_links.jsonl grows unbounded.
+      try {
+        const st = statSync(this.file);
+        if (st.size > MAX_PERSIST_BYTES) this.rotateDisk();
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT") throw err;
+      }
       appendFileSync(this.file, `${JSON.stringify(link)}\n`, { mode: 0o600 });
     } catch (err) {
       this.opts.logger?.warn?.(
         `[linklog] append failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Trim commit_issue_links.jsonl to the most recent MAX_PERSIST_LINES (or
+   * whatever fits under MAX_PERSIST_BYTES). Lines beyond the cap are dropped
+   * from disk; in-memory `links[]` is unaffected (separately bounded by
+   * memoryCap). Best-effort — failure is logged and the next append proceeds
+   * against the un-rotated file.
+   */
+  private rotateDisk(): void {
+    try {
+      const raw = readFileSync(this.file, "utf8");
+      let lines = raw.split("\n").filter((l) => l.trim());
+      if (lines.length > MAX_PERSIST_LINES) {
+        lines = lines.slice(-MAX_PERSIST_LINES);
+      }
+      let joined = lines.join("\n");
+      while (joined.length + 1 > MAX_PERSIST_BYTES && lines.length > 1) {
+        lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
+        joined = lines.join("\n");
+      }
+      if (lines.length === 1 && joined.length + 1 > MAX_PERSIST_BYTES) {
+        this.opts.logger?.warn?.(
+          `[linklog] rotate dropped 1 oversized row (${joined.length} bytes > ${MAX_PERSIST_BYTES} cap)`,
+        );
+        lines = [];
+        joined = "";
+      }
+      writeFileSync(this.file, joined.length > 0 ? `${joined}\n` : "", {
+        mode: 0o600,
+      });
+    } catch (err) {
+      this.opts.logger?.warn?.(
+        `[linklog] rotate failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
