@@ -66,6 +66,19 @@ const DRIVER_ROWS: DriverRow[] = [
   { id: "grok", name: "Grok", detail: "xAI · API key required", driverValue: "grok", keyProvider: "xai" },
 ];
 
+// Default model id each driver runs when input.model is not set.
+// Source of truth (update when driver defaults move):
+//   claude  → src/claudeDriver.ts:616, src/drivers/claude/api.ts:52
+//   openai  → src/drivers/openai/index.ts:79 (literal fallback)
+//   grok    → src/drivers/grok/index.ts:19 (defaultModel)
+//   gemini  → no override; whatever the user's `gemini` CLI defaults to
+const DRIVER_DEFAULT_MODEL: Record<string, string | null> = {
+  claude: "claude-haiku-4-5-20251001",
+  openai: "gpt-4o",
+  grok: "grok-2-latest",
+  gemini: null, // CLI default — not knowable without running it
+};
+
 // Inline style objects intentionally use the canonical --ink/--line tokens
 // (not the legacy --fg-*/--border-* aliases). The aliases are kept in
 // globals.css for back-compat but new surfaces should pick the canonical
@@ -586,6 +599,11 @@ export default function SettingsPage() {
                             )}
                           </div>
                           <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", marginTop: 2 }}>{row.detail}</div>
+                          {DRIVER_DEFAULT_MODEL[row.id] && (
+                            <div className="mono" style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)", marginTop: 2 }}>
+                              Default model: {DRIVER_DEFAULT_MODEL[row.id]}
+                            </div>
+                          )}
                         </div>
                         <button
                           type="button"
