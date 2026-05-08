@@ -211,14 +211,20 @@ function CompareInner() {
     setPromoting: (v: boolean) => void;
   } | null>(null);
 
+  // The bridge wraps the response: { plan: DryRunPlan, error?: string }.
+  // The /recipes/[name]/plan page already extracts data.plan; this one was
+  // stuffing the whole envelope into setPlanA, then crashing on
+  // `plan.steps.map(...)` — TypeError: Cannot read properties of undefined
+  // (reading 'map'). Match the /plan page's load() shape: pull data.plan
+  // out and treat missing plan as an error.
   useEffect(() => {
     if (!nameA) return;
     setLoadingA(true);
     fetch(apiPath(`/api/bridge/recipes/${encodeURIComponent(nameA)}/plan`))
       .then((r) => r.json())
-      .then((d: DryRunPlan & { error?: string }) => {
-        if (d.error) setErrA(d.error);
-        else setPlanA(d);
+      .then((d: { plan?: DryRunPlan; error?: string }) => {
+        if (d.error || !d.plan) setErrA(d.error ?? "Failed to load plan.");
+        else setPlanA(d.plan);
       })
       .catch((e: unknown) => setErrA(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoadingA(false));
@@ -229,9 +235,9 @@ function CompareInner() {
     setLoadingB(true);
     fetch(apiPath(`/api/bridge/recipes/${encodeURIComponent(nameB)}/plan`))
       .then((r) => r.json())
-      .then((d: DryRunPlan & { error?: string }) => {
-        if (d.error) setErrB(d.error);
-        else setPlanB(d);
+      .then((d: { plan?: DryRunPlan; error?: string }) => {
+        if (d.error || !d.plan) setErrB(d.error ?? "Failed to load plan.");
+        else setPlanB(d.plan);
       })
       .catch((e: unknown) => setErrB(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoadingB(false));
