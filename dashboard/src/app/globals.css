@@ -1654,14 +1654,28 @@ button.topbar-search {
 .quilt-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
+  /* Tightened gap from 18px so the · separators (rendered via ::after
+     on each stat except the last) read as "X · Y · Z" not as widely-
+     spaced isolated chips. Matches the wireframe meta-line rhythm. */
+  gap: 0;
   font-size: 12px;
   color: var(--ink-2);
+  margin-top: 14px;
+}
+.quilt-stats > span {
+  display: inline-flex;
+  align-items: center;
+}
+.quilt-stats > span:not(:last-child)::after {
+  content: " · ";
+  color: var(--ink-3);
+  margin: 0 10px;
 }
 .quilt-stats b {
   color: var(--ink-0);
   font-weight: 600;
   font-family: var(--font-mono);
+  margin-right: 6px;
 }
 
 /* ---- Weather (stitched-seam gauge) ---- */

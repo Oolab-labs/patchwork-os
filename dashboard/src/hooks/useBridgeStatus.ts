@@ -18,6 +18,7 @@ export interface BridgeStatus {
     workspace?: string;
     approvalGate?: string;
     driver?: string;
+    model?: string;
     version?: string;
   };
 }
