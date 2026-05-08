@@ -123,11 +123,13 @@ describe("createOpenInBrowserTool", () => {
     const html = "<html></html>";
     await tool.handler({ html });
 
-    expect(execSafe).toHaveBeenCalledWith("cmd", [
-      "/c",
-      "start",
-      "",
-      expect.stringMatching(/\.html$/),
-    ]);
+    expect(execSafe).toHaveBeenCalledWith(
+      "cmd",
+      ["/c", "start", "", expect.stringMatching(/\.html$/)],
+      // cmd is no longer in SAFE_BIN_BASENAMES; openInBrowser opts in via
+      // allowlistChecked since the argv shape is fixed and tmpPath is
+      // mkdtemp-generated, never user input.
+      { allowlistChecked: true },
+    );
   });
 });

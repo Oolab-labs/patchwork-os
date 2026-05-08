@@ -33,6 +33,18 @@ export class OpenAIApiDriver implements ProviderDriver {
         "OpenAIApiDriver requires OPENAI_API_KEY environment variable",
       );
     }
+    // Subclasses (Grok, Gemini, Local) MUST set their own defaultModel —
+    // a bare OpenAI driver defaults to gpt-4o here, but a subclass that
+    // overrides baseURL without defaultModel would otherwise silently dial
+    // the foreign endpoint asking for gpt-4o (which doesn't exist on Grok,
+    // Gemini, or local LLMs) and surface as a confusing 404 / phantom-model
+    // error far from the actual misconfiguration.
+    if (opts.baseURL && !opts.defaultModel) {
+      throw new Error(
+        "OpenAIApiDriver: subclass must set defaultModel when baseURL is " +
+          "overridden — bare 'gpt-4o' fallback only applies to OpenAI's API.",
+      );
+    }
   }
 
   async run(input: ProviderTaskInput): Promise<ProviderTaskResult> {
@@ -103,9 +115,25 @@ export class OpenAIApiDriver implements ProviderDriver {
         const delta: string = chunk.choices?.[0]?.delta?.content ?? "";
         if (delta) {
           if (firstChunkAt === undefined) firstChunkAt = Date.now();
-          text += delta;
-          if (text.length <= OUTPUT_CAP) {
+          if (text.length < OUTPUT_CAP) {
+            // Cap accumulation in-loop to bound memory under runaway streams
+            // (e.g. local LLMs that loop). Once we hit the cap, stop appending
+            // and abort the upstream stream so sockets and decoder buffers
+            // are released. onChunk is gated by the same cap so partial
+            // listeners stop receiving deltas.
+            text += delta;
             input.onChunk?.(delta);
+          } else {
+            // biome-ignore lint/suspicious/noExplicitAny: stream shape
+            const ctrl = (stream as any).controller;
+            if (ctrl && typeof ctrl.abort === "function") {
+              try {
+                ctrl.abort();
+              } catch {
+                /* best effort */
+              }
+            }
+            break;
           }
         }
       }
