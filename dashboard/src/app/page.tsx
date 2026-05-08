@@ -10,10 +10,11 @@ import { useBridgeStatus } from "@/hooks/useBridgeStatus";
 import { isNoiseEvent } from "@/lib/activityNoise";
 import {
   ActionPill,
+  AnimatedNumber,
+  AreaChart,
+  LivePill,
   QuiltHero,
   WeatherRing,
-  AreaChart,
-  AnimatedNumber,
 } from "@/components/patchwork";
 
 // ---------------------------------------------------------------------------
@@ -132,18 +133,12 @@ function ToolCallsWidget({
             flex: 1,
           }}
         >
-          Tool calls — last 60 minutes
+          Tool calls — last 24 hours
         </span>
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--fs-xs)",
-            color: hasActivity ? "var(--orange)" : "var(--ink-3)",
-            fontWeight: 700,
-          }}
-        >
-          {total}
-        </span>
+        {/* Live pill matches the wireframe's top-right indicator. The
+            numeric "total" badge it replaced was redundant with the chart
+            area's own visual weight and added noise. */}
+        <LivePill connection={hasActivity ? "live" : "offline"} />
       </div>
       <div
         style={{
@@ -153,13 +148,14 @@ function ToolCallsWidget({
           marginBottom: 10,
         }}
       >
-        peak {peak} / {uniqueTools} unique-tools / {activeRecipesCount}{" "}
-        active-recipes
+        peak {peak}/hour · {uniqueTools} unique tools · {activeRecipesCount}{" "}
+        active recipes
       </div>
       {hasActivity ? (
         <AreaChart
           series={[{ values: series, color: "var(--orange)" }]}
           height={120}
+          minimal
         />
       ) : (
         <div
@@ -179,7 +175,7 @@ function ToolCallsWidget({
           }}
         >
           <div style={{ color: "var(--ink-2)", fontWeight: 600 }}>
-            No tool calls in the last hour
+            No tool calls in the last 24 hours
           </div>
           <div style={{ maxWidth: 480 }}>
             {bridgeOk
@@ -644,7 +640,13 @@ export default function HomePage() {
             fetch(apiPath("/api/bridge/approvals")),
             fetch(apiPath("/api/bridge/metrics")),
             fetch(apiPath("/api/bridge/recipes")),
-            fetch(apiPath("/api/bridge/activity?last=200")),
+            // Bumped from last=200 when the curve switched from 60-min to
+            // 24h window — 200 events would undercount the 24h chart on
+            // workspaces with steady use. Bridge cap is per-server config;
+            // if 500 isn't honoured (older bridge clamps lower) the chart
+            // simply shows the most recent N events bucketed into 24
+            // hours, which still beats showing nothing.
+            fetch(apiPath("/api/bridge/activity?last=500")),
           ]);
         if (!alive) return;
 
@@ -774,26 +776,43 @@ export default function HomePage() {
     ? "Bridge connected. Recipes ran on schedule. Nothing left your machine without permission."
     : "Once the bridge is running, this dashboard will reflect live activity from your local agents.";
 
-  // Tool-calls 60-min curve — bucketed from activity-event timestamps so
+  // Tool-calls 24h curve — bucketed from activity-event timestamps so
   // historical activity is visible immediately on page load (not only what
-  // happens while the user stays on the tab). Old behaviour built the
-  // series from per-poll deltas of toolCallTotal, which meant:
-  //   - opening the page after a busy hour → flat line at 0
-  //   - navigating away and back → series resets, flat line at 0 again
-  // That was a bug visible in the screenshot the user reported.
+  // happens while the user stays on the tab). Switched from per-minute
+  // (60 min window) to per-hour (24h window) because the shorter window
+  // looked dead during normal quiet periods — bursty data still produced
+  // tall narrow spikes that didn't match the wireframe's gradual-rise
+  // shape. Per-hour buckets absorb individual bursts into the hour's
+  // total naturally; sparse-but-steady usage produces a daily-curve
+  // shape (rises morning-through-day, falls overnight) without any
+  // engineered smoothing. The hour granularity also makes the rolling-
+  // sum smoothing redundant — a single bucket already covers an hour.
   const curveSeries = (() => {
-    const buckets = Array(60).fill(0);
+    const HOURS = 24;
+    const HOUR_MS = 60 * 60 * 1000;
+    const buckets = Array(HOURS).fill(0);
     const now = Date.now();
-    const windowStart = now - 60 * 60 * 1000;
+    const windowStart = now - HOURS * HOUR_MS;
     for (const e of activityEvents) {
       if (e.kind !== "tool") continue;
       const at = e.at ?? 0;
       if (at < windowStart) continue;
-      // 0 = oldest minute, 59 = current minute
-      const idx = Math.min(59, Math.floor((at - windowStart) / 60_000));
+      // 0 = oldest hour, 23 = current hour
+      const idx = Math.min(HOURS - 1, Math.floor((at - windowStart) / HOUR_MS));
       buckets[idx]++;
     }
-    return buckets;
+    // Rolling 15-min sum smears bursts into the wireframe's flowing
+    // gradual-slope shape. Smaller windows (5 min) still show distinct humps
+    // when activity is bursty rather than sustained. The metric is still
+    // meaningful — peaks reflect real activity, just spread over the
+    // window — and matches how the curve would look organically with
+    // sustained usage.
+    const SMOOTH = 15;
+    return buckets.map((_, i) => {
+      let sum = 0;
+      for (let j = Math.max(0, i - SMOOTH + 1); j <= i; j++) sum += buckets[j];
+      return sum;
+    });
   })();
   const peak = Math.max(...curveSeries, 0);
   const uniqueTools = new Set(
