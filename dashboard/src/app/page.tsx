@@ -631,9 +631,7 @@ export default function HomePage() {
   const [pendingApprovals, setPendingApprovals] = useState<Pending[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [toolCallTotal, setToolCallTotal] = useState(0);
-  const [toolCallSeries, setToolCallSeries] = useState<number[]>([]);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
-  const prevToolCallsRef = useRef<number | undefined>(undefined);
   const tickRef = useRef<() => void>(() => {});
   const greet = useGreeting();
 
@@ -668,13 +666,7 @@ export default function HomePage() {
           ? recipesData
           : (recipesData as { recipes?: Recipe[] }).recipes ?? [];
 
-        const prev = prevToolCallsRef.current;
-        const delta =
-          prev !== undefined && total >= prev ? total - prev : 0;
-        prevToolCallsRef.current = total;
-
         setToolCallTotal(total);
-        setToolCallSeries((s) => [...s.slice(-59), delta]);
         setPendingApprovals(Array.isArray(approvalsData) ? approvalsData : []);
         setRecipes(list);
         setActivityEvents(
@@ -696,13 +688,48 @@ export default function HomePage() {
   // Telemetry numbers — real bridge values, no floors.
   const recipesShipped = recipes.length;
   const pendingCount = pendingApprovals.length;
-  const toolsToday = toolCallTotal;
   const oldestApprovalLabel = (() => {
     if (pendingApprovals.length === 0) return "none pending";
     const oldest = Math.min(
       ...pendingApprovals.map((p) => p.requestedAt),
     );
     return `oldest ${relTime(oldest)}`;
+  })();
+
+  // "Tools called today" used to display toolCallTotal — the cumulative
+  // Prometheus counter since bridge restart. The label promised "today" but
+  // delivered "since restart", which is days off after a long-running bridge.
+  // Recompute from activity events filtered to today/yesterday so the tile
+  // matches its label and can show a trend delta vs yesterday (per wireframe).
+  // Caveat: activity feed caps at 200 events so workspaces with >200 tool
+  // calls/day will undercount; the tile is best-effort, not auditable.
+  const { toolsToday, toolsTrendLabel } = (() => {
+    const startOfToday = (() => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
+    })();
+    const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000;
+    let today = 0;
+    let yesterday = 0;
+    for (const e of activityEvents) {
+      if (e.kind !== "tool") continue;
+      const at = e.at ?? 0;
+      if (at >= startOfToday) today++;
+      else if (at >= startOfYesterday) yesterday++;
+    }
+    let label: string;
+    if (today === 0 && yesterday === 0) {
+      label = "no calls yet";
+    } else if (yesterday === 0) {
+      label = "first day with calls";
+    } else {
+      const pct = Math.round(((today - yesterday) / yesterday) * 100);
+      if (pct === 0) label = "flat vs yesterday";
+      else if (pct > 0) label = `↑ +${pct}% vs yesterday`;
+      else label = `↓ ${pct}% vs yesterday`;
+    }
+    return { toolsToday: today, toolsTrendLabel: label };
   })();
 
   // LOAD widget — running tasks + connections heuristic, + 4 trend
@@ -747,13 +774,26 @@ export default function HomePage() {
     ? "Bridge connected. Recipes ran on schedule. Nothing left your machine without permission."
     : "Once the bridge is running, this dashboard will reflect live activity from your local agents.";
 
-  // Tool-calls 60-min curve — pad with zeros so it's always smooth
+  // Tool-calls 60-min curve — bucketed from activity-event timestamps so
+  // historical activity is visible immediately on page load (not only what
+  // happens while the user stays on the tab). Old behaviour built the
+  // series from per-poll deltas of toolCallTotal, which meant:
+  //   - opening the page after a busy hour → flat line at 0
+  //   - navigating away and back → series resets, flat line at 0 again
+  // That was a bug visible in the screenshot the user reported.
   const curveSeries = (() => {
-    const padded = [
-      ...Array(Math.max(0, 60 - toolCallSeries.length)).fill(0),
-      ...toolCallSeries,
-    ];
-    return padded.slice(-60);
+    const buckets = Array(60).fill(0);
+    const now = Date.now();
+    const windowStart = now - 60 * 60 * 1000;
+    for (const e of activityEvents) {
+      if (e.kind !== "tool") continue;
+      const at = e.at ?? 0;
+      if (at < windowStart) continue;
+      // 0 = oldest minute, 59 = current minute
+      const idx = Math.min(59, Math.floor((at - windowStart) / 60_000));
+      buckets[idx]++;
+    }
+    return buckets;
   })();
   const peak = Math.max(...curveSeries, 0);
   const uniqueTools = new Set(
@@ -893,7 +933,7 @@ export default function HomePage() {
             <StatCard
               label="Tools called today"
               value={<AnimatedNumber value={toolsToday} />}
-              foot={toolsToday === 0 ? "no calls yet" : "last 60 min"}
+              foot={toolsTrendLabel}
               href="/activity"
             />
             <StatCard
