@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GeminiApiDriver } from "../gemini/api.js";
 import { GrokApiDriver } from "../grok/index.js";
 import { OpenAIApiDriver } from "../openai/index.js";
 
@@ -14,6 +15,7 @@ const log = vi.fn();
 beforeEach(() => {
   process.env.OPENAI_API_KEY = "test-openai-key";
   process.env.XAI_API_KEY = "test-xai-key";
+  process.env.GEMINI_API_KEY = "test-gemini-key";
   mockCreate.mockReset();
   log.mockReset();
 });
@@ -21,6 +23,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.OPENAI_API_KEY;
   delete process.env.XAI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
 });
 
 function makeStream(chunks: string[]): AsyncIterable<unknown> {
@@ -210,5 +213,51 @@ describe("GrokApiDriver", () => {
   it("throws if XAI_API_KEY missing", () => {
     delete process.env.XAI_API_KEY;
     expect(() => new GrokApiDriver(log)).toThrow(/XAI_API_KEY/);
+  });
+});
+
+describe("GeminiApiDriver", () => {
+  // Same approach as GrokApiDriver: subclass OpenAIApiDriver with Google's
+  // OpenAI-compatible chat-completions endpoint as baseURL. Tests mirror
+  // the Grok suite (default model, name, missing-key throw).
+
+  it("uses gemini-2.5-pro as default model", async () => {
+    mockCreate.mockResolvedValue(makeStream(["ok"]));
+    const driver = new GeminiApiDriver(log);
+    await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gemini-2.5-pro" }),
+      expect.anything(),
+    );
+  });
+
+  it("has name gemini-api", () => {
+    expect(new GeminiApiDriver(log).name).toBe("gemini-api");
+  });
+
+  it("throws if GEMINI_API_KEY missing", () => {
+    delete process.env.GEMINI_API_KEY;
+    expect(() => new GeminiApiDriver(log)).toThrow(/GEMINI_API_KEY/);
+  });
+
+  it("respects model override (e.g. gemini-2.5-flash)", async () => {
+    mockCreate.mockResolvedValue(makeStream(["ok"]));
+    const driver = new GeminiApiDriver(log);
+    await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+      model: "gemini-2.5-flash",
+    });
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gemini-2.5-flash" }),
+      expect.anything(),
+    );
   });
 });

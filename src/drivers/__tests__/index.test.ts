@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ApiDriver } from "../claude/api.js";
 import { SubprocessDriver } from "../claude/subprocess.js";
+import { GeminiApiDriver } from "../gemini/api.js";
 import { GeminiSubprocessDriver } from "../gemini/index.js";
 import { GrokApiDriver } from "../grok/index.js";
 import { createDriver } from "../index.js";
@@ -12,12 +13,14 @@ beforeEach(() => {
   process.env.OPENAI_API_KEY = "test-openai-key";
   process.env.XAI_API_KEY = "test-xai-key";
   process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
+  process.env.GEMINI_API_KEY = "test-gemini-key";
 });
 
 afterEach(() => {
   delete process.env.OPENAI_API_KEY;
   delete process.env.XAI_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.GEMINI_API_KEY;
 });
 
 const opts = { binary: "claude", antBinary: "ant" };
@@ -67,6 +70,12 @@ describe("createDriver", () => {
     });
     const driver = createDriver("gemini", { ...opts, bridgeMcp }, log);
     expect(driver).toBeInstanceOf(GeminiSubprocessDriver);
+  });
+
+  it("returns GeminiApiDriver for mode=gemini-api", () => {
+    expect(createDriver("gemini-api", opts, log)).toBeInstanceOf(
+      GeminiApiDriver,
+    );
   });
 
   it("throws for unknown driver mode", () => {

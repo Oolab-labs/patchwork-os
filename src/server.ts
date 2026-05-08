@@ -1333,6 +1333,7 @@ export class Server extends EventEmitter<ServerEvents> {
                 "openai",
                 "grok",
                 "gemini",
+                "gemini-api",
                 "none",
               ];
               if (!validDrivers.includes(driverRaw)) {
