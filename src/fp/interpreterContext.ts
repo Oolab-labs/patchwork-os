@@ -36,6 +36,22 @@ export interface InterpreterContext {
   readonly eventData: Readonly<Record<string, string>>;
   readonly backend: Backend;
   readonly log: (msg: string) => void;
+  /**
+   * Optional accessor for the live AutomationState at retry-fire time. If
+   * present, WithRetry uses this instead of the snapshot taken when the retry
+   * was scheduled — preventing retries from re-firing hooks that have since
+   * entered cooldown / dedup. AutomationHooks supplies a function that returns
+   * `this._automationState`; tests may omit.
+   */
+  readonly getLiveState?: () => AutomationState;
+  /**
+   * Optional sink for the AutomationState produced by a retry's interpret()
+   * call. Without this, cooldown / dedup / rateLimit / pendingRetries /
+   * taskTimestamps writes performed during the retry are silently dropped.
+   * AutomationHooks supplies a sink that merges the result into
+   * `this._automationState` via `_enqueueMutation`; tests may omit.
+   */
+  readonly mergeRetryState?: (state: AutomationState) => void;
 }
 
 // ── Interpreter result ────────────────────────────────────────────────────────

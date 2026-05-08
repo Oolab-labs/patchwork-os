@@ -1375,6 +1375,12 @@ export class AutomationHooks {
       eventData,
       backend: this._interpreterBackend,
       log: this.log.bind(this),
+      getLiveState: () => this._automationState,
+      mergeRetryState: (state) => {
+        this._enqueueMutation(() => {
+          this._automationState = state;
+        });
+      },
     };
     const result = await executeAutomationPolicy(this._programAST, ctx);
     if (result.ok) {

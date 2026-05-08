@@ -634,6 +634,122 @@ describe("Parallel state merge", () => {
 // ── WithRetry re-execution ────────────────────────────────────────────────────
 
 describe("WithRetry re-execution", () => {
+  it("retry merges its resulting state via mergeRetryState (no state loss)", async () => {
+    // Backend that fails first enqueue but succeeds on retry. We assert that
+    // after the retry fires, the AutomationState produced by the retry's
+    // interpret() is published via mergeRetryState — and that it includes
+    // both a cleared pendingRetries entry AND a taskTimestamps entry for
+    // the retry-spawned task. Previously the retry result was discarded, so
+    // pendingRetries leaked and taskTimestamps undercounted.
+    let attempts = 0;
+    const realRetryBackend = new TestBackend();
+    realRetryBackend.enqueueTask = async (opts) => {
+      attempts++;
+      if (attempts === 1) throw new Error("first-try-failure");
+      realRetryBackend.collector.enqueuedTasks.push(opts);
+      return `task-${attempts}`;
+    };
+    realRetryBackend.scheduleRetry = (key, delayMs, fn) => {
+      realRetryBackend.collector.scheduledRetries.push({ key, delayMs });
+      fn();
+      return () => {};
+    };
+
+    const merged: import("../automationState.js").AutomationState[] = [];
+    let live = EMPTY_AUTOMATION_STATE;
+
+    const prog = withRetry(
+      "retry-key",
+      2,
+      5000,
+      hook({
+        hookType: "onFileSave",
+        enabled: true,
+        promptSource: INLINE_SOURCE,
+      }),
+    );
+    const ctx = makeCtx({
+      backend: realRetryBackend,
+      getLiveState: () => live,
+      mergeRetryState: (s) => {
+        merged.push(s);
+        live = s;
+      },
+    });
+    const result = await executeAutomationPolicy([prog], ctx);
+    if (!result.ok) throw new Error("not ok");
+    // Initial run set live = post-initial state with pendingRetries entry
+    live = result.value.updatedState;
+    // Allow the void async retry callback to settle
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(attempts).toBeGreaterThanOrEqual(2);
+    expect(merged.length).toBe(1);
+    const after = merged[0]!;
+    // BUG #1: pendingRetries must be cleared after a successful retry
+    expect(after.pendingRetries.has("retry-key")).toBe(false);
+    // BUG #1: taskTimestamps must include the retry-spawned task
+    expect(after.taskTimestamps.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("retry reads live state at fire time (not scheduling-time snapshot)", async () => {
+    // Verifies BUG #2: between scheduling and firing, live state has gained a
+    // cooldown record for the same hook. The retry MUST read live state and
+    // therefore skip on cooldown, NOT re-fire from the stale snapshot.
+    let attempts = 0;
+    const realRetryBackend = new TestBackend();
+    let firedFn: (() => void) | null = null;
+    realRetryBackend.enqueueTask = async (opts) => {
+      attempts++;
+      if (attempts === 1) throw new Error("first-try-failure");
+      realRetryBackend.collector.enqueuedTasks.push(opts);
+      return `task-${attempts}`;
+    };
+    realRetryBackend.scheduleRetry = (_key, _delayMs, fn) => {
+      // Defer firing — caller will mutate live state, then fire.
+      firedFn = fn;
+      return () => {};
+    };
+
+    let live = EMPTY_AUTOMATION_STATE;
+
+    const prog = withRetry(
+      "retry-key",
+      2,
+      5000,
+      withCooldown(
+        "cooldown-key",
+        60_000,
+        hook({
+          hookType: "onFileSave",
+          enabled: true,
+          promptSource: INLINE_SOURCE,
+        }),
+      ),
+    );
+    const ctx = makeCtx({
+      backend: realRetryBackend,
+      getLiveState: () => live,
+      mergeRetryState: (s) => {
+        live = s;
+      },
+    });
+    const result = await executeAutomationPolicy([prog], ctx);
+    if (!result.ok) throw new Error("not ok");
+    live = result.value.updatedState;
+    // Simulate another (concurrent) hook that recorded a cooldown trigger for
+    // the same key between scheduling and firing.
+    live = recordTrigger(live, "cooldown-key", "task-existing", Date.now());
+    // Now fire the retry.
+    expect(firedFn).not.toBeNull();
+    firedFn?.();
+    await new Promise((r) => setTimeout(r, 20));
+    // BUG #2: retry read the snapshot and ignored the new cooldown — would
+    // have produced a 2nd enqueueTask attempt. Live-state read means the
+    // retry sees the cooldown and short-circuits.
+    expect(attempts).toBe(1);
+  });
+
   it("retry callback re-invokes the wrapped program on next tick", async () => {
     // Backend that fails first enqueue but succeeds on retry
     let attempts = 0;
