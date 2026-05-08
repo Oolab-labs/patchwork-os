@@ -719,6 +719,20 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
         >
           <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "var(--fs-s)", color: isDegraded ? "var(--warn)" : "var(--ink-2)", minWidth: 0, overflow: "hidden" }}>
             <span
+              // The toggle + Test + Disconnect cluster on the right squeezes
+              // this left half down to ~25px of usable width. Putting "Connected
+              // · 1w ago" inline made the text ellipsise to a single letter ("C"
+              // / "0" / "1."). Status is already conveyed by the green dot, the
+              // CONNECTED status pill at the top of the card, and the toggle's
+              // ON position; the only signal that gets lost is the lastSync time,
+              // surfaced here as a title tooltip on the dot.
+              title={
+                statusEntry.lastSync
+                  ? `Last sync: ${relativeTime(statusEntry.lastSync)}`
+                  : isDegraded
+                    ? "Degraded — re-auth required"
+                    : "Connected"
+              }
               style={{
                 width: 6, height: 6, borderRadius: "50%",
                 background: isDegraded ? "#f59e0b" : "var(--ok)",
@@ -726,12 +740,10 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
               }}
               aria-hidden="true"
             />
-            <span style={{ fontWeight: 500, flexShrink: 0 }}>{isDegraded ? "Degraded" : "Connected"}</span>
-            {statusEntry.lastSync && (
-              <span style={{ color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                · {relativeTime(statusEntry.lastSync)}
-              </span>
-            )}
+            {/* "Degraded" label kept — it's a distinct warning state worth
+                naming inline. "Connected" word + lastSync are now on the
+                dot's title tooltip (see comment above). */}
+            {isDegraded && <span style={{ fontWeight: 500, flexShrink: 0 }}>Degraded</span>}
           </div>
           <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
             {isConnected && (
