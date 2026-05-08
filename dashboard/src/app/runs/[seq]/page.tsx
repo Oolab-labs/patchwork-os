@@ -109,10 +109,10 @@ function AssertionFailuresPanel({ failures }: { failures: AssertionFailure[] }) 
           background: "color-mix(in srgb, var(--err) 8%, var(--bg-1))",
         }}
       >
-        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--err)" }}>
+        <span style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--err)" }}>
           Assertion Failures ({failures.length})
         </span>
-        <span className="pill err" style={{ fontSize: 10 }}>expect</span>
+        <span className="pill err" style={{ fontSize: "var(--fs-2xs)" }}>expect</span>
       </div>
       {failures.map((f, i) => (
         <div
@@ -126,14 +126,14 @@ function AssertionFailuresPanel({ failures }: { failures: AssertionFailure[] }) 
             alignItems: "start",
           }}
         >
-          <span className="pill err" style={{ fontSize: 10, marginTop: 1 }}>{f.assertion}</span>
+          <span className="pill err" style={{ fontSize: "var(--fs-2xs)", marginTop: 1 }}>{f.assertion}</span>
           <div>
-            <div style={{ fontSize: 13, color: "var(--err)" }}>{f.message}</div>
+            <div style={{ fontSize: "var(--fs-m)", color: "var(--err)" }}>{f.message}</div>
             <div style={{ display: "flex", gap: 16, marginTop: 4 }}>
-              <span className="mono muted" style={{ fontSize: 11 }}>
+              <span className="mono muted" style={{ fontSize: "var(--fs-xs)" }}>
                 expected: {JSON.stringify(f.expected)}
               </span>
-              <span className="mono muted" style={{ fontSize: 11 }}>
+              <span className="mono muted" style={{ fontSize: "var(--fs-xs)" }}>
                 actual: {JSON.stringify(f.actual)}
               </span>
             </div>
@@ -240,14 +240,14 @@ function StepRow({
           padding: "10px 16px",
         }}
       >
-        <span className="mono muted" style={{ fontSize: 11, textAlign: "right" }}>
+        <span className="mono muted" style={{ fontSize: "var(--fs-xs)", textAlign: "right" }}>
           {index + 1}
         </span>
         <div style={{ minWidth: 0 }}>
           <div
             className="mono"
             style={{
-              fontSize: 13,
+              fontSize: "var(--fs-m)",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -256,7 +256,7 @@ function StepRow({
             {step.tool ?? step.id}
           </div>
           {step.tool && step.tool !== step.id && (
-            <div className="mono muted" style={{ fontSize: 11, marginTop: 2 }}>
+            <div className="mono muted" style={{ fontSize: "var(--fs-xs)", marginTop: 2 }}>
               {step.id}
             </div>
           )}
@@ -286,22 +286,22 @@ function StepRow({
         </div>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           {step.tool?.includes(".") && (
-            <span className="pill muted" style={{ fontSize: 10 }}>connector</span>
+            <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }}>connector</span>
           )}
           <span
             className={`pill ${stepStatusClass(step.status)}`}
-            style={{ fontSize: 10 }}
+            style={{ fontSize: "var(--fs-2xs)" }}
           >
             {stepStatusLabel(step.status)}
           </span>
         </div>
-        <span className="mono muted" style={{ fontSize: 11, minWidth: 40, textAlign: "right" }}>
+        <span className="mono muted" style={{ fontSize: "var(--fs-xs)", minWidth: 40, textAlign: "right" }}>
           {fmtDur(step.durationMs)}
         </span>
       </div>
       {open && step.error && (
         <div style={{ padding: "8px 16px 12px 56px", background: "var(--bg-0)" }}>
-          <pre style={{ margin: 0, fontSize: 11, color: "var(--err)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          <pre style={{ margin: 0, fontSize: "var(--fs-xs)", color: "var(--err)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
             {step.error}
           </pre>
         </div>
@@ -339,14 +339,14 @@ function PlanStepRow({ step, index, groupIndex }: { step: PlanStep; index: numbe
         alignItems: "center",
       }}
     >
-      <span className="mono muted" style={{ fontSize: 11, textAlign: "right" }}>
+      <span className="mono muted" style={{ fontSize: "var(--fs-xs)", textAlign: "right" }}>
         {index + 1}
       </span>
       <div style={{ minWidth: 0 }}>
         <div
           className="mono"
           style={{
-            fontSize: 13,
+            fontSize: "var(--fs-m)",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
@@ -355,41 +355,41 @@ function PlanStepRow({ step, index, groupIndex }: { step: PlanStep; index: numbe
           {step.tool ?? step.id}
         </div>
         {step.tool && step.tool !== step.id && (
-          <div className="mono muted" style={{ fontSize: 11, marginTop: 2 }}>
+          <div className="mono muted" style={{ fontSize: "var(--fs-xs)", marginTop: 2 }}>
             id: {step.id}
           </div>
         )}
         {step.dependencies && step.dependencies.length > 0 && (
-          <div className="mono muted" style={{ fontSize: 11, marginTop: 2 }}>
+          <div className="mono muted" style={{ fontSize: "var(--fs-xs)", marginTop: 2 }}>
             awaits: {step.dependencies.join(", ")}
           </div>
         )}
         {step.condition && (
-          <div className="mono muted" style={{ fontSize: 11, marginTop: 2 }}>
+          <div className="mono muted" style={{ fontSize: "var(--fs-xs)", marginTop: 2 }}>
             when: {step.condition}
           </div>
         )}
         {groupIndex !== undefined && (
-          <div className="muted" style={{ fontSize: 10, marginTop: 3 }}>
+          <div className="muted" style={{ fontSize: "var(--fs-2xs)", marginTop: 3 }}>
             parallel group {groupIndex + 1}
           </div>
         )}
       </div>
       <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
         {step.isConnector && (
-          <span className="pill muted" style={{ fontSize: 10 }}>connector</span>
+          <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }}>connector</span>
         )}
         {step.isWrite && (
-          <span className="pill warn" style={{ fontSize: 10 }}>write</span>
+          <span className="pill warn" style={{ fontSize: "var(--fs-2xs)" }}>write</span>
         )}
         {!step.resolved && step.type === "tool" && (
-          <span className="pill err" style={{ fontSize: 10 }}>unresolved</span>
+          <span className="pill err" style={{ fontSize: "var(--fs-2xs)" }}>unresolved</span>
         )}
         {step.optional && (
-          <span className="pill muted" style={{ fontSize: 10 }}>optional</span>
+          <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }}>optional</span>
         )}
         {step.risk && step.risk !== "low" && (
-          <span className={`pill ${riskClass(step.risk)}`} style={{ fontSize: 10 }}>
+          <span className={`pill ${riskClass(step.risk)}`} style={{ fontSize: "var(--fs-2xs)" }}>
             {step.risk}
           </span>
         )}
@@ -413,24 +413,24 @@ function PlanView({ plan }: { plan: DryRunPlan }) {
     <div>
       {/* summary badges */}
       <div style={{ padding: "12px 16px", display: "flex", gap: 8, flexWrap: "wrap", borderBottom: "1px solid var(--border-subtle)" }}>
-        <span className="pill muted" style={{ fontSize: 11 }}>{plan.triggerType}</span>
+        <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>{plan.triggerType}</span>
         {plan.connectorNamespaces && plan.connectorNamespaces.length > 0 && (
-          <span className="pill muted" style={{ fontSize: 11 }}>
+          <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>
             connectors: {plan.connectorNamespaces.join(", ")}
           </span>
         )}
         {plan.hasWriteSteps && (
-          <span className="pill warn" style={{ fontSize: 11 }}>has writes</span>
+          <span className="pill warn" style={{ fontSize: "var(--fs-xs)" }}>has writes</span>
         )}
         {plan.parallelGroups && plan.parallelGroups.length > 0 && (
-          <span className="pill info" style={{ fontSize: 11 }}>
+          <span className="pill info" style={{ fontSize: "var(--fs-xs)" }}>
             {plan.parallelGroups.length} parallel group{plan.parallelGroups.length !== 1 ? "s" : ""}
           </span>
         )}
         {plan.maxDepth !== undefined && plan.maxDepth > 0 && (
-          <span className="pill muted" style={{ fontSize: 11 }}>depth {plan.maxDepth}</span>
+          <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>depth {plan.maxDepth}</span>
         )}
-        <span className="pill muted" style={{ fontSize: 11, marginLeft: "auto" }}>
+        <span className="pill muted" style={{ fontSize: "var(--fs-xs)", marginLeft: "auto" }}>
           generated {new Date(plan.generatedAt).toISOString().replace("T", " ").slice(0, 19)}
         </span>
       </div>
@@ -501,7 +501,7 @@ function CausalChainCard({ run }: { run: RunDetail }) {
         style={{
           padding: "10px 16px",
           borderBottom: "1px solid var(--border-subtle)",
-          fontSize: 12,
+          fontSize: "var(--fs-s)",
           fontWeight: 600,
           color: "var(--ink-2)",
           display: "flex",
@@ -524,17 +524,17 @@ function CausalChainCard({ run }: { run: RunDetail }) {
               color: "inherit",
             }}
           >
-            <span style={{ fontSize: 11, color: "var(--ink-3)", minWidth: 56 }}>triggered by</span>
-            <span className="pill muted" style={{ fontSize: 11 }}>#{run.parentSeq}</span>
-            <span style={{ fontSize: 13 }}>
+            <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", minWidth: 56 }}>triggered by</span>
+            <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>#{run.parentSeq}</span>
+            <span style={{ fontSize: "var(--fs-m)" }}>
               {parent ? parent.recipeName : <span style={{ color: "var(--ink-3)" }}>…</span>}
             </span>
             {parent && (
               <>
-                <span className={`pill ${statusPillClass(parent.status)}`} style={{ fontSize: 10 }}>
+                <span className={`pill ${statusPillClass(parent.status)}`} style={{ fontSize: "var(--fs-2xs)" }}>
                   {parent.status}
                 </span>
-                <span className="mono muted" style={{ fontSize: 11, marginLeft: "auto" }}>
+                <span className="mono muted" style={{ fontSize: "var(--fs-xs)", marginLeft: "auto" }}>
                   {fmtDur(parent.durationMs)}
                 </span>
               </>
@@ -560,17 +560,17 @@ function CausalChainCard({ run }: { run: RunDetail }) {
                 borderTop: i > 0 ? "1px solid var(--border-subtle)" : undefined,
               }}
             >
-              <span style={{ fontSize: 11, color: "var(--ink-3)", minWidth: 56 }}>triggered</span>
-              <span className="pill muted" style={{ fontSize: 11 }}>#{childSeq}</span>
-              <span style={{ fontSize: 13 }}>
+              <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", minWidth: 56 }}>triggered</span>
+              <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>#{childSeq}</span>
+              <span style={{ fontSize: "var(--fs-m)" }}>
                 {child ? child.recipeName : <span style={{ color: "var(--ink-3)" }}>…</span>}
               </span>
               {child && (
                 <>
-                  <span className={`pill ${statusPillClass(child.status)}`} style={{ fontSize: 10 }}>
+                  <span className={`pill ${statusPillClass(child.status)}`} style={{ fontSize: "var(--fs-2xs)" }}>
                     {child.status}
                   </span>
-                  <span className="mono muted" style={{ fontSize: 11, marginLeft: "auto" }}>
+                  <span className="mono muted" style={{ fontSize: "var(--fs-xs)", marginLeft: "auto" }}>
                     {fmtDur(child.durationMs)}
                   </span>
                 </>
@@ -587,7 +587,7 @@ function ReplayPreflight({ stepResults }: { stepResults: StepResult[] }) {
   const preflight = previewMockedReplay(stepResults);
   if (preflight.unmocked.length === 0) {
     return (
-      <p style={{ fontSize: 12, color: "var(--ink-3)", margin: "0 0 16px" }}>
+      <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", margin: "0 0 16px" }}>
         All {preflight.mocked.length} step
         {preflight.mocked.length === 1 ? "" : "s"} will be mocked from captures.
         No external API calls.
@@ -597,7 +597,7 @@ function ReplayPreflight({ stepResults }: { stepResults: StepResult[] }) {
   return (
     <div
       style={{
-        fontSize: 12,
+        fontSize: "var(--fs-s)",
         margin: "0 0 16px",
         padding: "8px 10px",
         borderRadius: "var(--r-1)",
@@ -613,7 +613,7 @@ function ReplayPreflight({ stepResults }: { stepResults: StepResult[] }) {
       </div>
       <ul style={{ margin: "4px 0 0", paddingLeft: 20, color: "var(--ink-2)" }}>
         {preflight.unmocked.slice(0, 8).map((u) => (
-          <li key={u.id} className="mono" style={{ fontSize: 11 }}>
+          <li key={u.id} className="mono" style={{ fontSize: "var(--fs-xs)" }}>
             {u.tool ? `${u.tool} ` : ""}
             <span style={{ color: "var(--ink-3)" }}>({u.id})</span>
             {" — "}
@@ -623,7 +623,7 @@ function ReplayPreflight({ stepResults }: { stepResults: StepResult[] }) {
           </li>
         ))}
         {preflight.unmocked.length > 8 && (
-          <li style={{ fontSize: 11, color: "var(--ink-3)" }}>
+          <li style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>
             …and {preflight.unmocked.length - 8} more
           </li>
         )}
@@ -819,7 +819,7 @@ export default function RunDetailPage() {
 
   const tabStyle = (t: Tab): React.CSSProperties => ({
     padding: "6px 14px",
-    fontSize: 12,
+    fontSize: "var(--fs-s)",
     fontWeight: 500,
     cursor: "pointer",
     color: tab === t ? "var(--fg-1)" : "var(--fg-2)",
@@ -846,7 +846,7 @@ export default function RunDetailPage() {
         }}
       >
         <div style={{ flex: 1, minWidth: "min(200px, 100%)" }}>
-          <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 2 }}>
+          <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginBottom: 2 }}>
             <Link href="/runs" style={{ color: "var(--ink-2)" }}>Runs</Link>
             {" / "}
             <span className="mono">#{seq}</span>
@@ -857,26 +857,26 @@ export default function RunDetailPage() {
         </div>
         {run && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span className="pill muted" style={{ fontSize: 11 }}>{run.trigger}</span>
+            <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>{run.trigger}</span>
             <span
               className={`pill ${run.assertionFailures?.length ? "err" : statusPillClass(run.status)}`}
-              style={{ fontSize: 11 }}
+              style={{ fontSize: "var(--fs-xs)" }}
             >
               {run.status !== "running" && <span className="pill-dot" />}
               {run.status}
             </span>
-            <span className="pill muted" style={{ fontSize: 11 }}>
+            <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>
               {fmtDur(run.durationMs)}
             </span>
             {run.model && (
-              <span className="pill muted" style={{ fontSize: 11 }}>{run.model}</span>
+              <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>{run.model}</span>
             )}
             {run.assertionFailures && run.assertionFailures.length > 0 && (
-              <span className="pill err" style={{ fontSize: 11 }}>
+              <span className="pill err" style={{ fontSize: "var(--fs-xs)" }}>
                 {run.assertionFailures.length} assertion{run.assertionFailures.length !== 1 ? "s" : ""} failed
               </span>
             )}
-            <span style={{ fontSize: 11, color: "var(--ink-3)", marginLeft: 4 }}>
+            <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginLeft: 4 }}>
               {fmtTs(run.createdAt)}
             </span>
             {/* VD-4: replay button (mocked-only). Real replay TBD. */}
@@ -887,7 +887,7 @@ export default function RunDetailPage() {
                 disabled={replayState === "running"}
                 title="Re-run the recipe with all tool/agent calls mocked from this run's captured outputs. No external IO, no side effects."
                 style={{
-                  fontSize: 11,
+                  fontSize: "var(--fs-xs)",
                   padding: "4px 10px",
                   borderRadius: "var(--r-1, 4px)",
                   border: "1px solid var(--line-2)",
@@ -922,7 +922,7 @@ export default function RunDetailPage() {
         <h3 id="replay-confirm-heading" style={{ marginTop: 0, marginBottom: 8 }}>
           Replay this run?
         </h3>
-        <p style={{ fontSize: 13, color: "var(--ink-2)", margin: "0 0 12px" }}>
+        <p style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)", margin: "0 0 12px" }}>
           Re-runs the recipe with each step's tool / agent call replaced by its
           captured output from this run. Templates, transforms, and
           <code className="mono"> when:</code> conditions re-evaluate against the
@@ -930,7 +930,7 @@ export default function RunDetailPage() {
           connected services.
         </p>
         <ReplayPreflight stepResults={run?.stepResults ?? []} />
-        <p style={{ fontSize: 12, color: "var(--ink-3)", margin: "0 0 16px" }}>
+        <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", margin: "0 0 16px" }}>
           A new run will be created with{" "}
           <code className="mono">replay:{seq}</code> in its taskId.
         </p>
@@ -1008,10 +1008,10 @@ export default function RunDetailPage() {
                       justifyContent: "space-between",
                     }}
                   >
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                    <span style={{ fontSize: "var(--fs-m)", fontWeight: 600 }}>
                       Steps ({run.stepResults.length})
                     </span>
-                    <span className="mono muted" style={{ fontSize: 11 }}>
+                    <span className="mono muted" style={{ fontSize: "var(--fs-xs)" }}>
                       total {fmtDur(run.durationMs)}
                     </span>
                   </div>
@@ -1051,13 +1051,13 @@ export default function RunDetailPage() {
                   justifyContent: "space-between",
                 }}
               >
-                <span style={{ fontSize: 13, fontWeight: 600 }}>Execution Plan</span>
-                <span className="muted" style={{ fontSize: 11 }}>
+                <span style={{ fontSize: "var(--fs-m)", fontWeight: 600 }}>Execution Plan</span>
+                <span className="muted" style={{ fontSize: "var(--fs-xs)" }}>
                   re-generated from current registry
                 </span>
               </div>
               {planLoading && (
-                <div style={{ padding: 20, color: "var(--fg-2)", fontSize: 13 }}>Generating…</div>
+                <div style={{ padding: 20, color: "var(--fg-2)", fontSize: "var(--fs-m)" }}>Generating…</div>
               )}
               {planErr && (
                 <div className="alert-err" style={{ margin: 16 }}>
@@ -1080,37 +1080,37 @@ export default function RunDetailPage() {
               }}
             >
               <div>
-                <div style={{ fontSize: 10, color: "var(--fg-2)", marginBottom: 2 }}>TASK ID</div>
-                <span className="mono" style={{ fontSize: 12 }}>{run.taskId}</span>
+                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>TASK ID</div>
+                <span className="mono" style={{ fontSize: "var(--fs-s)" }}>{run.taskId}</span>
               </div>
               <div>
-                <div style={{ fontSize: 10, color: "var(--fg-2)", marginBottom: 2 }}>STARTED</div>
-                <span className="mono" style={{ fontSize: 12 }}>
+                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>STARTED</div>
+                <span className="mono" style={{ fontSize: "var(--fs-s)" }}>
                   {run.startedAt ? fmtTs(run.startedAt) : "—"}
                 </span>
               </div>
               <div>
-                <div style={{ fontSize: 10, color: "var(--fg-2)", marginBottom: 2 }}>FINISHED</div>
-                <span className="mono" style={{ fontSize: 12 }}>{fmtTs(run.doneAt)}</span>
+                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>FINISHED</div>
+                <span className="mono" style={{ fontSize: "var(--fs-s)" }}>{fmtTs(run.doneAt)}</span>
               </div>
               {run.model && (
                 <div>
-                  <div style={{ fontSize: 10, color: "var(--fg-2)", marginBottom: 2 }}>MODEL</div>
-                  <span className="mono" style={{ fontSize: 12 }}>{run.model}</span>
+                  <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>MODEL</div>
+                  <span className="mono" style={{ fontSize: "var(--fs-s)" }}>{run.model}</span>
                 </div>
               )}
             </div>
             {run.errorMessage && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 10, color: "var(--err)", marginBottom: 4 }}>ERROR</div>
-                <pre style={{ margin: 0, fontSize: 12, color: "var(--err)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--err)", marginBottom: 4 }}>ERROR</div>
+                <pre style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--err)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                   {run.errorMessage}
                 </pre>
               </div>
             )}
             {run.outputTail && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 10, color: "var(--fg-2)", marginBottom: 4 }}>OUTPUT TAIL</div>
+                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 4 }}>OUTPUT TAIL</div>
                 <pre className="task-output" style={{ borderTop: "none", padding: 0 }}>
                   {run.outputTail}
                 </pre>
