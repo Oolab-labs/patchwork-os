@@ -591,6 +591,9 @@ export default function RecipesPage() {
       }
       if (!recipesRes.ok) throw new Error(`/recipes ${recipesRes.status}`);
       const data = await recipesRes.json();
+      // Recovered: clear the transient unsupported flag so a single 404
+      // followed by a 200 doesn't strand the UI in the empty state.
+      setUnsupported(false);
       const list: Recipe[] = Array.isArray(data)
         ? data
         : Array.isArray(data?.recipes)
