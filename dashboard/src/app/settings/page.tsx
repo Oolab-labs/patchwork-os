@@ -62,12 +62,12 @@ interface DriverRow {
 //
 // "Claude" and "Claude API" are two real driver values (`subprocess` vs
 // `api`) that hit Anthropic two different ways: Claude CLI subscription
-// vs API key. Same row pattern as OpenAI/Grok for the API path. Gemini
-// will get a sibling "Gemini API" row once GeminiApiDriver lands (#361).
+// vs API key. Same split now applies to Gemini (`gemini` vs `gemini-api`).
 const DRIVER_ROWS: DriverRow[] = [
   { id: "claude", name: "Claude", detail: "Anthropic · Claude Code subscription (subprocess)", driverValue: "subprocess", keyProvider: "anthropic" },
   { id: "claude-api", name: "Claude API", detail: "Anthropic · API key (no subscription required)", driverValue: "api", keyProvider: "anthropic" },
   { id: "gemini", name: "Gemini", detail: "Google · CLI subscription (subprocess)", driverValue: "gemini", keyProvider: "google" },
+  { id: "gemini-api", name: "Gemini API", detail: "Google · API key (OpenAI-compatible endpoint)", driverValue: "gemini-api", keyProvider: "google" },
   { id: "openai", name: "OpenAI", detail: "API key required", driverValue: "openai", keyProvider: "openai" },
   { id: "grok", name: "Grok", detail: "xAI · API key required", driverValue: "grok", keyProvider: "xai" },
 ];
@@ -77,12 +77,14 @@ const DRIVER_ROWS: DriverRow[] = [
 //   claude / claude-api → src/claudeDriver.ts:616, src/drivers/claude/api.ts:52
 //   openai              → src/drivers/openai/index.ts:79 (literal fallback)
 //   grok                → src/drivers/grok/index.ts:19 (defaultModel)
+//   gemini-api          → src/drivers/gemini/api.ts:25 (defaultModel)
 //   gemini              → no override; whatever the user's `gemini` CLI defaults to
 const DRIVER_DEFAULT_MODEL: Record<string, string | null> = {
   claude: "claude-haiku-4-5-20251001",
   "claude-api": "claude-haiku-4-5-20251001",
   openai: "gpt-4o",
   grok: "grok-2-latest",
+  "gemini-api": "gemini-2.5-pro",
   gemini: null, // CLI default — not knowable without running it
 };
 
