@@ -1334,6 +1334,7 @@ export class Server extends EventEmitter<ServerEvents> {
                 "grok",
                 "gemini",
                 "gemini-api",
+                "local",
                 "none",
               ];
               if (!validDrivers.includes(driverRaw)) {

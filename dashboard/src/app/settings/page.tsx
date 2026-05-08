@@ -57,12 +57,13 @@ interface DriverRow {
 }
 
 // Names omit model versions on purpose — versions go stale fast and the
-// authoritative model id is already shown on /overview hero. Ollama hidden
-// until `local` is wired into the bridge driver allowlist (see follow-up).
+// authoritative model id is already shown on /overview hero.
 //
 // "Claude" and "Claude API" are two real driver values (`subprocess` vs
 // `api`) that hit Anthropic two different ways: Claude CLI subscription
 // vs API key. Same split applies to Gemini (`gemini` vs `gemini-api`).
+// Local LLM row drives a separate endpoint+model card (no key — local
+// servers don't validate one).
 //
 // Subprocess rows (Claude, Gemini) authenticate via the CLI's own login
 // (Claude Code subscription / Gemini CLI gcloud auth) — they don't read
@@ -75,6 +76,7 @@ const DRIVER_ROWS: DriverRow[] = [
   { id: "gemini-api", name: "Gemini API", detail: "Google · API key (OpenAI-compatible endpoint)", driverValue: "gemini-api", keyProvider: "google" },
   { id: "openai", name: "OpenAI", detail: "API key required", driverValue: "openai", keyProvider: "openai" },
   { id: "grok", name: "Grok", detail: "xAI · API key required", driverValue: "grok", keyProvider: "xai" },
+  { id: "local", name: "Local LLM", detail: "Ollama · LM Studio · vLLM · llama.cpp (OpenAI-compatible)", driverValue: "local" },
 ];
 
 // Default model id each driver runs when input.model is not set.
@@ -83,6 +85,7 @@ const DRIVER_ROWS: DriverRow[] = [
 //   openai              → src/drivers/openai/index.ts:79 (literal fallback)
 //   grok                → src/drivers/grok/index.ts:19 (defaultModel)
 //   gemini-api          → src/drivers/gemini/api.ts:25 (defaultModel)
+//   local               → src/drivers/local/index.ts:36 (env LOCAL_MODEL or fallback)
 //   gemini              → no override; whatever the user's `gemini` CLI defaults to
 const DRIVER_DEFAULT_MODEL: Record<string, string | null> = {
   claude: "claude-haiku-4-5-20251001",
@@ -90,6 +93,7 @@ const DRIVER_DEFAULT_MODEL: Record<string, string | null> = {
   openai: "gpt-4o",
   grok: "grok-2-latest",
   "gemini-api": "gemini-2.5-pro",
+  local: null, // Reads from /status — see localEndpoint/localModel below
   gemini: null, // CLI default — not knowable without running it
 };
 
@@ -156,6 +160,16 @@ export default function SettingsPage() {
   const [keySaving, setKeySaving] = useState<ApiKeyProvider | null>(null);
   const [keyMsg, setKeyMsg] = useState<{ provider: ApiKeyProvider; ok: boolean; text: string } | null>(null);
 
+  // Local LLM endpoint + model. Drafted in the form; pushed via POST
+  // {model:"local", localEndpoint, localModel} which writes to ~/.patchwork
+  // and (on bridge restart) seeds LOCAL_ENDPOINT/LOCAL_MODEL env vars that
+  // LocalApiDriver reads.
+  const [localEndpoint, setLocalEndpoint] = useState("");
+  const [localModel, setLocalModel] = useState("");
+  const [localSaving, setLocalSaving] = useState(false);
+  const [localMsg, setLocalMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const localInitialized = useRef(false);
+
   // Approval policy
   const [gateValue, setGateValue] = useState<"off" | "high" | "all">("off");
   const [gatePending, setGatePending] = useState<"off" | "high" | "all">("off");
@@ -213,6 +227,11 @@ export default function SettingsPage() {
         if (!todayAnomalyInitialized.current) {
           setTodayAnomaly(Boolean(data.patchwork?.enableTimeOfDayAnomaly));
           todayAnomalyInitialized.current = true;
+        }
+        if (!localInitialized.current) {
+          setLocalEndpoint(data.patchwork?.localEndpoint ?? "");
+          setLocalModel(data.patchwork?.localModel ?? "");
+          localInitialized.current = true;
         }
         if (!driverInitialized.current) {
           const d = data.patchwork?.driver ?? "subprocess";
@@ -303,6 +322,46 @@ export default function SettingsPage() {
       setKeyMsg({ provider, ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
       setKeySaving(null);
+    }
+  }
+
+  async function saveLocalConfig() {
+    if (!localEndpoint.trim()) {
+      setLocalMsg({ ok: false, text: "Endpoint URL is required." });
+      return;
+    }
+    setLocalSaving(true);
+    setLocalMsg(null);
+    try {
+      // model:"local" is required by the bridge handler to accept localEndpoint
+      // and localModel writes ([src/server.ts:1371-1376] gates them on this).
+      const res = await fetch(apiPath("/api/bridge/settings"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "local",
+          localEndpoint: localEndpoint.trim(),
+          localModel: localModel.trim(),
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        restartRequired?: boolean;
+        error?: string;
+      };
+      if (res.ok) {
+        const text = body.restartRequired
+          ? "Saved. Restart Claude Code (quit and re-open, then /ide) to activate."
+          : "Saved.";
+        setLocalMsg({ ok: true, text });
+        flashSaved();
+      } else {
+        setLocalMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
+      }
+    } catch (e) {
+      setLocalMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setLocalSaving(false);
     }
   }
 
@@ -693,6 +752,54 @@ export default function SettingsPage() {
                               {keyMsg.text}
                             </span>
                           )}
+                        </div>
+                      )}
+                      {row.id === "local" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <input
+                              id="local-endpoint"
+                              type="text"
+                              placeholder="http://localhost:11434/v1 (Ollama default)"
+                              value={localEndpoint}
+                              onChange={(e) => setLocalEndpoint(e.target.value)}
+                              style={{ ...inputStyle, flex: 1, minWidth: 280 }}
+                              aria-label="Local LLM endpoint URL"
+                            />
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <input
+                              id="local-model"
+                              type="text"
+                              placeholder="llama3.2 (or any model your runtime serves)"
+                              value={localModel}
+                              onChange={(e) => setLocalModel(e.target.value)}
+                              style={{ ...inputStyle, flex: 1, minWidth: 280 }}
+                              aria-label="Local LLM default model"
+                            />
+                            <button
+                              type="button"
+                              onClick={saveLocalConfig}
+                              disabled={localSaving || !localEndpoint.trim()}
+                              style={{
+                                background: "transparent",
+                                color: "var(--fg-1)",
+                                border: "1px solid var(--border-default)",
+                                borderRadius: "var(--r-2)",
+                                padding: "5px 10px",
+                                fontSize: "var(--fs-s)",
+                                cursor: !localEndpoint.trim() ? "default" : "pointer",
+                                opacity: !localEndpoint.trim() ? 0.5 : 1,
+                              }}
+                            >
+                              {localSaving ? "Saving…" : "Save"}
+                            </button>
+                            {localMsg && (
+                              <span style={{ fontSize: "var(--fs-s)", color: localMsg.ok ? "var(--ok)" : "var(--err)" }}>
+                                {localMsg.text}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>

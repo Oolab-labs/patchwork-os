@@ -5,6 +5,7 @@ import { GeminiApiDriver } from "../gemini/api.js";
 import { GeminiSubprocessDriver } from "../gemini/index.js";
 import { GrokApiDriver } from "../grok/index.js";
 import { createDriver } from "../index.js";
+import { LocalApiDriver } from "../local/index.js";
 import { OpenAIApiDriver } from "../openai/index.js";
 
 const log = () => {};
@@ -14,6 +15,7 @@ beforeEach(() => {
   process.env.XAI_API_KEY = "test-xai-key";
   process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
   process.env.GEMINI_API_KEY = "test-gemini-key";
+  process.env.LOCAL_ENDPOINT = "http://localhost:11434/v1";
 });
 
 afterEach(() => {
@@ -21,6 +23,7 @@ afterEach(() => {
   delete process.env.XAI_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
   delete process.env.GEMINI_API_KEY;
+  delete process.env.LOCAL_ENDPOINT;
 });
 
 const opts = { binary: "claude", antBinary: "ant" };
@@ -76,6 +79,10 @@ describe("createDriver", () => {
     expect(createDriver("gemini-api", opts, log)).toBeInstanceOf(
       GeminiApiDriver,
     );
+  });
+
+  it("returns LocalApiDriver for mode=local", () => {
+    expect(createDriver("local", opts, log)).toBeInstanceOf(LocalApiDriver);
   });
 
   it("throws for unknown driver mode", () => {

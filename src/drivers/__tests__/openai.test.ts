@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GeminiApiDriver } from "../gemini/api.js";
 import { GrokApiDriver } from "../grok/index.js";
+import { LocalApiDriver } from "../local/index.js";
 import { OpenAIApiDriver } from "../openai/index.js";
 
 const mockCreate = vi.fn();
@@ -16,6 +17,8 @@ beforeEach(() => {
   process.env.OPENAI_API_KEY = "test-openai-key";
   process.env.XAI_API_KEY = "test-xai-key";
   process.env.GEMINI_API_KEY = "test-gemini-key";
+  process.env.LOCAL_ENDPOINT = "http://localhost:11434/v1";
+  process.env.LOCAL_MODEL = "llama3.2";
   mockCreate.mockReset();
   log.mockReset();
 });
@@ -24,6 +27,9 @@ afterEach(() => {
   delete process.env.OPENAI_API_KEY;
   delete process.env.XAI_API_KEY;
   delete process.env.GEMINI_API_KEY;
+  delete process.env.LOCAL_ENDPOINT;
+  delete process.env.LOCAL_MODEL;
+  delete process.env.LOCAL_API_KEY;
 });
 
 function makeStream(chunks: string[]): AsyncIterable<unknown> {
@@ -259,5 +265,69 @@ describe("GeminiApiDriver", () => {
       expect.objectContaining({ model: "gemini-2.5-flash" }),
       expect.anything(),
     );
+  });
+});
+
+describe("LocalApiDriver", () => {
+  // Subclasses OpenAIApiDriver with the configured LOCAL_ENDPOINT and
+  // LOCAL_MODEL env vars. The bridge auto-injects these from
+  // patchworkConfig.localEndpoint / localModel at startup
+  // (src/config.ts), so a dashboard save → next-restart round-trip works
+  // without any explicit driver wiring.
+
+  it("uses LOCAL_MODEL env value as default model", async () => {
+    mockCreate.mockResolvedValue(makeStream(["ok"]));
+    const driver = new LocalApiDriver(log);
+    await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "llama3.2" }),
+      expect.anything(),
+    );
+  });
+
+  it("falls back to llama3.2 when LOCAL_MODEL is unset", async () => {
+    delete process.env.LOCAL_MODEL;
+    mockCreate.mockResolvedValue(makeStream(["ok"]));
+    const driver = new LocalApiDriver(log);
+    await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "llama3.2" }),
+      expect.anything(),
+    );
+  });
+
+  it("respects model override (e.g. qwen3-coder:30b)", async () => {
+    mockCreate.mockResolvedValue(makeStream(["ok"]));
+    const driver = new LocalApiDriver(log);
+    await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+      model: "qwen3-coder:30b",
+    });
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "qwen3-coder:30b" }),
+      expect.anything(),
+    );
+  });
+
+  it("has name local", () => {
+    expect(new LocalApiDriver(log).name).toBe("local");
+  });
+
+  it("throws if LOCAL_ENDPOINT missing", () => {
+    delete process.env.LOCAL_ENDPOINT;
+    expect(() => new LocalApiDriver(log)).toThrow(/LOCAL_ENDPOINT/);
   });
 });

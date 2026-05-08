@@ -3,6 +3,7 @@ import { SubprocessDriver } from "./claude/subprocess.js";
 import { GeminiApiDriver } from "./gemini/api.js";
 import { GeminiSubprocessDriver } from "./gemini/index.js";
 import { GrokApiDriver } from "./grok/index.js";
+import { LocalApiDriver } from "./local/index.js";
 import { OpenAIApiDriver } from "./openai/index.js";
 import type { ProviderDriver } from "./types.js";
 
@@ -13,6 +14,7 @@ export type DriverMode =
   | "grok"
   | "gemini"
   | "gemini-api"
+  | "local"
   | "none";
 
 export interface DriverFactoryOpts {
@@ -49,6 +51,7 @@ export function createDriver(
       opts.bridgeMcp,
     );
   if (mode === "gemini-api") return new GeminiApiDriver(log);
+  if (mode === "local") return new LocalApiDriver(log);
   throw new Error(`Unknown driver mode: ${mode}`);
 }
 
@@ -57,6 +60,7 @@ export { SubprocessDriver } from "./claude/subprocess.js";
 export { GeminiApiDriver } from "./gemini/api.js";
 export { GeminiSubprocessDriver } from "./gemini/index.js";
 export { GrokApiDriver } from "./grok/index.js";
+export { LocalApiDriver } from "./local/index.js";
 export { OpenAIApiDriver } from "./openai/index.js";
 export type {
   ProviderDriver,
