@@ -288,10 +288,13 @@ export function setLatestDiagnostics(
 // ── Merge helper (for Parallel node) ──────────────────────────────────────────
 
 /**
- * Merge two AutomationStates produced by parallel branches that share the same
- * initial state. For each map, keeps the max timestamp / last value per key.
- * taskTimestamps are unioned. Used by the Parallel interpreter case so both
- * branches' cooldown / trigger records are preserved.
+ * @deprecated Not called from production code. Parallel was rewritten to be
+ * sequential (see automationInterpreter.ts case "Parallel") so that branches
+ * see each other's cooldown/dedup writes — the merge-max semantics here lost
+ * those guarantees. Function + tests retained as a reference for any future
+ * truly-concurrent execution model. NOTE: `unionMap` of `activeTasks` is
+ * last-write-wins, which silently drops one taskId when both branches record
+ * the same key — restore as union-of-arrays before re-introducing parallelism.
  */
 export function mergeAutomationStates(
   a: AutomationState,
