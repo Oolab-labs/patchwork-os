@@ -16,7 +16,10 @@ export interface AgentExecutorDeps {
     prompt: string,
     model: string | undefined,
   ) => Promise<string>;
-  claudeCliFn: (prompt: string) => Promise<string>;
+  claudeCliFn: (
+    prompt: string,
+    opts?: { mcpAccess?: boolean },
+  ) => Promise<string>;
   localFn: (prompt: string, model: string) => Promise<string>;
   /** Returns true when the `claude` CLI is available on PATH. */
   probeClaudeCli: () => boolean;
@@ -28,6 +31,13 @@ export interface AgentExecutorInput {
   prompt: string;
   driver?: string;
   model?: string;
+  /**
+   * Forwarded to claudeCliFn for the subprocess driver path. When true, the
+   * spawned `claude -p` is given a `--mcp-config` file pointing at the bridge,
+   * so it can call bridge tools (getAnalyticsReport, ctxQueryTraces, etc.).
+   * Ignored by API drivers — they reach the bridge through other means.
+   */
+  mcpAccess?: boolean;
 }
 
 const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
@@ -36,7 +46,8 @@ export async function executeAgent(
   input: AgentExecutorInput,
   deps: AgentExecutorDeps,
 ): Promise<string> {
-  const { prompt, driver, model } = input;
+  const { prompt, driver, model, mcpAccess } = input;
+  const cliOpts = mcpAccess !== undefined ? { mcpAccess } : undefined;
 
   if (driver === "anthropic" || driver === "claude") {
     return deps.anthropicFn(prompt, model ?? DEFAULT_MODEL);
@@ -45,7 +56,7 @@ export async function executeAgent(
     return deps.providerDriverFn(driver, prompt, model);
   }
   if (driver === "subprocess" || driver === "claude-code") {
-    return deps.claudeCliFn(prompt);
+    return deps.claudeCliFn(prompt, cliOpts);
   }
   if (driver === "local") {
     return deps.localFn(prompt, model ?? DEFAULT_MODEL);
@@ -62,7 +73,7 @@ export async function executeAgent(
 
   // Explicit subprocess driver config → skip API key check entirely.
   if (pwCfg.driver === "subprocess" || pwCfg.driver === "claude-code") {
-    return deps.claudeCliFn(prompt);
+    return deps.claudeCliFn(prompt, cliOpts);
   }
 
   // Auto-detect: prefer API key, otherwise probe for claude CLI.
@@ -70,7 +81,7 @@ export async function executeAgent(
     return deps.anthropicFn(prompt, model ?? DEFAULT_MODEL);
   }
   if (deps.probeClaudeCli()) {
-    return deps.claudeCliFn(prompt);
+    return deps.claudeCliFn(prompt, cliOpts);
   }
   // Probe failed and no API key — fall back to anthropicFn so the caller
   // surfaces a clear "[agent step skipped: ANTHROPIC_API_KEY not set]" message

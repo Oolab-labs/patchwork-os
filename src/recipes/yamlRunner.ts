@@ -79,7 +79,21 @@ const BUNDLED_TEMPLATES_DIR: string = (() => {
 
 export interface YamlStep {
   tool?: string;
-  agent?: { prompt: string; model?: string; into?: string; driver?: string };
+  agent?: {
+    prompt: string;
+    model?: string;
+    into?: string;
+    driver?: string;
+    /**
+     * Opt-in: inject bridge MCP tools (getAnalyticsReport, ctxQueryTraces, etc.)
+     * into the spawned `claude -p` subprocess via `--mcp-config`. Default off.
+     * Only honored by the subprocess driver path. Recursion risk: the subprocess
+     * could itself call `runClaudeTask` and chain into another bridge spawn —
+     * keep this off unless the prompt is read-only (telemetry summaries,
+     * trace queries, etc.).
+     */
+    mcpAccess?: boolean;
+  };
   into?: string;
   optional?: boolean;
   /** Retry count for this step on failure (overrides recipe-level on_error.retry). */
@@ -244,7 +258,10 @@ export interface RunnerDeps {
   /** Optional Anthropic API caller for agent steps. Defaults to fetch-based impl. */
   claudeFn?: (prompt: string, model: string) => Promise<string>;
   /** Optional Claude Code CLI caller for agent steps with driver: claude-code. */
-  claudeCodeFn?: (prompt: string) => Promise<string>;
+  claudeCodeFn?: (
+    prompt: string,
+    opts?: { mcpAccess?: boolean },
+  ) => Promise<string>;
   /** Optional local LLM caller (Ollama / LM Studio) for agent steps with driver: local or model: local. */
   localFn?: (prompt: string, model: string) => Promise<string>;
   /**
@@ -487,6 +504,9 @@ export async function runYamlRecipe(
             prompt: renderedPrompt,
             driver: agentCfg.driver === "api" ? "anthropic" : agentCfg.driver,
             model: agentCfg.model,
+            ...(agentCfg.mcpAccess !== undefined && {
+              mcpAccess: agentCfg.mcpAccess,
+            }),
           },
           buildAgentExecutorDeps(stepDeps, deps),
         );
@@ -1092,14 +1112,17 @@ function resolveStepDeps(deps: RunnerDeps): StepDeps {
 function buildAgentExecutorDeps(
   stepDeps: StepDeps,
   runnerDeps: RunnerDeps,
-  claudeCodeFnOverride?: (prompt: string) => Promise<string>,
+  claudeCodeFnOverride?: (
+    prompt: string,
+    opts?: { mcpAccess?: boolean },
+  ) => Promise<string>,
 ): AgentExecutorDeps {
   const claudeCliFn = claudeCodeFnOverride ?? stepDeps.claudeCodeFn;
   return {
     anthropicFn: (prompt, model) => stepDeps.claudeFn(prompt, model),
     providerDriverFn: (driver, prompt, model) =>
       stepDeps.providerDriverFn(driver, prompt, model),
-    claudeCliFn: (prompt) => claudeCliFn(prompt),
+    claudeCliFn: (prompt, opts) => claudeCliFn(prompt, opts),
     localFn: (prompt, model) => stepDeps.localFn(prompt, model),
     probeClaudeCli: () => {
       if (runnerDeps.claudeFn !== undefined) return false;
@@ -1122,7 +1145,10 @@ function buildAgentExecutorDeps(
   };
 }
 
-function defaultClaudeCodeFn(prompt: string): Promise<string> {
+function defaultClaudeCodeFn(
+  prompt: string,
+  _opts?: { mcpAccess?: boolean },
+): Promise<string> {
   try {
     const result = spawnSync(
       "claude",
@@ -1279,7 +1305,10 @@ async function defaultLocalFn(prompt: string, model: string): Promise<string> {
  */
 export function buildChainedDeps(
   runnerDeps: RunnerDeps,
-  claudeCodeFnOverride?: (prompt: string) => Promise<string>,
+  claudeCodeFnOverride?: (
+    prompt: string,
+    opts?: { mcpAccess?: boolean },
+  ) => Promise<string>,
 ): import("./chainedRunner.js").ExecutionDeps {
   const stepDeps = resolveStepDeps(runnerDeps);
 
@@ -1341,9 +1370,15 @@ export function buildChainedDeps(
     prompt: string,
     model?: string,
     driver?: string,
+    mcpAccess?: boolean,
   ): Promise<string> =>
     _executeAgent(
-      { prompt, model, driver },
+      {
+        prompt,
+        model,
+        driver,
+        ...(mcpAccess !== undefined && { mcpAccess }),
+      },
       buildAgentExecutorDeps(stepDeps, runnerDeps, claudeCodeFnOverride),
     );
 

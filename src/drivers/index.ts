@@ -31,7 +31,12 @@ export function createDriver(
 ): ProviderDriver | null {
   if (mode === "none") return null;
   if (mode === "subprocess")
-    return new SubprocessDriver(opts.binary, opts.antBinary, log);
+    return new SubprocessDriver(
+      opts.binary,
+      opts.antBinary,
+      log,
+      opts.bridgeMcp,
+    );
   if (mode === "api") return new ApiDriver(log);
   if (mode === "openai") return new OpenAIApiDriver(log);
   if (mode === "grok") return new GrokApiDriver(log);

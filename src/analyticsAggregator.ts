@@ -90,13 +90,20 @@ export interface AnalyticsSummary {
   toolStats: ToolStat[];
 }
 
-/** Returns the safe tool name to include in analytics. */
-function safeToolName(tool: string): string {
+/**
+ * Returns the safe tool name to include in analytics.
+ * Plugin names are hashed with a per-install salt so the same plugin produces
+ * a different hash on a different machine — receivers can't correlate plugin
+ * usage across installs. Salt defaults to "" only for tests; production callers
+ * MUST pass `getAnalyticsSalt()` from analyticsPrefs.ts.
+ */
+function safeToolName(tool: string, salt: string): string {
   if (BUILTIN_TOOL_NAMES.has(tool)) return tool;
   // Plugin tool: extract prefix (everything before first underscore) and hash it
   const prefix = tool.includes("_") ? (tool.split("_")[0] ?? tool) : tool;
   const hash = crypto
     .createHash("sha256")
+    .update(salt)
     .update(prefix)
     .digest("hex")
     .slice(0, 8);
@@ -114,6 +121,10 @@ function percentiles(sorted: number[]): { p50: number; p95: number } {
 /**
  * Build an anonymized summary from raw tool call entries.
  * Accepts the same shape as ActivityLog.stats() plus raw duration arrays.
+ *
+ * `salt` is mixed into the SHA256 of plugin tool names so the same plugin
+ * hashes differently across installs. Pass `getAnalyticsSalt()` from
+ * analyticsPrefs.ts in production. Defaults to "" for tests/back-compat.
  */
 export function buildSummary(
   entries: Array<{
@@ -123,6 +134,7 @@ export function buildSummary(
   }>,
   sessionDurationMs: number,
   bridgeVersion: string,
+  salt = "",
 ): AnalyticsSummary {
   // Group by safe tool name
   const map = new Map<
@@ -131,7 +143,7 @@ export function buildSummary(
   >();
 
   for (const entry of entries) {
-    const name = safeToolName(entry.tool);
+    const name = safeToolName(entry.tool, salt);
     const s = map.get(name) ?? { calls: 0, errors: 0, durations: [] };
     s.calls++;
     if (entry.status === "error") s.errors++;
