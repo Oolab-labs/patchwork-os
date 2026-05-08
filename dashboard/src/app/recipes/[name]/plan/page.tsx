@@ -144,7 +144,18 @@ export default function RecipePlanPage({
         };
         if (cancelled) return;
         if (!res.ok || !data.plan) {
-          setError(data.error ?? "Failed to load plan.");
+          // Bridge returns `{"error":"Run not found"}` with 404 for
+          // both unknown recipes and unknown runs (the underlying runner
+          // doesn't distinguish). On a recipe page the literal string
+          // is misleading — the user is staring at "Dry-run plan:
+          // <recipe>" with "Run not found" below it. Override to a
+          // recipe-specific message on 404; surface the bridge error
+          // verbatim only on other failures.
+          if (res.status === 404) {
+            setError(`Recipe "${name}" not found.`);
+          } else {
+            setError(data.error ?? "Failed to load plan.");
+          }
         } else {
           setPlan(data.plan);
         }
