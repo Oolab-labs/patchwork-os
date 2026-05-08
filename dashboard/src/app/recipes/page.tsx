@@ -383,6 +383,13 @@ function RecipeYamlPanel({ recipe }: { recipe: Recipe }) {
         lineHeight: 1.55,
         maxHeight: 360,
         overflow: "auto",
+        // Detail panel is ~384px wide; without these the long
+        // {{...}} template values push past the right edge into a
+        // hidden horizontal scroll bar (no scroll affordance shown,
+        // so the visible YAML is silently truncated). Wrap and break
+        // long words — matches the /recipes/new preview behaviour.
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
         fontFamily: "var(--font-mono)",
       }}
     >
