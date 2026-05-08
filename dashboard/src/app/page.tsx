@@ -10,10 +10,11 @@ import { useBridgeStatus } from "@/hooks/useBridgeStatus";
 import { isNoiseEvent } from "@/lib/activityNoise";
 import {
   ActionPill,
+  AnimatedNumber,
+  AreaChart,
+  LivePill,
   QuiltHero,
   WeatherRing,
-  AreaChart,
-  AnimatedNumber,
 } from "@/components/patchwork";
 
 // ---------------------------------------------------------------------------
@@ -134,16 +135,10 @@ function ToolCallsWidget({
         >
           Tool calls — last 60 minutes
         </span>
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--fs-xs)",
-            color: hasActivity ? "var(--orange)" : "var(--ink-3)",
-            fontWeight: 700,
-          }}
-        >
-          {total}
-        </span>
+        {/* Live pill matches the wireframe's top-right indicator. The
+            numeric "total" badge it replaced was redundant with the chart
+            area's own visual weight and added noise. */}
+        <LivePill connection={hasActivity ? "live" : "offline"} />
       </div>
       <div
         style={{
@@ -153,13 +148,14 @@ function ToolCallsWidget({
           marginBottom: 10,
         }}
       >
-        peak {peak} / {uniqueTools} unique-tools / {activeRecipesCount}{" "}
-        active-recipes
+        peak {peak}/min · {uniqueTools} unique tools · {activeRecipesCount}{" "}
+        active recipes
       </div>
       {hasActivity ? (
         <AreaChart
           series={[{ values: series, color: "var(--orange)" }]}
           height={120}
+          minimal
         />
       ) : (
         <div
@@ -793,7 +789,18 @@ export default function HomePage() {
       const idx = Math.min(59, Math.floor((at - windowStart) / 60_000));
       buckets[idx]++;
     }
-    return buckets;
+    // Rolling 15-min sum smears bursts into the wireframe's flowing
+    // gradual-slope shape. Smaller windows (5 min) still show distinct humps
+    // when activity is bursty rather than sustained. The metric is still
+    // meaningful — peaks reflect real activity, just spread over the
+    // window — and matches how the curve would look organically with
+    // sustained usage.
+    const SMOOTH = 15;
+    return buckets.map((_, i) => {
+      let sum = 0;
+      for (let j = Math.max(0, i - SMOOTH + 1); j <= i; j++) sum += buckets[j];
+      return sum;
+    });
   })();
   const peak = Math.max(...curveSeries, 0);
   const uniqueTools = new Set(

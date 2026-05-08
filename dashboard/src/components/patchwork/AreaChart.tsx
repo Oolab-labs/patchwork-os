@@ -31,11 +31,16 @@ export function AreaChart({
   xLabels,
   height = 120,
   yTicks = 4,
+  // "minimal" strips axis labels + gridlines. Used on the overview Tool-calls
+  // widget to match the wireframe (just a flowing curve + fill, no chrome).
+  // Default keeps the labelled-chart behaviour for /metrics, /analytics, etc.
+  minimal = false,
 }: {
   series: AreaChartSeries[];
   xLabels?: string[];
   height?: number;
   yTicks?: number;
+  minimal?: boolean;
 }) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
   const { maxVal, n, tickVals, paths } = useMemo(() => {
@@ -103,8 +108,8 @@ export function AreaChart({
           ))}
         </defs>
 
-        {/* gridlines */}
-        {tickVals.map((v, i) => {
+        {/* gridlines (suppressed in minimal mode) */}
+        {!minimal && tickVals.map((v, i) => {
           const y =
             PAD.top +
             (height - PAD.top - PAD.bottom) * (1 - v / Math.max(maxVal, 1));
@@ -191,8 +196,8 @@ export function AreaChart({
         })}
       </svg>
 
-      {/* y-axis labels (HTML overlay) */}
-      <div
+      {/* y-axis labels (HTML overlay) — suppressed in minimal mode */}
+      {!minimal && <div
         aria-hidden="true"
         style={{
           position: "absolute",
@@ -226,10 +231,10 @@ export function AreaChart({
             </span>
           );
         })}
-      </div>
+      </div>}
 
-      {/* x-axis labels (HTML overlay) */}
-      <div
+      {/* x-axis labels (HTML overlay) — suppressed in minimal mode */}
+      {!minimal && <div
         aria-hidden="true"
         style={{
           position: "absolute",
@@ -265,7 +270,7 @@ export function AreaChart({
             </span>
           );
         })}
-      </div>
+      </div>}
       {/* hover/focus tooltip */}
       {tooltip && (
         <div
@@ -346,7 +351,25 @@ function buildPath(
     return [x, y] as const;
   });
 
-  const line = pts.map(([x, y], i) => (i === 0 ? `M${x},${y}` : `L${x},${y}`)).join(" ");
+  // Catmull-Rom → cubic Bezier so the line reads as a smooth gradual curve
+  // instead of straight zig-zag between samples. tension = 0.5 gives the
+  // standard centripetal Catmull-Rom; control points are mirrored at the
+  // endpoints so the curve doesn't overshoot the first/last point.
+  const tension = 0.5;
+  const segments: string[] = [];
+  segments.push(`M${pts[0][0]},${pts[0][1]}`);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] ?? pts[i + 1];
+    const c1x = p1[0] + ((p2[0] - p0[0]) / 6) * tension * 2;
+    const c1y = p1[1] + ((p2[1] - p0[1]) / 6) * tension * 2;
+    const c2x = p2[0] - ((p3[0] - p1[0]) / 6) * tension * 2;
+    const c2y = p2[1] - ((p3[1] - p1[1]) / 6) * tension * 2;
+    segments.push(`C${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`);
+  }
+  const line = segments.join(" ");
   const last = pts[pts.length - 1];
   const first = pts[0];
   if (!last || !first) return { line: "", area: "" };
