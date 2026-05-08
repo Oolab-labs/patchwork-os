@@ -25,6 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  getApiKeysPresent,
   loadConfig,
   saveApiKeyToSecureStore,
   saveConfig,
@@ -153,5 +154,47 @@ describe("saveApiKeyToSecureStore", () => {
       const buf = readFileSync(join(tokenDir, name), "utf-8");
       expect(buf).not.toContain("secret-google-key-xyz");
     }
+  });
+});
+
+describe("getApiKeysPresent", () => {
+  // Used by /status to surface which providers have a key without ever
+  // exposing the key itself to the dashboard. Must return a boolean for all
+  // four providers regardless of which (or none) are stored.
+
+  it("returns false for every provider when the store is empty", () => {
+    const present = getApiKeysPresent();
+    expect(present).toEqual({
+      anthropic: false,
+      openai: false,
+      google: false,
+      xai: false,
+    });
+  });
+
+  it("flips a provider to true when its key is saved", () => {
+    saveApiKeyToSecureStore("openai", "sk-present-test");
+    const present = getApiKeysPresent();
+    expect(present.openai).toBe(true);
+    // Other providers stay false
+    expect(present.anthropic).toBe(false);
+    expect(present.google).toBe(false);
+    expect(present.xai).toBe(false);
+  });
+
+  it("flips back to false after the key is cleared", () => {
+    saveApiKeyToSecureStore("xai", "xai-key-temp");
+    expect(getApiKeysPresent().xai).toBe(true);
+
+    saveApiKeyToSecureStore("xai", "");
+    expect(getApiKeysPresent().xai).toBe(false);
+  });
+
+  it("never includes the actual key in the return value", () => {
+    const secret = "anthropic-key-do-not-leak-zzz";
+    saveApiKeyToSecureStore("anthropic", secret);
+    const present = getApiKeysPresent();
+    // Stringify and grep — the secret must not appear anywhere in the value.
+    expect(JSON.stringify(present)).not.toContain(secret);
   });
 });
