@@ -1,3 +1,4 @@
+apiVersion: patchwork.sh/v1
 name: daily-usage
 description: |
   Every weekday at 09:00, summarize what Patchwork was used for in the last 24h:
@@ -7,14 +8,16 @@ description: |
   Reads only existing local telemetry (activity log, recipe runs, decision traces).
   Does NOT transmit anything off-machine.
 
-  Requires --claude-driver subprocess and a running bridge with HTTP port so the
-  agent has MCP access. Run from the dashboard Recipes page (or `patchwork recipe
-  run` will fail at the agent step — local claude -p has no bridge MCP context).
+  Requires the bridge running with --driver subprocess. The agent step sets
+  `mcpAccess: true`, which makes the spawned `claude -p` connect to the bridge
+  over HTTP for the read-only telemetry tools below. Run from the dashboard
+  Recipes page or let the cron schedule fire.
 trigger:
   type: cron
   at: "0 9 * * 1-5"
 steps:
   - agent:
+      mcpAccess: true
       prompt: |
         You are writing a daily Patchwork usage brief. Use the bridge MCP tools
         listed below — do not call any other tools.

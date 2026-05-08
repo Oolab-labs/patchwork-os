@@ -256,12 +256,18 @@ export class RecipeOrchestration {
         // Reuse the orchestrator's claudeCodeFn for any step that falls
         // through to real execution (unmocked steps — caller is told).
         const orch = this.deps.getOrchestrator();
-        const claudeCodeFn = async (prompt: string): Promise<string> => {
+        const claudeCodeFn = async (
+          prompt: string,
+          callOpts?: { mcpAccess?: boolean },
+        ): Promise<string> => {
           if (!orch) return "";
           const task = await orch.runAndWait({
             prompt,
             triggerSource: `replay:${seq}:agent`,
             timeoutMs: 600_000,
+            ...(callOpts?.mcpAccess !== undefined && {
+              mcpAccess: callOpts.mcpAccess,
+            }),
           });
           return task.output ?? task.errorMessage ?? "";
         };
@@ -614,11 +620,17 @@ export class RecipeOrchestration {
     const { buildChainedDeps, dispatchRecipe } = await import(
       "./recipes/yamlRunner.js"
     );
-    const claudeCodeFn = async (prompt: string): Promise<string> => {
+    const claudeCodeFn = async (
+      prompt: string,
+      callOpts?: { mcpAccess?: boolean },
+    ): Promise<string> => {
       const task = await orch.runAndWait({
         prompt,
         triggerSource: `${opts.triggerSourceSuffix}:agent`,
         timeoutMs: 600_000,
+        ...(callOpts?.mcpAccess !== undefined && {
+          mcpAccess: callOpts.mcpAccess,
+        }),
       });
       return task.output ?? task.errorMessage ?? "";
     };

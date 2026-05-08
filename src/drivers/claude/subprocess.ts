@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type {
   ProviderDriver,
   ProviderTaskInput,
@@ -12,6 +15,43 @@ import { createSubprocessSettings } from "./subprocessSettings.js";
 const OUTPUT_CAP = 50 * 1024; // 50KB
 
 /**
+ * Write a single-server MCP config to a 0600 temp file, return the path.
+ * Caller passes path via `--mcp-config <path>` to claude -p.
+ *
+ * Uses the `claude-ide-bridge shim` stdio relay rather than wiring claude -p
+ * straight to the bridge's HTTP MCP endpoint. claude -p (2.1.x) connects to
+ * HTTP MCP servers but the spawned `Task` tool / model context never receives
+ * the resulting tools — `tools/list` is skipped and `mcp__patchwork__*` tools
+ * never appear in the catalog. The stdio shim sidesteps that path: claude -p
+ * spawns the shim, the shim auto-discovers the running bridge from
+ * `~/.claude/ide/*.lock`, and forwards JSON-RPC over stdin/stdout.
+ *
+ * The temp file is intentionally not deleted after the run — claude -p reads
+ * it asynchronously during MCP init and unlinking too eagerly is racy. The
+ * dir is created with `mkdtemp` under `os.tmpdir()` (per-run) so OS cleanup
+ * handles it.
+ *
+ * The `mcp` parameter is currently unused at write time (the shim discovers
+ * bridge state itself) but kept in the signature so callers continue to gate
+ * file creation on bridge availability.
+ */
+function writeMcpConfigFile(_mcp: { url: string; authToken: string }): string {
+  const dir = mkdtempSync(join(tmpdir(), "patchwork-mcp-"));
+  const path = join(dir, "mcp.json");
+  const config = {
+    mcpServers: {
+      patchwork: {
+        type: "stdio",
+        command: "claude-ide-bridge",
+        args: ["shim"],
+      },
+    },
+  };
+  writeFileSync(path, JSON.stringify(config), { mode: 0o600 });
+  return path;
+}
+
+/**
  * Scrub secrets from a string before storing or surfacing it.
  */
 export function scrubSecrets(text: string): string {
@@ -23,7 +63,13 @@ export function scrubSecrets(text: string): string {
 
 /**
  * Claude subprocess driver — spawns `claude -p` with stream-json output.
- * Claude-specific providerOptions: { effort, fallbackModel, maxBudgetUsd, useAnt }
+ * Claude-specific providerOptions: { effort, fallbackModel, maxBudgetUsd, useAnt, mcpAccess }
+ *
+ * `mcpAccess: true` is opt-in per task — the driver writes a temp `--mcp-config`
+ * file pointing at the spawning bridge's HTTP MCP endpoint so the subprocess can
+ * call bridge tools (getAnalyticsReport, ctxQueryTraces, etc.). Default is off
+ * because most subprocess tasks shouldn't connect back to the bridge that
+ * spawned them — recursion via `runClaudeTask` etc. is the failure mode.
  */
 export class SubprocessDriver implements ProviderDriver {
   readonly name = "subprocess";
@@ -33,6 +79,9 @@ export class SubprocessDriver implements ProviderDriver {
     private readonly binary: string,
     private readonly antBinary: string,
     private readonly log: (msg: string) => void,
+    private readonly bridgeMcp?: () =>
+      | { url: string; authToken: string }
+      | undefined,
   ) {
     this.settings = createSubprocessSettings(log);
     this.settings.write();
@@ -62,9 +111,16 @@ export class SubprocessDriver implements ProviderDriver {
       );
     }
 
+    const mcpAccess = opts.mcpAccess === true;
+    const mcp = mcpAccess ? this.bridgeMcp?.() : undefined;
+
     const args = [
       "-p",
       input.prompt,
+      // --strict-mcp-config: load only the MCP servers from --mcp-config (or
+      // none at all when mcpAccess is off), never ~/.claude.json or
+      // .mcp.json. The strict flag also prevents claude -p from opening a
+      // second session to the same bridge via a duplicate user-level entry.
       "--strict-mcp-config",
       "--settings",
       this.settings.path,
@@ -74,6 +130,18 @@ export class SubprocessDriver implements ProviderDriver {
       "--include-partial-messages",
       "--no-session-persistence",
     ];
+
+    // Opt-in bridge MCP injection. mcpAccess + mcp resolved above the args
+    // array because --strict-mcp-config behavior changes when mcpAccess is on.
+    if (mcpAccess && !mcp) {
+      this.log(
+        "[SubprocessDriver] WARN: mcpAccess requested but bridge MCP endpoint unavailable (port not bound or feature unwired); spawning without MCP",
+      );
+    }
+    if (mcp) {
+      const mcpConfigPath = writeMcpConfigFile(mcp);
+      args.push("--mcp-config", mcpConfigPath);
+    }
     if (input.model && !input.model.startsWith("-")) {
       args.push("--model", input.model);
     }

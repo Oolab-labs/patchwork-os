@@ -1,3 +1,4 @@
+apiVersion: patchwork.sh/v1
 name: ctx-loop-test
 description: |
   End-to-end test of the agent-read loop. An agent writes a decision trace with
@@ -5,10 +6,10 @@ description: |
   appears in the result. Output lands in ~/.patchwork/inbox/ for manual inspection.
   Run this after deploying a new bridge build to confirm the memory moat is live.
 
-  NOTE: requires --claude-driver subprocess and a running bridge with HTTP port
-  so the agent subprocess has MCP access. Running via `patchwork recipe run`
-  (local yamlRunner) will fail at Step 1 — the local claude -p subprocess has
-  no bridge MCP context. Trigger from the dashboard Recipes page instead.
+  Requires the bridge running with --driver subprocess. The agent step sets
+  `mcpAccess: true`, which gives the spawned `claude -p` a one-shot
+  `--mcp-config` pointing at the bridge so it can call ctxSaveTrace and
+  ctxQueryTraces. Trigger from the dashboard Recipes page or run manually.
 trigger:
   type: manual
 steps:
@@ -17,6 +18,7 @@ steps:
     into: recent_commits
 
   - agent:
+      mcpAccess: true
       prompt: |
         You are validating the Patchwork cross-session memory loop end-to-end.
 

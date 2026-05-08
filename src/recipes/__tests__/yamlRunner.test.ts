@@ -2182,7 +2182,7 @@ describe("buildChainedDeps executeAgent", () => {
     const claudeCodeFn = vi.fn().mockResolvedValue("cc result");
     const deps = buildChainedDeps({ ...noop(), claudeCodeFn, testMode: true });
     const result = await deps.executeAgent("hello", undefined, "claude-code");
-    expect(claudeCodeFn).toHaveBeenCalledWith("hello");
+    expect(claudeCodeFn).toHaveBeenCalledWith("hello", undefined);
     expect(result).toBe("cc result");
   });
 
