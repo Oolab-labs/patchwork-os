@@ -483,8 +483,13 @@ export class ClaudeOrchestrator {
 
       this.notifyDone?.(id, task.status);
       this._fireCompletion(id);
-      void Promise.resolve(this.checkpoint?.save()).catch(() => {
-        /* best-effort */
+      void Promise.resolve(this.checkpoint?.save()).catch((err) => {
+        // Persistent disk-write failure here means task state is no longer
+        // crash-safe. Best-effort persistence — but log so a degraded disk
+        // shows up in operator logs instead of failing silently.
+        this.log(
+          `[orchestrator] checkpoint save failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       });
       this._drain();
       this._pruneHistory();

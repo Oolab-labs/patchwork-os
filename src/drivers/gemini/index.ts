@@ -1,5 +1,11 @@
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { sanitizeEnv } from "../claude/envSanitizer.js";
@@ -58,24 +64,48 @@ export class GeminiSubprocessDriver implements ProviderDriver {
       typeof opts.approvalMode === "string" ? opts.approvalMode : "yolo";
 
     // Inject bridge MCP into ~/.gemini/settings.json before spawning so the
-    // subprocess can call bridge tools. Gemini CLI reads settings.json at startup.
+    // subprocess can call bridge tools. Gemini CLI reads settings.json at
+    // startup. We snapshot whatever was there before (or remember "absent")
+    // and restore it in a finally block at the end of run() — the bearer
+    // token must NOT outlive this single invocation in a shared-home file.
+    //
+    // URL is rewritten to 127.0.0.1:<port> for the spawned subprocess: the
+    // bridge may be bound 0.0.0.0 with a public --issuer-url, but the local
+    // child should always dial loopback so neither the URL nor the token
+    // ever leave this machine.
     const mcp = this.bridgeMcp?.();
+    let settingsCleanup: (() => void) | null = null;
     if (mcp) {
       const settingsFile = join(homedir(), ".gemini", "settings.json");
       try {
+        let originalContent: string | null = null;
         let settings: Record<string, unknown> = {};
         if (existsSync(settingsFile)) {
-          settings = JSON.parse(readFileSync(settingsFile, "utf-8")) as Record<
-            string,
-            unknown
-          >;
+          originalContent = readFileSync(settingsFile, "utf-8");
+          settings = JSON.parse(originalContent) as Record<string, unknown>;
         }
         const mcpServers = (settings.mcpServers ?? {}) as Record<
           string,
           unknown
         >;
+        const previousBridgeEntry = Object.hasOwn(
+          mcpServers,
+          "claude-ide-bridge",
+        )
+          ? mcpServers["claude-ide-bridge"]
+          : undefined;
+        const localUrl = (() => {
+          try {
+            const u = new URL(mcp.url);
+            // Force loopback — keeps token off the wire even if bridge bound 0.0.0.0
+            u.hostname = "127.0.0.1";
+            return u.toString();
+          } catch {
+            return mcp.url;
+          }
+        })();
         mcpServers["claude-ide-bridge"] = {
-          url: mcp.url,
+          url: localUrl,
           headers: { Authorization: `Bearer ${mcp.authToken}` },
         };
         settings.mcpServers = mcpServers;
@@ -83,6 +113,44 @@ export class GeminiSubprocessDriver implements ProviderDriver {
           mode: 0o600,
         });
         chmodSync(settingsFile, 0o600);
+        // Schedule restoration. If the original file existed, write back its
+        // exact bytes; if the bridge entry was absent, remove the key. If the
+        // file did not exist before, delete it. Best-effort; logged on failure.
+        settingsCleanup = () => {
+          try {
+            if (originalContent === null) {
+              // File was created by us — try to remove. Tolerate ENOENT.
+              try {
+                unlinkSync(settingsFile);
+              } catch {
+                /* ignore */
+              }
+              return;
+            }
+            const parsed = JSON.parse(originalContent) as Record<
+              string,
+              unknown
+            >;
+            if (previousBridgeEntry === undefined) {
+              const restoredServers = (parsed.mcpServers ?? {}) as Record<
+                string,
+                unknown
+              >;
+              if (Object.hasOwn(restoredServers, "claude-ide-bridge")) {
+                delete restoredServers["claude-ide-bridge"];
+              }
+              parsed.mcpServers = restoredServers;
+            }
+            writeFileSync(settingsFile, JSON.stringify(parsed, null, 2), {
+              mode: 0o600,
+            });
+            chmodSync(settingsFile, 0o600);
+          } catch (err) {
+            this.log(
+              `[GeminiSubprocessDriver] WARN: could not restore ~/.gemini/settings.json: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        };
       } catch (err) {
         this.log(
           `[GeminiSubprocessDriver] WARN: could not update ~/.gemini/settings.json: ${err instanceof Error ? err.message : String(err)}`,
@@ -90,166 +158,172 @@ export class GeminiSubprocessDriver implements ProviderDriver {
       }
     }
 
-    const args = [
-      "-p",
-      input.prompt,
-      "--output-format",
-      "stream-json",
-      "--approval-mode",
-      approvalMode,
-    ];
-    if (input.model) args.push("-m", input.model);
-    // contextFiles: pass as --include-directories; normalize relative paths against workspace
-    for (const f of input.contextFiles ?? []) {
-      if (typeof f === "string" && f.length > 0 && !f.startsWith("-")) {
-        const abs = isAbsolute(f) ? f : resolve(input.workspace, f);
-        args.push("--include-directories", abs);
-      }
-    }
-
-    // Strip MCP_* and CLAUDECODE vars; preserve GEMINI_API_KEY + GOOGLE_* vars
-    const env = sanitizeEnv(process.env);
-    // Also strip Claude-specific auth vars that could confuse Gemini
-    for (const key of Object.keys(env)) {
-      if (key.startsWith("ANTHROPIC_") || key === "CLAUDE_API_KEY") {
-        delete env[key];
-      }
-    }
-
-    this.log(
-      `[GeminiSubprocessDriver] spawning: ${this.binary} -p <prompt> (workspace: ${input.workspace})`,
-    );
-
-    const child = spawn(this.binary, args, {
-      cwd: homedir(),
-      env,
-      signal: input.signal,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    // unref() so the bridge can exit without waiting for the subprocess,
-    // but keep detached=false so the subprocess dies cleanly with the bridge
-    // rather than getting SIGPIPE when the pipe closes mid-run.
-    child.unref();
-
-    let lineBuf = "";
-    let accumulated = "";
-    let outputBytesSent = 0;
-    let firstAssistantAt: number | undefined;
-    let doneFromResult = false;
-    let resultSuccess = true;
-
-    child.stdout.setEncoding("utf-8");
-    child.stdout.on("data", (chunk: string) => {
-      const { lines, remainder } = splitLines(lineBuf, chunk);
-      lineBuf = remainder;
-
-      for (const line of lines) {
-        if (line.trim() === "") continue;
-        let event: GeminiEvent;
-        try {
-          event = JSON.parse(line) as GeminiEvent;
-        } catch {
-          // Non-JSON stderr/warning lines — skip (Gemini prints "YOLO mode..." to stdout)
-          continue;
-        }
-
-        if (
-          event.type === "message" &&
-          event.role === "assistant" &&
-          event.content
-        ) {
-          if (firstAssistantAt === undefined) firstAssistantAt = Date.now();
-          const text = event.content;
-          accumulated += text;
-          if (outputBytesSent < OUTPUT_CAP) {
-            const send = text.slice(0, OUTPUT_CAP - outputBytesSent);
-            if (send.length > 0) {
-              input.onChunk?.(send);
-              outputBytesSent += send.length;
-            }
-          }
-        } else if (event.type === "result") {
-          doneFromResult = true;
-          resultSuccess = event.status === "success";
-        }
-      }
-    });
-
-    let stderr = "";
-    child.stderr.setEncoding("utf-8");
-    child.stderr.on("data", (chunk: string) => {
-      if (stderr.length < OUTPUT_CAP) {
-        stderr += chunk;
-        if (stderr.length > OUTPUT_CAP) stderr = stderr.slice(0, OUTPUT_CAP);
-      }
-    });
-
-    const start = Date.now();
-    const stderrTailOf = (s: string): string | undefined =>
-      s.length > 0 ? scrubSecrets(s.slice(-2048)) : undefined;
-    const startupMsOf = (): number | undefined =>
-      firstAssistantAt !== undefined ? firstAssistantAt - start : undefined;
-
-    let startupTimedOut = false;
-    const startupHandle = input.startupTimeoutMs
-      ? setTimeout(() => {
-          if (firstAssistantAt === undefined && !doneFromResult) {
-            startupTimedOut = true;
-            child.kill();
-          }
-        }, input.startupTimeoutMs)
-      : null;
-
-    let exitCode: number;
     try {
-      exitCode = await new Promise<number>((resolve, reject) => {
-        child.on("close", (code) => resolve(code ?? 0));
-        child.on("error", reject);
+      const args = [
+        "-p",
+        input.prompt,
+        "--output-format",
+        "stream-json",
+        "--approval-mode",
+        approvalMode,
+      ];
+      if (input.model) args.push("-m", input.model);
+      // contextFiles: pass as --include-directories; normalize relative paths against workspace
+      for (const f of input.contextFiles ?? []) {
+        if (typeof f === "string" && f.length > 0 && !f.startsWith("-")) {
+          const abs = isAbsolute(f) ? f : resolve(input.workspace, f);
+          args.push("--include-directories", abs);
+        }
+      }
+
+      // Strip MCP_* and CLAUDECODE vars; preserve GEMINI_API_KEY + GOOGLE_* vars
+      const env = sanitizeEnv(process.env);
+      // Also strip Claude-specific auth vars that could confuse Gemini
+      for (const key of Object.keys(env)) {
+        if (key.startsWith("ANTHROPIC_") || key === "CLAUDE_API_KEY") {
+          delete env[key];
+        }
+      }
+
+      this.log(
+        `[GeminiSubprocessDriver] spawning: ${this.binary} -p <prompt> (workspace: ${input.workspace})`,
+      );
+
+      const child = spawn(this.binary, args, {
+        cwd: homedir(),
+        env,
+        signal: input.signal,
+        stdio: ["ignore", "pipe", "pipe"],
       });
-    } catch (err) {
+      // unref() so the bridge can exit without waiting for the subprocess,
+      // but keep detached=false so the subprocess dies cleanly with the bridge
+      // rather than getting SIGPIPE when the pipe closes mid-run.
+      child.unref();
+
+      let lineBuf = "";
+      let accumulated = "";
+      let outputBytesSent = 0;
+      let firstAssistantAt: number | undefined;
+      let doneFromResult = false;
+      let resultSuccess = true;
+
+      child.stdout.setEncoding("utf-8");
+      child.stdout.on("data", (chunk: string) => {
+        const { lines, remainder } = splitLines(lineBuf, chunk);
+        lineBuf = remainder;
+
+        for (const line of lines) {
+          if (line.trim() === "") continue;
+          let event: GeminiEvent;
+          try {
+            event = JSON.parse(line) as GeminiEvent;
+          } catch {
+            // Non-JSON stderr/warning lines — skip (Gemini prints "YOLO mode..." to stdout)
+            continue;
+          }
+
+          if (
+            event.type === "message" &&
+            event.role === "assistant" &&
+            event.content
+          ) {
+            if (firstAssistantAt === undefined) firstAssistantAt = Date.now();
+            const text = event.content;
+            accumulated += text;
+            if (outputBytesSent < OUTPUT_CAP) {
+              const send = text.slice(0, OUTPUT_CAP - outputBytesSent);
+              if (send.length > 0) {
+                input.onChunk?.(send);
+                outputBytesSent += send.length;
+              }
+            }
+          } else if (event.type === "result") {
+            doneFromResult = true;
+            resultSuccess = event.status === "success";
+          }
+        }
+      });
+
+      let stderr = "";
+      child.stderr.setEncoding("utf-8");
+      child.stderr.on("data", (chunk: string) => {
+        if (stderr.length < OUTPUT_CAP) {
+          stderr += chunk;
+          if (stderr.length > OUTPUT_CAP) stderr = stderr.slice(0, OUTPUT_CAP);
+        }
+      });
+
+      const start = Date.now();
+      const stderrTailOf = (s: string): string | undefined =>
+        s.length > 0 ? scrubSecrets(s.slice(-2048)) : undefined;
+      const startupMsOf = (): number | undefined =>
+        firstAssistantAt !== undefined ? firstAssistantAt - start : undefined;
+
+      let startupTimedOut = false;
+      const startupHandle = input.startupTimeoutMs
+        ? setTimeout(() => {
+            if (firstAssistantAt === undefined && !doneFromResult) {
+              startupTimedOut = true;
+              child.kill();
+            }
+          }, input.startupTimeoutMs)
+        : null;
+
+      let exitCode: number;
+      try {
+        exitCode = await new Promise<number>((resolve, reject) => {
+          child.on("close", (code) => resolve(code ?? 0));
+          child.on("error", reject);
+        });
+      } catch (err) {
+        if (startupHandle) clearTimeout(startupHandle);
+        const isAbort =
+          (err instanceof Error && err.name === "AbortError") ||
+          input.signal.aborted;
+        if (isAbort) {
+          return {
+            text: accumulated.slice(0, OUTPUT_CAP),
+            durationMs: Date.now() - start,
+            wasAborted: true,
+            startupMs: startupMsOf(),
+            stderrTail: stderrTailOf(stderr),
+          };
+        }
+        throw err;
+      }
       if (startupHandle) clearTimeout(startupHandle);
-      const isAbort =
-        (err instanceof Error && err.name === "AbortError") ||
-        input.signal.aborted;
-      if (isAbort) {
+
+      if (startupTimedOut) {
         return {
           text: accumulated.slice(0, OUTPUT_CAP),
           durationMs: Date.now() - start,
           wasAborted: true,
-          startupMs: startupMsOf(),
+          startupTimedOut: true,
           stderrTail: stderrTailOf(stderr),
         };
       }
-      throw err;
-    }
-    if (startupHandle) clearTimeout(startupHandle);
 
-    if (startupTimedOut) {
+      const effectiveExitCode = doneFromResult
+        ? resultSuccess
+          ? 0
+          : 1
+        : exitCode;
+      if (effectiveExitCode !== 0 && stderr) {
+        this.log(`[GeminiSubprocessDriver] stderr: ${stderr.slice(0, 500)}`);
+      }
+
       return {
         text: accumulated.slice(0, OUTPUT_CAP),
+        exitCode: effectiveExitCode,
         durationMs: Date.now() - start,
-        wasAborted: true,
-        startupTimedOut: true,
         stderrTail: stderrTailOf(stderr),
+        startupMs: startupMsOf(),
       };
+    } finally {
+      // Always restore ~/.gemini/settings.json — bridge bearer token must
+      // not survive in this shared-home file past one invocation.
+      settingsCleanup?.();
     }
-
-    const effectiveExitCode = doneFromResult
-      ? resultSuccess
-        ? 0
-        : 1
-      : exitCode;
-    if (effectiveExitCode !== 0 && stderr) {
-      this.log(`[GeminiSubprocessDriver] stderr: ${stderr.slice(0, 500)}`);
-    }
-
-    return {
-      text: accumulated.slice(0, OUTPUT_CAP),
-      exitCode: effectiveExitCode,
-      durationMs: Date.now() - start,
-      stderrTail: stderrTailOf(stderr),
-      startupMs: startupMsOf(),
-    };
   }
 
   async runOutcome(input: ProviderTaskInput) {

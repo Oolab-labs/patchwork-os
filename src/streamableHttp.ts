@@ -248,7 +248,20 @@ interface HttpSession {
   transport: McpTransport;
   openedFiles: Set<string>;
   terminalPrefix: string;
+  /**
+   * Last interaction of any kind (POST/GET/DELETE OR server-initiated SSE
+   * push). Used by the long-TTL idle pruner so a healthy SSE client receiving
+   * server-pushed notifications is not pruned during quiet periods.
+   */
   lastActivity: number;
+  /**
+   * Last *client-initiated* request (POST/GET/DELETE only). Used by the
+   * capacity-eviction guard so an attacker holding 5 open SSE streams cannot
+   * keep refreshing their slot via server-side broadcasts and DoS new
+   * clients. Diverges from `lastActivity` only when SSE pushes happen
+   * without paired client traffic.
+   */
+  lastClientActivity: number;
   /** Number of POST requests currently being processed (tool calls in flight). */
   inFlight: number;
   /** X-Claude-Code-Session-Id from the initialize request, if present. */
@@ -554,6 +567,7 @@ export class StreamableHttpHandler {
     }
 
     session.lastActivity = Date.now();
+    session.lastClientActivity = session.lastActivity;
 
     // Notifications have no `id` field at all per JSON-RPC 2.0.
     // id:null is technically a malformed request but treat it as a notification
@@ -662,6 +676,7 @@ export class StreamableHttpHandler {
 
     session.adapter.attachSSE(res);
     session.lastActivity = Date.now();
+    session.lastClientActivity = session.lastActivity;
 
     req.on("close", () => {
       session.adapter.attachSSE(null); // detach SSE stream on client disconnect
@@ -724,6 +739,7 @@ export class StreamableHttpHandler {
       openedFiles: new Set<string>(),
       terminalPrefix: `http-${id.slice(0, 8)}`,
       lastActivity: Date.now(),
+      lastClientActivity: Date.now(),
       inFlight: 0,
       claudeCodeSessionId: null,
       ownershipToken,
@@ -878,26 +894,31 @@ export class StreamableHttpHandler {
   }
 
   /**
-   * Evict the oldest idle HTTP session to make room for a new connection.
-   * Only evicts if the oldest session has been idle for more than 60 seconds,
-   * which indicates the client is gone (crashed, network dropped, no DELETE sent).
-   * Returns true if a slot was freed, false if all sessions are actively in use.
+   * Evict the oldest client-idle HTTP session to make room for a new
+   * connection. Only evicts if the oldest session's *client-initiated*
+   * activity is more than 60 seconds stale — server-pushed SSE events do NOT
+   * count, so an attacker can't hold 5 SSE streams open and DoS new clients
+   * by riding on bridge-initiated broadcasts (notifications/tools/list_changed,
+   * etc.) refreshing their slot.
+   *
+   * Returns true if a slot was freed, false if all sessions have made a
+   * client request within the threshold.
    */
   private evictOldestIdleSession(): boolean {
     const IDLE_THRESHOLD_MS = 60_000;
     const now = Date.now();
     let oldestId: string | null = null;
-    let oldestActivity = now;
+    let oldestClientActivity = now;
     for (const [id, session] of this.sessions) {
       if (session.inFlight > 0) continue; // skip sessions with in-flight tool calls
-      if (session.lastActivity < oldestActivity) {
-        oldestActivity = session.lastActivity;
+      if (session.lastClientActivity < oldestClientActivity) {
+        oldestClientActivity = session.lastClientActivity;
         oldestId = id;
       }
     }
-    if (oldestId && now - oldestActivity > IDLE_THRESHOLD_MS) {
+    if (oldestId && now - oldestClientActivity > IDLE_THRESHOLD_MS) {
       this.logger.warn(
-        `Evicting idle HTTP session ${oldestId.slice(0, 8)} (idle ${Math.round((now - oldestActivity) / 1000)}s) to make room`,
+        `Evicting client-idle HTTP session ${oldestId.slice(0, 8)} (no client traffic ${Math.round((now - oldestClientActivity) / 1000)}s) to make room`,
       );
       this.destroySession(oldestId);
       return true;
