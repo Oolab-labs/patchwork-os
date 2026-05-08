@@ -2,7 +2,7 @@
 
 ## Overview
 
-MCP prompts are reusable prompt templates invocable via `prompts/get` or `/name` in Claude Desktop. The bridge ships 72 prompts across four categories. Invoke with `/prompt-name` in any chat session.
+MCP prompts are reusable prompt templates invocable via `prompts/get` or `/name` in Claude Desktop. The bridge currently ships **36** prompts in `src/prompts.ts`; this document catalogs both shipped and *proposed* prompts across four categories. The runtime `prompts/list` call is the authoritative list of what's actually invocable. Invoke shipped prompts with `/prompt-name` in any chat session.
 
 Prompts appear in the Claude Desktop prompt picker automatically when the bridge is connected. In Claude Code CLI, use `/prompt-name args`.
 

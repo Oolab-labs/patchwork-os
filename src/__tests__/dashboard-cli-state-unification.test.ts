@@ -119,7 +119,7 @@ describe("setRecipeEnabled — install-dir recipe writes marker", () => {
 describe("listInstalledRecipes — install-dir recipes report enabled state from marker", () => {
   it("reports enabled=true for an install-dir recipe with no marker", () => {
     writeInstallDirRecipe("morning-pkg", "morning-brief");
-    const list = listInstalledRecipes(tmp);
+    const list = listInstalledRecipes(tmp, { disabledRecipes: [] });
     const entry = list.recipes.find((r) => r.name === "morning-brief");
     expect(entry).toBeDefined();
     expect(entry?.enabled).toBe(true);
@@ -127,7 +127,7 @@ describe("listInstalledRecipes — install-dir recipes report enabled state from
 
   it("reports enabled=false for an install-dir recipe with .disabled marker", () => {
     writeInstallDirRecipe("morning-pkg", "morning-brief", { disabled: true });
-    const list = listInstalledRecipes(tmp);
+    const list = listInstalledRecipes(tmp, { disabledRecipes: [] });
     const entry = list.recipes.find((r) => r.name === "morning-brief");
     expect(entry).toBeDefined();
     expect(entry?.enabled).toBe(false);
@@ -135,13 +135,13 @@ describe("listInstalledRecipes — install-dir recipes report enabled state from
 
   it("install-dir recipes still appear in the list (visibility regression check)", () => {
     writeInstallDirRecipe("standup-pkg", "standup-digest");
-    const list = listInstalledRecipes(tmp);
+    const list = listInstalledRecipes(tmp, { disabledRecipes: [] });
     expect(list.recipes.some((r) => r.name === "standup-digest")).toBe(true);
   });
 
   it("top-level legacy recipes still report enabled=true by default", () => {
     writeTopLevelRecipe("legacy.json", "legacy-recipe");
-    const list = listInstalledRecipes(tmp);
+    const list = listInstalledRecipes(tmp, { disabledRecipes: [] });
     const entry = list.recipes.find((r) => r.name === "legacy-recipe");
     expect(entry?.enabled).toBe(true);
   });
