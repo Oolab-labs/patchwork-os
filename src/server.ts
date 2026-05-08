@@ -1348,7 +1348,20 @@ export class Server extends EventEmitter<ServerEvents> {
                 PatchworkConfig["driver"]
               >;
               cfg.driver = driver;
-              saveBridgeConfigDriver(driver, this.bridgeConfigPath);
+              try {
+                saveBridgeConfigDriver(driver, this.bridgeConfigPath);
+              } catch (writeErr) {
+                this.logger.error(
+                  `[/config/patchwork] saveBridgeConfigDriver failed: ${writeErr instanceof Error ? (writeErr.stack ?? writeErr.message) : String(writeErr)}`,
+                );
+                res.writeHead(500, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({
+                    error: "Failed to write bridge driver config",
+                  }),
+                );
+                return;
+              }
             }
             if (body.model !== undefined) {
               const validModels = [
@@ -1391,12 +1404,38 @@ export class Server extends EventEmitter<ServerEvents> {
               // Provider keys go to the secure store (Keychain/DPAPI/Secret
               // Service / AES-256-GCM file fallback) — never persisted to
               // ~/.patchwork/config.json. Empty string clears.
-              saveApiKeyToSecureStore(
-                provider as "anthropic" | "openai" | "google" | "xai",
-                key,
-              );
+              try {
+                saveApiKeyToSecureStore(
+                  provider as "anthropic" | "openai" | "google" | "xai",
+                  key,
+                );
+              } catch (writeErr) {
+                this.logger.error(
+                  `[/config/patchwork] saveApiKeyToSecureStore failed: ${writeErr instanceof Error ? (writeErr.stack ?? writeErr.message) : String(writeErr)}`,
+                );
+                res.writeHead(500, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({
+                    error: "Failed to write provider API key",
+                  }),
+                );
+                return;
+              }
             }
-            savePatchworkConfig(cfg, configPath);
+            try {
+              savePatchworkConfig(cfg, configPath);
+            } catch (writeErr) {
+              this.logger.error(
+                `[/config/patchwork] savePatchworkConfig failed: ${writeErr instanceof Error ? (writeErr.stack ?? writeErr.message) : String(writeErr)}`,
+              );
+              res.writeHead(500, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  error: "Failed to write patchwork config",
+                }),
+              );
+              return;
+            }
             if (hasWebhookUpdate) {
               this.approvalWebhookUrl = raw || undefined;
             }

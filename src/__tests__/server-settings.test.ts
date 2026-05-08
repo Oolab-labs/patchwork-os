@@ -284,6 +284,44 @@ describe("POST /settings — driver persistence to bridge config file", () => {
     });
   });
 
+  it("returns 500 (not 400 'Invalid request body') when bridge config write fails", async () => {
+    // Audit found that disk-write failures inside POST /settings were caught
+    // by the outer try and reported as HTTP 400 'Invalid request body' — the
+    // same shape as a JSON parse error. Callers (the dashboard) couldn't
+    // distinguish a malformed payload from a permissions error on the bridge
+    // config file. The fix wraps saveBridgeConfigDriver in its own try/catch
+    // and returns HTTP 500 with a distinct message.
+    const bridgeCfgPath = path.join(tempDir!, "ro", "bridge.json");
+    mkdirSync(path.dirname(bridgeCfgPath), { recursive: true });
+    // Make the parent directory read-only so the atomic write inside
+    // saveBridgeConfigDriver fails on the temp-file rename.
+    const fs = await import("node:fs");
+    fs.chmodSync(path.dirname(bridgeCfgPath), 0o500);
+    server!.bridgeConfigPath = bridgeCfgPath;
+
+    try {
+      const { status, body } = await makeRequest(
+        {
+          method: "POST",
+          path: "/settings",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ driver: "gemini" }),
+      );
+
+      expect(status).toBe(500);
+      const parsed = JSON.parse(body) as { error: string };
+      expect(parsed.error).not.toBe("Invalid request body");
+      expect(parsed.error.toLowerCase()).toContain("config");
+    } finally {
+      // Restore permissions so cleanup in afterEach can rm -rf.
+      fs.chmodSync(path.dirname(bridgeCfgPath), 0o700);
+    }
+  });
+
   it("returns 413 when /settings body exceeds 16 KB cap", async () => {
     // Pad a valid-shape body past the 16 KB cap. Without the cap an
     // authenticated caller could stream gigabytes; the cap rejects the
