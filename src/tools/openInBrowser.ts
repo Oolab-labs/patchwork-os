@@ -134,7 +134,12 @@ export function createOpenInBrowserTool() {
       if (platform === "darwin") {
         await execSafe("open", [tmpPath]);
       } else if (platform === "win32") {
-        await execSafe("cmd", ["/c", "start", "", tmpPath]);
+        // tmpPath is bridge-generated (mkdtempSync), never user input — gate
+        // on this static call shape rather than the global SAFE_BIN_BASENAMES
+        // set so cmd.exe stays out of the general sink-side allowlist.
+        await execSafe("cmd", ["/c", "start", "", tmpPath], {
+          allowlistChecked: true,
+        });
       } else {
         await execSafe("xdg-open", [tmpPath]);
       }

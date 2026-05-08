@@ -143,8 +143,13 @@ describe("successStructured", () => {
 });
 
 describe("execSafe", () => {
+  // node is intentionally excluded from SAFE_BIN_BASENAMES (interpreters via
+  // -e/-c can run arbitrary code). These tests opt in via allowlistChecked
+  // since the argv is hand-written and bounded.
   it("runs a real command and returns stdout", async () => {
-    const result = await execSafe("node", ["-e", "console.log('hi')"]);
+    const result = await execSafe("node", ["-e", "console.log('hi')"], {
+      allowlistChecked: true,
+    });
     expect(result.stdout.trim()).toBe("hi");
     expect(result.exitCode).toBe(0);
     expect(result.timedOut).toBe(false);
@@ -152,13 +157,17 @@ describe("execSafe", () => {
   });
 
   it("returns non-zero exit code for failing commands", async () => {
-    const result = await execSafe("node", ["-e", "process.exit(2)"]);
+    const result = await execSafe("node", ["-e", "process.exit(2)"], {
+      allowlistChecked: true,
+    });
     expect(result.exitCode).toBeGreaterThan(0);
     expect(result.timedOut).toBe(false);
   });
 
   it("captures stderr", async () => {
-    const result = await execSafe("node", ["-e", "console.error('oops')"]);
+    const result = await execSafe("node", ["-e", "console.error('oops')"], {
+      allowlistChecked: true,
+    });
     expect(result.stderr.trim()).toBe("oops");
   });
 
@@ -166,11 +175,23 @@ describe("execSafe", () => {
     const result = await execSafe(
       "node",
       ["-e", "setTimeout(() => {}, 5000)"],
-      { timeout: 500 },
+      { timeout: 500, allowlistChecked: true },
     );
     expect(result.timedOut).toBe(true);
     expect(result.durationMs).toBeGreaterThanOrEqual(400);
   }, 10000);
+
+  it("rejects 'node' without allowlistChecked (interpreter blocked at sink)", async () => {
+    await expect(execSafe("node", ["-e", "console.log(1)"])).rejects.toThrow(
+      /safe-binary set/i,
+    );
+  });
+
+  it("rejects 'cmd' without allowlistChecked (Windows shell blocked at sink)", async () => {
+    await expect(execSafe("cmd", ["/c", "echo", "hi"])).rejects.toThrow(
+      /safe-binary set/i,
+    );
+  });
 });
 
 describe("withHeartbeat", () => {

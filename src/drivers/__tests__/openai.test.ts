@@ -330,4 +330,65 @@ describe("LocalApiDriver", () => {
     delete process.env.LOCAL_ENDPOINT;
     expect(() => new LocalApiDriver(log)).toThrow(/LOCAL_ENDPOINT/);
   });
+
+  describe("LOCAL_ENDPOINT host validation", () => {
+    afterEach(() => {
+      delete process.env.LOCAL_ENDPOINT_ALLOW_REMOTE;
+    });
+
+    it("rejects non-loopback / non-private hostnames", () => {
+      process.env.LOCAL_ENDPOINT = "https://attacker.example.com/v1";
+      expect(() => new LocalApiDriver(log)).toThrow(/not loopback or private/i);
+    });
+
+    it("rejects public IPv4 addresses", () => {
+      process.env.LOCAL_ENDPOINT = "http://8.8.8.8:11434/v1";
+      expect(() => new LocalApiDriver(log)).toThrow(/not loopback or private/i);
+    });
+
+    it("accepts localhost", () => {
+      process.env.LOCAL_ENDPOINT = "http://localhost:11434/v1";
+      expect(() => new LocalApiDriver(log)).not.toThrow();
+    });
+
+    it("accepts 127.0.0.1", () => {
+      process.env.LOCAL_ENDPOINT = "http://127.0.0.1:11434/v1";
+      expect(() => new LocalApiDriver(log)).not.toThrow();
+    });
+
+    it("accepts RFC1918 (192.168.x.x)", () => {
+      process.env.LOCAL_ENDPOINT = "http://192.168.1.50:11434/v1";
+      expect(() => new LocalApiDriver(log)).not.toThrow();
+    });
+
+    it("accepts 10.x.x.x", () => {
+      process.env.LOCAL_ENDPOINT = "http://10.0.0.5:11434/v1";
+      expect(() => new LocalApiDriver(log)).not.toThrow();
+    });
+
+    it("accepts 172.16-31.x.x but rejects 172.32+", () => {
+      process.env.LOCAL_ENDPOINT = "http://172.16.0.1:11434/v1";
+      expect(() => new LocalApiDriver(log)).not.toThrow();
+      process.env.LOCAL_ENDPOINT = "http://172.31.255.255:11434/v1";
+      expect(() => new LocalApiDriver(log)).not.toThrow();
+      process.env.LOCAL_ENDPOINT = "http://172.32.0.1:11434/v1";
+      expect(() => new LocalApiDriver(log)).toThrow(/not loopback or private/i);
+    });
+
+    it("accepts .local mDNS hostnames", () => {
+      process.env.LOCAL_ENDPOINT = "http://printer.local:11434/v1";
+      expect(() => new LocalApiDriver(log)).not.toThrow();
+    });
+
+    it("LOCAL_ENDPOINT_ALLOW_REMOTE=1 bypasses validation", () => {
+      process.env.LOCAL_ENDPOINT = "https://remote-llm.example.com/v1";
+      process.env.LOCAL_ENDPOINT_ALLOW_REMOTE = "1";
+      expect(() => new LocalApiDriver(log)).not.toThrow();
+    });
+
+    it("rejects malformed URLs", () => {
+      process.env.LOCAL_ENDPOINT = "not-a-url";
+      expect(() => new LocalApiDriver(log)).toThrow(/not loopback or private/i);
+    });
+  });
 });
