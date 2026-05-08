@@ -611,6 +611,9 @@ export default function TracesPage() {
 
   const doneCount = flatSorted.filter(t => traceStatus(t) === "done").length;
   const errorCount = flatSorted.filter(t => traceStatus(t) === "error").length;
+  // Header used to read "50 traces · 34 done · 1 errors" — readers expected
+  // the parts to add up. Surfaced here so 50 = 34 + 1 + 15 stays obvious.
+  const runningCount = flatSorted.length - doneCount - errorCount;
 
   const toggle = (rowKey: string) => {
     setExpanded((prev) => {
@@ -631,7 +634,8 @@ export default function TracesPage() {
           </h1>
           <div className="editorial-sub" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span>
-              {traces.length} traces · {doneCount} done · {errorCount} errors ·{" "}
+              {traces.length} traces · {doneCount} done · {errorCount} error{errorCount === 1 ? "" : "s"}
+              {runningCount > 0 ? ` · ${runningCount} running` : ""} ·{" "}
               {SINCE_OPTIONS.find((o) => o.k === since)?.label.toLowerCase() ?? since}
             </span>
             <LivePill label="3s" tone="muted" />
@@ -821,7 +825,14 @@ export default function TracesPage() {
                     onClick={() => toggle(rowKey)}
                     style={{
                       fontSize: "var(--fs-m)",
-                      color: "var(--ink-1)",
+                      // Anonymous traces (no body.recipeName) used to fall back to
+                      // t.key here, which was already rendered in the prior column
+                      // — every "anon:Bash" row showed "anon:Bash anon:Bash". Mute
+                      // and em-dash when the recipe name would just duplicate.
+                      color:
+                        typeof t.body?.recipeName === "string"
+                          ? "var(--ink-1)"
+                          : "var(--ink-3)",
                       background: "transparent",
                       border: "none",
                       padding: 0,
@@ -832,7 +843,7 @@ export default function TracesPage() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {String(t.body?.recipeName ?? t.key)}
+                    {typeof t.body?.recipeName === "string" ? t.body.recipeName : "—"}
                   </button>
                   <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", textAlign: "right" }}>
                     {relTime(t.ts)}
@@ -967,7 +978,10 @@ export default function TracesPage() {
                     onClick={() => toggle(rootKey)}
                     style={{
                       fontSize: "var(--fs-m)",
-                      color: "var(--ink-1)",
+                      color:
+                        typeof root.body?.recipeName === "string"
+                          ? "var(--ink-1)"
+                          : "var(--ink-3)",
                       background: "transparent",
                       border: "none",
                       padding: 0,
@@ -978,7 +992,7 @@ export default function TracesPage() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {String(root.body?.recipeName ?? root.key)}
+                    {typeof root.body?.recipeName === "string" ? root.body.recipeName : "—"}
                   </button>
                   <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", textAlign: "right" }}>
                     {relTime(root.ts)}
@@ -1072,13 +1086,18 @@ export default function TracesPage() {
                             <span
                               style={{
                                 fontSize: "var(--fs-xs)",
-                                color: "var(--ink-2)",
+                                color:
+                                  typeof child.body?.recipeName === "string"
+                                    ? "var(--ink-2)"
+                                    : "var(--ink-3)",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
                                 whiteSpace: "nowrap",
                               }}
                             >
-                              {String(child.body?.recipeName ?? child.key)}
+                              {typeof child.body?.recipeName === "string"
+                                ? child.body.recipeName
+                                : "—"}
                             </span>
                             <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", textAlign: "right" }}>
                               {relTime(child.ts)}
