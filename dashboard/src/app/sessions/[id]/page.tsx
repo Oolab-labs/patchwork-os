@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { ACTIVITY_NOISE_EVENTS } from "@/lib/activityNoise";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 
 const MessageMarkdown = dynamic(() => import("@/components/MessageMarkdown"), {
@@ -153,14 +154,7 @@ const validateDetail: ShapeCheck<DetailResponse> = shape(
   },
 );
 
-const NOISE_EVENTS = new Set([
-  "claude_connected",
-  "claude_disconnected",
-  "extension_connected",
-  "extension_disconnected",
-  "grace_started",
-  "grace_expired",
-]);
+const NOISE_EVENTS = ACTIVITY_NOISE_EVENTS;
 
 export default function SessionDetailPage() {
   const params = useParams<{ id: string }>();

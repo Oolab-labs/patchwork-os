@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
+import { ACTIVITY_NOISE_EVENTS } from "@/lib/activityNoise";
 import { isDemoMode } from "@/lib/demoMode";
 import {
   EmptyState,
@@ -58,16 +59,6 @@ const MAX_EVENTS = 200;
 
 const RECIPE_START_EVENTS = new Set(["recipe_step_start", "TaskCreated", "InstructionsLoaded", "session_start"]);
 const RECIPE_END_EVENTS = new Set(["recipe_step_done", "recipe_done", "PostCompact", "session_end", "recipe_end"]);
-
-/** Connection-churn events that dominate the log but aren't actionable. */
-const NOISE_EVENTS = new Set([
-  "claude_connected",
-  "claude_disconnected",
-  "extension_connected",
-  "extension_disconnected",
-  "grace_started",
-  "grace_expired",
-]);
 
 function withAt(e: ActivityEvent): ActivityEvent {
   if (typeof e.at === "number") return e;
@@ -190,7 +181,7 @@ export default function ActivityPage() {
       );
     } else {
       out = out.filter(
-        (e) => !(e.kind === "lifecycle" && NOISE_EVENTS.has(e.event ?? "")),
+        (e) => !(e.kind === "lifecycle" && ACTIVITY_NOISE_EVENTS.has(e.event ?? "")),
       );
     }
     return out;
