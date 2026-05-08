@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { error, findLineNumber, success } from "../utils.js";
+import { error, execSafe, findLineNumber, success } from "../utils.js";
 
 describe("success() and error() format", () => {
   it("success returns compact JSON (no pretty-printing)", () => {
@@ -88,5 +88,56 @@ describe("findLineNumber (async)", () => {
     expect(
       await findLineNumber("/tmp/nonexistent-file-12345.txt", "text"),
     ).toBeNull();
+  });
+});
+
+describe("execSafe — sink-side binary allowlist (CodeQL #14)", () => {
+  // Closes CodeQL js/shell-command-injection-from-environment by attaching
+  // the safe-binary check to the sink itself. Callers gating on their own
+  // allowlist (runCommand, terminal fallback) opt out via allowlistChecked.
+
+  it("rejects an unknown binary by basename", async () => {
+    await expect(execSafe("rm", ["-rf", "/tmp/x"])).rejects.toThrow(
+      /not in the safe-binary set/,
+    );
+  });
+
+  it("rejects an absolute-path unknown binary by basename", async () => {
+    await expect(execSafe("/usr/bin/curl", ["https://evil"])).rejects.toThrow(
+      /not in the safe-binary set/,
+    );
+  });
+
+  it("error message names the rejected command for clear diagnostics", async () => {
+    await expect(execSafe("nope-binary-xyz", [])).rejects.toThrow(
+      /"nope-binary-xyz"/,
+    );
+  });
+
+  it("accepts an allowlisted basename (git --version)", async () => {
+    const result = await execSafe("git", ["--version"], { timeout: 5000 });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/^git version /);
+  });
+
+  it("accepts an absolute path whose basename is allowlisted", async () => {
+    // `path.basename("/usr/bin/git") === "git"` — allowlist gate accepts.
+    // The actual spawn may ENOENT on this host but that's a non-throw error
+    // captured in the result; the assertion is that the gate didn't throw.
+    const result = await execSafe("/usr/bin/git", ["--version"], {
+      timeout: 5000,
+    });
+    expect(typeof result.exitCode).toBe("number");
+  });
+
+  it("bypasses the allowlist when allowlistChecked:true is passed", async () => {
+    // `echo` is not in SAFE_BIN_BASENAMES; allowlistChecked lets it through.
+    // This is the path used by runCommand / terminal after their own gate.
+    const result = await execSafe("echo", ["hello"], {
+      timeout: 5000,
+      allowlistChecked: true,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toBe("hello");
   });
 });

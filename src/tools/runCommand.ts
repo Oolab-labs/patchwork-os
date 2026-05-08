@@ -91,6 +91,10 @@ export function createRunCommandTool(workspace: string, config: Config) {
             timeout,
             maxBuffer: maxBytes,
             signal,
+            // Already validated against config.commandAllowlist via
+            // buildCommandDescription above — skip execSafe's intrinsic
+            // SAFE_BIN_BASENAMES gate so user-allowlisted binaries work.
+            allowlistChecked: true,
             onLine: (line) => {
               lineCount++;
               progress(lineCount, undefined, line);
@@ -103,6 +107,7 @@ export function createRunCommandTool(workspace: string, config: Config) {
                 timeout,
                 maxBuffer: maxBytes,
                 signal,
+                allowlistChecked: true,
               }),
             progress,
             { message: `running ${command}…`, intervalMs: 5_000 },

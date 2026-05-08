@@ -367,6 +367,65 @@ export interface ExecSafeResult {
   durationMs: number;
 }
 
+/**
+ * Sink-side allowlist for execSafe / execSafeStreaming. The bridge resolves
+ * `cmd` against $PATH, so a shared environment can in principle substitute a
+ * binary; checking the basename here gates that surface to a vetted set even
+ * if a caller passes user-derived input by mistake. Callers that route
+ * through their own allowlist (runCommand, terminal fallback) opt in via
+ * `opts.allowlistChecked: true` and bypass this check.
+ *
+ * Closes CodeQL js/shell-command-injection-from-environment by attaching the
+ * sanitization to the sink itself (per the lesson in
+ * feedback_redos_bound_doesnt_help.md: structural fix at the sink, not an
+ * upstream guard CodeQL's taint-flow can't see).
+ */
+const SAFE_BIN_BASENAMES = new Set([
+  // VCS + GitHub CLI
+  "git",
+  "gh",
+  // Search / find
+  "grep",
+  "rg",
+  "fd",
+  "find",
+  // Package managers
+  "npm",
+  "yarn",
+  "pnpm",
+  "cargo",
+  "go",
+  "pip",
+  // Runtimes / typecheckers
+  "node",
+  "tsc",
+  "pyright",
+  // Linters / formatters / fixers
+  "eslint",
+  "biome",
+  "prettier",
+  "ruff",
+  "black",
+  // Repo scanning
+  "ts-prune",
+  // Browsers / file openers
+  "open",
+  "xdg-open",
+  "cmd",
+]);
+
+function assertSafeBinary(cmd: string): void {
+  // path.basename strips directory components (incl. node_modules/.bin/foo
+  // forms used for workspace-local binaries). The check is on the resolved
+  // basename so an absolute path like /usr/local/bin/git is treated as "git".
+  const basename = path.basename(cmd);
+  if (!SAFE_BIN_BASENAMES.has(basename)) {
+    throw new Error(
+      `execSafe: command "${cmd}" is not in the safe-binary set. Callers that gate on their own allowlist (e.g. runCommand) must pass opts.allowlistChecked=true.`,
+    );
+  }
+}
+
 export async function execSafe(
   cmd: string,
   args: string[],
@@ -377,8 +436,11 @@ export async function execSafe(
     signal?: AbortSignal;
     stdin?: string;
     env?: NodeJS.ProcessEnv;
+    /** Caller has gated `cmd` against its own allowlist (e.g. config.commandAllowlist). Skips the SAFE_BIN_BASENAMES check. */
+    allowlistChecked?: boolean;
   } = {},
 ): Promise<ExecSafeResult> {
+  if (!opts.allowlistChecked) assertSafeBinary(cmd);
   const timeout = opts.timeout ?? 30_000;
   const maxBuffer = opts.maxBuffer ?? 512 * 1024;
   const start = Date.now();
@@ -472,8 +534,11 @@ export async function execSafeStreaming(
     env?: NodeJS.ProcessEnv;
     onLine?: (line: string) => void;
     onStderrLine?: (line: string) => void;
+    /** Caller has gated `cmd` against its own allowlist. Skips the SAFE_BIN_BASENAMES check. */
+    allowlistChecked?: boolean;
   } = {},
 ): Promise<ExecSafeResult> {
+  if (!opts.allowlistChecked) assertSafeBinary(cmd);
   const { onLine, onStderrLine, ...restOpts } = opts;
   if (!onLine && !onStderrLine) return execSafe(cmd, args, restOpts);
 

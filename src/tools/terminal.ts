@@ -624,6 +624,10 @@ export function createRunInTerminalTool(
         cwd: workspace,
         timeout: timeoutMs,
         signal: signal ?? undefined,
+        // Already passed validateCommand at the top of this handler — skip
+        // execSafe's intrinsic SAFE_BIN_BASENAMES gate so user-allowlisted
+        // binaries work in the headless fallback path.
+        allowlistChecked: true,
       });
 
       return successStructured({ ...fallbackResult, fallback: "subprocess" });
