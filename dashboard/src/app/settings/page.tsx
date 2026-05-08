@@ -64,10 +64,14 @@ interface DriverRow {
 // vs API key. Same row pattern for OpenAI/Grok/Gemini API. Local LLM row
 // drives a separate endpoint+model card (no key — local servers don't
 // validate one).
+//
+// Subprocess rows (Claude, Gemini) authenticate via the CLI's own login
+// (Claude Code subscription / Gemini CLI gcloud auth) — they don't read
+// an API key from env, so no keyProvider on those rows.
 const DRIVER_ROWS: DriverRow[] = [
-  { id: "claude", name: "Claude", detail: "Anthropic · Claude Code subscription (subprocess)", driverValue: "subprocess", keyProvider: "anthropic" },
+  { id: "claude", name: "Claude", detail: "Anthropic · Claude Code subscription (subprocess)", driverValue: "subprocess" },
   { id: "claude-api", name: "Claude API", detail: "Anthropic · API key (no subscription required)", driverValue: "api", keyProvider: "anthropic" },
-  { id: "gemini", name: "Gemini", detail: "Google · CLI subscription (subprocess)", driverValue: "gemini", keyProvider: "google" },
+  { id: "gemini", name: "Gemini", detail: "Google · CLI subscription (subprocess)", driverValue: "gemini" },
   { id: "openai", name: "OpenAI", detail: "API key required", driverValue: "openai", keyProvider: "openai" },
   { id: "grok", name: "Grok", detail: "xAI · API key required", driverValue: "grok", keyProvider: "xai" },
   { id: "local", name: "Local LLM", detail: "Ollama · LM Studio · vLLM · llama.cpp (OpenAI-compatible)", driverValue: "local" },
