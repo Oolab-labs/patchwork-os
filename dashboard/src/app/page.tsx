@@ -217,6 +217,20 @@ function useGreeting(): string {
   return g;
 }
 
+// Compact uptime renderer for the hero meta line — matches the wireframe's
+// "4d 12h uptime" rhythm. Drops smaller-than-relevant units so a 3-day-old
+// bridge reads "3d 4h", a fresh restart reads "12m", not "0d 0h 12m".
+function formatUptime(ms: number): string {
+  const sec = Math.floor(ms / 1000);
+  const days = Math.floor(sec / 86400);
+  const hours = Math.floor((sec % 86400) / 3600);
+  const mins = Math.floor((sec % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  if (mins > 0) return `${mins}m`;
+  return `${sec}s`;
+}
+
 function parseUptimeMs(text: string): number | null {
   if (!text) return null;
   const m = text.match(/^bridge_uptime_seconds\s+(\d+(?:\.\d+)?)/m);
@@ -927,6 +941,28 @@ export default function HomePage() {
         greeting={greet ? `— ${greet.toLowerCase()}` : "— welcome"}
         headline={headline}
         summary={summary}
+        stats={(() => {
+          // Hero meta line — matches the wireframe's
+          // "4d 12h uptime · v0.2.0-α35 bridge · claude-3.5-sonnet primary · 3 IDEs attached"
+          // rhythm. Only ship segments backed by real bridge data; the
+          // remaining wireframe segments (bridge version, IDE count) need
+          // bridge changes that haven't landed.
+          const stats: Array<{ label: string; value: React.ReactNode }> = [];
+          if (typeof bridgeStatus.uptimeMs === "number" && bridgeStatus.uptimeMs > 0) {
+            stats.push({ label: "uptime", value: formatUptime(bridgeStatus.uptimeMs) });
+          }
+          const driver = bridgeStatus.patchwork?.driver;
+          const model = bridgeStatus.patchwork?.model;
+          if (model) {
+            stats.push({ label: "primary", value: model });
+          } else if (driver) {
+            stats.push({ label: "driver", value: driver });
+          }
+          if (bridgeStatus.extensionConnected) {
+            stats.push({ label: "attached", value: "IDE" });
+          }
+          return stats.length > 0 ? stats : undefined;
+        })()}
         aside={
           <WeatherRing
             label="LOAD"
