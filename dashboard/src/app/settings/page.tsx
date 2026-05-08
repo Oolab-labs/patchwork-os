@@ -61,17 +61,19 @@ interface DriverRow {
 //
 // "Claude" and "Claude API" are two real driver values (`subprocess` vs
 // `api`) that hit Anthropic two different ways: Claude CLI subscription
-// vs API key. Same row pattern for OpenAI/Grok/Gemini API. Local LLM row
-// drives a separate endpoint+model card (no key — local servers don't
-// validate one).
+// vs API key. Same split applies to Gemini (`gemini` vs `gemini-api`).
+// Local LLM row drives a separate endpoint+model card (no key — local
+// servers don't validate one).
 //
 // Subprocess rows (Claude, Gemini) authenticate via the CLI's own login
 // (Claude Code subscription / Gemini CLI gcloud auth) — they don't read
-// an API key from env, so no keyProvider on those rows.
+// an API key from env, so no keyProvider on those rows. Adding a key
+// field there would mislead users into thinking it's required.
 const DRIVER_ROWS: DriverRow[] = [
   { id: "claude", name: "Claude", detail: "Anthropic · Claude Code subscription (subprocess)", driverValue: "subprocess" },
   { id: "claude-api", name: "Claude API", detail: "Anthropic · API key (no subscription required)", driverValue: "api", keyProvider: "anthropic" },
   { id: "gemini", name: "Gemini", detail: "Google · CLI subscription (subprocess)", driverValue: "gemini" },
+  { id: "gemini-api", name: "Gemini API", detail: "Google · API key (OpenAI-compatible endpoint)", driverValue: "gemini-api", keyProvider: "google" },
   { id: "openai", name: "OpenAI", detail: "API key required", driverValue: "openai", keyProvider: "openai" },
   { id: "grok", name: "Grok", detail: "xAI · API key required", driverValue: "grok", keyProvider: "xai" },
   { id: "local", name: "Local LLM", detail: "Ollama · LM Studio · vLLM · llama.cpp (OpenAI-compatible)", driverValue: "local" },
@@ -82,6 +84,7 @@ const DRIVER_ROWS: DriverRow[] = [
 //   claude / claude-api → src/claudeDriver.ts:616, src/drivers/claude/api.ts:52
 //   openai              → src/drivers/openai/index.ts:79 (literal fallback)
 //   grok                → src/drivers/grok/index.ts:19 (defaultModel)
+//   gemini-api          → src/drivers/gemini/api.ts:25 (defaultModel)
 //   local               → src/drivers/local/index.ts:36 (env LOCAL_MODEL or fallback)
 //   gemini              → no override; whatever the user's `gemini` CLI defaults to
 const DRIVER_DEFAULT_MODEL: Record<string, string | null> = {
@@ -89,6 +92,7 @@ const DRIVER_DEFAULT_MODEL: Record<string, string | null> = {
   "claude-api": "claude-haiku-4-5-20251001",
   openai: "gpt-4o",
   grok: "grok-2-latest",
+  "gemini-api": "gemini-2.5-pro",
   local: null, // Reads from /status — see localEndpoint/localModel below
   gemini: null, // CLI default — not knowable without running it
 };
