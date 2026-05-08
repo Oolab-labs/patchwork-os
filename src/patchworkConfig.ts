@@ -102,6 +102,25 @@ function loadApiKeysFromSecureStore(): NonNullable<PatchworkConfig["apiKeys"]> {
   return out;
 }
 
+/**
+ * Boolean presence check per provider — returns whether a key is in the
+ * secure store, never the key itself. Used by /status so the dashboard can
+ * render "key set" badges and gate the picker without ever seeing a raw key.
+ */
+export function getApiKeysPresent(): Record<ApiKeyProvider, boolean> {
+  const out: Record<ApiKeyProvider, boolean> = {
+    anthropic: false,
+    openai: false,
+    google: false,
+    xai: false,
+  };
+  for (const provider of API_KEY_PROVIDERS) {
+    const stored = getSecretJsonSync<StoredApiKey>(secretKeyFor(provider));
+    out[provider] = Boolean(stored?.key);
+  }
+  return out;
+}
+
 export function loadConfig(path = defaultConfigPath()): PatchworkConfig {
   if (!existsSync(path)) {
     const fromStore = loadApiKeysFromSecureStore();

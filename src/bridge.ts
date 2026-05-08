@@ -25,6 +25,7 @@ import { Logger } from "./logger.js";
 import { OAuthServerImpl } from "./oauth.js";
 import {
   defaultConfigPath,
+  getApiKeysPresent,
   loadConfig as loadPatchworkConfig,
 } from "./patchworkConfig.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
@@ -1383,6 +1384,7 @@ export class Bridge {
             httpPort: this.port,
             inboxDir: path.join(os.homedir(), ".patchwork", "inbox"),
             configPath: defaultConfigPath(),
+            apiKeysPresent: getApiKeysPresent(),
             webhookUrl: this.server.approvalWebhookUrl ?? null,
             pushServiceUrl: this.server.pushServiceUrl ?? null,
             pushServiceToken: this.server.pushServiceToken ? "***" : null,
