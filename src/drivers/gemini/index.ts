@@ -50,6 +50,28 @@ function scrubSecrets(text: string): string {
 export class GeminiSubprocessDriver implements ProviderDriver {
   readonly name = "gemini";
 
+  /**
+   * Process-wide serialization for `~/.gemini/settings.json` mutation. Two
+   * concurrent `run()` invocations would otherwise race:
+   *
+   *   A reads file (originalContent = X)
+   *   A writes A's-token
+   *   B reads file (originalContent = A's-token)   ← B captures wrong baseline
+   *   B writes B's-token
+   *   A's child starts, reads settings — sees B's-token (uses wrong creds)
+   *   A finishes, restores to X (wipes B's token mid-flight)
+   *   B's child reads settings — sees X (no MCP config)
+   *   B finishes, restores to A's-token (token leaks past run)
+   *
+   * The settings file is global to ~/.gemini/, so per-call isolation requires
+   * either Gemini-CLI's `--settings <path>` (not universal across versions)
+   * or a strict mutex across the whole run() lifetime. We take the mutex
+   * approach — Gemini subprocess runs are slow (seconds-to-minutes) and the
+   * operator-driven concurrency level is already low, so the throughput
+   * cost is acceptable for cross-version correctness.
+   */
+  private static settingsMutex: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly binary: string,
     private readonly log: (msg: string) => void,
@@ -59,6 +81,29 @@ export class GeminiSubprocessDriver implements ProviderDriver {
   ) {}
 
   async run(input: ProviderTaskInput): Promise<ProviderTaskResult> {
+    // If we're going to mutate ~/.gemini/settings.json, wait for any prior
+    // Gemini run holding the same file to finish first. This is a no-op when
+    // bridgeMcp is unset (no settings injection → no race).
+    if (this.bridgeMcp?.()) {
+      const prior = GeminiSubprocessDriver.settingsMutex;
+      let releaseLock!: () => void;
+      const ourLock = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+      GeminiSubprocessDriver.settingsMutex = ourLock;
+      try {
+        await prior;
+        return await this._runLocked(input);
+      } finally {
+        releaseLock();
+      }
+    }
+    return this._runLocked(input);
+  }
+
+  private async _runLocked(
+    input: ProviderTaskInput,
+  ): Promise<ProviderTaskResult> {
     const opts = input.providerOptions ?? {};
     const approvalMode =
       typeof opts.approvalMode === "string" ? opts.approvalMode : "yolo";
