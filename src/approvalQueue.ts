@@ -60,6 +60,19 @@ interface Entry extends PendingApproval {
   inflightKey: string;
   /** Promise resolvers attached to the same dedup key after the first call. */
   pendingPromises: Array<(d: ApprovalDecision) => void>;
+  /**
+   * Failed-attempt counter for the phone-path approval token. Defends
+   * against brute-force without letting wrong-token POSTs invalidate the
+   * legitimate approver's token (the prior "clear on first check regardless"
+   * design was a DoS: any unauthenticated POST with a syntactically-valid
+   * callId — e.g. one disclosed via a webhook target or `/approvals`
+   * leak — could permanently lock out the rightful approver).
+   *
+   * Token is cleared only on successful match. After
+   * `MAX_TOKEN_FAILURES` mismatches, the entry's token is treated as
+   * expired (no further validation succeeds for this callId).
+   */
+  tokenFailures: number;
 }
 
 /**
@@ -179,6 +192,7 @@ export class ApprovalQueue {
       approvalToken,
       inflightKey,
       pendingPromises: [],
+      tokenFailures: 0,
       ...input,
     });
     this.inflight.set(inflightKey, callId);
@@ -187,19 +201,52 @@ export class ApprovalQueue {
   }
 
   /**
+   * Maximum failed validateToken attempts per callId before the token is
+   * locked out (treated as expired). 5 is generous for legitimate retries
+   * (typo on phone, copy-paste error) and tight enough to bound brute-force
+   * to 5 / token-TTL — for 256-bit tokens this is astronomically below the
+   * keyspace, so the limit is functionally only a DoS / spray defense.
+   */
+  private static readonly MAX_TOKEN_FAILURES = 5;
+
+  /**
    * Validate a phone-path approval token for the given callId.
-   * Tokens are single-use: deleted from the entry after first check regardless of outcome.
-   * Returns true only if the token matches. Uses timing-safe comparison.
+   *
+   * On a successful match, the token is cleared (single-use against
+   * approver-side replay). On a mismatch, the token is preserved so a
+   * subsequent legitimate POST still works — but a per-entry failure
+   * counter is incremented and the token locks out after
+   * MAX_TOKEN_FAILURES attempts.
+   *
+   * Prior behavior cleared the token on first check regardless of outcome,
+   * which let any unauthenticated POST with a known callId (e.g. one
+   * leaked via a webhook target or /approvals reader) DoS every queued
+   * approval by spraying garbage tokens. Closes that hole while preserving
+   * the brute-force defense (5 attempts × 256-bit keyspace).
+   *
+   * Uses timing-safe comparison.
    */
   validateToken(callId: string, token: string): boolean {
     const entry = this.entries.get(callId);
     if (!entry?.approvalToken) return false;
+    if (entry.tokenFailures >= ApprovalQueue.MAX_TOKEN_FAILURES) {
+      // Locked out — treat as expired without leaking timing on the compare.
+      return false;
+    }
     const expected = Buffer.from(entry.approvalToken, "utf8");
     const provided = Buffer.from(token, "utf8");
-    // Clear token immediately — single-use regardless of outcome
-    entry.approvalToken = undefined;
-    if (expected.length !== provided.length) return false;
-    return timingSafeEqual(expected, provided);
+    let matched = false;
+    if (expected.length === provided.length) {
+      matched = timingSafeEqual(expected, provided);
+    }
+    if (matched) {
+      // Single-use — clear only on success so the legitimate approver
+      // cannot be locked out by a garbage-token spray.
+      entry.approvalToken = undefined;
+      return true;
+    }
+    entry.tokenFailures++;
+    return false;
   }
 
   approve(callId: string): boolean {
