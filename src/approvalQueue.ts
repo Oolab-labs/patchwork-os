@@ -201,28 +201,33 @@ export class ApprovalQueue {
   }
 
   /**
-   * Maximum failed validateToken attempts per callId before the token is
-   * locked out (treated as expired). 5 is generous for legitimate retries
-   * (typo on phone, copy-paste error) and tight enough to bound brute-force
-   * to 5 / token-TTL — for 256-bit tokens this is astronomically below the
-   * keyspace, so the limit is functionally only a DoS / spray defense.
+   * Hard cap on failed validateToken attempts per callId. Once exceeded,
+   * the token is treated as expired.
+   *
+   * The cap is **memory/CPU theatre, not a brute-force defense** — token
+   * entropy is 256 bits, so even at 200 req/s × 5-min TTL = 60 000
+   * attempts vs 2^256 keyspace is astronomically below the keyspace. The
+   * earlier 5-attempt cap was found by audit to enable a *new* DoS:
+   * an attacker who burned 4 failures on a leaked callId locked the
+   * legitimate approver out after one typo. Same scenario applied to
+   * dedup-reused entries (an agent re-requesting the same
+   * `(sessionId, toolName, params)` inherited the entry's accumulated
+   * `tokenFailures`).
+   *
+   * Bumping the cap to 1000 leaves the legitimate approver with ample
+   * retry budget while still bounding memory/CPU on a sustained
+   * misbehaving client. The HTTP-level rate limit on `/approve` /
+   * `/reject` is where real spray defense should live; track in a
+   * follow-up.
    */
-  private static readonly MAX_TOKEN_FAILURES = 5;
+  private static readonly MAX_TOKEN_FAILURES = 1000;
 
   /**
    * Validate a phone-path approval token for the given callId.
    *
    * On a successful match, the token is cleared (single-use against
    * approver-side replay). On a mismatch, the token is preserved so a
-   * subsequent legitimate POST still works — but a per-entry failure
-   * counter is incremented and the token locks out after
-   * MAX_TOKEN_FAILURES attempts.
-   *
-   * Prior behavior cleared the token on first check regardless of outcome,
-   * which let any unauthenticated POST with a known callId (e.g. one
-   * leaked via a webhook target or /approvals reader) DoS every queued
-   * approval by spraying garbage tokens. Closes that hole while preserving
-   * the brute-force defense (5 attempts × 256-bit keyspace).
+   * subsequent legitimate POST still works.
    *
    * Uses timing-safe comparison.
    */

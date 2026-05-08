@@ -81,10 +81,15 @@ export class GeminiSubprocessDriver implements ProviderDriver {
   ) {}
 
   async run(input: ProviderTaskInput): Promise<ProviderTaskResult> {
-    // If we're going to mutate ~/.gemini/settings.json, wait for any prior
-    // Gemini run holding the same file to finish first. This is a no-op when
-    // bridgeMcp is unset (no settings injection → no race).
-    if (this.bridgeMcp?.()) {
+    // Resolve bridgeMcp ONCE per run() and pass the result down. The
+    // closure may be cheap today, but calling it twice (once at the lock
+    // gate, once inside _runLocked) opens a TOCTOU window: if the value
+    // ever flips falsy→truthy between the two calls, the gate skips the
+    // mutex but _runLocked writes settings.json without a lock.
+    const mcp = this.bridgeMcp?.();
+    if (mcp) {
+      // If we're going to mutate ~/.gemini/settings.json, wait for any prior
+      // Gemini run holding the same file to finish first.
       const prior = GeminiSubprocessDriver.settingsMutex;
       let releaseLock!: () => void;
       const ourLock = new Promise<void>((resolve) => {
@@ -93,16 +98,18 @@ export class GeminiSubprocessDriver implements ProviderDriver {
       GeminiSubprocessDriver.settingsMutex = ourLock;
       try {
         await prior;
-        return await this._runLocked(input);
+        return await this._runLocked(input, mcp);
       } finally {
         releaseLock();
       }
     }
-    return this._runLocked(input);
+    // No mcp injection → no settings file write → no mutex needed.
+    return this._runLocked(input, undefined);
   }
 
   private async _runLocked(
     input: ProviderTaskInput,
+    mcp: { url: string; authToken: string } | undefined,
   ): Promise<ProviderTaskResult> {
     const opts = input.providerOptions ?? {};
     const approvalMode =
@@ -118,7 +125,6 @@ export class GeminiSubprocessDriver implements ProviderDriver {
     // bridge may be bound 0.0.0.0 with a public --issuer-url, but the local
     // child should always dial loopback so neither the URL nor the token
     // ever leave this machine.
-    const mcp = this.bridgeMcp?.();
     let settingsCleanup: (() => void) | null = null;
     if (mcp) {
       const settingsFile = join(homedir(), ".gemini", "settings.json");
