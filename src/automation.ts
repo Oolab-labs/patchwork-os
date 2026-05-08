@@ -414,7 +414,7 @@ export interface OnDiagnosticsClearedPolicy extends PromptSource {
  * Unified diagnostics-state hook (v2.43.0+) — replaces `onDiagnosticsError`
  * and `onDiagnosticsCleared` with a single schema entry carrying a `state`
  * discriminator. Expanded at load time. Legacy names still accepted with a
- * deprecation warning. Removed no earlier than v2.46 + 30 days.
+ * deprecation warning. Removed no earlier than 2026-09-01.
  */
 export type OnDiagnosticsStateChangePolicy =
   | ({ state: "error" } & OnDiagnosticsErrorPolicy)
@@ -476,9 +476,9 @@ export interface AutomationPolicy {
    * slot based on `phase`. Prefer this form in new policies.
    */
   onCompaction?: OnCompactionPolicy;
-  /** @deprecated v2.43.0 — use `onCompaction` with `phase: "post"`. Removed no earlier than v2.46 / 30 days. */
+  /** @deprecated v2.43.0 — use `onCompaction` with `phase: "post"`. Removed no earlier than 2026-09-01. */
   onPostCompact?: OnPostCompactPolicy;
-  /** @deprecated v2.43.0 — use `onCompaction` with `phase: "pre"`. Removed no earlier than v2.46 / 30 days. */
+  /** @deprecated v2.43.0 — use `onCompaction` with `phase: "pre"`. Removed no earlier than 2026-09-01. */
   onPreCompact?: OnPreCompactPolicy;
   /** Fired by Claude Code 2.1.76+ InstructionsLoaded hook — injects bridge status at session start. */
   onInstructionsLoaded?: OnInstructionsLoadedPolicy;
@@ -742,12 +742,12 @@ export function loadPolicy(filePath: string): AutomationPolicy {
   );
   if (hadLegacyPreCompact) {
     console.warn(
-      `[automation-policy] "onPreCompact" in "${filePath}" is deprecated — migrate to "onCompaction" with phase: "pre". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+      `[automation-policy] "onPreCompact" in "${filePath}" is deprecated — migrate to "onCompaction" with phase: "pre". Legacy name removed no earlier than 2026-09-01.`,
     );
   }
   if (hadLegacyPostCompact) {
     console.warn(
-      `[automation-policy] "onPostCompact" in "${filePath}" is deprecated — migrate to "onCompaction" with phase: "post". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+      `[automation-policy] "onPostCompact" in "${filePath}" is deprecated — migrate to "onCompaction" with phase: "post". Legacy name removed no earlier than 2026-09-01.`,
     );
   }
 
@@ -769,12 +769,12 @@ export function loadPolicy(filePath: string): AutomationPolicy {
   );
   if (hadLegacyDiagError) {
     console.warn(
-      `[automation-policy] "onDiagnosticsError" in "${filePath}" is deprecated — migrate to "onDiagnosticsStateChange" with state: "error". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+      `[automation-policy] "onDiagnosticsError" in "${filePath}" is deprecated — migrate to "onDiagnosticsStateChange" with state: "error". Legacy name removed no earlier than 2026-09-01.`,
     );
   }
   if (hadLegacyDiagCleared) {
     console.warn(
-      `[automation-policy] "onDiagnosticsCleared" in "${filePath}" is deprecated — migrate to "onDiagnosticsStateChange" with state: "cleared". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+      `[automation-policy] "onDiagnosticsCleared" in "${filePath}" is deprecated — migrate to "onDiagnosticsStateChange" with state: "cleared". Legacy name removed no earlier than 2026-09-01.`,
     );
   }
 
@@ -796,12 +796,12 @@ export function loadPolicy(filePath: string): AutomationPolicy {
   );
   if (hadLegacyDebugStart) {
     console.warn(
-      `[automation-policy] "onDebugSessionStart" in "${filePath}" is deprecated — migrate to "onDebugSession" with phase: "start". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+      `[automation-policy] "onDebugSessionStart" in "${filePath}" is deprecated — migrate to "onDebugSession" with phase: "start". Legacy name removed no earlier than 2026-09-01.`,
     );
   }
   if (hadLegacyDebugEnd) {
     console.warn(
-      `[automation-policy] "onDebugSessionEnd" in "${filePath}" is deprecated — migrate to "onDebugSession" with phase: "end". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+      `[automation-policy] "onDebugSessionEnd" in "${filePath}" is deprecated — migrate to "onDebugSession" with phase: "end". Legacy name removed no earlier than 2026-09-01.`,
     );
   }
 
@@ -860,12 +860,12 @@ export function loadPolicy(filePath: string): AutomationPolicy {
   }
   if (hadLegacyOnFailureOnly) {
     console.warn(
-      `[automation-policy] "onTestRun.onFailureOnly" in "${filePath}" is deprecated — migrate to "onTestRun.filter" ("failure" or "any"). Legacy field removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+      `[automation-policy] "onTestRun.onFailureOnly" in "${filePath}" is deprecated — migrate to "onTestRun.filter" ("failure" or "any"). Legacy field removed no earlier than 2026-09-01.`,
     );
   }
   if (hadLegacyTestPassAfterFailure) {
     console.warn(
-      `[automation-policy] "onTestPassAfterFailure" in "${filePath}" is deprecated — migrate to "onTestRun" with filter: "pass-after-fail". Legacy hook removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+      `[automation-policy] "onTestPassAfterFailure" in "${filePath}" is deprecated — migrate to "onTestRun" with filter: "pass-after-fail". Legacy hook removed no earlier than 2026-09-01.`,
     );
   }
 

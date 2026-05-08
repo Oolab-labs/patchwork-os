@@ -258,6 +258,7 @@ describe("RecipeScheduler", () => {
       recipesDir: tmp,
       enqueue: () => "tid",
       runYaml: async () => {},
+      disabledRecipes: [],
     });
 
     const scheduled = scheduler.start();
