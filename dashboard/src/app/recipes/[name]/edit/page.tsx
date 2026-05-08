@@ -28,6 +28,11 @@ export default function RecipeEditPage({
   const [content, setContent] = useState<string>("");
   const [savedContent, setSavedContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  // Whether the recipe didn't exist at load time. Used to show a banner so
+  // the user knows they're not actually editing — they're typing into an
+  // empty buffer. (Saving WILL create it; this just makes that intention
+  // explicit instead of looking like the recipe loaded blank.)
+  const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -57,11 +62,13 @@ export default function RecipeEditPage({
           if (!cancelled) {
             setContent(text);
             setSavedContent(text);
+            setNotFound(false);
           }
         } else if (res.status === 404) {
           if (!cancelled) {
             setContent("");
             setSavedContent("");
+            setNotFound(true);
           }
         } else {
           const err = await res.text().catch(() => "unknown error");
@@ -313,6 +320,45 @@ export default function RecipeEditPage({
           </button>
         </div>
       </div>
+
+      {/* Recipe-not-found banner — fires when /api/bridge/recipes/:name 404'd
+          on load. The editor still mounts (so the user can save and create the
+          recipe) but without this banner the empty buffer looks like the
+          recipe loaded blank. */}
+      {!loading && notFound && (
+        <div
+          role="status"
+          style={{
+            marginBottom: "var(--s-3)",
+            padding: "var(--s-3) var(--s-4)",
+            borderRadius: "var(--r-2)",
+            background: "var(--warn-soft)",
+            border: "1px solid var(--warn)",
+            color: "var(--warn)",
+            fontSize: "var(--fs-m)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: "var(--s-3)",
+          }}
+        >
+          <div>
+            <strong style={{ display: "block", marginBottom: 2 }}>
+              Recipe not found
+            </strong>
+            <span style={{ fontSize: "var(--fs-s)" }}>
+              No recipe named <code style={{ fontFamily: "var(--font-mono)" }}>{name}</code> exists yet. Saving here will create it as a new recipe.
+            </span>
+          </div>
+          <Link
+            href="/recipes/new"
+            className="btn sm ghost"
+            style={{ flexShrink: 0, fontSize: "var(--fs-xs)" }}
+          >
+            Use new-recipe form →
+          </Link>
+        </div>
+      )}
 
       {/* Validation error banner */}
       {saveError && (
