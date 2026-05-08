@@ -190,20 +190,22 @@ describe("ApprovalQueue — approval tokens", () => {
     expect(q.validateToken(callId, approvalToken!)).toBe(true);
   });
 
-  it("validateToken locks out after MAX_TOKEN_FAILURES wrong attempts", () => {
-    // Brute-force defense: 5 mismatches and the token is dead, even when the
-    // 6th attempt would have been correct. Bounds spray attacks at 5 ×
-    // token-TTL even if an attacker has unlimited callIds.
+  it("survives sustained wrong-token spray without locking out the legit approver", () => {
+    // Regression: prior cap of 5 enabled its own DoS — an attacker burning
+    // 4 failures on a leaked callId locked the legit approver out after one
+    // typo. Same applied to dedup-reused entries inheriting accumulated
+    // tokenFailures. Cap bumped to 1000 (memory/CPU bound, not security
+    // bound — token entropy is 256 bits). 100 wrong attempts must still
+    // leave room for the legit one to win.
     const q = new ApprovalQueue();
     const { callId, approvalToken } = q.request(
       { toolName: "gitPush", params: {}, tier: "high" },
       { withToken: true },
     );
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 100; i++) {
       expect(q.validateToken(callId, "deadbeef".repeat(8))).toBe(false);
     }
-    // Even the correct token fails after lockout.
-    expect(q.validateToken(callId, approvalToken!)).toBe(false);
+    expect(q.validateToken(callId, approvalToken!)).toBe(true);
   });
 
   it("validateToken returns false for unknown callId", () => {

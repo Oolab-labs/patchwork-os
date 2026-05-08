@@ -1001,14 +1001,15 @@ export class Server extends EventEmitter<ServerEvents> {
           if (existing.length > Server.MAX_WEBHOOK_PAYLOADS) {
             existing.length = Server.MAX_WEBHOOK_PAYLOADS;
           }
-          // Evict the oldest recipe entry if we'd exceed the key cap on
-          // insertion. Map iteration is insertion order, so .keys().next()
-          // returns the oldest. Skip eviction when the path is already in
-          // the Map (re-keying same path doesn't grow size).
-          if (
-            !this.webhookPayloads.has(hookPath) &&
-            this.webhookPayloads.size >= Server.MAX_WEBHOOK_RECIPES
-          ) {
+          // LRU eviction: Map.set() on an existing key keeps original
+          // insertion-order position (per spec), so a hot recipe registered
+          // at startup would otherwise be evicted in favor of a cold
+          // scanner-spam recipe just because it was registered earlier.
+          // Delete + re-set re-anchors the key to the END of insertion
+          // order, making `.keys().next()` correctly point at the
+          // least-recently-fired recipe.
+          this.webhookPayloads.delete(hookPath);
+          if (this.webhookPayloads.size >= Server.MAX_WEBHOOK_RECIPES) {
             const oldest = this.webhookPayloads.keys().next().value;
             if (oldest !== undefined) this.webhookPayloads.delete(oldest);
           }

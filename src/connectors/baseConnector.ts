@@ -417,10 +417,10 @@ export abstract class BaseConnector {
     // Clamp + sanitize header-derived values: a buggy or malicious provider
     // returning `Retry-After: 9999999999` overflows setTimeout's 32-bit
     // delay (and the int*1000 silently); a NaN result poisons backoff math
-    // for every subsequent call. Cap at 10 minutes — enough for any
-    // legitimate rate-limit window, short enough that a wedged connector
-    // recovers within a single ops cycle.
-    const MAX_BACKOFF_MS = 10 * 60 * 1000;
+    // for every subsequent call. Cap at 1 hour — covers documented IdP
+    // lockout windows (Okta, Azure AD) and PagerDuty/Asana sustained-outage
+    // backoff while still bounding pathological values.
+    const MAX_BACKOFF_MS = 60 * 60 * 1000;
     const clampNonNegative = (n: number, max: number): number => {
       if (!Number.isFinite(n) || n < 0) return 0;
       return Math.min(n, max);
