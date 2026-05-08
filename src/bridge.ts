@@ -5,7 +5,7 @@ import path from "node:path";
 import { WebSocket } from "ws";
 import { ActivityLog } from "./activityLog.js";
 import { buildSummary } from "./analyticsAggregator.js";
-import { getAnalyticsPref } from "./analyticsPrefs.js";
+import { getAnalyticsPref, getAnalyticsSalt } from "./analyticsPrefs.js";
 import { sendAnalytics } from "./analyticsSend.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
@@ -1821,7 +1821,13 @@ export class Bridge {
     if (analyticsOn === true && totalSessions > 0) {
       try {
         const entries = this.activityLog.query({ last: 500 });
-        const summary = buildSummary(entries, maxDurationMs, PACKAGE_VERSION);
+        const salt = getAnalyticsSalt();
+        const summary = buildSummary(
+          entries,
+          maxDurationMs,
+          PACKAGE_VERSION,
+          salt,
+        );
         await Promise.race([
           sendAnalytics(summary),
           new Promise<void>((resolve) => setTimeout(resolve, 2000)),
