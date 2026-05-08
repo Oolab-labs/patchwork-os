@@ -320,6 +320,29 @@ export class Server extends EventEmitter<ServerEvents> {
    * insertion order in JS), not the largest list.
    */
   static readonly MAX_WEBHOOK_RECIPES = 1000;
+  /**
+   * Per-IP rate limit on the unauthenticated phone-path approval endpoints
+   * (`POST /approve/:callId` and `POST /reject/:callId` when
+   * `x-approval-token` is present). The auth gate intentionally bypasses
+   * bearer auth for those paths so a phone can dispatch without a bridge
+   * token; without rate limiting, an attacker who learns a callId (via
+   * webhook target leak, bearer-authed `/approvals` reader, etc.) can
+   * spray garbage tokens to DoS the legitimate approver. PR #380 bumped
+   * the per-callId failure cap to 1000 (memory bound, not security
+   * bound); this is the HTTP-layer spray defense flagged as the proper
+   * fix in that commit.
+   *
+   * 60 attempts per IP per minute is generous for legitimate retries
+   * (phone re-tap, network flake) and tight enough to bound brute-force
+   * attempts during the 5-minute approval TTL to 300 — well within the
+   * per-callId cap, so no legit retry budget is consumed by sprayers.
+   */
+  private readonly approvalIpCounts = new Map<
+    string,
+    { count: number; windowStart: number }
+  >();
+  static readonly APPROVAL_IP_MAX = 60;
+  static readonly APPROVAL_IP_WINDOW_MS = 60_000;
   /** Set by bridge to handle MCP Streamable HTTP sessions (POST/GET/DELETE /mcp) */
   public httpMcpHandler:
     | ((req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>)
@@ -626,6 +649,42 @@ export class Server extends EventEmitter<ServerEvents> {
         req.method === "POST" &&
         /^\/(approve|reject)\/[A-Za-z0-9-]+$/.test(parsedUrl.pathname) &&
         !!req.headers["x-approval-token"];
+      // Rate-limit the phone bypass surface. Only applies when this is
+      // actually a phone-path request that's relying on the bypass — a
+      // properly-authenticated bearer caller is unaffected. Counted +
+      // checked *before* dispatch so a sprayer can't burn the per-callId
+      // failure budget at line-rate.
+      if (isPhoneApprovalPath && !isStaticToken && !oauthResolved) {
+        const remoteIp = (req.socket?.remoteAddress ?? "unknown").slice(0, 64);
+        const now = Date.now();
+        const entry = this.approvalIpCounts.get(remoteIp);
+        if (entry && now - entry.windowStart < Server.APPROVAL_IP_WINDOW_MS) {
+          entry.count++;
+          if (entry.count > Server.APPROVAL_IP_MAX) {
+            res.writeHead(429, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: "too_many_requests",
+                error_description:
+                  "per-IP approval endpoint rate limit reached",
+              }),
+            );
+            return;
+          }
+        } else {
+          this.approvalIpCounts.set(remoteIp, { count: 1, windowStart: now });
+        }
+        // GC stale entries opportunistically — bounded growth alongside
+        // the same Map. 200 is well above any legitimate concurrent IP
+        // count; well below memory pressure.
+        if (this.approvalIpCounts.size > 200) {
+          for (const [k, v] of this.approvalIpCounts) {
+            if (now - v.windowStart > Server.APPROVAL_IP_WINDOW_MS) {
+              this.approvalIpCounts.delete(k);
+            }
+          }
+        }
+      }
       // oauthResolved is the bridge token if the OAuth token is valid; null otherwise
       if (!isStaticToken && !oauthResolved && !isPhoneApprovalPath) {
         // RFC 6750: only include error= when a token was actually presented but invalid
