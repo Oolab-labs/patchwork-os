@@ -62,12 +62,16 @@ export function useBridgeFetch<T>(
         setStatus(res.status);
 
         if (res.status === 404) {
+          // 404 is a stable terminal state: either the endpoint isn't
+          // implemented by this bridge version (older bridge) or the resource
+          // ID doesn't exist (e.g. /sessions/<gone-uuid>). Polling won't make
+          // either appear — and on session-detail pages with a 3s interval it
+          // generates a 404-per-tick stream that fills server logs and burns
+          // network. Stop the loop. Callers that want to retry call refetch().
           setUnsupported(true);
           setData(unsupportedValueRef.current);
           setError(undefined);
           setLoading(false);
-          failures = 0;
-          schedule(intervalMs);
           return;
         }
 

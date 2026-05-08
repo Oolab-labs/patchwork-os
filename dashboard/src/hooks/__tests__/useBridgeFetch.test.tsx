@@ -85,6 +85,28 @@ describe("useBridgeFetch — error branches", () => {
     expect(result.current.loading).toBe(false);
   });
 
+  it("404 stops the polling loop — no further fetches fire", async () => {
+    // Regression test for the session-detail / older-bridge case where a 404
+    // would re-poll forever at intervalMs. 404 is a stable state — neither a
+    // missing endpoint nor a missing resource will materialise from polling,
+    // and the network noise was filling browser/server logs. Callers that
+    // want to retry call refetch() explicitly.
+    fetchMock.mockResolvedValueOnce(
+      new Response("nope", { status: 404, headers: { "content-type": "text/plain" } }),
+    );
+
+    const { result } = renderHook(() =>
+      useBridgeFetch("/api/missing", { intervalMs: 50 }),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe(404));
+    const callsAfterFirst = fetchMock.mock.calls.length;
+    // Wait several intervals — if the hook was still polling we'd see
+    // additional fetch() invocations stack up.
+    await new Promise((r) => setTimeout(r, 250));
+    expect(fetchMock).toHaveBeenCalledTimes(callsAfterFirst);
+  });
+
   it("503 sets a 'Bridge not running' error", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response("down", { status: 503 }),
