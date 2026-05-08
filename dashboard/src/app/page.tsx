@@ -227,6 +227,16 @@ function parseUptimeMs(text: string): number | null {
   return null;
 }
 
+// Compact human-readable counts: 4_752_583_497 → "4.8B", 58_376_273 → "58M".
+// Used in tile sub-stats where digits would crowd out other content. Falls
+// back to toLocaleString below 10k where readable digits are still cheap.
+function formatCompact(n: number): string {
+  if (n < 10_000) return n.toLocaleString();
+  if (n < 1_000_000) return `${(n / 1_000).toFixed(n < 100_000 ? 1 : 0)}K`;
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(n < 100_000_000 ? 1 : 0)}M`;
+  return `${(n / 1_000_000_000).toFixed(n < 100_000_000_000 ? 1 : 0)}B`;
+}
+
 function parseToolCallTotal(text: string): number {
   if (!text) return 0;
   let total = 0;
@@ -882,19 +892,41 @@ export default function HomePage() {
               label="Tokens burnt"
               value={
                 health?.tokens ? (
-                  <AnimatedNumber value={health.tokens.total} />
+                  <AnimatedNumber
+                    // The bridge's tokens.total is just input + output, but cache
+                    // creation is also billed (~1.25× input rate). Cache reads
+                    // (often 100×–1000× larger than the rest combined) are billed
+                    // at 0.1× and excluded — they'd dwarf the headline and
+                    // mislead. Show the full-rate-ish slice; cache reads get a
+                    // sub-stat in the foot. Compact format ("68.5M" not
+                    // "68,540,195") so the digit count doesn't hijack the tile.
+                    value={
+                      health.tokens.input +
+                      health.tokens.output +
+                      health.tokens.cacheCreate
+                    }
+                    format={formatCompact}
+                  />
                 ) : (
                   "—"
                 )
               }
               foot={
-                health?.tokens && health.tokens.messages > 0
-                  ? `${health.tokens.messages.toLocaleString()} msg${health.tokens.messages === 1 ? "" : "s"}`
-                  : undefined
+                health?.tokens && health.tokens.cacheRead > 0
+                  ? `+${formatCompact(health.tokens.cacheRead)} cache reads · ${formatCompact(health.tokens.messages)} msg${health.tokens.messages === 1 ? "" : "s"}`
+                  : health?.tokens && health.tokens.messages > 0
+                    ? `${formatCompact(health.tokens.messages)} msg${health.tokens.messages === 1 ? "" : "s"}`
+                    : undefined
               }
               title={
                 health?.tokens
-                  ? `Input: ${health.tokens.input.toLocaleString()}\nOutput: ${health.tokens.output.toLocaleString()}\nCache create: ${health.tokens.cacheCreate.toLocaleString()}\nCache read: ${health.tokens.cacheRead.toLocaleString()}\nMessages: ${health.tokens.messages.toLocaleString()}`
+                  ? [
+                      `Input:        ${health.tokens.input.toLocaleString()}`,
+                      `Output:       ${health.tokens.output.toLocaleString()}`,
+                      `Cache create: ${health.tokens.cacheCreate.toLocaleString()}  (billed ~1.25× input)`,
+                      `Cache read:   ${health.tokens.cacheRead.toLocaleString()}  (billed 0.1× input)`,
+                      `Messages:     ${health.tokens.messages.toLocaleString()}`,
+                    ].join("\n")
                   : undefined
               }
               href="/metrics"
