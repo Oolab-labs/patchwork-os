@@ -396,8 +396,10 @@ const SAFE_BIN_BASENAMES = new Set([
   "cargo",
   "go",
   "pip",
-  // Runtimes / typecheckers
-  "node",
+  // Typecheckers (interpreters like `node`, `python`, `bash` deliberately
+  // excluded — even with allowlisted argv, an interpreter accepts arbitrary
+  // code via -e/-c. Callers with a known-safe argv shape opt in via
+  // `opts.allowlistChecked: true`.)
   "tsc",
   "pyright",
   // Linters / formatters / fixers
@@ -408,10 +410,11 @@ const SAFE_BIN_BASENAMES = new Set([
   "black",
   // Repo scanning
   "ts-prune",
-  // Browsers / file openers
+  // Browsers / file openers (cmd.exe is excluded for the same reason as
+  // interpreters — Windows browser-launch in openInBrowser uses
+  // allowlistChecked:true with a fixed argv shape.)
   "open",
   "xdg-open",
-  "cmd",
 ]);
 
 function assertSafeBinary(cmd: string): void {
