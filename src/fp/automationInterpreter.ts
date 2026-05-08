@@ -589,47 +589,66 @@ async function interpret(
           const nextAttempt = attempt + 1;
           const nextRetryAt = ctx.now + program.retryDelayMs;
 
-          // Schedule retry: re-invoke the wrapped program when the timer
-          // fires. Read live state at fire time (not the scheduling-time
-          // snapshot) so the retry honours cooldown / dedup / rate-limit
-          // mutations that landed between scheduling and fire. Merge the
-          // retry's resulting state back via mergeRetryState so cooldown,
-          // dedup, rateLimit, pendingRetries, and taskTimestamps writes
-          // performed during the retry are not silently dropped.
+          // Schedule retry: re-run the wrapped program when the timer
+          // fires. The work runs INSIDE AutomationHooks' mutation lock
+          // (`runRetryUnderLock`) so:
+          //   1. Read of live state is atomic w.r.t. concurrent _runInterpreter
+          //      calls — the retry sees their cooldown / dedup / rateLimit
+          //      writes, can't clobber them.
+          //   2. Write of post-retry state is atomic w.r.t. the same chain,
+          //      so the retry's effects can't be lost to a concurrent run
+          //      that started between scheduling and merge.
+          //   3. `clearPendingRetry` is in a try/finally so the
+          //      pendingRetries entry is dropped even if the inner
+          //      interpret() throws (otherwise the retry leaks the entry
+          //      forever).
+          //
           // TestBackend records the call but does not actually fire the timer.
+          // Tests that exercise retry dispatch synchronously override
+          // `scheduleRetry`.
           const wrappedProgram = program.program;
           const retrySnapshot = innerAcc.state;
           const liveStateFn = ctx.getLiveState;
-          const mergeFn = ctx.mergeRetryState;
+          const runUnderLock = ctx.runRetryUnderLock;
           ctx.backend.scheduleRetry(program.key, program.retryDelayMs, () => {
             ctx.log(
               `[interpreter] retry attempt ${nextAttempt} for ${program.key}`,
             );
-            void (async () => {
+            const doRetry = async (
+              live: AutomationState,
+            ): Promise<AutomationState> => {
               try {
-                const liveState = liveStateFn ? liveStateFn() : retrySnapshot;
                 const retryCtx: InterpreterContext = {
                   ...ctx,
-                  state: liveState,
+                  state: live,
                   now: Date.now(),
                 };
                 const retryResult = await interpret(
                   wrappedProgram,
                   retryCtx,
-                  emptyAcc(liveState),
+                  emptyAcc(live),
                 );
-                // Always clear the pendingRetries entry — the retry has run,
-                // whether it spawned a task or not — then publish state.
-                const finalState = clearPendingRetry(
-                  retryResult.state,
-                  program.key,
-                );
-                if (mergeFn) mergeFn(finalState);
+                return clearPendingRetry(retryResult.state, program.key);
               } catch (e) {
                 const m = e instanceof Error ? e.message : String(e);
                 ctx.log(`[interpreter] retry ${program.key} failed: ${m}`);
+                // Drop the pending entry even on error — leaving it would
+                // make `pendingRetries.get(key)` look truthy forever.
+                return clearPendingRetry(live, program.key);
               }
-            })();
+            };
+            if (runUnderLock) {
+              runUnderLock(doRetry);
+            } else {
+              // Fallback for tests that didn't supply a lock executor:
+              // run against the snapshot (or live read if available),
+              // discard result. Not atomic, but tests don't observe the
+              // chain anyway.
+              void (async () => {
+                const seed = liveStateFn ? liveStateFn() : retrySnapshot;
+                await doRetry(seed);
+              })();
+            }
           });
 
           const newState = recordPendingRetry(

@@ -45,13 +45,23 @@ export interface InterpreterContext {
    */
   readonly getLiveState?: () => AutomationState;
   /**
-   * Optional sink for the AutomationState produced by a retry's interpret()
-   * call. Without this, cooldown / dedup / rateLimit / pendingRetries /
-   * taskTimestamps writes performed during the retry are silently dropped.
-   * AutomationHooks supplies a sink that merges the result into
-   * `this._automationState` via `_enqueueMutation`; tests may omit.
+   * Optional atomic-retry executor. Receives a function that, given the
+   * truly-current `AutomationState` at lock-acquisition time, returns the
+   * post-retry state. AutomationHooks runs this through `_enqueueMutation`
+   * so the read-run-write happens atomically with respect to other
+   * `_runInterpreter` calls (the same chain that prevents two concurrent
+   * events from clobbering each other's writes).
+   *
+   * Replaces the older `mergeRetryState` setter API, which let a retry
+   * publish stale absolute state and clobber writes from concurrent runs
+   * that landed between scheduling and merge. Now the retry's interpret()
+   * is itself executed inside the lock against fresh live state.
+   *
+   * Tests may omit (TestBackend doesn't fire retries by default).
    */
-  readonly mergeRetryState?: (state: AutomationState) => void;
+  readonly runRetryUnderLock?: (
+    work: (live: AutomationState) => Promise<AutomationState>,
+  ) => void;
 }
 
 // ── Interpreter result ────────────────────────────────────────────────────────
