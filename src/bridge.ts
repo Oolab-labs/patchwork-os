@@ -23,7 +23,10 @@ import { buildEnforcementReminder } from "./instructionsUtils.js";
 import { LockFileManager } from "./lockfile.js";
 import { Logger } from "./logger.js";
 import { OAuthServerImpl } from "./oauth.js";
-import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
+import {
+  defaultConfigPath,
+  loadConfig as loadPatchworkConfig,
+} from "./patchworkConfig.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
 import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
@@ -1364,22 +1367,28 @@ export class Bridge {
         extension: this.extensionClient.isConnected(),
         extensionCircuitBreaker: this.extensionClient.getCircuitBreakerState(),
         timeline: this.activityLog.queryTimeline({ last: 50 }),
-        patchwork: {
-          workspace: this.config.workspace,
-          approvalGate: this.server.approvalGate,
-          enableTimeOfDayAnomaly: this.server.enableTimeOfDayAnomaly,
-          fullMode: this.config.fullMode,
-          driver: this.config.driver,
-          model: loadPatchworkConfig().model,
-          localEndpoint: loadPatchworkConfig().localEndpoint,
-          localModel: loadPatchworkConfig().localModel,
-          automationEnabled: this.config.automationEnabled,
-          port: this.port,
-          webhookUrl: this.server.approvalWebhookUrl ?? null,
-          pushServiceUrl: this.server.pushServiceUrl ?? null,
-          pushServiceToken: this.server.pushServiceToken ? "***" : null,
-          pushServiceBaseUrl: this.server.pushServiceBaseUrl ?? null,
-        },
+        patchwork: (() => {
+          const cfg = loadPatchworkConfig();
+          return {
+            workspace: this.config.workspace,
+            approvalGate: this.server.approvalGate,
+            enableTimeOfDayAnomaly: this.server.enableTimeOfDayAnomaly,
+            fullMode: this.config.fullMode,
+            driver: this.config.driver,
+            model: cfg.model,
+            localEndpoint: cfg.localEndpoint,
+            localModel: cfg.localModel,
+            automationEnabled: this.config.automationEnabled,
+            port: this.port,
+            httpPort: this.port,
+            inboxDir: path.join(os.homedir(), ".patchwork", "inbox"),
+            configPath: defaultConfigPath(),
+            webhookUrl: this.server.approvalWebhookUrl ?? null,
+            pushServiceUrl: this.server.pushServiceUrl ?? null,
+            pushServiceToken: this.server.pushServiceToken ? "***" : null,
+            pushServiceBaseUrl: this.server.pushServiceBaseUrl ?? null,
+          };
+        })(),
       };
     };
 
