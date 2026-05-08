@@ -857,12 +857,16 @@ export default function HomePage() {
         </Link>
       </div>
 
-      {/* Four telemetry tiles */}
+      {/* Four telemetry tiles. Inline grid-template-columns used to force
+          repeat(4, minmax(0,1fr)) — that wins over the responsive .stat-grid
+          class default (auto-fit minmax(180px, 1fr)) and made tile labels
+          ellipsise to "PENDING APPROV/" / "TOOLS CALLED TOD…" on mobile.
+          Drop the inline override; .stat-grid auto-fit gives 4 cols at
+          desktop (≥768px content width) and stacks gracefully on narrow. */}
       <div
         className="stat-grid"
         style={{
           marginBottom: "var(--s-5)",
-          gridTemplateColumns: "repeat(4, minmax(0,1fr))",
         }}
       >
         {!health && bridgeStatus.ok !== false ? (
