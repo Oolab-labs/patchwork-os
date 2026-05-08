@@ -26,7 +26,6 @@ interface StatusResponse {
     pushServiceBaseUrl?: string | null;
     inboxDir?: string;
     httpPort?: number;
-    wsPort?: number;
     configPath?: string;
   };
   [k: string]: unknown;
@@ -98,7 +97,6 @@ export default function SettingsPage() {
   const [workspacePath, setWorkspacePath] = useState("");
   const [inboxDir, setInboxDir] = useState("");
   const [httpPort, setHttpPort] = useState("3101");
-  const [wsPort, setWsPort] = useState("3100");
   const bridgeInitialized = useRef(false);
 
   // AI drivers
@@ -131,11 +129,20 @@ export default function SettingsPage() {
       try {
         const res = await fetch(apiPath("/api/bridge/status"));
         if (res.status === 404) {
-          setUnsupported(true);
+          // Only collapse to "unsupported" empty state if we have NEVER
+          // successfully loaded settings. Once initialized, treat 404 as a
+          // transient error so a single hiccup doesn't wipe the whole page.
+          if (!bridgeInitialized.current) {
+            setUnsupported(true);
+          } else {
+            setErr(`/status 404`);
+          }
           return;
         }
         if (!res.ok) throw new Error(`/status ${res.status}`);
         const data = (await res.json()) as StatusResponse;
+        // Recovered: clear the transient unsupported flag so the UI heals.
+        setUnsupported(false);
         setSettings(data);
         setErr(undefined);
 
@@ -143,7 +150,6 @@ export default function SettingsPage() {
           setWorkspacePath(data.patchwork?.workspace ?? "");
           setInboxDir(data.patchwork?.inboxDir ?? "~/.patchwork/inbox");
           setHttpPort(String(data.patchwork?.httpPort ?? data.patchwork?.port ?? 3101));
-          setWsPort(String(data.patchwork?.wsPort ?? 3100));
           bridgeInitialized.current = true;
         }
         if (!gateInitialized.current) {
@@ -228,12 +234,21 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ driver: row.driverValue }),
       });
+      // Always read body — both success and error responses carry useful info
+      // (e.g. `restartRequired` flag on success, `error` text on failure).
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        restartRequired?: boolean;
+        error?: string;
+      };
       if (res.ok) {
         setPrimaryDriver(rowId);
-        setDriverMsg({ ok: true, text: `${row.name} set as primary.` });
+        const text = body.restartRequired
+          ? `${row.name} set as primary — restart the bridge to activate.`
+          : `${row.name} set as primary.`;
+        setDriverMsg({ ok: true, text });
         flashSaved();
       } else {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
         setDriverMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
       }
     } catch (e) {
@@ -286,7 +301,7 @@ export default function SettingsPage() {
     }
   }
 
-  const configPath = settings?.patchwork?.configPath ?? "~/.patchwork/config.yaml";
+  const configPath = settings?.patchwork?.configPath ?? "~/.patchwork/config.json";
 
   return (
     <section>
@@ -433,35 +448,21 @@ export default function SettingsPage() {
                   </p>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <label htmlFor="bridge-http-port" style={labelStyle}>
-                      HTTP port
-                    </label>
-                    <input
-                      id="bridge-http-port"
-                      type="number"
-                      value={httpPort}
-                      readOnly
-                      placeholder="3101"
-                      style={{ ...inputStyle, background: "var(--bg-2)", cursor: "not-allowed" }}
-                    />
-                    <p style={helpStyle}>Dashboard + REST API listen here.</p>
-                  </div>
-                  <div>
-                    <label htmlFor="bridge-ws-port" style={labelStyle}>
-                      WebSocket port
-                    </label>
-                    <input
-                      id="bridge-ws-port"
-                      type="number"
-                      value={wsPort}
-                      readOnly
-                      placeholder="3100"
-                      style={{ ...inputStyle, background: "var(--bg-2)", cursor: "not-allowed" }}
-                    />
-                    <p style={helpStyle}>Claude Code IDE bridge transport.</p>
-                  </div>
+                <div>
+                  <label htmlFor="bridge-port" style={labelStyle}>
+                    Bridge port
+                  </label>
+                  <input
+                    id="bridge-port"
+                    type="number"
+                    value={httpPort}
+                    readOnly
+                    placeholder="3101"
+                    style={{ ...inputStyle, background: "var(--bg-2)", cursor: "not-allowed" }}
+                  />
+                  <p style={helpStyle}>
+                    REST API, dashboard, and Claude Code WebSocket transport all share this port.
+                  </p>
                 </div>
 
                 <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)" }}>
@@ -491,6 +492,10 @@ export default function SettingsPage() {
                 {DRIVER_ROWS.map((row) => {
                   const isPrimary = primaryDriver === row.id;
                   const activeDriver = settings.patchwork?.driver === row.driverValue;
+                  // When the row is the optimistic "primary" but the bridge
+                  // hasn't switched yet, surface that as a clear pending-restart
+                  // state instead of the contradictory `primary` + `inactive`.
+                  const pendingRestart = isPrimary && !activeDriver;
                   return (
                     <div
                       key={row.id}
@@ -508,9 +513,13 @@ export default function SettingsPage() {
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <span style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-0)" }}>{row.name}</span>
                           {isPrimary && <StatusPill tone="ok">primary</StatusPill>}
-                          <StatusPill tone={activeDriver ? "ok" : "muted"}>
-                            {activeDriver ? "active" : "inactive"}
-                          </StatusPill>
+                          {pendingRestart ? (
+                            <StatusPill tone="warn">pending restart</StatusPill>
+                          ) : (
+                            <StatusPill tone={activeDriver ? "ok" : "muted"}>
+                              {activeDriver ? "active" : "inactive"}
+                            </StatusPill>
+                          )}
                         </div>
                         <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", marginTop: 2 }}>{row.detail}</div>
                       </div>
@@ -772,17 +781,23 @@ function PermColumn({
 }
 
 function ConfigFileCard({ path }: { path: string }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<"idle" | "copied" | "blocked">("idle");
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(path);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setState("copied");
+      setTimeout(() => setState("idle"), 1500);
     } catch {
-      /* clipboard blocked */
+      // Clipboard API blocked (insecure context, headless, permission denied).
+      // Tell the user instead of silently no-op'ing.
+      setState("blocked");
+      setTimeout(() => setState("idle"), 2400);
     }
   }
+
+  const copied = state === "copied";
+  const blocked = state === "blocked";
 
   return (
     <div
@@ -812,7 +827,7 @@ function ConfigFileCard({ path }: { path: string }) {
           background: "transparent",
           border: "1px solid var(--border-default)",
           borderRadius: "var(--r-s)",
-          color: copied ? "var(--ok)" : "var(--fg-1)",
+          color: copied ? "var(--ok)" : blocked ? "var(--err)" : "var(--fg-1)",
           fontSize: "var(--fs-xs)",
           padding: "3px 8px",
           cursor: "pointer",
@@ -821,8 +836,8 @@ function ConfigFileCard({ path }: { path: string }) {
           gap: 4,
         }}
       >
-        <span aria-hidden>{copied ? "✓" : "⧉"}</span>
-        {copied ? "Copied" : "Copy path"}
+        <span aria-hidden>{copied ? "✓" : blocked ? "⚠" : "⧉"}</span>
+        {copied ? "Copied" : blocked ? "Copy blocked — select manually" : "Copy path"}
       </button>
     </div>
   );
