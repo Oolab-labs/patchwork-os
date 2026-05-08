@@ -390,5 +390,43 @@ describe("LocalApiDriver", () => {
       process.env.LOCAL_ENDPOINT = "not-a-url";
       expect(() => new LocalApiDriver(log)).toThrow(/not loopback or private/i);
     });
+
+    it("rejects attacker-registered .local public domain (multi-label)", () => {
+      // Regression: `host.endsWith(".local")` previously matched
+      // `evil.com.local`, an attacker-registered domain on a public TLD.
+      process.env.LOCAL_ENDPOINT = "http://evil.com.local/v1";
+      expect(() => new LocalApiDriver(log)).toThrow(/not loopback or private/i);
+    });
+
+    it("accepts single-label .local mDNS host", () => {
+      process.env.LOCAL_ENDPOINT = "http://printer.local/v1";
+      expect(() => new LocalApiDriver(log)).not.toThrow();
+    });
+
+    it("rejects multi-label .lan host", () => {
+      process.env.LOCAL_ENDPOINT = "http://attacker.com.lan/v1";
+      expect(() => new LocalApiDriver(log)).toThrow(/not loopback or private/i);
+    });
+
+    it("rejects hostname starting with 'fc' that is NOT an IPv6 literal", () => {
+      // Regression: prior `host.startsWith("fc")` matched any hostname.
+      process.env.LOCAL_ENDPOINT = "http://fc-services.example.com/v1";
+      expect(() => new LocalApiDriver(log)).toThrow(/not loopback or private/i);
+    });
+
+    it("rejects hostname starting with 'fe8' that is NOT an IPv6 literal", () => {
+      process.env.LOCAL_ENDPOINT = "http://fe8a-test.example.com/v1";
+      expect(() => new LocalApiDriver(log)).toThrow(/not loopback or private/i);
+    });
+
+    it("accepts bracketed IPv6 fc00::/7 literal", () => {
+      process.env.LOCAL_ENDPOINT = "http://[fc00::1]:11434/v1";
+      expect(() => new LocalApiDriver(log)).not.toThrow();
+    });
+
+    it("accepts bracketed IPv6 fe80::/10 literal", () => {
+      process.env.LOCAL_ENDPOINT = "http://[fe80::1]:11434/v1";
+      expect(() => new LocalApiDriver(log)).not.toThrow();
+    });
   });
 });
