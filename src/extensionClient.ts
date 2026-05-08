@@ -270,6 +270,9 @@ export class ExtensionClient {
       this.diagnosticsListeners.clear();
       // Clear LSP readiness — language servers may need to re-index after reconnect
       this.lspReadyLanguages.clear();
+      // Reset protocol-mismatch flag so a fresh hello on reconnect can
+      // re-evaluate compatibility (operator may have updated the extension).
+      this.extensionProtocolMismatch = false;
       this.logger.info(`Extension disconnected: ${reason}`);
       this.safeCallback(this.onExtensionDisconnected);
     };
@@ -475,10 +478,20 @@ export class ExtensionClient {
           this.logger.debug(
             `Extension protocol version "${extVer}" is not a recognized semver format, skipping version check`,
           );
+          this.extensionProtocolMismatch = false;
         } else if (extMajor !== bridgeMajor) {
-          this.logger.warn(
-            `Extension protocol major version mismatch: bridge=${BRIDGE_PROTOCOL_VERSION}, extension=${extVer}. Consider updating.`,
+          // Mark the extension as unavailable. Without this, the bridge
+          // would proceed sending requests of one protocol-major to a
+          // handler of another, surfacing as opaque field-shape errors
+          // far from the actual cause. `extensionRequired` tools fail
+          // fast with a clear isError content block.
+          this.logger.error(
+            `Extension protocol major version mismatch: bridge=${BRIDGE_PROTOCOL_VERSION}, extension=${extVer}. ` +
+              `Marking extension as unavailable. Update the VS Code extension to a build whose protocolVersion major matches the bridge.`,
           );
+          this.extensionProtocolMismatch = true;
+        } else {
+          this.extensionProtocolMismatch = false;
         }
         break;
       }
@@ -2014,8 +2027,17 @@ export class ExtensionClient {
     };
   }
 
+  /**
+   * Tracks whether the connected extension has a protocol-major-version
+   * mismatch with the bridge. When set, `isConnected()` returns false so
+   * `extensionRequired` tools fail fast with a clear "extension protocol
+   * mismatch" error instead of attempting requests that would silently
+   * misbehave (e.g. handler accepting a v1 shape but bridge sending v2).
+   */
+  private extensionProtocolMismatch = false;
+
   isConnected(): boolean {
-    return this.connected;
+    return this.connected && !this.extensionProtocolMismatch;
   }
 
   /**

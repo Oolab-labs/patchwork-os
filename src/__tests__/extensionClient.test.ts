@@ -384,7 +384,12 @@ describe("ExtensionClient", () => {
     ws3.close();
   });
 
-  it("logs warning on extension/hello major version mismatch", async () => {
+  it("logs error and marks extension unavailable on extension/hello major version mismatch", async () => {
+    // Behavior change: a major-version mismatch used to only log a warning;
+    // bridge would proceed sending requests of one protocol-major to a
+    // handler of another, surfacing as opaque field-shape errors. Now
+    // marks the extension unavailable so `extensionRequired` tools fail
+    // fast with a clear message.
     const serverConn = new Promise<WebSocket>((resolve) => {
       wss.on("connection", resolve);
     });
@@ -394,10 +399,12 @@ describe("ExtensionClient", () => {
     const serverWs = await serverConn;
     client.handleExtensionConnection(serverWs);
 
-    // Spy on the logger — Logger exposes .warn() publicly
-    const warnSpy = vi.spyOn(
-      client["logger" as never] as { warn: (msg: string) => void },
-      "warn",
+    // Sanity: connected before hello arrives.
+    expect(client.isConnected()).toBe(true);
+
+    const errorSpy = vi.spyOn(
+      client["logger" as never] as { error: (msg: string) => void },
+      "error",
     );
 
     ws.send(
@@ -409,9 +416,10 @@ describe("ExtensionClient", () => {
     );
 
     await new Promise((r) => setTimeout(r, 50));
-    expect(warnSpy).toHaveBeenCalledWith(
+    expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining("major version mismatch"),
     );
+    expect(client.isConnected()).toBe(false);
 
     ws.close();
   });

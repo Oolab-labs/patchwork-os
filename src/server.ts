@@ -310,6 +310,16 @@ export class Server extends EventEmitter<ServerEvents> {
     }>
   >();
   static readonly MAX_WEBHOOK_PAYLOADS = 5;
+  /**
+   * Per-list FIFO bounds the per-recipe payload count, but the Map itself
+   * needs a key cap so a recipe-rename loop or a scanner hitting many
+   * distinct legitimate hookPaths can't grow `webhookPayloads.size`
+   * without bound. 1000 is generous for any realistic operator deployment
+   * (5 payloads × 1000 recipes = ~5000 entries × ~10 KB each = 50 MB).
+   * On overflow, evict the oldest *recipe* (Map iteration order is
+   * insertion order in JS), not the largest list.
+   */
+  static readonly MAX_WEBHOOK_RECIPES = 1000;
   /** Set by bridge to handle MCP Streamable HTTP sessions (POST/GET/DELETE /mcp) */
   public httpMcpHandler:
     | ((req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>)
@@ -990,6 +1000,17 @@ export class Server extends EventEmitter<ServerEvents> {
           });
           if (existing.length > Server.MAX_WEBHOOK_PAYLOADS) {
             existing.length = Server.MAX_WEBHOOK_PAYLOADS;
+          }
+          // Evict the oldest recipe entry if we'd exceed the key cap on
+          // insertion. Map iteration is insertion order, so .keys().next()
+          // returns the oldest. Skip eviction when the path is already in
+          // the Map (re-keying same path doesn't grow size).
+          if (
+            !this.webhookPayloads.has(hookPath) &&
+            this.webhookPayloads.size >= Server.MAX_WEBHOOK_RECIPES
+          ) {
+            const oldest = this.webhookPayloads.keys().next().value;
+            if (oldest !== undefined) this.webhookPayloads.delete(oldest);
           }
           this.webhookPayloads.set(hookPath, existing);
         }
