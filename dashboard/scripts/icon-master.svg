@@ -1,128 +1,47 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!--
-    Patchwork app icon — recessed P + jewel dot, balanced scale.
+    Patchwork app icon — fresh redesign with real font letterform.
 
-    Calibration history:
-      v1: 24% × 66% (too small — felt timid next to Uber/Claude)
-      v2: 47% × 74% (too big — overshadowed neighbouring apps)
-      v3 (this): 36% × 60% — matches typical iOS app subject proportions
-                 (Things, Spotify, Cron, modern brand icons)
+    Iteration history (committed): hand-drawn geometric P paths kept
+    failing — bowl was too round, counter shape was off, proportions
+    didn't match a real font. This version uses a system-font "P"
+    rendered as <text>, which gives a properly-tuned letterform
+    (correct bowl elongation, counter top-left rounded corner, stem-
+    to-bowl junction, optical correction).
+
+    Composition:
+      Dark warm-charcoal vertical gradient canvas.
+      Bold SF Pro Display Weight-900 "P" anchored left.
+      Orange accent dot in upper-right at the favicon's
+      proportional position (cx 78%, cy 28%, r 10.5%).
+
+    Render dependency:
+      `node scripts/render-icons.mjs` rasterizes via sharp/librsvg
+      and resolves the font stack against the running machine's
+      installed fonts. On macOS the first hit is "SF Pro Display"
+      (system) which is what was used for the committed PNGs.
+      The fallback chain is `-apple-system → BlinkMacSystemFont →
+      Helvetica Neue → sans-serif` so the SVG still renders on
+      Linux but the glyph shape will differ. If you need to
+      regenerate the PNGs on a non-macOS host and want pixel parity,
+      run on macOS or convert this <text> to a path first.
   -->
   <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"   stop-color="#231e18"/>
-      <stop offset="55%"  stop-color="#16120e"/>
-      <stop offset="100%" stop-color="#0d0a07"/>
+    <linearGradient id="bg" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#221d18"/>
+      <stop offset="100%" stop-color="#0f0c08"/>
     </linearGradient>
-
-    <radialGradient id="rimGlow" cx="50%" cy="0%" r="70%">
-      <stop offset="0%"   stop-color="#5a3a1c" stop-opacity="0.22"/>
-      <stop offset="50%"  stop-color="#3a2510" stop-opacity="0.06"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
-    </radialGradient>
-
-    <linearGradient id="pGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"   stop-color="#fdfdfc"/>
-      <stop offset="55%"  stop-color="#f0eeea"/>
-      <stop offset="100%" stop-color="#dcd8d1"/>
-    </linearGradient>
-
-    <filter id="pInnerShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
-      <feOffset dx="0" dy="3" result="off1"/>
-      <feFlood flood-color="#000000" flood-opacity="0.45"/>
-      <feComposite in2="off1" operator="in" result="shadow1"/>
-      <feComposite in="SourceGraphic" in2="shadow1" operator="over"/>
-    </filter>
-
-    <linearGradient id="pRim" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.55"/>
-      <stop offset="6%"   stop-color="#ffffff" stop-opacity="0.0"/>
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
-    </linearGradient>
-
-    <radialGradient id="dotGrad" cx="50%" cy="32%" r="68%">
-      <stop offset="0%"   stop-color="#ff9266"/>
-      <stop offset="45%"  stop-color="#f07238"/>
-      <stop offset="100%" stop-color="#c44d18"/>
-    </radialGradient>
-
-    <radialGradient id="dotHalo" cx="50%" cy="50%" r="55%">
-      <stop offset="0%"   stop-color="#ef6a2a" stop-opacity="0.34"/>
-      <stop offset="55%"  stop-color="#c44d18" stop-opacity="0.07"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
-    </radialGradient>
-
-    <filter id="dotInner" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
-      <feOffset dx="0" dy="2.5" result="off1"/>
-      <feFlood flood-color="#5a1f05" flood-opacity="0.55"/>
-      <feComposite in2="off1" operator="in" result="shadow1"/>
-      <feComposite in="SourceGraphic" in2="shadow1" operator="over"/>
-    </filter>
-
-    <clipPath id="canvasClip">
-      <rect width="512" height="512" rx="112"/>
-    </clipPath>
   </defs>
 
-  <!-- Base canvas -->
-  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
 
-  <!-- Warm rim glow inside the rounded square -->
-  <g clip-path="url(#canvasClip)">
-    <rect width="512" height="512" fill="url(#rimGlow)"/>
-  </g>
+  <text x="155" y="370"
+        font-family="SF Pro Display, -apple-system, BlinkMacSystemFont, Helvetica Neue, sans-serif"
+        font-weight="900"
+        font-size="380"
+        fill="#ffffff"
+        text-anchor="start">P</text>
 
-  <!--
-    P path:
-      Cap height 308, stem 56 wide, bowl semicircle r=77 (dy 154)
-      Bounds: 110→293 wide (36%), 100→408 tall (60%)
-      Counter: 50×90 with 32 px top + 32 px bottom margins
-  -->
-  <path
-    d="M 110 100
-       L 216 100
-       A 77 77 0 0 1 216 254
-       L 166 254
-       L 166 408
-       L 110 408
-       Z
-       M 166 132
-       L 216 132
-       A 45 45 0 0 1 216 222
-       L 166 222
-       Z"
-    fill="url(#pGrad)"
-    fill-rule="evenodd"
-    filter="url(#pInnerShadow)"
-  />
-
-  <!-- Top-rim highlight on the P -->
-  <path
-    d="M 110 100
-       L 216 100
-       A 77 77 0 0 1 216 254
-       L 166 254
-       L 166 408
-       L 110 408
-       Z
-       M 166 132
-       L 216 132
-       A 45 45 0 0 1 216 222
-       L 166 222
-       Z"
-    fill="url(#pRim)"
-    fill-rule="evenodd"
-    style="mix-blend-mode:screen"
-  />
-
-  <!-- Dot halo -->
-  <ellipse cx="420" cy="120" rx="110" ry="110" fill="url(#dotHalo)"/>
-
-  <!-- Jewel dot -->
-  <circle cx="420" cy="120" r="50" fill="url(#dotGrad)" filter="url(#dotInner)"/>
-
-  <!-- Specular highlight, top-left -->
-  <ellipse cx="405" cy="105" rx="14" ry="9" fill="#ffffff" fill-opacity="0.32"/>
+  <!-- Dot at favicon-proportional position: cx=78%, cy=28%, r=10.5% -->
+  <circle cx="400" cy="143" r="54" fill="#e8622a"/>
 </svg>
