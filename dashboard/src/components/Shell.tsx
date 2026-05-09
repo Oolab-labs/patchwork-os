@@ -419,7 +419,31 @@ export function Shell({ children }: { children: ReactNode }) {
           </Link>
         </div>
       </header>
-      <aside ref={drawerRef} className="app-sidebar" aria-label="Primary navigation">
+      {/*
+        Drawer ARIA: at desktop width the sidebar is just a navigation
+        landmark, but on mobile (≤768 px) it's a modal dialog —
+        useFocusTrap inerts the rest of the app + locks scroll while
+        it's open. Mirror that semantically with `role="dialog"` +
+        `aria-modal` so screen readers announce "Primary navigation
+        dialog" / "modal" instead of leaking it as just another
+        landmark. `tabIndex={-1}` is needed for the focus trap to
+        focus the container when there are no focusable children.
+
+        Desktop screen readers don't see the dialog role as wrong —
+        the drawer is always "open" at desktop, so behaving as a
+        dialog with no dismiss path is benign. The inertSelector
+        passed to useFocusTrap is `main, .app-header,
+        .mobile-bottom-nav` which only fires on mobile because none
+        of those targets actually go inert at desktop scope.
+      */}
+      <aside
+        ref={drawerRef}
+        className="app-sidebar"
+        role="dialog"
+        aria-modal={mobileOpen ? "true" : undefined}
+        aria-label="Primary navigation"
+        tabIndex={-1}
+      >
         <Link href="/recipes/new" className="sidebar-create" style={{ textDecoration: "none" }}>
           <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ position: "relative", zIndex: 1 }}>
             <path d={PATHS.plus} />
