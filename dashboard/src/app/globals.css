@@ -1196,6 +1196,27 @@ button.topbar-search {
 .table .mono { font-family: var(--font-mono); font-size: 12px; color: var(--ink-1); }
 .table .muted { color: var(--ink-3); }
 
+/* /recipes table on phone: 7-column desktop layout (%, RECIPE, TRIGGER,
+   LAST 14 RUNS, AVG, LAST, Actions) is 700+ px wide. Below ≈768 px the
+   declared widths plus padding push horizontal scroll to the point where
+   the RECIPE column is visually clipped — the page becomes a list of
+   nameless rows. Drop the three secondary metric columns; the values
+   still live in the selected-recipe detail panel below the table. */
+@media (max-width: 768px) {
+  .recipes-table th:nth-child(4),
+  .recipes-table td:nth-child(4),
+  .recipes-table th:nth-child(5),
+  .recipes-table td:nth-child(5),
+  .recipes-table th:nth-child(6),
+  .recipes-table td:nth-child(6) {
+    display: none;
+  }
+  .recipes-table th,
+  .recipes-table td {
+    padding: 9px 10px;
+  }
+}
+
 
 /* ---- Empty / Error ---- */
 

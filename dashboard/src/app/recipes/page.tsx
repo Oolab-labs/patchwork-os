@@ -939,7 +939,7 @@ export default function RecipesPage() {
         >
           <PatchCard padded={false} style={{ overflow: "hidden", minWidth: 0 }}>
             <div className="table-wrap" style={{ minWidth: 0, overflow: "auto" }}>
-              <table className="table" style={{ width: "100%", tableLayout: "fixed" }}>
+              <table className="table recipes-table" style={{ width: "100%", tableLayout: "fixed" }}>
                 <caption className="sr-only">
                   Installed recipes with health, trigger, last 14 runs, average duration, last run time, and actions.
                 </caption>
