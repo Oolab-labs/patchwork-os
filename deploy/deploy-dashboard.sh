@@ -39,9 +39,16 @@ echo "==> Copying tarball to VPS..."
 scp "$TARBALL" "$VPS:/tmp/patchwork-dashboard.tar.gz"
 
 echo "==> Deploying on VPS..."
+# Pass secrets as positional args (NOT inside the heredoc body) so the
+# single-quoted heredoc still preserves remote-shell `$X` references but
+# the operator's local env reaches the VPS. Without this, the previous
+# `${PATCHWORK_BRIDGE_TOKEN:-REPLACE_ME}` inside the heredoc evaluated on
+# the remote, where the var doesn't exist, and always wrote REPLACE_ME.
 # shellcheck disable=SC2087
-ssh "$VPS" bash <<'REMOTE'
+ssh "$VPS" bash -s -- "${PATCHWORK_BRIDGE_TOKEN:-REPLACE_ME}" "${DASHBOARD_PASSWORD:-}" <<'REMOTE'
 set -euo pipefail
+PATCHWORK_BRIDGE_TOKEN="$1"
+DASHBOARD_PASSWORD="$2"
 REMOTE_DIR="/opt/patchwork-dashboard"
 PM2_NAME="patchwork-dashboard"
 PORT=3200

@@ -78,9 +78,18 @@ export function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    // Protect all routes except Next.js internals, public assets, and marketplace.
+    // Protect all routes except Next.js internals, public assets, marketplace,
+    // and the bridge-relay endpoint.
+    //
+    // `api/relay/push` is exempted because it's the bridge → dashboard push
+    // handshake — it has its own Bearer-token auth (PATCHWORK_PUSH_TOKEN,
+    // timing-safe). Routing it through this Basic-auth middleware would
+    // make the bridge's outbound POST fail with 401 if the operator ever
+    // sets DASHBOARD_PASSWORD, silently breaking phone notifications for
+    // every queued approval.
+    //
     // Includes favicon.svg + manifest.json + robots.txt so PWA / browser asset
     // requests don't 401 on every page load.
-    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace|api/relay/push).*)",
   ],
 };
