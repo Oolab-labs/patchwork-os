@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 interface BottomNavItem {
   href: string;
@@ -39,21 +40,25 @@ const MORE_ICON = "M12 6h.01M12 12h.01M12 18h.01";
 export function MobileBottomNav() {
   const pathname = usePathname() ?? "/";
   const [sheetOpen, setSheetOpen] = useState(false);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
 
   // Close on route change
   useEffect(() => {
     setSheetOpen(false);
   }, [pathname]);
 
-  // Close on Escape
-  useEffect(() => {
-    if (!sheetOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSheetOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [sheetOpen]);
+  // Sheet focus trap: lock body scroll, inert the rest of the app
+  // (main content, header, sidebar, bottom-nav) so Tab and screen-
+  // reader navigation stay inside the sheet, close on Escape.
+  // Pointer events on the bottom-nav still work, so a second tap on
+  // "More" still closes the sheet — inert affects keyboard + AT only.
+  useFocusTrap({
+    open: sheetOpen,
+    onClose: () => setSheetOpen(false),
+    containerRef: sheetRef,
+    inertSelector:
+      "main, .app-header, .app-sidebar, .mobile-bottom-nav",
+  });
 
   const moreActive = MORE_LINKS.some((l) => pathname.startsWith(l.href));
 
@@ -121,11 +126,13 @@ export function MobileBottomNav() {
             onClick={() => setSheetOpen(false)}
           />
           <div
+            ref={sheetRef}
             id="mobile-more-sheet"
             className="mobile-more-sheet"
             role="dialog"
             aria-modal="true"
             aria-label="More navigation"
+            tabIndex={-1}
           >
             <div className="mobile-more-sheet-handle" aria-hidden="true" />
             <div className="mobile-more-sheet-grid">
