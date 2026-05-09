@@ -490,6 +490,33 @@ export async function runYamlRecipe(
   let runError: string | undefined;
 
   for (const step of recipe.steps) {
+    // Evaluate `when` guard before running anything. Mirrors
+    // chainedRunner.ts:248-266 — render the template, then truthy-check the
+    // result (empty string, "0", "false", "null", "undefined" are falsy).
+    // A falsy guard records the step as `skipped`, increments stepsRun, and
+    // continues — it is NOT a failure. Bridge-dev iMessage recipes rely on
+    // this to suppress the iMessage agent step when phone is empty.
+    if (typeof step.when === "string" && step.when.length > 0) {
+      const rendered = render(step.when, ctx).trim().toLowerCase();
+      const truthy =
+        !!rendered &&
+        rendered !== "0" &&
+        rendered !== "false" &&
+        rendered !== "null" &&
+        rendered !== "undefined";
+      if (!truthy) {
+        const skipId = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
+        stepResults.push({
+          id: skipId,
+          tool: step.agent ? "agent" : step.tool,
+          status: "skipped",
+          durationMs: 0,
+        });
+        stepsRun++;
+        continue;
+      }
+    }
+
     // Handle agent steps separately
     if (step.agent) {
       const agentCfg = step.agent;
