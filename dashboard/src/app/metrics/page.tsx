@@ -169,14 +169,11 @@ export default function MetricsPage() {
         )}
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, minmax(0,1fr))",
-          gap: "var(--s-4)",
-          marginBottom: "var(--s-5)",
-        }}
-      >
+      {/* KPI tile row: 4-col on desktop, 2-col on phone (.grid-4 utility
+          collapses 4→2 at ≤1100, then to 1 at ≤760; we use a dedicated
+          class so the 4-up tiles stay 2-up at phone size where the
+          per-tile values are short enough to share a row). */}
+      <div className="metrics-kpi-grid" style={{ marginBottom: "var(--s-5)" }}>
         <div className="card" style={{ padding: "16px 20px", borderRadius: "var(--r-card)", borderLeft: "3px solid var(--orange)" }}>
           <div style={{ fontSize: "var(--fs-2xs)", fontFamily: "var(--font-mono)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 6 }}>
             <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6, verticalAlign: "-1px" }}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>Total calls
