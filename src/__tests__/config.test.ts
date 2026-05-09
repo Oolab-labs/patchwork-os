@@ -348,6 +348,45 @@ describe("parseConfig --db flag", () => {
   });
 });
 
+describe("parseConfig --trust-proxy flag", () => {
+  // PR #383 added a `trustedProxies` constructor parameter on Server but
+  // shipped without a CLI flag, so bridge.ts:174 was always passing the
+  // default `[]`. These tests pin the wiring: the parser must populate
+  // config.trustedProxies, which bridge.ts must then forward to Server.
+
+  it("defaults trustedProxies to []", () => {
+    expect(cfg().trustedProxies).toEqual([]);
+  });
+
+  it("collects --trust-proxy 1.1.1.1 into trustedProxies", () => {
+    expect(cfg("--trust-proxy", "127.0.0.1").trustedProxies).toEqual([
+      "127.0.0.1",
+    ]);
+  });
+
+  it("repeats: --trust-proxy can appear multiple times for multi-hop chains", () => {
+    expect(
+      cfg("--trust-proxy", "127.0.0.1", "--trust-proxy", "10.0.0.1")
+        .trustedProxies,
+    ).toEqual(["127.0.0.1", "10.0.0.1"]);
+  });
+
+  it("throws when --trust-proxy has an empty value", () => {
+    expect(() => cfg("--trust-proxy", "")).toThrow(/non-empty/);
+  });
+
+  it("env var CLAUDE_IDE_BRIDGE_TRUST_PROXY (comma-separated) overrides file/CLI", () => {
+    const prev = process.env.CLAUDE_IDE_BRIDGE_TRUST_PROXY;
+    process.env.CLAUDE_IDE_BRIDGE_TRUST_PROXY = "10.1.1.1, 10.1.1.2 ,";
+    try {
+      expect(cfg().trustedProxies).toEqual(["10.1.1.1", "10.1.1.2"]);
+    } finally {
+      if (prev === undefined) delete process.env.CLAUDE_IDE_BRIDGE_TRUST_PROXY;
+      else process.env.CLAUDE_IDE_BRIDGE_TRUST_PROXY = prev;
+    }
+  });
+});
+
 describe("parseConfig --allow-private-http flag", () => {
   it("sets allowPrivateHttp to true when --allow-private-http is set", () => {
     expect(cfg("--allow-private-http").allowPrivateHttp).toBe(true);

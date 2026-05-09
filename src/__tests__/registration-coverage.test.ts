@@ -70,6 +70,7 @@ function baseConfig(overrides: Partial<{ fullMode: boolean }> = {}) {
     fixedToken: null,
     issuerUrl: null,
     corsOrigins: [],
+    trustedProxies: [],
     auditLogPath: null,
     fullMode: true,
     maxSessions: 5,
