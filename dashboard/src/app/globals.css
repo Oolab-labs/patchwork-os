@@ -650,6 +650,13 @@ button.topbar-search {
   font-family: inherit;
 }
 .kbd {
+  /* Keyboard-shortcut hint chip (⌘K, J, K, E, X). On touch devices
+     there's no physical keyboard so the chip is misleading — the
+     audit found these on /approvals and the topbar `Jump to anything`
+     pill on iPhone where neither J/K/E/X nor ⌘K do anything.
+     Hide via the same hover/pointer query used for the hover-state
+     neutralizer. The kbd hotkeys still work on a paired BT keyboard
+     (we only hide the *visual hint*, the listener stays). */
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -661,6 +668,11 @@ button.topbar-search {
   background: var(--pressed);
   color: var(--ink-2);
   border: 1px solid var(--line-strong);
+}
+@media (hover: none) and (pointer: coarse) {
+  .kbd {
+    display: none;
+  }
 }
 .app-header-actions {
   display: flex;
