@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.patchwork.bridge</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{BRIDGE_BIN}}</string>
+    <string>--port</string>
+    <string>{{BRIDGE_PORT}}</string>
+    <string>--fixed-token</string>
+    <string>{{BRIDGE_TOKEN}}</string>
+    <string>--watch</string>
+    <string>--workspace</string>
+    <string>{{WORKSPACE}}</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- KeepAlive is redundant with `--watch` (which has its own
+       exponential-backoff supervisor and recovers from crashes faster
+       than launchd's per-second relaunch). Leave it true as belt-and-
+       suspenders in case `--watch` itself dies (its supervisor process
+       is a single Node, and that's the one launchd is keeping alive). -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>{{HOME}}/Library/Logs/patchwork-bridge.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{HOME}}/Library/Logs/patchwork-bridge.log</string>
+
+  <key>WorkingDirectory</key>
+  <string>{{WORKSPACE}}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd's default PATH doesn't include Homebrew. Bridge spawns
+         child processes (claude CLI, git, npm) via PATH lookup, so
+         missing /opt/homebrew/bin breaks half the tools. -->
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>{{HOME}}</string>
+  </dict>
+
+  <!-- Throttle: don't relaunch faster than every 10 s on rapid crash
+       loops, prevents spinning up if the binary is broken. -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>
