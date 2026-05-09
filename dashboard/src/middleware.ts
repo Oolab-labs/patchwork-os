@@ -30,7 +30,14 @@ function unauthenticated(req: NextRequest): NextResponse {
   const wantsHtml = accept.includes("text/html");
   if (wantsHtml) {
     const url = req.nextUrl.clone();
-    const original = url.pathname + url.search;
+    // Capture the original URL the browser sees, INCLUDING the basePath,
+    // so login can send the user back where they were. `nextUrl.pathname`
+    // is post-basePath-strip (`/analytics` for external `/dashboard/analytics`),
+    // so we re-prepend it. Without this the post-login redirect drops the
+    // basePath and lands at bare `/analytics`, which nginx routes to the
+    // bridge HTTP API and 401s.
+    const basePath = req.nextUrl.basePath ?? "";
+    const original = `${basePath}${url.pathname}${url.search}`;
     // Set pathname WITHOUT basePath — Next.js's redirect helper
     // prepends basePath itself when constructing the final Location
     // header. Including `/dashboard` here gives `/dashboard/dashboard/login`.
