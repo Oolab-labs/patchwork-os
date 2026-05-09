@@ -56,6 +56,8 @@ export const DASHBOARD_API_BODY_CAPS = {
   connectorRequest: 16 * 1024,
   /** /api/push/{subscribe,unsubscribe} — PushSubscription JSON; spec is ~2 KB but allow headroom. */
   push: 16 * 1024,
+  /** /api/relay/push — bridge → dashboard relay (callId/toolName/tier/approvalToken/bridgeCallbackBase + optional summary, riskSignals). 8 KB is generous. */
+  relayPush: 8 * 1024,
   /** /api/connections/[connector]/connect — OAuth start: redirect target + provider state. */
   connectionsConnect: 32 * 1024,
 } as const;
