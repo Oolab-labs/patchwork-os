@@ -1,70 +1,86 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!--
-    Patchwork app icon — "P" lettermark with accent dot.
-
-    Composition mirrors public/favicon.svg (geometric sans-serif P
-    + orange dot upper-right) but scaled and refined for the larger
-    canvas. The P is drawn as a path so the icon renders identically
-    regardless of which font the rasterizer falls back to (librsvg
-    doesn't have Albert Sans).
-
-    Proportions:
-      Canvas 512×512, iOS app-icon corner radius 112.
-      P cap height 337 (≈ 66% of canvas), stem width 60, bowl
-      extends 125 px right of stem with a 202×202 semicircle.
-      Counter (inner hole) is centered vertically inside the bowl
-      with 64 px top + 61 px bottom margins so it reads balanced.
-      Accent dot: cx=400, cy=135, r=55 — same upper-right placement
-      and proportional size as the favicon.
-
-    Polish:
-      - Subtle radial warmth on the canvas (center #1f1d1a → edges
-        #1a1917) so the icon doesn't read as a flat black square
-      - Top-light gradient on the P (#ffffff → #ededed, 4% drop)
-        gives a barely-perceptible dimension at large sizes without
-        looking glossy at home-screen size
-      - Top-light gradient on the dot (#f4794d → #e8622a) for the
-        same reason
-      - Soft warm halo behind the dot to suggest accent radiance
+    Patchwork app icon — agentG variant 1: "Recessed P, jewel dot"
+    Direction: deep warm-charcoal vertical gradient, P feels recessed
+    into the surface (inner shadow at top + bottom edge), dot reads
+    as a top-lit jewel with a soft inner shadow at base.
   -->
   <defs>
-    <radialGradient id="bgGrad" cx="50%" cy="42%" r="80%">
-      <stop offset="0%"   stop-color="#1f1d1a"/>
-      <stop offset="100%" stop-color="#1a1917"/>
+    <!-- Deep warm-charcoal vertical gradient: top a touch lighter -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#231e18"/>
+      <stop offset="55%"  stop-color="#16120e"/>
+      <stop offset="100%" stop-color="#0d0a07"/>
+    </linearGradient>
+
+    <!-- Faint warm rim glow at top edge -->
+    <radialGradient id="rimGlow" cx="50%" cy="0%" r="70%">
+      <stop offset="0%"   stop-color="#5a3a1c" stop-opacity="0.22"/>
+      <stop offset="50%"  stop-color="#3a2510" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
     </radialGradient>
 
+    <!-- P body: subtle top-down gradient, neutral cool whites -->
     <linearGradient id="pGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"   stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#ededed"/>
+      <stop offset="0%"   stop-color="#fdfdfc"/>
+      <stop offset="55%"  stop-color="#f0eeea"/>
+      <stop offset="100%" stop-color="#dcd8d1"/>
     </linearGradient>
 
-    <linearGradient id="dotGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"   stop-color="#f4794d"/>
-      <stop offset="100%" stop-color="#e8622a"/>
+    <!-- Inner shadow filter for the P (recessed-into-surface read) -->
+    <filter id="pInnerShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="0" dy="3" result="off1"/>
+      <feFlood flood-color="#000000" flood-opacity="0.45"/>
+      <feComposite in2="off1" operator="in" result="shadow1"/>
+      <feComposite in="SourceGraphic" in2="shadow1" operator="over"/>
+    </filter>
+
+    <!-- Top-rim highlight: a thin lighter band along the upper edge -->
+    <linearGradient id="pRim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="6%"   stop-color="#ffffff" stop-opacity="0.0"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
 
-    <radialGradient id="dotHalo" cx="50%" cy="50%" r="55%">
-      <stop offset="0%"   stop-color="#e8622a" stop-opacity="0.30"/>
-      <stop offset="60%"  stop-color="#e8622a" stop-opacity="0.06"/>
-      <stop offset="100%" stop-color="#e8622a" stop-opacity="0"/>
+    <!-- Dot: top-lit orange, deeper at base -->
+    <radialGradient id="dotGrad" cx="50%" cy="32%" r="68%">
+      <stop offset="0%"   stop-color="#ff9266"/>
+      <stop offset="45%"  stop-color="#f07238"/>
+      <stop offset="100%" stop-color="#c44d18"/>
     </radialGradient>
+
+    <!-- Soft halo behind dot -->
+    <radialGradient id="dotHalo" cx="50%" cy="50%" r="55%">
+      <stop offset="0%"   stop-color="#ef6a2a" stop-opacity="0.34"/>
+      <stop offset="55%"  stop-color="#c44d18" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Inner shadow for dot — sits with weight at base -->
+    <filter id="dotInner" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+      <feOffset dx="0" dy="2.5" result="off1"/>
+      <feFlood flood-color="#5a1f05" flood-opacity="0.55"/>
+      <feComposite in2="off1" operator="in" result="shadow1"/>
+      <feComposite in="SourceGraphic" in2="shadow1" operator="over"/>
+    </filter>
+
+    <!-- Clip the canvas corners so rim glow stays within the rounded square -->
+    <clipPath id="canvasClip">
+      <rect width="512" height="512" rx="112"/>
+    </clipPath>
   </defs>
 
-  <!-- Canvas with subtle radial warmth -->
+  <!-- Base canvas -->
   <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
 
-  <!--
-    "P" — outer outline + inner counter as one evenodd-filled path so
-    the counter renders as a hole, not a filled rect.
-    Outer trace (clockwise from top-left of stem):
-      (105, 88) → (230, 88)
-        ↳ semicircle arc to (230, 290) — the bowl, radius 101
-      → (165, 290) → (165, 425) → (105, 425) → close
-    Inner counter (clockwise, inside the bowl):
-      (165, 152) → (228, 152)
-        ↳ semicircle arc to (228, 229) — radius 38.5
-      → (165, 229) → close
-  -->
+  <!-- Warm rim glow inside the rounded square -->
+  <g clip-path="url(#canvasClip)">
+    <rect width="512" height="512" fill="url(#rimGlow)"/>
+  </g>
+
+  <!-- Recessed P with inner shadow -->
   <path
     d="M 105 88
        L 230 88
@@ -80,11 +96,34 @@
        Z"
     fill="url(#pGrad)"
     fill-rule="evenodd"
+    filter="url(#pInnerShadow)"
   />
 
-  <!-- Soft halo behind dot — placed BEFORE the dot so dot sits on top -->
-  <ellipse cx="400" cy="135" rx="115" ry="115" fill="url(#dotHalo)"/>
+  <!-- Thin top-rim highlight on the P (beveled-edge suggestion) -->
+  <path
+    d="M 105 88
+       L 230 88
+       A 101 101 0 0 1 230 290
+       L 165 290
+       L 165 425
+       L 105 425
+       Z
+       M 165 152
+       L 228 152
+       A 38.5 38.5 0 0 1 228 229
+       L 165 229
+       Z"
+    fill="url(#pRim)"
+    fill-rule="evenodd"
+    style="mix-blend-mode:screen"
+  />
 
-  <!-- Accent dot -->
-  <circle cx="400" cy="135" r="55" fill="url(#dotGrad)"/>
+  <!-- Dot halo (under the dot) -->
+  <ellipse cx="400" cy="135" rx="120" ry="120" fill="url(#dotHalo)"/>
+
+  <!-- Jewel dot with inner shadow at base -->
+  <circle cx="400" cy="135" r="55" fill="url(#dotGrad)" filter="url(#dotInner)"/>
+
+  <!-- Tiny specular highlight on dot, top-left -->
+  <ellipse cx="383" cy="118" rx="14" ry="9" fill="#ffffff" fill-opacity="0.32"/>
 </svg>
