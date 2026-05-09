@@ -342,20 +342,16 @@ function SuggestionGroup({
           }`;
           const action = renderAction(s);
           return (
-            <li
-              key={key}
-              style={{
-                display: "flex",
-                gap: 12,
-                alignItems: "center",
-                padding: "10px 0",
-                borderBottom: "1px solid var(--border-subtle)",
-              }}
-            >
+            // Suggestion row: 3-column flex (pill | label | CTA) on
+            // desktop. At 390 px the label column was getting squashed
+            // to ~140 px and prose wrapped to 6+ lines. The
+            // `.suggestion-row` class wraps to a stacked layout on
+            // mobile so the label gets full width and CTAs sit below.
+            <li key={key} className="suggestion-row">
               <span className={`pill ${meta.pillClass}`} style={{ fontSize: "var(--fs-2xs)" }}>
                 {meta.label}
               </span>
-              <span style={{ flex: 1, fontSize: "var(--fs-m)" }}>{s.label}</span>
+              <span className="suggestion-label" style={{ fontSize: "var(--fs-m)" }}>{s.label}</span>
               {action}
             </li>
           );
