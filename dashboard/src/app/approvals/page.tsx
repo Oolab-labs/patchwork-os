@@ -882,6 +882,7 @@ function ApprovalsContent() {
             })()}
           </div>
           <div
+            className="kbd-hint-row"
             style={{
               display: "flex",
               alignItems: "center",

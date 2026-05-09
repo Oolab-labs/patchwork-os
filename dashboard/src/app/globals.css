@@ -2891,6 +2891,80 @@ button.topbar-search {
 }
 
 /* ──────────────────────────────────────────────────────────────────────
+   Mobile-only multi-page polish (round 3):
+   - Hide `.kbd-hint-row` on /approvals at phone width (the J/K/E/X
+     palette hint is meaningless without a physical keyboard; PR #403
+     hid the chips themselves but the surrounding "next prev approve"
+     labels remained, which read as broken text on touch).
+   - Metrics KPI tile grid: 4-up on desktop, 2-up on phone so the
+     numbers don't crush at ~80 px each.
+   - Recipe row: stack vertically on phone so the name has full width,
+     PR #391/#409 column-tweak approach didn't survive `tableLayout:
+     fixed` constraints in production.
+   ────────────────────────────────────────────────────────────────────── */
+.metrics-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s-4, 16px);
+}
+@media (max-width: 768px) {
+  .metrics-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-3, 12px);
+  }
+  /* Hide the keyboard-shortcut hint row on phone (no physical keys
+     so the labels are misleading even with the chips hidden). */
+  .kbd-hint-row {
+    display: none !important;
+  }
+  /* Recipe row: switch from `tableLayout: fixed` to a stacked card
+     so the name gets the whole row width. The earlier column-width
+     tweaks couldn't reliably override `tableLayout: fixed` + inline
+     `minWidth: 160`. */
+  .recipes-table,
+  .recipes-table thead,
+  .recipes-table tbody,
+  .recipes-table tr,
+  .recipes-table td {
+    display: block !important;
+    width: 100% !important;
+  }
+  .recipes-table thead {
+    display: none !important;
+  }
+  .recipes-table tr {
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-l, 12px);
+    margin-bottom: 8px;
+    padding: 10px 14px;
+    background: var(--surface);
+  }
+  .recipes-table td {
+    border-bottom: none !important;
+    padding: 4px 0 !important;
+    text-align: left !important;
+  }
+  /* Hide secondary metric columns and the success ring */
+  .recipes-table td:nth-child(1),
+  .recipes-table td:nth-child(4),
+  .recipes-table td:nth-child(5),
+  .recipes-table td:nth-child(6) {
+    display: none !important;
+  }
+  /* Recipe name (col 2) gets full row */
+  .recipes-table td:nth-child(2) {
+    font-weight: 600;
+  }
+  /* Trigger pill (col 3) and Actions (col 7) inline below the name */
+  .recipes-table td:nth-child(3),
+  .recipes-table td:nth-child(7) {
+    display: inline-block !important;
+    width: auto !important;
+    margin-right: 8px;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
    Touch tap-target floor.
 
    Apple HIG and WCAG 2.5.5 (AAA) both want touch targets at ≥44 pt /

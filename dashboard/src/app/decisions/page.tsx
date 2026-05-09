@@ -356,15 +356,13 @@ function DecisionsContent() {
                   </span>
                 </div>
 
-                {/* two-column body: problem | solution */}
+                {/* two-column body: problem | solution. Use .grid-2 utility
+                    (collapses to single column at ≤760 px) — at 390 px each
+                    side was getting ~140 px and PROBLEM/SOLUTION text was
+                    wrapping every 3-4 words. PR #407 added the suggestion
+                    fix but missed this file in the cherry-pick. */}
                 {(b.problem || b.solution) && (
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: 12,
-                    }}
-                  >
+                  <div className="grid-2">
                     {b.problem && (
                       <div
                         style={{
