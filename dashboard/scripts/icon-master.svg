@@ -1,30 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!--
-    Patchwork app icon — fresh redesign with real font letterform.
+    Patchwork app icon — centered P + small accent dot.
 
-    Iteration history (committed): hand-drawn geometric P paths kept
-    failing — bowl was too round, counter shape was off, proportions
-    didn't match a real font. This version uses a system-font "P"
-    rendered as <text>, which gives a properly-tuned letterform
-    (correct bowl elongation, counter top-left rounded corner, stem-
-    to-bowl junction, optical correction).
+    Calibration history:
+      v1 hand-drawn paths (multiple): bowl too round, counter off
+      v2 SF Pro left-anchored P (#400): P at x=155, dot at cx=400 r=54.
+         Visual center landed at ~x=304 (canvas center is 256), making
+         the icon read as right-heavy on the home screen next to
+         center-balanced neighbours (Slack, Termius, Evopay, Teams).
+      v3 (this): center the P horizontally (text-anchor=middle, x=256),
+         pull the dot closer to the bowl + shrink (r=38 from 54) so it
+         reads as a small accent rather than a second subject.
 
-    Composition:
-      Dark warm-charcoal vertical gradient canvas.
-      Bold SF Pro Display Weight-900 "P" anchored left.
-      Orange accent dot in upper-right at the favicon's
-      proportional position (cx 78%, cy 28%, r 10.5%).
-
-    Render dependency:
-      `node scripts/render-icons.mjs` rasterizes via sharp/librsvg
-      and resolves the font stack against the running machine's
-      installed fonts. On macOS the first hit is "SF Pro Display"
-      (system) which is what was used for the committed PNGs.
-      The fallback chain is `-apple-system → BlinkMacSystemFont →
-      Helvetica Neue → sans-serif` so the SVG still renders on
-      Linux but the glyph shape will differ. If you need to
-      regenerate the PNGs on a non-macOS host and want pixel parity,
-      run on macOS or convert this <text> to a path first.
+    Render dependency: librsvg/sharp pick the first available font from
+    the family stack. On macOS that's SF Pro Display Black, which is
+    what the committed PNGs reflect. Fallback chain ends in
+    `sans-serif`; glyph shape will differ by host font.
   -->
   <defs>
     <linearGradient id="bg" x1="50%" y1="0%" x2="50%" y2="100%">
@@ -35,13 +26,12 @@
 
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
 
-  <text x="155" y="370"
+  <text x="256" y="370"
         font-family="SF Pro Display, -apple-system, BlinkMacSystemFont, Helvetica Neue, sans-serif"
         font-weight="900"
-        font-size="380"
+        font-size="360"
         fill="#ffffff"
-        text-anchor="start">P</text>
+        text-anchor="middle">P</text>
 
-  <!-- Dot at favicon-proportional position: cx=78%, cy=28%, r=10.5% -->
-  <circle cx="400" cy="143" r="54" fill="#e8622a"/>
+  <circle cx="370" cy="148" r="38" fill="#e8622a"/>
 </svg>
