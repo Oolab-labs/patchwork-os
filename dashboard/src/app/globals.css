@@ -1392,6 +1392,21 @@ button.topbar-search {
   color: var(--ink-1);
 }
 
+/* /tasks two-pane layout: 440 px rail + flex detail on desktop,
+   single column on phone. The inline 440 px column was wider than a
+   390 px iPhone viewport, so the whole `.app-content` was scrolling
+   horizontally with the task summary text clipped at the edge. */
+.tasks-layout {
+  display: grid;
+  grid-template-columns: 440px minmax(0, 1fr);
+  gap: var(--s-4);
+}
+@media (max-width: 768px) {
+  .tasks-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 
 /* ---- Decision rows ---- */
 

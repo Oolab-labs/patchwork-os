@@ -515,14 +515,12 @@ export default function TasksPage() {
           <SkeletonList rows={3} columns={3} />
         )
       ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "440px minmax(0,1fr)",
-            gap: "var(--s-4)",
-            alignItems: "start",
-          }}
-        >
+        // Tasks two-pane layout: 440 px left rail + flex right detail
+        // on desktop, single column on mobile (the inline 440 px was
+        // wider than a 390 px iPhone viewport, causing 148 px of
+        // horizontal overflow on the whole `app-content`). The
+        // `.tasks-layout` class collapses to one column at ≤768 px.
+        <div className="tasks-layout" style={{ alignItems: "start" }}>
           {/* left: timeline rail + task list */}
           <div style={{ position: "relative" }}>
             <div
