@@ -39,9 +39,17 @@ echo "==> Copying tarball to VPS..."
 scp "$TARBALL" "$VPS:/tmp/patchwork-dashboard.tar.gz"
 
 echo "==> Deploying on VPS..."
+# Pass secrets as positional args (NOT inside the heredoc body) so the
+# single-quoted heredoc still preserves remote-shell `$X` references but
+# the operator's local env reaches the VPS. Without this, the previous
+# `${PATCHWORK_BRIDGE_TOKEN:-REPLACE_ME}` inside the heredoc evaluated on
+# the remote, where the var doesn't exist, and always wrote REPLACE_ME.
 # shellcheck disable=SC2087
-ssh "$VPS" bash <<'REMOTE'
+ssh "$VPS" bash -s -- "${PATCHWORK_BRIDGE_TOKEN:-REPLACE_ME}" "${DASHBOARD_PASSWORD:-}" <<'REMOTE'
 set -euo pipefail
+# `${N:-}` so an empty/missing positional arg doesn't trip `set -u`.
+PATCHWORK_BRIDGE_TOKEN="${1:-REPLACE_ME}"
+DASHBOARD_PASSWORD="${2:-}"
 REMOTE_DIR="/opt/patchwork-dashboard"
 PM2_NAME="patchwork-dashboard"
 PORT=3200
@@ -52,9 +60,25 @@ if pm2 list | grep -q "$PM2_NAME"; then
   pm2 delete "$PM2_NAME" || true
 fi
 
+# Preserve .env.local across the deploy. Without this stash/restore, the
+# `rm -rf "$REMOTE_DIR"` below blows away every secret the operator pasted
+# (VAPID, PATCHWORK_PUSH_TOKEN, custom DASHBOARD_PASSWORD), and the "if
+# already exists, preserve" branch later in this script never fires —
+# the file no longer exists by then.
+ENV_BACKUP=""
+if [ -f "$REMOTE_DIR/.env.local" ]; then
+  ENV_BACKUP="$(mktemp /tmp/patchwork-env.XXXXXX)"
+  cp -p "$REMOTE_DIR/.env.local" "$ENV_BACKUP"
+fi
+
 # Wipe and recreate deploy dir
 rm -rf "$REMOTE_DIR"
 mkdir -p "$REMOTE_DIR"
+
+if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
+  cp -p "$ENV_BACKUP" "$REMOTE_DIR/.env.local"
+  rm -f "$ENV_BACKUP"
+fi
 
 # Extract
 tar -xzf /tmp/patchwork-dashboard.tar.gz -C "$REMOTE_DIR"

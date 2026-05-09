@@ -503,32 +503,25 @@ export default function SettingsPage() {
     setPushMsg(null);
     try {
       await registerServiceWorker();
-      const ok = await subscribeToPush(vapidPublicKey);
-      if (ok) {
-        setPushStatus("subscribed");
-        setPushMsg({
-          ok: true,
-          text: "Subscribed. Use 'Send test notification' to confirm delivery.",
-        });
-        flashSaved();
-      } else {
-        // subscribeToPush returns false on permission denial or PushManager
-        // failure; re-read the status so the badge reflects reality.
+      await subscribeToPush(vapidPublicKey);
+      setPushStatus("subscribed");
+      setPushMsg({
+        ok: true,
+        text: "Subscribed. Use 'Send test notification' to confirm delivery.",
+      });
+      flashSaved();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // Re-read browser status so the badge reflects what actually happened
+      // (e.g. permission denied vs subscribe stalled). The error message
+      // tells the user which step failed.
+      try {
         const s = await getPushSubscriptionStatus();
         setPushStatus(s);
-        setPushMsg({
-          ok: false,
-          text:
-            s === "denied"
-              ? "Notification permission was denied. Re-enable it in browser site settings, then reload."
-              : "Subscription failed. See browser console for details.",
-        });
+      } catch {
+        /* status read itself failed — leave previous value */
       }
-    } catch (e) {
-      setPushMsg({
-        ok: false,
-        text: e instanceof Error ? e.message : String(e),
-      });
+      setPushMsg({ ok: false, text: msg });
     } finally {
       setPushBusy(false);
     }
@@ -636,12 +629,16 @@ export default function SettingsPage() {
             </>
           }
         />
-      ) : !settings ? (
-        <div className="empty-state">
-          <p>Loading…</p>
-        </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: "var(--s-5)", alignItems: "start" }}>
+        // Render the full form even when /status hasn't loaded yet. Bridge-
+        // independent cards (Mobile, Telemetry) work without it; bridge-
+        // dependent cards (Bridge, AI drivers, Approval) show their state
+        // hooks' defaults until /status responds. Previous behavior gated
+        // every card behind `!settings ? Loading…` which made the Mobile
+        // section unreachable when the dashboard couldn't talk to the
+        // bridge — exactly when the operator most needs to enable phone
+        // notifications.
+        <div className="settings-grid">
           {/* Sticky inner left nav */}
           <nav
             style={{
@@ -691,8 +688,8 @@ export default function SettingsPage() {
                     Runtime ports, workspace binding, inbox path
                   </div>
                 </div>
-                <StatusPill tone={settings.extension ? "ok" : "warn"}>
-                  extension {settings.extension ? "connected" : "offline"}
+                <StatusPill tone={settings?.extension ? "ok" : "warn"}>
+                  extension {settings?.extension ? "connected" : "offline"}
                 </StatusPill>
               </div>
 
@@ -754,9 +751,9 @@ export default function SettingsPage() {
               </div>
 
               <div style={{ display: "flex", gap: 16, paddingTop: 12, borderTop: "1px solid var(--border-subtle)", fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
-                <span>Mode: <span style={{ color: "var(--fg-0)" }}>{settings.patchwork?.fullMode === false ? "slim" : "full"}</span></span>
-                <span>Sessions: <span className="mono" style={{ color: "var(--fg-0)" }}>{settings.activeSessions ?? 0}</span></span>
-                <span>Uptime: <span className="mono" style={{ color: "var(--fg-0)" }}>{settings.uptimeMs != null ? fmtDuration(settings.uptimeMs) : "—"}</span></span>
+                <span>Mode: <span style={{ color: "var(--fg-0)" }}>{settings?.patchwork?.fullMode === false ? "slim" : "full"}</span></span>
+                <span>Sessions: <span className="mono" style={{ color: "var(--fg-0)" }}>{settings?.activeSessions ?? 0}</span></span>
+                <span>Uptime: <span className="mono" style={{ color: "var(--fg-0)" }}>{settings?.uptimeMs != null ? fmtDuration(settings.uptimeMs) : "—"}</span></span>
               </div>
             </div>
 
@@ -774,14 +771,14 @@ export default function SettingsPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "16px 0 4px" }}>
                 {DRIVER_ROWS.map((row) => {
                   const isPrimary = primaryDriver === row.id;
-                  const activeDriver = settings.patchwork?.driver === row.driverValue;
+                  const activeDriver = settings?.patchwork?.driver === row.driverValue;
                   // When the row is the optimistic "primary" but the bridge
                   // hasn't switched yet, surface that as a clear pending-restart
                   // state instead of the contradictory `primary` + `inactive`.
                   const pendingRestart = isPrimary && !activeDriver;
                   const provider = row.keyProvider;
                   const keyPresent = provider
-                    ? Boolean(settings.patchwork?.apiKeysPresent?.[provider])
+                    ? Boolean(settings?.patchwork?.apiKeysPresent?.[provider])
                     : false;
                   return (
                     <div

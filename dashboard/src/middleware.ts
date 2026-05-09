@@ -1,86 +1,120 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  checkLocked,
-  recordFailure,
-  recordSuccess,
-} from "@/lib/authRateLimit";
-import { clientKey } from "@/lib/clientIp";
+import { SESSION_COOKIE_NAME, verifySession } from "@/lib/session";
 
-const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD;
+/**
+ * Cookie-based session auth for the dashboard. Replaces the previous
+ * HTTP Basic auth gate so that:
+ *   - iOS Safari PWAs don't re-prompt on every cold launch
+ *   - Service workers can authenticate via the cookie (default
+ *     `credentials: "same-origin"` includes it)
+ *   - Logout actually exists (POST /dashboard/api/logout clears the cookie)
+ *
+ * Required env: DASHBOARD_PASSWORD (the one shared password) and
+ * DASHBOARD_SESSION_SECRET (HMAC signing key, ≥32 bytes recommended —
+ * generate with `openssl rand -base64 32`).
+ *
+ * Dev override: DASHBOARD_ALLOW_UNAUTHENTICATED=1 keeps the dashboard
+ * world-readable. Useful for local dev; never set in production.
+ */
+
 const ALLOW_UNAUTHENTICATED =
   process.env.DASHBOARD_ALLOW_UNAUTHENTICATED === "1";
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
-// Constant-time string comparison. Length difference is folded into the
-// final XOR so a length-only timing leak doesn't bypass the loop.
-function constantTimeEq(a: string, b: string): boolean {
-  const len = Math.max(a.length, b.length);
-  let diff = a.length ^ b.length;
-  for (let i = 0; i < len; i++) {
-    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+function unauthenticated(req: NextRequest): NextResponse {
+  // For HTML navigations: redirect to /dashboard/login with the original
+  // path as `next` so the user can come back after authenticating.
+  // For API/JSON requests: 401 with a small JSON body so client code can
+  // detect missing-session and prompt for login programmatically.
+  const accept = req.headers.get("accept") ?? "";
+  const wantsHtml = accept.includes("text/html");
+  if (wantsHtml) {
+    const url = req.nextUrl.clone();
+    // Capture the original URL the browser sees, INCLUDING the basePath,
+    // so login can send the user back where they were. `nextUrl.pathname`
+    // is post-basePath-strip (`/analytics` for external `/dashboard/analytics`),
+    // so we re-prepend it. Without this the post-login redirect drops the
+    // basePath and lands at bare `/analytics`, which nginx routes to the
+    // bridge HTTP API and 401s.
+    const basePath = req.nextUrl.basePath ?? "";
+    const original = `${basePath}${url.pathname}${url.search}`;
+    // Set pathname WITHOUT basePath — Next.js's redirect helper
+    // prepends basePath itself when constructing the final Location
+    // header. Including `/dashboard` here gives `/dashboard/dashboard/login`.
+    url.pathname = "/login";
+    url.search = `?next=${encodeURIComponent(original)}`;
+    return NextResponse.redirect(url);
   }
-  return diff === 0;
+  return new NextResponse(
+    JSON.stringify({ error: "session_required" }),
+    {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
 }
 
-function lockedResponse(retryAfterSec: number): NextResponse {
-  return new NextResponse("Too Many Requests", {
-    status: 429,
-    headers: { "Retry-After": String(retryAfterSec) },
-  });
-}
-
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   if (DEMO_MODE) {
     return NextResponse.next();
   }
 
-  if (!DASHBOARD_PASSWORD) {
+  const expected = process.env.DASHBOARD_PASSWORD ?? "";
+  const secret = process.env.DASHBOARD_SESSION_SECRET ?? "";
+
+  // No password configured — let traffic through unless production
+  // explicitly forbids it. Mirrors the prior basic-auth behavior.
+  if (!expected || !secret) {
     if (process.env.NODE_ENV === "production" && !ALLOW_UNAUTHENTICATED) {
       return new NextResponse(
-        "Dashboard auth not configured. Set DASHBOARD_PASSWORD or DASHBOARD_ALLOW_UNAUTHENTICATED=1.",
+        "Dashboard auth not configured. Set DASHBOARD_PASSWORD and DASHBOARD_SESSION_SECRET (and remove DASHBOARD_ALLOW_UNAUTHENTICATED).",
         { status: 503 },
       );
     }
     return NextResponse.next();
   }
 
-  const ip = clientKey(req.headers);
-
-  // Check lockout BEFORE inspecting credentials so a locked-out client
-  // can't keep probing.
-  const lock = checkLocked(ip);
-  if (lock.locked) return lockedResponse(lock.retryAfterSec);
-
-  const auth = req.headers.get("authorization");
-  if (auth) {
-    const [scheme, encoded] = auth.split(" ");
-    if (scheme === "Basic" && encoded) {
-      const decoded = Buffer.from(encoded, "base64").toString("utf-8");
-      const colonIdx = decoded.indexOf(":");
-      const password = colonIdx !== -1 ? decoded.slice(colonIdx + 1) : "";
-      if (constantTimeEq(password, DASHBOARD_PASSWORD)) {
-        recordSuccess(ip);
-        return NextResponse.next();
-      }
-    }
+  // Login page itself must be reachable without a session. Next.js
+  // strips basePath before matching, so the internal pathname is
+  // `/login` even though the external URL is `/dashboard/login`.
+  if (
+    req.nextUrl.pathname === "/login" ||
+    req.nextUrl.pathname === "/dashboard/login"
+  ) {
+    return NextResponse.next();
   }
 
-  const result = recordFailure(ip);
-  if (result.locked) return lockedResponse(result.retryAfterSec);
-
-  return new NextResponse("Unauthorized", {
-    status: 401,
-    headers: {
-      "WWW-Authenticate": 'Basic realm="Patchwork OS", charset="UTF-8"',
-    },
-  });
+  const cookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+  const session = await verifySession(cookie);
+  if (!session.valid) return unauthenticated(req);
+  return NextResponse.next();
 }
 
 export const config = {
   matcher: [
-    // Protect all routes except Next.js internals, public assets, and marketplace.
-    // Includes favicon.svg + manifest.json + robots.txt so PWA / browser asset
-    // requests don't 401 on every page load.
-    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace).*)",
+    // Protect all routes except Next.js internals, public assets, marketplace,
+    // and the bridge-relay endpoint.
+    //
+    // `api/relay/push` is exempted because it's the bridge → dashboard push
+    // handshake — it has its own Bearer-token auth (PATCHWORK_PUSH_TOKEN,
+    // timing-safe).
+    //
+    // `api/login` is exempted so a not-yet-authed client can authenticate.
+    //
+    // PWA + SW machinery exemptions (these paths must be reachable
+    // without a session so the PWA can install and the service worker
+    // can re-subscribe in the background):
+    //   - sw.js: registered by `navigator.serviceWorker.register` on
+    //     page load; must be cacheable by the browser before login.
+    //   - icons/: PWA icons referenced from manifest.json.
+    //   - api/push/vapid-key: SW context fetches this on
+    //     pushsubscriptionchange; SW doesn't always carry the cookie.
+    //   - api/push/{subscribe,unsubscribe}: same SW context limitation;
+    //     they have their own same-origin CSRF guard.
+    // Root path (basePath bare) explicitly — the negative-lookahead
+    // matcher below doesn't reliably catch `/` alone in Next.js, which
+    // means the dashboard's overview page would otherwise be unprotected.
+    "/",
+    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace|api/login|api/relay/push|sw\\.js|icons/|api/push/vapid-key|api/push/subscribe|api/push/unsubscribe).*)",
   ],
 };

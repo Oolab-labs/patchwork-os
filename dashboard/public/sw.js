@@ -8,13 +8,28 @@
  */
 
 const CACHE_NAME = "patchwork-shell-v1";
-const SHELL_URLS = ["/", "/approvals"];
+// Scope-relative so basePath (`/dashboard`) is honored. Absolute paths
+// like `/approvals` route to the bridge's HTTP API and 401, which makes
+// `cache.addAll` reject and the SW never activates — `serviceWorker.ready`
+// then hangs forever, which manifests as a permanently stuck "Working…"
+// on the Subscribe-to-push button. The SW scope is `/dashboard/`, so
+// `./` resolves to `/dashboard/` and `./approvals` to `/dashboard/approvals`.
+const SHELL_URLS = ["./", "./approvals"];
 
 // ── Install: cache shell ──────────────────────────────────────────────────
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS)).then(() => self.skipWaiting()),
+    caches
+      .open(CACHE_NAME)
+      .then((cache) =>
+        // Belt-and-braces: even if individual shell URLs 4xx, don't block
+        // SW activation. Push handlers don't depend on the precache.
+        cache.addAll(SHELL_URLS).catch((err) => {
+          console.warn("[sw] shell precache failed (non-fatal):", err);
+        }),
+      )
+      .then(() => self.skipWaiting()),
   );
 });
 
@@ -26,6 +41,54 @@ self.addEventListener("activate", (event) => {
       .keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
+  );
+});
+
+// ── pushsubscriptionchange: re-subscribe transparently ────────────────────
+//
+// Fires when the browser invalidates the existing push subscription —
+// commonly on SW update (iOS), Apple-side token rotation, or after long
+// inactivity. Without a handler the subscription is silently lost and
+// the user has to manually re-Subscribe in the dashboard, which they
+// won't do until the next time they notice missing notifications.
+//
+// Re-subscribe with the same VAPID public key fetched from the
+// dashboard's /api/push/vapid-key endpoint (scope-relative), then POST
+// the new subscription to /api/push/subscribe.
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        const keyRes = await fetch("./api/push/vapid-key");
+        if (!keyRes.ok) {
+          console.warn("[sw] vapid-key fetch failed:", keyRes.status);
+          return;
+        }
+        const { publicKey } = await keyRes.json();
+        if (!publicKey) return;
+        const sub = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+        await fetch("./api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sub.toJSON()),
+        });
+      } catch (err) {
+        console.warn("[sw] pushsubscriptionchange re-subscribe failed:", err);
+      }
+    })(),
   );
 });
 
@@ -129,10 +192,12 @@ self.addEventListener("notificationclick", (event) => {
     return;
   }
 
-  // Default: open/focus approval card
+  // Default: open/focus approval card. Scope-relative so basePath
+   // (`/dashboard`) is honored — absolute `/approvals` routes through
+   // nginx to the bridge HTTP API and 401s without a bearer token.
   const targetUrl = callId
-    ? `/approvals?highlight=${callId}`
-    : "/approvals";
+    ? `./approvals?highlight=${callId}`
+    : "./approvals";
 
   event.waitUntil(
     self.clients

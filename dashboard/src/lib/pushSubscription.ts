@@ -21,36 +21,85 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
   }
 }
 
+/**
+ * Wrap a promise with a deadline. Without this, iOS PWA push hangs at
+ * `pushManager.subscribe()` are silent forever — Apple's push registration
+ * sometimes never completes on first install, and the page sits in
+ * "Working…" with no indication where the stall happened.
+ */
+async function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  step: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`stalled at ${step} (>${Math.round(ms / 1000)}s)`)),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Subscribe to web push. Throws labeled Error on any step failure so
+ * callers can surface "stalled at pushManager.subscribe" etc. to the UI
+ * instead of seeing a perma-stuck busy state. Returns true on success.
+ *
+ * Common failure points (especially iOS):
+ *   - serviceWorker.ready: SW registration didn't finish (rare, usually
+ *     means the SW file 404'd at install time)
+ *   - pushManager.subscribe: Apple's APNs registration timed out — this
+ *     is the iOS PWA "first subscribe sometimes hangs" bug. Force-close
+ *     and reopen the PWA, then retry.
+ *   - POST /api/push/subscribe: dashboard same-origin guard rejected the
+ *     request, or VAPID is misconfigured server-side.
+ */
 export async function subscribeToPush(vapidPublicKey: string): Promise<boolean> {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-    console.warn("[pwa] Push not supported");
-    return false;
+    throw new Error("Push API not available in this browser");
   }
 
   const permission = await Notification.requestPermission();
   if (permission !== "granted") {
-    console.warn("[pwa] Notification permission denied");
-    return false;
+    throw new Error(`Notification permission ${permission}`);
   }
 
-  const reg = await navigator.serviceWorker.ready;
-  let subscription: PushSubscription;
-  try {
-    subscription = await reg.pushManager.subscribe({
+  const reg = await withTimeout(
+    navigator.serviceWorker.ready,
+    10_000,
+    "serviceWorker.ready",
+  );
+
+  const subscription = await withTimeout(
+    reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as BufferSource,
-    });
-  } catch (err) {
-    console.error("[pwa] Push subscription failed:", err);
-    return false;
-  }
+    }),
+    15_000,
+    "pushManager.subscribe (Apple/Mozilla push server)",
+  );
 
-  const res = await fetch(apiPath("/api/push/subscribe"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(subscription.toJSON()),
-  });
-  return res.ok;
+  const res = await withTimeout(
+    fetch(apiPath("/api/push/subscribe"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(subscription.toJSON()),
+    }),
+    10_000,
+    "POST /api/push/subscribe",
+  );
+  if (!res.ok) {
+    throw new Error(`POST /api/push/subscribe → HTTP ${res.status}`);
+  }
+  return true;
 }
 
 export async function unsubscribeFromPush(): Promise<boolean> {

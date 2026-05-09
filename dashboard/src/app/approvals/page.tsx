@@ -215,7 +215,7 @@ function ApprovalCard({
           {icon}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h3 style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: "var(--fs-base)", fontWeight: 700, color: "var(--ink-0)", wordBreak: "break-all" }}>
+          <h3 style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: "var(--fs-base)", fontWeight: 700, color: "var(--ink-0)", overflowWrap: "anywhere" }}>
             {heading}
           </h3>
         </div>

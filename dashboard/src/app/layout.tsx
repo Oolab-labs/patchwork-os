@@ -72,6 +72,15 @@ export const viewport = {
   viewportFit: "cover",
 };
 
+// Force every page to render on each request so the auth middleware
+// runs. Without this, statically prerendered pages (`○ (Static)` in the
+// build manifest) bypass middleware entirely and serve their cached
+// HTML to anyone with the URL. The dashboard's home and most settings
+// pages were prerendered, which made the entire dashboard accessible
+// without a session despite the middleware being configured. The cost
+// is roughly +100ms per page load — acceptable for a private dashboard.
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${albertSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}>
