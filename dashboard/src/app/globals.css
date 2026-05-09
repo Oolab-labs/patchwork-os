@@ -218,7 +218,11 @@
   --ink-0:   #f6f7f8;
   --ink-1:   #d4d6dc;
   --ink-2:   #a3a7b1;
-  --ink-3:   #71757f;
+  /* #71757f failed WCAG AA on `--canvas` (4.27:1, need 4.5). Lifted so
+     section labels, sidebar-bridge-port, search placeholders, and tab
+     subtitles pass AA on dark theme. ~16+ contrast-flagged sites covered
+     in one swap. */
+  --ink-3:   #9ea2ad;
   --orange:  #ff7a45;
   --orange-hover: #ff8f62;
   --orange-soft:  rgba(255,122,69,0.14);
@@ -311,7 +315,10 @@ button { font-family: inherit; }
   display: grid;
   grid-template-columns: var(--nav-w) minmax(0, 1fr);
   grid-template-rows: var(--header-h) minmax(0, 1fr);
-  min-height: 100vh;
+  /* dvh, not vh: iOS Safari `100vh` is the *large* viewport (URL bar
+     hidden), so the bottom 60px of fixed layouts hide behind the URL bar
+     until the user scrolls. `100dvh` tracks the visible viewport. */
+  min-height: 100dvh;
   background:
     radial-gradient(1200px 600px at 80% -10%, var(--aurora-1), transparent 60%),
     var(--canvas);
@@ -327,7 +334,7 @@ button { font-family: inherit; }
   padding: 16px 12px;
   position: sticky;
   top: var(--header-h);
-  height: calc(100vh - var(--header-h));
+  height: calc(100dvh - var(--header-h));
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -571,7 +578,6 @@ button { font-family: inherit; }
 }
 .brand-stitch {
   stroke-dasharray: 3 3;
-  animation: stitch 4s linear infinite;
 }
 
 .topbar-brand {
@@ -669,7 +675,7 @@ button.topbar-search {
   padding: 32px 36px 72px;
   max-width: 1400px;
   width: 100%;
-  min-height: calc(100vh - var(--header-h));
+  min-height: calc(100dvh - var(--header-h));
 }
 
 /* ---- Page head ---- */
@@ -1451,10 +1457,6 @@ button.topbar-search {
   100% { transform: translate3d(-1%, 2%, 0) scale(0.98); opacity: 0.85; }
 }
 
-@keyframes stitch {
-  to { stroke-dashoffset: -24; }
-}
-
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -2019,14 +2021,18 @@ button.topbar-search {
 @media (max-width: 768px) {
   .app-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: var(--header-h) minmax(0, 1fr);
+    /* Header track grows by the iOS safe-area-inset-top so the status
+       bar (PWA standalone) doesn't sit on top of the topbar contents. */
+    grid-template-rows: calc(var(--header-h) + env(safe-area-inset-top, 0px)) minmax(0, 1fr);
   }
   .app-sidebar {
     position: fixed;
     top: 0;
     left: 0;
     width: min(82vw, 320px);
-    height: 100vh;
+    height: 100dvh;
+    padding-top: calc(16px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     z-index: 30;
     transform: translateX(-100%);
     transition: transform 220ms var(--transition);
@@ -2046,7 +2052,12 @@ button.topbar-search {
     display: inline-flex;
   }
   .app-header {
-    padding: 0 14px;
+    /* PWA standalone on iPhone: status bar would otherwise overlap the
+       header logo + hamburger. viewport-fit=cover (set in layout.tsx)
+       activates env(safe-area-inset-top); the surrounding grid track
+       grows to match so content below isn't pushed behind the topbar. */
+    padding: env(safe-area-inset-top, 0px) 14px 0;
+    height: 100%;
   }
   .app-header-left {
     gap: 12px;
@@ -2600,5 +2611,67 @@ button.topbar-search {
     transition-duration: 0.01ms !important;
     transition-delay: 0ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   iOS form-input zoom fix.
+
+   Safari on iOS auto-zooms the page when you focus an input whose
+   computed font-size is <16px, and never restores zoom on blur. The
+   dashboard body is 14px and most inputs inherit, so every text field
+   on /settings, /recipes/new, login, and the command palette triggers
+   it. Bumping form-controls to 16px on mobile suppresses the zoom.
+   ────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   Touch device hover neutralization.
+
+   ~31 :hover rules in this stylesheet were authored without an
+   `@media (hover: hover)` guard, so on iOS Safari the hover state
+   sticks after every tap until the user taps elsewhere. Symptoms:
+   sidebar nav items stay translated 2px right after tap, primary CTA
+   stays in elevated/shimmer state, inbox row stays highlighted.
+
+   The proper fix is wrapping each hover rule in `@media (hover: hover)
+   and (pointer: fine)`. Doing that to 31 sites is a large, mechanical
+   change. As a lower-risk first pass, this block neutralizes the most
+   visible effects on touch devices. Subsequent PRs can incrementally
+   move rules into proper hover-media-queries.
+   ────────────────────────────────────────────────────────────────────── */
+@media (hover: none) and (pointer: coarse) {
+  .app-nav-link:hover,
+  .topbar-icon-btn:hover,
+  .topbar-avatar:hover,
+  .inbox-item:hover,
+  .copy-section-btn:hover,
+  .approval-card:hover,
+  .recipe-row:hover,
+  .btn:hover,
+  a:hover,
+  button:hover {
+    transform: none;
+  }
+  .app-nav-link:hover,
+  .inbox-item:hover {
+    background: transparent;
+  }
+  .sidebar-create:hover {
+    background: var(--orange);
+    transform: none;
+    box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.35) inset,
+      0 2px 8px rgba(var(--orange-rgb), 0.3);
+  }
+  /* Shimmer sweep is purely decorative on hover; reset its position so
+     it doesn't sit mid-sweep after a tap. */
+  .sidebar-create:hover::before {
+    left: -100%;
   }
 }
