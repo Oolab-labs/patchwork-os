@@ -2081,7 +2081,13 @@ button.topbar-search {
   .app-header-left {
     gap: 12px;
   }
+  /* Mobile header: keep the wordmark visible (shorter "Patchwork", drop
+     "OS"). The bare brand-mark icon alone left the topbar feeling
+     unbranded and lopsided with everything else hidden. */
   .topbar-brand span:not(.topbar-local) {
+    font-size: 15px;
+  }
+  .topbar-brand-suffix {
     display: none;
   }
   /* Specificity bumped via .app-header ancestor — the base rules for these
@@ -2092,9 +2098,21 @@ button.topbar-search {
   .app-header .demo-toggle,
   .app-header .bridge-status-pill,
   .app-header .identity-pill,
-  .app-header .topbar-icon-btn,
   .app-header .topbar-avatar {
     display: none;
+  }
+  /* Theme toggle + bell stay on the right so the user can see pending
+     approvals at a glance and switch themes without opening the drawer.
+     The catch-all `.topbar-icon-btn` hide above would also hide them, so
+     re-show them with an even more specific selector. Theme toggle is a
+     `.theme-toggle` button not `.topbar-icon-btn`, so it survives — but
+     the bell IS `.topbar-icon-btn`, hence the re-show. */
+  .app-header .topbar-icon-btn.topbar-bell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
   }
   .app-header-title {
     font-size: 13px;
