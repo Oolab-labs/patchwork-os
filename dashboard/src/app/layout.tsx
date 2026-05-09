@@ -96,7 +96,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <meta name="theme-color" content="#faf7f2" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#0d0c0b" media="(prefers-color-scheme: dark)" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <link rel="apple-touch-icon" href="/dashboard/icons/icon-192.png" />
+        {/* iOS reads `apple-mobile-web-app-capable` (NOT the modern
+            `mobile-web-app-capable`) to honor "Add to Home Screen" as a
+            full-screen PWA. Next 15's `metadata.appleWebApp` doesn't
+            emit this consistently; ship it explicitly. */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        {/* Block iOS Safari from auto-linking 7+ digit numbers as
+            tel: anchors — recipe slugs, port numbers, and timestamps
+            were getting wrapped in invisible blue underlines that
+            interfered with copy + tap targets. */}
+        <meta name="format-detection" content="telephone=no" />
+        {/* iOS prefers a 180×180 apple-touch-icon. The 192px PWA icon
+            renders fuzzy when iOS scales it for the home screen. */}
+        <link rel="apple-touch-icon" sizes="180x180" href="/dashboard/icons/apple-touch-icon.png" />
         <link rel="manifest" href="/dashboard/manifest.json" />
       </head>
       <body>
