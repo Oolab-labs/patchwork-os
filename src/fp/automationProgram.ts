@@ -38,7 +38,13 @@ export type PromptSourceNode =
       readonly kind: "named";
       readonly promptName: string;
       readonly promptArgs?: Record<string, string>;
-    };
+    }
+  /**
+   * Webhook-only hook entry — no inline prompt, no task enqueue. The hook
+   * still flows through cooldown/dedup/rateLimit gates and fires its
+   * `webhook` (if configured) on the success path.
+   */
+  | { readonly kind: "none" };
 
 // ── When condition ────────────────────────────────────────────────────────────
 
@@ -70,6 +76,25 @@ export type HookExtras =
   | TestRunExtras
   | { readonly kind: "none" };
 
+// ── Webhook config ────────────────────────────────────────────────────────────
+
+/**
+ * Outbound webhook configuration for an automation hook.
+ *
+ * When attached to a HookNode, the interpreter POSTs (or sends via the chosen
+ * method) a JSON body to `url` AFTER any inline prompt has been enqueued. The
+ * body shape is `{ phase, timestamp, hookType, ...eventData }` for v1.
+ *
+ * Failure modes (timeout, non-2xx, network error) are recorded and logged
+ * via the Backend, never thrown — webhook fan-out is always best-effort and
+ * does not block other hooks or the prompt enqueue.
+ */
+export interface WebhookConfig {
+  readonly url: string;
+  readonly method?: "POST" | "PUT" | "PATCH";
+  readonly headers?: Readonly<Record<string, string>>;
+}
+
 // ── Node types ────────────────────────────────────────────────────────────────
 
 export interface HookNode {
@@ -84,6 +109,12 @@ export interface HookNode {
   readonly effort?: "low" | "medium" | "high" | "max";
   readonly systemPrompt?: string;
   readonly extras?: HookExtras;
+  /**
+   * Optional outbound webhook fired AFTER the inline prompt enqueue. Wired
+   * for `onCompaction` (onPreCompact/onPostCompact) only in v1; other hook
+   * types may opt in later by widening the parser. See ADR-0009.
+   */
+  readonly webhook?: WebhookConfig;
 }
 
 export interface SequenceNode {

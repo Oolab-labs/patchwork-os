@@ -59,6 +59,14 @@ export interface AutomationState {
    * Last known test runner outcome (pass/fail) for evaluateWhen checks.
    */
   readonly lastTestRunnerStatusByRunner: ReadonlyMap<string, "pass" | "fail">;
+  /**
+   * Last successful webhook fan-out time (ms since epoch) per hook key.
+   * Recorded after `Backend.postWebhook` resolves regardless of `ok` —
+   * the timestamp marks "we attempted to deliver", which is what an
+   * operator wants when debugging webhook health. Merged via max-per-key
+   * in `mergeAutomationStates`.
+   */
+  readonly lastWebhookFiredAt: ReadonlyMap<string, number>;
 }
 
 export const EMPTY_AUTOMATION_STATE: AutomationState = {
@@ -71,6 +79,7 @@ export const EMPTY_AUTOMATION_STATE: AutomationState = {
   pendingRetries: new Map(),
   latestDiagnosticsByFile: new Map(),
   lastTestRunnerStatusByRunner: new Map(),
+  lastWebhookFiredAt: new Map(),
 };
 
 // ── Cooldown helpers ──────────────────────────────────────────────────────────
@@ -344,6 +353,7 @@ export function mergeAutomationStates(
       a.lastTestRunnerStatusByRunner,
       b.lastTestRunnerStatusByRunner,
     ),
+    lastWebhookFiredAt: maxNumMap(a.lastWebhookFiredAt, b.lastWebhookFiredAt),
   };
 }
 
@@ -360,4 +370,30 @@ export function setTestRunnerStatus(
   const newMap = new Map(state.lastTestRunnerStatusByRunner);
   newMap.set(runner, outcome);
   return { ...state, lastTestRunnerStatusByRunner: newMap };
+}
+
+// ── Webhook helpers ───────────────────────────────────────────────────────────
+
+const WEBHOOK_FIRED_MAX_SIZE = 5_000;
+
+/**
+ * Record that an automation webhook fan-out attempt for `key` resolved at
+ * `now`. Used for telemetry / dashboards — does NOT gate future fires on its
+ * own (cooldown is already enforced by WithCooldown around the parent hook).
+ *
+ * Bounded at 5_000 entries, FIFO eviction.
+ */
+export function recordWebhookFired(
+  state: AutomationState,
+  key: string,
+  now: number,
+): AutomationState {
+  const newMap = new Map(state.lastWebhookFiredAt);
+  newMap.delete(key);
+  newMap.set(key, now);
+  if (newMap.size > WEBHOOK_FIRED_MAX_SIZE) {
+    const firstKey = newMap.keys().next().value as string;
+    newMap.delete(firstKey);
+  }
+  return { ...state, lastWebhookFiredAt: newMap };
 }

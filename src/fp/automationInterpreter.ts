@@ -20,6 +20,7 @@ import {
   recordDedup,
   recordPendingRetry,
   recordTrigger,
+  recordWebhookFired,
   tasksInLastHour,
 } from "./automationState.js";
 import {
@@ -176,7 +177,14 @@ export function primaryValue(
  * Resolve a PromptSourceNode to a string.
  * For named prompts, calls getPrompt() and concatenates user messages.
  * Returns null if a named prompt cannot be resolved (unknown name / missing args).
+ *
+ * When `source.kind === "none"`, returns the symbol `NO_PROMPT` so callers
+ * can distinguish "no inline prompt configured" (webhook-only hook) from
+ * "named prompt failed to resolve" (skip silently).
  */
+export const NO_PROMPT = Symbol("no-prompt");
+export type ResolvedPrompt = string | null | typeof NO_PROMPT;
+
 export function resolvePromptSource(
   source:
     | { kind: "inline"; prompt: string }
@@ -184,9 +192,11 @@ export function resolvePromptSource(
         kind: "named";
         promptName: string;
         promptArgs?: Record<string, string>;
-      },
+      }
+    | { kind: "none" },
   eventData: Readonly<Record<string, string>>,
-): string | null {
+): ResolvedPrompt {
+  if (source.kind === "none") return NO_PROMPT;
   if (source.kind === "inline") return source.prompt;
   // Substitute event placeholders into promptArgs values
   const resolvedArgs: Record<string, string> = {};
@@ -412,45 +422,115 @@ async function interpret(
           ],
         };
       }
-      const nonce = crypto.randomBytes(8).toString("hex");
-      const finalPrompt = buildFinalPrompt(
-        promptTemplate,
-        program.hookType,
-        ctx.eventData,
-        nonce,
-      );
 
-      try {
-        const taskId = await ctx.backend.enqueueTask({
-          prompt: finalPrompt,
-          triggerSource: program.hookType,
-          sessionId: "",
-          isAutomationTask: true,
-          model: program.model,
-          effort: program.effort,
-          systemPrompt: program.systemPrompt,
-        });
-        const newState = recordTrigger(
-          acc.state,
+      // When promptTemplate is a string, enqueue a Claude task. When it is
+      // NO_PROMPT, the hook is webhook-only — skip the enqueue but still
+      // proceed to webhook fan-out below. A webhook-only hook still records
+      // a trigger in state so cooldown gating can observe its firing.
+      let working = acc;
+      if (promptTemplate !== NO_PROMPT) {
+        const nonce = crypto.randomBytes(8).toString("hex");
+        const finalPrompt = buildFinalPrompt(
+          promptTemplate,
           program.hookType,
-          taskId,
-          ctx.now,
+          ctx.eventData,
+          nonce,
         );
-        return {
-          ...acc,
-          taskIds: [...acc.taskIds, taskId],
-          state: newState,
-        };
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        ctx.log(
-          `[interpreter] hook ${program.hookType} enqueue failed: ${message}`,
-        );
-        return {
-          ...acc,
-          errors: [...acc.errors, { message, hook: program.hookType }],
-        };
+
+        try {
+          const taskId = await ctx.backend.enqueueTask({
+            prompt: finalPrompt,
+            triggerSource: program.hookType,
+            sessionId: "",
+            isAutomationTask: true,
+            model: program.model,
+            effort: program.effort,
+            systemPrompt: program.systemPrompt,
+          });
+          const newState = recordTrigger(
+            working.state,
+            program.hookType,
+            taskId,
+            ctx.now,
+          );
+          working = {
+            ...working,
+            taskIds: [...working.taskIds, taskId],
+            state: newState,
+          };
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          ctx.log(
+            `[interpreter] hook ${program.hookType} enqueue failed: ${message}`,
+          );
+          return {
+            ...working,
+            errors: [...working.errors, { message, hook: program.hookType }],
+          };
+        }
       }
+
+      // Webhook fan-out — runs AFTER the inline prompt enqueue (if any).
+      // Failures are recorded as interpreter errors and do not throw, so
+      // other hooks in the same run continue to fire. Always records
+      // `lastWebhookFiredAt` regardless of HTTP outcome — operators
+      // debugging webhook delivery want "we attempted X" telemetry.
+      if (program.webhook) {
+        const phase =
+          program.hookType === "onPreCompact"
+            ? "pre"
+            : program.hookType === "onPostCompact"
+              ? "post"
+              : undefined;
+        const body: Record<string, unknown> = {
+          hookType: program.hookType,
+          timestamp: ctx.now,
+          ...ctx.eventData,
+        };
+        if (phase) body.phase = phase;
+
+        try {
+          const result = await ctx.backend.postWebhook({
+            url: program.webhook.url,
+            method: program.webhook.method ?? "POST",
+            headers: program.webhook.headers ?? {},
+            body,
+            hookKey: program.hookType,
+          });
+          working = {
+            ...working,
+            state: recordWebhookFired(working.state, program.hookType, ctx.now),
+          };
+          if (!result.ok) {
+            const message = `webhook fan-out failed: ${result.error ?? "unknown"}${result.status !== undefined ? ` (status=${result.status})` : ""}`;
+            ctx.log(`[interpreter] hook ${program.hookType} ${message}`);
+            working = {
+              ...working,
+              errors: [...working.errors, { message, hook: program.hookType }],
+            };
+          }
+        } catch (e) {
+          // Defensive: postWebhook contract is "never rejects", but a buggy
+          // backend could still throw. Log + record but do not propagate.
+          const message = e instanceof Error ? e.message : String(e);
+          ctx.log(
+            `[interpreter] hook ${program.hookType} webhook threw: ${message}`,
+          );
+          working = {
+            ...working,
+            state: recordWebhookFired(working.state, program.hookType, ctx.now),
+            errors: [
+              ...working.errors,
+              {
+                message: `webhook fan-out threw: ${message}`,
+                hook: program.hookType,
+              },
+            ],
+          };
+        }
+      }
+
+      return working;
     }
 
     case "Sequence": {
@@ -510,14 +590,35 @@ async function interpret(
 
       const innerAcc = await interpret(program.program, ctx, acc);
 
-      // If we produced new task IDs, record the cooldown trigger
+      // If we produced new task IDs, record the cooldown trigger.
+      // For webhook-only hooks (kind: "none") no taskId is produced, but the
+      // webhook firing still counts as a trigger — detected via a delta in
+      // `lastWebhookFiredAt`. Without this branch, cooldowns never apply to
+      // webhook-only hooks, defeating the cooldown gate the operator
+      // configured.
       const newTaskIds = innerAcc.taskIds.slice(acc.taskIds.length);
+      const webhookFired =
+        innerAcc.state.lastWebhookFiredAt.size >
+          acc.state.lastWebhookFiredAt.size ||
+        // Same key was already in the map but timestamp moved forward
+        Array.from(innerAcc.state.lastWebhookFiredAt.entries()).some(
+          ([k, v]) => (acc.state.lastWebhookFiredAt.get(k) ?? -1) < v,
+        );
       if (newTaskIds.length > 0) {
         const lastTaskId = newTaskIds[newTaskIds.length - 1] ?? "";
         const newState = recordTrigger(
           innerAcc.state,
           program.key,
           lastTaskId,
+          ctx.now,
+        );
+        return { ...innerAcc, state: newState };
+      }
+      if (webhookFired) {
+        const newState = recordTrigger(
+          innerAcc.state,
+          program.key,
+          "webhook",
           ctx.now,
         );
         return { ...innerAcc, state: newState };

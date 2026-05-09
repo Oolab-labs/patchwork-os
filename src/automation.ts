@@ -53,6 +53,28 @@ export interface AutomationCondition {
   testRunnerLastStatus?: "passed" | "failed" | "any";
 }
 
+/**
+ * Outbound webhook configuration for an automation hook.
+ *
+ * Currently wired only for `onCompaction` (onPreCompact/onPostCompact slots);
+ * other hook types may opt in later. When set on a hook entry, the interpreter
+ * POSTs a JSON body containing `{ phase?, timestamp, hookType, ...eventData }`
+ * to `url` after the inline prompt (if any) has been enqueued.
+ *
+ * Security: by default, only loopback URLs (127.0.0.1, ::1, localhost) and
+ * public hosts are allowed. Other RFC 1918 / link-local / ULA / CGNAT
+ * addresses are blocked unless the bridge is started with the
+ * `--automation-allow-private-webhooks` flag (TODO follow-up).
+ */
+export interface AutomationWebhookConfig {
+  /** Full http:// or https:// URL. Loopback OK by default; other private ranges blocked. */
+  url: string;
+  /** HTTP method. Default: "POST". */
+  method?: "POST" | "PUT" | "PATCH";
+  /** Optional request headers. Content-Type defaults to application/json. */
+  headers?: Record<string, string>;
+}
+
 export interface PromptSource {
   prompt?: string;
   promptName?: string;
@@ -75,6 +97,16 @@ export interface PromptSource {
    * Enforced minimum: 5_000.
    */
   retryDelayMs?: number;
+  /**
+   * Optional outbound webhook fired AFTER the inline prompt enqueue.
+   *
+   * As of v1, only honored on `onCompaction` (onPreCompact/onPostCompact).
+   * Setting it on other hooks is silently ignored by the parser. Both
+   * `prompt` (or `promptName`) AND `webhook` may be set on the same hook
+   * entry — they run sequentially: prompt enqueue first, then webhook.
+   * See ADR-0009.
+   */
+  webhook?: AutomationWebhookConfig;
 }
 
 export interface OnDiagnosticsErrorPolicy extends PromptSource {
@@ -546,21 +578,26 @@ const MAX_PROMPT_NAME_CHARS = 64;
 /**
  * Validates that a hook config has exactly one of `prompt` (non-empty inline string)
  * or `promptName` (reference to a built-in MCP prompt), plus optional `promptArgs`.
+ * Hook configs that wire only a `webhook` are allowed to omit both prompt fields.
  * Throws a descriptive error on violation.
  */
 function validatePromptSource(hookName: string, cfg: PromptSource): void {
   const hasPrompt = typeof cfg.prompt === "string" && cfg.prompt.trim() !== "";
   const hasPromptName =
     typeof cfg.promptName === "string" && cfg.promptName.trim() !== "";
+  const hasWebhook =
+    cfg.webhook !== undefined &&
+    typeof cfg.webhook === "object" &&
+    cfg.webhook !== null;
 
   if (hasPrompt && hasPromptName) {
     throw new Error(
       `"${hookName}" must specify either "prompt" or "promptName", not both`,
     );
   }
-  if (!hasPrompt && !hasPromptName) {
+  if (!hasPrompt && !hasPromptName && !hasWebhook) {
     throw new Error(
-      `"${hookName}" must have a non-empty "prompt" or "promptName"`,
+      `"${hookName}" must have a non-empty "prompt", "promptName", or "webhook"`,
     );
   }
   if (hasPrompt && (cfg.prompt?.length ?? 0) > MAX_POLICY_PROMPT_CHARS) {
@@ -606,6 +643,66 @@ function validatePromptSource(hookName: string, cfg: PromptSource): void {
       throw new Error(
         `"${hookName}.effort" must be one of "low", "medium", "high", "max"`,
       );
+    }
+  }
+  if (cfg.webhook !== undefined) {
+    const wh = cfg.webhook as unknown;
+    if (typeof wh !== "object" || wh === null || Array.isArray(wh)) {
+      throw new Error(`"${hookName}.webhook" must be a plain object`);
+    }
+    const w = wh as Record<string, unknown>;
+    if (typeof w.url !== "string" || w.url.trim() === "") {
+      throw new Error(`"${hookName}.webhook.url" must be a non-empty string`);
+    }
+    if (w.url.length > 2048) {
+      throw new Error(`"${hookName}.webhook.url" must be ≤ 2048 characters`);
+    }
+    try {
+      const parsed = new URL(w.url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new Error(
+          `"${hookName}.webhook.url" must use http:// or https:// (got ${parsed.protocol})`,
+        );
+      }
+    } catch (e) {
+      // Re-throw protocol errors verbatim; wrap parse errors.
+      if (e instanceof Error && e.message.includes("must use http")) throw e;
+      throw new Error(
+        `"${hookName}.webhook.url" is not a valid URL: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    if (w.method !== undefined) {
+      if (
+        typeof w.method !== "string" ||
+        !["POST", "PUT", "PATCH"].includes(w.method)
+      ) {
+        throw new Error(
+          `"${hookName}.webhook.method" must be one of "POST", "PUT", "PATCH"`,
+        );
+      }
+    }
+    if (w.headers !== undefined) {
+      if (
+        typeof w.headers !== "object" ||
+        w.headers === null ||
+        Array.isArray(w.headers)
+      ) {
+        throw new Error(`"${hookName}.webhook.headers" must be a plain object`);
+      }
+      for (const [k, v] of Object.entries(
+        w.headers as Record<string, unknown>,
+      )) {
+        if (typeof v !== "string") {
+          throw new Error(
+            `"${hookName}.webhook.headers.${k}" must be a string`,
+          );
+        }
+        if (k.length > 128 || v.length > 1024) {
+          throw new Error(
+            `"${hookName}.webhook.headers.${k}" exceeds size limits (key ≤128, value ≤1024)`,
+          );
+        }
+      }
     }
   }
 }
