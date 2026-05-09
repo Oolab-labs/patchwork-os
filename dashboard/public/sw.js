@@ -44,6 +44,54 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// ── pushsubscriptionchange: re-subscribe transparently ────────────────────
+//
+// Fires when the browser invalidates the existing push subscription —
+// commonly on SW update (iOS), Apple-side token rotation, or after long
+// inactivity. Without a handler the subscription is silently lost and
+// the user has to manually re-Subscribe in the dashboard, which they
+// won't do until the next time they notice missing notifications.
+//
+// Re-subscribe with the same VAPID public key fetched from the
+// dashboard's /api/push/vapid-key endpoint (scope-relative), then POST
+// the new subscription to /api/push/subscribe.
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        const keyRes = await fetch("./api/push/vapid-key");
+        if (!keyRes.ok) {
+          console.warn("[sw] vapid-key fetch failed:", keyRes.status);
+          return;
+        }
+        const { publicKey } = await keyRes.json();
+        if (!publicKey) return;
+        const sub = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+        await fetch("./api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sub.toJSON()),
+        });
+      } catch (err) {
+        console.warn("[sw] pushsubscriptionchange re-subscribe failed:", err);
+      }
+    })(),
+  );
+});
+
 // ── Fetch: network-first, fallback to cache ───────────────────────────────
 
 self.addEventListener("fetch", (event) => {

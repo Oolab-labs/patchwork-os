@@ -47,8 +47,9 @@ echo "==> Deploying on VPS..."
 # shellcheck disable=SC2087
 ssh "$VPS" bash -s -- "${PATCHWORK_BRIDGE_TOKEN:-REPLACE_ME}" "${DASHBOARD_PASSWORD:-}" <<'REMOTE'
 set -euo pipefail
-PATCHWORK_BRIDGE_TOKEN="$1"
-DASHBOARD_PASSWORD="$2"
+# `${N:-}` so an empty/missing positional arg doesn't trip `set -u`.
+PATCHWORK_BRIDGE_TOKEN="${1:-REPLACE_ME}"
+DASHBOARD_PASSWORD="${2:-}"
 REMOTE_DIR="/opt/patchwork-dashboard"
 PM2_NAME="patchwork-dashboard"
 PORT=3200
