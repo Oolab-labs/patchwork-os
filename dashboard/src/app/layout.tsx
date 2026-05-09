@@ -85,6 +85,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${albertSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}>
       <head>
+        {/* Blocking inline script: set data-theme before first paint to
+            prevent the paper-theme flash on refresh. Must stay in sync
+            with normalizeTheme/useTheme in components/Shell.tsx. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var v=localStorage.getItem('patchwork.theme')||localStorage.getItem('pw-theme');var t=(v==='paper'||v==='light')?'paper':'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`,
+          }}
+        />
         <meta name="theme-color" content="#faf7f2" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#0d0c0b" media="(prefers-color-scheme: dark)" />
         <meta name="mobile-web-app-capable" content="yes" />
