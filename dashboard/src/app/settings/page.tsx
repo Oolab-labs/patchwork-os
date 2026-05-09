@@ -645,7 +645,7 @@ export default function SettingsPage() {
         // section unreachable when the dashboard couldn't talk to the
         // bridge — exactly when the operator most needs to enable phone
         // notifications.
-        <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: "var(--s-5)", alignItems: "start" }}>
+        <div className="settings-grid">
           {/* Sticky inner left nav */}
           <nav
             style={{

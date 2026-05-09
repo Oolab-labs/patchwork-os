@@ -1958,6 +1958,29 @@ button.topbar-search {
   text-decoration: none;
 }
 
+/* Settings page layout — desktop has a sticky 200px in-page nav next to
+   cards; on mobile (≤768px) the nav stacks above the cards instead of
+   eating half the viewport width. */
+.settings-grid {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: var(--s-5);
+  align-items: start;
+}
+@media (max-width: 768px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+  .settings-grid > nav {
+    position: static !important;
+    flex-direction: row !important;
+    flex-wrap: wrap;
+    gap: var(--s-2) !important;
+    min-height: auto !important;
+    overflow-x: auto;
+  }
+}
+
 /* ---- Mobile responsive (≤768px) ----
    The sidebar collapses to an off-canvas drawer with a hamburger toggle in
    the header. Backdrop scrim closes the drawer on tap. */
