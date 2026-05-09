@@ -1136,16 +1136,13 @@ export default function HomePage() {
       />
 
       {/* ------------------------------------------------------------------ */}
-      {/* Activity thread + Active recipe                                      */}
+      {/* Activity thread + Recent recipes                                     */}
       {/* ------------------------------------------------------------------ */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-          gap: "var(--s-4)",
-          marginBottom: "var(--s-5)",
-        }}
-      >
+      {/* Use the .grid-2 utility (collapses to a single column at ≤760 px)
+          rather than an inline 2-col grid that ignored viewport. Side-by-
+          side at phone width forced both cards to ~150 px wide and made
+          activity timestamps + recipe slugs collide. */}
+      <div className="grid-2" style={{ marginBottom: "var(--s-5)" }}>
         <ActivityThread
           events={activityEvents.filter((e) => !isNoiseEvent(e)).slice(-8).reverse()}
         />
