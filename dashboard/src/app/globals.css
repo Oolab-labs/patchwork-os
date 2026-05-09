@@ -2693,6 +2693,32 @@ button.topbar-search {
 }
 
 
+/* /suggestions row layout: 3-col flex (pill | label | CTA) on desktop.
+   At 390 px the label column was crushed to ~140 px and prose wrapped
+   to 6+ lines. Stack vertically on mobile so the label gets full
+   width and the CTA sits below. */
+.suggestion-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.suggestion-label {
+  flex: 1;
+}
+@media (max-width: 768px) {
+  .suggestion-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 14px 0;
+  }
+  .suggestion-label {
+    flex: unset;
+  }
+}
+
 /* ──────────────────────────────────────────────────────────────────────
    Recipe editor mobile sticky-save bar.
 

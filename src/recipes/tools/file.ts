@@ -137,8 +137,11 @@ registerTool({
     assertWriteAllowed("file.append");
     const p = jailedPath(params.path as string, deps.workdir, true);
     const content = params.content as string;
-    // 'when' condition is evaluated before executeStep is called in yamlRunner
-    // but we check here too for direct registry usage
+    // 'when' is evaluated by both runners before executeStep is called
+    // (yamlRunner.ts step loop + chainedRunner.ts:248-266). This in-tool
+    // fallback only runs when the registry is invoked directly (no runner),
+    // and uses the limited evalCondition below — runner paths render the
+    // template against the recipe's context first, which this fallback can't.
     const when = step.when as string | undefined;
     if (when && !evalCondition(when, {})) {
       return null;

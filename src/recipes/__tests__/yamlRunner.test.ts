@@ -605,6 +605,165 @@ describe("runYamlRecipe — seed context", () => {
   });
 });
 
+// ── step.when guard ───────────────────────────────────────────────────────────
+//
+// Regression: the `when:` clause is honored by chainedRunner but was silently
+// dropped in yamlRunner — every non-chained trigger (manual, cron, file_watch,
+// on_file_save, on_test_run, webhook, git_hook) ignored it. The 4 bridge-dev
+// iMessage recipes use `when: "{{phone}}"` to suppress an agent step when the
+// phone variable is empty; without this guard the agent ran every time.
+//
+// Match chainedRunner.ts:248-266 semantics: render template, truthy check
+// (empty string, "0", "false", "null", "undefined" are falsy).
+
+describe("runYamlRecipe — step.when guard", () => {
+  it("skips a tool step when `when` template renders empty", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        { tool: "file.write", path: "/tmp/first.md", content: "always" },
+        {
+          tool: "file.write",
+          path: "/tmp/second.md",
+          content: "guarded",
+          when: "{{flag}}",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(
+      recipe,
+      {
+        ...noop(),
+        writeFile: (p, c) => {
+          written[p] = c;
+        },
+      },
+      { flag: "" },
+    );
+    expect(written["/tmp/first.md"]).toBe("always");
+    expect(written["/tmp/second.md"]).toBeUndefined();
+    expect(result.stepResults[1]!.status).toBe("skipped");
+    expect(result.errorMessage).toBeUndefined();
+  });
+
+  it("runs a tool step when `when` template renders truthy", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        { tool: "file.write", path: "/tmp/first.md", content: "always" },
+        {
+          tool: "file.write",
+          path: "/tmp/second.md",
+          content: "guarded",
+          when: "{{flag}}",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(
+      recipe,
+      {
+        ...noop(),
+        writeFile: (p, c) => {
+          written[p] = c;
+        },
+      },
+      { flag: "yes" },
+    );
+    expect(written["/tmp/first.md"]).toBe("always");
+    expect(written["/tmp/second.md"]).toBe("guarded");
+    expect(result.stepResults[1]!.status).toBe("ok");
+  });
+
+  it("skips an agent step when `when` is empty (no agent invocation)", async () => {
+    let agentCalls = 0;
+    const recipe = makeRecipe({
+      steps: [
+        { tool: "file.write", path: "/tmp/report.md", content: "report" },
+        {
+          when: "{{phone}}",
+          agent: {
+            driver: "claude-code",
+            prompt: "send to {{phone}}",
+            into: "im_result",
+          },
+        },
+      ],
+    });
+    const result = await runYamlRecipe(
+      recipe,
+      {
+        ...noop(),
+        writeFile: () => {},
+        claudeCodeFn: async () => {
+          agentCalls++;
+          return "should never run";
+        },
+      },
+      { phone: "" },
+    );
+    expect(agentCalls).toBe(0);
+    expect(result.stepResults[1]!.status).toBe("skipped");
+    expect(result.errorMessage).toBeUndefined();
+  });
+
+  it("runs the agent step when `when` is truthy", async () => {
+    let agentCalls = 0;
+    const recipe = makeRecipe({
+      steps: [
+        { tool: "file.write", path: "/tmp/report.md", content: "report" },
+        {
+          when: "{{phone}}",
+          agent: {
+            driver: "claude-code",
+            prompt: "send to {{phone}}",
+            into: "im_result",
+          },
+        },
+      ],
+    });
+    await runYamlRecipe(
+      recipe,
+      {
+        ...noop(),
+        writeFile: () => {},
+        claudeCodeFn: async () => {
+          agentCalls++;
+          return "ok";
+        },
+      },
+      { phone: "+15551234567" },
+    );
+    expect(agentCalls).toBe(1);
+  });
+
+  it("treats '0' / 'false' / 'null' / 'undefined' as falsy (matches chainedRunner)", async () => {
+    for (const falsy of ["0", "false", "null", "undefined", " "]) {
+      const written: Record<string, string> = {};
+      const recipe = makeRecipe({
+        steps: [
+          {
+            tool: "file.write",
+            path: "/tmp/x.md",
+            content: "x",
+            when: "{{flag}}",
+          },
+        ],
+      });
+      await runYamlRecipe(
+        recipe,
+        {
+          ...noop(),
+          writeFile: (p, c) => {
+            written[p] = c;
+          },
+        },
+        { flag: falsy },
+      );
+      expect(written["/tmp/x.md"]).toBeUndefined();
+    }
+  });
+});
+
 // ── recipe-level context blocks (type: env) ───────────────────────────────────
 
 describe("runYamlRecipe — context: env blocks", () => {
