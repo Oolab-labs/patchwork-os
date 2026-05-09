@@ -491,6 +491,30 @@ export default function RecipeEditPage({
           </span>
         </div>
       </div>
+
+      {/* Mobile-only sticky save bar. The desktop Save button lives in
+          the page header — fine on a 1400 px screen, but on a phone the
+          editor is 2000+ px tall and the user has to scroll back to the
+          top to save. Floating savebar at the bottom of the viewport
+          mirrors the convention native iOS forms use. Hidden ≥769 px. */}
+      <div className="recipe-editor-mobile-savebar" aria-hidden={false}>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => void handleRun()}
+          disabled={running || loading}
+        >
+          {running ? "Running…" : "Run"}
+        </button>
+        <button
+          type="button"
+          className="btn primary"
+          onClick={() => void handleSave()}
+          disabled={saving || loading || !dirty}
+        >
+          {saving ? "Saving…" : dirty ? "Save •" : "Save"}
+        </button>
+      </div>
     </section>
   );
 }
