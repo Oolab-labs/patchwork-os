@@ -2,10 +2,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
 import { isDemoMode, onDemoModeChange, setDemoMode } from "@/lib/demoMode";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
 
@@ -237,11 +238,23 @@ export function Shell({ children }: { children: ReactNode }) {
   // Demo: replace with real notification count when available
   const hasNotifications = approvalCount > 0;
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const drawerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     setMobileOpen(false);
     setPaletteOpen(false);
   }, [pathname]);
+
+  // Drawer focus trap: lock body scroll, mark non-drawer regions inert,
+  // cycle Tab inside the drawer, close on Escape. Selector excludes the
+  // drawer itself (`.app-sidebar`) and its scrim (`.mobile-scrim`) so
+  // both remain interactive while the rest of the app goes inert.
+  useFocusTrap({
+    open: mobileOpen,
+    onClose: () => setMobileOpen(false),
+    containerRef: drawerRef,
+    inertSelector: "main, .app-header, .mobile-bottom-nav",
+  });
 
   // Global ⌘K / Ctrl+K hotkey
   useEffect(() => {
@@ -381,7 +394,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </Link>
         </div>
       </header>
-      <aside className="app-sidebar" aria-label="Primary navigation">
+      <aside ref={drawerRef} className="app-sidebar" aria-label="Primary navigation">
         <Link href="/recipes/new" className="sidebar-create" style={{ textDecoration: "none" }}>
           <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ position: "relative", zIndex: 1 }}>
             <path d={PATHS.plus} />
