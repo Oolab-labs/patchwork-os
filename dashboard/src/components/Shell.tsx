@@ -7,6 +7,7 @@ import { apiPath } from "@/lib/api";
 import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
 import { isDemoMode, onDemoModeChange, setDemoMode } from "@/lib/demoMode";
 import { useFocusTrap } from "@/lib/useFocusTrap";
+import { subscribeStreamLiveness } from "@/lib/streamLiveness";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
 
@@ -109,17 +110,25 @@ function useApprovalCount(): number {
     let alive = true;
     let failures = 0;
     let timerId: ReturnType<typeof setTimeout> | null = null;
+    let sseLive = false;
     const BASE = 5000;
+    /** Slow cadence while SSE is healthy — SSE pushes approval-decision
+     *  events directly, so this becomes a periodic correctness check. */
+    const SSE_LIVE = 30_000;
     const MAX = 30_000;
 
-    const schedule = (ms: number) => {
+    const reschedule = (ms: number) => {
+      if (timerId !== null) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
       if (!alive) return;
       timerId = setTimeout(tick, ms);
     };
 
     const tick = async () => {
       if (typeof document !== "undefined" && document.hidden) {
-        schedule(BASE);
+        reschedule(BASE);
         return;
       }
       let ok = false;
@@ -133,14 +142,22 @@ function useApprovalCount(): number {
       } catch { /* offline */ }
       if (ok) failures = 0;
       else failures++;
+      const baseInterval = sseLive ? SSE_LIVE : BASE;
       const exp = Math.min(BASE * 2 ** failures, MAX);
-      schedule(ok ? BASE : exp * (0.8 + Math.random() * 0.4));
+      reschedule(ok ? baseInterval : exp * (0.8 + Math.random() * 0.4));
     };
+
+    const unsubLiveness = subscribeStreamLiveness((live) => {
+      const wasLive = sseLive;
+      sseLive = live;
+      // SSE just dropped — refresh now so the badge doesn't sit stale
+      // for up to 30 s after the bridge goes offline.
+      if (wasLive && !live) reschedule(0);
+    });
 
     const onVisible = () => {
       if (!document.hidden && alive) {
-        if (timerId !== null) clearTimeout(timerId);
-        tick();
+        reschedule(0);
       }
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -149,6 +166,7 @@ function useApprovalCount(): number {
       alive = false;
       if (timerId !== null) clearTimeout(timerId);
       document.removeEventListener("visibilitychange", onVisible);
+      unsubLiveness();
     };
   }, []);
   return count;
