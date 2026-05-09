@@ -124,6 +124,7 @@ describe("registerAllTools tool set filtering", () => {
       fixedToken: null,
       issuerUrl: null,
       corsOrigins: [],
+      trustedProxies: [],
       auditLogPath: null,
       fullMode: false,
       maxSessions: 5,

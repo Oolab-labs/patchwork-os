@@ -117,6 +117,7 @@ function makeConfig(workspace: string): Config {
     issuerUrl: null,
     oauthTokenTtlMs: 86_400_000,
     corsOrigins: [],
+    trustedProxies: [],
     auditLogPath: null,
     fullMode: false,
     maxSessions: 5,
@@ -165,6 +166,25 @@ describe("Bridge activation metrics", () => {
       process.env.CLAUDE_CONFIG_DIR = previousClaudeConfigDir;
     }
     fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("forwards config.trustedProxies into the underlying Server constructor", async () => {
+    // Regression guard for PR #383's dead-code wiring: the constructor
+    // parameter on Server existed but bridge.ts:174 was passing only three
+    // args, so trustedProxies was always []. Reverse-proxy operators got
+    // no rate-limit fix.
+    const workspace = fs.mkdtempSync(path.join(tempDir, "workspace-tp-"));
+    const cfg = makeConfig(workspace);
+    cfg.trustedProxies = ["127.0.0.1", "10.0.0.1"];
+    const bridge = new Bridge(cfg);
+    try {
+      const proxies = (
+        bridge as unknown as { server: { trustedProxies: string[] } }
+      ).server.trustedProxies;
+      expect(proxies).toEqual(["127.0.0.1", "10.0.0.1"]);
+    } finally {
+      await bridge.stop();
+    }
   });
 
   it("records a successful YAML recipe run", async () => {

@@ -64,6 +64,13 @@ export interface Config {
   /** Access token TTL in milliseconds (derived from oauthTokenTtlDays config; default 24h). */
   oauthTokenTtlMs: number;
   corsOrigins: string[];
+  /**
+   * IPs of trusted reverse proxies. When the immediate socket peer is one
+   * of these, the bridge honors the X-Forwarded-For header for per-IP
+   * rate-limit bucketing on the phone-path approval bypass. Empty by
+   * default; X-Forwarded-For from an untrusted peer is ignored.
+   */
+  trustedProxies: string[];
   auditLogPath: string | null;
   fullMode: boolean;
   maxSessions: number;
@@ -232,6 +239,7 @@ interface ConfigFile {
   issuerUrl?: string;
   oauthTokenTtlDays?: number;
   corsOrigins?: string[];
+  trustedProxies?: string[];
   fullMode?: boolean;
   maxSessions?: number;
   githubDefaultRepo?: string;
@@ -264,6 +272,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "issuerUrl",
   "oauthTokenTtlDays",
   "corsOrigins",
+  "trustedProxies",
   "fullMode",
   "maxSessions",
   "githubDefaultRepo",
@@ -448,6 +457,7 @@ export function parseConfig(argv: string[]): Config {
       ? Math.min(Math.max(rawTtlDays, 1), 90) * 24 * 60 * 60 * 1_000
       : 24 * 60 * 60 * 1_000; // default 24h
   let corsOrigins: string[] = fileConfig.corsOrigins ?? [];
+  let trustedProxies: string[] = fileConfig.trustedProxies ?? [];
   // "driver" is the canonical field; "claudeDriver" is the deprecated alias.
   if (fileConfig.claudeDriver && !fileConfig.driver) {
     console.warn(
@@ -747,6 +757,16 @@ export function parseConfig(argv: string[]): Config {
         corsOrigins.push(origin);
         break;
       }
+      case "--trust-proxy": {
+        const ip = requireArg(args, ++i, "--trust-proxy");
+        // Accept any non-empty token; the runtime check (Server.getClientIp)
+        // does an exact-match against req.socket.remoteAddress, so the
+        // operator must match the format Node reports (e.g. IPv4
+        // "127.0.0.1" or IPv6 "::1"). Repeat the flag for multiple hops.
+        if (!ip) throw new Error("--trust-proxy requires a non-empty IP");
+        trustedProxies.push(ip);
+        break;
+      }
       case "--full":
         fullMode = true;
         break;
@@ -973,6 +993,11 @@ Environment Variables:
       (s) => s.trim(),
     );
   }
+  if (process.env.CLAUDE_IDE_BRIDGE_TRUST_PROXY) {
+    trustedProxies = process.env.CLAUDE_IDE_BRIDGE_TRUST_PROXY.split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
   if (process.env.CLAUDE_IDE_BRIDGE_LINTERS) {
     linters = process.env.CLAUDE_IDE_BRIDGE_LINTERS.split(",").map((s) =>
       s.trim(),
@@ -1066,6 +1091,7 @@ Environment Variables:
     issuerUrl,
     oauthTokenTtlMs,
     corsOrigins,
+    trustedProxies,
     vps,
     db,
     allowPrivateHttp,

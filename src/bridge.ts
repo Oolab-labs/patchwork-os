@@ -171,7 +171,13 @@ export class Bridge {
     const configDir =
       process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
     this.authToken = config.fixedToken ?? loadOrCreateBridgeToken(configDir);
-    this.server = new Server(this.authToken, this.logger, config.corsOrigins);
+    this.server = new Server(
+      this.authToken,
+      this.logger,
+      config.corsOrigins,
+      undefined,
+      config.trustedProxies,
+    );
     this.server.bridgeConfigPath = config.configFilePath ?? undefined;
     if (config.issuerUrl) {
       this.oauthServer = new OAuthServerImpl(this.authToken, config.issuerUrl, {
