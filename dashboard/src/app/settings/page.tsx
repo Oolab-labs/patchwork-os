@@ -1080,9 +1080,15 @@ export default function SettingsPage() {
                     Notification permission was denied. Re-enable it in the browser's site settings for this origin, then reload this page.
                   </p>
                 )}
-                {!vapidPublicKey && (
+                {!vapidPublicKey && pushStatus !== "subscribed" && (
                   <p style={{ ...helpStyle, color: "var(--err)" }}>
                     <code>NEXT_PUBLIC_VAPID_PUBLIC_KEY</code> is not set. Generate a keypair with <code>npx web-push generate-vapid-keys</code>, add the values to <code>dashboard/.env.local</code>, and rebuild before subscribing.
+                  </p>
+                )}
+                {!vapidPublicKey && pushStatus === "subscribed" && (
+                  <p style={{ ...helpStyle, color: "var(--warn)" }}>
+                    This subscription was made when VAPID keys were configured.
+                    The server can no longer send notifications until keys are restored — or you can unsubscribe to clear the stale subscription.
                   </p>
                 )}
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
@@ -1130,8 +1136,13 @@ export default function SettingsPage() {
                     <>
                       <button
                         type="button"
-                        disabled={pushBusy}
+                        disabled={pushBusy || !vapidPublicKey}
                         onClick={handlePushTest}
+                        title={
+                          !vapidPublicKey
+                            ? "VAPID keys not configured — server cannot send notifications"
+                            : undefined
+                        }
                         style={{
                           fontSize: "var(--fs-s)",
                           fontWeight: 600,
@@ -1140,8 +1151,9 @@ export default function SettingsPage() {
                           border: "none",
                           background: "var(--accent)",
                           color: "var(--on-accent)",
-                          cursor: pushBusy ? "default" : "pointer",
-                          opacity: pushBusy ? 0.5 : 1,
+                          cursor:
+                            pushBusy || !vapidPublicKey ? "default" : "pointer",
+                          opacity: pushBusy || !vapidPublicKey ? 0.5 : 1,
                         }}
                       >
                         {pushBusy ? "Working…" : "Send test notification"}
