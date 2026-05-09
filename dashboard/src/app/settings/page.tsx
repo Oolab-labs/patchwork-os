@@ -3,6 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { fmtDuration } from "@/components/time";
 import { apiPath } from "@/lib/api";
 import { EmptyState, StatusPill } from "@/components/patchwork";
+import {
+  getPushSubscriptionStatus,
+  registerServiceWorker,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from "@/lib/pushSubscription";
 
 interface StatusResponse {
   uptimeMs?: number;
@@ -39,12 +45,18 @@ interface StatusResponse {
 
 type ApiKeyProvider = "anthropic" | "openai" | "google" | "xai";
 
-type SectionId = "s-bridge" | "s-ai" | "s-approval" | "s-telemetry";
+type SectionId =
+  | "s-bridge"
+  | "s-ai"
+  | "s-approval"
+  | "s-mobile"
+  | "s-telemetry";
 
 const NAV: { id: SectionId; label: string }[] = [
   { id: "s-bridge", label: "Bridge" },
   { id: "s-ai", label: "AI drivers" },
   { id: "s-approval", label: "Approval policy" },
+  { id: "s-mobile", label: "Mobile" },
   { id: "s-telemetry", label: "Telemetry" },
 ];
 
@@ -184,6 +196,23 @@ export default function SettingsPage() {
   // CC permission rules (loaded from approval insights)
   const [permRules, setPermRules] = useState<{ allow: string[]; ask: string[]; deny: string[] } | null>(null);
 
+  // Mobile push (Web Push via dashboard /api/push/* + service worker).
+  // Distinct from the bridge → push-relay path (FCM/APNS for native device
+  // tokens) which is configured by env vars on the bridge side. This card
+  // wires the browser-side flow only.
+  type PushStatus =
+    | "loading"
+    | "subscribed"
+    | "unsubscribed"
+    | "denied"
+    | "unsupported";
+  const [pushStatus, setPushStatus] = useState<PushStatus>("loading");
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMsg, setPushMsg] = useState<{ ok: boolean; text: string } | null>(
+    null,
+  );
+  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+
   // Telemetry (local only — no backend yet)
   const [telCrash, setTelCrash] = useState(false);
   const [telUsage, setTelUsage] = useState(false);
@@ -264,6 +293,25 @@ export default function SettingsPage() {
         });
       } catch {
         /* fail-soft */
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  // Read current Web Push subscription status on mount. Idempotently
+  // register the SW so a fresh visit can later subscribe without a reload —
+  // pushManager.subscribe() requires an active registration.
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        await registerServiceWorker();
+        const s = await getPushSubscriptionStatus();
+        if (!cancel) setPushStatus(s);
+      } catch {
+        if (!cancel) setPushStatus("unsupported");
       }
     })();
     return () => {
@@ -440,6 +488,99 @@ export default function SettingsPage() {
       /* swallow */
     } finally {
       setTodayAnomalySaving(false);
+    }
+  }
+
+  async function handlePushSubscribe() {
+    if (!vapidPublicKey) {
+      setPushMsg({
+        ok: false,
+        text: "NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set. Generate keys with `npx web-push generate-vapid-keys`, add them to dashboard/.env.local, and rebuild.",
+      });
+      return;
+    }
+    setPushBusy(true);
+    setPushMsg(null);
+    try {
+      await registerServiceWorker();
+      const ok = await subscribeToPush(vapidPublicKey);
+      if (ok) {
+        setPushStatus("subscribed");
+        setPushMsg({
+          ok: true,
+          text: "Subscribed. Use 'Send test notification' to confirm delivery.",
+        });
+        flashSaved();
+      } else {
+        // subscribeToPush returns false on permission denial or PushManager
+        // failure; re-read the status so the badge reflects reality.
+        const s = await getPushSubscriptionStatus();
+        setPushStatus(s);
+        setPushMsg({
+          ok: false,
+          text:
+            s === "denied"
+              ? "Notification permission was denied. Re-enable it in browser site settings, then reload."
+              : "Subscription failed. See browser console for details.",
+        });
+      }
+    } catch (e) {
+      setPushMsg({
+        ok: false,
+        text: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function handlePushUnsubscribe() {
+    setPushBusy(true);
+    setPushMsg(null);
+    try {
+      await unsubscribeFromPush();
+      setPushStatus("unsubscribed");
+      setPushMsg({ ok: true, text: "Unsubscribed." });
+      flashSaved();
+    } catch (e) {
+      setPushMsg({
+        ok: false,
+        text: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function handlePushTest() {
+    setPushBusy(true);
+    setPushMsg(null);
+    try {
+      const res = await fetch(apiPath("/api/push/test"), { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        sent?: number;
+        total?: number;
+        error?: string;
+      };
+      if (res.ok) {
+        setPushMsg({
+          ok: true,
+          text: `Sent ${body.sent ?? 0} of ${body.total ?? 0} subscribers.`,
+        });
+      } else {
+        setPushMsg({
+          ok: false,
+          text: body.error ?? `Error ${res.status}`,
+        });
+      }
+    } catch (e) {
+      setPushMsg({
+        ok: false,
+        text: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setPushBusy(false);
     }
   }
 
@@ -906,6 +1047,161 @@ export default function SettingsPage() {
                 ) : (
                   <p style={{ ...helpStyle, marginTop: 10 }}>No permission data available.</p>
                 )}
+              </div>
+            </div>
+
+            {/* Mobile / push */}
+            <div id="s-mobile" className="card" style={{ marginTop: 16 }}>
+              <div className="card-head">
+                <div>
+                  <h2 style={{ margin: 0 }}>Mobile</h2>
+                  <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginTop: 2 }}>
+                    Get push notifications on your phone when an approval is pending. Install this dashboard as a PWA, then subscribe here.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ padding: "16px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                  <span style={labelStyle}>Status</span>
+                  {pushStatus === "loading" && <StatusPill tone="muted">Checking…</StatusPill>}
+                  {pushStatus === "subscribed" && <StatusPill tone="ok" dot>Subscribed</StatusPill>}
+                  {pushStatus === "unsubscribed" && <StatusPill tone="muted">Not subscribed</StatusPill>}
+                  {pushStatus === "denied" && <StatusPill tone="err">Permission denied</StatusPill>}
+                  {pushStatus === "unsupported" && <StatusPill tone="warn">Not supported</StatusPill>}
+                </div>
+                {pushStatus === "unsupported" && (
+                  <p style={helpStyle}>
+                    This browser does not support Web Push. Install Chrome on Android, or Safari 16.4+ on iOS — and on iOS the dashboard must be opened from a home-screen icon, not a Safari tab.
+                  </p>
+                )}
+                {pushStatus === "denied" && (
+                  <p style={helpStyle}>
+                    Notification permission was denied. Re-enable it in the browser's site settings for this origin, then reload this page.
+                  </p>
+                )}
+                {!vapidPublicKey && pushStatus !== "subscribed" && (
+                  <p style={{ ...helpStyle, color: "var(--err)" }}>
+                    <code>NEXT_PUBLIC_VAPID_PUBLIC_KEY</code> is not set. Generate a keypair with <code>npx web-push generate-vapid-keys</code>, add the values to <code>dashboard/.env.local</code>, and rebuild before subscribing.
+                  </p>
+                )}
+                {!vapidPublicKey && pushStatus === "subscribed" && (
+                  <p style={{ ...helpStyle, color: "var(--warn)" }}>
+                    This subscription was made when VAPID keys were configured.
+                    The server can no longer send notifications until keys are restored — or you can unsubscribe to clear the stale subscription.
+                  </p>
+                )}
+                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                  {pushStatus !== "subscribed" && (
+                    <button
+                      type="button"
+                      disabled={
+                        pushBusy ||
+                        !vapidPublicKey ||
+                        pushStatus === "unsupported" ||
+                        pushStatus === "denied" ||
+                        pushStatus === "loading"
+                      }
+                      onClick={handlePushSubscribe}
+                      style={{
+                        fontSize: "var(--fs-s)",
+                        fontWeight: 600,
+                        padding: "6px 12px",
+                        borderRadius: "var(--r-2)",
+                        border: "none",
+                        background: "var(--accent)",
+                        color: "var(--on-accent)",
+                        cursor:
+                          pushBusy ||
+                          !vapidPublicKey ||
+                          pushStatus === "unsupported" ||
+                          pushStatus === "denied" ||
+                          pushStatus === "loading"
+                            ? "default"
+                            : "pointer",
+                        opacity:
+                          pushBusy ||
+                          !vapidPublicKey ||
+                          pushStatus === "unsupported" ||
+                          pushStatus === "denied" ||
+                          pushStatus === "loading"
+                            ? 0.5
+                            : 1,
+                      }}
+                    >
+                      {pushBusy ? "Working…" : "Subscribe to push"}
+                    </button>
+                  )}
+                  {pushStatus === "subscribed" && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={pushBusy || !vapidPublicKey}
+                        onClick={handlePushTest}
+                        title={
+                          !vapidPublicKey
+                            ? "VAPID keys not configured — server cannot send notifications"
+                            : undefined
+                        }
+                        style={{
+                          fontSize: "var(--fs-s)",
+                          fontWeight: 600,
+                          padding: "6px 12px",
+                          borderRadius: "var(--r-2)",
+                          border: "none",
+                          background: "var(--accent)",
+                          color: "var(--on-accent)",
+                          cursor:
+                            pushBusy || !vapidPublicKey ? "default" : "pointer",
+                          opacity: pushBusy || !vapidPublicKey ? 0.5 : 1,
+                        }}
+                      >
+                        {pushBusy ? "Working…" : "Send test notification"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pushBusy}
+                        onClick={handlePushUnsubscribe}
+                        style={{
+                          fontSize: "var(--fs-s)",
+                          fontWeight: 600,
+                          padding: "6px 12px",
+                          borderRadius: "var(--r-2)",
+                          border: "1px solid var(--line-2)",
+                          background: "transparent",
+                          color: "var(--ink-1)",
+                          cursor: pushBusy ? "default" : "pointer",
+                          opacity: pushBusy ? 0.5 : 1,
+                        }}
+                      >
+                        Unsubscribe
+                      </button>
+                    </>
+                  )}
+                </div>
+                {pushMsg && (
+                  <p
+                    style={{
+                      fontSize: "var(--fs-s)",
+                      color: pushMsg.ok ? "var(--ok)" : "var(--err)",
+                      marginTop: 8,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {pushMsg.text}
+                  </p>
+                )}
+              </div>
+
+              <div style={{ padding: "16px 0" }}>
+                <div style={labelStyle}>Install as PWA</div>
+                <p style={helpStyle}>
+                  <strong>iOS Safari (16.4+):</strong> open this dashboard in Safari, tap the Share icon, then "Add to Home Screen". Push only works when launched from the home-screen icon.<br />
+                  <strong>Android Chrome:</strong> 3-dot menu → "Install app" (or "Add to Home screen").
+                </p>
+                <p style={{ ...helpStyle, marginTop: 8 }}>
+                  Native FCM/APNS delivery via the patchwork push relay is configured separately on the bridge (env vars <code>PATCHWORK_PUSH_URL</code>, <code>PATCHWORK_PUSH_TOKEN</code>, <code>PATCHWORK_PUSH_BASE_URL</code>) and is not required for browser/PWA notifications.
+                </p>
               </div>
             </div>
 
