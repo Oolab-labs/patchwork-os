@@ -1,64 +1,90 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!--
-    Patchwork app icon — agentD-1 (minimalist with single-line stitches).
+    Patchwork app icon — "P" lettermark with accent dot.
 
-    Strip-back from the polished master:
-      - NO halo, NO inner-shadow, NO 3-strand stitches
-      - Single 1-stroke peach stitch line per seam (reads as a thread, not a bar)
-      - Patch gradient kept to one stop top→bottom, very tight range (≤6% lift)
-        so it's a hint of fabric, not a glossy plastic look at 60px
+    Composition mirrors public/favicon.svg (geometric sans-serif P
+    + orange dot upper-right) but scaled and refined for the larger
+    canvas. The P is drawn as a path so the icon renders identically
+    regardless of which font the rasterizer falls back to (librsvg
+    doesn't have Albert Sans).
 
-    Diagonals match the brand: TL hero solid, BR deep sibling, TR/BL outlined.
+    Proportions:
+      Canvas 512×512, iOS app-icon corner radius 112.
+      P cap height 337 (≈ 66% of canvas), stem width 60, bowl
+      extends 125 px right of stem with a 202×202 semicircle.
+      Counter (inner hole) is centered vertically inside the bowl
+      with 64 px top + 61 px bottom margins so it reads balanced.
+      Accent dot: cx=400, cy=135, r=55 — same upper-right placement
+      and proportional size as the favicon.
+
+    Polish:
+      - Subtle radial warmth on the canvas (center #1f1d1a → edges
+        #1a1917) so the icon doesn't read as a flat black square
+      - Top-light gradient on the P (#ffffff → #ededed, 4% drop)
+        gives a barely-perceptible dimension at large sizes without
+        looking glossy at home-screen size
+      - Top-light gradient on the dot (#f4794d → #e8622a) for the
+        same reason
+      - Soft warm halo behind the dot to suggest accent radiance
   -->
   <defs>
-    <!-- Background: very subtle radial warmth so it isn't a flat black square -->
     <radialGradient id="bgGrad" cx="50%" cy="42%" r="80%">
       <stop offset="0%"   stop-color="#1f1d1a"/>
       <stop offset="100%" stop-color="#1a1917"/>
     </radialGradient>
 
-    <!-- Tight one-stop gradient: top-light → mid. ~5% lift, no shine. -->
-    <linearGradient id="patchBright" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"   stop-color="#ee6e36"/>
+    <linearGradient id="pGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#ededed"/>
+    </linearGradient>
+
+    <linearGradient id="dotGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#f4794d"/>
       <stop offset="100%" stop-color="#e8622a"/>
     </linearGradient>
 
-    <linearGradient id="patchDeep" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"   stop-color="#b04a22"/>
-      <stop offset="100%" stop-color="#a8451f"/>
-    </linearGradient>
+    <radialGradient id="dotHalo" cx="50%" cy="50%" r="55%">
+      <stop offset="0%"   stop-color="#e8622a" stop-opacity="0.30"/>
+      <stop offset="60%"  stop-color="#e8622a" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#e8622a" stop-opacity="0"/>
+    </radialGradient>
   </defs>
 
-  <!-- Canvas -->
+  <!-- Canvas with subtle radial warmth -->
   <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
 
-  <!-- TL: bright solid (hero) -->
-  <rect x="43" y="43" width="192" height="192" rx="32" fill="url(#patchBright)"/>
-
-  <!-- TR: outlined window -->
-  <rect x="277" y="43" width="192" height="192" rx="32"
-        fill="none" stroke="#e8622a" stroke-width="20"/>
-
-  <!-- BL: outlined window -->
-  <rect x="43" y="277" width="192" height="192" rx="32"
-        fill="none" stroke="#e8622a" stroke-width="20"/>
-
-  <!-- BR: deep solid sibling -->
-  <rect x="277" y="277" width="192" height="192" rx="32" fill="url(#patchDeep)"/>
-
   <!--
-    Single clean stitch lines: one 4px peach stroke per seam.
-    Centered in the gutter (gutter is 42px wide, x=235→277).
-    Short enough to read as thread, not a bar; long enough to survive 60px.
+    "P" — outer outline + inner counter as one evenodd-filled path so
+    the counter renders as a hole, not a filled rect.
+    Outer trace (clockwise from top-left of stem):
+      (105, 88) → (230, 88)
+        ↳ semicircle arc to (230, 290) — the bowl, radius 101
+      → (165, 290) → (165, 425) → (105, 425) → close
+    Inner counter (clockwise, inside the bowl):
+      (165, 152) → (228, 152)
+        ↳ semicircle arc to (228, 229) — radius 38.5
+      → (165, 229) → close
   -->
-  <g stroke="#f7a877" stroke-width="4" stroke-linecap="round">
-    <!-- top seam (between TL and TR) -->
-    <line x1="240" y1="139" x2="272" y2="139"/>
-    <!-- bottom seam (between BL and BR) -->
-    <line x1="240" y1="373" x2="272" y2="373"/>
-    <!-- left seam (between TL and BL) -->
-    <line x1="139" y1="240" x2="139" y2="272"/>
-    <!-- right seam (between TR and BR) -->
-    <line x1="373" y1="240" x2="373" y2="272"/>
-  </g>
+  <path
+    d="M 105 88
+       L 230 88
+       A 101 101 0 0 1 230 290
+       L 165 290
+       L 165 425
+       L 105 425
+       Z
+       M 165 152
+       L 228 152
+       A 38.5 38.5 0 0 1 228 229
+       L 165 229
+       Z"
+    fill="url(#pGrad)"
+    fill-rule="evenodd"
+  />
+
+  <!-- Soft halo behind dot — placed BEFORE the dot so dot sits on top -->
+  <ellipse cx="400" cy="135" rx="115" ry="115" fill="url(#dotHalo)"/>
+
+  <!-- Accent dot -->
+  <circle cx="400" cy="135" r="55" fill="url(#dotGrad)"/>
 </svg>
