@@ -37,6 +37,7 @@ afterEach(async () => {
 async function postApprove(
   p: number,
   callId: string,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number }> {
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -48,6 +49,7 @@ async function postApprove(
         headers: {
           "Content-Type": "application/json",
           "x-approval-token": FAKE_APPROVAL_TOKEN,
+          ...extraHeaders,
         },
       },
       (res) => {
@@ -114,6 +116,84 @@ describe("phone-path approval per-IP rate limit", () => {
       // matters is that NONE of them are 429.
       expect(res.status).not.toBe(429);
     }
+  });
+
+  it("ignores X-Forwarded-For by default (untrusted proxy header is spoofable)", async () => {
+    // Without an explicit trustedProxies allowlist, X-Forwarded-For must
+    // NOT influence the bucket key — otherwise any sprayer rotates the
+    // header to bypass the limit. Spray > MAX from one socket-IP with
+    // distinct XFF values; at least 5 must 429.
+    const max = Server.APPROVAL_IP_MAX;
+    let rejected429 = 0;
+    for (let i = 0; i < max + 5; i++) {
+      const res = await postApprove(port, `callid-${i}`, {
+        "X-Forwarded-For": `10.${i & 0xff}.${(i >> 8) & 0xff}.1`,
+      });
+      if (res.status === 429) rejected429++;
+    }
+    expect(rejected429).toBeGreaterThanOrEqual(5);
+  });
+
+  it("honors X-Forwarded-For when the socket peer is a trusted proxy", async () => {
+    // Behind nginx/Caddy/Cloudflare every request's socket peer is the
+    // proxy itself — without this logic, a single sprayer DoSes the legit
+    // approver. With trustedProxies=["127.0.0.1"], distinct XFF clients get
+    // distinct buckets.
+    await server?.close();
+    server = new Server(TOKEN, logger, [], 30_000, ["127.0.0.1"]);
+    port = await server.findAndListen(null);
+
+    const max = Server.APPROVAL_IP_MAX;
+
+    // Spray MAX requests from "1.1.1.1" — should fill its bucket (some 429s
+    // expected on overflow if we go further, but at MAX exactly we should
+    // still be under the cap).
+    for (let i = 0; i < max; i++) {
+      const res = await postApprove(port, `a-${i}`, {
+        "X-Forwarded-For": "1.1.1.1",
+      });
+      expect(res.status).not.toBe(429);
+    }
+
+    // Now MAX requests from a different XFF — must be on an independent
+    // bucket. ZERO 429s expected.
+    for (let i = 0; i < max; i++) {
+      const res = await postApprove(port, `b-${i}`, {
+        "X-Forwarded-For": "2.2.2.2",
+      });
+      expect(res.status).not.toBe(429);
+    }
+  });
+
+  it("with trustedProxies set, rightmost untrusted XFF entry is the client", async () => {
+    // Multi-hop: client → trusted-proxy-A → trusted-proxy-B → bridge.
+    // XFF reads "client, proxy-A" (each hop appends to the right).
+    // We trust 127.0.0.1 (the immediate peer in tests). The rightmost
+    // entry NOT in trustedProxies is the client.
+    await server?.close();
+    server = new Server(TOKEN, logger, [], 30_000, ["127.0.0.1", "10.0.0.1"]);
+    port = await server.findAndListen(null);
+
+    const max = Server.APPROVAL_IP_MAX;
+
+    // Spray MAX from "client-A" via the proxy chain; should fill that
+    // single bucket if buckets are correctly keyed on client-A.
+    for (let i = 0; i < max; i++) {
+      await postApprove(port, `m-${i}`, {
+        "X-Forwarded-For": "203.0.113.5, 10.0.0.1",
+      });
+    }
+    // (max+1)th from same client → 429.
+    const overflow = await postApprove(port, "m-overflow", {
+      "X-Forwarded-For": "203.0.113.5, 10.0.0.1",
+    });
+    expect(overflow.status).toBe(429);
+
+    // But a different client through the same proxy chain → fresh bucket.
+    const fresh = await postApprove(port, "n-1", {
+      "X-Forwarded-For": "203.0.113.6, 10.0.0.1",
+    });
+    expect(fresh.status).not.toBe(429);
   });
 
   it("does not gate non-approval paths even when phone-path bypass shape is otherwise present", async () => {
