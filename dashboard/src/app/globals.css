@@ -1177,6 +1177,32 @@ button.topbar-search {
   overflow-x: auto;
   overflow-y: hidden;
   box-shadow: var(--card-shadow);
+  /* Scroll-affordance — round-3 audit found /activity, /analytics,
+     /transactions tables overflow at 390 px but the user has no visual
+     cue that the right-edge content is reachable. The right-edge
+     gradient mask + a thin "more →" hint becomes visible only when
+     the table is actually scrollable AND not yet scrolled to end.
+     Hidden on desktop where horizontal scroll is uncommon. */
+  position: relative;
+}
+@media (max-width: 768px) {
+  .table-wrap::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 32px;
+    pointer-events: none;
+    background: linear-gradient(
+      to left,
+      var(--canvas) 0%,
+      transparent 100%
+    );
+    opacity: 0.85;
+    border-top-right-radius: var(--r-l);
+    border-bottom-right-radius: var(--r-l);
+  }
 }
 .table {
   width: 100%;
