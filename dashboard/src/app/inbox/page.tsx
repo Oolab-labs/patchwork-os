@@ -584,10 +584,16 @@ const filteredItems = items.filter((item) => {
             description="Run a recipe to generate your first brief."
           />
         ) : (
-          <div style={{ display: "flex", flex: 1, minHeight: 0, border: "1px solid var(--line-1)", borderRadius: "var(--r-l)", overflow: "hidden", background: "var(--surface)" }}>
+          <div
+            className={`inbox-twopane${selected ? " inbox-twopane--reader" : " inbox-twopane--list"}`}
+            style={{ display: "flex", flex: 1, minHeight: 0, border: "1px solid var(--line-1)", borderRadius: "var(--r-l)", overflow: "hidden", background: "var(--surface)" }}
+          >
 
-            {/* ── Left sidebar ── */}
-            <div style={{ width: sidebarOpen ? 300 : 48, flexShrink: 0, borderRight: "1px solid var(--line-1)", display: "flex", flexDirection: "column", transition: "width 200ms ease", overflow: "hidden" }}>
+            {/* ── Left sidebar (list) ── */}
+            <div
+              className="inbox-list-pane"
+              style={{ width: sidebarOpen ? 300 : 48, flexShrink: 0, borderRight: "1px solid var(--line-1)", display: "flex", flexDirection: "column", transition: "width 200ms ease", overflow: "hidden" }}
+            >
 
               {/* Sidebar header */}
               <div style={{ padding: "10px 10px 10px 14px", borderBottom: "1px solid var(--line-1)", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
@@ -738,8 +744,8 @@ const filteredItems = items.filter((item) => {
               )}
             </div>
 
-            {/* ── Right content panel ── */}
-            <div style={{ flex: 1, overflowY: "auto", minWidth: 0 }}>
+            {/* ── Right content panel (reader) ── */}
+            <div className="inbox-reader-pane" style={{ flex: 1, overflowY: "auto", minWidth: 0 }}>
               {detailLoading ? (
                 <div
                   role="status"
@@ -759,6 +765,31 @@ const filteredItems = items.filter((item) => {
                 </div>
               ) : selected ? (
                 <div style={{ padding: "28px 40px 48px", maxWidth: 700 }}>
+                  {/* Mobile-only back-to-list button. Hidden on desktop
+                      where the list is always visible alongside the
+                      reader — there's no "back" mental model on a
+                      two-pane view. */}
+                  <button
+                    type="button"
+                    className="inbox-back-mobile"
+                    onClick={() => setSelected(null)}
+                    aria-label="Back to message list"
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
+                    <span>Messages</span>
+                  </button>
                   {/* Detail header */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, paddingBottom: 14, borderBottom: "1px solid var(--line-1)" }}>
                     <span style={{ color: senderBadgeColor(selected.name), lineHeight: 1, flexShrink: 0 }}>

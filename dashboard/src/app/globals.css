@@ -2622,6 +2622,64 @@ button.topbar-search {
    still fires, in case a component depends on it. Cells in QuiltBg are
    gated separately (cell flicker is JS-driven, not CSS-driven).
    ────────────────────────────────────────────────────────────────────── */
+
+/* ──────────────────────────────────────────────────────────────────────
+   /inbox mobile two-pane collapse.
+
+   Desktop is sidebar (300 px or 48 px) + reader side-by-side. On a
+   390 px phone that crushed the reader to ~56 px and rotated text into
+   vertical strips — messages were unreadable. Switch to a list/reader
+   switcher pattern at ≤768 px:
+
+     * No message selected → full-width LIST pane (reader hidden).
+     * Message selected → full-width READER pane with a Back-to-list
+       button at the top (list hidden).
+
+   Container gets `inbox-twopane--list` or `inbox-twopane--reader` based
+   on selection state; CSS swaps which pane is visible. Desktop renders
+   unchanged.
+   ────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .inbox-twopane {
+    flex-direction: column;
+  }
+  .inbox-twopane .inbox-list-pane,
+  .inbox-twopane .inbox-reader-pane {
+    /* Inline styles set width/flex on the desktop layout; override here. */
+    width: 100% !important;
+    flex: 1 1 auto !important;
+    border-right: none !important;
+  }
+  .inbox-twopane--reader .inbox-list-pane {
+    display: none;
+  }
+  .inbox-twopane--list .inbox-reader-pane {
+    display: none;
+  }
+}
+
+.inbox-back-mobile {
+  display: none;
+}
+@media (max-width: 768px) {
+  .inbox-back-mobile {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 16px;
+    padding: 8px 12px;
+    background: var(--recess);
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-full, 999px);
+    color: var(--ink-1);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
