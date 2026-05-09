@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "name": "patchwork-os/imessage",
+  "version": "0.1.0",
+  "description": "Send iMessage / SMS via macOS Messages.app (osascript-backed)",
+  "entrypoint": "./index.mjs",
+  "toolNamePrefix": "im",
+  "minBridgeVersion": "0.2.0-alpha.0"
+}
