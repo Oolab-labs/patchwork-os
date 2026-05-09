@@ -144,10 +144,12 @@ self.addEventListener("notificationclick", (event) => {
     return;
   }
 
-  // Default: open/focus approval card
+  // Default: open/focus approval card. Scope-relative so basePath
+   // (`/dashboard`) is honored — absolute `/approvals` routes through
+   // nginx to the bridge HTTP API and 401s without a bearer token.
   const targetUrl = callId
-    ? `/approvals?highlight=${callId}`
-    : "/approvals";
+    ? `./approvals?highlight=${callId}`
+    : "./approvals";
 
   event.waitUntil(
     self.clients
