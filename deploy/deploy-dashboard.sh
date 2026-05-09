@@ -52,9 +52,25 @@ if pm2 list | grep -q "$PM2_NAME"; then
   pm2 delete "$PM2_NAME" || true
 fi
 
+# Preserve .env.local across the deploy. Without this stash/restore, the
+# `rm -rf "$REMOTE_DIR"` below blows away every secret the operator pasted
+# (VAPID, PATCHWORK_PUSH_TOKEN, custom DASHBOARD_PASSWORD), and the "if
+# already exists, preserve" branch later in this script never fires —
+# the file no longer exists by then.
+ENV_BACKUP=""
+if [ -f "$REMOTE_DIR/.env.local" ]; then
+  ENV_BACKUP="$(mktemp /tmp/patchwork-env.XXXXXX)"
+  cp -p "$REMOTE_DIR/.env.local" "$ENV_BACKUP"
+fi
+
 # Wipe and recreate deploy dir
 rm -rf "$REMOTE_DIR"
 mkdir -p "$REMOTE_DIR"
+
+if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
+  cp -p "$ENV_BACKUP" "$REMOTE_DIR/.env.local"
+  rm -f "$ENV_BACKUP"
+fi
 
 # Extract
 tar -xzf /tmp/patchwork-dashboard.tar.gz -C "$REMOTE_DIR"
