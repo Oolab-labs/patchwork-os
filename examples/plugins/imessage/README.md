@@ -13,17 +13,103 @@ claude-ide-bridge --plugin ./examples/plugins/imessage --plugin-watch
 
 The plugin has no npm dependencies — `osascript` ships with macOS.
 
-## First-run permission
+## Set up iMessage on the host Mac
 
-The first time `im_send` runs, macOS will pop a one-time permission
-dialog: "*<host process>* wants to control Messages.app." Click **OK**.
+The plugin doesn't configure iMessage — it just drives Messages.app. Do
+this once before your first `im_send` call.
+
+### 1. Sign Messages.app into iMessage
+
+1. Open **Messages.app** (Cmd+Space → "Messages").
+2. **Messages → Settings… → iMessage**.
+3. Sign in with your Apple ID. Same one your iPhone uses, ideally —
+   then sends are routed through the same identity.
+4. Tick **Enable Messages in iCloud** so conversations sync.
+5. Under **You can be reached for messages at**, check the phone number
+   and emails you want to be reachable on.
+6. Under **Start new conversations from**, pick the address recipients
+   should see — usually your `+CC…` phone number or your Apple ID email.
+
+If the iMessage tab says **"Waiting for activation"** for more than a
+few minutes, sign out, reboot, sign back in. First-time activation
+occasionally hangs on a single attempt.
+
+### 2. Send a manual test message first
+
+Before AppleScript drives anything, you must successfully send one
+message manually from this Mac. Otherwise the `buddy` lookup the
+plugin uses fails with iMessage error `-25212`.
+
+In Messages.app, open a new chat → To: **your own Apple ID email** →
+type "test" → send.
+
+- Blue bubble, no red `!` → iMessage works. Use this email as your
+  default `to:` for `im_send` testing.
+- Red `!` "Not Delivered" → fix below.
+
+> **Apple ID email is the most reliable test target.** It always
+> resolves to iMessage and bypasses any phone-routing issues. Numbers
+> not on iMessage (most non-US/EU prefixes, including `+254`) will fail
+> from a Mac unless you set up SMS forwarding (step 4).
+
+### 3. Make production recipients reachable
+
+For real recipients (not yourself), the AppleScript looks up the
+address as a `buddy` of the iMessage service. That works reliably when
+**any one** of these is true:
+
+- The recipient is in your **Contacts.app**, OR
+- You've manually messaged them at least once from this Mac, OR
+- The recipient's address is itself an Apple ID
+
+For a number you've never messaged, add a Contact first
+(Contacts.app → New Contact → save phone in `+CC…` format) and send a
+manual hello. After that, `im_send` works for them.
+
+### 4. (Optional) Enable SMS fallback for non-iMessage numbers
+
+Without this, sending to a green-bubble number from a Mac fails. With
+it, Messages.app on the Mac proxies the send through your iPhone as
+SMS.
+
+1. On the **iPhone** (must be signed into the same Apple ID and on the
+   same Wi-Fi or paired via Bluetooth):
+2. Settings → **Messages** → **Text Message Forwarding**.
+3. Toggle the Mac on. The Mac pops a 6-digit code; enter it on the
+   iPhone.
+
+This is the only path to reach non-iMessage recipients — including
+most numbers in regions where iMessage adoption is low — from a
+Mac-driven plugin.
+
+### 5. First `im_send` call: grant Automation permission
+
+The very first invocation triggers a one-time macOS dialog:
+
+> *"<host process>* wants to control Messages.app."
+
+Click **OK**. The host process is whatever launched the bridge —
+Terminal, iTerm, Cursor, Windsurf, VS Code, or `node` if you ran the
+bridge directly. macOS records the grant per process binary.
+
 If you missed the prompt or clicked Don't Allow, fix it in:
 
-> System Settings → Privacy & Security → Automation → *<your terminal /
-> node binary>* → Messages
+> System Settings → **Privacy & Security** → **Automation** → expand
+> the host process row → tick **Messages**.
 
-Without that, every call returns an `im_send: osascript exited 1` error
-mentioning Automation permission.
+If the row isn't there yet, run `im_send` once to register it; the row
+appears after the first attempt regardless of outcome.
+
+### 6. Verify the plugin end-to-end
+
+In a Claude Code chat connected to the bridge:
+
+> "Use `im_send` to text `your.appleid@example.com` 'plugin works'."
+
+Expected: blue bubble in Messages.app within a second; tool returns
+`{ delivered: true, to: "your.appleid@example.com" }`. If you see an
+error, the message points at the fix (Automation permission missing,
+recipient unreachable, etc.).
 
 ## Usage from Claude Code (chat)
 
