@@ -1,0 +1,19 @@
+{
+  "name": "patchwork-os-imessage",
+  "version": "0.1.0",
+  "description": "Send iMessage / SMS via macOS Messages.app — Patchwork OS plugin",
+  "type": "module",
+  "main": "index.mjs",
+  "keywords": [
+    "patchwork-os",
+    "claude-ide-bridge-plugin",
+    "imessage",
+    "macos"
+  ],
+  "peerDependencies": {
+    "patchwork-os": ">=0.2.0-alpha.0"
+  },
+  "os": [
+    "darwin"
+  ]
+}
