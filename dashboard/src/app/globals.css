@@ -1589,6 +1589,26 @@ button.topbar-search {
 
 /* ---- Grids ---- */
 .grid { display: grid; gap: 16px; }
+.grid-2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s-4, 16px);
+}
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-4, 16px);
+}
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s-4, 16px);
+}
+.grid-2-3 {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: var(--s-4, 16px);
+}
 @media (max-width: 1100px) {
   .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2069,6 +2089,16 @@ button.topbar-search {
     opacity: 1;
     pointer-events: auto;
   }
+  /* Hide the bottom-nav while the drawer is open. The drawer is
+     min(82vw, 320px) wide and the bottom-nav is full-width, so the
+     ~75 px tail to the right of the drawer was visibly leaking the
+     bottom-nav under the drawer's right edge. The drawer's focus trap
+     already inerts the bottom-nav for keyboard + AT; this hides it
+     visually too. */
+  .app-shell.mobile-open ~ .mobile-bottom-nav,
+  .app-shell.mobile-open .mobile-bottom-nav {
+    display: none;
+  }
   .mobile-menu-btn {
     display: inline-flex;
   }
@@ -2083,7 +2113,13 @@ button.topbar-search {
   .app-header-left {
     gap: 12px;
   }
+  /* Mobile header: keep the wordmark visible (shorter "Patchwork", drop
+     "OS"). The bare brand-mark icon alone left the topbar feeling
+     unbranded and lopsided with everything else hidden. */
   .topbar-brand span:not(.topbar-local) {
+    font-size: 15px;
+  }
+  .topbar-brand-suffix {
     display: none;
   }
   /* Specificity bumped via .app-header ancestor — the base rules for these
@@ -2094,9 +2130,21 @@ button.topbar-search {
   .app-header .demo-toggle,
   .app-header .bridge-status-pill,
   .app-header .identity-pill,
-  .app-header .topbar-icon-btn,
   .app-header .topbar-avatar {
     display: none;
+  }
+  /* Theme toggle + bell stay on the right so the user can see pending
+     approvals at a glance and switch themes without opening the drawer.
+     The catch-all `.topbar-icon-btn` hide above would also hide them, so
+     re-show them with an even more specific selector. Theme toggle is a
+     `.theme-toggle` button not `.topbar-icon-btn`, so it survives — but
+     the bell IS `.topbar-icon-btn`, hence the re-show. */
+  .app-header .topbar-icon-btn.topbar-bell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
   }
   .app-header-title {
     font-size: 13px;

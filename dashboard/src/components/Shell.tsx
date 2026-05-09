@@ -298,7 +298,14 @@ export function Shell({ children }: { children: ReactNode }) {
           </button>
           <Link href="/" className="topbar-brand">
             <BrandMark />
-            <span>Patchwork OS</span>
+            <span>
+              Patchwork
+              {/* "OS" suffix shown on desktop, dropped on mobile via the
+                  .topbar-brand-suffix rule in globals.css. Keeps the
+                  full wordmark on wide screens and the short form on
+                  phones where horizontal room is tight. */}
+              <span className="topbar-brand-suffix"> OS</span>
+            </span>
             <span className="topbar-local">local</span>
           </Link>
         </div>
