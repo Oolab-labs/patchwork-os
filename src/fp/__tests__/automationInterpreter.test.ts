@@ -832,6 +832,167 @@ describe("WithRetry re-execution", () => {
   });
 });
 
+// ── Hook: webhook fan-out ─────────────────────────────────────────────────────
+
+describe("Hook: webhook fan-out", () => {
+  it("fires a webhook with correct URL, method, headers, and body for onPreCompact", async () => {
+    const backend = new TestBackend();
+    const ctx = makeCtx({
+      backend,
+      eventType: "onPreCompact",
+      eventData: {},
+      now: NOW,
+    });
+    const h = hook({
+      hookType: "onPreCompact",
+      enabled: true,
+      promptSource: { kind: "none" },
+      webhook: {
+        url: "http://127.0.0.1:54321/hooks/compaction-snapshot-pre",
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Test": "1" },
+      },
+    });
+    const result = await executeAutomationPolicy([h], ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // No Claude task was enqueued (webhook-only hook)
+    expect(backend.collector.enqueuedTasks).toHaveLength(0);
+    expect(result.value.taskIds).toHaveLength(0);
+
+    // Webhook was fired exactly once with expected shape
+    expect(backend.collector.webhookCalls).toHaveLength(1);
+    const call = backend.collector.webhookCalls[0];
+    if (!call) throw new Error("expected webhookCall[0]");
+    expect(call.url).toBe(
+      "http://127.0.0.1:54321/hooks/compaction-snapshot-pre",
+    );
+    expect(call.method).toBe("POST");
+    expect(call.headers["X-Test"]).toBe("1");
+    expect(call.body.hookType).toBe("onPreCompact");
+    expect(call.body.timestamp).toBe(NOW);
+    expect(call.body.phase).toBe("pre");
+
+    // State recorded the webhook fan-out time
+    expect(
+      result.value.updatedState.lastWebhookFiredAt.get("onPreCompact"),
+    ).toBe(NOW);
+  });
+
+  it("fires a webhook AND enqueues a task when both prompt and webhook are set", async () => {
+    const backend = new TestBackend();
+    const ctx = makeCtx({
+      backend,
+      eventType: "onPreCompact",
+      eventData: {},
+      now: NOW,
+    });
+    const h = hook({
+      hookType: "onPreCompact",
+      enabled: true,
+      promptSource: { kind: "inline", prompt: "Snapshot IDE state" },
+      webhook: {
+        url: "http://localhost:9999/hook",
+      },
+    });
+    const result = await executeAutomationPolicy([h], ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Task enqueued first, webhook fired after
+    expect(backend.collector.enqueuedTasks).toHaveLength(1);
+    expect(backend.collector.webhookCalls).toHaveLength(1);
+    expect(result.value.taskIds).toHaveLength(1);
+  });
+
+  it("records error and continues when webhook returns non-2xx", async () => {
+    const backend = new TestBackend();
+    backend.webhookResponse = { ok: false, status: 500, error: "boom" };
+    const ctx = makeCtx({
+      backend,
+      eventType: "onPostCompact",
+      eventData: {},
+      now: NOW,
+    });
+    const h = hook({
+      hookType: "onPostCompact",
+      enabled: true,
+      promptSource: { kind: "none" },
+      webhook: { url: "http://127.0.0.1:54321/missing" },
+    });
+    const result = await executeAutomationPolicy([h], ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(backend.collector.webhookCalls).toHaveLength(1);
+    expect(result.value.errors).toHaveLength(1);
+    expect(result.value.errors[0]?.message).toContain("status=500");
+    // lastWebhookFiredAt is recorded even on non-2xx — the operator wants the
+    // "we tried at T" timestamp for telemetry.
+    expect(
+      result.value.updatedState.lastWebhookFiredAt.get("onPostCompact"),
+    ).toBe(NOW);
+  });
+
+  it("does not throw when backend.postWebhook itself throws", async () => {
+    const backend = new TestBackend();
+    backend.postWebhook = async () => {
+      throw new Error("network blew up");
+    };
+    const ctx = makeCtx({
+      backend,
+      eventType: "onPreCompact",
+      eventData: {},
+      now: NOW,
+    });
+    const h = hook({
+      hookType: "onPreCompact",
+      enabled: true,
+      promptSource: { kind: "none" },
+      webhook: { url: "http://127.0.0.1:54321/x" },
+    });
+    const result = await executeAutomationPolicy([h], ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.errors[0]?.message).toContain("threw");
+  });
+
+  it("respects WithCooldown for webhook-only hooks", async () => {
+    const backend = new TestBackend();
+    const inner = hook({
+      hookType: "onPreCompact",
+      enabled: true,
+      promptSource: { kind: "none" },
+      webhook: { url: "http://127.0.0.1:54321/hook" },
+    });
+    const wrapped = withCooldown("precompact", 60_000, inner);
+
+    // First fire: webhook posted, cooldown recorded
+    const result1 = await executeAutomationPolicy([wrapped], {
+      ...makeCtx({ backend, eventType: "onPreCompact", eventData: {} }),
+    });
+    expect(result1.ok).toBe(true);
+    if (!result1.ok) return;
+    expect(backend.collector.webhookCalls).toHaveLength(1);
+
+    // Second fire 1s later: should be blocked by cooldown
+    const result2 = await executeAutomationPolicy([wrapped], {
+      ...makeCtx({
+        backend,
+        eventType: "onPreCompact",
+        eventData: {},
+        state: result1.value.updatedState,
+        now: NOW + 1_000,
+      }),
+    });
+    expect(result2.ok).toBe(true);
+    if (!result2.ok) return;
+    expect(backend.collector.webhookCalls).toHaveLength(1);
+    expect(result2.value.skipped[0]?.reason).toBe("cooldown:precompact");
+  });
+});
+
 // ── PBT: parallel merge ───────────────────────────────────────────────────────
 
 describe("PBT: parallel merge", () => {

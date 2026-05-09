@@ -203,6 +203,21 @@ Event-driven hooks that trigger Claude tasks automatically.
   - `onDebugSession` (v2.43.0+) — unified debug-session hook. `phase: "start"` fires on session start (`{{sessionName}}`, `{{sessionType}}`, `{{breakpointCount}}`, `{{activeFile}}`). `phase: "end"` fires on termination (`{{sessionName}}`, `{{sessionType}}`). Replaces deprecated `onDebugSessionStart` + `onDebugSessionEnd`.
 - **Shared options**: all hooks support inline `prompt` string or `promptName`/`promptArgs` named prompt references. All support `cooldownMs` (min 5000).
 - **Cooldown**: min 5s between triggers for same file/event. Max prompt size: 32KB.
+- **Webhook fan-out** (v1, `onCompaction` only — see [ADR-0009](docs/adr/0009-automation-webhook-fanout.md)) — any opted-in hook may add an optional `webhook: { url, method?, headers? }` config. When the hook fires, the interpreter POSTs (or PUT/PATCH) a JSON body to the URL AFTER the inline prompt enqueue. Body shape: `{ hookType, phase?, timestamp, ...eventData }`. 10s timeout; non-2xx and network errors are logged but never block other hooks. SSRF guard: loopback (127.0.0.0/8, ::1, localhost) and public hosts allowed; other private ranges blocked unless `--automation-allow-private-webhooks` is set (CLI flag is a follow-up). Both inline `prompt` AND `webhook` may be set on the same entry — they run sequentially: prompt first, then webhook. Hook entries with only a `webhook` (no `prompt` / `promptName`) are valid and skip the task enqueue. Example:
+  ```json
+  {
+    "onCompaction": {
+      "phase": "pre",
+      "enabled": true,
+      "cooldownMs": 5000,
+      "webhook": {
+        "url": "http://127.0.0.1:54321/hooks/compaction-snapshot-pre",
+        "method": "POST",
+        "headers": { "Content-Type": "application/json" }
+      }
+    }
+  }
+  ```
 - **CC hook wiring** — hooks relying on Claude Code's hook system need MCP notify tools called from `settings.json`. Bridge registers these automatically when `--automation` active:
 
   | CC hook event | Shell command (settings.json) |

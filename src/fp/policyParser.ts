@@ -12,6 +12,7 @@ import {
   type HookType,
   hook,
   type PromptSourceNode,
+  type WebhookConfig,
   type WhenCondition,
   withCooldown,
   withDedup,
@@ -82,9 +83,15 @@ function buildPromptSource(src: PromptSource): ToolResult<PromptSourceNode> {
       promptArgs: src.promptArgs,
     });
   }
+  // Webhook-only hook (e.g. recipe-6 compaction triggers): no inline prompt,
+  // no named prompt, just a webhook fan-out. Caller is responsible for
+  // ensuring `webhook` is configured — `validatePromptSource` enforces this.
+  if (src.webhook !== undefined) {
+    return ok({ kind: "none" as const });
+  }
   return err(
     "invalid_arg",
-    "Hook must specify either `prompt` or `promptName`",
+    "Hook must specify either `prompt`, `promptName`, or `webhook`",
   );
 }
 
@@ -107,6 +114,17 @@ function buildWhen(src: PromptSource): WhenCondition | undefined {
 
 // ── Hook builder ──────────────────────────────────────────────────────────────
 
+/**
+ * Hook types that opt into webhook fan-out as of v1. Other types parse the
+ * `webhook` field successfully (per validatePromptSource) but the parser
+ * silently drops it — keeps the schema forward-compatible without enabling
+ * fan-out where it hasn't been thought through yet.
+ */
+const WEBHOOK_ENABLED_HOOK_TYPES = new Set<HookType>([
+  "onPreCompact",
+  "onPostCompact",
+]);
+
 function buildHook(
   hookType: HookType,
   src: PromptSource,
@@ -122,6 +140,19 @@ function buildHook(
   const promptSourceResult = buildPromptSource(src);
   if (!promptSourceResult.ok) return promptSourceResult;
 
+  // Wire `webhook` into the HookNode only for opted-in hook types. This keeps
+  // the v1 surface area focused on `onCompaction` (recipe-6 unblock) while
+  // letting the schema parse the field everywhere — adding a new hook type
+  // later is a one-line change to WEBHOOK_ENABLED_HOOK_TYPES.
+  const webhook: WebhookConfig | undefined =
+    src.webhook && WEBHOOK_ENABLED_HOOK_TYPES.has(hookType)
+      ? {
+          url: src.webhook.url,
+          method: src.webhook.method,
+          headers: src.webhook.headers,
+        }
+      : undefined;
+
   const hookNode: HookNode = hook({
     hookType,
     enabled,
@@ -133,6 +164,7 @@ function buildHook(
     effort,
     systemPrompt,
     extras,
+    webhook,
   });
 
   const key = cooldownKey(hookType, condition);
