@@ -1215,6 +1215,15 @@ button.topbar-search {
    nameless rows. Drop the three secondary metric columns; the values
    still live in the selected-recipe detail panel below the table. */
 @media (max-width: 768px) {
+  /* Hide secondary metric columns (LAST 14 RUNS, AVG, LAST). Round-2
+     audit found PR #391's first pass wasn't enough — the success-ring
+     col 1 (48 px) + trigger col 3 (120 px) + actions col 7 (110 px)
+     still left only ~110 px for the RECIPE name on a 390 px viewport,
+     and names continued to truncate to "morni…", "incid…". Hide col 1
+     too (the success ring is in the detail panel below) and let the
+     RECIPE column take the slack. Tighten cell padding further. */
+  .recipes-table th:nth-child(1),
+  .recipes-table td:nth-child(1),
   .recipes-table th:nth-child(4),
   .recipes-table td:nth-child(4),
   .recipes-table th:nth-child(5),
@@ -1225,7 +1234,22 @@ button.topbar-search {
   }
   .recipes-table th,
   .recipes-table td {
-    padding: 9px 10px;
+    padding: 9px 8px;
+  }
+  /* RECIPE name column: take all available width, no width clamp */
+  .recipes-table th:nth-child(2),
+  .recipes-table td:nth-child(2) {
+    width: auto;
+  }
+  /* TRIGGER column: tighter (was 120 px) */
+  .recipes-table th:nth-child(3),
+  .recipes-table td:nth-child(3) {
+    width: 90px;
+  }
+  /* Actions column: tighter (was 110 px) */
+  .recipes-table th:nth-child(7),
+  .recipes-table td:nth-child(7) {
+    width: 96px;
   }
 }
 
