@@ -2150,7 +2150,13 @@ button.topbar-search {
     font-size: 13px;
   }
   .app-content {
-    padding: 16px;
+    /* Bottom padding clears the fixed bottom-nav (≈ 62 px) plus the iOS
+       home-indicator safe-area inset so the last row of content never
+       hides under the nav. The audit found this clipping content on
+       /tasks /decisions /activity /transactions /traces /settings
+       /marketplace and more — adding the padding here covers every
+       inner page in one rule. */
+    padding: 16px 16px calc(80px + env(safe-area-inset-bottom, 0px));
   }
   .app-main {
     grid-column: 1 / 2;
