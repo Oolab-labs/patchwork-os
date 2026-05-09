@@ -31,7 +31,10 @@ function unauthenticated(req: NextRequest): NextResponse {
   if (wantsHtml) {
     const url = req.nextUrl.clone();
     const original = url.pathname + url.search;
-    url.pathname = "/dashboard/login";
+    // Set pathname WITHOUT basePath — Next.js's redirect helper
+    // prepends basePath itself when constructing the final Location
+    // header. Including `/dashboard` here gives `/dashboard/dashboard/login`.
+    url.pathname = "/login";
     url.search = `?next=${encodeURIComponent(original)}`;
     return NextResponse.redirect(url);
   }
@@ -64,8 +67,13 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Login page itself must be reachable without a session.
-  if (req.nextUrl.pathname === "/dashboard/login") {
+  // Login page itself must be reachable without a session. Next.js
+  // strips basePath before matching, so the internal pathname is
+  // `/login` even though the external URL is `/dashboard/login`.
+  if (
+    req.nextUrl.pathname === "/login" ||
+    req.nextUrl.pathname === "/dashboard/login"
+  ) {
     return NextResponse.next();
   }
 
@@ -96,6 +104,10 @@ export const config = {
     //     pushsubscriptionchange; SW doesn't always carry the cookie.
     //   - api/push/{subscribe,unsubscribe}: same SW context limitation;
     //     they have their own same-origin CSRF guard.
+    // Root path (basePath bare) explicitly — the negative-lookahead
+    // matcher below doesn't reliably catch `/` alone in Next.js, which
+    // means the dashboard's overview page would otherwise be unprotected.
+    "/",
     "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace|api/login|api/relay/push|sw\\.js|icons/|api/push/vapid-key|api/push/subscribe|api/push/unsubscribe).*)",
   ],
 };
