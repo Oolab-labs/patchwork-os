@@ -8,13 +8,28 @@
  */
 
 const CACHE_NAME = "patchwork-shell-v1";
-const SHELL_URLS = ["/", "/approvals"];
+// Scope-relative so basePath (`/dashboard`) is honored. Absolute paths
+// like `/approvals` route to the bridge's HTTP API and 401, which makes
+// `cache.addAll` reject and the SW never activates — `serviceWorker.ready`
+// then hangs forever, which manifests as a permanently stuck "Working…"
+// on the Subscribe-to-push button. The SW scope is `/dashboard/`, so
+// `./` resolves to `/dashboard/` and `./approvals` to `/dashboard/approvals`.
+const SHELL_URLS = ["./", "./approvals"];
 
 // ── Install: cache shell ──────────────────────────────────────────────────
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS)).then(() => self.skipWaiting()),
+    caches
+      .open(CACHE_NAME)
+      .then((cache) =>
+        // Belt-and-braces: even if individual shell URLs 4xx, don't block
+        // SW activation. Push handlers don't depend on the precache.
+        cache.addAll(SHELL_URLS).catch((err) => {
+          console.warn("[sw] shell precache failed (non-fatal):", err);
+        }),
+      )
+      .then(() => self.skipWaiting()),
   );
 });
 

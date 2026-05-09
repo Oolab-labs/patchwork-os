@@ -503,32 +503,25 @@ export default function SettingsPage() {
     setPushMsg(null);
     try {
       await registerServiceWorker();
-      const ok = await subscribeToPush(vapidPublicKey);
-      if (ok) {
-        setPushStatus("subscribed");
-        setPushMsg({
-          ok: true,
-          text: "Subscribed. Use 'Send test notification' to confirm delivery.",
-        });
-        flashSaved();
-      } else {
-        // subscribeToPush returns false on permission denial or PushManager
-        // failure; re-read the status so the badge reflects reality.
+      await subscribeToPush(vapidPublicKey);
+      setPushStatus("subscribed");
+      setPushMsg({
+        ok: true,
+        text: "Subscribed. Use 'Send test notification' to confirm delivery.",
+      });
+      flashSaved();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // Re-read browser status so the badge reflects what actually happened
+      // (e.g. permission denied vs subscribe stalled). The error message
+      // tells the user which step failed.
+      try {
         const s = await getPushSubscriptionStatus();
         setPushStatus(s);
-        setPushMsg({
-          ok: false,
-          text:
-            s === "denied"
-              ? "Notification permission was denied. Re-enable it in browser site settings, then reload."
-              : "Subscription failed. See browser console for details.",
-        });
+      } catch {
+        /* status read itself failed — leave previous value */
       }
-    } catch (e) {
-      setPushMsg({
-        ok: false,
-        text: e instanceof Error ? e.message : String(e),
-      });
+      setPushMsg({ ok: false, text: msg });
     } finally {
       setPushBusy(false);
     }
