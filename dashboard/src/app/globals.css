@@ -2660,6 +2660,50 @@ button.topbar-search {
 }
 
 
+/* ──────────────────────────────────────────────────────────────────────
+   Recipe editor mobile sticky-save bar.
+
+   /recipes/[name]/edit hosts a CodeMirror YAML editor that grows to
+   2000+ px on a non-trivial recipe. The Save / Run buttons live in
+   the page-header on desktop — fine at 1400 px wide, but on a 390 px
+   phone the user scrolls down to read the YAML and then has to
+   scroll back to the top to save. Float a savebar at the bottom of
+   the viewport on mobile only.
+   ────────────────────────────────────────────────────────────────────── */
+.recipe-editor-mobile-savebar {
+  display: none;
+}
+@media (max-width: 768px) {
+  .recipe-editor-mobile-savebar {
+    display: flex;
+    gap: 8px;
+    position: fixed;
+    /* Sit above the bottom-nav (~62 px) + safe-area inset; small breath. */
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    right: 12px;
+    z-index: 25;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-l, 14px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+  .recipe-editor-mobile-savebar .btn {
+    flex: 1;
+    justify-content: center;
+    min-height: 40px;
+  }
+  /* Push the editor's last line above the floating savebar — without
+     this, the bottom of the YAML or the line-count footer hides under
+     the bar. `:has()` is supported in all evergreen browsers we target. */
+  body:has(.recipe-editor-mobile-savebar) .app-content {
+    padding-bottom: 140px;
+  }
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
    Reduced-motion gate (audit Wave 1 / WCAG 2.3.3)
 

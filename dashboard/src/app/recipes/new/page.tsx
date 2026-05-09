@@ -2,6 +2,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { AutoGrowTextarea } from "@/components/AutoGrowTextarea";
 import { highlightYaml } from "@/components/patchwork";
 import { normalizeRecipeName, prepareAndSaveAiRecipe } from "./applyAiYaml";
 
@@ -785,8 +786,9 @@ function NewRecipePageInner() {
               Describe what you want in plain language and Claude will draft a
               recipe YAML for you.
             </p>
-            <textarea
+            <AutoGrowTextarea
               rows={3}
+              maxHeight={400}
               placeholder="e.g. every weekday at 9am, summarize my unread Gmail and post the digest to Slack"
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
@@ -800,7 +802,6 @@ function NewRecipePageInner() {
                 fontFamily: "var(--font-sans)",
                 outline: "none",
                 padding: "var(--s-2) var(--s-3)",
-                resize: "vertical",
                 width: "100%",
               }}
             />
@@ -1021,12 +1022,13 @@ function NewRecipePageInner() {
                   (optional)
                 </span>
               </label>
-              <textarea
+              <AutoGrowTextarea
                 id="recipe-desc"
                 value={form.description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="What does this recipe do?"
                 rows={2}
+                maxHeight={240}
                 style={{
                   width: "100%",
                   background: "var(--bg-2)",
@@ -1036,7 +1038,6 @@ function NewRecipePageInner() {
                   fontSize: "var(--fs-base)",
                   padding: "var(--s-2) var(--s-3)",
                   outline: "none",
-                  resize: "vertical",
                   fontFamily: "var(--font-sans)",
                 }}
               />
