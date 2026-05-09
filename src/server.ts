@@ -436,6 +436,12 @@ export class Server extends EventEmitter<ServerEvents> {
     private logger: Logger,
     private extraCorsOrigins: string[] = [],
     private pingIntervalMs = 30_000,
+    // Reverse-proxy hops whose X-Forwarded-For values we trust. Empty by
+    // default — the per-IP rate limiter buckets on the direct socket peer.
+    // Behind nginx/Caddy/Cloudflare set this to the proxy's IP so distinct
+    // real clients get distinct buckets; otherwise every request looks
+    // like 127.0.0.1 and a single sprayer DoSes the legit approver.
+    private trustedProxies: string[] = [],
   ) {
     super();
     // Defense-in-depth: ensure token is non-empty so timingSafeTokenCompare
@@ -655,7 +661,20 @@ export class Server extends EventEmitter<ServerEvents> {
       // checked *before* dispatch so a sprayer can't burn the per-callId
       // failure budget at line-rate.
       if (isPhoneApprovalPath && !isStaticToken && !oauthResolved) {
-        const remoteIp = (req.socket?.remoteAddress ?? "unknown").slice(0, 64);
+        const remoteIp = this.getClientIp(req);
+        if (!remoteIp) {
+          // Fail closed — without an attributable IP we cannot bucket
+          // safely, and the original "unknown" string was a single shared
+          // counter every IP-less request rolled up into.
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "bad_request",
+              error_description: "could not determine client IP",
+            }),
+          );
+          return;
+        }
         const now = Date.now();
         const entry = this.approvalIpCounts.get(remoteIp);
         if (entry && now - entry.windowStart < Server.APPROVAL_IP_WINDOW_MS) {
@@ -1537,8 +1556,21 @@ export class Server extends EventEmitter<ServerEvents> {
               this.pushServiceToken = body.pushServiceToken.trim() || undefined;
             }
             if (body.pushServiceBaseUrl !== undefined) {
-              this.pushServiceBaseUrl =
-                body.pushServiceBaseUrl.trim() || undefined;
+              const baseUrl = body.pushServiceBaseUrl.trim();
+              // pushServiceBaseUrl is the bridge callback origin embedded in
+              // the SW's approveUrl/rejectUrl. If it can be set to plain
+              // http:// or to a host the operator didn't intend, the SW will
+              // POST the one-shot approvalToken there — letting an attacker
+              // who sets this redirect every approval to attacker.tld and
+              // replay tokens to the real bridge for silent auto-approve.
+              if (baseUrl && !baseUrl.startsWith("https://")) {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({ error: "pushServiceBaseUrl must be HTTPS" }),
+                );
+                return;
+              }
+              this.pushServiceBaseUrl = baseUrl || undefined;
             }
             const restartRequired =
               driverRaw !== undefined ||
@@ -1918,6 +1950,44 @@ export class Server extends EventEmitter<ServerEvents> {
         req.socket.remoteAddress;
       this.emit("connection", ws);
     });
+  }
+
+  /**
+   * Resolve the client IP for rate-limit bucketing on the phone-path
+   * approval bypass. Default: the direct socket peer. When trustedProxies
+   * is set AND the socket peer is one of them, the rightmost X-Forwarded-For
+   * entry not in the trusted list is the real client. XFF from an untrusted
+   * peer is ignored — that header is spoofable by anyone who can reach the
+   * server directly. Returns null when no IP can be determined; the caller
+   * should fail closed.
+   */
+  private getClientIp(req: http.IncomingMessage): string | null {
+    const socketIp = req.socket?.remoteAddress;
+    if (
+      socketIp &&
+      this.trustedProxies.length > 0 &&
+      this.trustedProxies.includes(socketIp)
+    ) {
+      const xffRaw = req.headers["x-forwarded-for"];
+      const xffStr = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw;
+      if (typeof xffStr === "string" && xffStr.length > 0) {
+        const hops = xffStr
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s): s is string => s.length > 0);
+        // Walk right→left (proxies append to the right). The rightmost hop
+        // we DON'T trust is the client; everything to its right is our own
+        // hop chain.
+        for (let i = hops.length - 1; i >= 0; i--) {
+          const hop = hops[i];
+          if (hop !== undefined && !this.trustedProxies.includes(hop)) {
+            return hop.slice(0, 64);
+          }
+        }
+        // Edge case: every hop is in trustedProxies — unusual; fall through.
+      }
+    }
+    return socketIp ? socketIp.slice(0, 64) : null;
   }
 
   async listen(port: number, bindAddress = "127.0.0.1"): Promise<number> {

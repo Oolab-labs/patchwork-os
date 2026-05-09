@@ -349,3 +349,64 @@ describe("POST /settings — driver persistence to bridge config file", () => {
     });
   });
 });
+
+describe("POST /settings — pushServiceBaseUrl HTTPS guard", () => {
+  // pushServiceBaseUrl is the bridge callback origin embedded in the SW's
+  // approveUrl/rejectUrl. If it can be set to plain http:// (or any private
+  // host the operator didn't intend), the SW will POST the one-shot
+  // approvalToken to that host. An attacker holding the dashboard bearer
+  // could redirect every future approval token to attacker.tld and replay
+  // them to the real bridge for silent auto-approve. Mirror the existing
+  // pushServiceUrl HTTPS check.
+  it("rejects http:// pushServiceBaseUrl with 400", async () => {
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ pushServiceBaseUrl: "http://attacker.example.com" }),
+    );
+    expect(status).toBe(400);
+    expect(JSON.parse(body)).toMatchObject({
+      error: expect.stringContaining("HTTPS"),
+    });
+    expect(server!.pushServiceBaseUrl).toBeUndefined();
+  });
+
+  it("accepts https:// pushServiceBaseUrl and live-mutates the field", async () => {
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ pushServiceBaseUrl: "https://bridge.example.com" }),
+    );
+    expect(status).toBe(200);
+    expect(server!.pushServiceBaseUrl).toBe("https://bridge.example.com");
+  });
+
+  it("treats empty-string pushServiceBaseUrl as a clear (no HTTPS check)", async () => {
+    server!.pushServiceBaseUrl = "https://old.example.com";
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ pushServiceBaseUrl: "" }),
+    );
+    expect(status).toBe(200);
+    expect(server!.pushServiceBaseUrl).toBeUndefined();
+  });
+});
