@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!--
+    Patchwork app icon — agentD-1 (minimalist with single-line stitches).
+
+    Strip-back from the polished master:
+      - NO halo, NO inner-shadow, NO 3-strand stitches
+      - Single 1-stroke peach stitch line per seam (reads as a thread, not a bar)
+      - Patch gradient kept to one stop top→bottom, very tight range (≤6% lift)
+        so it's a hint of fabric, not a glossy plastic look at 60px
+
+    Diagonals match the brand: TL hero solid, BR deep sibling, TR/BL outlined.
+  -->
+  <defs>
+    <!-- Background: very subtle radial warmth so it isn't a flat black square -->
+    <radialGradient id="bgGrad" cx="50%" cy="42%" r="80%">
+      <stop offset="0%"   stop-color="#1f1d1a"/>
+      <stop offset="100%" stop-color="#1a1917"/>
+    </radialGradient>
+
+    <!-- Tight one-stop gradient: top-light → mid. ~5% lift, no shine. -->
+    <linearGradient id="patchBright" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#ee6e36"/>
+      <stop offset="100%" stop-color="#e8622a"/>
+    </linearGradient>
+
+    <linearGradient id="patchDeep" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#b04a22"/>
+      <stop offset="100%" stop-color="#a8451f"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Canvas -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+
+  <!-- TL: bright solid (hero) -->
+  <rect x="43" y="43" width="192" height="192" rx="32" fill="url(#patchBright)"/>
+
+  <!-- TR: outlined window -->
+  <rect x="277" y="43" width="192" height="192" rx="32"
+        fill="none" stroke="#e8622a" stroke-width="20"/>
+
+  <!-- BL: outlined window -->
+  <rect x="43" y="277" width="192" height="192" rx="32"
+        fill="none" stroke="#e8622a" stroke-width="20"/>
+
+  <!-- BR: deep solid sibling -->
+  <rect x="277" y="277" width="192" height="192" rx="32" fill="url(#patchDeep)"/>
+
+  <!--
+    Single clean stitch lines: one 4px peach stroke per seam.
+    Centered in the gutter (gutter is 42px wide, x=235→277).
+    Short enough to read as thread, not a bar; long enough to survive 60px.
+  -->
+  <g stroke="#f7a877" stroke-width="4" stroke-linecap="round">
+    <!-- top seam (between TL and TR) -->
+    <line x1="240" y1="139" x2="272" y2="139"/>
+    <!-- bottom seam (between BL and BR) -->
+    <line x1="240" y1="373" x2="272" y2="373"/>
+    <!-- left seam (between TL and BL) -->
+    <line x1="139" y1="240" x2="139" y2="272"/>
+    <!-- right seam (between TR and BR) -->
+    <line x1="373" y1="240" x2="373" y2="272"/>
+  </g>
+</svg>

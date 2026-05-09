@@ -1,8 +1,12 @@
 import sharp from "sharp";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const svg = readFileSync("/tmp/icon-master.svg");
+// Master SVG lives next to this script so a fresh clone can regen
+// icons without first reconstructing /tmp state.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const svg = readFileSync(resolve(HERE, "icon-master.svg"));
 const outDir = resolve(process.cwd(), "public/icons");
 
 const targets = [
