@@ -2826,6 +2826,37 @@ button.topbar-search {
 }
 
 /* ──────────────────────────────────────────────────────────────────────
+   Touch tap-target floor.
+
+   Apple HIG and WCAG 2.5.5 (AAA) both want touch targets at ≥44 pt /
+   ≥44 px. Round-2 audit measured several controls below that:
+     .btn.sm                   32 × auto    (recipe/approval CTAs)
+     .topbar-icon-btn          32 × 32      (bell, theme, demo)
+     .cluster-tab              33 tall      (Pending/Suggested/History)
+
+   Bump the floor on touch devices specifically; desktop stays compact.
+   ────────────────────────────────────────────────────────────────────── */
+@media (hover: none) and (pointer: coarse) {
+  .btn.sm {
+    min-height: 44px;
+    padding: 0 14px;
+  }
+  .topbar-icon-btn,
+  .theme-toggle {
+    width: 44px;
+    height: 44px;
+  }
+  .cluster-tab {
+    min-height: 44px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .sidebar-create {
+    min-height: 44px;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
    Touch device hover neutralization.
 
    ~31 :hover rules in this stylesheet were authored without an
