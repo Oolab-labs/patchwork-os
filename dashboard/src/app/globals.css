@@ -2795,10 +2795,15 @@ button.topbar-search {
    it. Bumping form-controls to 16px on mobile suppresses the zoom.
    ────────────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
+  /* `!important` is load-bearing: round-2 audit found this rule was
+     being shadowed by inline `style={{ fontSize: "var(--fs-m)" }}`
+     (13.5 px) on /settings driver fields, /recipes/new form, login —
+     inline styles win against regular CSS rules regardless of source
+     order. The override below makes the 16-px floor mandatory. */
   input,
   select,
   textarea {
-    font-size: 16px;
+    font-size: 16px !important;
   }
 }
 
