@@ -78,6 +78,12 @@ export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
           : [];
       const map: StatusMap = {};
       for (const c of list) {
+        // Defensive: the bridge has historically returned malformed entries
+        // (missing `name`) when the connector subprocess is mid-init, which
+        // crashed the panel with `Cannot read properties of undefined
+        // (reading 'toLowerCase')`. Skip silently — the next 30 s poll will
+        // pick up the populated entry.
+        if (typeof c?.name !== "string" || c.name.length === 0) continue;
         map[c.name.toLowerCase()] = c;
       }
       setStatusMap(map);
