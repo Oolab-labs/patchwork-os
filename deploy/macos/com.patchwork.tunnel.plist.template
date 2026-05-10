@@ -38,7 +38,13 @@
     <string>StrictHostKeyChecking=accept-new</string>
     <string>-i</string>
     <string>{{SSH_KEY}}</string>
-    <string>{{SSH_USER}}@{{VPS_HOST}}</string>
+    <!-- SSH_TARGET is rendered by install-mac-bridge.sh:
+           - "user@host" form when host is an IP or hostname
+           - bare alias when host matches a `~/.ssh/config` Host entry
+             (so ssh_config's User + HostName + IdentityFile resolution
+             works as designed; passing user@alias would override the
+             config's User directive and confuse the alias case). -->
+    <string>{{SSH_TARGET}}</string>
   </array>
 
   <key>RunAtLoad</key>

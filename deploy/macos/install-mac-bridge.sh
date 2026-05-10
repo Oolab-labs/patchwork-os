@@ -7,9 +7,27 @@
 #   bash deploy/macos/install-mac-bridge.sh
 #
 # Usage (env-driven, idempotent re-install):
-#   VPS_HOST=bridge.your.tld VPS_USER=wesh BRIDGE_PORT=63906 \
-#   VPS_PORT=3285 BRIDGE_TOKEN="$(uuidgen)" \
+#   VPS_HOST=185.167.97.141 VPS_USER=root BRIDGE_PORT=63906 \
+#   VPS_PORT=3285 BRIDGE_TOKEN="$(uuidgen | tr '[:upper:]' '[:lower:]')" \
 #   bash deploy/macos/install-mac-bridge.sh
+#
+# Tip: prefer the VPS IP (or a `~/.ssh/config` Host alias) over the
+# public domain. The domain may resolve via DNS that drifts, putting
+# you on a different machine after a redeploy and breaking host-key
+# verification. The IP is whatever your deploy script targets — a
+# stable identity across rebuilds.
+#
+# Using a ~/.ssh/config alias (cleanest):
+#   # in ~/.ssh/config:
+#   #   Host pw-bridge
+#   #       HostName 185.167.97.141
+#   #       User wesh
+#   #       IdentityFile ~/.ssh/id_ed25519
+#   VPS_HOST=pw-bridge VPS_USER=wesh \
+#   bash deploy/macos/install-mac-bridge.sh
+#   # → tunnel.plist uses `pw-bridge` as the SSH target (User from
+#   #   ssh_config wins over the plist's user@host form when an alias
+#   #   exists; we still set both so the resolution is explicit).
 #
 # After install:
 #   tail -f ~/Library/Logs/patchwork-bridge.log
@@ -78,11 +96,40 @@ SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 [[ -f "$SSH_KEY" ]] || SSH_KEY="$HOME/.ssh/id_rsa"
 
 if [[ -z "$VPS_HOST" ]]; then
-  read -p "VPS host (e.g. bridge.your.tld): " VPS_HOST
+  cat <<'PROMPT'
+
+VPS target — three choices, in increasing order of stability:
+
+  (1) Public domain     e.g. bridge.your.tld
+      DNS-resolved each connection. Drifts during redeploys → host-key churn.
+
+  (2) VPS IP            e.g. 185.167.97.141
+      Stable per VPS. Doesn't survive a VPS rebuild but doesn't drift between.
+
+  (3) ~/.ssh/config alias  e.g. pw-bridge
+      Most stable. Pins IP + identity in one place; the rest of the
+      stack (this script, deploy.sh, manual ssh) all use the alias.
+      Update one ssh_config entry on a rebuild, everything follows.
+
+PROMPT
+  read -p "VPS host (IP or ssh alias preferred): " VPS_HOST
 fi
 if [[ -z "$VPS_HOST" ]]; then
   echo "VPS host is required." >&2
   exit 1
+fi
+
+# When VPS_HOST is a ~/.ssh/config alias, ssh resolves both User and
+# HostName from the config, so VPS_USER becomes redundant. The plist
+# still passes user@host to be explicit (and to support the IP-direct
+# case where ssh_config has nothing). If `ssh -G $VPS_HOST` reports a
+# resolved hostname different from VPS_HOST, treat that as confirmation
+# the value is an alias.
+if ssh -G "$VPS_HOST" 2>/dev/null | awk '$1 == "hostname"' | grep -qv "^hostname $VPS_HOST$"; then
+  echo "Detected '$VPS_HOST' is a ~/.ssh/config alias — host + identity resolved from there."
+  IS_SSH_ALIAS=1
+else
+  IS_SSH_ALIAS=0
 fi
 
 if [[ -z "$BRIDGE_TOKEN" ]]; then
@@ -112,6 +159,18 @@ AUTOSSH_BIN="$(command -v autossh)"
 
 mkdir -p "$LAUNCH_AGENTS" "$LOGS"
 
+# SSH target string: bare alias when VPS_HOST is a `~/.ssh/config` Host
+# entry, "user@host" form otherwise. The alias case lets ssh_config own
+# user + identity + hostname resolution, which is the most stable setup
+# (one place to update on a VPS rebuild).
+if [ "$IS_SSH_ALIAS" = "1" ]; then
+  SSH_TARGET="$VPS_HOST"
+  echo "SSH target: $SSH_TARGET (resolved via ~/.ssh/config)"
+else
+  SSH_TARGET="$VPS_USER@$VPS_HOST"
+  echo "SSH target: $SSH_TARGET"
+fi
+
 render() {
   local tmpl="$1" out="$2"
   sed \
@@ -122,6 +181,7 @@ render() {
     -e "s|{{BRIDGE_TOKEN}}|$BRIDGE_TOKEN|g" \
     -e "s|{{VPS_HOST}}|$VPS_HOST|g" \
     -e "s|{{SSH_USER}}|$VPS_USER|g" \
+    -e "s|{{SSH_TARGET}}|$SSH_TARGET|g" \
     -e "s|{{SSH_KEY}}|$SSH_KEY|g" \
     -e "s|{{WORKSPACE}}|$WORKSPACE|g" \
     -e "s|{{HOME}}|$HOME|g" \
@@ -162,7 +222,7 @@ cat <<INFO
 Installed.
 
   Bridge: 127.0.0.1:$BRIDGE_PORT
-  Tunnel: -> $VPS_USER@$VPS_HOST:$VPS_PORT
+  Tunnel: -> $SSH_TARGET:$VPS_PORT
   Token:  $BRIDGE_TOKEN
 
 Logs:
@@ -177,7 +237,7 @@ Update the VPS dashboard's PATCHWORK_BRIDGE_TOKEN to match the token
 above, then \`pm2 restart patchwork-dashboard\` on the VPS so the new
 token takes effect:
 
-  ssh $VPS_USER@$VPS_HOST 'sed -i "s|^PATCHWORK_BRIDGE_TOKEN=.*|PATCHWORK_BRIDGE_TOKEN=$BRIDGE_TOKEN|" /opt/patchwork-dashboard/.env.local && pm2 restart patchwork-dashboard'
+  ssh $SSH_TARGET 'sed -i "s|^PATCHWORK_BRIDGE_TOKEN=.*|PATCHWORK_BRIDGE_TOKEN=$BRIDGE_TOKEN|" /opt/patchwork-dashboard/.env.local && pm2 restart patchwork-dashboard'
 
 Uninstall: bash deploy/macos/uninstall-mac-bridge.sh
 ────────────────────────────────────────────────────────────────────────
