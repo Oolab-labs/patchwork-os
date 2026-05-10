@@ -102,5 +102,11 @@ export interface Recipe {
   trigger: Trigger;
   context?: ContextBlock[];
   steps: Step[];
+  /**
+   * Acknowledge write-tool steps so preflight does not flag them. Each entry
+   * is a tool id (e.g. "file.write") or a namespace (e.g. "slack"). Merged
+   * with any --allow-write CLI flags at preflight time.
+   */
+  allowWrites?: string[];
   on_error?: ErrorPolicy;
 }

@@ -1874,6 +1874,74 @@ steps:
       expect(result.plan.schemaVersion).toBe(1);
     });
 
+    it("accepts allowWrites declared in the recipe YAML (no CLI flag needed)", async () => {
+      const recipePath = join(tmpDir, "preflight-allow-writes-yaml.yaml");
+      writeFileSync(
+        recipePath,
+        `name: preflight-allow-writes-yaml
+description: Recipe-level allowWrites should suppress write warnings
+trigger:
+  type: manual
+allowWrites:
+  - file.write
+steps:
+  - tool: file.write
+    path: ${JSON.stringify(join(tmpDir, "pf-yaml.txt"))}
+    content: "hi"
+`,
+      );
+
+      const result = await runPreflight(recipePath);
+      expect(result.ok).toBe(true);
+      expect(result.issues.some((i) => i.code === "unacknowledged-write")).toBe(
+        false,
+      );
+    });
+
+    it("merges YAML allowWrites with CLI-supplied allowWrites", async () => {
+      const recipePath = join(tmpDir, "preflight-allow-writes-merge.yaml");
+      writeFileSync(
+        recipePath,
+        `name: preflight-allow-writes-merge
+description: YAML covers file.write; CLI covers slack
+trigger:
+  type: manual
+allowWrites:
+  - file.write
+steps:
+  - id: write-file
+    tool: file.write
+    path: ${JSON.stringify(join(tmpDir, "pf-merge.txt"))}
+    content: "hi"
+  - id: post-slack
+    tool: slack.post_message
+    channel: "#x"
+    text: "hi"
+`,
+      );
+
+      const yamlOnly = await runPreflight(recipePath);
+      expect(
+        yamlOnly.issues.some(
+          (i) =>
+            i.code === "unacknowledged-write" &&
+            i.tool === "slack.post_message",
+        ),
+      ).toBe(true);
+      expect(
+        yamlOnly.issues.some(
+          (i) => i.code === "unacknowledged-write" && i.tool === "file.write",
+        ),
+      ).toBe(false);
+
+      const merged = await runPreflight(recipePath, {
+        allowWrites: ["slack"],
+      });
+      expect(merged.issues.some((i) => i.code === "unacknowledged-write")).toBe(
+        false,
+      );
+    });
+
     it("treats an untrusted write as an error without allowWrites", async () => {
       const recipePath = join(tmpDir, "preflight-unacked-write.yaml");
       writeFileSync(
