@@ -4,6 +4,8 @@
 
 Automation hooks let Claude act autonomously on IDE and git events without user input. When a Claude Code lifecycle event fires — a file is saved, a test run completes, a branch is checked out — the bridge evaluates your policy file, and if the matching hook is enabled and its cooldown has elapsed, the bridge spawns a Claude Code subprocess with the configured prompt. The subprocess has full access to bridge tools (full mode is the default since v2.43.0), runs to completion, and exits. No user interaction is required at any step.
 
+> **Reaching your phone from a hook or recipe:** the bridge subprocess runs under `launchd`'s TCC identity, so AppleScript / iMessage paths are silently denied. Use [ntfy.sh](recipe-phone-notifications.md) instead — one `curl POST` from any hook step, no signing, no permissions, action-button round-trip supported.
+
 ---
 
 ## Prerequisites
