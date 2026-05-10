@@ -65,6 +65,20 @@ export interface ApprovalHttpDeps {
   /** Public base URL of this bridge (e.g. https://mybridge.example.com). Embedded in push payload as callback base. */
   pushServiceBaseUrl?: string;
   /**
+   * ntfy.sh topic for direct phone-path approvals via action buttons. When set
+   * AND `pushServiceBaseUrl` is set (so the action URLs can reach the bridge),
+   * each queued approval is published to the topic with Approve / Reject HTTP
+   * action buttons that POST back to the bridge with the single-use approval
+   * token. Independent of `pushServiceUrl` — ntfy can be the sole phone path
+   * (no FCM/APNS relay needed) or run alongside it.
+   */
+  ntfyTopic?: string;
+  /**
+   * ntfy server. Defaults to `https://ntfy.sh`. Set to a self-hosted instance
+   * (e.g. `https://ntfy.your-domain.tld`) for auth/private-topic deployments.
+   */
+  ntfyServer?: string;
+  /**
    * Optional ActivityLog used to compute passive risk personalization
    * signals (`src/approvalSignals.ts`). When omitted, personalSignals are
    * not computed and the queue entry has the `personalSignals` field
@@ -428,6 +442,117 @@ async function dispatchPushNotification(
   }
 }
 
+/**
+ * Publish an approval prompt to ntfy.sh with Approve / Reject HTTP action
+ * buttons that POST back to the bridge using the single-use approval token.
+ * Reuses the same SSRF guard as the push relay path. Fire-and-forget.
+ *
+ * Action buttons embed the token in the `x-approval-token` header (not the
+ * URL), matching the existing relay → service-worker → bridge contract so the
+ * single-use token never appears in logs or referrer.
+ */
+async function dispatchNtfyApproval(
+  ntfyServer: string,
+  payload: {
+    topic: string;
+    toolName: string;
+    tier: string;
+    callId: string;
+    summary?: string;
+    approvalToken: string;
+    bridgeCallbackBase: string;
+  },
+): Promise<void> {
+  if (!ntfyServer.startsWith("https://")) {
+    console.warn(`[ntfy] Rejected non-HTTPS ntfy server URL`);
+    return;
+  }
+  if (!payload.bridgeCallbackBase.startsWith("https://")) {
+    console.warn(
+      `[ntfy] bridgeCallbackBase must be https:// for action buttons; skipping ntfy publish`,
+    );
+    return;
+  }
+  let hostname: string;
+  try {
+    hostname = new URL(ntfyServer).hostname;
+  } catch {
+    console.warn(`[ntfy] Malformed ntfy server URL — skipping`);
+    return;
+  }
+  if (hostname === "localhost") {
+    console.warn(`[ntfy] Blocked loopback ntfy server hostname`);
+    return;
+  }
+  try {
+    const resolved = await dns.lookup(hostname);
+    if (isBlockedIp(resolved.address)) {
+      console.warn(
+        `[ntfy] Blocked private/loopback IP for ntfy server: ${resolved.address}`,
+      );
+      return;
+    }
+  } catch (err) {
+    console.warn(
+      `[ntfy] DNS resolution failed for ${hostname}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return;
+  }
+
+  const callbackBase = payload.bridgeCallbackBase.replace(/\/+$/, "");
+  const headerSet = {
+    "x-approval-token": payload.approvalToken,
+    "Content-Type": "application/json",
+  };
+  const body = JSON.stringify({
+    topic: payload.topic,
+    title: `Approve ${payload.toolName}? (${payload.tier})`,
+    message: payload.summary ?? `Pending tool call ${payload.callId}`,
+    tags: ["lock", "warning"],
+    priority: payload.tier === "high" ? 5 : 4,
+    actions: [
+      {
+        action: "http",
+        label: "Approve",
+        method: "POST",
+        url: `${callbackBase}/approve/${payload.callId}`,
+        headers: headerSet,
+        clear: true,
+      },
+      {
+        action: "http",
+        label: "Reject",
+        method: "POST",
+        url: `${callbackBase}/reject/${payload.callId}`,
+        headers: headerSet,
+        clear: true,
+      },
+    ],
+  });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const res = await fetch(ntfyServer.replace(/\/+$/, "") + "/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.warn(
+        `[ntfy] Non-2xx from ntfy server: ${res.status} ${res.statusText}`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[ntfy] Dispatch failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function computeRiskSignals(
   toolName: string,
   params: Record<string, unknown>,
@@ -710,7 +835,7 @@ async function handleApprovalRequest(
       // field stays absent — that case still means "not configured."
       ...(personalSignals !== undefined && { personalSignals }),
     },
-    { withToken: !!deps.pushServiceUrl },
+    { withToken: !!deps.pushServiceUrl || !!deps.ntfyTopic },
   );
   recordApprovalPrompted();
 
@@ -738,6 +863,21 @@ async function handleApprovalRequest(
       riskSignals,
       approvalToken,
       bridgeCallbackBase: deps.pushServiceBaseUrl ?? "",
+    }).catch(() => {});
+  }
+
+  // ntfy.sh phone path — independent of the FCM/APNS relay above. Action
+  // buttons in the notification POST back to /approve|/reject with the
+  // single-use token. Requires a public bridgeCallbackBase (HTTPS).
+  if (deps.ntfyTopic && approvalToken && deps.pushServiceBaseUrl) {
+    dispatchNtfyApproval(deps.ntfyServer ?? "https://ntfy.sh", {
+      topic: deps.ntfyTopic,
+      toolName,
+      tier,
+      callId,
+      summary,
+      approvalToken,
+      bridgeCallbackBase: deps.pushServiceBaseUrl,
     }).catch(() => {});
   }
 

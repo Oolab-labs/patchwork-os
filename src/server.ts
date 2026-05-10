@@ -252,6 +252,10 @@ export class Server extends EventEmitter<ServerEvents> {
   public pushServiceToken: string | undefined = undefined;
   /** Patchwork: public base URL of this bridge, embedded in push payloads as callback base. */
   public pushServiceBaseUrl: string | undefined = undefined;
+  /** Patchwork: ntfy.sh topic for direct phone-path approvals via action buttons. */
+  public ntfyTopic: string | undefined = undefined;
+  /** Patchwork: ntfy server (default https://ntfy.sh; override for self-hosted). */
+  public ntfyServer: string | undefined = undefined;
   /** Patchwork: approval decision audit callback wired to activityLog.recordEvent. */
   public onApprovalDecision:
     | ((event: string, meta: Record<string, unknown>) => void)
@@ -1357,6 +1361,8 @@ export class Server extends EventEmitter<ServerEvents> {
           pushServiceUrl?: string;
           pushServiceToken?: string;
           pushServiceBaseUrl?: string;
+          ntfyTopic?: string;
+          ntfyServer?: string;
         }>(req, SETTINGS_BODY_CAP);
         if (!parsed.ok) {
           if (parsed.code === "too_large") {
@@ -1572,6 +1578,35 @@ export class Server extends EventEmitter<ServerEvents> {
               }
               this.pushServiceBaseUrl = baseUrl || undefined;
             }
+            if (body.ntfyTopic !== undefined) {
+              const topic = body.ntfyTopic.trim();
+              // Topic acts as a bearer token on the public ntfy.sh server —
+              // anyone subscribed sees the approval payload + single-use
+              // approvalToken. Reject empty / whitespace / control chars to
+              // avoid silent misconfiguration.
+              if (topic && !/^[A-Za-z0-9_-]{1,64}$/.test(topic)) {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({
+                    error: "ntfyTopic must match [A-Za-z0-9_-]{1,64}",
+                  }),
+                );
+                return;
+              }
+              this.ntfyTopic = topic || undefined;
+            }
+            if (body.ntfyServer !== undefined) {
+              const server = body.ntfyServer.trim();
+              // Same reasoning as pushServiceBaseUrl — the bridge sends the
+              // single-use token to this URL. http:// would expose it on the
+              // wire; a malicious value would exfiltrate every approval.
+              if (server && !server.startsWith("https://")) {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "ntfyServer must be HTTPS" }));
+                return;
+              }
+              this.ntfyServer = server || undefined;
+            }
             const restartRequired =
               driverRaw !== undefined ||
               body.apiKey !== undefined ||
@@ -1705,6 +1740,8 @@ export class Server extends EventEmitter<ServerEvents> {
               pushServiceUrl: this.pushServiceUrl,
               pushServiceToken: this.pushServiceToken,
               pushServiceBaseUrl: this.pushServiceBaseUrl,
+              ntfyTopic: this.ntfyTopic,
+              ntfyServer: this.ntfyServer,
               activityLog: this.activityLog,
               // RecipeRunLog satisfies RecipeRunQuerier structurally
               // — the cast bridges TS contravariance: RecipeRunQuerier's

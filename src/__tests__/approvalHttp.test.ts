@@ -1042,6 +1042,150 @@ describe("push notification dispatch", () => {
     }
   });
 
+  it("ntfy publish includes Approve/Reject http actions with approvalToken header when ntfyTopic + bridgeCallbackBase configured", async () => {
+    const originalFetch = globalThis.fetch;
+    const ntfyCalls: Array<{ url: string; body: unknown }> = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      ntfyCalls.push({
+        url,
+        body: JSON.parse((init?.body as string) ?? "{}"),
+      });
+      return new Response("{}", { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      const queue = new ApprovalQueue();
+      const pending = routeApprovalRequest(
+        { method: "POST", path: "/approvals", body: { toolName: "gitPush" } },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+          ntfyTopic: "patchwork-test-topic",
+          ntfyServer: "https://ntfy.example.com",
+          pushServiceBaseUrl: "https://bridge.example.com",
+        },
+      );
+      await new Promise((r) => setTimeout(r, 50));
+      const item = queue.list()[0];
+      if (!item) throw new Error("no queued item");
+      queue.approve(item.callId);
+      await pending;
+
+      const ntfyCall = ntfyCalls.find(
+        (c) => new URL(c.url).hostname === "ntfy.example.com",
+      );
+      expect(ntfyCall).toBeDefined();
+      const body = ntfyCall!.body as {
+        topic: string;
+        actions: Array<{
+          action: string;
+          label: string;
+          method: string;
+          url: string;
+          headers: Record<string, string>;
+        }>;
+      };
+      expect(body.topic).toBe("patchwork-test-topic");
+      expect(body.actions).toHaveLength(2);
+      const approve = body.actions.find((a) => a.label === "Approve");
+      const reject = body.actions.find((a) => a.label === "Reject");
+      expect(approve).toBeDefined();
+      expect(reject).toBeDefined();
+      expect(approve!.action).toBe("http");
+      expect(approve!.method).toBe("POST");
+      expect(approve!.url).toBe(
+        `https://bridge.example.com/approve/${item.callId}`,
+      );
+      expect(reject!.url).toBe(
+        `https://bridge.example.com/reject/${item.callId}`,
+      );
+      // Single-use approval token must be in the header set, not the URL.
+      expect(typeof approve!.headers["x-approval-token"]).toBe("string");
+      expect(approve!.headers["x-approval-token"].length).toBeGreaterThan(16);
+      expect(approve!.url).not.toContain(approve!.headers["x-approval-token"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("ntfy publish skipped when bridgeCallbackBase missing (action URLs cannot be built)", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      calls.push(url);
+      return new Response("{}", { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      const queue = new ApprovalQueue();
+      const pending = routeApprovalRequest(
+        { method: "POST", path: "/approvals", body: { toolName: "gitPush" } },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+          ntfyTopic: "patchwork-test-topic",
+          // pushServiceBaseUrl deliberately omitted
+        },
+      );
+      await new Promise((r) => setTimeout(r, 20));
+      const item = queue.list()[0];
+      if (item) queue.approve(item.callId);
+      await pending;
+      expect(
+        calls.filter((u) => {
+          try {
+            return new URL(u).hostname === "ntfy.sh";
+          } catch {
+            return false;
+          }
+        }),
+      ).toHaveLength(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("ntfy publish blocks non-HTTPS bridgeCallbackBase (would expose token over plaintext)", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      calls.push(url);
+      return new Response("{}", { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      const queue = new ApprovalQueue();
+      const pending = routeApprovalRequest(
+        { method: "POST", path: "/approvals", body: { toolName: "gitPush" } },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+          ntfyTopic: "patchwork-test-topic",
+          ntfyServer: "https://ntfy.example.com",
+          pushServiceBaseUrl: "http://bridge.example.com",
+        },
+      );
+      await new Promise((r) => setTimeout(r, 20));
+      const item = queue.list()[0];
+      if (item) queue.approve(item.callId);
+      await pending;
+      expect(
+        calls.filter((u) => {
+          try {
+            return new URL(u).hostname === "ntfy.example.com";
+          } catch {
+            return false;
+          }
+        }),
+      ).toHaveLength(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("non-HTTPS push service URL is blocked", async () => {
     const originalFetch = globalThis.fetch;
     const calls: string[] = [];

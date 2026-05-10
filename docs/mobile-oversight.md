@@ -28,8 +28,49 @@ within 500 ms.
 ## Prerequisites
 
 - Patchwork bridge v0.2.0-alpha.18+ running locally or on a VPS.
-- A push relay service reachable from the bridge (self-hosted or hosted at `notify.patchwork.dev`).
-- The dashboard installed as a PWA on your phone (see step 4).
+- A push path. Pick one:
+  - **ntfy.sh** (simplest, recommended for personal use) — free, hosted, action-button approvals straight from the lock screen. No relay infrastructure to run. See [Step 1B](#step-1b--ntfysh-no-relay-needed) below.
+  - **Push relay** (FCM/APNS, recommended for teams) — full PWA + service worker integration, custom branding. Self-hosted or hosted at `notify.patchwork.dev`. See [Step 1A](#step-1--deploy-the-push-relay) below.
+  - You can also run **both** in parallel; they're independent.
+- For the relay path: the dashboard installed as a PWA on your phone (see step 4).
+- For the ntfy path: the [ntfy iOS / Android app](https://ntfy.sh/) installed and subscribed to your topic.
+
+---
+
+## Step 1B — ntfy.sh (no relay needed)
+
+Skip this section if you're going with FCM/APNS via the push relay (Step 1 below).
+
+ntfy.sh is a thin pub-sub HTTPS server with iOS/Android apps. The bridge POSTs each pending approval as a notification with two HTTP action buttons (Approve / Reject) that POST back to the bridge with the same single-use token the relay path uses. Tap a button on the lock screen, the approval lands. No FCM, no APNS, no service worker.
+
+1. Pick an unguessable topic. The topic name is your bearer-equivalent — anyone subscribed sees the approval payload and the single-use token.
+
+   ```bash
+   openssl rand -hex 6
+   # → e.g. d1949fe75b5e — use as the topic suffix
+   ```
+
+2. Install the [ntfy app](https://ntfy.sh/) on your phone, open it, **+** → **Subscribe to topic** → enter `patchwork-<your-suffix>`. Leave server as `ntfy.sh` unless you're self-hosting.
+
+3. Configure the bridge. The bridge's `pushServiceBaseUrl` must be a public HTTPS URL the phone can reach (your reverse tunnel / VPS / Cloudflare Tunnel). The action buttons POST to `${pushServiceBaseUrl}/approve/<callId>` with the single-use token in the `x-approval-token` header.
+
+   ```bash
+   curl -X POST https://<bridge-public-url>/settings \
+     -H "Authorization: Bearer $BRIDGE_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "ntfyTopic": "patchwork-d1949fe75b5e",
+       "pushServiceBaseUrl": "https://<bridge-public-url>"
+     }'
+   ```
+
+   Self-hosted ntfy: also pass `"ntfyServer": "https://ntfy.your-domain.tld"`.
+
+4. Test it. Trigger any approval-gated tool call (e.g. a `gitPush` from a Claude Code session). Within seconds your phone buzzes with a notification carrying Approve / Reject buttons. Tap one. The bridge records the decision and unblocks the tool call.
+
+**Security model:** the `pushServiceBaseUrl` must be HTTPS — the bridge refuses to publish ntfy notifications when it's plaintext, because the action URLs would carry the single-use token over the wire. Topic names should be high-entropy (≥ 8 random hex bytes) and rotated if leaked. For multi-recipient or auth-gated topics, run [self-hosted ntfy](https://docs.ntfy.sh/install/) and point `ntfyServer` at it.
+
+**Trade-off vs the relay path:** ntfy is single-recipient (anyone with the topic name receives the push), no PWA, no custom branding. If you need team workflows or per-user device routing, use the relay path below.
 
 ---
 
