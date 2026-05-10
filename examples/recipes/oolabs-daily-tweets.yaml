@@ -83,6 +83,19 @@ steps:
           - Zero hashtags by default.
           - No emoji unless the angle genuinely calls for one (max 1).
 
+        SUNDAY WILDCARD:
+        Compute today's day-of-week from {{date}} (Sunday = 0). If today
+        is Sunday, ALSO produce a fourth tweet from the WILDCARD POOL
+        below (can break 280 chars if it earns the length, e.g. as a
+        thread opener). On any other day, output exactly 3 and stop.
+
+        WILDCARD POOL (Sundays only):
+          W1. Thread starter: longer first post, ends with "(1/n)" cue.
+          W2. Week in review: the most interesting thing that landed.
+          W3. What I'm thinking about: an in-progress thought, not a roadmap.
+          W4. Reader question: a real design question to the timeline.
+          W5. Field note: an observation from using your own tool all week.
+
         Output (plain text, EXACTLY this shape, no JSON, no fences):
 
         Tweet 1:
@@ -92,6 +105,10 @@ steps:
         <tweet text>
 
         Tweet 3:
+        <tweet text>
+
+        (Sunday only — omit on every other day:)
+        Tweet 4 (wildcard):
         <tweet text>
       into: tweet_drafts
 
