@@ -1205,7 +1205,18 @@ export async function runPreflight(
   const plan = await runRecipeDryPlan(recipeRef, options);
 
   const requireWriteAck = options.requireWriteAck ?? true;
-  const allowlist = new Set(options.allowWrites ?? []);
+  // Merge the recipe's declared allowWrites (YAML) with any caller-supplied
+  // entries (e.g. --allow-write CLI flag). Either source is sufficient.
+  const recipeForWrites = loadYamlRecipe(recipePath);
+  const recipeAllowWrites = Array.isArray(recipeForWrites.allowWrites)
+    ? recipeForWrites.allowWrites.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
+    : [];
+  const allowlist = new Set<string>([
+    ...recipeAllowWrites,
+    ...(options.allowWrites ?? []),
+  ]);
 
   for (const step of plan.steps) {
     if (step.type === "tool" && step.tool && step.resolved === false) {

@@ -34,6 +34,33 @@ patchwork recipe run morning-inbox-triage   # dry-run, immediate
 patchwork recipe enable morning-inbox-triage  # activates cron
 ```
 
+## Acknowledging writes
+
+Recipes that include write-capable tools (`file.write`, `slack.post_message`, `github.create_pr`, etc.) fail `patchwork recipe preflight` until you opt in. There are two ways to do that — pick whichever fits the recipe.
+
+**Recipe-level (recommended for shipped recipes):** declare `allowWrites` at the top of the YAML. The list is part of the recipe's contract — anyone who reads the file knows which side effects it intends.
+
+```yaml
+name: my-recipe
+trigger:
+  type: manual
+allowWrites:
+  - file.write           # specific tool id
+  - slack                # whole namespace
+steps:
+  - tool: file.write
+    path: ~/.patchwork/inbox/note.md
+    content: "hi"
+```
+
+**CLI flag (recommended for ad-hoc local runs):** pass `--allow-write <tool-or-namespace>` to `patchwork recipe preflight`. Useful when you're iterating on a recipe and don't want to commit the acknowledgement yet.
+
+```bash
+patchwork recipe preflight my-recipe.yaml --allow-write file.write
+```
+
+The two sources merge — a recipe with `allowWrites: [file.write]` and a CLI invocation with `--allow-write slack` ends up with both acknowledged.
+
 ## Subdirectories
 
 | Directory | What's there |

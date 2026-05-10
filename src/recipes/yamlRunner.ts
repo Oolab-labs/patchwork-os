@@ -211,6 +211,12 @@ export interface YamlRecipe {
   output?: { path: string };
   /** Plugin specs (npm package name or local path) to load before running steps. */
   servers?: string[];
+  /**
+   * Acknowledge write-tool steps so preflight does not flag them. Each entry
+   * is a tool id (e.g. "file.write") or a namespace (e.g. "slack"). Merged
+   * with any --allow-write CLI flags at preflight time.
+   */
+  allowWrites?: string[];
   on_error?: ErrorPolicy;
 }
 

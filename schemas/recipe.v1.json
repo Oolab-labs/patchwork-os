@@ -610,6 +610,15 @@
         }
       }
     },
+    "allowWrites": {
+      "type": "array",
+      "description": "Acknowledge write-tool steps so preflight does not flag them. Each entry is a tool id (e.g. \"file.write\") or a namespace (e.g. \"slack\" to acknowledge every slack.* tool). Equivalent to passing --allow-write on the CLI; the recipe-level list and the CLI list are merged.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
     "on_error": {
       "type": "object",
       "description": "Error handling policy",
