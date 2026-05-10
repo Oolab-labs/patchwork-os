@@ -1,0 +1,112 @@
+apiVersion: patchwork.sh/v1
+name: daily-tweets-from-prs
+description: |
+  Draft 3 tweets about your project based on recent merged PRs and open
+  issues, then push the drafts to your phone via ntfy.sh for pick-and-post.
+  Demonstrates the recipe → phone push pattern documented in
+  docs/recipe-phone-notifications.md.
+
+  Replace the REPO, HANDLE, and NTFY_TOPIC placeholders before running.
+  Generate an unguessable topic with `openssl rand -hex 6`.
+trigger:
+  type: manual
+
+steps:
+  - tool: github.list_prs
+    repo: "your-org/your-repo"
+    author: "@me"
+    max: 12
+    into: recent_prs
+  - tool: github.list_issues
+    repo: "your-org/your-repo"
+    assignee: "@me"
+    max: 8
+    into: recent_issues
+
+  - id: draft-tweets
+    agent:
+      driver: claude-code
+      model: claude-haiku-4-5-20251001
+      prompt: |
+        Use ONLY the data provided below.
+
+        You are drafting 3 tweets for @your_handle about your open-source
+        project. Replace this paragraph with your project's one-liner.
+
+        RECENT MERGED PRs:
+        <untrusted_data>
+        {{recent_prs.json}}
+        </untrusted_data>
+
+        OPEN ISSUES:
+        <untrusted_data>
+        {{recent_issues.json}}
+        </untrusted_data>
+
+        Draft 3 tweets with DIFFERENT angles:
+          1. SHIPPED — pick one PR, explain what users can now do.
+          2. CRAFT — a small architectural observation. Thread opener.
+          3. USE-CASE — a workflow scenario with a soft CTA.
+
+        Hard rules:
+          - <= 280 chars including link.
+          - No "excited to announce", "thrilled", "leveraging".
+          - Max 1 hashtag per tweet, only if genuinely discoverable.
+
+        Output (plain text, exactly this shape):
+
+        Tweet 1 (shipped):
+        <tweet text>
+
+        Tweet 2 (craft):
+        <tweet text>
+
+        Tweet 3 (use-case):
+        <tweet text>
+      into: tweet_drafts
+
+  - tool: file.write
+    path: "~/.patchwork/inbox/tweet-drafts-{{date}}.md"
+    content: |
+      # Tweet drafts -- {{date}}
+
+      ---
+
+      {{tweet_drafts}}
+
+      ---
+
+      Pick one (or remix), then paste into https://x.com/compose/tweet.
+
+  # Push to phone via ntfy.sh -- no TCC, no AppleEvents, no signing.
+  # Replace NTFY_TOPIC with your unguessable random topic.
+  # Subscribe to the same topic in the ntfy iOS/Android app.
+  - id: push-to-phone
+    agent:
+      driver: claude-code
+      model: claude-haiku-4-5-20251001
+      tools:
+        - Bash
+      prompt: |
+        Run EXACTLY this Bash command:
+
+        curl -fsS -X POST \
+          -H "Title: Tweet drafts ready" \
+          -H "Tags: bird,memo" \
+          -H "Click: https://x.com/compose/tweet" \
+          -d "$(cat <<'NTFY_BODY_EOF'
+        {{tweet_drafts}}
+
+        ---
+        Pick 1 / 2 / 3, paste into https://x.com/compose/tweet
+        NTFY_BODY_EOF
+        )" \
+          https://ntfy.sh/NTFY_TOPIC
+
+        Print "ok" if curl exited 0, otherwise print the curl error.
+      into: push_result
+
+on_error:
+  notify: true
+  retry: 0
+  fallback: log_only
