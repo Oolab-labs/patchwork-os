@@ -1153,7 +1153,10 @@ function buildAgentExecutorDeps(
     localFn: (prompt, model) => stepDeps.localFn(prompt, model),
     probeClaudeCli: () => {
       if (runnerDeps.claudeFn !== undefined) return false;
-      const probe = spawnSync("claude", ["--version"], {
+      // Use the same resolution as defaultClaudeCodeFn so the auto-detect
+      // branch in agentExecutor.ts doesn't probe "claude" via PATH and
+      // then later fail to spawn the configured override (or vice versa).
+      const probe = spawnSync(resolveClaudeBinary(), ["--version"], {
         encoding: "utf-8",
         timeout: 5000,
       });
@@ -1172,13 +1175,37 @@ function buildAgentExecutorDeps(
   };
 }
 
+/**
+ * Resolve the `claude` binary path with override precedence:
+ *   1. PATCHWORK_CLAUDE_BINARY env var (set by the bridge LaunchAgent
+ *      or any wrapper script)
+ *   2. `~/.patchwork/config.json` `claudeBinary` field
+ *   3. plain `"claude"` (PATH lookup — pre-existing default)
+ *
+ * Resolved per-call, not memoised, so config edits + env-var changes
+ * take effect on the next agent step without a bridge restart.
+ */
+export function resolveClaudeBinary(): string {
+  const envOverride = process.env.PATCHWORK_CLAUDE_BINARY;
+  if (envOverride && envOverride.length > 0) return envOverride;
+  try {
+    const cfg = loadPatchworkConfigSync();
+    if (cfg.claudeBinary && cfg.claudeBinary.length > 0)
+      return cfg.claudeBinary;
+  } catch {
+    // ignore — fall through to the "claude" default
+  }
+  return "claude";
+}
+
 function defaultClaudeCodeFn(
   prompt: string,
   _opts?: { mcpAccess?: boolean },
 ): Promise<string> {
+  const binary = resolveClaudeBinary();
   try {
     const result = spawnSync(
-      "claude",
+      binary,
       [
         "-p",
         prompt,
@@ -1193,8 +1220,12 @@ function defaultClaudeCodeFn(
       },
     );
     if (result.error) {
+      // Surface the configured binary path in the error so users diagnosing
+      // ENOENT can see whether resolveClaudeBinary picked up their override.
+      // Hint includes the env var + config field names so the fix is one
+      // click away.
       return Promise.resolve(
-        "[agent step failed: claude CLI not found — install Claude Code or set ANTHROPIC_API_KEY]",
+        `[agent step failed: claude CLI not found at "${binary}" — install Claude Code, set PATCHWORK_CLAUDE_BINARY, or set ANTHROPIC_API_KEY]`,
       );
     }
     if (result.status !== 0) {

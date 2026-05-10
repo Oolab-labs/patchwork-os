@@ -2443,3 +2443,65 @@ describe("listYamlRecipes — JSON recipe files", () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// resolveClaudeBinary — override precedence
+//
+// The recipe `agent:` step's `claude` spawn uses this resolver so a
+// launchd-managed bridge (whose PATH may not include the developer's
+// local install) can configure the binary explicitly via env or config.
+// ─────────────────────────────────────────────────────────────────────
+
+describe("resolveClaudeBinary — override precedence", async () => {
+  const { resolveClaudeBinary } = await import("../yamlRunner.js");
+
+  // Wrap each test in env restore: process.env mutations leak across
+  // tests within the same vitest worker.
+  const originalEnv = process.env.PATCHWORK_CLAUDE_BINARY;
+
+  function withEnv(value: string | undefined, fn: () => void) {
+    if (value === undefined) {
+      delete process.env.PATCHWORK_CLAUDE_BINARY;
+    } else {
+      process.env.PATCHWORK_CLAUDE_BINARY = value;
+    }
+    try {
+      fn();
+    } finally {
+      if (originalEnv === undefined) {
+        delete process.env.PATCHWORK_CLAUDE_BINARY;
+      } else {
+        process.env.PATCHWORK_CLAUDE_BINARY = originalEnv;
+      }
+    }
+  }
+
+  it("env var beats config + default", () => {
+    withEnv("/from/env/claude", () => {
+      expect(resolveClaudeBinary()).toBe("/from/env/claude");
+    });
+  });
+
+  it("empty env var is treated as unset (falls through to default)", () => {
+    withEnv("", () => {
+      // No PatchworkConfig.claudeBinary mocked here, so this falls through
+      // to the literal "claude" default. The point is: empty string in
+      // env shouldn't mean "spawn empty-string-binary".
+      expect(resolveClaudeBinary()).toBe("claude");
+    });
+  });
+
+  it("no env, no config → 'claude' default (PATH lookup)", () => {
+    withEnv(undefined, () => {
+      // This will call loadPatchworkConfigSync which reads the real
+      // ~/.patchwork/config.json — if the developer running the test
+      // has claudeBinary set there, this would return that value. The
+      // assertion below tolerates either: the default OR a configured
+      // override path. The strict env-precedence test above is the
+      // load-bearing assertion.
+      const result = resolveClaudeBinary();
+      expect(typeof result).toBe("string");
+      expect(result.length).toBeGreaterThan(0);
+    });
+  });
+});

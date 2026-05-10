@@ -55,7 +55,8 @@
       "properties": {
         "slackChannel": { "type": "string" }
       }
-    }
+    },
+    "claudeBinary": { "type": "string" }
   },
   "additionalProperties": false
 }
