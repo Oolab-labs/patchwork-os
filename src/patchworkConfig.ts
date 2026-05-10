@@ -54,6 +54,22 @@ export interface PatchworkConfig {
   notifications?: {
     slackChannel?: string;
   };
+  /**
+   * Path to the `claude` CLI binary. Used by recipe `agent:` steps
+   * (`defaultClaudeCodeFn`) when the runtime can't rely on PATH-based
+   * lookup — e.g. a launchd-managed bridge whose env diverges from the
+   * developer's interactive shell, or a `npm link`-ed install where
+   * the global `claude` symlink resolves into a sandboxed dir.
+   *
+   * Override priority (highest first):
+   *   1. `PATCHWORK_CLAUDE_BINARY` env var
+   *   2. this `claudeBinary` config field
+   *   3. plain `"claude"` (PATH lookup)
+   *
+   * Default: omitted → spawn falls back to PATH lookup, matching
+   * pre-existing behavior.
+   */
+  claudeBinary?: string;
 }
 
 const DEFAULTS: PatchworkConfig = {
