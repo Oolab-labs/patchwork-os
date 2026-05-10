@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.patchwork.tunnel</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{AUTOSSH_BIN}}</string>
+    <!-- AUTOSSH_PORT=0 disables the legacy monitoring-port heartbeat in
+         favor of SSH's own ServerAliveInterval/CountMax. Modern autossh
+         docs recommend this; the monitoring port is unreliable behind
+         NAT and consumes another tunnel slot. -->
+    <string>-M</string>
+    <string>0</string>
+    <!-- -N: no remote command   -T: no pseudo-tty                 -->
+    <string>-N</string>
+    <string>-T</string>
+    <string>-R</string>
+    <string>127.0.0.1:{{VPS_PORT}}:localhost:{{BRIDGE_PORT}}</string>
+    <!-- ServerAliveInterval=30 + CountMax=3 = ssh kills the link if
+         the server doesn't respond for 90 s, autossh restarts. Critical
+         for laptop sleep/wake and Wi-Fi switches. -->
+    <string>-o</string>
+    <string>ServerAliveInterval=30</string>
+    <string>-o</string>
+    <string>ServerAliveCountMax=3</string>
+    <!-- ExitOnForwardFailure=yes makes autossh exit + retry if the
+         remote port is already bound. Otherwise the tunnel "succeeds"
+         but no traffic flows. -->
+    <string>-o</string>
+    <string>ExitOnForwardFailure=yes</string>
+    <!-- Don't auto-add new host keys (security: surface key changes
+         instead of silently trusting). Initial setup expects the user
+         to have already SSH'd at least once and accepted the key. -->
+    <string>-o</string>
+    <string>StrictHostKeyChecking=accept-new</string>
+    <string>-i</string>
+    <string>{{SSH_KEY}}</string>
+    <!-- SSH_TARGET is rendered by install-mac-bridge.sh:
+           - "user@host" form when host is an IP or hostname
+           - bare alias when host matches a `~/.ssh/config` Host entry
+             (so ssh_config's User + HostName + IdentityFile resolution
+             works as designed; passing user@alias would override the
+             config's User directive and confuse the alias case). -->
+    <string>{{SSH_TARGET}}</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>{{HOME}}/Library/Logs/patchwork-tunnel.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{HOME}}/Library/Logs/patchwork-tunnel.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>{{HOME}}</string>
+    <!-- AUTOSSH_GATETIME=0: don't require a "stable" connection time
+         before counting reconnect attempts. Default 30 s makes startup
+         after a long sleep slower than necessary. -->
+    <key>AUTOSSH_GATETIME</key>
+    <string>0</string>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>
