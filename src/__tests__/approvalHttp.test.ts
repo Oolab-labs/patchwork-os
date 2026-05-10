@@ -1109,6 +1109,56 @@ describe("push notification dispatch", () => {
     }
   });
 
+  it("ntfy publishes a confirmation notification after the approval is decided (visible feedback for silent http actions)", async () => {
+    const originalFetch = globalThis.fetch;
+    const ntfyCalls: Array<{ url: string; body: unknown }> = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      ntfyCalls.push({
+        url,
+        body: JSON.parse((init?.body as string) ?? "{}"),
+      });
+      return new Response("{}", { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      const queue = new ApprovalQueue();
+      const pending = routeApprovalRequest(
+        { method: "POST", path: "/approvals", body: { toolName: "gitPush" } },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+          ntfyTopic: "patchwork-test-topic",
+          ntfyServer: "https://ntfy.example.com",
+          pushServiceBaseUrl: "https://bridge.example.com",
+        },
+      );
+      await new Promise((r) => setTimeout(r, 50));
+      const item = queue.list()[0];
+      if (!item) throw new Error("no queued item");
+      queue.approve(item.callId);
+      await pending;
+
+      // Two ntfy publishes expected: the initial action prompt + the
+      // post-decision confirmation. Confirmation has no actions and a
+      // checkmark title.
+      const publishes = ntfyCalls.filter(
+        (c) => new URL(c.url).hostname === "ntfy.example.com",
+      );
+      expect(publishes.length).toBeGreaterThanOrEqual(2);
+      const confirmation = publishes.find((c) => {
+        const b = c.body as { title?: string; actions?: unknown[] };
+        return typeof b.title === "string" && b.title.startsWith("✓ Approved");
+      });
+      expect(confirmation).toBeDefined();
+      expect((confirmation!.body as { actions?: unknown[] }).actions).toBe(
+        undefined,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("ntfy publish skipped when bridgeCallbackBase missing (action URLs cannot be built)", async () => {
     const originalFetch = globalThis.fetch;
     const calls: string[] = [];
@@ -1149,9 +1199,12 @@ describe("push notification dispatch", () => {
 
   it("ntfy publish blocks non-HTTPS bridgeCallbackBase (would expose token over plaintext)", async () => {
     const originalFetch = globalThis.fetch;
-    const calls: string[] = [];
-    globalThis.fetch = (async (url: string) => {
-      calls.push(url);
+    const calls: Array<{ url: string; body: unknown }> = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        body: JSON.parse((init?.body as string) ?? "{}"),
+      });
       return new Response("{}", { status: 200 });
     }) as typeof globalThis.fetch;
     try {
@@ -1172,15 +1225,16 @@ describe("push notification dispatch", () => {
       const item = queue.list()[0];
       if (item) queue.approve(item.callId);
       await pending;
-      expect(
-        calls.filter((u) => {
-          try {
-            return new URL(u).hostname === "ntfy.example.com";
-          } catch {
-            return false;
-          }
-        }),
-      ).toHaveLength(0);
+
+      // The confirmation publish (no actions) is fine even with a bogus
+      // bridgeCallbackBase — it doesn't carry the token. What MUST be
+      // suppressed is the prompt publish, which would put the token-
+      // bearing action URL on the wire pointing at a plaintext bridge.
+      const promptPublishes = calls.filter((c) => {
+        const b = c.body as { actions?: unknown[] };
+        return Array.isArray(b.actions) && b.actions.length > 0;
+      });
+      expect(promptPublishes).toHaveLength(0);
     } finally {
       globalThis.fetch = originalFetch;
     }

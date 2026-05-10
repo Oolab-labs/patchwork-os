@@ -553,6 +553,57 @@ async function dispatchNtfyApproval(
   }
 }
 
+/**
+ * Publish a confirmation to ntfy after an approval is decided. Gives the
+ * lock-screen tap visible feedback the iOS ntfy app does not produce on its
+ * own. Best-effort, fire-and-forget — never blocks decision lifecycle.
+ */
+async function dispatchNtfyConfirmation(
+  ntfyServer: string,
+  payload: { topic: string; toolName: string; outcome: string },
+): Promise<void> {
+  if (!ntfyServer.startsWith("https://")) return;
+  let hostname: string;
+  try {
+    hostname = new URL(ntfyServer).hostname;
+  } catch {
+    return;
+  }
+  if (hostname === "localhost") return;
+  try {
+    const resolved = await dns.lookup(hostname);
+    if (isBlockedIp(resolved.address)) return;
+  } catch {
+    return;
+  }
+  const approved = payload.outcome === "approved";
+  const body = JSON.stringify({
+    topic: payload.topic,
+    title: approved
+      ? `✓ Approved ${payload.toolName}`
+      : `✗ Rejected ${payload.toolName}`,
+    message: approved
+      ? "Tool call unblocked. Decision recorded."
+      : "Tool call rejected. Decision recorded.",
+    tags: [approved ? "white_check_mark" : "x"],
+    priority: 2,
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    await fetch(ntfyServer.replace(/\/+$/, "") + "/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: controller.signal,
+    });
+  } catch {
+    // best-effort
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function computeRiskSignals(
   toolName: string,
   params: Record<string, unknown>,
@@ -886,6 +937,19 @@ async function handleApprovalRequest(
     recordApprovalCompleted();
   }
   emit(outcome === "approved" ? "allow" : "deny", outcome, { callId });
+
+  // Publish a confirmation back to the same ntfy topic so the lock-screen
+  // tap has visible feedback. The iOS ntfy app gives no UI signal when an
+  // http action fires successfully; without this follow-up the user can't
+  // tell whether their tap landed. Skip on "expired" — the approval ran
+  // out before any human input arrived, so there's nothing to confirm.
+  if (deps.ntfyTopic && deps.pushServiceBaseUrl && outcome !== "expired") {
+    dispatchNtfyConfirmation(deps.ntfyServer ?? "https://ntfy.sh", {
+      topic: deps.ntfyTopic,
+      toolName,
+      outcome,
+    }).catch(() => {});
+  }
   return {
     status: 200,
     body: {
