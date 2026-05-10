@@ -1395,6 +1395,8 @@ export class Bridge {
             pushServiceUrl: this.server.pushServiceUrl ?? null,
             pushServiceToken: this.server.pushServiceToken ? "***" : null,
             pushServiceBaseUrl: this.server.pushServiceBaseUrl ?? null,
+            ntfyTopic: this.server.ntfyTopic ?? null,
+            ntfyServer: this.server.ntfyServer ?? null,
           };
         })(),
       };

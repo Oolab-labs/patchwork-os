@@ -65,6 +65,20 @@ export interface ApprovalHttpDeps {
   /** Public base URL of this bridge (e.g. https://mybridge.example.com). Embedded in push payload as callback base. */
   pushServiceBaseUrl?: string;
   /**
+   * ntfy.sh topic for direct phone-path approvals via action buttons. When set
+   * AND `pushServiceBaseUrl` is set (so the action URLs can reach the bridge),
+   * each queued approval is published to the topic with Approve / Reject HTTP
+   * action buttons that POST back to the bridge with the single-use approval
+   * token. Independent of `pushServiceUrl` — ntfy can be the sole phone path
+   * (no FCM/APNS relay needed) or run alongside it.
+   */
+  ntfyTopic?: string;
+  /**
+   * ntfy server. Defaults to `https://ntfy.sh`. Set to a self-hosted instance
+   * (e.g. `https://ntfy.your-domain.tld`) for auth/private-topic deployments.
+   */
+  ntfyServer?: string;
+  /**
    * Optional ActivityLog used to compute passive risk personalization
    * signals (`src/approvalSignals.ts`). When omitted, personalSignals are
    * not computed and the queue entry has the `personalSignals` field
@@ -428,6 +442,168 @@ async function dispatchPushNotification(
   }
 }
 
+/**
+ * Publish an approval prompt to ntfy.sh with Approve / Reject HTTP action
+ * buttons that POST back to the bridge using the single-use approval token.
+ * Reuses the same SSRF guard as the push relay path. Fire-and-forget.
+ *
+ * Action buttons embed the token in the `x-approval-token` header (not the
+ * URL), matching the existing relay → service-worker → bridge contract so the
+ * single-use token never appears in logs or referrer.
+ */
+async function dispatchNtfyApproval(
+  ntfyServer: string,
+  payload: {
+    topic: string;
+    toolName: string;
+    tier: string;
+    callId: string;
+    summary?: string;
+    approvalToken: string;
+    bridgeCallbackBase: string;
+  },
+): Promise<void> {
+  if (!ntfyServer.startsWith("https://")) {
+    console.warn(`[ntfy] Rejected non-HTTPS ntfy server URL`);
+    return;
+  }
+  if (!payload.bridgeCallbackBase.startsWith("https://")) {
+    console.warn(
+      `[ntfy] bridgeCallbackBase must be https:// for action buttons; skipping ntfy publish`,
+    );
+    return;
+  }
+  let hostname: string;
+  try {
+    hostname = new URL(ntfyServer).hostname;
+  } catch {
+    console.warn(`[ntfy] Malformed ntfy server URL — skipping`);
+    return;
+  }
+  if (hostname === "localhost") {
+    console.warn(`[ntfy] Blocked loopback ntfy server hostname`);
+    return;
+  }
+  try {
+    const resolved = await dns.lookup(hostname);
+    if (isBlockedIp(resolved.address)) {
+      console.warn(
+        `[ntfy] Blocked private/loopback IP for ntfy server: ${resolved.address}`,
+      );
+      return;
+    }
+  } catch (err) {
+    console.warn(
+      `[ntfy] DNS resolution failed for ${hostname}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return;
+  }
+
+  const callbackBase = payload.bridgeCallbackBase.replace(/\/+$/, "");
+  const headerSet = {
+    "x-approval-token": payload.approvalToken,
+    "Content-Type": "application/json",
+  };
+  const body = JSON.stringify({
+    topic: payload.topic,
+    title: `Approve ${payload.toolName}? (${payload.tier})`,
+    message: payload.summary ?? `Pending tool call ${payload.callId}`,
+    tags: ["lock", "warning"],
+    priority: payload.tier === "high" ? 5 : 4,
+    actions: [
+      {
+        action: "http",
+        label: "Approve",
+        method: "POST",
+        url: `${callbackBase}/approve/${payload.callId}`,
+        headers: headerSet,
+        clear: true,
+      },
+      {
+        action: "http",
+        label: "Reject",
+        method: "POST",
+        url: `${callbackBase}/reject/${payload.callId}`,
+        headers: headerSet,
+        clear: true,
+      },
+    ],
+  });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const res = await fetch(ntfyServer.replace(/\/+$/, "") + "/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.warn(
+        `[ntfy] Non-2xx from ntfy server: ${res.status} ${res.statusText}`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[ntfy] Dispatch failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Publish a confirmation to ntfy after an approval is decided. Gives the
+ * lock-screen tap visible feedback the iOS ntfy app does not produce on its
+ * own. Best-effort, fire-and-forget — never blocks decision lifecycle.
+ */
+async function dispatchNtfyConfirmation(
+  ntfyServer: string,
+  payload: { topic: string; toolName: string; outcome: string },
+): Promise<void> {
+  if (!ntfyServer.startsWith("https://")) return;
+  let hostname: string;
+  try {
+    hostname = new URL(ntfyServer).hostname;
+  } catch {
+    return;
+  }
+  if (hostname === "localhost") return;
+  try {
+    const resolved = await dns.lookup(hostname);
+    if (isBlockedIp(resolved.address)) return;
+  } catch {
+    return;
+  }
+  const approved = payload.outcome === "approved";
+  const body = JSON.stringify({
+    topic: payload.topic,
+    title: approved
+      ? `✓ Approved ${payload.toolName}`
+      : `✗ Rejected ${payload.toolName}`,
+    message: approved
+      ? "Tool call unblocked. Decision recorded."
+      : "Tool call rejected. Decision recorded.",
+    tags: [approved ? "white_check_mark" : "x"],
+    priority: 2,
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    await fetch(ntfyServer.replace(/\/+$/, "") + "/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: controller.signal,
+    });
+  } catch {
+    // best-effort
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function computeRiskSignals(
   toolName: string,
   params: Record<string, unknown>,
@@ -710,7 +886,7 @@ async function handleApprovalRequest(
       // field stays absent — that case still means "not configured."
       ...(personalSignals !== undefined && { personalSignals }),
     },
-    { withToken: !!deps.pushServiceUrl },
+    { withToken: !!deps.pushServiceUrl || !!deps.ntfyTopic },
   );
   recordApprovalPrompted();
 
@@ -741,11 +917,39 @@ async function handleApprovalRequest(
     }).catch(() => {});
   }
 
+  // ntfy.sh phone path — independent of the FCM/APNS relay above. Action
+  // buttons in the notification POST back to /approve|/reject with the
+  // single-use token. Requires a public bridgeCallbackBase (HTTPS).
+  if (deps.ntfyTopic && approvalToken && deps.pushServiceBaseUrl) {
+    dispatchNtfyApproval(deps.ntfyServer ?? "https://ntfy.sh", {
+      topic: deps.ntfyTopic,
+      toolName,
+      tier,
+      callId,
+      summary,
+      approvalToken,
+      bridgeCallbackBase: deps.pushServiceBaseUrl,
+    }).catch(() => {});
+  }
+
   const outcome = await promise;
   if (outcome !== "expired") {
     recordApprovalCompleted();
   }
   emit(outcome === "approved" ? "allow" : "deny", outcome, { callId });
+
+  // Publish a confirmation back to the same ntfy topic so the lock-screen
+  // tap has visible feedback. The iOS ntfy app gives no UI signal when an
+  // http action fires successfully; without this follow-up the user can't
+  // tell whether their tap landed. Skip on "expired" — the approval ran
+  // out before any human input arrived, so there's nothing to confirm.
+  if (deps.ntfyTopic && deps.pushServiceBaseUrl && outcome !== "expired") {
+    dispatchNtfyConfirmation(deps.ntfyServer ?? "https://ntfy.sh", {
+      topic: deps.ntfyTopic,
+      toolName,
+      outcome,
+    }).catch(() => {});
+  }
   return {
     status: 200,
     body: {
