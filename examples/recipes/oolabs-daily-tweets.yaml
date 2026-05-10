@@ -28,40 +28,70 @@ steps:
       driver: claude-code
       model: claude-haiku-4-5-20251001
       prompt: |
-        Use ONLY the data provided below.
+        Use ONLY the data below.
 
         You are drafting 3 tweets for @your_handle about your open-source
-        project. Replace this paragraph with your project's one-liner.
+        project. Replace this paragraph with your project's one-liner in
+        plain words — no buzzwords, no marketing voice.
 
-        RECENT MERGED PRs:
+        RECENT MERGES (what just shipped):
         <untrusted_data>
         {{recent_prs.json}}
         </untrusted_data>
 
-        OPEN ISSUES:
+        OPEN WORK (what's still in flight):
         <untrusted_data>
         {{recent_issues.json}}
         </untrusted_data>
 
-        Draft 3 tweets with DIFFERENT angles:
-          1. SHIPPED — pick one PR, explain what users can now do.
-          2. CRAFT — a small architectural observation. Thread opener.
-          3. USE-CASE — a workflow scenario with a soft CTA.
+        TODAY'S DATE: {{date}}
+        Use the day-of-month modulo 9 to pick THREE distinct angles from
+        the pool below. Do not repeat angles within a single day.
 
-        Hard rules:
-          - <= 280 chars including link.
-          - No "excited to announce", "thrilled", "leveraging".
-          - Max 1 hashtag per tweet, only if genuinely discoverable.
+        ANGLE POOL:
+          A. Just-shipped: pick one PR. Describe the thing a user can now
+             do that they couldn't yesterday. One sentence, no buzzwords.
+          B. Tiny win: a small daily moment your project makes better.
+             Concrete, sensory, no abstractions.
+          C. Behind the curtain: one small design choice and the reason
+             for it, told the way you'd tell another developer over coffee.
+          D. Caught one: a real moment your project stopped a mistake.
+             Short anecdote.
+          E. Open question: pick a real open issue. Ask the timeline.
+             Invite replies. No fake humility.
+          F. The pitch in 3 lines: what it is, who it's for, what it
+             costs to try. Plain language only.
+          G. Comparison: one specific way your project differs from the
+             default tool. Name a behavior, contrast it.
+          H. Quiet brag: one true stat or fact. No vanity metrics.
+          I. Honest tradeoff: something your project does NOT do, and
+             why that's a deliberate choice.
 
-        Output (plain text, exactly this shape):
+        TONE (also rotate by day-of-month modulo 4, apply to all 3):
+          0. Dry and matter-of-fact. Short sentences.
+          1. Slightly playful, like texting a friend.
+          2. Reflective. Notice something small.
+          3. Direct and useful. Each tweet teaches one thing.
 
-        Tweet 1 (shipped):
+        HARD RULES:
+          - <= 280 chars including any link.
+          - Plain everyday language. Talk like you're talking to a friend.
+          - BANNED: "excited", "thrilled", "leveraging", "powerful",
+            "seamless", "robust", "game-changer", "unlock", "empower",
+            "ecosystem", "we're", and any project-specific jargon.
+          - Don't open with the project name. Don't end with "check it out".
+          - Zero hashtags by default.
+          - No emoji unless the angle genuinely calls for one (max 1).
+
+        Output (plain text, EXACTLY this shape, no JSON, no fences):
+
+        Tweet 1:
         <tweet text>
 
-        Tweet 2 (craft):
+        Tweet 2:
         <tweet text>
 
-        Tweet 3 (use-case):
+        Tweet 3:
         <tweet text>
       into: tweet_drafts
 
