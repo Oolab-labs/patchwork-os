@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   categoriseHaltReason,
   deriveHaltReasonFromError,
+  haltSummaryToPrometheus,
   summariseHalts,
 } from "../haltCategory.js";
 
@@ -194,5 +195,44 @@ describe("deriveHaltReasonFromError", () => {
     });
     expect(r).toBeDefined();
     expect(categoriseHaltReason(r)).toBe("agent_threw");
+  });
+});
+
+describe("haltSummaryToPrometheus", () => {
+  it("returns empty array for an empty summary (no orphan HELP/TYPE)", () => {
+    expect(
+      haltSummaryToPrometheus({ total: 0, byCategory: {}, recent: [] }),
+    ).toEqual([]);
+  });
+
+  it("emits HELP + TYPE + one line per category", () => {
+    const lines = haltSummaryToPrometheus({
+      total: 5,
+      byCategory: { tool_threw: 3, kill_switch: 1, agent_silent_fail: 1 },
+      recent: [],
+    });
+    expect(lines).toContain(
+      "# HELP bridge_recipe_halts Recipe halts in the in-memory run-log window, by category",
+    );
+    expect(lines).toContain("# TYPE bridge_recipe_halts gauge");
+    expect(lines).toContain('bridge_recipe_halts{category="tool_threw"} 3');
+    expect(lines).toContain('bridge_recipe_halts{category="kill_switch"} 1');
+    expect(lines).toContain(
+      'bridge_recipe_halts{category="agent_silent_fail"} 1',
+    );
+    // 2 meta lines + 3 sample lines
+    expect(lines).toHaveLength(5);
+  });
+
+  it("produces lines that parse as well-formed Prometheus text-exposition", () => {
+    const lines = haltSummaryToPrometheus({
+      total: 1,
+      byCategory: { unknown: 1 },
+      recent: [],
+    });
+    const sampleLines = lines.filter((l) => !l.startsWith("#"));
+    expect(sampleLines).toHaveLength(1);
+    // Match `metric{labels} value` per Prometheus exposition format.
+    expect(sampleLines[0]).toMatch(/^[a-z_][a-z0-9_]*\{[a-z_]+="[^"]+"\} \d+$/);
   });
 });
