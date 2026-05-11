@@ -11,6 +11,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { recordRecipeRun } from "./activationMetrics.js";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import { summariseHalts } from "./recipes/haltCategory.js";
+import { summariseJudgments } from "./recipes/judgeSummary.js";
 import type { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
 import type {
   SchedulerEnqueue,
@@ -227,6 +228,28 @@ export class RecipeOrchestration {
         })
         .filter((r) => r.createdAt >= cutoff);
       return summariseHalts(runs);
+    };
+
+    // PR3b — judge verdicts use the same windowing/recipe filter shape
+    // as halts. Verdicts intentionally live on a *separate* aggregate
+    // channel to preserve the augment-only invariant.
+    server.judgeSummaryFn = (opts?: {
+      sinceMs?: number;
+      limit?: number;
+      recipe?: string;
+    }) => {
+      if (!this.deps.recipeRunLog)
+        return { total: 0, byVerdict: {}, recent: [] };
+      const sinceMs = opts?.sinceMs ?? 7 * 24 * 60 * 60 * 1000;
+      const limit = opts?.limit ?? 500;
+      const cutoff = Date.now() - sinceMs;
+      const runs = this.deps.recipeRunLog
+        .query({
+          limit,
+          ...(opts?.recipe !== undefined && { recipe: opts.recipe }),
+        })
+        .filter((r) => r.createdAt >= cutoff);
+      return summariseJudgments(runs);
     };
 
     server.runPlanFn = async (recipeName: string) => {
