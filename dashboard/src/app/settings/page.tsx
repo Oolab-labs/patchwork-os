@@ -49,6 +49,7 @@ type SectionId =
   | "s-bridge"
   | "s-ai"
   | "s-approval"
+  | "s-safety"
   | "s-mobile"
   | "s-telemetry";
 
@@ -56,6 +57,7 @@ const NAV: { id: SectionId; label: string }[] = [
   { id: "s-bridge", label: "Bridge" },
   { id: "s-ai", label: "AI drivers" },
   { id: "s-approval", label: "Approval policy" },
+  { id: "s-safety", label: "Safety" },
   { id: "s-mobile", label: "Mobile" },
   { id: "s-telemetry", label: "Telemetry" },
 ];
@@ -218,6 +220,17 @@ export default function SettingsPage() {
   const [telUsage, setTelUsage] = useState(false);
   const [telDiag, setTelDiag] = useState(true);
 
+  // Kill-switch state — fetched from /api/bridge/kill-switch (proxy to
+  // bridge `GET /kill-switch`). Polls in tandem with /status below.
+  // Issue #422 step 6.
+  const [ksEngaged, setKsEngaged] = useState(false);
+  const [ksLocked, setKsLocked] = useState(false);
+  const [ksLockedReason, setKsLockedReason] = useState<string | undefined>();
+  const [ksSaving, setKsSaving] = useState(false);
+  const [ksMsg, setKsMsg] = useState<{ ok: boolean; text: string } | null>(
+    null,
+  );
+
   useEffect(() => {
     const tick = async () => {
       try {
@@ -267,6 +280,25 @@ export default function SettingsPage() {
           const match = DRIVER_ROWS.find((r) => r.driverValue === d);
           setPrimaryDriver(match?.id ?? "claude");
           driverInitialized.current = true;
+        }
+
+        // Kill-switch state poll — parallel to /status, same cadence.
+        // 404 means the endpoint isn't deployed yet (pre-#422 bridge);
+        // treat as "feature not available" and leave defaults.
+        try {
+          const ksRes = await fetch(apiPath("/api/bridge/kill-switch"));
+          if (ksRes.ok) {
+            const ks = (await ksRes.json()) as {
+              engaged?: boolean;
+              locked?: boolean;
+              lockedReason?: string;
+            };
+            setKsEngaged(Boolean(ks.engaged));
+            setKsLocked(Boolean(ks.locked));
+            setKsLockedReason(ks.lockedReason);
+          }
+        } catch {
+          // Transient — leave previous state in place.
         }
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
@@ -1047,6 +1079,108 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            {/* Safety — kill-switch (#422) */}
+            <div id="s-safety" className="card" style={{ marginTop: 16 }}>
+              <div className="card-head">
+                <div>
+                  <h2 style={{ margin: 0 }}>Safety</h2>
+                  <div
+                    style={{
+                      fontSize: "var(--fs-s)",
+                      color: "var(--ink-2)",
+                      marginTop: 2,
+                    }}
+                  >
+                    Global write-tier kill switch. When engaged, every
+                    recipe step + connector tool tagged write-tier
+                    refuses to run on every running bridge. Use during
+                    an incident; release when safe.
+                  </div>
+                </div>
+              </div>
+              <div style={{ padding: "16px 0" }}>
+                <ToggleRow
+                  id="kill-switch-toggle"
+                  label={
+                    ksEngaged
+                      ? "Kill switch — ENGAGED (writes blocked)"
+                      : "Kill switch — released (writes allowed)"
+                  }
+                  help="Equivalent to running `patchwork kill-switch engage` / `release` from the CLI. Fans out to every running bridge."
+                  checked={ksEngaged}
+                  disabled={ksLocked || ksSaving}
+                  disabledReason={
+                    ksLocked
+                      ? ksLockedReason ??
+                        "Locked by PATCHWORK_FLAG_KILL_SWITCH_WRITES at bridge startup — restart with that env unset to toggle from here."
+                      : undefined
+                  }
+                  onChange={async (value) => {
+                    setKsSaving(true);
+                    setKsMsg(null);
+                    try {
+                      const res = await fetch(
+                        apiPath("/api/bridge/kill-switch"),
+                        {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ engage: value }),
+                        },
+                      );
+                      const j = (await res.json().catch(() => ({}))) as {
+                        ok?: boolean;
+                        engaged?: boolean;
+                        changed?: boolean;
+                        error?: string;
+                        lockedReason?: string;
+                      };
+                      if (res.status === 409) {
+                        setKsLocked(true);
+                        setKsLockedReason(j.lockedReason);
+                        setKsMsg({
+                          ok: false,
+                          text: `Env-locked: ${j.lockedReason ?? "policy override"}`,
+                        });
+                        return;
+                      }
+                      if (!res.ok) {
+                        setKsMsg({
+                          ok: false,
+                          text: `Bridge returned ${res.status}: ${j.error ?? "unknown"}`,
+                        });
+                        return;
+                      }
+                      setKsEngaged(Boolean(j.engaged));
+                      setKsMsg({
+                        ok: true,
+                        text: j.changed
+                          ? `Kill switch ${value ? "engaged" : "released"}.`
+                          : "Already in target state — no change.",
+                      });
+                    } catch (err) {
+                      setKsMsg({
+                        ok: false,
+                        text: `Failed to reach bridge: ${err instanceof Error ? err.message : String(err)}`,
+                      });
+                    } finally {
+                      setKsSaving(false);
+                    }
+                  }}
+                />
+                {ksMsg && (
+                  <p
+                    style={{
+                      fontSize: "var(--fs-s)",
+                      marginTop: 8,
+                      color: ksMsg.ok ? "var(--ok)" : "var(--err)",
+                    }}
+                  >
+                    {ksMsg.text}
+                  </p>
+                )}
+              </div>
+            </div>
+
             {/* Mobile / push */}
             <div id="s-mobile" className="card" style={{ marginTop: 16 }}>
               <div className="card-head">
@@ -1253,25 +1387,70 @@ function ToggleRow({
   help,
   checked,
   onChange,
+  disabled,
+  disabledReason,
 }: {
   id: string;
   label: string;
   help: string;
   checked: boolean;
   onChange: (v: boolean) => void;
+  /**
+   * When true, the checkbox cannot be toggled by the user. Used by
+   * the kill-switch row when env-locked (#422 v2-I7).
+   */
+  disabled?: boolean;
+  /** Tooltip text shown on hover when disabled is true. */
+  disabledReason?: string;
 }) {
   return (
-    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+    <div
+      style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+      title={disabled ? disabledReason : undefined}
+    >
       <input
         id={id}
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
-        style={{ marginTop: 2 }}
+        style={{ marginTop: 2, cursor: disabled ? "not-allowed" : undefined }}
       />
-      <label htmlFor={id} style={{ flex: 1, cursor: "pointer" }}>
-        <div style={{ fontSize: "var(--fs-m)", fontWeight: 500, color: "var(--fg-0)" }}>{label}</div>
-        <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", marginTop: 2, lineHeight: 1.5 }}>{help}</div>
+      <label
+        htmlFor={id}
+        style={{ flex: 1, cursor: disabled ? "not-allowed" : "pointer" }}
+      >
+        <div
+          style={{
+            fontSize: "var(--fs-m)",
+            fontWeight: 500,
+            color: disabled ? "var(--fg-2)" : "var(--fg-0)",
+          }}
+        >
+          {label}
+        </div>
+        <div
+          style={{
+            fontSize: "var(--fs-s)",
+            color: "var(--fg-2)",
+            marginTop: 2,
+            lineHeight: 1.5,
+          }}
+        >
+          {help}
+          {disabled && disabledReason ? (
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: "var(--fs-xs)",
+                color: "var(--fg-3)",
+                fontStyle: "italic",
+              }}
+            >
+              ⓘ {disabledReason}
+            </div>
+          ) : null}
+        </div>
       </label>
     </div>
   );
