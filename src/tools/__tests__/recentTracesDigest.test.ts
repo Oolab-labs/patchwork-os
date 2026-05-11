@@ -372,4 +372,76 @@ describe("buildRecentTracesDigest — decision formatting", () => {
       expect(lines.every((l) => !l.startsWith("HALTS"))).toBe(true);
     });
   });
+
+  // ── PR3c — JUDGMENTS one-liner ───────────────────────────────────────────
+  describe("JUDGMENTS line", () => {
+    it("prepends a verdict summary when recent runs include judgeVerdicts", async () => {
+      const now = Date.now();
+      runLog.appendDirect({
+        taskId: "t-j1",
+        recipeName: "review",
+        trigger: "recipe",
+        status: "done",
+        createdAt: now - 60_000,
+        startedAt: now - 60_000,
+        doneAt: now - 30_000,
+        durationMs: 30_000,
+        stepResults: [
+          {
+            id: "review",
+            status: "ok",
+            durationMs: 800,
+            judgeVerdict: {
+              verdict: "approve",
+              reasons: ["small diff"],
+            },
+          },
+        ],
+      });
+      runLog.appendDirect({
+        taskId: "t-j2",
+        recipeName: "review",
+        trigger: "recipe",
+        status: "done",
+        createdAt: now - 120_000,
+        startedAt: now - 120_000,
+        doneAt: now - 90_000,
+        durationMs: 30_000,
+        stepResults: [
+          {
+            id: "review",
+            status: "ok",
+            durationMs: 800,
+            judgeVerdict: {
+              verdict: "request_changes",
+              reasons: ["missing tests"],
+            },
+          },
+        ],
+      });
+
+      const lines = await buildRecentTracesDigest({ recipeRunLog: runLog });
+      const judgeLine = lines.find((l) => l.startsWith("JUDGMENTS"));
+      expect(judgeLine).toBeDefined();
+      expect(judgeLine).toContain("JUDGMENTS (last 12h): 2");
+      expect(judgeLine).toContain("approve·1");
+      expect(judgeLine).toContain("request_changes·1");
+    });
+
+    it("omits the JUDGMENTS line when no recent runs carry a verdict", async () => {
+      runLog.appendDirect({
+        taskId: "t-ok",
+        recipeName: "happy",
+        trigger: "cron",
+        status: "done",
+        createdAt: Date.now() - 1000,
+        startedAt: Date.now() - 1000,
+        doneAt: Date.now() - 500,
+        durationMs: 500,
+        stepResults: [],
+      });
+      const lines = await buildRecentTracesDigest({ recipeRunLog: runLog });
+      expect(lines.every((l) => !l.startsWith("JUDGMENTS"))).toBe(true);
+    });
+  });
 });

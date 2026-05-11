@@ -10,6 +10,13 @@ import { diffForStep, previewMockedReplay } from "@/lib/registryDiff";
 
 // ------------------------------------------------------------------ types
 
+interface JudgeVerdict {
+  verdict: "approve" | "request_changes" | "unparseable";
+  reasons: string[];
+  fixList?: string[];
+  raw?: string;
+}
+
 interface StepResult {
   id: string;
   tool?: string;
@@ -17,6 +24,8 @@ interface StepResult {
   error?: string;
   /** One-sentence human-actionable halt reason for error rows. */
   haltReason?: string;
+  /** PR3a — cold-eyes judge verdict. Augment-only: never affects status. */
+  judgeVerdict?: JudgeVerdict;
   durationMs: number;
   // VD-2 capture (all optional — pre-VD-2 runs don't have these).
   resolvedParams?: unknown;
@@ -162,6 +171,72 @@ function stepStatusLabel(status: StepResult["status"]): string {
   return "skipped";
 }
 
+function verdictPalette(
+  verdict: JudgeVerdict["verdict"],
+): { bg: string; fg: string; label: string } {
+  if (verdict === "approve") {
+    return { bg: "var(--ok-bg, #1b3a1b)", fg: "var(--ok)", label: "approve" };
+  }
+  if (verdict === "request_changes") {
+    return {
+      bg: "var(--warn-bg, #3a2a1b)",
+      fg: "var(--warn, #d49a3a)",
+      label: "request_changes",
+    };
+  }
+  return {
+    bg: "var(--bg-2)",
+    fg: "var(--fg-2)",
+    label: "unparseable",
+  };
+}
+
+function JudgeVerdictPill({ verdict }: { verdict: JudgeVerdict }) {
+  const { bg, fg, label } = verdictPalette(verdict.verdict);
+  const firstReason = verdict.reasons[0];
+  return (
+    <div
+      style={{
+        marginTop: 4,
+        display: "flex",
+        gap: 6,
+        flexWrap: "wrap",
+        alignItems: "center",
+      }}
+    >
+      <span
+        className="mono"
+        style={{
+          fontSize: "var(--fs-xs)",
+          padding: "1px 6px",
+          borderRadius: 3,
+          background: bg,
+          color: fg,
+          letterSpacing: "0.02em",
+        }}
+        title="cold-eyes judge verdict (augment-only — never gates the run)"
+      >
+        judge: {label}
+      </span>
+      {firstReason && (
+        <span
+          className="muted"
+          style={{
+            fontSize: "var(--fs-xs)",
+            whiteSpace: "normal",
+            wordBreak: "break-word",
+          }}
+        >
+          {firstReason}
+          {verdict.reasons.length > 1 && (
+            <> +{verdict.reasons.length - 1} more</>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function StepRow({
   step,
   index,
@@ -275,6 +350,9 @@ function StepRow({
             >
               {step.haltReason}
             </div>
+          )}
+          {step.judgeVerdict && (
+            <JudgeVerdictPill verdict={step.judgeVerdict} />
           )}
           <div
             style={{

@@ -2,6 +2,7 @@ import type { ActivityLog } from "../activityLog.js";
 import type { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
 import type { DecisionTraceLog } from "../decisionTraceLog.js";
 import { summariseHalts } from "../recipes/haltCategory.js";
+import { summariseJudgments } from "../recipes/judgeSummary.js";
 import type { RecipeRunLog } from "../runLog.js";
 import { createCtxQueryTracesTool } from "./ctxQueryTraces.js";
 
@@ -150,6 +151,7 @@ export async function buildRecentTracesDigest(
   // even when there are no decision traces — halts are signal on their
   // own.
   let haltLine: string | null = null;
+  let judgeLine: string | null = null;
   if (deps.recipeRunLog) {
     const cutoff = now - windowMs;
     const recentRuns = deps.recipeRunLog
@@ -163,12 +165,25 @@ export async function buildRecentTracesDigest(
         .join(" ");
       haltLine = `HALTS (last 12h): ${halts.total} — ${breakdown}`;
     }
+    // PR3c — same window, parallel channel. Surfaced separately from
+    // halts to preserve the augment-only invariant (a request_changes
+    // verdict is not a failure). Useful for "the judge has been
+    // asking for changes a lot lately".
+    const judgments = summariseJudgments(recentRuns);
+    if (judgments.total > 0) {
+      const breakdown = Object.entries(judgments.byVerdict)
+        .sort(([, a], [, b]) => b - a)
+        .map(([v, count]) => `${v}·${count}`)
+        .join(" ");
+      judgeLine = `JUDGMENTS (last 12h): ${judgments.total} — ${breakdown}`;
+    }
   }
 
-  // If there's nothing on either axis, skip the section entirely.
-  if (!haltLine && top.length === 0) return [];
+  // If there's nothing on any axis, skip the section entirely.
+  if (!haltLine && !judgeLine && top.length === 0) return [];
 
   if (haltLine) lines.push(haltLine);
+  if (judgeLine) lines.push(judgeLine);
   if (top.length > 0) {
     lines.push("RECENT DECISIONS (last 12h):");
     for (const t of top) {
@@ -180,7 +195,8 @@ export async function buildRecentTracesDigest(
   // Hard byte cap — keep dropping oldest decision entries until under budget.
   // The halt line + DECISIONS heading are the floor (length 2 when both
   // present, 1 when only one). Don't pop past the floor.
-  const floor = (haltLine ? 1 : 0) + (top.length > 0 ? 1 : 0);
+  const floor =
+    (haltLine ? 1 : 0) + (judgeLine ? 1 : 0) + (top.length > 0 ? 1 : 0);
   while (lines.join("\n").length > MAX_BYTES && lines.length > floor) {
     lines.pop();
   }
