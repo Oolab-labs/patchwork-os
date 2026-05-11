@@ -55,9 +55,78 @@ Output only the JSON object as the final line.`;
  */
 export function buildJudgeArtefactBlock(artefact: unknown): string {
   if (artefact === undefined || artefact === null) return "";
-  const body =
-    typeof artefact === "string" ? artefact : JSON.stringify(artefact, null, 2);
+  let body: string;
+  if (typeof artefact === "string") {
+    body = artefact;
+  } else {
+    try {
+      body = JSON.stringify(artefact, null, 2);
+      // `JSON.stringify` returns `undefined` for functions / symbols /
+      // top-level BigInt — the artefact block becomes
+      // `<artefact>\nundefined\n</artefact>` which is misleading. Fall
+      // back to a marker so downstream readers can spot the gap.
+      if (body === undefined) body = "[unserialisable artefact]";
+    } catch {
+      // Circular references, BigInt inside the object graph, or any
+      // toJSON throwing. The judge step must never propagate this out
+      // of the prompt builder — augment-only invariant.
+      body = "[unserialisable artefact]";
+    }
+  }
   return `\n\n<artefact>\n${body}\n</artefact>`;
+}
+
+/**
+ * Walk `text` forward and emit `[start, endInclusive]` ranges for every
+ * balanced top-level `{...}` block, respecting JSON string syntax so a
+ * `}` inside a string doesn't offset the brace depth.
+ *
+ * The original implementation walked back from `lastIndexOf("}")` and
+ * counted braces literally. A judge response of the shape
+ * `Consider this snippet: { x: "} oops" }` would be miscounted — the
+ * `}` inside the string would close depth too early and the candidate
+ * slice would JSON.parse-fail, returning `unparseable` for an
+ * otherwise-legitimate verdict trailer.
+ */
+function findBalancedObjectRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        ranges.push([start, i]);
+        start = -1;
+      }
+      if (depth < 0) {
+        // Stray closing brace — reset so we don't underflow.
+        depth = 0;
+        start = -1;
+      }
+    }
+  }
+  return ranges;
 }
 
 /**
@@ -73,52 +142,38 @@ export function parseJudgeVerdict(text: string): JudgeVerdict {
     };
   }
 
-  // Walk back from the end looking for a `{...}` block that JSON-parses.
-  const lastBrace = trimmed.lastIndexOf("}");
-  if (lastBrace === -1) {
-    return { verdict: "unparseable", reasons: [], raw: text };
-  }
-  // Find the matching `{` by scanning backward, respecting nested braces.
-  let depth = 0;
-  let start = -1;
-  for (let i = lastBrace; i >= 0; i--) {
-    const ch = trimmed[i];
-    if (ch === "}") depth++;
-    else if (ch === "{") {
-      depth--;
-      if (depth === 0) {
-        start = i;
-        break;
-      }
+  // Collect every balanced `{...}` range, then try them last-to-first
+  // so the JSON tail wins over an in-prose snippet earlier in the
+  // response.
+  const ranges = findBalancedObjectRanges(trimmed);
+  for (let i = ranges.length - 1; i >= 0; i--) {
+    const range = ranges[i];
+    if (!range) continue;
+    const [s, e] = range;
+    const candidate = trimmed.slice(s, e + 1);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      continue;
     }
+    if (!parsed || typeof parsed !== "object") continue;
+    const obj = parsed as Record<string, unknown>;
+    const verdictRaw = obj.verdict;
+    if (verdictRaw !== "approve" && verdictRaw !== "request_changes") {
+      continue;
+    }
+    const reasons = Array.isArray(obj.reasons)
+      ? obj.reasons.filter((r): r is string => typeof r === "string")
+      : [];
+    const fixList = Array.isArray(obj.fixList)
+      ? obj.fixList.filter((r): r is string => typeof r === "string")
+      : undefined;
+    return {
+      verdict: verdictRaw,
+      reasons,
+      ...(fixList && fixList.length > 0 && { fixList }),
+    };
   }
-  if (start === -1) {
-    return { verdict: "unparseable", reasons: [], raw: text };
-  }
-  const candidate = trimmed.slice(start, lastBrace + 1);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(candidate);
-  } catch {
-    return { verdict: "unparseable", reasons: [], raw: text };
-  }
-  if (!parsed || typeof parsed !== "object") {
-    return { verdict: "unparseable", reasons: [], raw: text };
-  }
-  const obj = parsed as Record<string, unknown>;
-  const verdictRaw = obj.verdict;
-  if (verdictRaw !== "approve" && verdictRaw !== "request_changes") {
-    return { verdict: "unparseable", reasons: [], raw: text };
-  }
-  const reasons = Array.isArray(obj.reasons)
-    ? obj.reasons.filter((r): r is string => typeof r === "string")
-    : [];
-  const fixList = Array.isArray(obj.fixList)
-    ? obj.fixList.filter((r): r is string => typeof r === "string")
-    : undefined;
-  return {
-    verdict: verdictRaw,
-    reasons,
-    ...(fixList && fixList.length > 0 && { fixList }),
-  };
+  return { verdict: "unparseable", reasons: [], raw: text };
 }
