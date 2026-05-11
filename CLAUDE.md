@@ -25,6 +25,7 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `quick-task <preset>` — Launch a context-aware Claude task from a preset (fixErrors, refactorFile, addTests, explainCode, optimizePerf, runTests, resumeLastCancelled). Same dispatch path as the sidebar. Requires `--driver subprocess`.
 - `start-task "<description>"` — Enqueue a free-form Claude task; Claude gathers its own workspace context.
 - `continue-handoff` — Resume from the stored handoff note (skips auto-snapshots).
+- `recipe new <name>` — Scaffold a recipe from a template (`minimal` | `daily` | `inbox`). Add `--interactive` (or `-i`) to drop into the connector-aware prompt tree instead: mode pick (Guided / Template / AI-suggest), then step-by-step build. Generated YAML includes the SchemaStore pragma and runs `validateRecipeDefinition` post-hoc as warnings. AI-suggest discovers the running bridge via `~/.claude/ide/*.lock` and POSTs the goal to `/recipes/generate`; raw response written to disk (no form normalization).
 - `--watch` — Auto-restart supervisor with exponential backoff (2s → 30s). Safe for production.
 
 ## Bug Fix Protocol
@@ -278,6 +279,7 @@ Event-driven hooks that trigger Claude tasks automatically.
 - **Input validation**: AJV validates all tool arguments at transport layer before execution. `isValidRef` rejects leading-dash git refs. `searchAndReplace` rejects null bytes and `-`-prefixed globs. Clipboard enforces 1MB cap via `Buffer.byteLength`.
 - **Rate limiting**: 200 requests/min (ring buffer), 500 notifications/min, per-session tool token bucket (default 60/min, configurable via `--tool-rate-limit`). Failed AJV validation does not consume rate limit tokens.
 - **Error codes**: `ToolErrorCodes` (string codes in `isError: true` content blocks) for tool failures; `ErrorCodes` (JSON-RPC -32xxx) for protocol issues. Never mix. See [ADR-0004](docs/adr/0004-tool-errors-as-content.md).
+- **Webhook HMAC auth** (`POST /hooks/*`): when started with `--webhook-secret <hex>` (or `BRIDGE_WEBHOOK_SECRET` env), requests carrying `X-Hub-Signature-256: sha256=<hex>` are authenticated via HMAC-SHA256 over the raw body (constant-time compare via `timingSafeEqual`). Bearer-token access still works — HMAC is additive. Without `--webhook-secret`, a request that presents `X-Hub-Signature-256` gets 401 `webhook_secret_not_configured` (must still pass Bearer gate to reach the handler); a missing/invalid signature with no Bearer returns 401 at the outer gate.
 
 ## Claude IDE Bridge
 
