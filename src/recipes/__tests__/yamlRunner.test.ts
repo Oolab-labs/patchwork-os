@@ -2506,6 +2506,142 @@ describe("resolveClaudeBinary — override precedence", async () => {
   });
 });
 
+// ── PR2b — recipe.budget enforcement ─────────────────────────────────────────
+
+describe("recipe.budget — tokensMax enforcement (PR2b)", () => {
+  it("halts on the next agent step after budget is breached", async () => {
+    const recipe = makeRecipe({
+      budget: { tokensMax: 100 },
+      steps: [
+        {
+          agent: {
+            prompt: "step 1",
+            model: "claude-haiku-4-5-20251001",
+            into: "out1",
+          },
+        },
+        {
+          agent: {
+            prompt: "step 2",
+            model: "claude-haiku-4-5-20251001",
+            into: "out2",
+          },
+        },
+      ],
+    });
+    // First call consumes 120 tokens (over the 100-token cap); second
+    // call must be denied admission before it ever dispatches.
+    let calls = 0;
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => {
+        calls++;
+        return {
+          text: `output ${calls}`,
+          usage: { inputTokens: 60, outputTokens: 60 },
+        };
+      },
+    });
+    expect(calls).toBe(1); // second admission refused
+    expect(result.stepResults).toHaveLength(2);
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(result.stepResults[1]?.status).toBe("error");
+    expect(result.stepResults[1]?.haltReason).toMatch(/budget_exceeded/);
+  });
+
+  it("does not enforce when recipe.budget is absent (no overhead)", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "step",
+            model: "claude-haiku-4-5-20251001",
+            into: "out",
+          },
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => ({
+        text: "ok",
+        usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+      }),
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+  });
+
+  it("onBreach='warn' lets the run continue past the cap", async () => {
+    const recipe = makeRecipe({
+      budget: { tokensMax: 100, onBreach: "warn" },
+      steps: [
+        {
+          agent: {
+            prompt: "step 1",
+            model: "claude-haiku-4-5-20251001",
+            into: "out1",
+          },
+        },
+        {
+          agent: {
+            prompt: "step 2",
+            model: "claude-haiku-4-5-20251001",
+            into: "out2",
+          },
+        },
+      ],
+    });
+    let calls = 0;
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => {
+        calls++;
+        return {
+          text: `output ${calls}`,
+          usage: { inputTokens: 200, outputTokens: 200 },
+        };
+      },
+    });
+    expect(calls).toBe(2);
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(result.stepResults[1]?.status).toBe("ok");
+  });
+
+  it("subscription-driver fail-open: no usage = no enforcement", async () => {
+    const recipe = makeRecipe({
+      budget: { tokensMax: 50 },
+      steps: [
+        {
+          agent: {
+            prompt: "step 1",
+            model: "claude-haiku-4-5-20251001",
+            into: "out1",
+          },
+        },
+        {
+          agent: {
+            prompt: "step 2",
+            model: "claude-haiku-4-5-20251001",
+            into: "out2",
+          },
+        },
+      ],
+    });
+    // claudeFn returns plain strings — usage is undefined → fail-open.
+    let calls = 0;
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => {
+        calls++;
+        return `output ${calls}`;
+      },
+    });
+    expect(calls).toBe(2);
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(result.stepResults[1]?.status).toBe("ok");
+  });
+});
+
 // ── PR2a — executeAgent return shape (AgentResult union normalization) ───────
 // The runner's claudeFn dep accepts `Promise<string | AgentResult>`. Test
 // mocks return strings (legacy/cheap); bridge wrappers + real adapters

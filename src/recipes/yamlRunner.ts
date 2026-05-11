@@ -49,6 +49,7 @@ import {
   normalizeRecipeForRuntime,
 } from "./legacyRecipeCompat.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
+import { RunBudget } from "./runBudget.js";
 import type { ErrorPolicy } from "./schema.js";
 import { detectSilentFail } from "./stepObservation.js";
 
@@ -220,6 +221,8 @@ export interface YamlRecipe {
    */
   allowWrites?: string[];
   on_error?: ErrorPolicy;
+  /** PR2b — per-recipe token budget (see `BudgetPolicy` in schema.ts). */
+  budget?: import("./schema.js").BudgetPolicy;
 }
 
 export type RunContext = Record<string, string>;
@@ -486,6 +489,9 @@ export async function runYamlRecipe(
   };
 
   const stepDeps = resolveStepDeps(deps);
+  // PR2b: one per-run budget shared across all agent steps. Absent
+  // `recipe.budget` → no enforcement, no overhead.
+  const runBudget = new RunBudget(recipe.budget);
 
   // Open a `running`-state run-log entry so the dashboard sees the recipe
   // as in flight. Only when a long-lived `runLog` is provided (bridge path);
@@ -555,10 +561,28 @@ export async function runYamlRecipe(
       const stepId = intoKey;
       const stepStart = Date.now();
       let agentResult: string;
-      // PR2a foundation: the executor now returns `{text, usage?}` so
-      // downstream PR2b can enforce per-recipe tokensMax. This call site
-      // discards `.usage` for now — wiring lands in PR2b along with the
-      // RunBudget admission/reconcile path.
+      // PR2b: per-recipe token budget. Admission check before dispatch;
+      // reconcile actual consumption after. Subscription drivers
+      // (Claude CLI, provider subprocess) report `usage === undefined`
+      // — `RunBudget.reconcile` records a fail-open warning per driver
+      // per run and continues.
+      const admission = runBudget.admit();
+      if (!admission.admitted) {
+        const reason =
+          admission.reason ??
+          "Run exceeded its token budget — budget_exceeded.";
+        runError = runError ?? reason;
+        stepResults.push({
+          id: stepId,
+          tool: "agent",
+          status: "error",
+          error: reason,
+          haltReason: reason,
+          durationMs: 0,
+        });
+        stepsRun++;
+        continue;
+      }
       try {
         const agentReturn = await _executeAgent(
           {
@@ -572,6 +596,10 @@ export async function runYamlRecipe(
           buildAgentExecutorDeps(stepDeps, deps),
         );
         agentResult = agentReturn.text;
+        runBudget.reconcile(
+          agentCfg.driver === "api" ? "anthropic" : (agentCfg.driver ?? "auto"),
+          agentReturn.usage,
+        );
         // Catch both `[agent step failed: ...]` (existing) and the
         // silent-fail patterns `[agent step skipped: ...]` etc. via the
         // shared detector. Per-step opt-out via `silentFailDetection: false`.

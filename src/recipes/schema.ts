@@ -95,6 +95,35 @@ export interface ErrorPolicy {
   notify?: boolean;
 }
 
+/**
+ * PR2b — per-recipe token budget. When `tokensMax` is set, the runner
+ * tracks cumulative input + output tokens from API drivers across the
+ * run; on breach the run halts with a `budget_exceeded` haltReason
+ * (composes with the existing halt-summary / dashboard / CLI / Prom
+ * surfaces from #441/#444/#451/#452/#453).
+ *
+ * Subscription drivers (Claude CLI, provider subprocess CLIs) don't
+ * report token counts — the runner emits a one-time warning per driver
+ * per run and skips enforcement for those calls (fail-open). API
+ * drivers (Anthropic API, OpenAI/Gemini/Grok subprocess that surfaces
+ * usage, local LLM adapters) get full enforcement.
+ *
+ * Nested object (not flat `tokensMax`) so future siblings — `usdMax`,
+ * `wallClockMs`, `stepsMax` — don't churn the schema again.
+ */
+export interface BudgetPolicy {
+  /** Cumulative input + output tokens allowed across the whole run. */
+  tokensMax?: number;
+  /**
+   * What to do when the budget is breached. `halt` (default) stops the
+   * run on the next admission check with a `budget_exceeded` halt
+   * reason. `warn` continues the run but emits a warning + records the
+   * breach in the run log; useful for tuning budgets without breaking
+   * production cron recipes.
+   */
+  onBreach?: "halt" | "warn";
+}
+
 export interface Recipe {
   name: string;
   version: string;
@@ -109,4 +138,6 @@ export interface Recipe {
    */
   allowWrites?: string[];
   on_error?: ErrorPolicy;
+  /** PR2b — see `BudgetPolicy` above. Absent = no enforcement. */
+  budget?: BudgetPolicy;
 }

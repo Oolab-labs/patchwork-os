@@ -33,6 +33,16 @@ describe("categoriseHaltReason", () => {
     ).toBe("tool_error");
   });
 
+  it("recognises budget_exceeded halts from the RunBudget admission path", () => {
+    expect(
+      categoriseHaltReason(
+        "Run exceeded its token budget — budget_exceeded: total=1200 > tokensMax=1000.",
+      ),
+    ).toBe("budget_exceeded");
+    expect(categoriseHaltReason("budget_exceeded")).toBe("budget_exceeded");
+    expect(categoriseHaltReason("budget exceeded")).toBe("budget_exceeded");
+  });
+
   it("recognises kill-switch-blocked writes before the generic tool_threw match", () => {
     const reason =
       'Tool "slack.postMessage" in step "post" threw: Write operation blocked by kill switch: slack.postMessage. Unset PATCHWORK_FLAG_KILL_SWITCH_WRITES or set kill-switch.writes=false to restore.';
