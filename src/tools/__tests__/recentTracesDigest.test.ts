@@ -134,7 +134,12 @@ describe("buildRecentTracesDigest", () => {
       errorMessage: "x".repeat(200),
     });
     const lines = await buildRecentTracesDigest({ recipeRunLog: runLog });
-    const bullet = lines[1] ?? "";
+    // PR #449 prepends a HALTS line when run_level halts are present; the
+    // error recorded above qualifies. Find the bullet after the
+    // "RECENT DECISIONS" heading instead of hardcoding lines[1].
+    const headingIdx = lines.findIndex((l) => l.startsWith("RECENT DECISIONS"));
+    expect(headingIdx).toBeGreaterThanOrEqual(0);
+    const bullet = lines[headingIdx + 1] ?? "";
     expect(bullet).toContain("…"); // truncation marker present
     // The rendered summary (between icon and "— Ns ago") must be ≤80 chars.
     const summaryMatch = bullet.match(/^ {2}. (.+) — \d+[smhd] ago$/);
@@ -276,5 +281,95 @@ describe("buildRecentTracesDigest — decision formatting", () => {
     const summaryMatch = bullet.match(/^ {2}. (.+) — \d+[smhd] ago$/);
     expect(summaryMatch).not.toBeNull();
     expect((summaryMatch?.[1] ?? "").length).toBeLessThanOrEqual(80);
+  });
+
+  // ── PR #449 — HALTS one-liner ────────────────────────────────────────────
+  describe("HALTS line", () => {
+    it("prepends a halt summary when recent runs include error stepResults", async () => {
+      const now = Date.now();
+      // Record two error runs in the last 12h via appendDirect so we can
+      // attach stepResults with haltReason inline.
+      runLog.appendDirect({
+        taskId: "t-1",
+        recipeName: "post-notify",
+        trigger: "cron",
+        status: "error",
+        createdAt: now - 60_000,
+        startedAt: now - 60_000,
+        doneAt: now - 30_000,
+        durationMs: 30_000,
+        stepResults: [
+          {
+            id: "post",
+            status: "error",
+            haltReason: 'Tool "slack.postMessage" in step "post" threw: 500',
+            durationMs: 100,
+          },
+        ],
+      });
+      runLog.appendDirect({
+        taskId: "t-2",
+        recipeName: "weekly-report",
+        trigger: "cron",
+        status: "error",
+        createdAt: now - 120_000,
+        startedAt: now - 120_000,
+        doneAt: now - 90_000,
+        durationMs: 30_000,
+        stepResults: [
+          {
+            id: "fetch",
+            status: "error",
+            haltReason:
+              'Tool "jira.searchIssues" in step "fetch" reported an error: 401',
+            durationMs: 100,
+          },
+        ],
+      });
+
+      const lines = await buildRecentTracesDigest({ recipeRunLog: runLog });
+      const haltLine = lines.find((l) => l.startsWith("HALTS"));
+      expect(haltLine).toBeDefined();
+      expect(haltLine).toContain("HALTS (last 12h): 2");
+      expect(haltLine).toContain("tool_threw·1");
+      expect(haltLine).toContain("tool_error·1");
+    });
+
+    it("emits halt summary even when there are no decision traces (halts alone are signal)", async () => {
+      const now = Date.now();
+      // run_level halt — no stepResults, just an errorMessage.
+      runLog.appendDirect({
+        taskId: "t-cycle",
+        recipeName: "broken",
+        trigger: "cron",
+        status: "error",
+        createdAt: now - 1000,
+        startedAt: now - 1000,
+        doneAt: now - 500,
+        durationMs: 500,
+        errorMessage: "Recipe has circular dependencies",
+        stepResults: [],
+      });
+      const lines = await buildRecentTracesDigest({ recipeRunLog: runLog });
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines[0]).toContain("HALTS");
+      expect(lines[0]).toContain("run_level·1");
+    });
+
+    it("omits the HALTS line when nothing halted in the window", async () => {
+      runLog.appendDirect({
+        taskId: "t-ok",
+        recipeName: "happy",
+        trigger: "cron",
+        status: "done",
+        createdAt: Date.now() - 1000,
+        startedAt: Date.now() - 1000,
+        doneAt: Date.now() - 500,
+        durationMs: 500,
+        stepResults: [],
+      });
+      const lines = await buildRecentTracesDigest({ recipeRunLog: runLog });
+      expect(lines.every((l) => !l.startsWith("HALTS"))).toBe(true);
+    });
   });
 });
