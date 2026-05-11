@@ -39,6 +39,10 @@ import {
   haltSummaryToPrometheus,
   summariseHalts,
 } from "./recipes/haltCategory.js";
+import {
+  judgeSummaryToPrometheus,
+  summariseJudgments,
+} from "./recipes/judgeSummary.js";
 import { warnAboutLegacyPermissionsSidecars } from "./recipes/migrationWarnings.js";
 import { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
 import { classifyTool } from "./riskTier.js";
@@ -1123,15 +1127,21 @@ export class Bridge {
       // and `patchwork halts`, surfaced through the existing /metrics
       // route.
       let haltLines: string[] = [];
+      let judgeLines: string[] = [];
       try {
         if (this.recipeRunLog) {
           const runs = this.recipeRunLog.query({ limit: 500 });
           haltLines = haltSummaryToPrometheus(summariseHalts(runs));
+          // PR3b — judge verdicts are a separate channel from halts
+          // (augment-only invariant; see judgeVerdict.ts). Same window,
+          // same fail-open posture.
+          judgeLines = judgeSummaryToPrometheus(summariseJudgments(runs));
         }
       } catch {
         /* fail-open: prometheus must never break on log read */
       }
-      return haltLines.length > 0 ? `${base}\n${haltLines.join("\n")}\n` : base;
+      const extras = [...haltLines, ...judgeLines];
+      return extras.length > 0 ? `${base}\n${extras.join("\n")}\n` : base;
     };
     this.server.perfDataFn = () => {
       const windowMs = 60 * 60_000; // 1h window for dashboard
