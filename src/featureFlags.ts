@@ -133,6 +133,42 @@ export function isEnabled(flagId: string): boolean {
 }
 
 /**
+ * Returns true when the given kill-switch flag is **env-locked** — i.e. its
+ * value was frozen at startup from a `PATCHWORK_FLAG_<ID>` environment
+ * variable and any subsequent `setFlag()` call will be silently overridden
+ * by `isEnabled()`.
+ *
+ * Used by the `/kill-switch` endpoint (issue #422) to surface a 409
+ * Conflict instead of returning 200 OK for a setFlag that won't stick,
+ * and by the dashboard to render the toggle as disabled (with a tooltip
+ * naming which direction was sysadmin-locked) when this returns true.
+ *
+ * Returns false for non-kill-switch flags (they read env dynamically and
+ * are never "locked"), for unknown flags, and when `lockKillSwitchEnv()`
+ * has not yet been called.
+ */
+export function isEnvLockedFor(flagId: string): boolean {
+  if (!envLocked) return false;
+  const flag = FLAG_REGISTRY.get(flagId);
+  if (!flag?.isKillSwitch) return false;
+  return FROZEN_KILL_SWITCH_ENV.get(flagId) !== undefined;
+}
+
+/**
+ * Returns the frozen env-locked value for a kill-switch flag (`true` /
+ * `false`), or `null` if not env-locked.
+ *
+ * Used by the dashboard tooltip so the disabled-state can read "env-locked
+ * to **on**" vs "env-locked to **off**" — both directions are policy-locked,
+ * but the user should know which.
+ */
+export function getEnvLockedValue(flagId: string): boolean | null {
+  if (!isEnvLockedFor(flagId)) return null;
+  const frozen = FROZEN_KILL_SWITCH_ENV.get(flagId);
+  return frozen === undefined ? null : frozen;
+}
+
+/**
  * Set a flag value (persists to config file if persist=true).
  */
 export function setFlag(flagId: string, value: boolean, persist = false): void {
