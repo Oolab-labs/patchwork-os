@@ -1748,47 +1748,68 @@ if (process.argv[2] === "recipe" && process.argv[3] === "schema") {
 }
 
 // Patchwork: `patchwork recipe new <name>` — scaffold a new recipe from template.
+// With `--interactive`, drops into a connector-aware prompt tree instead.
 if (process.argv[2] === "recipe" && process.argv[3] === "new") {
   const args = process.argv.slice(4);
-  const recipeName = args[0];
-  if (!recipeName) {
-    process.stderr.write(
-      "Usage: patchwork recipe new <name> [--template <name>] [--desc <description>] [--out <dir>]\n" +
-        "  --out <dir>  Write the recipe to <dir>/<name>.yaml.\n" +
-        "               Defaults to ~/.patchwork/recipes/ — pass `--out .` to\n" +
-        "               write into the current directory instead.\n",
-    );
-    process.stderr.write("\nTemplates:\n");
-    (async () => {
-      const { listTemplates } = await import("./commands/recipe.js");
-      for (const t of listTemplates()) {
-        process.stderr.write(`  ${t}\n`);
-      }
-      process.exit(1);
-    })();
-  } else {
+  const isInteractive = args.includes("--interactive") || args.includes("-i");
+  if (isInteractive) {
     (async () => {
       try {
-        const { runNew } = await import("./commands/recipe.js");
-        const templateIdx = args.indexOf("--template");
-        const template = templateIdx >= 0 ? args[templateIdx + 1] : undefined;
-        const descIdx = args.indexOf("--desc");
-        const description =
-          (descIdx >= 0 ? args[descIdx + 1] : undefined) ??
-          `Recipe: ${recipeName}`;
+        const { runNewInteractive } = await import("./commands/recipe.js");
+        const { createInterface } = await import("node:readline/promises");
+        const rl = createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
         const outIdx = args.indexOf("--out");
         const outRaw = outIdx >= 0 ? args[outIdx + 1] : undefined;
-        // `--out .` is the common case for "scaffold in cwd" — resolve so
-        // the success message shows the absolute path the user can open.
         const outputDir = outRaw ? path.resolve(outRaw) : undefined;
-
-        const result = runNew({
-          name: recipeName,
-          description,
-          ...(template ? { template } : {}),
+        const deps = {
+          ask: async (q: string) => (await rl.question(`${q}: `)).trim(),
+          pickFromList: async (q: string, options: string[]) => {
+            process.stdout.write(`\n${q}\n`);
+            options.forEach((opt, i) => {
+              process.stdout.write(`  ${i + 1}. ${opt}\n`);
+            });
+            for (let attempt = 0; attempt < 5; attempt++) {
+              const raw = (
+                await rl.question(`Choose 1-${options.length}: `)
+              ).trim();
+              const idx = Number.parseInt(raw, 10);
+              if (Number.isFinite(idx) && idx >= 1 && idx <= options.length) {
+                return idx;
+              }
+              process.stdout.write(
+                `Invalid choice. Enter a number 1-${options.length}.\n`,
+              );
+            }
+            throw new Error("Too many invalid choices");
+          },
+          confirm: async (q: string) => {
+            const a = (await rl.question(`${q} [y/N]: `)).trim().toLowerCase();
+            return a === "y" || a === "yes";
+          },
+          preview: (yaml: string) => {
+            process.stdout.write("\n--- Preview ---\n");
+            process.stdout.write(yaml);
+            process.stdout.write("---\n\n");
+          },
+        };
+        const result = await runNewInteractive({
+          deps,
           ...(outputDir ? { outputDir } : {}),
         });
+        rl.close();
         process.stdout.write(`  ✓ Created ${result.path}\n`);
+        if (result.warnings.length > 0) {
+          process.stdout.write(`\n  ⚠ Lint warnings (recipe still written):\n`);
+          for (const w of result.warnings) {
+            process.stdout.write(`    [${w.level}] ${w.message}\n`);
+          }
+        }
+        process.stdout.write(
+          `\n  Run with: patchwork recipe run ${result.path}\n`,
+        );
         process.exit(0);
       } catch (err) {
         process.stderr.write(
@@ -1797,6 +1818,56 @@ if (process.argv[2] === "recipe" && process.argv[3] === "new") {
         process.exit(1);
       }
     })();
+  } else {
+    const recipeName = args[0];
+    if (!recipeName) {
+      process.stderr.write(
+        "Usage: patchwork recipe new <name> [--template <name>] [--desc <description>] [--out <dir>]\n" +
+          "  --interactive (-i)  Run the connector-aware prompt tree instead of using a template.\n" +
+          "  --out <dir>  Write the recipe to <dir>/<name>.yaml.\n" +
+          "               Defaults to ~/.patchwork/recipes/ — pass `--out .` to\n" +
+          "               write into the current directory instead.\n",
+      );
+      process.stderr.write("\nTemplates:\n");
+      (async () => {
+        const { listTemplates } = await import("./commands/recipe.js");
+        for (const t of listTemplates()) {
+          process.stderr.write(`  ${t}\n`);
+        }
+        process.exit(1);
+      })();
+    } else {
+      (async () => {
+        try {
+          const { runNew } = await import("./commands/recipe.js");
+          const templateIdx = args.indexOf("--template");
+          const template = templateIdx >= 0 ? args[templateIdx + 1] : undefined;
+          const descIdx = args.indexOf("--desc");
+          const description =
+            (descIdx >= 0 ? args[descIdx + 1] : undefined) ??
+            `Recipe: ${recipeName}`;
+          const outIdx = args.indexOf("--out");
+          const outRaw = outIdx >= 0 ? args[outIdx + 1] : undefined;
+          // `--out .` is the common case for "scaffold in cwd" — resolve so
+          // the success message shows the absolute path the user can open.
+          const outputDir = outRaw ? path.resolve(outRaw) : undefined;
+
+          const result = runNew({
+            name: recipeName,
+            description,
+            ...(template ? { template } : {}),
+            ...(outputDir ? { outputDir } : {}),
+          });
+          process.stdout.write(`  ✓ Created ${result.path}\n`);
+          process.exit(0);
+        } catch (err) {
+          process.stderr.write(
+            `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+          process.exit(1);
+        }
+      })();
+    }
   }
 }
 
