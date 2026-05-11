@@ -219,16 +219,6 @@ interface ConfigFile {
     | "gemini-api"
     | "local"
     | "none";
-  /** @deprecated Use driver instead. */
-  claudeDriver?:
-    | "subprocess"
-    | "api"
-    | "openai"
-    | "grok"
-    | "gemini"
-    | "gemini-api"
-    | "local"
-    | "none";
   claudeBinary?: string;
   antBinary?: string;
   automationEnabled?: boolean;
@@ -261,7 +251,6 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "ideName",
   "autoTmux",
   "driver",
-  "claudeDriver", // deprecated alias — still accepted for backward compat
   "claudeBinary",
   "antBinary",
   "automationEnabled",
@@ -379,7 +368,6 @@ export function saveBridgeConfigDriver(
     }
     parsed = candidate as Record<string, unknown>;
   }
-  delete parsed.claudeDriver;
   parsed.driver = driver;
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.writeFileSync(targetPath, JSON.stringify(parsed, null, 2), {
@@ -458,12 +446,6 @@ export function parseConfig(argv: string[]): Config {
       : 24 * 60 * 60 * 1_000; // default 24h
   let corsOrigins: string[] = fileConfig.corsOrigins ?? [];
   let trustedProxies: string[] = fileConfig.trustedProxies ?? [];
-  // "driver" is the canonical field; "claudeDriver" is the deprecated alias.
-  if (fileConfig.claudeDriver && !fileConfig.driver) {
-    console.warn(
-      '[patchwork-os] Warning: "claudeDriver" in config is deprecated — rename to "driver".',
-    );
-  }
   const VALID_DRIVER_MODES = [
     "subprocess",
     "api",
@@ -493,7 +475,7 @@ export function parseConfig(argv: string[]): Config {
     | "gemini"
     | "gemini-api"
     | "local"
-    | "none" = fileConfig.driver ?? fileConfig.claudeDriver ?? "none";
+    | "none" = fileConfig.driver ?? "none";
   let claudeBinary = fileConfig.claudeBinary ?? "claude";
   let antBinary = fileConfig.antBinary ?? "ant";
   let automationEnabled = fileConfig.automationEnabled ?? false;
@@ -664,15 +646,8 @@ export function parseConfig(argv: string[]): Config {
       case "--auto-tmux":
         autoTmux = true;
         break;
-      case "--driver":
-      case "--claude-driver": {
-        const flagName = args[i] as string;
-        if (flagName === "--claude-driver") {
-          console.warn(
-            "[patchwork-os] Warning: --claude-driver is deprecated — use --driver instead.",
-          );
-        }
-        const driverVal = requireArg(args, ++i, flagName);
+      case "--driver": {
+        const driverVal = requireArg(args, ++i, "--driver");
         if (
           driverVal !== "subprocess" &&
           driverVal !== "api" &&
@@ -684,7 +659,7 @@ export function parseConfig(argv: string[]): Config {
           driverVal !== "none"
         ) {
           throw new Error(
-            `Invalid ${flagName} value: "${driverVal}". Must be "subprocess", "api", "openai", "grok", "gemini", "gemini-api", "local", or "none".`,
+            `Invalid --driver value: "${driverVal}". Must be "subprocess", "api", "openai", "grok", "gemini", "gemini-api", "local", or "none".`,
           );
         }
         driver = driverVal;
@@ -900,9 +875,8 @@ Patchwork:
 
 Automation:
   --driver <mode>           AI driver: "subprocess" | "api" | "openai" | "grok" | "gemini" | "gemini-api" | "local" | "none" (default: "none")
-  --claude-driver <mode>    Deprecated alias for --driver
   --claude-binary <path>    Path to claude binary (default: "claude")
-  --automation              Enable event-driven automation hooks (requires --claude-driver != none and --automation-policy)
+  --automation              Enable event-driven automation hooks (requires --driver != none and --automation-policy)
   --automation-policy <path>  Path to JSON automation policy file
 
 Plugins:

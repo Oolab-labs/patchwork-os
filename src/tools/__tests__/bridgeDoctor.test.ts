@@ -39,7 +39,7 @@ const BASE_CONFIG = {
   automationEnabled: false,
   automationPolicyPath: null,
   issuerUrl: null,
-  claudeDriver: "none" as const,
+  driver: "none" as const,
   claudeBinary: "claude",
   port: 0,
 } as unknown as import("../../config.js").Config;

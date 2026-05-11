@@ -48,7 +48,7 @@ function makeConfig(workspace: string): Config {
     activeWorkspaceFolder: workspace,
     gracePeriodMs: 30_000,
     autoTmux: false,
-    claudeDriver: "none",
+    driver: "none",
     claudeBinary: "claude",
     automationEnabled: false,
     automationPolicyPath: null,

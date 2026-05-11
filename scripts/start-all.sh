@@ -55,7 +55,7 @@ NO_DASHBOARD=""
 DASHBOARD_PORT="3200"
 BRIDGE_PORT_FLAG=""
 AUTOMATION_POLICY=""
-CLAUDE_DRIVER="subprocess"
+DRIVER="subprocess"
 BRIDGE_READY_TIMEOUT="${BRIDGE_READY_TIMEOUT:-30}"
 LAST_CLAUDE_RESTART=0
 RESTART_COUNT=0
@@ -74,7 +74,7 @@ while [[ $# -gt 0 ]]; do
     --dashboard-port)    DASHBOARD_PORT="$2"; shift 2 ;;
     --bridge-port)       BRIDGE_PORT_FLAG="--port $2"; shift 2 ;;
     --automation-policy) AUTOMATION_POLICY="$2"; shift 2 ;;
-    --claude-driver)     CLAUDE_DRIVER="$2"; shift 2 ;;
+    --driver)            DRIVER="$2"; shift 2 ;;
     *)                   echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -168,7 +168,7 @@ if [[ -z "$FULL_MODE" ]]; then
 fi
 if [[ -n "$AUTOMATION_POLICY" ]]; then
   echo ""
-  echo "  ⚡ Automation: enabled (driver: $CLAUDE_DRIVER)"
+  echo "  ⚡ Automation: enabled (driver: $DRIVER)"
   echo "     Policy: $AUTOMATION_POLICY"
 fi
 echo ""
@@ -207,7 +207,7 @@ if [[ -n "$IDE_NAME" ]]; then
 fi
 BRIDGE_AUTOMATION_FLAGS=""
 if [[ -n "$AUTOMATION_POLICY" ]]; then
-  BRIDGE_AUTOMATION_FLAGS="--automation --automation-policy $(printf '%q' "$AUTOMATION_POLICY") --claude-driver $(printf '%q' "$CLAUDE_DRIVER")"
+  BRIDGE_AUTOMATION_FLAGS="--automation --automation-policy $(printf '%q' "$AUTOMATION_POLICY") --driver $(printf '%q' "$DRIVER")"
 fi
 # Use compiled dist when src/ is absent (npm install), tsx during local development
 if [[ -f "$BRIDGE_DIR/src/index.ts" ]]; then

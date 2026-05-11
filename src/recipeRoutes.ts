@@ -435,7 +435,7 @@ export function tryHandleRecipeRoute(
             JSON.stringify({
               ok: false,
               error:
-                "Recipe execution unavailable — requires --claude-driver subprocess",
+                "Recipe execution unavailable — requires --driver subprocess",
             }),
           );
           return;
@@ -493,7 +493,7 @@ export function tryHandleRecipeRoute(
             JSON.stringify({
               ok: false,
               error:
-                "Recipe execution unavailable — requires --claude-driver subprocess",
+                "Recipe execution unavailable — requires --driver subprocess",
             }),
           );
           return;
@@ -702,7 +702,7 @@ export function tryHandleRecipeRoute(
           JSON.stringify({
             ok: false,
             error:
-              "Recipe generation unavailable — requires --claude-driver subprocess",
+              "Recipe generation unavailable — requires --driver subprocess",
             unavailable: true,
           }),
         );

@@ -336,7 +336,7 @@ export class RecipeScheduler {
     if (yamlPath) {
       if (!this.opts.runYaml) {
         this.opts.logger?.warn?.(
-          `[scheduler] skipped "${name}" — YAML recipe requires runYaml callback (start bridge with --claude-driver)`,
+          `[scheduler] skipped "${name}" — YAML recipe requires runYaml callback (start bridge with --driver)`,
         );
         return;
       }

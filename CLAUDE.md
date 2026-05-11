@@ -22,7 +22,7 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `gen-claude-md` — Generate starter CLAUDE.md for current workspace
 - `print-token [--port N]` — Print auth token from active lock file
 - `gen-plugin-stub <dir> --name <org/name> --prefix <prefix> [--ts]` — Scaffold new plugin (add `--ts` for TypeScript variant)
-- `quick-task <preset>` — Launch a context-aware Claude task from a preset (fixErrors, refactorFile, addTests, explainCode, optimizePerf, runTests, resumeLastCancelled). Same dispatch path as the sidebar. Requires `--claude-driver subprocess`.
+- `quick-task <preset>` — Launch a context-aware Claude task from a preset (fixErrors, refactorFile, addTests, explainCode, optimizePerf, runTests, resumeLastCancelled). Same dispatch path as the sidebar. Requires `--driver subprocess`.
 - `start-task "<description>"` — Enqueue a free-form Claude task; Claude gathers its own workspace context.
 - `continue-handoff` — Resume from the stored handoff note (skips auto-snapshots).
 - `--watch` — Auto-restart supervisor with exponential backoff (2s → 30s). Safe for production.
@@ -171,7 +171,7 @@ For remote deployments where claude.ai custom connectors need authenticated acce
 
 Bridge spawns Claude Code subprocesses as background tasks.
 
-- **Activation**: `--claude-driver subprocess` (or `api`). Default `none` (disabled).
+- **Activation**: `--driver subprocess` (or `api`). Default `none` (disabled).
 - **Tools**: `runClaudeTask` (enqueue prompt), `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks`, `resumeClaudeTask`.
 - **Task lifecycle**: `pending` → `running` → `done | error | cancelled | interrupted`. Output streams to VS Code output channel, capped at 50KB.
 - **Binary**: `--claude-binary <path>` overrides Claude CLI path (default: `claude` on PATH).
@@ -182,7 +182,7 @@ Full reference: [documents/platform-docs.md](documents/platform-docs.md) (Claude
 
 Event-driven hooks that trigger Claude tasks automatically.
 
-- **Activation**: `--automation --automation-policy <path.json> --claude-driver subprocess`
+- **Activation**: `--automation --automation-policy <path.json> --driver subprocess`
 - **Hooks**:
   - `onDiagnosticsStateChange` (v2.43.0+) — unified diagnostics hook. `state: "error"` fires on new error/warning diagnostics (`{{file}}`, `{{diagnostics}}`, severity filter). `state: "cleared"` fires when errors/warnings drop to zero (`{{file}}`). Replaces deprecated `onDiagnosticsError` + `onDiagnosticsCleared`.
   - `onFileSave` — matching files saved. Minimatch glob patterns. Placeholder: `{{file}}`.

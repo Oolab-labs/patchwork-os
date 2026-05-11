@@ -104,7 +104,7 @@
     "vps:stop": "bash scripts/start-vps.sh --stop",
     "start-all": "bash scripts/start-all.sh",
     "start-orchestrator": "bash scripts/start-orchestrator.sh",
-    "start:automation": "claude-ide-bridge --workspace . --automation --automation-policy automation-policy.json --claude-driver subprocess --full",
+    "start:automation": "claude-ide-bridge --workspace . --automation --automation-policy automation-policy.json --driver subprocess --full",
     "prepare": "husky"
   },
   "dependencies": {
