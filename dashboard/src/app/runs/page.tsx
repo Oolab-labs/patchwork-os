@@ -2,6 +2,7 @@
 import React from "react";
 import { apiPath } from "@/lib/api";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LivePill } from "@/components/patchwork/LivePill";
 import { ErrorState } from "@/components/patchwork";
@@ -150,6 +151,13 @@ export default function RunsPage() {
   const [haltSummary, setHaltSummary] = useState<HaltSummary | null>(null);
   const [recipeQuery, setRecipeQuery] = useState("");
   const debouncedRecipeQuery = useDebounced(recipeQuery, 250);
+  // PR5c follow-up: read `?attempt=<id>` from URL to deep-link runs that
+  // share a manualRunId. Cleared via the same "clear filters" pill.
+  const searchParams = useSearchParams();
+  const [attemptFilter, setAttemptFilter] = useState<string>("");
+  useEffect(() => {
+    setAttemptFilter(searchParams?.get("attempt") ?? "");
+  }, [searchParams]);
   const [limit, setLimit] = useState(RUNS_PAGE_SIZE);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -162,6 +170,7 @@ export default function RunsPage() {
         if (trigger !== "all") params.set("trigger", trigger);
         if (status !== "all") params.set("status", status);
         if (debouncedRecipeQuery) params.set("recipe", debouncedRecipeQuery);
+        if (attemptFilter) params.set("manualRunId", attemptFilter);
         const res = await fetch(apiPath(`/api/bridge/runs?${params}`));
         if (!res.ok) throw new Error(`/runs ${res.status}`);
         const data = (await res.json()) as { runs?: Run[] };
@@ -175,7 +184,7 @@ export default function RunsPage() {
     load();
     const id = setInterval(load, 5000);
     return () => clearInterval(id);
-  }, [trigger, status, debouncedRecipeQuery, limit]);
+  }, [trigger, status, debouncedRecipeQuery, limit, attemptFilter]);
 
   // PR1c: poll halt-summary independently (cheaper payload, fixed cadence).
   // PR4: window selector feeds the same sinceMs into the summary so the
@@ -346,7 +355,19 @@ export default function RunsPage() {
             </option>
           ))}
         </select>
-        {(recipeQuery || trigger !== "all" || window !== "any") && (
+        {attemptFilter && (
+          <span
+            className="pill mono"
+            style={{ fontSize: "var(--fs-xs)" }}
+            title="Filtering by attempt id"
+          >
+            attempt:{attemptFilter}
+          </span>
+        )}
+        {(recipeQuery ||
+          trigger !== "all" ||
+          window !== "any" ||
+          attemptFilter) && (
           <button
             type="button"
             className="btn sm ghost"
@@ -354,6 +375,19 @@ export default function RunsPage() {
               setRecipeQuery("");
               setTrigger("all");
               setWindow("any");
+              setAttemptFilter("");
+              // Strip the ?attempt= from the URL so the filter doesn't
+              // re-apply on next render via the useSearchParams effect.
+              // `window` is shadowed by a state variable in this file —
+              // reach the global through `globalThis`.
+              const g = globalThis as typeof globalThis & {
+                window?: Window;
+              };
+              if (g.window && attemptFilter) {
+                const url = new URL(g.window.location.href);
+                url.searchParams.delete("attempt");
+                g.window.history.replaceState({}, "", url.toString());
+              }
             }}
           >
             Clear
@@ -512,16 +546,19 @@ export default function RunsPage() {
                       <td>
                         <span className="pill muted">{normaliseTrigger(r.trigger)}</span>
                         {r.manualRunId && (
-                          <span
+                          <Link
+                            href={`/runs?attempt=${encodeURIComponent(r.manualRunId)}`}
+                            onClick={(e) => e.stopPropagation()}
                             className="pill muted mono"
                             style={{
                               marginLeft: 6,
                               fontSize: "var(--fs-2xs)",
+                              textDecoration: "none",
                             }}
-                            title={`Attempt id ${r.manualRunId} — same id across runs = a resumed retry`}
+                            title={`Attempt id ${r.manualRunId} — click to filter to all runs sharing this attempt`}
                           >
                             attempt:{r.manualRunId.slice(-6)}
-                          </span>
+                          </Link>
                         )}
                       </td>
                       <td>

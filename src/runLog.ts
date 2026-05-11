@@ -145,6 +145,8 @@ export interface RunQuery {
   recipe?: string;
   /** Runs with seq > after. */
   after?: number;
+  /** PR5c — exact-match on manualRunId. Yields all retries of one attempt. */
+  manualRunId?: string;
 }
 
 export class RecipeRunLog {
@@ -256,6 +258,10 @@ export class RecipeRunLog {
     if (q.trigger) out = out.filter((r) => r.trigger === q.trigger);
     if (q.status) out = out.filter((r) => r.status === q.status);
     if (q.recipe) out = out.filter((r) => r.recipeName === q.recipe);
+    if (q.manualRunId) {
+      const id = q.manualRunId;
+      out = out.filter((r) => r.manualRunId === id);
+    }
     if (q.after !== undefined) {
       const after = q.after;
       out = out.filter((r) => r.seq > after);

@@ -543,6 +543,7 @@ export function tryHandleRecipeRoute(
       const trigger = sp.get("trigger");
       const status = sp.get("status");
       const recipe = sp.get("recipe");
+      const manualRunId = sp.get("manualRunId");
       const limit = limitRaw ? Number.parseInt(limitRaw, 10) : Number.NaN;
       const after = afterRaw ? Number.parseInt(afterRaw, 10) : Number.NaN;
       const runs =
@@ -551,6 +552,7 @@ export function tryHandleRecipeRoute(
           ...(trigger && { trigger }),
           ...(status && { status }),
           ...(recipe && { recipe }),
+          ...(manualRunId && { manualRunId }),
           ...(Number.isFinite(after) && { after }),
         }) ?? [];
       res.writeHead(200, { "Content-Type": "application/json" });

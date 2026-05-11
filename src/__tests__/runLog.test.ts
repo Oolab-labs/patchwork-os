@@ -441,6 +441,55 @@ describe("RecipeRunLog.record", () => {
     expect(log.getBySeq(seq2)?.manualRunId).toBeUndefined();
   });
 
+  it("query({ manualRunId }) returns only runs from that attempt", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    const attempt = "mr_resume_42";
+    log.appendDirect({
+      taskId: "t1",
+      recipeName: "review",
+      trigger: "recipe",
+      status: "error",
+      createdAt: 1_000,
+      doneAt: 1_500,
+      durationMs: 500,
+      manualRunId: attempt,
+    });
+    log.appendDirect({
+      taskId: "t2",
+      recipeName: "review",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 2_000,
+      doneAt: 2_500,
+      durationMs: 500,
+      manualRunId: attempt,
+    });
+    log.appendDirect({
+      taskId: "t3",
+      recipeName: "review",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 3_000,
+      doneAt: 3_500,
+      durationMs: 500,
+      manualRunId: "mr_other",
+    });
+    log.appendDirect({
+      taskId: "t4",
+      recipeName: "nightly",
+      trigger: "cron",
+      status: "done",
+      createdAt: 4_000,
+      doneAt: 4_500,
+      durationMs: 500,
+    });
+
+    const matched = log.query({ manualRunId: attempt });
+    expect(matched.map((r) => r.taskId).sort()).toEqual(["t1", "t2"]);
+    // Empty result for unknown ids — not a partial match.
+    expect(log.query({ manualRunId: "mr_does_not_exist" })).toEqual([]);
+  });
+
   it("record() stores parentSeq from :p<N> triggerSource suffix", () => {
     const log = new RecipeRunLog({ dir: tmp });
     const rec = log.record({

@@ -177,6 +177,7 @@ export class RecipeOrchestration {
       status?: string;
       recipe?: string;
       after?: number;
+      manualRunId?: string;
     }) => {
       if (!this.deps.recipeRunLog) return [];
       return this.deps.recipeRunLog.query({
@@ -194,6 +195,7 @@ export class RecipeOrchestration {
         }),
         ...(q.recipe !== undefined && { recipe: q.recipe }),
         ...(q.after !== undefined && { after: q.after }),
+        ...(q.manualRunId !== undefined && { manualRunId: q.manualRunId }),
       }) as unknown as Record<string, unknown>[];
     };
 
