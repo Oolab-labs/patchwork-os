@@ -35,6 +35,10 @@ import { isPreToolUseHookRegistered } from "./preToolUseHook.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
 import { RecipeOrchestration } from "./recipeOrchestration.js";
+import {
+  haltSummaryToPrometheus,
+  summariseHalts,
+} from "./recipes/haltCategory.js";
 import { warnAboutLegacyPermissionsSidecars } from "./recipes/migrationWarnings.js";
 import { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
 import { classifyTool } from "./riskTier.js";
@@ -1105,11 +1109,30 @@ export class Bridge {
         tokens: this.tokenUsageTracker.getTotals(),
       };
     };
-    this.server.metricsFn = () =>
-      this.activityLog.toPrometheus({
+    this.server.metricsFn = () => {
+      const base = this.activityLog.toPrometheus({
         rateLimitRejected: this.activityLog.getRateLimitRejections(),
         extensionDisconnects: this.extensionDisconnectCount,
       });
+      // Append per-category halt gauges from the runLog so users with
+      // their own Prometheus stack can dashboard halts without using
+      // Patchwork's UI. Reads everything currently in the in-memory ring
+      // (bounded by runLog memoryCap); rotation may cause the values to
+      // decrease, so we expose this as a `gauge` rather than a `counter`.
+      // Composes #441/#444/#447 — same data shape as /runs/halt-summary
+      // and `patchwork halts`, surfaced through the existing /metrics
+      // route.
+      let haltLines: string[] = [];
+      try {
+        if (this.recipeRunLog) {
+          const runs = this.recipeRunLog.query({ limit: 500 });
+          haltLines = haltSummaryToPrometheus(summariseHalts(runs));
+        }
+      } catch {
+        /* fail-open: prometheus must never break on log read */
+      }
+      return haltLines.length > 0 ? `${base}\n${haltLines.join("\n")}\n` : base;
+    };
     this.server.perfDataFn = () => {
       const windowMs = 60 * 60_000; // 1h window for dashboard
       const windowedS = this.activityLog.windowedStats(windowMs);

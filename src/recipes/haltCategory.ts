@@ -107,6 +107,27 @@ export function summariseHalts(runs: HaltSummaryInputRun[]): HaltSummary {
 }
 
 /**
+ * Format a `HaltSummary` as Prometheus text-exposition lines for the
+ * `bridge_recipe_halts{category="..."} N` gauge. Returns an empty array
+ * when the summary is empty (no HELP/TYPE block emitted in that case so
+ * Prom scrapers don't see an orphan declaration).
+ *
+ * Surfaced via `/metrics` so users with their own observability stack
+ * can dashboard halts without using Patchwork's UI.
+ */
+export function haltSummaryToPrometheus(summary: HaltSummary): string[] {
+  if (summary.total === 0) return [];
+  const lines: string[] = [
+    "# HELP bridge_recipe_halts Recipe halts in the in-memory run-log window, by category",
+    "# TYPE bridge_recipe_halts gauge",
+  ];
+  for (const [category, count] of Object.entries(summary.byCategory)) {
+    lines.push(`bridge_recipe_halts{category="${category}"} ${count}`);
+  }
+  return lines;
+}
+
+/**
  * Derive a one-sentence haltReason from a step's error-status + raw error
  * string. Used by `chainedRunner` to mirror the convention emitted by
  * `yamlRunner`. Returns `undefined` for non-error rows or missing error.
