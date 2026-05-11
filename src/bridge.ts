@@ -17,7 +17,7 @@ import type { Config } from "./config.js";
 import { DecisionTraceLog } from "./decisionTraceLog.js";
 import { createDriver } from "./drivers/index.js";
 import { ExtensionClient } from "./extensionClient.js";
-import { lockKillSwitchEnv } from "./featureFlags.js";
+import { lockKillSwitchEnv, watchFlags } from "./featureFlags.js";
 import { FileLock } from "./fileLock.js";
 import { buildEnforcementReminder } from "./instructionsUtils.js";
 import { LockFileManager } from "./lockfile.js";
@@ -715,6 +715,8 @@ export class Bridge {
 
   /** Write a periodic auto-snapshot while sessions are active (every 5 minutes). */
   private _periodicSnapshotTimer: ReturnType<typeof setInterval> | null = null;
+  /** Cleanup handle for `watchFlags()` — set in start(), invoked in stop(). */
+  private _stopFlagsWatch: (() => void) | null = null;
 
   private _startPeriodicSnapshots(): void {
     if (this._periodicSnapshotTimer) return;
@@ -885,6 +887,11 @@ export class Bridge {
     // recipe steps mutating `process.env.PATCHWORK_FLAG_*` cannot disable an
     // active emergency stop. Closes MED-2 from the 2026-04-28 audit.
     lockKillSwitchEnv();
+
+    // 0a-bis. Watch flags.json for cross-process changes — picks up CLI
+    // fallback writes and sibling-bridge updates in a multi-bridge fleet.
+    // v2-S1 + v2-B2 from issue #422.
+    this._stopFlagsWatch = watchFlags();
 
     // 0b. Auto-repair .claude/rules/bridge-tools.md if stale (present but missing the
     // current version sentinel). Older package versions write stale files that may
@@ -1777,6 +1784,14 @@ export class Bridge {
     this.stopped = true;
     this.logger.info("Shutting down...");
     this._stopPeriodicSnapshots();
+    if (this._stopFlagsWatch) {
+      try {
+        this._stopFlagsWatch();
+      } catch {
+        /* ignore */
+      }
+      this._stopFlagsWatch = null;
+    }
     this.tokenUsageTracker.stop();
     this.automationHooks?.destroy();
     this.recipeScheduler?.stop();
