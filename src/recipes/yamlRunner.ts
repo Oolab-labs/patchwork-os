@@ -583,6 +583,21 @@ export async function runYamlRecipe(
   let stepsRun = 0;
   let runError: string | undefined;
 
+  // Push live step results into the run-log ring so the dashboard's
+  // `/runs/[seq]` page surfaces verdicts + haltReasons mid-flight,
+  // instead of waiting for the whole recipe to finish via
+  // `completeRun`. The runLog ignores non-running entries; cron/webhook
+  // runs through the orchestrator path (where `runSeq` is undefined)
+  // skip this entirely.
+  const persistLiveStepResults = (): void => {
+    if (!deps.runLog || runSeq === undefined || stepDeps.testMode) return;
+    try {
+      deps.runLog.updateRunSteps(runSeq, stepResults);
+    } catch {
+      /* live-tail is best-effort; never break a recipe run for it */
+    }
+  };
+
   for (const step of recipe.steps) {
     // Evaluate `when` guard before running anything. Mirrors
     // chainedRunner.ts:248-266 — render the template, then truthy-check the
@@ -607,6 +622,7 @@ export async function runYamlRecipe(
           durationMs: 0,
         });
         stepsRun++;
+        persistLiveStepResults();
         continue;
       }
     }
@@ -649,6 +665,7 @@ export async function runYamlRecipe(
           durationMs: 0,
         });
         stepsRun++;
+        persistLiveStepResults();
         continue;
       }
       try {
@@ -744,6 +761,7 @@ export async function runYamlRecipe(
         });
       }
       stepsRun++;
+      persistLiveStepResults();
       continue;
     }
 
@@ -890,6 +908,7 @@ export async function runYamlRecipe(
         );
       }
     }
+    persistLiveStepResults();
   }
 
   // Evaluate expect block before persisting so failures are stored in the run log
