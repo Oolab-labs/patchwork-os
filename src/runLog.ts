@@ -43,6 +43,12 @@ export interface RunStepResult {
    * src/recipes/yamlRunner.ts for the construction sites.
    */
   haltReason?: string;
+  /**
+   * PR3a — judge-step verdict. Present only when the step was a
+   * `kind: "judge"` agent step. Augment-only: `request_changes` does
+   * NOT make `status: "error"`. Surfaced separately in dashboards.
+   */
+  judgeVerdict?: import("./recipes/judgeVerdict.js").JudgeVerdict;
   durationMs: number;
   // VD-2: per-step capture for diff hover + replay. All optional —
   // older `runs.jsonl` rows that pre-date VD-2 round-trip unchanged. Each
