@@ -198,6 +198,16 @@ export interface InteractivePromptDeps {
 export interface InteractiveNewOptions {
   outputDir?: string;
   deps: InteractivePromptDeps;
+  /**
+   * AI-suggest path. Injected so tests can stub the bridge-discovery +
+   * fetch pair without touching the network or the lock-file dir. When
+   * omitted, runNewInteractive uses the production defaults (findBridgeLock
+   * + global fetch). The CLI dispatch passes nothing.
+   */
+  aiSuggest?: {
+    findBridge?: () => { port: number; authToken: string } | null;
+    fetch?: typeof globalThis.fetch;
+  };
 }
 
 export interface InteractiveNewResult {
@@ -274,25 +284,175 @@ async function collectRequiredParams(
   return out;
 }
 
+/**
+ * AI-suggest path. Discovers the running bridge via lock file, POSTs
+ * the user's natural-language goal to `/recipes/generate`, writes the
+ * bridge's raw YAML response to disk (no form normalization — per
+ * memory project_recipe_audit_2026_05_06_part2), and validates
+ * post-hoc as warnings only.
+ *
+ * Failure modes:
+ *   - No bridge running    → clear actionable error
+ *   - Bridge returns 503   → "AI generation unavailable — start the
+ *                            bridge with --driver subprocess"
+ *   - Bridge returns 4xx   → surface server error message
+ *   - Bridge returns 200 but `result.yaml` is empty → write nothing,
+ *                            throw with the raw refusal text
+ */
+async function runNewAiSuggest(
+  options: InteractiveNewOptions,
+): Promise<InteractiveNewResult> {
+  const { deps } = options;
+  const name = await askWithValidation(deps, "Recipe name", (a) =>
+    RECIPE_NAME_RE.test(a)
+      ? null
+      : 'must match /^[a-z0-9][a-z0-9_-]{1,63}$/ (e.g. "morning-brief").',
+  );
+  const goal = await askWithValidation(
+    deps,
+    "Describe what the recipe should do (one-paragraph natural language)",
+    (a) => (a.trim().length > 0 ? null : "goal cannot be empty."),
+  );
+
+  // Resolve bridge discovery + fetch — production defaults or test injection.
+  const findBridge =
+    options.aiSuggest?.findBridge ??
+    (() => {
+      // Lazy import so non-AI paths don't pay the cost.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require("../bridgeLockDiscovery.js") as {
+        findBridgeLock: () => { port: number; authToken: string } | null;
+      };
+      return mod.findBridgeLock();
+    });
+  const doFetch = options.aiSuggest?.fetch ?? globalThis.fetch;
+
+  const lock = findBridge();
+  if (!lock) {
+    throw new Error(
+      "AI generation requires a running bridge. Start one with `patchwork start` " +
+        "(or `claude-ide-bridge --driver subprocess` for the bridge-only mode), " +
+        "then retry.",
+    );
+  }
+
+  let response: Response;
+  try {
+    response = await doFetch(`http://127.0.0.1:${lock.port}/recipes/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${lock.authToken}`,
+      },
+      body: JSON.stringify({ prompt: goal.trim() }),
+    });
+  } catch (err) {
+    throw new Error(
+      `Could not reach the bridge at port ${lock.port}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let payload: {
+    ok?: boolean;
+    yaml?: string;
+    error?: string;
+    unavailable?: boolean;
+  };
+  try {
+    payload = (await response.json()) as typeof payload;
+  } catch {
+    throw new Error(
+      `Bridge returned non-JSON response (status ${response.status})`,
+    );
+  }
+
+  if (response.status === 503 || payload.unavailable) {
+    throw new Error(
+      "AI generation unavailable — start the bridge with `--driver subprocess`.",
+    );
+  }
+  if (!payload.ok) {
+    throw new Error(payload.error ?? `Bridge returned ${response.status}`);
+  }
+  const yamlBody = (payload.yaml ?? "").trim();
+  if (!yamlBody) {
+    throw new Error("Bridge returned empty YAML — try a more specific goal.");
+  }
+
+  // Ensure the SchemaStore pragma is present at line 1 so the file
+  // gets autocomplete on first open. If the bridge already prepended
+  // one, leave it.
+  const hasPragma = /^#\s*yaml-language-server:/.test(yamlBody);
+  const content = hasPragma
+    ? `${yamlBody}\n`
+    : `${RECIPE_SCHEMA_HEADER}\n${yamlBody}\n`;
+
+  if (deps.preview) deps.preview(content);
+  const shouldWrite = await deps.confirm("Write to disk?");
+  if (!shouldWrite) {
+    throw new Error("Cancelled by user");
+  }
+
+  const outputDir = options.outputDir ?? RECIPES_DIR;
+  if (!existsSync(outputDir)) {
+    mkdirSync(outputDir, { recursive: true });
+  }
+  const outputPath = join(outputDir, `${name}.yaml`);
+  if (existsSync(outputPath)) {
+    throw new Error(`Recipe already exists: ${outputPath}`);
+  }
+  writeFileSync(outputPath, content);
+
+  // Lint post-hoc. Surface as warnings; never block — the user asked
+  // for a draft, the bridge produced it, the file is on disk.
+  let warnings: LintIssue[] = [];
+  try {
+    const parsed = parseYaml(content);
+    const lintResult = validateRecipeDefinition(
+      parsed as Record<string, unknown>,
+    );
+    warnings = lintResult.issues ?? [];
+  } catch (err) {
+    warnings = [
+      {
+        level: "warning",
+        message: `AI-generated YAML did not parse cleanly: ${err instanceof Error ? err.message : String(err)}`,
+      },
+    ];
+  }
+
+  return { path: outputPath, content, warnings };
+}
+
 export async function runNewInteractive(
   options: InteractiveNewOptions,
 ): Promise<InteractiveNewResult> {
   const { deps } = options;
 
-  // Mode pick — Guided (full prompt tree) vs Template (existing
-  // runNew templates: minimal | daily | inbox). The AI-suggest mode
-  // is still deferred (per memory project_recipe_audit_2026_05_06_part2:
-  // AI YAML must skip the form normalizer; needs design work for the
-  // bridge-discovery + auth path).
+  // Mode pick — Guided (full prompt tree), Template (existing runNew
+  // templates: minimal | daily | inbox), or AI-suggest (asks the running
+  // bridge's /recipes/generate endpoint and writes the raw response).
+  //
+  // AI-suggest skips the form normalizer per memory
+  // project_recipe_audit_2026_05_06_part2 — applyAiYaml on the dashboard
+  // was lossy. Here we writeFileSync the bridge's `result.yaml` verbatim
+  // (only the SchemaStore pragma is prepended if absent) and validate
+  // post-hoc as warnings, never blocking the write.
   const templates = listTemplates();
   const modeChoices = [
     "Guided — full prompt tree (recommended)",
     `Template — pick from ${templates.length} starters (${templates.join(", ")})`,
+    "AI suggest — describe what you want; the bridge drafts a YAML",
   ];
   const modeIdx = await deps.pickFromList(
     "How do you want to start?",
     modeChoices,
   );
+
+  // AI-suggest mode: route through the running bridge's /recipes/generate.
+  if (modeIdx === 3) {
+    return runNewAiSuggest(options);
+  }
 
   // Template mode: re-use the existing runNew() flow with the picked template.
   if (modeIdx === 2) {
