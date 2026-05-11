@@ -279,6 +279,61 @@ export async function runNewInteractive(
 ): Promise<InteractiveNewResult> {
   const { deps } = options;
 
+  // Mode pick — Guided (full prompt tree) vs Template (existing
+  // runNew templates: minimal | daily | inbox). The AI-suggest mode
+  // is still deferred (per memory project_recipe_audit_2026_05_06_part2:
+  // AI YAML must skip the form normalizer; needs design work for the
+  // bridge-discovery + auth path).
+  const templates = listTemplates();
+  const modeChoices = [
+    "Guided — full prompt tree (recommended)",
+    `Template — pick from ${templates.length} starters (${templates.join(", ")})`,
+  ];
+  const modeIdx = await deps.pickFromList(
+    "How do you want to start?",
+    modeChoices,
+  );
+
+  // Template mode: re-use the existing runNew() flow with the picked template.
+  if (modeIdx === 2) {
+    const name = await askWithValidation(deps, "Recipe name", (a) =>
+      RECIPE_NAME_RE.test(a)
+        ? null
+        : 'must match /^[a-z0-9][a-z0-9_-]{1,63}$/ (e.g. "morning-brief").',
+    );
+    const description = await askWithValidation(
+      deps,
+      "One-line description",
+      (a) => (a.trim().length > 0 ? null : "cannot be empty."),
+    );
+    const templateIdx = await deps.pickFromList("Pick a template", templates);
+    const template = templates[templateIdx - 1];
+    if (!template) throw new Error("Invalid template selection");
+
+    const result = runNew({
+      name,
+      description,
+      template,
+      ...(options.outputDir ? { outputDir: options.outputDir } : {}),
+    });
+    if (deps.preview) deps.preview(result.content);
+    const shouldWrite = await deps.confirm("Keep this recipe?");
+    if (!shouldWrite) {
+      // runNew already wrote the file — clean up to honor "cancel."
+      try {
+        if (existsSync(result.path)) {
+          const { unlinkSync } = await import("node:fs");
+          unlinkSync(result.path);
+        }
+      } catch {
+        // best effort
+      }
+      throw new Error("Cancelled by user");
+    }
+    return { path: result.path, content: result.content, warnings: [] };
+  }
+
+  // Guided mode (default — modeIdx === 1).
   const name = await askWithValidation(deps, "Recipe name", (a) =>
     RECIPE_NAME_RE.test(a)
       ? null

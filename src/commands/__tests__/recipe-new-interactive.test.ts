@@ -22,6 +22,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import "../../recipes/tools/index.js";
 import { type InteractivePromptDeps, runNewInteractive } from "../recipe.js";
 
+const MODE_GUIDED = 1;
+const MODE_TEMPLATE = 2;
 const KIND_TOOL = 1;
 const KIND_AGENT = 2;
 const KIND_DONE = 3;
@@ -74,6 +76,7 @@ describe("runNewInteractive", () => {
     const deps = makeStubDeps({
       ask: ["my-test-recipe", "Test description", "Summarize the input"],
       pickFromList: [
+        MODE_GUIDED, // mode: guided
         1, // trigger type: manual
         KIND_AGENT, // step 1: agent
         KIND_DONE, // step 2: done
@@ -140,6 +143,7 @@ describe("runNewInteractive", () => {
     const deps = makeStubDeps({
       ask: ["my-cron-recipe", "Daily cron test", "0 8 * * *"],
       pickFromList: [
+        MODE_GUIDED, // mode: guided
         2, // trigger type: cron
         KIND_TOOL, // step 1: tool
         chosenNsIdx, // pick connector
@@ -196,6 +200,7 @@ describe("runNewInteractive", () => {
     const deps = makeStubDeps({
       ask: ["multi-step", "Two tool steps + agent", "Summarize results"],
       pickFromList: [
+        MODE_GUIDED, // mode: guided
         1, // trigger: manual
         KIND_TOOL,
         picks[0]!.ns,
@@ -269,6 +274,7 @@ describe("runNewInteractive", () => {
     const deps = makeStubDeps({
       ask: ["needs-params", "Test required params", ...stubAnswers],
       pickFromList: [
+        MODE_GUIDED, // mode: guided
         1, // manual
         KIND_TOOL,
         chosenNsIdx,
@@ -296,6 +302,7 @@ describe("runNewInteractive", () => {
     const deps = makeStubDeps({
       ask: ["INVALID-Name", "valid-name", "desc", "prompt"],
       pickFromList: [
+        MODE_GUIDED, // mode: guided
         1, // manual
         KIND_AGENT, // agent step
         KIND_DONE,
@@ -311,6 +318,7 @@ describe("runNewInteractive", () => {
     const deps = makeStubDeps({
       ask: ["cancel-test", "desc"],
       pickFromList: [
+        MODE_GUIDED, // mode: guided
         1, // manual
         KIND_DONE, // no steps
       ],
@@ -322,5 +330,47 @@ describe("runNewInteractive", () => {
     await expect(
       runNewInteractive({ outputDir: tmpDir, deps }),
     ).rejects.toThrow(/Cancelled/);
+  });
+
+  it("template mode writes a starter recipe from the named template", async () => {
+    const deps = makeStubDeps({
+      ask: ["from-template", "Built from a template"],
+      pickFromList: [
+        MODE_TEMPLATE, // mode: template
+        1, // template index: first in listTemplates() — "minimal"
+      ],
+      confirm: [
+        true, // keep the recipe
+      ],
+    });
+
+    const result = await runNewInteractive({ outputDir: tmpDir, deps });
+    expect(existsSync(result.path)).toBe(true);
+    expect(result.path.endsWith("from-template.yaml")).toBe(true);
+
+    const content = readFileSync(result.path, "utf-8");
+    expect(content).toContain("name: from-template");
+    expect(content).toContain("description: Built from a template");
+    // "minimal" template writes a single file.write step.
+    expect(content).toContain("tool: file.write");
+  });
+
+  it("template mode declines write and cleans up the file", async () => {
+    const deps = makeStubDeps({
+      ask: ["template-cancel", "Will be discarded"],
+      pickFromList: [
+        MODE_TEMPLATE,
+        1, // first template
+      ],
+      confirm: [
+        false, // decline keep
+      ],
+    });
+
+    await expect(
+      runNewInteractive({ outputDir: tmpDir, deps }),
+    ).rejects.toThrow(/Cancelled/);
+    // Ensure the runNew-written file was cleaned up.
+    expect(existsSync(join(tmpDir, "template-cancel.yaml"))).toBe(false);
   });
 });
