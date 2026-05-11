@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
@@ -249,6 +250,13 @@ export class Server extends EventEmitter<ServerEvents> {
   public managedSettingsPath: string | undefined = undefined;
   /** Effective bridge config path to update when dashboard saves driver changes. */
   public bridgeConfigPath: string | undefined = undefined;
+  /**
+   * Shared secret for HMAC-SHA256 verification of POST /hooks/* requests
+   * carrying `X-Hub-Signature-256`. When null (default), HMAC auth is
+   * disabled and /hooks/* requires the bridge bearer token like every
+   * other route. Set by Bridge constructor from `config.webhookSecret`.
+   */
+  public webhookSecret: string | null = null;
   /** Patchwork: live approval gate level — mutated by POST /settings, read by bridge per-session setup. */
   public approvalGate: "off" | "high" | "all" = "off";
   /** Patchwork: outbound webhook URL for approval notifications (from dashboard.webhookUrl in config). */
@@ -692,6 +700,15 @@ export class Server extends EventEmitter<ServerEvents> {
         req.method === "POST" &&
         /^\/(approve|reject)\/[A-Za-z0-9-]+$/.test(parsedUrl.pathname) &&
         !!req.headers["x-approval-token"];
+      // GitHub-style webhook bypass: when --webhook-secret is configured,
+      // POST /hooks/* requests carrying X-Hub-Signature-256 bypass the
+      // bearer-token gate. Signature itself is verified inside the
+      // /hooks/* handler after the body has been read.
+      const isHmacWebhookCandidate =
+        req.method === "POST" &&
+        parsedUrl.pathname.startsWith("/hooks/") &&
+        !!req.headers["x-hub-signature-256"] &&
+        this.webhookSecret !== null;
       // Rate-limit the phone bypass surface. Only applies when this is
       // actually a phone-path request that's relying on the bypass — a
       // properly-authenticated bearer caller is unaffected. Counted +
@@ -742,7 +759,12 @@ export class Server extends EventEmitter<ServerEvents> {
         }
       }
       // oauthResolved is the bridge token if the OAuth token is valid; null otherwise
-      if (!isStaticToken && !oauthResolved && !isPhoneApprovalPath) {
+      if (
+        !isStaticToken &&
+        !oauthResolved &&
+        !isPhoneApprovalPath &&
+        !isHmacWebhookCandidate
+      ) {
         // RFC 6750: only include error= when a token was actually presented but invalid
         const tokenPresented = bearer.length > 0;
         const wwwAuth =
@@ -1074,6 +1096,36 @@ export class Server extends EventEmitter<ServerEvents> {
         if (!read.ok) {
           respond413(res, HOOKS_BODY_CAP);
           return;
+        }
+        // HMAC-SHA256 verification for GitHub-style webhooks. The signature
+        // must be computed over the raw request bytes — readBodyWithCap
+        // utf-8-decodes the body, so we re-encode here. The byte sequence
+        // round-trips identically for any valid utf-8 input (which JSON is).
+        const sigHeader = req.headers["x-hub-signature-256"];
+        if (typeof sigHeader === "string" && sigHeader.length > 0) {
+          if (!this.webhookSecret) {
+            res.writeHead(401, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "webhook_secret_not_configured" }));
+            return;
+          }
+          const rawBody = Buffer.from(read.body, "utf-8");
+          const expected =
+            "sha256=" +
+            createHmac("sha256", this.webhookSecret)
+              .update(rawBody)
+              .digest("hex");
+          const expectedBuf = Buffer.from(expected, "utf-8");
+          const providedBuf = Buffer.from(sigHeader, "utf-8");
+          // timingSafeEqual throws on length mismatch — length-check first
+          // so the constant-time path is only taken on equal-length inputs.
+          const sigOk =
+            expectedBuf.length === providedBuf.length &&
+            timingSafeEqual(expectedBuf, providedBuf);
+          if (!sigOk) {
+            res.writeHead(401, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "invalid_signature" }));
+            return;
+          }
         }
         let payload: unknown;
         if (read.body.trim()) {

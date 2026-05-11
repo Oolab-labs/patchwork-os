@@ -60,6 +60,14 @@ export interface Config {
   db: boolean;
   allowPrivateHttp: boolean;
   fixedToken: string | null;
+  /**
+   * Shared secret for HMAC-SHA256 verification of GitHub-style webhooks
+   * at POST /hooks/*. When set, requests presenting a valid
+   * `X-Hub-Signature-256: sha256=<hex>` header are authenticated via HMAC
+   * instead of Bearer token. Bearer-token access to /hooks/* still works
+   * (additive, backwards-compatible). null when feature disabled.
+   */
+  webhookSecret: string | null;
   issuerUrl: string | null;
   /** Access token TTL in milliseconds (derived from oauthTokenTtlDays config; default 24h). */
   oauthTokenTtlMs: number;
@@ -226,6 +234,7 @@ interface ConfigFile {
   plugins?: string[];
   pluginWatch?: boolean;
   fixedToken?: string;
+  webhookSecret?: string;
   issuerUrl?: string;
   oauthTokenTtlDays?: number;
   corsOrigins?: string[];
@@ -258,6 +267,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "plugins",
   "pluginWatch",
   "fixedToken",
+  "webhookSecret",
   "issuerUrl",
   "oauthTokenTtlDays",
   "corsOrigins",
@@ -438,6 +448,16 @@ export function parseConfig(argv: string[]): Config {
   let allowPrivateHttp = false;
   let pluginWatch = fileConfig.pluginWatch ?? false;
   let fixedToken: string | null = fileConfig.fixedToken ?? null;
+  let webhookSecret: string | null = fileConfig.webhookSecret ?? null;
+  // Validate config-file value early so a malformed value fails loud rather
+  // than silently disabling webhook auth.
+  if (webhookSecret !== null) {
+    if (!/^[0-9a-fA-F]+$/.test(webhookSecret) || webhookSecret.length < 32) {
+      throw new Error(
+        "webhookSecret in config file must be a hex string of length >= 32 (16 bytes)",
+      );
+    }
+  }
   let issuerUrl: string | null = fileConfig.issuerUrl ?? null;
   const rawTtlDays = fileConfig.oauthTokenTtlDays;
   const oauthTokenTtlMs =
@@ -721,6 +741,16 @@ export function parseConfig(argv: string[]): Config {
         fixedToken = tok;
         break;
       }
+      case "--webhook-secret": {
+        const sec = requireArg(args, ++i, "--webhook-secret");
+        if (!/^[0-9a-fA-F]+$/.test(sec) || sec.length < 32) {
+          throw new Error(
+            "--webhook-secret must be a hex string of length >= 32 (16 bytes); generate with `openssl rand -hex 32`",
+          );
+        }
+        webhookSecret = sec;
+        break;
+      }
       case "--issuer-url": {
         issuerUrl = requireArg(args, ++i, "--issuer-url");
         if (!/^https?:\/\/.+/.test(issuerUrl))
@@ -872,6 +902,9 @@ Options:
 Patchwork:
   --approval-gate <level>   Delegation policy: gate tool calls via oversight dashboard: "off" | "high" | "all" (default: "off")
   --managed-settings <path> Admin-controlled settings file (highest rule precedence, cannot be overridden by users)
+  --webhook-secret <hex>    Shared secret (hex, >=32 chars) for HMAC-SHA256 verification of POST /hooks/*
+                            via the X-Hub-Signature-256 header (GitHub-style webhooks). Bearer-token
+                            access to /hooks/* still works. Env: BRIDGE_WEBHOOK_SECRET
 
 Automation:
   --driver <mode>           AI driver: "subprocess" | "api" | "openai" | "grok" | "gemini" | "gemini-api" | "local" | "none" (default: "none")
@@ -956,6 +989,16 @@ Environment Variables:
     } else {
       console.warn(
         "Warning: CLAUDE_IDE_BRIDGE_TOKEN is not a valid UUID — ignored.",
+      );
+    }
+  }
+  if (process.env.BRIDGE_WEBHOOK_SECRET) {
+    const envSec = process.env.BRIDGE_WEBHOOK_SECRET;
+    if (/^[0-9a-fA-F]+$/.test(envSec) && envSec.length >= 32) {
+      webhookSecret = envSec;
+    } else {
+      console.warn(
+        "Warning: BRIDGE_WEBHOOK_SECRET must be a hex string of length >= 32 — ignored.",
       );
     }
   }
@@ -1062,6 +1105,7 @@ Environment Variables:
     plugins,
     pluginWatch,
     fixedToken,
+    webhookSecret,
     issuerUrl,
     oauthTokenTtlMs,
     corsOrigins,
