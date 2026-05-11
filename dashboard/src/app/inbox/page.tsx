@@ -80,6 +80,41 @@ function senderBadgeColor(name: string): string {
   return "var(--ink-2)";
 }
 
+// Gmail-style avatar: colored circle with an initial. Color is derived
+// deterministically from the source name so each recipe gets a stable hue.
+function avatarInitial(title: string): string {
+  const trimmed = title.trim();
+  if (!trimmed) return "?";
+  return trimmed.charAt(0).toUpperCase();
+}
+
+function SenderAvatar({ name, size = 40 }: { name: string; size?: number }) {
+  const title = slugToTitle(name);
+  const bg = senderBadgeColor(name);
+  return (
+    <span
+      aria-hidden="true"
+      className="inbox-avatar"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: bg,
+        color: "#fff",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: Math.round(size * 0.42),
+        fontWeight: 700,
+        flexShrink: 0,
+        lineHeight: 1,
+      }}
+    >
+      {avatarInitial(title)}
+    </span>
+  );
+}
+
 // ------------------------------------------------------------------ preview strip
 
 function stripMarkdown(text: string): string {
@@ -596,7 +631,7 @@ const filteredItems = items.filter((item) => {
             >
 
               {/* Sidebar header */}
-              <div style={{ padding: "10px 10px 10px 14px", borderBottom: "1px solid var(--line-1)", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <div className="inbox-sidebar-header" style={{ padding: "10px 10px 10px 14px", borderBottom: "1px solid var(--line-1)", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                 {sidebarOpen ? (
                   <>
                     <span style={{ fontSize: "var(--fs-xs)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ink-3)", flex: 1 }}>
@@ -692,15 +727,17 @@ const filteredItems = items.filter((item) => {
                           <button
                             key={item.name}
                             type="button"
-                            className={`inbox-item${isActive ? " inbox-item-active" : ""}`}
+                            className={`inbox-item${isActive ? " inbox-item-active" : ""}${isNew ? " inbox-item-new" : ""}`}
                             onClick={() => selectItem(item.name)}
                             style={{
-                              display: "block",
+                              display: "flex",
+                              alignItems: "flex-start",
+                              gap: 12,
                               width: "100%",
                               textAlign: "left",
-                              padding: "11px 14px",
+                              padding: "12px 14px",
                               background: isActive ? undefined : "transparent",
-                              borderLeft: `3px solid ${isActive ? "var(--accent)" : isNew ? "var(--orange)" : "transparent"}`,
+                              borderLeft: `3px solid ${isActive ? "var(--accent)" : "transparent"}`,
                               borderTop: "none",
                               borderRight: "none",
                               borderBottom: "1px solid var(--line-1)",
@@ -709,32 +746,27 @@ const filteredItems = items.filter((item) => {
                             }}
                             aria-pressed={isActive}
                           >
-                            {/* Row 1: icon + title + date */}
-                            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
-                              <span style={{ color: senderBadgeColor(item.name), lineHeight: 1, flexShrink: 0 }}>
-                                <RecipeIcon name={item.name} />
-                              </span>
-                              <span style={{ flex: 1, fontWeight: isNew ? 700 : 500, fontSize: "var(--fs-m)", color: "var(--ink-0)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                {title}
-                              </span>
-                            </div>
-
-                            {/* Row 2: preview */}
-                            {plainPreview && (
-                              <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 4 }}>
-                                {plainPreview}
+                            <SenderAvatar name={item.name} size={40} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              {/* Row 1: title + time */}
+                              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 2 }}>
+                                <span style={{ flex: 1, fontWeight: isNew ? 700 : 500, fontSize: "var(--fs-m)", color: "var(--ink-0)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                  {title}
+                                </span>
+                                <span style={{ fontSize: "var(--fs-xs)", color: isNew ? "var(--accent-strong)" : "var(--ink-3)", fontWeight: isNew ? 600 : 400, flexShrink: 0 }}>
+                                  <RelativeTime iso={item.modifiedAt} />
+                                </span>
                               </div>
-                            )}
-
-                            {/* Row 3: timestamp + new badge */}
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>
-                                <RelativeTime iso={item.modifiedAt} />
-                              </span>
-                              {isNew && (
-                                <span className="pill info" style={{ fontSize: "var(--fs-3xs)", padding: "1px 6px" }}>new</span>
+                              {/* Row 2: preview snippet (Gmail-style, 1 line on mobile) */}
+                              {plainPreview && (
+                                <div className="inbox-item-preview" style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", lineHeight: 1.4 }}>
+                                  {plainPreview}
+                                </div>
                               )}
                             </div>
+                            {isNew && (
+                              <span aria-label="unread" className="inbox-unread-dot" style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", flexShrink: 0, marginTop: 8 }} />
+                            )}
                           </button>
                         );
                       })
@@ -764,40 +796,34 @@ const filteredItems = items.filter((item) => {
                   <span style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)" }}>Loading message…</span>
                 </div>
               ) : selected ? (
-                <div style={{ padding: "28px 40px 48px", maxWidth: 700 }}>
-                  {/* Mobile-only back-to-list button. Hidden on desktop
-                      where the list is always visible alongside the
-                      reader — there's no "back" mental model on a
-                      two-pane view. */}
-                  <button
-                    type="button"
-                    className="inbox-back-mobile"
-                    onClick={() => setSelected(null)}
-                    aria-label="Back to message list"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
+                <div className="inbox-reader-body" style={{ padding: "28px 40px 48px", maxWidth: 700 }}>
+                  {/* Mobile-only Gmail-style top app bar: back arrow + title.
+                      Hidden on desktop where the list is always visible. */}
+                  <div className="inbox-mobile-appbar">
+                    <button
+                      type="button"
+                      className="inbox-appbar-back"
+                      onClick={() => setSelected(null)}
+                      aria-label="Back to message list"
                     >
-                      <path d="M19 12H5M12 19l-7-7 7-7" />
-                    </svg>
-                    <span>Messages</span>
-                  </button>
-                  {/* Detail header */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, paddingBottom: 14, borderBottom: "1px solid var(--line-1)" }}>
-                    <span style={{ color: senderBadgeColor(selected.name), lineHeight: 1, flexShrink: 0 }}>
-                      <RecipeIcon name={selected.name} />
-                    </span>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M19 12H5M12 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <span className="inbox-appbar-spacer" />
+                  </div>
+
+                  {/* Large subject (Gmail message screen) */}
+                  <h2 className="inbox-reader-subject" style={{ fontSize: 22, fontWeight: 600, color: "var(--ink-0)", margin: "0 0 14px", lineHeight: 1.3 }}>
+                    {slugToTitle(selected.name)}
+                  </h2>
+
+                  {/* Sender row: avatar + name + time */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, paddingBottom: 14, borderBottom: "1px solid var(--line-1)" }}>
+                    <SenderAvatar name={selected.name} size={40} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--ink-0)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {slugToTitle(selected.name)}
+                        Local agent
                       </div>
                       <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 2 }}>
                         {new Date(selected.modifiedAt).toLocaleString()}
@@ -808,6 +834,7 @@ const filteredItems = items.filter((item) => {
                       onClick={() => setSelected(null)}
                       title="Close"
                       aria-label="Close detail"
+                      className="inbox-reader-close-desktop"
                       style={{ background: "none", border: "1px solid var(--line-2)", cursor: "pointer", color: "var(--ink-3)", fontSize: "var(--fs-m)", lineHeight: 1, padding: "4px 8px", borderRadius: "var(--r-s)", flexShrink: 0, transition: "background 120ms" }}
                     >
                       ✕
@@ -845,7 +872,7 @@ const filteredItems = items.filter((item) => {
                     const recipeNameForSelected = selected.name.replace(/\.md$/, "").replace(/-\d{4}-\d{2}-\d{2}$/, "");
                     return (
                       <>
-                      <div style={{ display: "flex", gap: 6, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--line-1)" }}>
+                      <div className="inbox-reader-actions" style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--line-1)" }}>
                         <button
                           type="button"
                           className="btn sm primary"

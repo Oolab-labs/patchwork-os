@@ -2852,32 +2852,85 @@ button.topbar-search {
     border-right: none !important;
   }
   .inbox-twopane--reader .inbox-list-pane {
-    display: none;
+    display: none !important;
   }
   .inbox-twopane--list .inbox-reader-pane {
-    display: none;
+    display: none !important;
+  }
+
+  /* Gmail-style mobile list rows: airier padding, larger tap target. */
+  .inbox-item {
+    padding: 14px 16px !important;
+    min-height: 72px;
+    align-items: center !important;
+  }
+  .inbox-item-preview {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Sidebar collapse header is irrelevant on mobile (single-pane). */
+  .inbox-sidebar-header {
+    display: none !important;
+  }
+
+  /* Reader: edge-to-edge, comfortable padding, large subject. */
+  .inbox-reader-body {
+    padding: 12px 16px 80px !important;
+    max-width: 100% !important;
+  }
+  .inbox-reader-subject {
+    font-size: 20px !important;
+  }
+  .inbox-reader-close-desktop {
+    display: none !important;
+  }
+  /* Wrap action buttons on small screens so they don't overflow. */
+  .inbox-reader-actions .btn {
+    flex: 1 1 auto;
+    min-height: 40px;
   }
 }
 
-.inbox-back-mobile {
+/* Mobile-only top app bar (back arrow). Hidden on desktop where the
+   list is always visible alongside the reader. */
+.inbox-mobile-appbar {
   display: none;
 }
 @media (max-width: 768px) {
-  .inbox-back-mobile {
+  .inbox-mobile-appbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: -12px -16px 12px;
+    padding: 8px 8px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line-1);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  .inbox-appbar-back {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 16px;
-    padding: 8px 12px;
-    background: var(--recess);
-    border: 1px solid var(--line-1);
-    border-radius: var(--r-full, 999px);
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
     color: var(--ink-1);
-    font-size: var(--fs-xs);
-    font-weight: 600;
     cursor: pointer;
     -webkit-appearance: none;
     appearance: none;
+  }
+  .inbox-appbar-back:active {
+    background: var(--recess);
+  }
+  .inbox-appbar-spacer {
+    flex: 1;
   }
 }
 
