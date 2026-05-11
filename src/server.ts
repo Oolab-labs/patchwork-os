@@ -230,6 +230,7 @@ export class Server extends EventEmitter<ServerEvents> {
     | ((opts?: {
         sinceMs?: number;
         limit?: number;
+        recipe?: string;
       }) => import("./recipes/haltCategory.js").HaltSummary)
     | null = null;
   /** Patchwork: set by bridge to generate a dry-run plan for a recipe by name. */

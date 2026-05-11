@@ -19,6 +19,7 @@ async function startServer(
   fn?: (opts?: {
     sinceMs?: number;
     limit?: number;
+    recipe?: string;
   }) => import("../recipes/haltCategory.js").HaltSummary,
 ): Promise<void> {
   server = new Server(TOKEN, logger);
@@ -84,12 +85,40 @@ describe("GET /runs/halt-summary", () => {
   });
 
   it("forwards sinceMs and limit query params to haltSummaryFn", async () => {
-    let captured: { sinceMs?: number; limit?: number } | undefined;
+    let captured:
+      | { sinceMs?: number; limit?: number; recipe?: string }
+      | undefined;
     await startServer((opts) => {
       captured = opts;
       return { total: 0, byCategory: {}, recent: [] };
     });
     await get("/runs/halt-summary?sinceMs=3600000&limit=50");
     expect(captured).toEqual({ sinceMs: 3600000, limit: 50 });
+  });
+
+  it("forwards the recipe query param to haltSummaryFn", async () => {
+    let captured:
+      | { sinceMs?: number; limit?: number; recipe?: string }
+      | undefined;
+    await startServer((opts) => {
+      captured = opts;
+      return { total: 0, byCategory: {}, recent: [] };
+    });
+    await get("/runs/halt-summary?recipe=morning-brief&sinceMs=3600000");
+    expect(captured).toEqual({ sinceMs: 3600000, recipe: "morning-brief" });
+  });
+
+  it("URL-decodes recipe names with spaces / special chars", async () => {
+    let captured:
+      | { sinceMs?: number; limit?: number; recipe?: string }
+      | undefined;
+    await startServer((opts) => {
+      captured = opts;
+      return { total: 0, byCategory: {}, recent: [] };
+    });
+    await get(
+      `/runs/halt-summary?recipe=${encodeURIComponent("daily team brief")}`,
+    );
+    expect(captured?.recipe).toBe("daily team brief");
   });
 });

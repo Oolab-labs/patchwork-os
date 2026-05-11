@@ -208,14 +208,21 @@ export class RecipeOrchestration {
       };
     };
 
-    server.haltSummaryFn = (opts?: { sinceMs?: number; limit?: number }) => {
+    server.haltSummaryFn = (opts?: {
+      sinceMs?: number;
+      limit?: number;
+      recipe?: string;
+    }) => {
       if (!this.deps.recipeRunLog)
         return { total: 0, byCategory: {}, recent: [] };
       const sinceMs = opts?.sinceMs ?? 7 * 24 * 60 * 60 * 1000;
       const limit = opts?.limit ?? 500;
       const cutoff = Date.now() - sinceMs;
       const runs = this.deps.recipeRunLog
-        .query({ limit })
+        .query({
+          limit,
+          ...(opts?.recipe !== undefined && { recipe: opts.recipe }),
+        })
         .filter((r) => r.createdAt >= cutoff);
       return summariseHalts(runs);
     };

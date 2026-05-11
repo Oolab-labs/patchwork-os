@@ -368,14 +368,15 @@ export interface RecipeRouteDeps {
   runDetailFn: ((seq: number) => Record<string, unknown> | null) | null;
   /**
    * Aggregate halt categories across recent runs. `sinceMs` filters to runs
-   * created after `Date.now() - sinceMs`; default 7 days. Returns the
-   * `HaltSummary` shape from src/recipes/haltCategory.ts. Foundation for
-   * the dashboard's "is this system catching real failures?" widget.
+   * created after `Date.now() - sinceMs`; default 7 days. `recipe` filters
+   * to runs whose `recipeName` matches exactly. Returns the `HaltSummary`
+   * shape from src/recipes/haltCategory.ts.
    */
   haltSummaryFn:
     | ((opts?: {
         sinceMs?: number;
         limit?: number;
+        recipe?: string;
       }) => import("./recipes/haltCategory.js").HaltSummary)
     | null;
   runPlanFn: ((recipeName: string) => Promise<Record<string, unknown>>) | null;
@@ -568,11 +569,13 @@ export function tryHandleRecipeRoute(
       const sp = parsedUrl.searchParams;
       const sinceMsRaw = sp.get("sinceMs");
       const limitRaw = sp.get("limit");
+      const recipe = sp.get("recipe");
       const sinceMs = sinceMsRaw ? Number.parseInt(sinceMsRaw, 10) : Number.NaN;
       const limit = limitRaw ? Number.parseInt(limitRaw, 10) : Number.NaN;
       const summary = deps.haltSummaryFn?.({
         ...(Number.isFinite(sinceMs) && { sinceMs }),
         ...(Number.isFinite(limit) && { limit }),
+        ...(recipe && { recipe }),
       }) ?? { total: 0, byCategory: {}, recent: [] };
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(summary));
