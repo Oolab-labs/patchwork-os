@@ -86,8 +86,8 @@ describe("POST /hooks/* — HMAC-SHA256 webhook auth", () => {
     });
     expect(status).toBe(200);
     expect(calls).toHaveLength(1);
-    expect(calls[0].path).toBe("/test-recipe");
-    expect(calls[0].payload).toEqual({ action: "opened", number: 42 });
+    expect(calls[0]!.path).toBe("/test-recipe");
+    expect(calls[0]!.payload).toEqual({ action: "opened", number: 42 });
   });
 
   it("rejects an invalid signature with 401 invalid_signature", async () => {
@@ -143,7 +143,7 @@ describe("POST /hooks/* — HMAC-SHA256 webhook auth", () => {
     });
     expect(status).toBe(200);
     expect(calls).toHaveLength(1);
-    expect(calls[0].payload).toEqual({ source: "internal-automation" });
+    expect(calls[0]!.payload).toEqual({ source: "internal-automation" });
   });
 
   it("returns 401 when neither signature nor Bearer is provided", async () => {
@@ -163,6 +163,6 @@ describe("POST /hooks/* — HMAC-SHA256 webhook auth", () => {
     expect(status).toBe(200);
     expect(calls).toHaveLength(1);
     // Empty body — payload is undefined (no JSON parse attempted on empty input)
-    expect(calls[0].payload).toBeUndefined();
+    expect(calls[0]!.payload).toBeUndefined();
   });
 });
