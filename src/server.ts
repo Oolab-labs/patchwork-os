@@ -289,6 +289,32 @@ export class Server extends EventEmitter<ServerEvents> {
    * the user's preference.
    */
   public enableTimeOfDayAnomaly = false;
+  /**
+   * Patchwork: set by bridge to record a kill-switch audit trace.
+   * `/kill-switch` POST emits one entry on every state transition (no-op
+   * toggles do not emit). When unset, the handler logs via this.logger
+   * instead — see step 5 of issue #422.
+   *
+   * Trace encoding (v2-I6 from #422): we encode kill-switch events via
+   * the existing `DecisionTrace` schema rather than extending its
+   * `traceType` union, to keep schema migration off the kill-switch
+   * critical path. Fields used:
+   *   ref       = "kill-switch.writes"
+   *   problem   = "<short reason>" or "engage" / "release" if no reason
+   *   solution  = "ENGAGED at <ts>" or "RELEASED at <ts>"
+   *   tags      = ["kill-switch", "engage" | "release", "actor:http"]
+   *
+   * `ctxQueryTraces({tag: "kill-switch"})` returns the full audit
+   * history; pair with `tag: "engage"` / `tag: "release"` to filter
+   * direction.
+   */
+  public recordKillSwitchTraceFn:
+    | ((event: {
+        engaged: boolean;
+        reason: string | undefined;
+        ts: number;
+      }) => void)
+    | null = null;
   /** Patchwork: set by bridge to match + fire webhook-triggered recipes. */
   public webhookFn:
     | ((
@@ -1721,13 +1747,22 @@ export class Server extends EventEmitter<ServerEvents> {
           const changed = prev !== next;
           if (changed) {
             setFlag(KILL_SWITCH_WRITES, next, true);
-            // Audit-emit stub. Step 5 (decisionTraceLog plumbing into
-            // Server) replaces this console line with a real trace write.
+            // v2-I6: audit emit on every state transition; no-ops skip.
+            // When the bridge wires recordKillSwitchTraceFn (step 5),
+            // this writes to ~/.patchwork/decision_traces.jsonl. The
+            // logger.info line stays as a secondary signal in the
+            // bridge log; it's the only output when the trace fn is
+            // unset (tests, headless contexts).
             this.logger.info(
               `[kill-switch] ${next ? "ENGAGED" : "RELEASED"}${
                 reason ? ` (reason: ${reason})` : ""
               } — actor=http`,
             );
+            this.recordKillSwitchTraceFn?.({
+              engaged: next,
+              reason,
+              ts: Date.now(),
+            });
           }
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(

@@ -273,3 +273,87 @@ describe("POST /kill-switch", () => {
     expect(status).toBe(413);
   });
 });
+
+describe("POST /kill-switch — audit emit (step 5)", () => {
+  it("calls recordKillSwitchTraceFn with engage event on state transition", async () => {
+    const events: Array<{
+      engaged: boolean;
+      reason: string | undefined;
+      ts: number;
+    }> = [];
+    server!.recordKillSwitchTraceFn = (e) => events.push(e);
+
+    const { status } = await request(
+      "POST",
+      JSON.stringify({ engage: true, reason: "runaway recipe loop" }),
+    );
+    expect(status).toBe(200);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.engaged).toBe(true);
+    expect(events[0]?.reason).toBe("runaway recipe loop");
+    expect(typeof events[0]?.ts).toBe("number");
+  });
+
+  it("does NOT emit audit on no-op (already-engaged) transitions", async () => {
+    // Engage first so the second call is a no-op.
+    setFlag(KILL_SWITCH_WRITES, true, false);
+    const events: Array<unknown> = [];
+    server!.recordKillSwitchTraceFn = (e) => events.push(e);
+
+    const { status, body } = await request(
+      "POST",
+      JSON.stringify({ engage: true }),
+    );
+    expect(status).toBe(200);
+    expect(JSON.parse(body).changed).toBe(false);
+    // Audit log should remain empty — no real state change happened.
+    expect(events).toHaveLength(0);
+  });
+
+  it("emits release with reason undefined when no reason is supplied", async () => {
+    setFlag(KILL_SWITCH_WRITES, true, false);
+    const events: Array<{
+      engaged: boolean;
+      reason: string | undefined;
+    }> = [];
+    server!.recordKillSwitchTraceFn = (e) => events.push(e);
+
+    await request("POST", JSON.stringify({ engage: false }));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.engaged).toBe(false);
+    expect(events[0]?.reason).toBeUndefined();
+  });
+
+  it("does NOT emit audit when env-locked (409 path)", async () => {
+    process.env[KILL_SWITCH_ENV] = "1";
+    lockKillSwitchEnv();
+    const events: Array<unknown> = [];
+    server!.recordKillSwitchTraceFn = (e) => events.push(e);
+
+    const { status } = await request("POST", JSON.stringify({ engage: false }));
+    expect(status).toBe(409);
+    expect(events).toHaveLength(0);
+  });
+
+  it("trims reason to 500 chars before emit", async () => {
+    const events: Array<{
+      reason: string | undefined;
+    }> = [];
+    server!.recordKillSwitchTraceFn = (e) => events.push(e);
+
+    // 600-char reason fits inside the 1 KB body cap but exceeds the
+    // 500-char trim. After trim, reason should be exactly 500.
+    const reason = "a".repeat(600);
+    await request("POST", JSON.stringify({ engage: true, reason }));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.reason?.length).toBe(500);
+  });
+
+  it("does not throw when recordKillSwitchTraceFn is unset (logger-only path)", async () => {
+    server!.recordKillSwitchTraceFn = null;
+    const { status } = await request("POST", JSON.stringify({ engage: true }));
+    expect(status).toBe(200);
+    // No assertion on side effect — verifying the optional-callback
+    // pattern doesn't crash the handler.
+  });
+});

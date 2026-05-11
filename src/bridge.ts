@@ -1355,6 +1355,34 @@ export class Bridge {
         extensionConnected: this.extensionClient.isConnected(),
       };
     };
+
+    // Wire kill-switch audit-trace emit to decisionTraceLog. State
+    // transitions become DecisionTrace entries with tags=["kill-switch",
+    // "engage"|"release", "actor:http"]; query via ctxQueryTraces. See
+    // step 5 of #422.
+    if (this.decisionTraceLog) {
+      const traceLog = this.decisionTraceLog;
+      const workspace = this.config.workspace;
+      this.server.recordKillSwitchTraceFn = (event): void => {
+        const direction = event.engaged ? "engage" : "release";
+        const isoTs = new Date(event.ts).toISOString();
+        try {
+          traceLog.record({
+            ref: "kill-switch.writes",
+            problem: event.reason ?? direction,
+            solution: `${event.engaged ? "ENGAGED" : "RELEASED"} at ${isoTs}`,
+            workspace,
+            tags: ["kill-switch", direction, "actor:http"],
+          });
+        } catch (err) {
+          this.logger.warn(
+            `[kill-switch] failed to record audit trace: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      };
+    }
     this.server.statusFn = () => {
       let sessionsInGrace = 0;
       const sessionList: Record<string, unknown>[] = [];
