@@ -44,7 +44,7 @@ fs.writeFileSync(POLICY_PATH, JSON.stringify(validPolicy, null, 2));
       "--automation",
       "--automation-policy",
       POLICY_PATH,
-      "--claude-driver",
+      "--driver",
       "subprocess", // required by --automation; actual claude binary not invoked until a task fires
     ],
     { env: ENV, stdio: ["ignore", "ignore", "pipe"] },
@@ -118,7 +118,7 @@ fs.writeFileSync(POLICY_PATH, JSON.stringify(validPolicy, null, 2));
       "--automation",
       "--automation-policy",
       badPolicyPath,
-      "--claude-driver",
+      "--driver",
       "subprocess",
     ],
     { env: ENV, stdio: ["ignore", "ignore", "ignore"] },

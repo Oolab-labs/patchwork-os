@@ -51,7 +51,7 @@ const config = {
   maxHttpSessions: 5,
   auditLogPath: undefined,
   automation: false,
-  claudeDriver: "none",
+  driver: "none",
   vps: false,
   db: false,
   linters: [],
