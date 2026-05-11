@@ -54,6 +54,8 @@ interface Run {
   outputTail?: string;
   errorMessage?: string;
   assertionFailures?: AssertionFailure[];
+  /** PR5c — stable id for one logical retry-attempt; ties resumed runs together. */
+  manualRunId?: string;
 }
 
 type TriggerFilter = "all" | "cron" | "webhook" | "recipe" | "manual" | "git_hook";
@@ -509,6 +511,18 @@ export default function RunsPage() {
                       </td>
                       <td>
                         <span className="pill muted">{normaliseTrigger(r.trigger)}</span>
+                        {r.manualRunId && (
+                          <span
+                            className="pill muted mono"
+                            style={{
+                              marginLeft: 6,
+                              fontSize: "var(--fs-2xs)",
+                            }}
+                            title={`Attempt id ${r.manualRunId} — same id across runs = a resumed retry`}
+                          >
+                            attempt:{r.manualRunId.slice(-6)}
+                          </span>
+                        )}
                       </td>
                       <td>
                         <span

@@ -60,6 +60,8 @@ interface RunDetail {
   parentSeq?: number;
   /** seqs of runs triggered by this run. */
   childSeqs?: number[];
+  /** PR5c — stable id shared across resumed retries of the same attempt. */
+  manualRunId?: string;
 }
 
 interface PlanStep {
@@ -1191,6 +1193,18 @@ export default function RunDetailPage() {
                 <div>
                   <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>MODEL</div>
                   <span className="mono" style={{ fontSize: "var(--fs-s)" }}>{run.model}</span>
+                </div>
+              )}
+              {run.manualRunId && (
+                <div>
+                  <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>ATTEMPT</div>
+                  <span
+                    className="mono"
+                    style={{ fontSize: "var(--fs-s)" }}
+                    title="Stable id across resumed retries of the same logical attempt (PR5c)"
+                  >
+                    {run.manualRunId}
+                  </span>
                 </div>
               )}
             </div>
