@@ -42,6 +42,7 @@ import {
   executeAgent as _executeAgent,
   type AgentExecutorDeps,
 } from "./agentExecutor.js";
+import { WriteEffectLedger } from "./idempotencyKey.js";
 import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
@@ -330,6 +331,14 @@ export type StepDeps = Required<
   recordFixturesDir?: string;
   runLog?: RecipeRunLog;
   testMode: boolean;
+  /**
+   * PR5a — per-run idempotency ledger. When present, `executeTool`
+   * short-circuits duplicate write-tool calls (same toolId + params)
+   * within the run, returning the cached output instead of re-invoking
+   * the tool. Constructed at run start in `runYamlRecipe` /
+   * `runChainedRecipe`; discarded when the run completes.
+   */
+  writeEffectLedger?: WriteEffectLedger;
 };
 
 // Strip tool-call narration some models (e.g. Gemini) prepend before the markdown block.
@@ -1166,6 +1175,9 @@ function resolveStepDeps(deps: RunnerDeps): StepDeps {
       }),
     logDir: deps.logDir,
     testMode: deps.testMode ?? false,
+    // PR5a: per-run idempotency ledger. Each call to `resolveStepDeps`
+    // produces a fresh ledger, so the scope is one recipe run.
+    writeEffectLedger: new WriteEffectLedger(),
   };
 }
 

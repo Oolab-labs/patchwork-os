@@ -10,6 +10,7 @@
  */
 
 import { assertWriteAllowed } from "../featureFlags.js";
+import { deriveIdempotencyKey } from "./idempotencyKey.js";
 import type { RunContext, StepDeps } from "./yamlRunner.js";
 
 export interface ToolMetadata {
@@ -116,6 +117,25 @@ export async function executeTool(
   }
   if (tool.isWrite) {
     assertWriteAllowed(id);
+
+    // PR5a — idempotency dedup. Within a single recipe run, the same
+    // write tool with the same params must execute exactly once. If a
+    // parallel branch (chained recipe) or a re-dispatch reaches this
+    // function with a key already in the ledger, return the cached
+    // output so downstream `{{steps.x.data}}` references stay coherent.
+    // Errors are NOT recorded — retry-after-failure still re-executes
+    // (correct: a failed call may not have completed its side effect).
+    const ledger = context.deps.writeEffectLedger;
+    if (ledger) {
+      const key = deriveIdempotencyKey(id, context.params);
+      if (ledger.has(key)) {
+        const cached = ledger.get(key);
+        return cached ?? null;
+      }
+      const result = await tool.execute(context);
+      ledger.record(key, result);
+      return result;
+    }
   }
   return tool.execute(context);
 }
