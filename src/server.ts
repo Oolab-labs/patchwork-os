@@ -12,6 +12,13 @@ import {
 } from "./connectorRoutes.js";
 import { timingSafeStringEqual } from "./crypto.js";
 import { renderDashboardHtml } from "./dashboard.js";
+import {
+  getEnvLockedValue,
+  isEnvLockedFor,
+  isWriteKillSwitchActive,
+  KILL_SWITCH_WRITES,
+  setFlag,
+} from "./featureFlags.js";
 import { respond500 } from "./httpErrorResponse.js";
 import { tryHandleInboxRoute } from "./inboxRoutes.js";
 import type { Logger } from "./logger.js";
@@ -1623,6 +1630,117 @@ export class Server extends EventEmitter<ServerEvents> {
         }
         return;
       }
+      // /kill-switch — dedicated endpoint for the global write-tier kill switch.
+      // See issue #422 v2: not folded into /settings because kill-switch has
+      // audit + idempotency + env-lock semantics nothing else on /settings has.
+      //
+      // POST {engage: boolean, reason?: string} → toggle; idempotent.
+      //   200 {engaged, changed, locked: false}     — accepted
+      //   200 {engaged, changed: false, locked: false} — no-op (already in that state)
+      //   409 {error: "env_locked", flag, frozenValue, lockedReason}
+      //                                               — env-locked, cannot toggle
+      //   400 {error: "invalid_request"}            — malformed body
+      //
+      // GET → status. 200 {engaged, locked, lockedReason?, lockedValue?}
+      //
+      // Audit emit is stubbed with this.logger.info — full plumbing
+      // (decisionTraceLog into Server) lands in step 5 of the #422 series.
+      if (parsedUrl.pathname === "/kill-switch") {
+        if (req.method === "GET") {
+          const engaged = isWriteKillSwitchActive();
+          const locked = isEnvLockedFor(KILL_SWITCH_WRITES);
+          const body: Record<string, unknown> = { engaged, locked };
+          if (locked) {
+            const lockedValue = getEnvLockedValue(KILL_SWITCH_WRITES);
+            body.lockedValue = lockedValue;
+            body.lockedReason = `PATCHWORK_FLAG_KILL_SWITCH_WRITES=${
+              lockedValue ? "1" : "0"
+            } at bridge startup`;
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(body));
+          return;
+        }
+        if (req.method === "POST") {
+          // 1 KB — body is `{engage: bool, reason?: string}`; reason is a
+          // short audit note, 1 KB is generous.
+          const KS_BODY_CAP = 1 * 1024;
+          const parsed = await readJsonBody<{
+            engage?: unknown;
+            reason?: unknown;
+          }>(req, KS_BODY_CAP);
+          if (!parsed.ok) {
+            if (parsed.code === "too_large") {
+              respond413(res, KS_BODY_CAP);
+              return;
+            }
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({ error: "invalid_request", reason: "bad_json" }),
+            );
+            return;
+          }
+          const body = parsed.value ?? {};
+          if (typeof body.engage !== "boolean") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: "invalid_request",
+                reason: "engage must be boolean",
+              }),
+            );
+            return;
+          }
+          const reason =
+            typeof body.reason === "string" && body.reason.trim().length > 0
+              ? body.reason.trim().slice(0, 500)
+              : undefined;
+
+          // v2-B2 + I3: surface env-lock conflict as structured 409 so CLI
+          // + dashboard can distinguish "you sent garbage" from
+          // "policy-locked by sysadmin via PATCHWORK_FLAG_*".
+          if (isEnvLockedFor(KILL_SWITCH_WRITES)) {
+            const lockedValue = getEnvLockedValue(KILL_SWITCH_WRITES);
+            res.writeHead(409, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: "env_locked",
+                flag: KILL_SWITCH_WRITES,
+                frozenValue: lockedValue,
+                lockedReason: `PATCHWORK_FLAG_KILL_SWITCH_WRITES=${
+                  lockedValue ? "1" : "0"
+                } at bridge startup`,
+              }),
+            );
+            return;
+          }
+
+          // v2-I12: idempotent. State transitions emit audit; no-ops don't.
+          const prev = isWriteKillSwitchActive();
+          const next = body.engage;
+          const changed = prev !== next;
+          if (changed) {
+            setFlag(KILL_SWITCH_WRITES, next, true);
+            // Audit-emit stub. Step 5 (decisionTraceLog plumbing into
+            // Server) replaces this console line with a real trace write.
+            this.logger.info(
+              `[kill-switch] ${next ? "ENGAGED" : "RELEASED"}${
+                reason ? ` (reason: ${reason})` : ""
+              } — actor=http`,
+            );
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              engaged: next,
+              changed,
+              locked: false,
+            }),
+          );
+          return;
+        }
+      }
+
       // CC hook notify endpoint — lightweight alternative to full MCP session for hook wiring.
       if (parsedUrl.pathname === "/notify" && req.method === "POST") {
         // 8 KB — notify payloads carry an event name + small arg map
