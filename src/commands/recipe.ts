@@ -229,6 +229,51 @@ function yamlScalar(value: string): string {
   return JSON.stringify(value);
 }
 
+/**
+ * Prompt the user for the tool's required JSON Schema fields. Optional
+ * properties are skipped — the user can hand-edit the YAML afterwards
+ * if they want to set defaults. `into` is excluded since the generator
+ * supplies its own name.
+ *
+ * Returns an ordered list of `[key, value]` pairs so the YAML output is
+ * stable across runs (insertion order of object keys is sufficient in
+ * V8 for string keys, but an array makes the contract explicit).
+ */
+async function collectRequiredParams(
+  deps: InteractivePromptDeps,
+  tool: { id: string; paramsSchema: unknown },
+): Promise<Array<[string, string]>> {
+  const schema = tool.paramsSchema as
+    | {
+        required?: unknown;
+        properties?: Record<string, { description?: string }> | undefined;
+      }
+    | null
+    | undefined;
+  if (!schema || typeof schema !== "object") return [];
+
+  const required = Array.isArray(schema.required)
+    ? (schema.required.filter(
+        (k): k is string => typeof k === "string" && k !== "into",
+      ) as string[])
+    : [];
+  if (required.length === 0) return [];
+
+  const out: Array<[string, string]> = [];
+  const properties = schema.properties ?? {};
+  for (const key of required) {
+    const propMeta = properties[key];
+    const hint = propMeta?.description ? ` — ${propMeta.description}` : "";
+    const value = await askWithValidation(
+      deps,
+      `${tool.id} → ${key}${hint}`,
+      (a) => (a.trim().length > 0 ? null : "required, cannot be empty."),
+    );
+    out.push([key, value.trim()]);
+  }
+  return out;
+}
+
 export async function runNewInteractive(
   options: InteractiveNewOptions,
 ): Promise<InteractiveNewResult> {
@@ -267,49 +312,88 @@ export async function runNewInteractive(
     triggerLines.push(`  at: ${yamlScalar(cron.trim())}`);
   }
 
-  // Tool-step pick (connector or skip)
+  // Step loop. The user adds tool / agent steps until they pick "done".
+  // Each tool pick reads its paramsSchema and prompts for required fields,
+  // so the generated recipe is closer to runnable than the MVP slice.
   const namespaces = listConnectorNamespaces();
-  const choices = [...namespaces, "(skip — no tool step)"];
-  const nsIdx = await deps.pickFromList("Pick a connector (or skip)", choices);
-
   const stepLines: string[] = ["steps:"];
-  const pickedNs = namespaces[nsIdx - 1];
-  if (nsIdx >= 1 && nsIdx <= namespaces.length && pickedNs) {
-    const ns = pickedNs;
-    const tools = listTools(ns);
-    const labels = tools.map((t) => `${t.id} — ${t.description}`);
-    const toolIdx = await deps.pickFromList(`Pick a ${ns} tool`, labels);
-    const tool = tools[toolIdx - 1];
-    if (!tool) throw new Error(`Invalid tool selection for ${ns}`);
-    stepLines.push(`  - tool: ${tool.id}`);
-    stepLines.push(`    into: ${ns}_result`);
-  }
+  const intoNames: string[] = [];
+  let lastAgentInto: string | null = null;
+  let toolStepCount = 0;
+  let agentStepCount = 0;
 
-  const wantsAgent = await deps.confirm("Add an agent (LLM) step?");
-  if (wantsAgent) {
-    const prompt = await askWithValidation(deps, "Agent prompt", (a) =>
-      a.trim().length > 0 ? null : "cannot be empty.",
+  const stepKindChoices = [
+    "Add a tool step (calls a registered tool — gmail.fetch_unread, github.list_issues, …)",
+    "Add an agent step (LLM prompt — drafts, classifies, summarizes)",
+    "Done — preview and write",
+  ];
+
+  for (let stepIdx = 0; stepIdx < 20; stepIdx++) {
+    const kind = await deps.pickFromList(
+      stepIdx === 0
+        ? "Build steps — what's next?"
+        : "Add another step? (or pick Done)",
+      stepKindChoices,
     );
-    stepLines.push(`  - agent: true`);
-    stepLines.push(`    prompt: |`);
-    for (const line of prompt.split("\n")) {
-      stepLines.push(`      ${line}`);
+    if (kind === 3) break;
+
+    if (kind === 1) {
+      // Tool step
+      const nsIdx = await deps.pickFromList(
+        "Pick a connector",
+        namespaces.slice(),
+      );
+      const ns = namespaces[nsIdx - 1];
+      if (!ns) throw new Error("Invalid connector selection");
+      const tools = listTools(ns);
+      const labels = tools.map((t) => `${t.id} — ${t.description}`);
+      const toolIdx = await deps.pickFromList(`Pick a ${ns} tool`, labels);
+      const tool = tools[toolIdx - 1];
+      if (!tool) throw new Error(`Invalid tool selection for ${ns}`);
+      toolStepCount += 1;
+      const intoName =
+        toolStepCount === 1 ? `${ns}_result` : `${ns}_result_${toolStepCount}`;
+      intoNames.push(intoName);
+      stepLines.push(`  - tool: ${tool.id}`);
+      // Prompt for required params from the tool's JSON schema.
+      const params = await collectRequiredParams(deps, tool);
+      for (const [key, value] of params) {
+        stepLines.push(`    ${key}: ${yamlScalar(value)}`);
+      }
+      stepLines.push(`    into: ${intoName}`);
+    } else if (kind === 2) {
+      // Agent step
+      const prompt = await askWithValidation(deps, "Agent prompt", (a) =>
+        a.trim().length > 0 ? null : "cannot be empty.",
+      );
+      agentStepCount += 1;
+      const intoName =
+        agentStepCount === 1
+          ? "agent_output"
+          : `agent_output_${agentStepCount}`;
+      lastAgentInto = intoName;
+      stepLines.push(`  - agent: true`);
+      stepLines.push(`    prompt: |`);
+      for (const line of prompt.split("\n")) {
+        stepLines.push(`      ${line}`);
+      }
+      stepLines.push(`    into: ${intoName}`);
     }
-    stepLines.push(`    into: agent_output`);
   }
 
   // Always tail with file.write to inbox so the user sees output somewhere.
+  // Reference the most recent agent output when one exists, otherwise fall
+  // back to the most recent tool result (or a TODO comment if neither).
+  const tailRef = lastAgentInto ?? intoNames[intoNames.length - 1] ?? null;
   stepLines.push(`  - tool: file.write`);
   stepLines.push(`    path: "~/.patchwork/inbox/${name}-{{date}}.md"`);
   stepLines.push(`    content: |`);
-  if (wantsAgent) {
-    stepLines.push(`      # ${name} — {{date}}`);
-    stepLines.push(``);
-    stepLines.push(`      {{agent_output}}`);
+  stepLines.push(`      # ${name} — {{date}}`);
+  stepLines.push(``);
+  if (tailRef) {
+    stepLines.push(`      {{${tailRef}}}`);
   } else {
-    stepLines.push(`      # ${name} — {{date}}`);
-    stepLines.push(``);
-    stepLines.push(`      (no agent step configured — fill in)`);
+    stepLines.push(`      (no steps configured — fill in)`);
   }
 
   const content =
