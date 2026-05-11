@@ -310,6 +310,15 @@ export type StepResult = {
    * (R2 M-4). Other codes may follow.
    */
   errorCode?: string;
+  /**
+   * One-sentence, human-actionable halt reason — what stopped the step and
+   * why, phrased so a tired human at 7am can act on it without reading the
+   * raw `error` stack/message. Populated only for `status: "error"` rows.
+   * Categories: agent silent-fail, agent narration-only, agent threw, tool
+   * threw, tool reported error. Foundation for the inbox morning-summary
+   * (Val "halt cleanly with reason" idea, refined per plan review).
+   */
+  haltReason?: string;
   durationMs: number;
 };
 
@@ -560,6 +569,9 @@ export async function runYamlRecipe(
             tool: "agent",
             status: "error",
             error: reason,
+            haltReason: agentSilentFail
+              ? `Agent step "${stepId}" returned no usable output (silent-fail: ${agentSilentFail.reason}).`
+              : `Agent step "${stepId}" reported failure.`,
             durationMs: Date.now() - stepStart,
           });
         } else {
@@ -572,6 +584,7 @@ export async function runYamlRecipe(
               tool: "agent",
               status: "error",
               error: errMsg,
+              haltReason: `Agent step "${stepId}" returned only narration or whitespace — no content.`,
               durationMs: Date.now() - stepStart,
             });
           } else {
@@ -602,6 +615,7 @@ export async function runYamlRecipe(
           tool: "agent",
           status: "error",
           error: msg,
+          haltReason: `Agent step "${stepId}" threw before completing: ${msg}`,
           durationMs: Date.now() - stepStart,
         });
       }
@@ -674,12 +688,15 @@ export async function runYamlRecipe(
     const failOpen = step.optional === true || fallbackFailOpen;
 
     if (thrownError) {
+      const retryNote =
+        retryCount > 0 ? ` after ${retryCount + 1} attempts` : "";
       stepResults.push({
         id: stepId,
         tool: step.tool,
         status: "error",
         error: thrownError,
         ...(thrownErrorCode ? { errorCode: thrownErrorCode } : {}),
+        haltReason: `Tool "${step.tool ?? "?"}" in step "${stepId}" threw${retryNote}: ${thrownError}`,
         durationMs: Date.now() - stepStart,
       });
       if (!failOpen) {
@@ -690,11 +707,20 @@ export async function runYamlRecipe(
         );
       }
     } else {
+      const finalStatus =
+        result === null ? "skipped" : stepError ? "error" : "ok";
+      const retryNote =
+        retryCount > 0 ? ` after ${retryCount + 1} attempts` : "";
       stepResults.push({
         id: stepId,
         tool: step.tool,
-        status: result === null ? "skipped" : stepError ? "error" : "ok",
+        status: finalStatus,
         error: stepError,
+        ...(finalStatus === "error" && stepError
+          ? {
+              haltReason: `Tool "${step.tool ?? "?"}" in step "${stepId}" reported an error${retryNote}: ${stepError}`,
+            }
+          : {}),
         durationMs: Date.now() - stepStart,
       });
       if (stepError) {
@@ -768,6 +794,7 @@ export async function runYamlRecipe(
         tool: s.tool,
         status: s.status,
         error: s.error,
+        ...(s.haltReason ? { haltReason: s.haltReason } : {}),
         durationMs: s.durationMs,
       }));
       if (deps.runLog && runSeq !== undefined) {

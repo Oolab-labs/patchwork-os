@@ -2505,3 +2505,110 @@ describe("resolveClaudeBinary — override precedence", async () => {
     });
   });
 });
+
+// ── haltReason population ─────────────────────────────────────────────────────
+// PR1 of the Val-inspired plan: every error-status StepResult must carry a
+// one-sentence, human-actionable haltReason. These tests pin the convention
+// at each of the 5 construction sites in yamlRunner.ts so future refactors
+// can't silently drop the field — it's the foundation the morning-summary
+// view depends on.
+
+describe("haltReason population on error StepResults", () => {
+  it("agent silent-fail populates haltReason naming the silent-fail kind", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "summarize",
+            model: "claude-haiku-4-5-20251001",
+            into: "summary",
+          },
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => "[agent step skipped: ANTHROPIC_API_KEY not set]",
+    });
+    const step = result.stepResults[0]!;
+    expect(step.status).toBe("error");
+    expect(step.haltReason).toBeDefined();
+    expect(step.haltReason).toMatch(/silent-fail/);
+  });
+
+  it("agent narration-only output populates haltReason mentioning narration", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "summarize",
+            model: "claude-haiku-4-5-20251001",
+            into: "summary",
+          },
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => "   \n  \n  ",
+    });
+    const step = result.stepResults[0]!;
+    expect(step.status).toBe("error");
+    expect(step.haltReason).toBeDefined();
+    expect(step.haltReason).toMatch(/narration|whitespace|no content/i);
+  });
+
+  it("agent driver throwing populates haltReason naming the catch path", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "summarize",
+            model: "claude-haiku-4-5-20251001",
+            into: "summary",
+          },
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => {
+        throw new Error("driver exploded");
+      },
+    });
+    const step = result.stepResults[0]!;
+    expect(step.status).toBe("error");
+    expect(step.haltReason).toBeDefined();
+    expect(step.haltReason).toMatch(/threw before completing/);
+    expect(step.haltReason).toContain("driver exploded");
+  });
+
+  it("tool reporting {ok:false} populates haltReason naming the tool", async () => {
+    const recipe = makeRecipe({
+      steps: [{ tool: "git.stale_branches", days: 30, into: "stale" }],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      gitStaleBranches: () =>
+        JSON.stringify({ ok: false, error: "remote unreachable" }),
+    });
+    const step = result.stepResults[0]!;
+    expect(step.status).toBe("error");
+    expect(step.haltReason).toBeDefined();
+    expect(step.haltReason).toContain("git.stale_branches");
+    expect(step.haltReason).toContain("remote unreachable");
+  });
+
+  it("haltReason is absent on ok / skipped steps", async () => {
+    const recipe = makeRecipe({
+      steps: [{ tool: "git.log_since", since: "1 week ago", into: "log" }],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      gitLogSince: () => "feat: ship something",
+    });
+    const step = result.stepResults[0]!;
+    expect(step.status).toBe("ok");
+    expect(step.haltReason).toBeUndefined();
+  });
+});

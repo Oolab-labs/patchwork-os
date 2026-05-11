@@ -15,6 +15,8 @@ interface StepResult {
   tool?: string;
   status: "running" | "ok" | "skipped" | "error";
   error?: string;
+  /** One-sentence human-actionable halt reason for error rows. */
+  haltReason?: string;
   durationMs: number;
   // VD-2 capture (all optional — pre-VD-2 runs don't have these).
   resolvedParams?: unknown;
@@ -258,6 +260,20 @@ function StepRow({
           {step.tool && step.tool !== step.id && (
             <div className="mono muted" style={{ fontSize: "var(--fs-xs)", marginTop: 2 }}>
               {step.id}
+            </div>
+          )}
+          {step.haltReason && step.status === "error" && (
+            <div
+              style={{
+                fontSize: "var(--fs-xs)",
+                marginTop: 4,
+                color: "var(--err)",
+                whiteSpace: "normal",
+                wordBreak: "break-word",
+              }}
+              title="halt reason"
+            >
+              {step.haltReason}
             </div>
           )}
           <div
