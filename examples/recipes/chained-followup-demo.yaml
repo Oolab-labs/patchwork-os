@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json
 version: 1.0.0
 name: chained-followup-demo
 description: Demonstrate chained dependencies, gating, optional steps, and nested recipe calls.

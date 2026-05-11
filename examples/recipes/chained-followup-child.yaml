@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json
 version: 1.0.0
 name: chained-followup-child
 description: Child chained recipe used by the canonical chained follow-up demo.
