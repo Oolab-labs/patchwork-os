@@ -564,7 +564,7 @@ function NewRecipePageInner() {
         setAiResult({
           error:
             data.error ??
-            "AI generation is not available — start the bridge with --claude-driver subprocess.",
+            "AI generation is not available — start the bridge with --driver subprocess.",
         });
       } else if (data.ok && data.yaml) {
         setAiResult({ yaml: data.yaml, warnings: data.warnings });

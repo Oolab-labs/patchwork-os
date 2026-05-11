@@ -56,7 +56,7 @@ function baseConfig(overrides: Partial<{ fullMode: boolean }> = {}) {
     activeWorkspaceFolder: "/tmp/test",
     gracePeriodMs: 30_000,
     autoTmux: false,
-    claudeDriver: "none" as const,
+    driver: "none" as const,
     claudeBinary: "claude",
     automationEnabled: false,
     automationPolicyPath: null,

@@ -462,7 +462,7 @@ describe("saveBridgeConfigDriver", () => {
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(
       target,
-      JSON.stringify({ port: 4747, claudeDriver: "subprocess" }, null, 2),
+      JSON.stringify({ port: 4747, driver: "subprocess" }, null, 2),
     );
     process.chdir(workspace);
     process.env.CLAUDE_CONFIG_DIR = claudeDir;
@@ -483,7 +483,7 @@ describe("saveBridgeConfigDriver", () => {
     writeFileSync(
       customPath,
       JSON.stringify(
-        { bindAddress: "127.0.0.1", claudeDriver: "subprocess" },
+        { bindAddress: "127.0.0.1", driver: "subprocess" },
         null,
         2,
       ),

@@ -54,7 +54,7 @@ function findLock(overridePort?: number): LockInfo {
   if (!lockFile || !port) {
     process.stderr.write(
       `Error: No bridge lock file found in ${lockDir}\n` +
-        "Start the bridge first: claude-ide-bridge --watch --full --claude-driver subprocess\n",
+        "Start the bridge first: claude-ide-bridge --watch --full --driver subprocess\n",
     );
     process.exit(1);
   }
@@ -119,7 +119,7 @@ function usageQuickTask(): never {
     `Usage: claude-ide-bridge quick-task <preset> [--json] [--port N] [--source NAME]\n\n` +
       `Presets: ${QUICK_TASK_PRESET_IDS.join(", ")}\n\n` +
       "Runs a context-aware Claude task using the same preset logic as the VS Code sidebar.\n" +
-      "Requires bridge running with --claude-driver subprocess.\n",
+      "Requires bridge running with --driver subprocess.\n",
   );
   process.exit(2);
 }

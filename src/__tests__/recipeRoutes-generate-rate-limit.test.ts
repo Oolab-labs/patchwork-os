@@ -8,7 +8,7 @@
  * bucket at 10 req/min.
  *
  * The Claude orchestrator isn't wired in these tests (Server is
- * default-constructed without `--claude-driver subprocess`), so the
+ * default-constructed without `--driver subprocess`), so the
  * route returns 503 `unavailable:true` after the rate-limit check
  * passes. That's fine for testing the limiter in isolation: tokens get
  * consumed regardless of the downstream branch, so the 11th request

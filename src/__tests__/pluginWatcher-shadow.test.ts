@@ -53,7 +53,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     activeWorkspaceFolder: process.cwd(),
     gracePeriodMs: 30_000,
     autoTmux: false,
-    claudeDriver: "none",
+    driver: "none",
     claudeBinary: "claude",
     automationEnabled: false,
     automationPolicyPath: null,

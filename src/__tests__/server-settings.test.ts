@@ -7,8 +7,7 @@
  * driver was still loaded on restart.
  *
  * These tests prove that POST /settings writes driver to the authoritative
- * bridge config file (server.bridgeConfigPath), preserves unrelated keys, and
- * strips the deprecated claudeDriver field.
+ * bridge config file (server.bridgeConfigPath) and preserves unrelated keys.
  */
 
 import {
@@ -147,34 +146,6 @@ describe("POST /settings — driver persistence to bridge config file", () => {
     expect(saved.port).toBe(4747);
     expect(saved.fullMode).toBe(true);
     expect(saved.automationEnabled).toBe(false);
-  });
-
-  it("strips deprecated claudeDriver key when saving driver", async () => {
-    const bridgeCfgPath = path.join(tempDir!, "bridge.json");
-    writeFileSync(
-      bridgeCfgPath,
-      JSON.stringify({ claudeDriver: "subprocess", port: 3101 }, null, 2),
-    );
-    server!.bridgeConfigPath = bridgeCfgPath;
-
-    await makeRequest(
-      {
-        method: "POST",
-        path: "/settings",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${TOKEN}`,
-        },
-      },
-      JSON.stringify({ driver: "gemini" }),
-    );
-
-    const saved = JSON.parse(readFileSync(bridgeCfgPath, "utf-8")) as Record<
-      string,
-      unknown
-    >;
-    expect(saved.driver).toBe("gemini");
-    expect(saved).not.toHaveProperty("claudeDriver");
   });
 
   it("creates bridge config file if it does not exist yet", async () => {

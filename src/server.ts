@@ -1056,7 +1056,7 @@ export class Server extends EventEmitter<ServerEvents> {
             JSON.stringify({
               ok: false,
               error:
-                "Webhooks unavailable — start bridge with --claude-driver subprocess",
+                "Webhooks unavailable — start bridge with --driver subprocess",
             }),
           );
           return;
@@ -1802,8 +1802,7 @@ export class Server extends EventEmitter<ServerEvents> {
           res.end(
             JSON.stringify({
               ok: false,
-              error:
-                "Quick tasks unavailable — requires --claude-driver subprocess",
+              error: "Quick tasks unavailable — requires --driver subprocess",
             }),
           );
           return;

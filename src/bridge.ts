@@ -1057,7 +1057,7 @@ export class Bridge {
 
     if (this.config.automationEnabled) {
       if (!this.orchestrator) {
-        throw new Error("--automation requires --claude-driver != none");
+        throw new Error("--automation requires --driver != none");
       }
       if (!this.config.automationPolicyPath) {
         throw new Error("--automation requires --automation-policy <path>");
@@ -1463,7 +1463,7 @@ export class Bridge {
         return {
           ok: false,
           error:
-            "launchQuickTask not registered — requires --claude-driver subprocess",
+            "launchQuickTask not registered — requires --driver subprocess",
         };
       }
       const r = result as {

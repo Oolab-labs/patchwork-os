@@ -377,7 +377,7 @@ export class RecipeOrchestration {
         return {
           ok: false,
           error:
-            "Orchestrator unavailable — start bridge with --claude-driver subprocess",
+            "Orchestrator unavailable — start bridge with --driver subprocess",
         };
       }
       const orchestrator = this.deps.getOrchestrator();

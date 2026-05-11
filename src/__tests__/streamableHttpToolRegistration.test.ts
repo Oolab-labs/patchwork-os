@@ -46,7 +46,7 @@ function makeDeps() {
     noReady: false,
     configFile: null,
     noLockFile: false,
-    claudeDriver: "subprocess" as const,
+    driver: "subprocess" as const,
     claudeBinary: "claude",
     automationPolicy: null,
   };
