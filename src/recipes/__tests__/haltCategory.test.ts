@@ -32,6 +32,14 @@ describe("categoriseHaltReason", () => {
     ).toBe("tool_error");
   });
 
+  it("recognises kill-switch-blocked writes before the generic tool_threw match", () => {
+    const reason =
+      'Tool "slack.postMessage" in step "post" threw: Write operation blocked by kill switch: slack.postMessage. Unset PATCHWORK_FLAG_KILL_SWITCH_WRITES or set kill-switch.writes=false to restore.';
+    expect(categoriseHaltReason(reason)).toBe("kill_switch");
+    expect(categoriseHaltReason("kill_switch_blocked")).toBe("kill_switch");
+    expect(categoriseHaltReason("kill-switch active")).toBe("kill_switch");
+  });
+
   it("returns 'unknown' for missing or unrecognised reasons", () => {
     expect(categoriseHaltReason(undefined)).toBe("unknown");
     expect(categoriseHaltReason("")).toBe("unknown");

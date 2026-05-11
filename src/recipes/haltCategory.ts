@@ -18,18 +18,23 @@ export type HaltCategory =
   | "agent_threw"
   | "tool_threw"
   | "tool_error"
+  /** Write blocked by the global kill-switch (#422). Distinct from a real tool failure. */
+  | "kill_switch"
   /** Whole-recipe failure (e.g. circular dependencies) — has no step row. */
   | "run_level"
   | "unknown";
 
 export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (!reason) return "unknown";
-  // Order matters: more specific phrases (silent-fail, narration) must
-  // match before the general "Agent step ... threw" / "Tool ... threw"
-  // patterns. The phrases below mirror yamlRunner.ts:558-606,677-684,693-708.
+  // Order matters: more specific phrases (silent-fail, narration, kill
+  // switch) must match before the general "Agent step ... threw" /
+  // "Tool ... threw" patterns. The phrases below mirror
+  // yamlRunner.ts:558-606,677-684,693-708 and
+  // featureFlags.ts:assertWriteAllowed.
   if (/silent-fail/i.test(reason)) return "agent_silent_fail";
   if (/narration|whitespace|no content/i.test(reason))
     return "agent_narration_only";
+  if (/kill[- _]?switch/i.test(reason)) return "kill_switch";
   if (/^Agent step .* threw/i.test(reason)) return "agent_threw";
   if (/^Tool .* threw/i.test(reason)) return "tool_threw";
   if (/^Tool .* reported an error/i.test(reason)) return "tool_error";
