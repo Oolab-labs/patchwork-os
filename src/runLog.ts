@@ -101,6 +101,18 @@ export interface RecipeRun {
     actual: unknown;
     message: string;
   }>;
+  /**
+   * Stable id for one *logical* user-initiated execution attempt (PR5b
+   * prereq). Distinct from `seq` (which is per *physical* run row): a
+   * retry-after-failure of the same logical attempt re-uses the same
+   * `manualRunId` so the disk-backed WriteEffectLedger can scope dedup
+   * by `(recipeName, manualRunId)` and avoid replaying side effects.
+   *
+   * Optional — cron / webhook / nested-recipe trigger runs leave it
+   * unset. Caller-supplied (the CLI / dashboard mints it); the run log
+   * just round-trips the value.
+   */
+  manualRunId?: string;
 }
 
 const MAX_OUTPUT_TAIL = 2_000;
@@ -332,6 +344,7 @@ export class RecipeRunLog {
     startedAt?: number;
     model?: string;
     parentSeq?: number;
+    manualRunId?: string;
   }): number {
     const seq = ++this.seq;
     const run: RecipeRun = {
@@ -349,6 +362,7 @@ export class RecipeRunLog {
       durationMs: 0,
       stepResults: [],
       ...(opts.parentSeq !== undefined && { parentSeq: opts.parentSeq }),
+      ...(opts.manualRunId !== undefined && { manualRunId: opts.manualRunId }),
     };
     this.runs.push(run);
     if (this.runs.length > this.memoryCap) this.runs.shift();
