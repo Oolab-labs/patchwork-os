@@ -1,6 +1,7 @@
 import type { ActivityLog } from "../activityLog.js";
 import type { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
 import type { DecisionTraceLog } from "../decisionTraceLog.js";
+import { summariseHalts } from "../recipes/haltCategory.js";
 import type { RecipeRunLog } from "../runLog.js";
 import { createCtxQueryTracesTool } from "./ctxQueryTraces.js";
 
@@ -138,20 +139,50 @@ export async function buildRecentTracesDigest(
       }
     | undefined;
   const traces = structured?.traces ?? [];
-  if (traces.length === 0) return [];
-
   const top = traces.slice(0, topN);
-  const lines: string[] = ["RECENT DECISIONS (last 12h):"];
-  for (const t of top) {
-    const icon = TYPE_ICON[t.traceType] ?? "·";
-    lines.push(`  ${icon} ${formatTraceLine(t, now)}`);
+  const lines: string[] = [];
+
+  // PR #449: prepend a one-line halt summary when the runLog reports any
+  // halts in the same 12h window. Lets a fresh-context agent see "3
+  // recipes halted overnight (2 tool_threw, 1 kill_switch)" without
+  // querying ctxQueryTraces. Composes with the haltReason field (#441),
+  // category aggregator (#444), and kill_switch category (#447). Emitted
+  // even when there are no decision traces — halts are signal on their
+  // own.
+  let haltLine: string | null = null;
+  if (deps.recipeRunLog) {
+    const cutoff = now - windowMs;
+    const recentRuns = deps.recipeRunLog
+      .query({ limit: 500 })
+      .filter((r) => r.createdAt >= cutoff);
+    const halts = summariseHalts(recentRuns);
+    if (halts.total > 0) {
+      const breakdown = Object.entries(halts.byCategory)
+        .sort(([, a], [, b]) => b - a)
+        .map(([cat, count]) => `${cat}·${count}`)
+        .join(" ");
+      haltLine = `HALTS (last 12h): ${halts.total} — ${breakdown}`;
+    }
   }
 
-  // Hard byte cap — keep dropping oldest entries until under budget.
-  while (lines.join("\n").length > MAX_BYTES && lines.length > 1) {
+  // If there's nothing on either axis, skip the section entirely.
+  if (!haltLine && top.length === 0) return [];
+
+  if (haltLine) lines.push(haltLine);
+  if (top.length > 0) {
+    lines.push("RECENT DECISIONS (last 12h):");
+    for (const t of top) {
+      const icon = TYPE_ICON[t.traceType] ?? "·";
+      lines.push(`  ${icon} ${formatTraceLine(t, now)}`);
+    }
+  }
+
+  // Hard byte cap — keep dropping oldest decision entries until under budget.
+  // The halt line + DECISIONS heading are the floor (length 2 when both
+  // present, 1 when only one). Don't pop past the floor.
+  const floor = (haltLine ? 1 : 0) + (top.length > 0 ? 1 : 0);
+  while (lines.join("\n").length > MAX_BYTES && lines.length > floor) {
     lines.pop();
   }
-  // If only the heading survived, drop it too (nothing useful to say).
-  if (lines.length <= 1) return [];
   return lines;
 }
