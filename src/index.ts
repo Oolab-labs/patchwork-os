@@ -168,7 +168,6 @@ const KNOWN_SUBCOMMANDS = [
   "gen-plugin-stub",
   "notify",
   "install",
-  "marketplace",
   "status",
   "shim",
   "recipe",
@@ -476,14 +475,6 @@ Options:
 if (process.argv[2] === "install") {
   const { runInstall } = await import("./commands/install.js");
   await runInstall(process.argv.slice(3));
-  process.exit(0);
-}
-
-// Handle marketplace subcommand — DEPRECATED, prints migration message.
-// See issue #279 and src/commands/marketplace.ts for the rationale.
-if (process.argv[2] === "marketplace") {
-  const { runMarketplace } = await import("./commands/marketplace.js");
-  await runMarketplace(process.argv.slice(3));
   process.exit(0);
 }
 
