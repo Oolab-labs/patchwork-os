@@ -28,6 +28,8 @@ import { generateSchemaSet, writeSchemas } from "../recipes/schemaGenerator.js";
 import {
   getTool,
   isConnectorNamespace,
+  listConnectorNamespaces,
+  listTools,
   seedToolOutputPreviewContext,
 } from "../recipes/toolRegistry.js";
 import {
@@ -165,6 +167,195 @@ export function runNew(options: NewOptions): { path: string; content: string } {
 
 export function listTemplates(): string[] {
   return Object.keys(TEMPLATES);
+}
+
+// ============================================================================
+// patchwork recipe new --interactive
+//
+// Connector-aware prompt tree. Writes a valid recipe YAML based on
+// user choices. Use a `node:readline/promises` adapter in real CLI;
+// tests inject a stub `InteractivePromptDeps`.
+// ============================================================================
+
+const RECIPE_NAME_RE = /^[a-z0-9][a-z0-9_-]{1,63}$/;
+const CRON_SHAPE_RE =
+  /^(@every\s+\d+\s*(ms|s|m|h)|\S+\s+\S+\s+\S+\s+\S+\s+\S+)$/i;
+
+export interface InteractivePromptDeps {
+  /** Free-text prompt. Returns the user's trimmed answer. */
+  ask: (question: string) => Promise<string>;
+  /**
+   * List-select prompt. Returns the 1-based index of the choice the
+   * user picked. Implementations must reject 0 / out-of-range / NaN.
+   */
+  pickFromList: (question: string, options: string[]) => Promise<number>;
+  /** Y/N prompt. Returns true on yes. */
+  confirm: (question: string) => Promise<boolean>;
+  /** Optional preview hook — called once before the final write confirm. */
+  preview?: (yaml: string) => void;
+}
+
+export interface InteractiveNewOptions {
+  outputDir?: string;
+  deps: InteractivePromptDeps;
+}
+
+export interface InteractiveNewResult {
+  path: string;
+  content: string;
+  /** Lint issues surfaced by validateRecipeDefinition (warnings only — write proceeds). */
+  warnings: LintIssue[];
+}
+
+async function askWithValidation(
+  deps: InteractivePromptDeps,
+  question: string,
+  validate: (answer: string) => string | null,
+): Promise<string> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const answer = await deps.ask(question);
+    const error = validate(answer);
+    if (!error) return answer;
+    // Surface error and re-ask via the question prompt itself.
+    question = `${error} ${question}`;
+  }
+  throw new Error("Too many invalid answers");
+}
+
+function yamlScalar(value: string): string {
+  // Quote unless the string is a simple identifier-ish token. Conservative
+  // — when in doubt, JSON-encode (always parses as a YAML string).
+  if (/^[A-Za-z0-9_.\-/:]+$/.test(value)) return value;
+  return JSON.stringify(value);
+}
+
+export async function runNewInteractive(
+  options: InteractiveNewOptions,
+): Promise<InteractiveNewResult> {
+  const { deps } = options;
+
+  const name = await askWithValidation(deps, "Recipe name", (a) =>
+    RECIPE_NAME_RE.test(a)
+      ? null
+      : 'must match /^[a-z0-9][a-z0-9_-]{1,63}$/ (e.g. "morning-brief").',
+  );
+
+  const description = await askWithValidation(
+    deps,
+    "One-line description",
+    (a) => (a.trim().length > 0 ? null : "cannot be empty."),
+  );
+
+  const triggerTypes = ["manual", "cron"] as const;
+  const triggerIdx = await deps.pickFromList(
+    "Trigger type",
+    triggerTypes.slice(),
+  );
+  const triggerType = triggerTypes[triggerIdx - 1];
+  if (!triggerType) throw new Error("Invalid trigger selection");
+
+  const triggerLines: string[] = [`trigger:`, `  type: ${triggerType}`];
+  if (triggerType === "cron") {
+    const cron = await askWithValidation(
+      deps,
+      "Cron expression (e.g. '0 8 * * *' for 8am daily)",
+      (a) =>
+        CRON_SHAPE_RE.test(a.trim())
+          ? null
+          : 'expected 5-field cron or "@every Ns|Nm|Nh".',
+    );
+    triggerLines.push(`  at: ${yamlScalar(cron.trim())}`);
+  }
+
+  // Tool-step pick (connector or skip)
+  const namespaces = listConnectorNamespaces();
+  const choices = [...namespaces, "(skip — no tool step)"];
+  const nsIdx = await deps.pickFromList("Pick a connector (or skip)", choices);
+
+  const stepLines: string[] = ["steps:"];
+  const pickedNs = namespaces[nsIdx - 1];
+  if (nsIdx >= 1 && nsIdx <= namespaces.length && pickedNs) {
+    const ns = pickedNs;
+    const tools = listTools(ns);
+    const labels = tools.map((t) => `${t.id} — ${t.description}`);
+    const toolIdx = await deps.pickFromList(`Pick a ${ns} tool`, labels);
+    const tool = tools[toolIdx - 1];
+    if (!tool) throw new Error(`Invalid tool selection for ${ns}`);
+    stepLines.push(`  - tool: ${tool.id}`);
+    stepLines.push(`    into: ${ns}_result`);
+  }
+
+  const wantsAgent = await deps.confirm("Add an agent (LLM) step?");
+  if (wantsAgent) {
+    const prompt = await askWithValidation(deps, "Agent prompt", (a) =>
+      a.trim().length > 0 ? null : "cannot be empty.",
+    );
+    stepLines.push(`  - agent: true`);
+    stepLines.push(`    prompt: |`);
+    for (const line of prompt.split("\n")) {
+      stepLines.push(`      ${line}`);
+    }
+    stepLines.push(`    into: agent_output`);
+  }
+
+  // Always tail with file.write to inbox so the user sees output somewhere.
+  stepLines.push(`  - tool: file.write`);
+  stepLines.push(`    path: "~/.patchwork/inbox/${name}-{{date}}.md"`);
+  stepLines.push(`    content: |`);
+  if (wantsAgent) {
+    stepLines.push(`      # ${name} — {{date}}`);
+    stepLines.push(``);
+    stepLines.push(`      {{agent_output}}`);
+  } else {
+    stepLines.push(`      # ${name} — {{date}}`);
+    stepLines.push(``);
+    stepLines.push(`      (no agent step configured — fill in)`);
+  }
+
+  const content =
+    `${RECIPE_SCHEMA_HEADER}\n` +
+    `version: 1.0.0\n` +
+    `name: ${name}\n` +
+    `description: ${yamlScalar(description)}\n` +
+    `${triggerLines.join("\n")}\n` +
+    `${stepLines.join("\n")}\n`;
+
+  // Lint pre-write. validateRecipeDefinition expects parsed YAML.
+  let warnings: LintIssue[] = [];
+  try {
+    const parsed = parseYaml(content);
+    const lintResult = validateRecipeDefinition(
+      parsed as Record<string, unknown>,
+    );
+    warnings = lintResult.issues ?? [];
+  } catch {
+    // Parse failure here is a bug in the generator — surface but don't block.
+    warnings = [
+      {
+        level: "error",
+        message: "Generated YAML failed to parse — please report this.",
+      },
+    ];
+  }
+
+  if (deps.preview) deps.preview(content);
+
+  const shouldWrite = await deps.confirm("Write to disk?");
+  if (!shouldWrite) {
+    throw new Error("Cancelled by user");
+  }
+
+  const outputDir = options.outputDir ?? RECIPES_DIR;
+  if (!existsSync(outputDir)) {
+    mkdirSync(outputDir, { recursive: true });
+  }
+  const outputPath = join(outputDir, `${name}.yaml`);
+  if (existsSync(outputPath)) {
+    throw new Error(`Recipe already exists: ${outputPath}`);
+  }
+  writeFileSync(outputPath, content);
+
+  return { path: outputPath, content, warnings };
 }
 
 export interface SchemaWriteResult {
