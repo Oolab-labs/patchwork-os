@@ -96,6 +96,7 @@ type HaltCategory =
   | "agent_threw"
   | "tool_threw"
   | "tool_error"
+  | "run_level"
   | "unknown";
 
 interface HaltSummary {
@@ -110,6 +111,7 @@ const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   agent_threw: "agent threw",
   tool_threw: "tool threw",
   tool_error: "tool error",
+  run_level: "run-level halt",
   unknown: "uncategorised",
 };
 
@@ -281,6 +283,11 @@ export default function RunsPage() {
                   fontSize: "var(--fs-2xs)",
                   background: cat === "unknown" ? "var(--bg-1)" : undefined,
                   color: cat === "unknown" ? "var(--fg-2)" : "var(--err)",
+                  // light-mode visibility: var(--bg-1) on a pill can blend
+                  // into the panel, so add a subtle border on the muted variant.
+                  ...(cat === "unknown" && {
+                    border: "1px solid var(--border-subtle)",
+                  }),
                 }}
               >
                 {HALT_CATEGORY_LABEL[cat]} · {count}

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { categoriseHaltReason, summariseHalts } from "../haltCategory.js";
+import {
+  categoriseHaltReason,
+  deriveHaltReasonFromError,
+  summariseHalts,
+} from "../haltCategory.js";
 
 describe("categoriseHaltReason", () => {
   it("maps each of the 5 yamlRunner phrases to its own category", () => {
@@ -96,5 +100,91 @@ describe("summariseHalts", () => {
     expect(summary.total).toBe(0);
     expect(summary.byCategory).toEqual({});
     expect(summary.recent).toEqual([]);
+  });
+
+  it("counts run-level errorMessage as run_level when no per-step halts cover it", () => {
+    const runs = [
+      {
+        seq: 4,
+        status: "error" as const,
+        errorMessage: "Recipe has circular dependencies",
+        stepResults: [],
+      },
+      {
+        seq: 3,
+        status: "error" as const,
+        errorMessage: "this should NOT be counted (step halt already covers)",
+        stepResults: [
+          {
+            status: "error" as const,
+            haltReason: 'Tool "a" in step "s" threw: x',
+          },
+        ],
+      },
+    ];
+    const summary = summariseHalts(runs);
+    expect(summary.total).toBe(2);
+    expect(summary.byCategory).toEqual({
+      tool_threw: 1,
+      run_level: 1,
+    });
+    expect(summary.recent.find((r) => r.category === "run_level")?.runSeq).toBe(
+      4,
+    );
+  });
+});
+
+describe("deriveHaltReasonFromError", () => {
+  it("returns undefined for non-error or missing error", () => {
+    expect(
+      deriveHaltReasonFromError({ stepId: "s", status: "ok" }),
+    ).toBeUndefined();
+    expect(
+      deriveHaltReasonFromError({ stepId: "s", status: "error" }),
+    ).toBeUndefined();
+  });
+
+  it("derives silent-fail / narration / agent-threw / tool-error in that order", () => {
+    expect(
+      deriveHaltReasonFromError({
+        stepId: "s",
+        status: "error",
+        error: "silent-fail detected: (...)",
+      }),
+    ).toMatch(/silent-fail/);
+    expect(
+      deriveHaltReasonFromError({
+        stepId: "s",
+        status: "error",
+        error: "only narration here",
+      }),
+    ).toMatch(/narration/);
+    expect(
+      deriveHaltReasonFromError({
+        stepId: "s",
+        isAgent: true,
+        status: "error",
+        error: "kaboom",
+      }),
+    ).toMatch(/Agent step .* threw/);
+    expect(
+      deriveHaltReasonFromError({
+        stepId: "s",
+        toolName: "git.x",
+        status: "error",
+        error: "remote unreachable",
+      }),
+    ).toMatch(/Tool "git\.x" .* reported an error/);
+  });
+
+  it("output round-trips through categoriseHaltReason to the expected category", () => {
+    const r = deriveHaltReasonFromError({
+      stepId: "s",
+      isAgent: true,
+      status: "error",
+      error: "kaboom",
+    });
+    expect(r).toBeDefined();
+    expect(categoriseHaltReason(r)).toBe("agent_threw");
   });
 });
