@@ -220,6 +220,7 @@ export class Server extends EventEmitter<ServerEvents> {
         status?: string;
         recipe?: string;
         after?: number;
+        manualRunId?: string;
       }) => Record<string, unknown>[])
     | null = null;
   /** Patchwork: set by bridge to fetch a single run by seq for the detail page. */
