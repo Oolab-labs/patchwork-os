@@ -33,7 +33,7 @@ claude-ide-bridge \
   --full \
   --automation \
   --automation-policy ./automation-policy.json \
-  --claude-driver subprocess
+  --driver subprocess
 ```
 
 Then open `src/broken.ts` in your IDE. The TypeScript language server will surface the error; the bridge's `onDiagnosticsError` hook fires; `runClaudeTask` spawns a Claude subprocess with the diagnostic contents already embedded; Claude is instructed to call `getDiagnostics` + `getHover` + propose a patch and return its reasoning.

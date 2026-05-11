@@ -192,7 +192,7 @@ claude-ide-bridge start-task "Refactor the auth module for clarity, keep behavio
 claude-ide-bridge continue-handoff
 ```
 
-Requires `--claude-driver subprocess` on the running bridge. All three subcommands accept `--json`, `--port`, `--source`. Enforces a 5s bridge-global cooldown per preset (shared with the sidebar).
+Requires `--driver subprocess` on the running bridge. All three subcommands accept `--json`, `--port`, `--source`. Enforces a 5s bridge-global cooldown per preset (shared with the sidebar).
 
 ---
 
@@ -223,7 +223,7 @@ Event-driven hooks that trigger Claude tasks automatically — no polling, no ma
 
 Start with:
 ```bash
-claude-ide-bridge --watch --automation --automation-policy ./policy.json --claude-driver subprocess
+claude-ide-bridge --watch --automation --automation-policy ./policy.json --driver subprocess
 ```
 
 **18 hook events:** `onFileSave`, `onFileChanged`, `onDiagnosticsError`, `onDiagnosticsCleared`, `onGitCommit`, `onGitPush`, `onGitPull`, `onBranchCheckout`, `onPullRequest`, `onTestRun`, `onTestPassAfterFailure`, `onPostCompact`, `onInstructionsLoaded`, `onTaskCreated`, `onTaskSuccess`, `onPermissionDenied`, `onCwdChanged`, `onDebugSessionEnd`
@@ -299,7 +299,7 @@ claude-ide-bridge install claude-mem
 | `--fixed-token <uuid>` | — | Stable auth token across restarts |
 | `--automation` | off | Enable automation hooks |
 | `--automation-policy <path>` | — | Path to policy JSON |
-| `--claude-driver subprocess` | none | Enable Claude subprocess orchestration |
+| `--driver subprocess` | none | Enable Claude subprocess orchestration |
 | `--plugin <path>` | — | Load a plugin (repeatable) |
 | `--plugin-watch` | off | Hot-reload plugins on change |
 | `--issuer-url <url>` | — | Activate OAuth 2.0 mode |

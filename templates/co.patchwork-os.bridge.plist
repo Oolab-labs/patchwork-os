@@ -8,7 +8,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>__BINARY_PATH__</string>
-    <string>--claude-driver</string>
+    <string>--driver</string>
     <string>subprocess</string>
   </array>
   <key>RunAtLoad</key>

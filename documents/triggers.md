@@ -43,7 +43,7 @@ Returns:
 | 200 | recipe accepted (the run itself is async — check the dashboard for outcome) |
 | 401 | missing or wrong `Authorization: Bearer` header |
 | 404 | no recipe matches that hook path |
-| 503 | bridge running without `--claude-driver subprocess` (orchestrator unavailable) |
+| 503 | bridge running without `--driver subprocess` (orchestrator unavailable) |
 
 **Get your token:**
 

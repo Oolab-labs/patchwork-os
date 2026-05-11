@@ -272,10 +272,10 @@ docker run \
 
 Automation requires the flag to be present at startup:
 ```bash
-claude-ide-bridge --watch --automation --automation-policy /path/to/policy.json --claude-driver subprocess
+claude-ide-bridge --watch --automation --automation-policy /path/to/policy.json --driver subprocess
 ```
 
-All three flags are required: `--automation`, `--automation-policy`, and `--claude-driver subprocess`.
+All three flags are required: `--automation`, `--automation-policy`, and `--driver subprocess`.
 
 ### Claude Code version too old
 

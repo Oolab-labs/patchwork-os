@@ -488,7 +488,7 @@ The `claude remote-control` pane in tmux receives your message and relays it to 
 
 ### Step 2: Claude hands off to a subprocess
 
-With Claude server mode enabled (`--claude-driver subprocess`), Claude does one thing:
+With Claude server mode enabled (`--driver subprocess`), Claude does one thing:
 
 **Tool**: `runClaudeTask`
 ```json

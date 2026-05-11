@@ -1,6 +1,6 @@
 {
   "_comment": "recipe-authoring — runs preflight automatically when a .yaml recipe file is saved. Closes the authoring inner loop: edit → save → instant validation feedback via Claude task.",
-  "_usage": "Copy to automation-policy.json. Requires --automation --automation-policy <path> --claude-driver subprocess",
+  "_usage": "Copy to automation-policy.json. Requires --automation --automation-policy <path> --driver subprocess",
 
   "automationSystemPrompt": "Recipe lint bot. ≤10 lines. No preamble. List issues with file:line if available. End with 'Recipe OK' when clean.",
 

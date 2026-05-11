@@ -155,7 +155,7 @@ A dedicated WebSocket connection (separate from the Claude Code connection) runs
 | `onPermissionDenied` | Claude Code PermissionDenied hook (CC 2.1.89+) |
 | `onDebugSessionEnd` | VS Code debug session terminates |
 
-**Event flow**: lifecycle event fires (tool call completes or `/notify` POST received) → `handle*()` method checks policy enabled + per-file/event cooldown (min 5s) + loop guard (prevents re-entrant triggers) → `_evaluateWhen()` checks `AutomationCondition` (minDiagnosticCount, diagnosticsMinSeverity, testRunnerLastStatus) → `_enqueueAutomationTask()` → `SubprocessDriver` spawns `claude --verbose` subprocess with the resolved prompt. Rolling 60-minute rate limit window caps tasks per hour (default 20). Requires `--claude-driver subprocess`.
+**Event flow**: lifecycle event fires (tool call completes or `/notify` POST received) → `handle*()` method checks policy enabled + per-file/event cooldown (min 5s) + loop guard (prevents re-entrant triggers) → `_evaluateWhen()` checks `AutomationCondition` (minDiagnosticCount, diagnosticsMinSeverity, testRunnerLastStatus) → `_enqueueAutomationTask()` → `SubprocessDriver` spawns `claude --verbose` subprocess with the resolved prompt. Rolling 60-minute rate limit window caps tasks per hour (default 20). Requires `--driver subprocess`.
 
 ---
 

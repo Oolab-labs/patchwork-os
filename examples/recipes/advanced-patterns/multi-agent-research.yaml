@@ -1,7 +1,7 @@
 # vision-tier — demonstrates the runClaudeTask parent→child spawn pattern.
-# Works today if --claude-driver subprocess is active.
+# Works today if --driver subprocess is active.
 # Each topic gets its own Claude subprocess; parent merges results.
-# requires: file-mcp (read/write), claude-driver (subprocess or api)
+# requires: file-mcp (read/write), driver (subprocess or api)
 version: 1.0.0
 name: multi-agent-research
 description: >

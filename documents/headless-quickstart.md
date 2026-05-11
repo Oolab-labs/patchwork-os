@@ -93,13 +93,13 @@ Call `getBridgeStatus` after connecting to see which probes passed and which too
 | `auditDependencies` | Checks for outdated packages |
 | `getSecurityAdvisories` | CVE scan |
 | `runTests` | vitest / jest / pytest / cargo / go test |
-| `runClaudeTask` | Requires `--claude-driver subprocess` or `api` |
-| `listClaudeTasks` | Requires `--claude-driver` |
-| `getClaudeTaskStatus` | Requires `--claude-driver` |
+| `runClaudeTask` | Requires `--driver subprocess` or `api` |
+| `listClaudeTasks` | Requires `--driver` |
+| `getClaudeTaskStatus` | Requires `--driver` |
 
 ### Task Launcher CLI (v2.42.0+)
 
-Headless parity with the VS Code sidebar — launch context-aware Claude tasks from a terminal. Same prompt-building logic as the sidebar, same dispatch path. Requires a running bridge with `--claude-driver subprocess`.
+Headless parity with the VS Code sidebar — launch context-aware Claude tasks from a terminal. Same prompt-building logic as the sidebar, same dispatch path. Requires a running bridge with `--driver subprocess`.
 
 ```bash
 # 7 presets: fixErrors · refactorFile · addTests · explainCode · optimizePerf · runTests · resumeLastCancelled

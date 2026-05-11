@@ -1,6 +1,6 @@
 # F — Recipe Tool Registry Dogfood (Round 2, alpha.35 fresh)
 
-Bridge: PID 68045, started 1777627477261 (2026-05-01 ~12:24 local), `node dist/index.js --port 3101 --automation --automation-policy automation-policy.json --claude-driver subprocess --full`. Code path: `dist/recipes/...` re-imported live. Round 1 left ~6 of 60 tools tested; this run hit all 67 read-tier tools end-to-end and source-audited every write-tier tool.
+Bridge: PID 68045, started 1777627477261 (2026-05-01 ~12:24 local), `node dist/index.js --port 3101 --automation --automation-policy automation-policy.json --driver subprocess --full`. Code path: `dist/recipes/...` re-imported live. Round 1 left ~6 of 60 tools tested; this run hit all 67 read-tier tools end-to-end and source-audited every write-tier tool.
 
 Inventory done two ways:
 1. `listTools()` against the live registry (`dist/recipes/toolRegistry.js`).
