@@ -375,12 +375,19 @@ export function isWriteKillSwitchActive(): boolean {
 
 /**
  * Assert write is allowed — throws if kill switch is active.
+ *
+ * The thrown error carries `code: "kill_switch_blocked"` so the recipe
+ * runner can categorise the resulting halt as `kill_switch` (rather than
+ * a generic `tool_threw`) and the dashboard pill row can flag it
+ * distinctly from real tool failures.
  */
 export function assertWriteAllowed(operation: string): void {
   if (isWriteKillSwitchActive()) {
-    throw new Error(
+    const err = new Error(
       `Write operation blocked by kill switch: ${operation}. ` +
         `Unset PATCHWORK_FLAG_KILL_SWITCH_WRITES or set kill-switch.writes=false to restore.`,
     );
+    (err as Error & { code?: string }).code = "kill_switch_blocked";
+    throw err;
   }
 }

@@ -114,5 +114,19 @@ describe("featureFlags", () => {
 
       expect(() => assertWriteAllowed("file.write")).not.toThrow();
     });
+
+    it("attaches code: 'kill_switch_blocked' to the thrown error", () => {
+      setFlag(KILL_SWITCH_WRITES, true);
+
+      try {
+        assertWriteAllowed("file.write");
+        throw new Error("should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(Error);
+        expect((err as Error & { code?: string }).code).toBe(
+          "kill_switch_blocked",
+        );
+      }
+    });
   });
 });

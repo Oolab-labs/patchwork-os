@@ -96,6 +96,7 @@ type HaltCategory =
   | "agent_threw"
   | "tool_threw"
   | "tool_error"
+  | "kill_switch"
   | "run_level"
   | "unknown";
 
@@ -111,6 +112,7 @@ const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   agent_threw: "agent threw",
   tool_threw: "tool threw",
   tool_error: "tool error",
+  kill_switch: "kill-switch blocked",
   run_level: "run-level halt",
   unknown: "uncategorised",
 };
