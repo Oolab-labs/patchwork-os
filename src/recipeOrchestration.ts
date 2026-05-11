@@ -10,6 +10,7 @@ import { basename, extname, join } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { recordRecipeRun } from "./activationMetrics.js";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
+import { summariseHalts } from "./recipes/haltCategory.js";
 import type { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
 import type {
   SchedulerEnqueue,
@@ -205,6 +206,18 @@ export class RecipeOrchestration {
         ...(run as unknown as Record<string, unknown>),
         ...(childSeqs.length > 0 && { childSeqs }),
       };
+    };
+
+    server.haltSummaryFn = (opts?: { sinceMs?: number; limit?: number }) => {
+      if (!this.deps.recipeRunLog)
+        return { total: 0, byCategory: {}, recent: [] };
+      const sinceMs = opts?.sinceMs ?? 7 * 24 * 60 * 60 * 1000;
+      const limit = opts?.limit ?? 500;
+      const cutoff = Date.now() - sinceMs;
+      const runs = this.deps.recipeRunLog
+        .query({ limit })
+        .filter((r) => r.createdAt >= cutoff);
+      return summariseHalts(runs);
     };
 
     server.runPlanFn = async (recipeName: string) => {

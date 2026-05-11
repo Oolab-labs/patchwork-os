@@ -12,6 +12,7 @@ import {
   buildDependencyGraph,
   executeWithDependencies,
 } from "./dependencyGraph.js";
+import { deriveHaltReasonFromError } from "./haltCategory.js";
 import type {
   NestedRecipeConfig,
   NestedRecipeContext,
@@ -944,6 +945,8 @@ export async function runChainedRecipe(
         tool?: string;
         status: "ok" | "skipped" | "error";
         error?: string;
+        /** One-sentence human-actionable halt reason — see StepResult in yamlRunner.ts. */
+        haltReason?: string;
         durationMs: number;
         // VD-2 capture (only attached when present in `capturedStepData`).
         resolvedParams?: unknown;
@@ -954,11 +957,24 @@ export async function runChainedRecipe(
       for (const [id, r] of enrichedResults) {
         const step = stepMap.get(id);
         const captured = capturedStepData.get(id);
+        const status = r.skipped ? "skipped" : r.success ? "ok" : "error";
+        const errorMsg = r.error?.message;
+        // Mirror the haltReason convention from yamlRunner.ts so chained
+        // runs surface on the same dashboard pills + morning summary as
+        // top-level runs.
+        const haltReason = deriveHaltReasonFromError({
+          stepId: id,
+          toolName: step?.tool,
+          isAgent: !!step?.agent,
+          status,
+          error: errorMsg,
+        });
         stepResultsList.push({
           id,
           tool: step?.tool,
-          status: r.skipped ? "skipped" : r.success ? "ok" : "error",
-          error: r.error?.message,
+          status,
+          error: errorMsg,
+          ...(haltReason !== undefined && { haltReason }),
           durationMs: r.durationMs ?? 0,
           ...(captured?.resolvedParams !== undefined && {
             resolvedParams: captured.resolvedParams,
