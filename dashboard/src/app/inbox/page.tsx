@@ -814,7 +814,7 @@ const filteredItems = items.filter((item) => {
                   </div>
 
                   {/* Large subject (Gmail message screen) */}
-                  <h2 className="inbox-reader-subject" style={{ fontSize: 22, fontWeight: 600, color: "var(--ink-0)", margin: "0 0 14px", lineHeight: 1.3 }}>
+                  <h2 className="inbox-reader-subject" style={{ fontWeight: 600, color: "var(--ink-0)", margin: "0 0 14px", lineHeight: 1.3 }}>
                     {slugToTitle(selected.name)}
                   </h2>
 

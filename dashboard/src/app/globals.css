@@ -2882,7 +2882,7 @@ button.topbar-search {
     max-width: 100% !important;
   }
   .inbox-reader-subject {
-    font-size: 20px !important;
+    font-size: var(--fs-2xl) !important;
   }
   .inbox-reader-close-desktop {
     display: none !important;
@@ -2892,6 +2892,10 @@ button.topbar-search {
     flex: 1 1 auto;
     min-height: 40px;
   }
+}
+
+.inbox-reader-subject {
+  font-size: var(--fs-3xl);
 }
 
 /* Mobile-only top app bar (back arrow). Hidden on desktop where the
