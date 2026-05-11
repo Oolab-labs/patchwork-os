@@ -71,9 +71,9 @@ All four "phantom tools" previously advertised in the MCP handshake (`ctxGetTask
 
 ## Remaining Patchwork work
 
-1. **Dogfood the agent-read loop — CONFIRMED CLOSED (2026-04-22).** Live run of `ctx-loop-test` recipe via `/recipes/run` HTTP endpoint with `--claude-driver subprocess` active. Agent called `ctxSaveTrace` (seq 14 written to `~/.patchwork/decision_traces.jsonl`), called `ctxQueryTraces` (returned 5 traces, test trace found), wrote report to `~/.patchwork/inbox/ctx-loop-test-2026-04-22.md` with `Result: PASS`. Fix shipped: `runRecipeFn` in `bridge.ts` now falls through to YAML runner when JSON recipe not found — YAML recipes are runnable via HTTP endpoint for the first time.
+1. **Dogfood the agent-read loop — CONFIRMED CLOSED (2026-04-22).** Live run of `ctx-loop-test` recipe via `/recipes/run` HTTP endpoint with `--driver subprocess` active. Agent called `ctxSaveTrace` (seq 14 written to `~/.patchwork/decision_traces.jsonl`), called `ctxQueryTraces` (returned 5 traces, test trace found), wrote report to `~/.patchwork/inbox/ctx-loop-test-2026-04-22.md` with `Result: PASS`. Fix shipped: `runRecipeFn` in `bridge.ts` now falls through to YAML runner when JSON recipe not found — YAML recipes are runnable via HTTP endpoint for the first time.
 2. **Freshness scoring + dedup across context sources.** Deferred; wait until real duplication pain appears in `contextBundle` / `getCommitsForIssue` output.
-3. **Slack connector** — dogfooded 2026-04-22. `handleSlackTest` → 200, `slackListChannels` returns channels, `slackPostMessage` posts successfully to #all-massappealdesigns. `morning-brief-slack` tool steps (github.list_prs, linear.list_issues, slack.post_message) all run end-to-end. Agent step requires `--claude-driver subprocess` (by design). Google Calendar token refresh error is unrelated — OAuth tokens need re-auth. **Slack is production-ready.**
+3. **Slack connector** — dogfooded 2026-04-22. `handleSlackTest` → 200, `slackListChannels` returns channels, `slackPostMessage` posts successfully to #all-massappealdesigns. `morning-brief-slack` tool steps (github.list_prs, linear.list_issues, slack.post_message) all run end-to-end. Agent step requires `--driver subprocess` (by design). Google Calendar token refresh error is unrelated — OAuth tokens need re-auth. **Slack is production-ready.**
 4. **Gemini driver parity — CLOSED (2026-04-22).** Full end-to-end validation: `ctx-loop-test` (tool-use, ctxSaveTrace + ctxQueryTraces, PASS in 32s) and `morning-brief` (7-step recipe, 26s, correct sections, no narration leak, written to inbox + visible in dashboard). Fixes shipped: MCP injection via `~/.gemini/settings.json`; `cwd: homedir()` (workspace `.gemini/settings.json` was loading shim → hang); removed `model: gemini-2.0-flash` (not available on this account); `stripLeadingNarration()` for tool-call narration prefix; snippet cleanup (200-char cap, Unicode noise stripped); 300s timeout. **Scheduler YAML bug fixed (2026-04-22):** cron scheduler was silently dropping YAML recipes — `RecipeScheduler.fire()` now routes YAML recipes through `runYaml` → `runRecipeFn` → YAML runner. Root cause of degraded Apr 20–21 morning briefs.
 
 ---
@@ -733,10 +733,10 @@ The bridge can now spawn Claude subprocesses, queue tasks, and drive event-drive
 - `src/claudeDriver.ts`: `IClaudeDriver` interface + `SubprocessDriver` (spawns `claude -p`) + `ApiDriver` stub
 - `src/claudeOrchestrator.ts`: Task queue with `MAX_CONCURRENT=10`, `MAX_QUEUE=20`, `MAX_HISTORY=100`. Exposes `enqueue()`, `runAndWait()`, `cancel()`, `list()`, `getTask()`
 - `src/automation.ts`: `AutomationHooks` + `loadPolicy()` — handles `onDiagnosticsError` and `onFileSave` with cooldown and loop guard
-- 4 new MCP tools: `runClaudeTask`, `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks` (session-scoped; only visible when `--claude-driver != none`)
+- 4 new MCP tools: `runClaudeTask`, `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks` (session-scoped; only visible when `--driver != none`)
 - `GET /tasks` HTTP endpoint (Bearer-auth) for external monitoring
 - VS Code output channel receives streamed Claude output in real time (`bridge/claudeTaskOutput` push notification)
-- New CLI flags: `--claude-driver`, `--claude-binary`, `--automation`, `--automation-policy`
+- New CLI flags: `--driver`, `--claude-binary`, `--automation`, `--automation-policy`
 - Security: 32 KB prompt cap, `CLAUDECODE` env stripped from subprocess, workspace path confinement on context files, diagnostic message sanitization with delimiters
 - **Bug fixes (2026-03-14 live test)**: Removed bogus `--workspace` flag from `claude -p` spawn args (flag doesn't exist in the CLI); added `stdio: ['ignore', 'pipe', 'pipe']` to prevent subprocess blocking on open stdin pipe; stripped all `CLAUDE_CODE_*` + `MCP_*` env vars from subprocess to prevent attaching to parent session ingress; added `--strict-mcp-config` to suppress `.mcp.json` auto-discovery in the workspace
 
@@ -774,7 +774,7 @@ Research (2026-03-17) against current Claude Code docs revealed gaps between the
 ### Remaining (deferred)
 - Verify Tool Search compatibility — with 135+ tools active; low priority (automatic, no bridge changes needed)
 - Agent Teams — when Claude Code's multi-session Teams feature ships; plan session namespacing then
-- **Claude Code Routines integration** — revisit when API exits research preview (`experimental-cc-routine-2026-04-01`). Immediate value: thin `runRoutine`/`getRoutineStatus`/`listRoutines` MCP tools (Phase 3 only — ~1 file, no driver changes). Full `RoutinesDriver` (`--claude-driver routines`) deferred until auth is stable (currently claude.ai accounts only, not open API). Policy-layer `routineId` on automation hooks also deferred. See: https://claude.ai/code/routines
+- **Claude Code Routines integration** — revisit when API exits research preview (`experimental-cc-routine-2026-04-01`). Immediate value: thin `runRoutine`/`getRoutineStatus`/`listRoutines` MCP tools (Phase 3 only — ~1 file, no driver changes). Full `RoutinesDriver` (`--driver routines`) deferred until auth is stable (currently claude.ai accounts only, not open API). Policy-layer `routineId` on automation hooks also deferred. See: https://claude.ai/code/routines
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "_comment": "Self-healing demo policy. When TS language server reports a new error, Claude is spawned to diagnose it. Response is surface-only — the fix is NOT auto-applied.",
-  "_usage": "claude-ide-bridge --workspace $PWD --full --automation --automation-policy ./automation-policy.json --claude-driver subprocess",
+  "_usage": "claude-ide-bridge --workspace $PWD --full --automation --automation-policy ./automation-policy.json --driver subprocess",
 
   "defaultModel": "claude-haiku-4-5-20251001",
   "defaultEffort": "low",

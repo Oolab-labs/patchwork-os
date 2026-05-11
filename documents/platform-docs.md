@@ -430,7 +430,7 @@ All plan tools are full-only.
 
 ### Orchestrator / Claude Subprocesses
 
-These tools require `--claude-driver subprocess` (or `api`) at startup. They are not registered otherwise.
+These tools require `--driver subprocess` (or `api`) at startup. They are not registered otherwise.
 
 | Tool | Mode | Description |
 |------|------|-------------|
@@ -838,7 +838,7 @@ No. Patchwork is model-agnostic by design — that's one of its core differentia
 
 ### Provider drivers
 
-The `--claude-driver` flag selects the provider backend for subprocess orchestration tasks:
+The `--driver` flag selects the provider backend for subprocess orchestration tasks:
 
 | Flag value | Provider | Auth | Subscription support |
 |---|---|---|---|

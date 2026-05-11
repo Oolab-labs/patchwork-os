@@ -1,6 +1,6 @@
 {
   "_comment": "strict-lint — triggers on every save and error, enforces zero-warning policy.",
-  "_usage": "Copy to automation-policy.json. Requires --automation --automation-policy <path> --claude-driver subprocess",
+  "_usage": "Copy to automation-policy.json. Requires --automation --automation-policy <path> --driver subprocess",
 
   "automationSystemPrompt": "Automation bot. Drop articles/filler. Fragments OK. Abbreviate: DB/auth/config/req/res/fn. X→Y arrows. ≤5 lines. No preamble. Call tools → report results only.",
 

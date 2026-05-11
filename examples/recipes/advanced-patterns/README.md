@@ -24,7 +24,7 @@ Claude subagent per thread via `runClaudeTask`, then merges all results into a
 single structured document. The canonical reference for parent→child agent
 topologies in Patchwork.
 
-Requires: `--claude-driver subprocess` (or `api`), `file-mcp`, `notify-mcp`.
+Requires: `--driver subprocess` (or `api`), `file-mcp`, `notify-mcp`.
 
 ```bash
 patchwork run multi-agent-research --question "What are the main failure modes of solo founder companies?"
@@ -123,7 +123,7 @@ Two recipes in one file:
         into: "result_{{thread.id}}"
 ```
 
-Requires `--claude-driver subprocess` or `--claude-driver api`.
+Requires `--driver subprocess` or `--driver api`.
 
 ### Per-step model routing
 
@@ -166,10 +166,10 @@ trigger:
 
 | Recipe | Integrations needed |
 |---|---|
-| `multi-agent-research` | `claude-driver`, `file-mcp`, `notify-mcp` |
+| `multi-agent-research` | `driver`, `file-mcp`, `notify-mcp` |
 | `voice-memo-router` | `transcription-mcp`, `file-mcp`, `notify-mcp` |
 | `mixed-provider-pipeline` | `file-mcp`, multi-provider model support |
-| `writer-feedback-loop` | `claude-driver`, `file-mcp`, `dashboard-mcp`, `notify-mcp` |
+| `writer-feedback-loop` | `driver`, `file-mcp`, `dashboard-mcp`, `notify-mcp` |
 | `relationship-memory` | `gmail-mcp`, `file-mcp`, `notify-mcp` |
 | `small-business-brain` | `gmail-mcp`, `file-mcp`, `notify-mcp`, `scheduler-mcp` |
 

@@ -173,7 +173,7 @@ The package ships these in `templates/recipes/`. Recipes that need API keys are 
 
 ### Automation hooks
 
-Event-driven hooks trigger Claude tasks automatically. Activate with `--automation --automation-policy <path.json> --claude-driver subprocess`.
+Event-driven hooks trigger Claude tasks automatically. Activate with `--automation --automation-policy <path.json> --driver subprocess`.
 
 Key hooks:
 

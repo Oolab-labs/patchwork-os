@@ -1,6 +1,6 @@
 {
   "_comment": "Example automation policy with LSP-aware prompts. Copy to automation-policy.json and adjust as needed.",
-  "_usage": "Start bridge with: claude-ide-bridge --automation --automation-policy ./automation-policy.json --claude-driver subprocess",
+  "_usage": "Start bridge with: claude-ide-bridge --automation --automation-policy ./automation-policy.json --driver subprocess",
 
   "onFileChanged": {
     "enabled": true,

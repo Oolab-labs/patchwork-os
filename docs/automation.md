@@ -12,7 +12,7 @@ Automation hooks let Claude act autonomously on IDE and git events without user 
 
 - `--automation` — enables hook evaluation in the bridge
 - Full mode (the default since v2.43.0) — most hooks invoke tools like `runTests`, `gitCommit`, `getDiagnostics` that are hidden in slim mode; do NOT pass `--slim` alongside `--automation`
-- `--claude-driver subprocess` — required to spawn Claude Code subprocesses; without this, hooks are evaluated but never dispatched
+- `--driver subprocess` — required to spawn Claude Code subprocesses; without this, hooks are evaluated but never dispatched
 - `--automation-policy <path>` — path to your policy JSON file; if omitted, the bridge looks for `automation-policy.json` in the workspace root
 
 **Claude Code version minimums for CC-wired hooks:**
@@ -37,7 +37,7 @@ claude-ide-bridge \
   --watch \
   --automation \
   --automation-policy /path/to/automation-policy.json \
-  --claude-driver subprocess
+  --driver subprocess
 ```
 
 The policy file lives wherever you point `--automation-policy`. A common location is the workspace root:

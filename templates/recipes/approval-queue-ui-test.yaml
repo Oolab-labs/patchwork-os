@@ -19,7 +19,7 @@ description: |
     Keyboard — J / K (focus), E / X (decide)
 
   PREREQUISITES
-    1. Bridge running with --claude-driver subprocess so the agent has MCP
+    1. Bridge running with --driver subprocess so the agent has MCP
        access to the Playwright server.
     2. Dashboard reachable at DASHBOARD_URL (defaults to localhost:3000;
        Patchwork's Next.js dev typically mounts under /dashboard, so the

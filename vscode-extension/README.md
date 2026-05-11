@@ -15,7 +15,7 @@ Fix a bug from your phone. Let Claude run your tests and commit the result. Ask 
 | **Bridge only** _(default)_ | 170 MCP tools: LSP, diagnostics, debugger, terminal, git, GitHub, file ops | Anyone who wants Claude Code to see and act on their IDE |
 | **Patchwork OS layer** _(opt-in)_ | All bridge tools + recipes, approval queue, oversight dashboard, mobile push approvals, multi-model | Power users running automation, agent workflows, or background tasks |
 
-The bridge runs without any flags. Add `--automation --claude-driver subprocess` to enable the Patchwork OS layer when you want it.
+The bridge runs without any flags. Add `--automation --driver subprocess` to enable the Patchwork OS layer when you want it.
 
 ---
 
@@ -155,7 +155,7 @@ In untrusted workspaces, bridge auto-install and auto-start are disabled. The ex
 Everything below is opt-in. The bridge works fine without any of it. Enable when you want a background agent that watches your workspace, runs YAML recipes on events, and routes risky actions through an approval queue.
 
 ```bash
-claude-ide-bridge --automation --automation-policy automation-policy.json --claude-driver subprocess
+claude-ide-bridge --automation --automation-policy automation-policy.json --driver subprocess
 # or use the patchwork CLI which sets these defaults
 patchwork start-all
 ```
@@ -202,7 +202,7 @@ Recipes run via `patchwork recipe run <name>` or fire automatically from automat
 
 ### Claude Orchestration
 
-When started with `--claude-driver subprocess`, the bridge can spawn Claude Code subprocesses as background tasks. Tools: `runClaudeTask`, `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks`, `resumeClaudeTask`. Output streams to the **Claude IDE Bridge** output channel in real time.
+When started with `--driver subprocess`, the bridge can spawn Claude Code subprocesses as background tasks. Tools: `runClaudeTask`, `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks`, `resumeClaudeTask`. Output streams to the **Claude IDE Bridge** output channel in real time.
 
 The headless CLI also exposes `start-task "<description>"`, `quick-task <preset>`, and `continue-handoff` as subcommands, sharing the same dispatch path as MCP clients and the sidebar.
 

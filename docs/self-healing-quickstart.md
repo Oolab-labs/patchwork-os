@@ -50,7 +50,7 @@ claude-ide-bridge \
   --full \
   --automation \
   --automation-policy ./automation-policy.json \
-  --claude-driver subprocess
+  --driver subprocess
 ```
 
 Leave this running. You'll see something like:

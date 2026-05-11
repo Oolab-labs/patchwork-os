@@ -2,7 +2,7 @@
 # Spawns parallel subagents with distinct critical personas.
 # The approval trace log accumulates over time — which lens you act on teaches
 # the system which feedback style helps you most per project type.
-# requires: file-mcp, notify-mcp, claude-driver (subprocess or api)
+# requires: file-mcp, notify-mcp, driver (subprocess or api)
 version: 1.0.0
 name: writer-feedback-loop
 description: >

@@ -3,7 +3,7 @@
 # Economics: GPT-4o-mini for classification (fast+cheap), Claude for drafting (quality),
 #            local Ollama for bulk summarization.
 # requires: file-mcp, notify-mcp
-# requires: claude-driver with multi-provider support (--claude-driver subprocess | api)
+# requires: driver with multi-provider support (--driver subprocess | api)
 version: 1.0.0
 name: mixed-provider-pipeline
 description: >
