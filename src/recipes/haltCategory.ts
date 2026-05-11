@@ -20,6 +20,8 @@ export type HaltCategory =
   | "tool_error"
   /** Write blocked by the global kill-switch (#422). Distinct from a real tool failure. */
   | "kill_switch"
+  /** Recipe's `tokensMax` budget breached (PR2b). */
+  | "budget_exceeded"
   /** Whole-recipe failure (e.g. circular dependencies) — has no step row. */
   | "run_level"
   | "unknown";
@@ -35,6 +37,8 @@ export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (/narration|whitespace|no content/i.test(reason))
     return "agent_narration_only";
   if (/kill[- _]?switch/i.test(reason)) return "kill_switch";
+  if (/budget[_ ]?exceeded|exceeded its token budget/i.test(reason))
+    return "budget_exceeded";
   if (/^Agent step .* threw/i.test(reason)) return "agent_threw";
   if (/^Tool .* threw/i.test(reason)) return "tool_threw";
   if (/^Tool .* reported an error/i.test(reason)) return "tool_error";
