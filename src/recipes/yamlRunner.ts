@@ -45,6 +45,11 @@ import {
 } from "./agentExecutor.js";
 import { WriteEffectLedger } from "./idempotencyKey.js";
 import {
+  buildJudgeArtefactBlock,
+  JUDGE_PROMPT_SUFFIX,
+  parseJudgeVerdict,
+} from "./judgeVerdict.js";
+import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
 } from "./legacyRecipeCompat.js";
@@ -96,6 +101,23 @@ export interface YamlStep {
      * trace queries, etc.).
      */
     mcpAccess?: boolean;
+    /**
+     * PR3a — judge step (cold-eyes review). When `kind: "judge"` the
+     * runner appends a structured-verdict instruction to the prompt and
+     * parses the model's response into a `JudgeVerdict`
+     * (approve / request_changes / unparseable). The verdict is
+     * attached to the step result but **never gates the run** — judge
+     * steps always finish with `status: "ok"` regardless of the
+     * verdict. This is the augment-only invariant: judges add signal,
+     * they don't block.
+     *
+     * Pair with `reviews: <stepId>` to point the judge at the output
+     * of a prior step; the runner injects that step's `output` into
+     * the prompt under an `<artefact>` section.
+     */
+    kind?: "agent" | "judge";
+    /** Step id whose output the judge should review. Required when `kind: "judge"`. */
+    reviews?: string;
   };
   into?: string;
   optional?: boolean;
@@ -313,6 +335,13 @@ export type StepResult = {
   tool?: string;
   status: "ok" | "skipped" | "error";
   error?: string;
+  /**
+   * PR3a — judge-step verdict, present only when `step.agent.kind ===
+   * "judge"`. Augment-only: a `request_changes` verdict still
+   * produces `status: "ok"`. Surfaced separately in dashboard panels
+   * and `bridge_recipe_judgments` metrics (forthcoming PR3b/c).
+   */
+  judgeVerdict?: import("./judgeVerdict.js").JudgeVerdict;
   /**
    * Structured error code propagated from a thrown step error. Currently
    * populated for `recipe_path_jail_escape` (G-security A-PR1) so tests
@@ -556,7 +585,17 @@ export async function runYamlRecipe(
     // Handle agent steps separately
     if (step.agent) {
       const agentCfg = step.agent;
-      const renderedPrompt = render(agentCfg.prompt, ctx);
+      const isJudge = agentCfg.kind === "judge";
+      // PR3a: judge prompt convention. Append the structured-verdict
+      // suffix and, when `reviews: <stepId>` is set, inject the
+      // upstream step's output as an <artefact> block.
+      let renderedPrompt = render(agentCfg.prompt, ctx);
+      if (isJudge) {
+        if (agentCfg.reviews) {
+          renderedPrompt += buildJudgeArtefactBlock(ctx[agentCfg.reviews]);
+        }
+        renderedPrompt += JUDGE_PROMPT_SUFFIX;
+      }
       const intoKey = agentCfg.into ?? "agent_output";
       const stepId = intoKey;
       const stepStart = Date.now();
@@ -647,10 +686,18 @@ export async function runYamlRecipe(
               ctx[intoKey] = stripped;
             }
             outputs.push(intoKey);
+            // PR3a: parse + stash the judge verdict on the step result.
+            // Augment-only: a `request_changes` verdict still yields
+            // `status: "ok"`. The verdict surfaces via the runlog +
+            // future PR3b dashboard panel, but never gates the run.
+            const judgeVerdict = isJudge
+              ? parseJudgeVerdict(stripped)
+              : undefined;
             stepResults.push({
               id: stepId,
               tool: "agent",
               status: "ok",
+              ...(judgeVerdict !== undefined && { judgeVerdict }),
               durationMs: Date.now() - stepStart,
             });
           }
@@ -843,6 +890,7 @@ export async function runYamlRecipe(
         status: s.status,
         error: s.error,
         ...(s.haltReason ? { haltReason: s.haltReason } : {}),
+        ...(s.judgeVerdict ? { judgeVerdict: s.judgeVerdict } : {}),
         durationMs: s.durationMs,
       }));
       if (deps.runLog && runSeq !== undefined) {

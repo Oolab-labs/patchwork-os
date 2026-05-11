@@ -2506,6 +2506,161 @@ describe("resolveClaudeBinary — override precedence", async () => {
   });
 });
 
+// ── PR3a — judge step (augment-only) ─────────────────────────────────────────
+
+describe("agent kind: 'judge' — augment-only invariant (PR3a)", () => {
+  it("approve verdict is attached to stepResult and status stays ok", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "Review my change.",
+            model: "claude-haiku-4-5-20251001",
+            into: "review",
+            kind: "judge",
+          },
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () =>
+        `Looks good.\n\n{"verdict": "approve", "reasons": ["scoped diff"]}`,
+    });
+    const step = result.stepResults[0]!;
+    expect(step.status).toBe("ok");
+    expect(step.judgeVerdict?.verdict).toBe("approve");
+    expect(step.judgeVerdict?.reasons).toEqual(["scoped diff"]);
+  });
+
+  it("request_changes verdict does NOT halt the run (augment-only)", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "Review.",
+            model: "claude-haiku-4-5-20251001",
+            into: "review",
+            kind: "judge",
+          },
+        },
+        {
+          agent: {
+            prompt: "Continue.",
+            model: "claude-haiku-4-5-20251001",
+            into: "next",
+          },
+        },
+      ],
+    });
+    let calls = 0;
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => {
+        calls++;
+        if (calls === 1) {
+          return `Bad.\n{"verdict": "request_changes", "reasons": ["nope"], "fixList": ["x"]}`;
+        }
+        return "continued";
+      },
+    });
+    expect(calls).toBe(2);
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(result.stepResults[0]?.judgeVerdict?.verdict).toBe(
+      "request_changes",
+    );
+    expect(result.stepResults[1]?.status).toBe("ok");
+    expect(result.errorMessage).toBeUndefined();
+  });
+
+  it("unparseable verdict still yields status: ok with judgeVerdict.raw", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "Review.",
+            model: "claude-haiku-4-5-20251001",
+            into: "review",
+            kind: "judge",
+          },
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => "Looks fine — no JSON tail.",
+    });
+    const step = result.stepResults[0]!;
+    expect(step.status).toBe("ok");
+    expect(step.judgeVerdict?.verdict).toBe("unparseable");
+    expect(step.judgeVerdict?.raw).toContain("Looks fine");
+  });
+
+  it("non-judge agent steps never get a judgeVerdict field", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "Summarise.",
+            model: "claude-haiku-4-5-20251001",
+            into: "summary",
+            // no kind → defaults to regular agent
+          },
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () =>
+        `Summary text.\n{"verdict": "approve", "reasons": []}`,
+    });
+    const step = result.stepResults[0]!;
+    expect(step.status).toBe("ok");
+    // The JSON tail in the output should NOT be parsed as a verdict
+    // for non-judge steps — augment-only metadata is opt-in.
+    expect(step.judgeVerdict).toBeUndefined();
+  });
+
+  it("injects the reviewed step's output as an <artefact> block", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "Make a haiku.",
+            model: "claude-haiku-4-5-20251001",
+            into: "draft",
+          },
+        },
+        {
+          agent: {
+            prompt: "Review the haiku above.",
+            model: "claude-haiku-4-5-20251001",
+            into: "review",
+            kind: "judge",
+            reviews: "draft",
+          },
+        },
+      ],
+    });
+    let lastPrompt = "";
+    let calls = 0;
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async (prompt) => {
+        calls++;
+        lastPrompt = prompt;
+        if (calls === 1) return "An old silent pond...";
+        return `Solid.\n{"verdict": "approve", "reasons": []}`;
+      },
+    });
+    expect(result.stepResults).toHaveLength(2);
+    expect(result.stepResults[1]?.judgeVerdict?.verdict).toBe("approve");
+    expect(lastPrompt).toContain("<artefact>");
+    expect(lastPrompt).toContain("An old silent pond");
+    expect(lastPrompt).toContain("cold-eyes reviewer");
+  });
+});
+
 // ── PR2b — recipe.budget enforcement ─────────────────────────────────────────
 
 describe("recipe.budget — tokensMax enforcement (PR2b)", () => {
