@@ -1178,11 +1178,13 @@ if (process.argv[2] === "recipe" && process.argv[3] === "uninstall") {
 if (process.argv[2] === "recipe" && process.argv[3] === "run") {
   const args = process.argv.slice(4);
   const usage =
-    "Usage: patchwork recipe run <name-or-file> [--local] [--dry-run] [--step <id>] [--var KEY=VALUE]\n";
+    "Usage: patchwork recipe run <name-or-file> [--local] [--dry-run] [--step <id>] [--var KEY=VALUE] [--attempt <id>] [--ledger-dir <path>]\n";
   let localFlag = false;
   let dryRun = false;
   let recipeRef: string | undefined;
   let step: string | undefined;
+  let attemptId: string | undefined;
+  let ledgerDir: string | undefined;
   const vars: Record<string, string> = {};
 
   for (let i = 0; i < args.length; i++) {
@@ -1211,6 +1213,35 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
         process.exit(1);
       }
       step = value;
+      continue;
+    }
+
+    if (currentArg === "--attempt" || currentArg.startsWith("--attempt=")) {
+      const value =
+        currentArg === "--attempt"
+          ? args[++i]
+          : currentArg.slice("--attempt=".length);
+      if (!value) {
+        process.stderr.write(`Error: --attempt requires a value\n${usage}`);
+        process.exit(1);
+      }
+      attemptId = value;
+      continue;
+    }
+
+    if (
+      currentArg === "--ledger-dir" ||
+      currentArg.startsWith("--ledger-dir=")
+    ) {
+      const value =
+        currentArg === "--ledger-dir"
+          ? args[++i]
+          : currentArg.slice("--ledger-dir=".length);
+      if (!value) {
+        process.stderr.write(`Error: --ledger-dir requires a value\n${usage}`);
+        process.exit(1);
+      }
+      ledgerDir = value;
       continue;
     }
 
@@ -1266,7 +1297,7 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
       })();
       const { findBridgeLock } = await import("./bridgeLockDiscovery.js");
       const lock = localFlag ? null : findBridgeLock();
-      if (lock && !dryRun && !step && !explicitFile) {
+      if (lock && !dryRun && !step && !explicitFile && !attemptId) {
         const res = await fetch(`http://127.0.0.1:${lock.port}/recipes/run`, {
           method: "POST",
           headers: {
@@ -1323,9 +1354,28 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
           : `  Running recipe "${recipeArg}" locally…\n`,
       );
       const workdir = lock?.workspace || process.cwd();
+      // PR5c — resume support: when --attempt is given, mint or reuse a
+      // stable id and point the runner at a disk-backed effect ledger.
+      // `--attempt new` always mints a fresh id; any other value is
+      // taken verbatim (so the user can re-run the same attempt and
+      // skip already-completed write tools).
+      let resolvedAttempt: string | undefined;
+      let resolvedLedgerDir: string | undefined;
+      if (attemptId !== undefined) {
+        resolvedAttempt =
+          attemptId === "new"
+            ? `mr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+            : attemptId;
+        resolvedLedgerDir = ledgerDir ?? path.join(os.homedir(), ".patchwork");
+        process.stdout.write(
+          `  Attempt id: ${resolvedAttempt} (ledger: ${resolvedLedgerDir})\n`,
+        );
+      }
       const run = await runRecipe(recipeArg, {
         ...(step ? { step } : {}),
         ...(seedVars ? { vars: seedVars } : {}),
+        ...(resolvedAttempt && { manualRunId: resolvedAttempt }),
+        ...(resolvedLedgerDir && { ledgerDir: resolvedLedgerDir }),
         workdir,
       });
       if (run.stepSelection) {

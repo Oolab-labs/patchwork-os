@@ -1,6 +1,7 @@
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -3036,6 +3037,97 @@ trigger:
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  // ── PR5c — resume support via --attempt / manualRunId ──────────────────────
+  describe("runRecipe — manualRunId + ledgerDir resume semantics", () => {
+    it("a second runRecipe call with the same (manualRunId, ledgerDir) short-circuits the duplicate write tool", async () => {
+      const ledgerDir = mkdtempSync(join(os.tmpdir(), "resume-ledger-"));
+      const outPath = join(tmpDir, "resume-out.txt");
+      const recipePath = join(tmpDir, "resume-recipe.yaml");
+      writeFileSync(
+        recipePath,
+        `name: resume-test
+description: PR5c resume scope
+trigger:
+  type: manual
+steps:
+  - id: write_once
+    tool: file.write
+    path: ${JSON.stringify(outPath)}
+    content: "first-call"
+`,
+      );
+
+      const attempt = "mr_resume_test_1";
+
+      // First call: file.write runs the side effect AND records its
+      // idempotency key in the disk ledger.
+      const first = await runRecipe(recipePath, {
+        manualRunId: attempt,
+        ledgerDir,
+      });
+      expect("stepsRun" in first.result && first.result.stepsRun).toBe(1);
+      expect(readFileSync(outPath, "utf-8")).toBe("first-call");
+
+      // Overwrite the file behind the runner's back. If the second
+      // runRecipe re-executes file.write, this content will be replaced
+      // back to "first-call". If short-circuit works, the marker stays.
+      writeFileSync(outPath, "tampered");
+
+      // Second call: same attempt id, same ledger dir → the disk-backed
+      // ledger rehydrates from the JSONL on construction, sees the
+      // matching idempotency key, and short-circuits the call.
+      const second = await runRecipe(recipePath, {
+        manualRunId: attempt,
+        ledgerDir,
+      });
+      expect("stepsRun" in second.result && second.result.stepsRun).toBe(1);
+      expect(readFileSync(outPath, "utf-8")).toBe("tampered");
+
+      // Sanity: ledger file written and contains our scope key.
+      const ledgerFile = join(ledgerDir, "effect_ledger.jsonl");
+      const rows = readFileSync(ledgerFile, "utf-8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      expect(rows[0].scopeKey).toBe(`resume-test:${attempt}`);
+      rmSync(ledgerDir, { recursive: true, force: true });
+    });
+
+    it("a different manualRunId on the second call re-executes (different scope)", async () => {
+      const ledgerDir = mkdtempSync(join(os.tmpdir(), "resume-ledger-"));
+      const outPath = join(tmpDir, "rescope-out.txt");
+      const recipePath = join(tmpDir, "rescope-recipe.yaml");
+      writeFileSync(
+        recipePath,
+        `name: rescope-test
+description: PR5c scope isolation
+trigger:
+  type: manual
+steps:
+  - id: write_once
+    tool: file.write
+    path: ${JSON.stringify(outPath)}
+    content: "from-attempt"
+`,
+      );
+
+      await runRecipe(recipePath, {
+        manualRunId: "mr_a",
+        ledgerDir,
+      });
+      writeFileSync(outPath, "tampered");
+
+      // Different attempt id → different scope → re-executes.
+      await runRecipe(recipePath, {
+        manualRunId: "mr_b",
+        ledgerDir,
+      });
+      expect(readFileSync(outPath, "utf-8")).toBe("from-attempt");
+      rmSync(ledgerDir, { recursive: true, force: true });
     });
   });
 });
