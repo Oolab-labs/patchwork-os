@@ -1043,6 +1043,20 @@ export interface RunRecipeOptions {
   vars?: Record<string, string>;
   workdir?: string;
   deps?: Partial<RunnerDeps>;
+  /**
+   * PR5c — stable id for one *logical* execution attempt. Forwarded to
+   * RunnerDeps so the runner constructs a disk-backed WriteEffectLedger
+   * scoped by `${recipe.name}:${manualRunId}`. Re-using the same id on
+   * a retry replays prior dedup records and skips already-completed
+   * write tools (resume semantics).
+   */
+  manualRunId?: string;
+  /**
+   * PR5c — directory holding `effect_ledger.jsonl`. Required for the
+   * disk-backed ledger; without it the ledger stays in-memory even
+   * when manualRunId is set.
+   */
+  ledgerDir?: string;
 }
 
 export interface RunRecipeStepSelection {
@@ -1098,6 +1112,8 @@ export async function runRecipe(
   const runnerDeps: RunnerDeps = {
     ...options.deps,
     workdir: options.workdir ?? options.deps?.workdir ?? process.cwd(),
+    ...(options.manualRunId && { manualRunId: options.manualRunId }),
+    ...(options.ledgerDir && { ledgerDir: options.ledgerDir }),
   };
   if (options.dryRun) {
     throw new Error("runRecipeDryPlan must be used for dry-run execution");
