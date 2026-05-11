@@ -65,7 +65,12 @@ function BrandMark() {
 
 // ------------------------------------------------------------------ nav structure
 
-type NavItem = { href: string; label: string; icon: string; badge?: boolean };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: string;
+  badge?: "approvals" | "halts";
+};
 
 const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
   {
@@ -73,8 +78,8 @@ const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
     items: [
       { href: "/",           label: "Overview",    icon: "home" },
       { href: "/inbox",      label: "Inbox",       icon: "inbox" },
-      { href: "/approvals",  label: "Approvals",   icon: "check",  badge: true },
-      { href: "/activity",   label: "Activity",    icon: "activity" },
+      { href: "/approvals",  label: "Approvals",   icon: "check",  badge: "approvals" },
+      { href: "/activity",   label: "Activity",    icon: "activity", badge: "halts" },
     ],
   },
   {
@@ -172,6 +177,49 @@ function useApprovalCount(): number {
   return count;
 }
 
+// ------------------------------------------------------------------ halt count
+
+/**
+ * Polls `/runs/halt-summary` for the count of halts in the last 24h.
+ * Drives a small red badge on the Activity nav item so the user sees
+ * overnight halt pressure from any page. Slower cadence than approvals
+ * (halts are post-hoc; no SSE), low priority.
+ */
+function useHaltCount(): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    const PERIOD = 60_000; // 60s — halts are historical, no urgency
+
+    const tick = async () => {
+      if (typeof document !== "undefined" && document.hidden) {
+        timerId = setTimeout(tick, PERIOD);
+        return;
+      }
+      try {
+        const res = await fetch(
+          apiPath(`/api/bridge/runs/halt-summary?sinceMs=${24 * 60 * 60 * 1000}`),
+        );
+        if (res.ok) {
+          const data = (await res.json()) as { total?: number };
+          if (alive) setCount(typeof data.total === "number" ? data.total : 0);
+        }
+      } catch {
+        /* offline — leave count alone, don't flash to zero */
+      }
+      if (alive) timerId = setTimeout(tick, PERIOD);
+    };
+
+    tick();
+    return () => {
+      alive = false;
+      if (timerId !== null) clearTimeout(timerId);
+    };
+  }, []);
+  return count;
+}
+
 // ------------------------------------------------------------------ identity
 
 function useIdentity(status: BridgeStatus): { user: string; host: string; port: number | undefined } {
@@ -248,6 +296,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const status = useBridgeStatus();
   const approvalCount = useApprovalCount();
+  const haltCount = useHaltCount();
   const { active, toggle } = useTheme();
   const { demo, toggle: toggleDemo } = useDemo();
   const identity = useIdentity(status);
@@ -460,7 +509,17 @@ export function Shell({ children }: { children: ReactNode }) {
                   item.href === "/"
                     ? pathname === "/"
                     : pathname?.startsWith(item.href);
-                const showBadge = item.badge && approvalCount > 0;
+                const badgeCount =
+                  item.badge === "approvals"
+                    ? approvalCount
+                    : item.badge === "halts"
+                      ? haltCount
+                      : 0;
+                const badgeLabel =
+                  item.badge === "approvals"
+                    ? `${badgeCount} pending`
+                    : `${badgeCount} halts in last 24h`;
+                const showBadge = !!item.badge && badgeCount > 0;
                 return (
                   <Link
                     key={item.href}
@@ -473,8 +532,8 @@ export function Shell({ children }: { children: ReactNode }) {
                     </span>
                     <span>{item.label}</span>
                     {showBadge && (
-                      <span className="nav-badge" aria-label={`${approvalCount} pending`}>
-                        {approvalCount > 99 ? "99+" : approvalCount}
+                      <span className="nav-badge" aria-label={badgeLabel}>
+                        {badgeCount > 99 ? "99+" : badgeCount}
                       </span>
                     )}
                   </Link>
