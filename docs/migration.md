@@ -12,7 +12,6 @@ None. All changes in v2.x are additive.
 - **Headless LSP fallback**: `goToDefinition`, `findReferences`, `getTypeSignature` now work without VS Code via `typescript-language-server`
 
 ### New in v2.29
-- **Marketplace CLI**: `claude-ide-bridge marketplace list/search/install`
 - **Docker**: Official image at `ghcr.io/oolab-labs/claude-ide-bridge`; `docker-compose.yml` included
 - **Alpine Docker**: `ctags` package (was `universal-ctags`)
 

@@ -411,4 +411,4 @@ Plugins are discovered via npm's keyword index. Authors add `"claude-ide-bridge-
 npm search keywords:claude-ide-bridge-plugin
 ```
 
-> **Note:** The earlier `claude-ide-bridge marketplace list/search/install` subcommand is deprecated as of `0.2.0-beta.0` (issue #279) and now prints a migration notice. For non-plugin community content (recipe bundles), use `patchwork recipe install github:<org>/<repo>`.
+> **Note:** The earlier `claude-ide-bridge marketplace list/search/install` subcommand was removed (issue #279). For non-plugin community content (recipe bundles), use `patchwork recipe install github:<org>/<repo>`.
