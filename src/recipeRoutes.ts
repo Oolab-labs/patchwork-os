@@ -379,6 +379,18 @@ export interface RecipeRouteDeps {
         recipe?: string;
       }) => import("./recipes/haltCategory.js").HaltSummary)
     | null;
+  /**
+   * PR3b sibling of haltSummaryFn — same windowing shape but aggregates
+   * judge-step verdicts instead. Returns the `JudgeSummary` shape from
+   * src/recipes/judgeSummary.ts.
+   */
+  judgeSummaryFn:
+    | ((opts?: {
+        sinceMs?: number;
+        limit?: number;
+        recipe?: string;
+      }) => import("./recipes/judgeSummary.js").JudgeSummary)
+    | null;
   runPlanFn: ((recipeName: string) => Promise<Record<string, unknown>>) | null;
   runReplayFn:
     | ((seq: number) => Promise<{
@@ -579,6 +591,29 @@ export function tryHandleRecipeRoute(
         ...(Number.isFinite(limit) && { limit }),
         ...(recipe && { recipe }),
       }) ?? { total: 0, byCategory: {}, recent: [] };
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(summary));
+    } catch (err) {
+      respond500(res, err);
+    }
+    return true;
+  }
+
+  // GET /runs/judge-summary — PR3b sibling of /runs/halt-summary.
+  // Same query shape (sinceMs, limit, recipe), returns JudgeSummary.
+  if (parsedUrl.pathname === "/runs/judge-summary" && req.method === "GET") {
+    try {
+      const sp = parsedUrl.searchParams;
+      const sinceMsRaw = sp.get("sinceMs");
+      const limitRaw = sp.get("limit");
+      const recipe = sp.get("recipe");
+      const sinceMs = sinceMsRaw ? Number.parseInt(sinceMsRaw, 10) : Number.NaN;
+      const limit = limitRaw ? Number.parseInt(limitRaw, 10) : Number.NaN;
+      const summary = deps.judgeSummaryFn?.({
+        ...(Number.isFinite(sinceMs) && { sinceMs }),
+        ...(Number.isFinite(limit) && { limit }),
+        ...(recipe && { recipe }),
+      }) ?? { total: 0, byVerdict: {}, recent: [] };
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(summary));
     } catch (err) {

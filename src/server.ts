@@ -234,6 +234,14 @@ export class Server extends EventEmitter<ServerEvents> {
         recipe?: string;
       }) => import("./recipes/haltCategory.js").HaltSummary)
     | null = null;
+  /** Patchwork (PR3b): aggregate judge-step verdicts across recent runs. */
+  public judgeSummaryFn:
+    | ((opts?: {
+        sinceMs?: number;
+        limit?: number;
+        recipe?: string;
+      }) => import("./recipes/judgeSummary.js").JudgeSummary)
+    | null = null;
   /** Patchwork: set by bridge to generate a dry-run plan for a recipe by name. */
   public runPlanFn:
     | ((recipeName: string) => Promise<Record<string, unknown>>)
@@ -1398,6 +1406,7 @@ export class Server extends EventEmitter<ServerEvents> {
           runsFn: this.runsFn,
           runDetailFn: this.runDetailFn,
           haltSummaryFn: this.haltSummaryFn,
+          judgeSummaryFn: this.judgeSummaryFn,
           runPlanFn: this.runPlanFn,
           runReplayFn: this.runReplayFn,
           runRecipeFn: this.runRecipeFn,
