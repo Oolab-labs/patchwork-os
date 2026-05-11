@@ -8,7 +8,14 @@
  *   - Per-feature opt-in with default-off safety
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  type FSWatcher,
+  mkdirSync,
+  readFileSync,
+  watch,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 
@@ -270,6 +277,90 @@ registerFlag({
 
 // Load persisted flags on module init
 loadFlags();
+
+/**
+ * Watch the flags.json file for cross-process changes. When another
+ * process (typically the `patchwork kill-switch` CLI in its fallback
+ * fs-write path, or a sibling bridge in a multi-bridge deployment)
+ * writes to flags.json, this watcher reloads the in-memory FLAG_VALUES
+ * so the running bridge picks up the new state without a restart.
+ *
+ * v2-S1 + v2-B2 from #422. Closes the "no bridge reachable → CLI
+ * silent fallback → recipes keep writing" gap that motivated the
+ * redesign — even when the CLI's HTTP path fails and it falls back
+ * to writing the file directly, the running bridge still sees the
+ * change.
+ *
+ * **Env-lock interaction:** if `lockKillSwitchEnv()` already froze a
+ * kill-switch value from `PATCHWORK_FLAG_*`, the file-watch flow
+ * still updates FLAG_VALUES, but `isEnabled` continues reading from
+ * the frozen snapshot for that flag (existing behavior at L117-121).
+ * The env-lock is the source of truth — file changes can't override
+ * a sysadmin-mandated kill-switch state. This is the correct policy.
+ *
+ * Modeled on `src/pluginWatcher.ts`: directory-watch + filename
+ * filter + 100ms debounce so coalesced events (rename+create+change
+ * on most filesystems) don't trigger N reloads. Returns a close
+ * handle. Tolerates the file or directory not yet existing.
+ */
+export function watchFlags(): () => void {
+  const flagsPath = getFlagsPath();
+  const flagsDir = join(flagsPath, "..");
+  const flagsFile = "flags.json";
+
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let watcher: FSWatcher | null = null;
+  let stopped = false;
+
+  const reload = (): void => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      if (stopped) return;
+      try {
+        loadFlags();
+      } catch {
+        // loadFlags has its own try/catch for parse errors;
+        // this catch is belt-and-suspenders for fs errors.
+      }
+    }, 100);
+  };
+
+  try {
+    // Watch the directory rather than the file directly — flags.json
+    // may not exist yet when watch is established, and editors / atomic
+    // writes (rename-into-place) lose direct file watches.
+    watcher = watch(flagsDir, { recursive: false }, (_event, filename) => {
+      if (stopped) return;
+      // filename may be null on some platforms; reload on null to be safe.
+      if (!filename || filename === flagsFile) {
+        reload();
+      }
+    });
+  } catch {
+    // Directory doesn't exist yet — the user hasn't engaged any flags.
+    // No-op; first `persistFlags()` creates the dir and from then on
+    // the watcher won't fire. This is acceptable for an emergency-stop
+    // flag because the file will exist as soon as anyone toggles via
+    // /kill-switch (which calls setFlag(..., persist=true)).
+  }
+
+  return (): void => {
+    stopped = true;
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    if (watcher) {
+      try {
+        watcher.close();
+      } catch {
+        /* ignore */
+      }
+      watcher = null;
+    }
+  };
+}
 
 // ============================================================================
 // Kill Switch Helpers
