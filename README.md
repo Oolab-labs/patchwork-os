@@ -25,7 +25,7 @@ The same codebase ships **two ways to use it.** Pick the layer you need.
 | | What you get | Install | Best for |
 |---|---|---|---|
 | **🔌 Claude IDE Bridge** | MCP bridge connecting Claude Code to your IDE. 170+ tools — diagnostics, LSP, debugger, terminal, git, GitHub, file ops. | `npm i -g patchwork-os` then run `claude-ide-bridge` | Anyone who wants Claude Code to see and act on their editor state |
-| **🤖 Patchwork OS** | Everything in the bridge **plus** YAML recipes, approval queue, oversight dashboard, mobile push approvals, multi-model providers, JetBrains companion. | Same package, run `patchwork patchwork-init` | Power users running automation, agent workflows, or background tasks |
+| **🤖 Patchwork OS** | Everything in the bridge **plus** YAML recipes, approval queue, oversight dashboard, mobile push approvals, multi-model providers, JetBrains companion. | Same package, run `patchwork init` | Power users running automation, agent workflows, or background tasks |
 
 Same codebase. Bridge is the foundation; Patchwork OS is the optional layer on top. **No vendor lock-in. Runs on your machine.**
 
@@ -88,7 +88,7 @@ Bridge-only docs: [documents/platform-docs.md](documents/platform-docs.md)
 ## 🤖 Patchwork OS — Quick Start
 
 ```bash
-npx patchwork-os@beta patchwork-init
+npx patchwork-os@beta init
 ```
 
 Sets up 5 local recipes, detects Ollama, and opens a terminal dashboard — under 90 seconds.
@@ -99,7 +99,7 @@ Get an AI digest of your Gmail, calendar, and tasks every morning — or on dema
 
 ```bash
 # First-time setup (connect Gmail + Google Calendar)
-patchwork-os patchwork-init
+patchwork-os init
 patchwork-os connections connect gmail
 patchwork-os connections connect google-calendar
 
@@ -133,7 +133,7 @@ Think of it as a background agent that acts on your behalf — but asks before s
 
 ```bash
 # One-command setup: extension + CLAUDE.md + starter recipes
-patchwork patchwork-init
+patchwork init
 
 # Explore
 patchwork recipe list                      # installed recipes
@@ -296,7 +296,7 @@ Systemd service and deploy scripts in [`deploy/`](deploy/). Full guide: [docs/re
 | 170+ MCP tools (LSP, git, tests, debugger, diagnostics) | **shipped** |
 | VS Code / Cursor / Windsurf / Antigravity extension | **shipped** |
 | JetBrains plugin (49 handlers) | **shipped** |
-| `patchwork-init` — one-command setup | **shipped** |
+| `patchwork init` — one-command setup | **shipped** |
 | Terminal dashboard | **shipped** |
 | Web oversight UI (approvals, sessions, recipes) | **shipped** |
 | Recipe runner (YAML, cron, manual, webhook) | **shipped** |
@@ -320,7 +320,7 @@ npm install && npm run build
 # Symlink installs break the macOS LaunchAgent (EPERM at startup)
 npm pack
 npm install -g patchwork-os-*.tgz
-patchwork patchwork-init
+patchwork init
 ```
 
 ---
