@@ -1,0 +1,77 @@
+apiVersion: patchwork.sh/v1
+name: apple-watch-health-log
+description: |
+  Logs Apple Watch sleep duration, quality, and all three activity rings from
+  an iOS Shortcut. Appends a clean daily journal entry, then pushes a one-line
+  summary to your phone via ntfy.sh.
+
+  Suggested triggers:
+    - iOS Shortcut ("Log my watch" — pulls Health stats + POSTs JSON)
+    - Stream Deck button for manual end-of-day log
+    - NFC tag on your nightstand
+    - curl from any device that can POST HTTP
+
+  Payload conventions (all optional — missing fields render blank):
+    sleep_hours        numeric, e.g. 7.4
+    sleep_quality      "deep" | "restful" | "light" | "restless" | free text
+    move_percent       0-100+ (rings can exceed 100%)
+    move_calories      active kcal burned
+    exercise_percent   0-100+
+    exercise_min       exercise minutes recorded
+    stand_percent      0-100+
+    notes              free-form journal text
+
+  Setup:
+    1. Replace NTFY_TOPIC below with your own unguessable ntfy topic and
+       subscribe to it in the ntfy mobile app.
+    2. Drop this file in ~/.patchwork/recipes/.
+    3. Start the bridge with `--driver subprocess` so /hooks/* is live.
+
+  Example request:
+    curl -X POST http://localhost:3101/hooks/apple-watch-health \
+      -H 'Content-Type: application/json' \
+      -d '{"sleep_hours":7.4,"sleep_quality":"restful","move_percent":112,"move_calories":645,"exercise_percent":150,"exercise_min":45,"stand_percent":100,"notes":"Closed all three rings."}'
+
+trigger:
+  type: webhook
+  path: /apple-watch-health
+
+steps:
+  - id: write_journal
+    tool: file.append
+    path: ~/.patchwork/health-journal/{{date}}.md
+    content: |
+      ## {{date}} Apple Watch Summary
+
+      **Sleep**
+      Hours: {{payload.sleep_hours}}
+      Quality: {{payload.sleep_quality}}
+
+      **Activity Rings**
+      Move (calories): {{payload.move_percent}}% closed - {{payload.move_calories}} kcal
+      Exercise (minutes): {{payload.exercise_percent}}% closed - {{payload.exercise_min}} min
+      Stand (hours): {{payload.stand_percent}}% closed
+
+      **Notes**
+      {{payload.notes}}
+
+      ---
+
+  - id: push_to_phone
+    tool: http.post
+    url: https://ntfy.sh/NTFY_TOPIC
+    contentType: text/plain
+    headers:
+      Title: Apple Watch - {{date}}
+      Tags: watch,bulb
+    body: |
+      Sleep: {{payload.sleep_hours}}h ({{payload.sleep_quality}})
+      Move: {{payload.move_percent}}% - {{payload.move_calories}} kcal
+      Exercise: {{payload.exercise_percent}}% - {{payload.exercise_min}} min
+      Stand: {{payload.stand_percent}}%
+
+      {{payload.notes}}
+    into: push_result
+
+output:
+  path: ~/.patchwork/health-journal/{{date}}.md
