@@ -225,6 +225,13 @@ export class Server extends EventEmitter<ServerEvents> {
   /** Patchwork: set by bridge to fetch a single run by seq for the detail page. */
   public runDetailFn: ((seq: number) => Record<string, unknown> | null) | null =
     null;
+  /** Patchwork (PR1c): aggregate halt-reason categories across recent runs. */
+  public haltSummaryFn:
+    | ((opts?: {
+        sinceMs?: number;
+        limit?: number;
+      }) => import("./recipes/haltCategory.js").HaltSummary)
+    | null = null;
   /** Patchwork: set by bridge to generate a dry-run plan for a recipe by name. */
   public runPlanFn:
     | ((recipeName: string) => Promise<Record<string, unknown>>)
@@ -1388,6 +1395,7 @@ export class Server extends EventEmitter<ServerEvents> {
           setRecipeEnabledFn: this.setRecipeEnabledFn,
           runsFn: this.runsFn,
           runDetailFn: this.runDetailFn,
+          haltSummaryFn: this.haltSummaryFn,
           runPlanFn: this.runPlanFn,
           runReplayFn: this.runReplayFn,
           runRecipeFn: this.runRecipeFn,

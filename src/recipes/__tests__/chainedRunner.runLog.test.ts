@@ -481,4 +481,29 @@ describe("runChainedRecipe — ActivityLog step event broadcast", () => {
       expect(e.metadata.recipeName).toBe("outer");
     }
   });
+
+  it("derives haltReason on failing chained steps so they categorise", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const { summariseHalts } = await import("../haltCategory.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+    const failingDeps: ExecutionDeps = {
+      executeTool: vi.fn().mockRejectedValue(new Error("remote unreachable")),
+      executeAgent: vi.fn(),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    await runChainedRecipe(
+      chainedRecipe(),
+      optsWithLog({ runLog: log, runLogDir: undefined }),
+      failingDeps,
+    );
+    const run = log.query()[0];
+    const step = run?.stepResults?.[0];
+    expect(step?.status).toBe("error");
+    expect(step?.haltReason).toBeDefined();
+    expect(step?.haltReason).toContain("remote unreachable");
+    // And the run feeds summariseHalts as a non-`unknown` category.
+    const summary = summariseHalts(log.query());
+    expect(summary.total).toBeGreaterThan(0);
+    expect(summary.byCategory.unknown ?? 0).toBe(0);
+  });
 });
