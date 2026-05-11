@@ -2,7 +2,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { deriveIdempotencyKey, WriteEffectLedger } from "../idempotencyKey.js";
+import {
+  assertValidManualRunId,
+  deriveIdempotencyKey,
+  deriveScopeKey,
+  WriteEffectLedger,
+} from "../idempotencyKey.js";
 
 describe("deriveIdempotencyKey", () => {
   it("produces the same key for identical (toolId, params)", () => {
@@ -191,5 +196,52 @@ describe("WriteEffectLedger — disk-backed (PR5b)", () => {
     // Nothing was passed for dir, so the temp dir should remain empty.
     expect(() => readFileSync(path.join(dir, "effect_ledger.jsonl"))).toThrow();
     expect(ledger.size()).toBe(1);
+  });
+});
+
+describe("deriveScopeKey", () => {
+  it("collision-free across the colon-ambiguity case", () => {
+    // `${recipeName}:${manualRunId}` ambiguity: `a:b` + `c` vs `a` +
+    // `b:c` both produce `a:b:c`. Hashed composition must distinguish.
+    const a = deriveScopeKey("a:b", "c");
+    const b = deriveScopeKey("a", "b:c");
+    expect(a).not.toBe(b);
+  });
+
+  it("stable for identical (recipeName, manualRunId)", () => {
+    expect(deriveScopeKey("review", "mr_1")).toBe(
+      deriveScopeKey("review", "mr_1"),
+    );
+  });
+
+  it("differs when either field changes", () => {
+    const base = deriveScopeKey("review", "mr_1");
+    expect(deriveScopeKey("review", "mr_2")).not.toBe(base);
+    expect(deriveScopeKey("audit", "mr_1")).not.toBe(base);
+  });
+
+  it("returns 32 hex chars", () => {
+    expect(deriveScopeKey("x", "y")).toMatch(/^[0-9a-f]{32}$/);
+  });
+});
+
+describe("assertValidManualRunId", () => {
+  it("accepts the common shape (alnum + . _ -, length 1-64)", () => {
+    expect(assertValidManualRunId("mr_abc123")).toBe("mr_abc123");
+    expect(assertValidManualRunId("a")).toBe("a");
+    expect(assertValidManualRunId("A".repeat(64))).toBe("A".repeat(64));
+    expect(assertValidManualRunId("mr_2026-05-11_abc.1")).toBe(
+      "mr_2026-05-11_abc.1",
+    );
+  });
+
+  it("rejects ids that would break disk-row delimiters or audit caps", () => {
+    expect(() => assertValidManualRunId("")).toThrow();
+    expect(() => assertValidManualRunId("A".repeat(65))).toThrow();
+    expect(() => assertValidManualRunId("with space")).toThrow();
+    expect(() => assertValidManualRunId("newline\nhere")).toThrow();
+    expect(() => assertValidManualRunId("null\x00byte")).toThrow();
+    expect(() => assertValidManualRunId("../etc/passwd")).toThrow();
+    expect(() => assertValidManualRunId("path/traversal")).toThrow();
   });
 });

@@ -43,7 +43,11 @@ import {
   type AgentExecutorDeps,
   type AgentResult,
 } from "./agentExecutor.js";
-import { WriteEffectLedger } from "./idempotencyKey.js";
+import {
+  assertValidManualRunId,
+  deriveScopeKey,
+  WriteEffectLedger,
+} from "./idempotencyKey.js";
 import {
   buildJudgeArtefactBlock,
   JUDGE_PROMPT_SUFFIX,
@@ -1298,7 +1302,13 @@ function resolveStepDeps(
       deps.ledgerDir && deps.manualRunId && scope?.recipeName
         ? new WriteEffectLedger({
             dir: deps.ledgerDir,
-            scopeKey: `${scope.recipeName}:${deps.manualRunId}`,
+            // Hash both fields together — `${recipeName}:${manualRunId}`
+            // is ambiguous when recipe names contain colons (which
+            // RecipeRunLog.parseTrigger explicitly allows).
+            scopeKey: deriveScopeKey(
+              scope.recipeName,
+              assertValidManualRunId(deps.manualRunId),
+            ),
           })
         : new WriteEffectLedger(),
   };

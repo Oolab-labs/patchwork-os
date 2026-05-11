@@ -86,6 +86,52 @@ export function deriveIdempotencyKey(
 }
 
 /**
+ * Compose a collision-safe scope key from `(recipeName, manualRunId)`.
+ *
+ * Naive `${recipeName}:${manualRunId}` is ambiguous: recipe `a:b` +
+ * attempt `c` and recipe `a` + attempt `b:c` both produce `a:b:c` and
+ * would share a ledger scope, letting one attempt read another's
+ * cached write-tool outputs. We hash both fields separately as a JSON
+ * array so the encoding is unambiguous regardless of either field's
+ * contents.
+ *
+ * Returned as a 32-hex-char SHA-256 prefix — long enough that
+ * collisions across a realistic ledger are effectively impossible
+ * (~2^128 birthday bound), short enough to scan in a JSONL row.
+ */
+export function deriveScopeKey(
+  recipeName: string,
+  manualRunId: string,
+): string {
+  const payload = JSON.stringify([recipeName, manualRunId]);
+  return createHash("sha256").update(payload).digest("hex").slice(0, 32);
+}
+
+/**
+ * `manualRunId` charset validation — caller-supplied id from the CLI
+ * (`--attempt`), HTTP routes, or SDK. Rejects null bytes, control
+ * characters, path-traversal slugs (`/`, `\`, `..`), and anything
+ * longer than 64 chars. Returns the id verbatim when valid; throws
+ * with a descriptive message otherwise.
+ *
+ * Why strict: this string is hashed into the disk-ledger scope key,
+ * appended to `runs.jsonl` rows (capped audit-row size depends on it),
+ * and rendered into dashboard pills + CLI output. A 10 MB id would
+ * inflate every row past `MAX_PERSIST_BYTES` and erase audit during
+ * rotation; control characters break line-delimited persistence.
+ */
+const MANUAL_RUN_ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
+
+export function assertValidManualRunId(id: string): string {
+  if (typeof id !== "string" || !MANUAL_RUN_ID_PATTERN.test(id)) {
+    throw new Error(
+      `manualRunId must match ${MANUAL_RUN_ID_PATTERN} (1-64 chars of [A-Za-z0-9_.-]); got: ${JSON.stringify(id).slice(0, 80)}`,
+    );
+  }
+  return id;
+}
+
+/**
  * In-memory per-run ledger of executed write-tool calls. Maps idempotency
  * keys to the cached output the tool returned, so a duplicate call can
  * be short-circuited to the same result the first call produced.
