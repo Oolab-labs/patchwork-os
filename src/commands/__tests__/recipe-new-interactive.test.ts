@@ -24,6 +24,7 @@ import { type InteractivePromptDeps, runNewInteractive } from "../recipe.js";
 
 const MODE_GUIDED = 1;
 const MODE_TEMPLATE = 2;
+const MODE_AI = 3;
 const KIND_TOOL = 1;
 const KIND_AGENT = 2;
 const KIND_DONE = 3;
@@ -353,6 +354,123 @@ describe("runNewInteractive", () => {
     expect(content).toContain("description: Built from a template");
     // "minimal" template writes a single file.write step.
     expect(content).toContain("tool: file.write");
+  });
+
+  it("AI-suggest mode: writes raw bridge response with post-hoc warnings", async () => {
+    const bridgeYaml = [
+      "apiVersion: patchwork.sh/v1",
+      "name: from-ai",
+      "description: An AI-generated recipe",
+      "trigger:",
+      "  type: manual",
+      "steps:",
+      "  - tool: file.write",
+      "    path: ~/.patchwork/inbox/from-ai.md",
+      '    content: "hello from AI"',
+      "",
+    ].join("\n");
+    const mockFetch = async () =>
+      ({
+        status: 200,
+        json: async () => ({ ok: true, yaml: bridgeYaml }),
+      }) as unknown as Response;
+
+    const deps = makeStubDeps({
+      ask: ["from-ai", "Draft something that summarizes my inbox"],
+      pickFromList: [MODE_AI],
+      confirm: [true],
+    });
+
+    const result = await runNewInteractive({
+      outputDir: tmpDir,
+      deps,
+      aiSuggest: {
+        findBridge: () => ({ port: 12345, authToken: "test-token" }),
+        fetch: mockFetch as unknown as typeof fetch,
+      },
+    });
+    expect(existsSync(result.path)).toBe(true);
+    expect(result.path.endsWith("from-ai.yaml")).toBe(true);
+
+    const content = readFileSync(result.path, "utf-8");
+    // Pragma prepended (bridge response had none).
+    expect(content.startsWith("# yaml-language-server:")).toBe(true);
+    // Body preserved verbatim — no normalization.
+    expect(content).toContain("apiVersion: patchwork.sh/v1");
+    expect(content).toContain("from-ai");
+  });
+
+  it("AI-suggest mode: no bridge running → clear actionable error", async () => {
+    const deps = makeStubDeps({
+      ask: ["no-bridge", "Whatever"],
+      pickFromList: [MODE_AI],
+      confirm: [],
+    });
+
+    await expect(
+      runNewInteractive({
+        outputDir: tmpDir,
+        deps,
+        aiSuggest: {
+          findBridge: () => null,
+          fetch: (async () => {
+            throw new Error("fetch should not be called");
+          }) as unknown as typeof fetch,
+        },
+      }),
+    ).rejects.toThrow(/requires a running bridge/i);
+  });
+
+  it("AI-suggest mode: bridge 503 unavailable → points at --driver subprocess", async () => {
+    const mockFetch = async () =>
+      ({
+        status: 503,
+        json: async () => ({ ok: false, unavailable: true }),
+      }) as unknown as Response;
+
+    const deps = makeStubDeps({
+      ask: ["unavailable-test", "Whatever"],
+      pickFromList: [MODE_AI],
+      confirm: [],
+    });
+
+    await expect(
+      runNewInteractive({
+        outputDir: tmpDir,
+        deps,
+        aiSuggest: {
+          findBridge: () => ({ port: 12345, authToken: "test-token" }),
+          fetch: mockFetch as unknown as typeof fetch,
+        },
+      }),
+    ).rejects.toThrow(/--driver subprocess/);
+  });
+
+  it("AI-suggest mode: empty YAML response → don't write a blank file", async () => {
+    const mockFetch = async () =>
+      ({
+        status: 200,
+        json: async () => ({ ok: true, yaml: "   " }),
+      }) as unknown as Response;
+
+    const deps = makeStubDeps({
+      ask: ["empty-yaml-test", "Whatever"],
+      pickFromList: [MODE_AI],
+      confirm: [],
+    });
+
+    await expect(
+      runNewInteractive({
+        outputDir: tmpDir,
+        deps,
+        aiSuggest: {
+          findBridge: () => ({ port: 12345, authToken: "test-token" }),
+          fetch: mockFetch as unknown as typeof fetch,
+        },
+      }),
+    ).rejects.toThrow(/empty YAML/i);
+    // No file should have been written.
+    expect(existsSync(join(tmpDir, "empty-yaml-test.yaml"))).toBe(false);
   });
 
   it("template mode declines write and cleans up the file", async () => {
