@@ -178,6 +178,7 @@ const KNOWN_SUBCOMMANDS = [
   "start",
   "kill-switch",
   "halts",
+  "judgments",
 ] as const;
 
 const __invokedSubcommand = (() => {
