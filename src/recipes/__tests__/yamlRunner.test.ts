@@ -2955,3 +2955,51 @@ describe("haltReason population on error StepResults", () => {
     expect(step.haltReason).toBeUndefined();
   });
 });
+
+describe("live step persistence via updateRunSteps", () => {
+  it("each completed step is visible on the running run before completeRun fires", async () => {
+    // Captures the in-memory runLog state observed at step-2 dispatch
+    // time. If updateRunSteps is wired, step 1's result must be present.
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "yamlrunner-live-"));
+    try {
+      const runLog = new RecipeRunLog({ dir: tmp });
+      let snapshotAtStep2: unknown[] | undefined;
+      const recipe = makeRecipe({
+        name: "live-tail-test",
+        steps: [
+          {
+            agent: { prompt: "first", into: "a" },
+          },
+          {
+            agent: { prompt: "second", into: "b" },
+          },
+        ],
+      });
+      const claudeFn = vi
+        .fn()
+        .mockImplementationOnce(async () => "first-result")
+        .mockImplementationOnce(async () => {
+          // At this point step 1 has finished and pushed; the runLog
+          // entry must already reflect it.
+          const runs = runLog.query({ limit: 10 });
+          snapshotAtStep2 = runs[0]?.stepResults;
+          return "second-result";
+        });
+      await runYamlRecipe(recipe, {
+        ...noop(),
+        runLog,
+        claudeFn,
+        claudeCodeFn: claudeFn,
+        localFn: claudeFn,
+        providerDriverFn: claudeFn,
+      });
+      expect(Array.isArray(snapshotAtStep2)).toBe(true);
+      expect(snapshotAtStep2).toHaveLength(1);
+      // biome-ignore lint/suspicious/noExplicitAny: snapshot is unknown[]
+      expect((snapshotAtStep2 as any)[0].status).toBe("ok");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
