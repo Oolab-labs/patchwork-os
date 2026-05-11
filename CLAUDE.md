@@ -25,6 +25,7 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `quick-task <preset>` — Launch a context-aware Claude task from a preset (fixErrors, refactorFile, addTests, explainCode, optimizePerf, runTests, resumeLastCancelled). Same dispatch path as the sidebar. Requires `--driver subprocess`.
 - `start-task "<description>"` — Enqueue a free-form Claude task; Claude gathers its own workspace context.
 - `continue-handoff` — Resume from the stored handoff note (skips auto-snapshots).
+- `halts [--window 1h|24h|overnight|7d|any] [--json]` — One-screen morning summary of recent recipe halts. Discovers the running bridge via lock file, queries `/runs/halt-summary`, formats per category + 5 most-recent reasons. Default window is `overnight` (since 6pm yesterday local). Composes the haltReason field + category aggregator shipped in #441/#444.
 - `recipe new <name>` — Scaffold a recipe from a template (`minimal` | `daily` | `inbox`). Add `--interactive` (or `-i`) to drop into the connector-aware prompt tree instead: mode pick (Guided / Template / AI-suggest), then step-by-step build. Generated YAML includes the SchemaStore pragma and runs `validateRecipeDefinition` post-hoc as warnings. AI-suggest discovers the running bridge via `~/.claude/ide/*.lock` and POSTs the goal to `/recipes/generate`; raw response written to disk (no form normalization).
 - `--watch` — Auto-restart supervisor with exponential backoff (2s → 30s). Safe for production.
 

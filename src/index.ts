@@ -177,6 +177,7 @@ const KNOWN_SUBCOMMANDS = [
   "launchd",
   "start",
   "kill-switch",
+  "halts",
 ] as const;
 
 const __invokedSubcommand = (() => {
@@ -1895,6 +1896,162 @@ if (process.argv[2] === "kill-switch") {
         process.stdout.write(
           `\n  Kill-switch ${engage ? "engaged" : "released"} on ${liveLocks.length} bridge${liveLocks.length === 1 ? "" : "s"}.\n`,
         );
+      }
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
+// `patchwork halts` — one-screen morning summary of recent recipe halts.
+//
+// Composes the haltReason field (#441), category aggregator + endpoint
+// (#444), and dashboard pill conventions: queries the live bridge's
+// /runs/halt-summary endpoint over the chosen window and prints a
+// per-category breakdown plus the 5 most-recent halt reasons. Default
+// window is "overnight" (since 6pm yesterday local) so it lines up with
+// "what halted while I was asleep?".
+if (process.argv[2] === "halts") {
+  const args = process.argv.slice(3);
+  const wantHelp = args.includes("--help") || args.includes("-h");
+  if (wantHelp) {
+    process.stdout.write(
+      "Usage: patchwork halts [--window <name>] [--json]\n" +
+        "\n" +
+        "  --window 1h | 24h | overnight | 7d | any   (default: overnight)\n" +
+        "  --json                                     emit raw JSON (for scripting)\n" +
+        "\n" +
+        '"overnight" = since 6pm yesterday local time.\n',
+    );
+    process.exit(0);
+  }
+  type Win = "1h" | "24h" | "overnight" | "7d" | "any";
+  function parseWindow(): Win {
+    const idx = args.findIndex((a) => a === "--window" || a === "-w");
+    const raw = idx >= 0 && idx + 1 < args.length ? args[idx + 1] : "overnight";
+    if (
+      raw === "1h" ||
+      raw === "24h" ||
+      raw === "overnight" ||
+      raw === "7d" ||
+      raw === "any"
+    )
+      return raw;
+    process.stderr.write(`Unknown --window value: "${raw}"\n`);
+    process.exit(1);
+  }
+  function windowSinceMs(w: Win): number | null {
+    if (w === "any") return null;
+    if (w === "1h") return 60 * 60 * 1000;
+    if (w === "24h") return 24 * 60 * 60 * 1000;
+    if (w === "7d") return 7 * 24 * 60 * 60 * 1000;
+    const d = new Date();
+    d.setHours(18, 0, 0, 0);
+    if (d.getTime() > Date.now()) d.setDate(d.getDate() - 1);
+    return Date.now() - d.getTime();
+  }
+  const window = parseWindow();
+  const wantJson = args.includes("--json");
+
+  (async () => {
+    try {
+      const { findAllLiveBridges } = await import("./bridgeLockDiscovery.js");
+      const liveLocks = findAllLiveBridges();
+      if (liveLocks.length === 0) {
+        process.stderr.write(
+          "No running bridge found. Start one with `patchwork start` (or `--driver subprocess`).\n",
+        );
+        process.exit(2);
+      }
+      // Single-bridge default: query the first. Multi-bridge users will
+      // typically have one orchestrator anyway; expanding to fan-out is a
+      // follow-up if needed.
+      const lock = liveLocks[0];
+      if (!lock) {
+        process.stderr.write("No running bridge found.\n");
+        process.exit(2);
+      }
+      const sinceMs = windowSinceMs(window);
+      const qs = sinceMs != null ? `?sinceMs=${sinceMs}` : "";
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10_000);
+      let res: Response;
+      try {
+        res = await fetch(
+          `http://127.0.0.1:${lock.port}/runs/halt-summary${qs}`,
+          {
+            headers: { Authorization: `Bearer ${lock.authToken}` },
+            signal: controller.signal,
+          },
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!res.ok) {
+        process.stderr.write(
+          `Bridge returned ${res.status} for /runs/halt-summary\n`,
+        );
+        process.exit(1);
+      }
+      const summary = (await res.json()) as {
+        total: number;
+        byCategory: Record<string, number>;
+        recent: Array<{ reason: string; category: string; runSeq: number }>;
+      };
+
+      if (wantJson) {
+        process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+        process.exit(0);
+      }
+
+      const labels: Record<string, string> = {
+        agent_silent_fail: "agent silent-fail",
+        agent_narration_only: "agent narration-only",
+        agent_threw: "agent threw",
+        tool_threw: "tool threw",
+        tool_error: "tool error",
+        kill_switch: "kill-switch blocked",
+        run_level: "run-level halt",
+        unknown: "uncategorised",
+      };
+
+      const windowLabel: Record<Win, string> = {
+        "1h": "last hour",
+        "24h": "last 24h",
+        overnight: "since 6pm yesterday",
+        "7d": "last 7 days",
+        any: "all time",
+      };
+
+      process.stdout.write(`Halts — ${windowLabel[window]}\n`);
+      process.stdout.write(`Total: ${summary.total}\n`);
+      if (summary.total === 0) {
+        process.stdout.write("\n  (nothing halted in this window)\n");
+        process.exit(0);
+      }
+
+      const entries = Object.entries(summary.byCategory).sort(
+        ([, a], [, b]) => b - a,
+      );
+      process.stdout.write("\nBy category:\n");
+      for (const [cat, count] of entries) {
+        const label = labels[cat] ?? cat;
+        process.stdout.write(`  ${String(count).padStart(3)}  ${label}\n`);
+      }
+
+      if (summary.recent.length > 0) {
+        process.stdout.write("\nMost recent:\n");
+        for (const r of summary.recent) {
+          // Truncate the reason to ~120 chars so a wide stack trace
+          // can't blow up the terminal width on phones / narrow panes.
+          const reason =
+            r.reason.length > 120 ? `${r.reason.slice(0, 117)}…` : r.reason;
+          process.stdout.write(`  #${r.runSeq}  [${r.category}]  ${reason}\n`);
+        }
       }
       process.exit(0);
     } catch (err) {
