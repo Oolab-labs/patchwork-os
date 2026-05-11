@@ -40,6 +40,15 @@
  */
 
 import { createHash } from "node:crypto";
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import path from "node:path";
+import type { Logger } from "../logger.js";
 
 /**
  * Stable canonical-JSON serialiser. Recursively sorts object keys so two
@@ -87,8 +96,63 @@ export function deriveIdempotencyKey(
  * with no shared params hash by construction); the ledger catches
  * accidental same-params calls.
  */
+/**
+ * Optional disk-backed persistence for the ledger.
+ *
+ * PR5b — extends in-memory dedup so a *retry* of the same logical
+ * `(recipeName, manualRunId)` attempt won't replay side effects. The
+ * ledger stays per-attempt; cron/webhook runs and recipes without a
+ * manualRunId stay purely in memory (no scope key = nothing to write).
+ *
+ * File layout: a single JSONL at `${dir}/effect_ledger.jsonl`. Each row
+ * is `{scopeKey, idemKey, output, recordedAt}`. On construction, the
+ * ledger streams the file and rehydrates entries whose `scopeKey`
+ * matches the configured scope; everything else is left alone for the
+ * other attempts' ledgers to pick up.
+ *
+ * Failure mode: any IO error falls back to in-memory operation and logs
+ * a warning. A partially-replayed attempt with an unreadable ledger
+ * degrades to "re-execute side effects" — louder than "silently dedup
+ * something we can't audit".
+ */
+export interface DiskLedgerOptions {
+  /** Directory holding `effect_ledger.jsonl`. Created if missing. */
+  dir: string;
+  /** `${recipeName}:${manualRunId}` — composed by the caller. */
+  scopeKey: string;
+  logger?: Logger;
+}
+
+interface LedgerRow {
+  scopeKey: string;
+  idemKey: string;
+  output: string | null;
+  recordedAt: number;
+}
+
+const LEDGER_FILENAME = "effect_ledger.jsonl";
+const MAX_PERSIST_BYTES = 1024 * 1024; // 1 MB — same posture as runLog
+const MAX_PERSIST_LINES = 10_000;
+
 export class WriteEffectLedger {
   private readonly cache = new Map<string, string | null>();
+  private readonly disk: DiskLedgerOptions | null;
+  private readonly file: string | null;
+
+  constructor(disk?: DiskLedgerOptions) {
+    this.disk = disk ?? null;
+    this.file = disk ? path.join(disk.dir, LEDGER_FILENAME) : null;
+    if (this.disk && this.file) {
+      try {
+        mkdirSync(this.disk.dir, { recursive: true, mode: 0o700 });
+      } catch (err) {
+        this.disk.logger?.warn?.(
+          `[effect-ledger] could not create ${this.disk.dir}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      this.loadExisting();
+    }
+  }
 
   has(key: string): boolean {
     return this.cache.has(key);
@@ -106,6 +170,14 @@ export class WriteEffectLedger {
 
   record(key: string, output: string | null): void {
     this.cache.set(key, output);
+    if (this.disk && this.file) {
+      this.append({
+        scopeKey: this.disk.scopeKey,
+        idemKey: key,
+        output,
+        recordedAt: Date.now(),
+      });
+    }
   }
 
   /** Test-only inspection of the current key set. */
@@ -115,5 +187,84 @@ export class WriteEffectLedger {
 
   size(): number {
     return this.cache.size;
+  }
+
+  private loadExisting(): void {
+    if (!this.disk || !this.file) return;
+    let raw: string;
+    try {
+      statSync(this.file);
+      raw = readFileSync(this.file, "utf-8");
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") {
+        this.disk.logger?.warn?.(
+          `[effect-ledger] read failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      return;
+    }
+    for (const line of raw.split("\n")) {
+      if (!line) continue;
+      try {
+        const row = JSON.parse(line) as LedgerRow;
+        if (
+          typeof row.scopeKey !== "string" ||
+          typeof row.idemKey !== "string"
+        ) {
+          continue;
+        }
+        if (row.scopeKey === this.disk.scopeKey) {
+          this.cache.set(row.idemKey, row.output ?? null);
+        }
+      } catch {
+        /* skip malformed row */
+      }
+    }
+  }
+
+  private append(row: LedgerRow): void {
+    if (!this.disk || !this.file) return;
+    try {
+      try {
+        const st = statSync(this.file);
+        if (st.size > MAX_PERSIST_BYTES) this.rotate();
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT") throw err;
+      }
+      appendFileSync(this.file, `${JSON.stringify(row)}\n`, { mode: 0o600 });
+    } catch (err) {
+      this.disk.logger?.warn?.(
+        `[effect-ledger] append failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Trim `effect_ledger.jsonl` to the most recent MAX_PERSIST_LINES.
+   * Best-effort — failure logs and the next append proceeds against the
+   * un-rotated file. Same pattern as RecipeRunLog / DecisionTraceLog.
+   */
+  private rotate(): void {
+    if (!this.file || !this.disk) return;
+    try {
+      const raw = readFileSync(this.file, "utf-8");
+      let lines = raw.split("\n").filter((l) => l.trim());
+      if (lines.length > MAX_PERSIST_LINES) {
+        lines = lines.slice(-MAX_PERSIST_LINES);
+      }
+      writeFileSync(
+        this.file,
+        lines.length > 0 ? `${lines.join("\n")}\n` : "",
+        {
+          mode: 0o600,
+        },
+      );
+    } catch (err) {
+      this.disk.logger?.warn?.(
+        `[effect-ledger] rotate failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }
