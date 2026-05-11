@@ -109,6 +109,25 @@ interface HaltSummary {
   recent: Array<{ reason: string; category: HaltCategory; runSeq: number }>;
 }
 
+type JudgeVerdictKind = "approve" | "request_changes" | "unparseable";
+
+interface JudgeSummary {
+  total: number;
+  byVerdict: Partial<Record<JudgeVerdictKind, number>>;
+  recent: Array<{
+    verdict: JudgeVerdictKind;
+    firstReason?: string;
+    runSeq: number;
+    stepId: string;
+  }>;
+}
+
+const JUDGE_VERDICT_LABEL: Record<JudgeVerdictKind, string> = {
+  approve: "approve",
+  request_changes: "request changes",
+  unparseable: "unparseable",
+};
+
 const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   agent_silent_fail: "agent silent-fail",
   agent_narration_only: "agent narration-only",
@@ -149,6 +168,7 @@ export default function RunsPage() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [window, setWindow] = useState<TimeWindow>("any");
   const [haltSummary, setHaltSummary] = useState<HaltSummary | null>(null);
+  const [judgeSummary, setJudgeSummary] = useState<JudgeSummary | null>(null);
   const [recipeQuery, setRecipeQuery] = useState("");
   const debouncedRecipeQuery = useDebounced(recipeQuery, 250);
   // PR5c follow-up: read `?attempt=<id>` from URL to deep-link runs that
@@ -203,6 +223,31 @@ export default function RunsPage() {
         if (!cancelled) setHaltSummary(data);
       } catch {
         /* halt summary is best-effort; ignore */
+      }
+    };
+    void load();
+    const id = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [window]);
+
+  // PR3b sibling poller — judge-summary on the same cadence + window.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const sinceMs = windowCutoffMs(window);
+        const qs = sinceMs != null ? `?sinceMs=${sinceMs}` : "";
+        const res = await fetch(
+          apiPath(`/api/bridge/runs/judge-summary${qs}`),
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as JudgeSummary;
+        if (!cancelled) setJudgeSummary(data);
+      } catch {
+        /* judge summary is best-effort; ignore */
       }
     };
     void load();
@@ -304,6 +349,61 @@ export default function RunsPage() {
                 }}
               >
                 {HALT_CATEGORY_LABEL[cat]} · {count}
+              </span>
+            ))}
+        </div>
+      )}
+
+      {judgeSummary && judgeSummary.total > 0 && (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            alignItems: "center",
+            marginBottom: "var(--s-4)",
+            padding: "8px 12px",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: 6,
+            background: "var(--bg-0)",
+          }}
+          title={
+            judgeSummary.recent
+              .map(
+                (r) =>
+                  `run #${r.runSeq} · ${r.stepId}: [${r.verdict}] ${r.firstReason ?? ""}`,
+              )
+              .join("\n") || undefined
+          }
+        >
+          <span className="mono muted" style={{ fontSize: "var(--fs-xs)" }}>
+            judgments: {judgeSummary.total}
+          </span>
+          {(
+            Object.entries(judgeSummary.byVerdict) as Array<
+              [JudgeVerdictKind, number]
+            >
+          )
+            .sort((a, b) => b[1] - a[1])
+            .map(([verdict, count]) => (
+              <span
+                key={verdict}
+                className="pill"
+                style={{
+                  fontSize: "var(--fs-2xs)",
+                  color:
+                    verdict === "approve"
+                      ? "var(--ok)"
+                      : verdict === "request_changes"
+                        ? "var(--warn, #d49a3a)"
+                        : "var(--fg-2)",
+                  ...(verdict === "unparseable" && {
+                    border: "1px solid var(--border-subtle)",
+                    background: "var(--bg-1)",
+                  }),
+                }}
+              >
+                {JUDGE_VERDICT_LABEL[verdict]} · {count}
               </span>
             ))}
         </div>
