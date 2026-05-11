@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -243,5 +249,71 @@ describe("assertValidManualRunId", () => {
     expect(() => assertValidManualRunId("null\x00byte")).toThrow();
     expect(() => assertValidManualRunId("../etc/passwd")).toThrow();
     expect(() => assertValidManualRunId("path/traversal")).toThrow();
+  });
+});
+
+describe("WriteEffectLedger — ledgerDir validation (security hardening)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(os.tmpdir(), "effect-ledger-sec-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("rejects empty string", () => {
+    expect(() => new WriteEffectLedger({ dir: "", scopeKey: "s" })).toThrow(
+      /non-empty/,
+    );
+  });
+
+  it("rejects null bytes", () => {
+    expect(
+      () => new WriteEffectLedger({ dir: "/tmp/foo\0bar", scopeKey: "s" }),
+    ).toThrow(/null bytes/);
+  });
+
+  it("rejects relative paths", () => {
+    expect(
+      () => new WriteEffectLedger({ dir: "relative/path", scopeKey: "s" }),
+    ).toThrow(/absolute/);
+  });
+
+  it("rejects a directory that is a symlink", () => {
+    const realDir = path.join(dir, "real");
+    const linkDir = path.join(dir, "link");
+    writeFileSync(path.join(dir, "marker"), "x");
+    symlinkSync(realDir, linkDir);
+    expect(
+      () => new WriteEffectLedger({ dir: linkDir, scopeKey: "s" }),
+    ).toThrow(/symlink/);
+  });
+
+  it("accepts a fresh non-existent absolute path (will be mkdir'd)", () => {
+    const fresh = path.join(dir, "fresh");
+    expect(
+      () => new WriteEffectLedger({ dir: fresh, scopeKey: "s" }),
+    ).not.toThrow();
+  });
+
+  it("refuses to load a symlinked JSONL file", () => {
+    // Pre-populate a sibling file with foreign data, then symlink the
+    // ledger filename to it. Constructor should NOT pick up the foreign
+    // contents.
+    const realLedger = path.join(dir, "real-ledger");
+    writeFileSync(
+      realLedger,
+      `${JSON.stringify({ scopeKey: "victim", idemKey: "leaked", output: "secret", recordedAt: 1 })}\n`,
+    );
+    symlinkSync(realLedger, path.join(dir, "effect_ledger.jsonl"));
+    const warnings: string[] = [];
+    const ledger = new WriteEffectLedger({
+      dir,
+      scopeKey: "victim",
+      logger: {
+        warn: (msg: string) => warnings.push(msg),
+        // biome-ignore lint/suspicious/noExplicitAny: minimal Logger shape
+      } as any,
+    });
+    expect(ledger.has("leaked")).toBe(false);
+    expect(warnings.some((w) => /symlink/.test(w))).toBe(true);
   });
 });

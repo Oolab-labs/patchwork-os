@@ -42,6 +42,7 @@
 import { createHash } from "node:crypto";
 import {
   appendFileSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   statSync,
@@ -180,12 +181,65 @@ const LEDGER_FILENAME = "effect_ledger.jsonl";
 const MAX_PERSIST_BYTES = 1024 * 1024; // 1 MB — same posture as runLog
 const MAX_PERSIST_LINES = 10_000;
 
+/**
+ * Validate a caller-supplied ledger directory before any filesystem IO.
+ *
+ * The dir argument flows from the CLI (`--ledger-dir`) and (if/when
+ * exposed) HTTP-runner inputs; we'd rather fail loudly than write JSONL
+ * to whatever path is handed in. Three checks:
+ *
+ *  - **No null bytes** — would short-circuit C string handling in older
+ *    libc paths and confuse logs / audit tooling.
+ *  - **Absolute** — relative paths resolve against `process.cwd()`,
+ *    which for recipe runs is the workspace; an `--ledger-dir foo`
+ *    silently scattering ledger files under recipe sources is the
+ *    wrong default. Caller can pass `path.resolve(...)` explicitly if
+ *    they want relative resolution.
+ *  - **Not a symlink** — if the directory already exists and is a
+ *    symlink, an attacker who can write to the symlink's owning dir
+ *    can swap the target and redirect appends. Rejecting up front
+ *    means a fresh dir is created (via mkdirSync) or an existing real
+ *    dir is used; symlink-replacement on the JSONL file itself is
+ *    handled separately on each read in `loadExisting`.
+ */
+function assertSafeLedgerDir(dir: string): void {
+  if (typeof dir !== "string" || dir.length === 0) {
+    throw new Error("ledgerDir must be a non-empty string");
+  }
+  if (dir.includes("\0")) {
+    throw new Error("ledgerDir must not contain null bytes");
+  }
+  if (!path.isAbsolute(dir)) {
+    throw new Error(`ledgerDir must be an absolute path; got: ${dir}`);
+  }
+  try {
+    const st = lstatSync(dir);
+    if (st.isSymbolicLink()) {
+      throw new Error(`ledgerDir must not be a symlink: ${dir}`);
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return; // dir will be created later — fine
+    throw err;
+  }
+}
+
 export class WriteEffectLedger {
   private readonly cache = new Map<string, string | null>();
   private readonly disk: DiskLedgerOptions | null;
   private readonly file: string | null;
 
   constructor(disk?: DiskLedgerOptions) {
+    if (disk) {
+      // Validate + normalise the directory before any IO. Rejects null
+      // bytes (would short-circuit C string handling in libc paths),
+      // requires absolute paths (relative paths resolve against cwd
+      // which is the recipe workspace — surprising and racy), and
+      // refuses symlinks (a symlink swap on the ledger directory after
+      // construction could redirect appends to an attacker-chosen
+      // path).
+      assertSafeLedgerDir(disk.dir);
+    }
     this.disk = disk ?? null;
     this.file = disk ? path.join(disk.dir, LEDGER_FILENAME) : null;
     if (this.disk && this.file) {
@@ -239,7 +293,17 @@ export class WriteEffectLedger {
     if (!this.disk || !this.file) return;
     let raw: string;
     try {
-      statSync(this.file);
+      // `lstat` (not `stat`) so we see the symlink, not its target.
+      // A swapped symlink at `${dir}/effect_ledger.jsonl` would
+      // otherwise let an attacker substitute another file's contents
+      // as cached tool outputs.
+      const st = lstatSync(this.file);
+      if (st.isSymbolicLink()) {
+        this.disk.logger?.warn?.(
+          `[effect-ledger] refusing to load ${this.file}: file is a symlink`,
+        );
+        return;
+      }
       raw = readFileSync(this.file, "utf-8");
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
