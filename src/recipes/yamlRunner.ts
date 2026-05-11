@@ -41,6 +41,7 @@ import type { RecipeRunLog } from "../runLog.js";
 import {
   executeAgent as _executeAgent,
   type AgentExecutorDeps,
+  type AgentResult,
 } from "./agentExecutor.js";
 import { WriteEffectLedger } from "./idempotencyKey.js";
 import {
@@ -262,15 +263,20 @@ export interface RunnerDeps {
    * (they fall back to constructing a local log + `appendDirect`).
    */
   runLog?: RecipeRunLog;
-  /** Optional Anthropic API caller for agent steps. Defaults to fetch-based impl. */
-  claudeFn?: (prompt: string, model: string) => Promise<string>;
+  /**
+   * Optional Anthropic API caller for agent steps. Defaults to fetch-based
+   * impl. May return either a raw string (legacy / tests) or `AgentResult`
+   * carrying usage tokens (bridge wrappers, real adapters). The runner
+   * normalises at the executor boundary — see PR2a.
+   */
+  claudeFn?: (prompt: string, model: string) => Promise<string | AgentResult>;
   /** Optional Claude Code CLI caller for agent steps with driver: claude-code. */
   claudeCodeFn?: (
     prompt: string,
     opts?: { mcpAccess?: boolean },
-  ) => Promise<string>;
+  ) => Promise<string | AgentResult>;
   /** Optional local LLM caller (Ollama / LM Studio) for agent steps with driver: local or model: local. */
-  localFn?: (prompt: string, model: string) => Promise<string>;
+  localFn?: (prompt: string, model: string) => Promise<string | AgentResult>;
   /**
    * Optional provider driver invoker for agent steps with driver: openai|grok|gemini.
    * Dispatches to src/drivers/* under the hood. If not provided, the runner will
@@ -280,7 +286,7 @@ export interface RunnerDeps {
     driverName: "openai" | "grok" | "gemini",
     prompt: string,
     model: string | undefined,
-  ) => Promise<string>;
+  ) => Promise<string | AgentResult>;
   /** Mock connector replays used by `patchwork recipe test`. */
   mockConnectors?: Partial<Record<string, MockToolConnector>>;
   /** Directory to store recorded connector fixtures for `patchwork recipe record`. */
@@ -549,8 +555,12 @@ export async function runYamlRecipe(
       const stepId = intoKey;
       const stepStart = Date.now();
       let agentResult: string;
+      // PR2a foundation: the executor now returns `{text, usage?}` so
+      // downstream PR2b can enforce per-recipe tokensMax. This call site
+      // discards `.usage` for now — wiring lands in PR2b along with the
+      // RunBudget admission/reconcile path.
       try {
-        agentResult = await _executeAgent(
+        const agentReturn = await _executeAgent(
           {
             prompt: renderedPrompt,
             driver: agentCfg.driver === "api" ? "anthropic" : agentCfg.driver,
@@ -561,6 +571,7 @@ export async function runYamlRecipe(
           },
           buildAgentExecutorDeps(stepDeps, deps),
         );
+        agentResult = agentReturn.text;
         // Catch both `[agent step failed: ...]` (existing) and the
         // silent-fail patterns `[agent step skipped: ...]` etc. via the
         // shared detector. Per-step opt-out via `silentFailDetection: false`.
@@ -1181,21 +1192,34 @@ function resolveStepDeps(deps: RunnerDeps): StepDeps {
   };
 }
 
+/**
+ * Normalise the union return of a RunnerDeps caller into an `AgentResult`.
+ * Test mocks / CLI overrides typically return a plain string; bridge
+ * wrappers + real adapter paths return `{text, usage}` so PR2b's token
+ * budget enforcer can read usage. Both shapes converge here.
+ */
+function toAgentResult(v: string | AgentResult): AgentResult {
+  return typeof v === "string" ? { text: v } : v;
+}
+
 function buildAgentExecutorDeps(
   stepDeps: StepDeps,
   runnerDeps: RunnerDeps,
   claudeCodeFnOverride?: (
     prompt: string,
     opts?: { mcpAccess?: boolean },
-  ) => Promise<string>,
+  ) => Promise<string | AgentResult>,
 ): AgentExecutorDeps {
   const claudeCliFn = claudeCodeFnOverride ?? stepDeps.claudeCodeFn;
   return {
-    anthropicFn: (prompt, model) => stepDeps.claudeFn(prompt, model),
-    providerDriverFn: (driver, prompt, model) =>
-      stepDeps.providerDriverFn(driver, prompt, model),
-    claudeCliFn: (prompt, opts) => claudeCliFn(prompt, opts),
-    localFn: (prompt, model) => stepDeps.localFn(prompt, model),
+    anthropicFn: async (prompt, model) =>
+      toAgentResult(await stepDeps.claudeFn(prompt, model)),
+    providerDriverFn: async (driver, prompt, model) =>
+      toAgentResult(await stepDeps.providerDriverFn(driver, prompt, model)),
+    claudeCliFn: async (prompt, opts) =>
+      toAgentResult(await claudeCliFn(prompt, opts)),
+    localFn: async (prompt, model) =>
+      toAgentResult(await stepDeps.localFn(prompt, model)),
     probeClaudeCli: () => {
       if (runnerDeps.claudeFn !== undefined) return false;
       // Use the same resolution as defaultClaudeCodeFn so the auto-detect
@@ -1342,9 +1366,13 @@ function makeProviderDriverFn(): (
   };
 }
 
-async function defaultClaudeFn(prompt: string, model: string): Promise<string> {
+async function defaultClaudeFn(
+  prompt: string,
+  model: string,
+): Promise<AgentResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return "[agent step skipped: ANTHROPIC_API_KEY not set]";
+  if (!apiKey)
+    return { text: "[agent step skipped: ANTHROPIC_API_KEY not set]" };
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -1366,18 +1394,35 @@ async function defaultClaudeFn(prompt: string, model: string): Promise<string> {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => res.statusText);
-      return `[agent step failed: ${text}]`;
+      return { text: `[agent step failed: ${text}]` };
     }
+    // PR2a: forward Anthropic API token counts so PR2b's RunBudget can
+    // reconcile actual consumption. Optional both upstream (older API
+    // versions) and downstream (subscription/CLI driver returns
+    // undefined here).
     const data = (await res.json()) as {
       content?: Array<{ type: string; text?: string }>;
+      usage?: { input_tokens?: number; output_tokens?: number };
     };
-    return data.content?.[0]?.text ?? "[agent step failed: empty response]";
+    const text =
+      data.content?.[0]?.text ?? "[agent step failed: empty response]";
+    const inputTokens = data.usage?.input_tokens;
+    const outputTokens = data.usage?.output_tokens;
+    if (typeof inputTokens === "number" && typeof outputTokens === "number") {
+      return { text, usage: { inputTokens, outputTokens } };
+    }
+    return { text };
   } catch (err) {
-    return `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`;
+    return {
+      text: `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`,
+    };
   }
 }
 
-async function defaultLocalFn(prompt: string, model: string): Promise<string> {
+async function defaultLocalFn(
+  prompt: string,
+  model: string,
+): Promise<AgentResult> {
   try {
     const { createLocalAdapter } = await import("../adapters/local.js");
     const { loadConfig: loadPatchworkConfig } = await import(
@@ -1392,9 +1437,18 @@ async function defaultLocalFn(prompt: string, model: string): Promise<string> {
       systemPrompt: "",
       messages: [{ role: "user", content: prompt }],
     });
-    return result.text ?? "[agent step failed: empty response from local LLM]";
+    const text =
+      result.text ?? "[agent step failed: empty response from local LLM]";
+    // PR2a: local adapters carry usage when the backing API (Ollama / LM
+    // Studio) surfaces it; otherwise undefined.
+    if (result.usage) {
+      return { text, usage: result.usage };
+    }
+    return { text };
   } catch (err) {
-    return `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`;
+    return {
+      text: `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`,
+    };
   }
 }
 
@@ -1411,7 +1465,7 @@ export function buildChainedDeps(
   claudeCodeFnOverride?: (
     prompt: string,
     opts?: { mcpAccess?: boolean },
-  ) => Promise<string>,
+  ) => Promise<string | AgentResult>,
 ): import("./chainedRunner.js").ExecutionDeps {
   const stepDeps = resolveStepDeps(runnerDeps);
 
@@ -1474,8 +1528,11 @@ export function buildChainedDeps(
     model?: string,
     driver?: string,
     mcpAccess?: boolean,
-  ): Promise<string> =>
-    _executeAgent(
+  ): Promise<string> => {
+    // chainedRunner's AgentExecutor contract still returns a plain string —
+    // PR2b's token-budget consumer will plug in here as well, but for now
+    // we discard `.usage`.
+    const result = await _executeAgent(
       {
         prompt,
         model,
@@ -1484,6 +1541,8 @@ export function buildChainedDeps(
       },
       buildAgentExecutorDeps(stepDeps, runnerDeps, claudeCodeFnOverride),
     );
+    return result.text;
+  };
 
   // ---------------------------------------------------------------------
   // BEGIN A-PR2 EDIT BLOCK — `loadNestedRecipe` jail (dogfood F-04).
