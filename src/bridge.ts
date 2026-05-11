@@ -179,6 +179,7 @@ export class Bridge {
       config.trustedProxies,
     );
     this.server.bridgeConfigPath = config.configFilePath ?? undefined;
+    this.server.webhookSecret = config.webhookSecret ?? null;
     if (config.issuerUrl) {
       this.oauthServer = new OAuthServerImpl(this.authToken, config.issuerUrl, {
         configDir,
