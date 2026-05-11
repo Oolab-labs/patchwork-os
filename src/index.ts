@@ -1920,9 +1920,10 @@ if (process.argv[2] === "halts") {
   const wantHelp = args.includes("--help") || args.includes("-h");
   if (wantHelp) {
     process.stdout.write(
-      "Usage: patchwork halts [--window <name>] [--json]\n" +
+      "Usage: patchwork halts [--window <name>] [--recipe <name>] [--json]\n" +
         "\n" +
         "  --window 1h | 24h | overnight | 7d | any   (default: overnight)\n" +
+        "  --recipe <name>                            filter to one recipe by name\n" +
         "  --json                                     emit raw JSON (for scripting)\n" +
         "\n" +
         '"overnight" = since 6pm yesterday local time.\n',
@@ -1956,6 +1957,11 @@ if (process.argv[2] === "halts") {
   }
   const window = parseWindow();
   const wantJson = args.includes("--json");
+  const recipeIdx = args.findIndex((a) => a === "--recipe" || a === "-r");
+  const recipeFilter =
+    recipeIdx >= 0 && recipeIdx + 1 < args.length
+      ? args[recipeIdx + 1]
+      : undefined;
 
   (async () => {
     try {
@@ -1976,7 +1982,11 @@ if (process.argv[2] === "halts") {
         process.exit(2);
       }
       const sinceMs = windowSinceMs(window);
-      const qs = sinceMs != null ? `?sinceMs=${sinceMs}` : "";
+      const params: string[] = [];
+      if (sinceMs != null) params.push(`sinceMs=${sinceMs}`);
+      if (recipeFilter)
+        params.push(`recipe=${encodeURIComponent(recipeFilter)}`);
+      const qs = params.length > 0 ? `?${params.join("&")}` : "";
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10_000);
       let res: Response;
@@ -2027,7 +2037,8 @@ if (process.argv[2] === "halts") {
         any: "all time",
       };
 
-      process.stdout.write(`Halts — ${windowLabel[window]}\n`);
+      const recipeSuffix = recipeFilter ? ` · recipe="${recipeFilter}"` : "";
+      process.stdout.write(`Halts — ${windowLabel[window]}${recipeSuffix}\n`);
       process.stdout.write(`Total: ${summary.total}\n`);
       if (summary.total === 0) {
         process.stdout.write("\n  (nothing halted in this window)\n");
