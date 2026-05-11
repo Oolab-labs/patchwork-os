@@ -419,6 +419,28 @@ describe("RecipeRunLog.record", () => {
     expect(log.getChildSeqs(99)).toEqual([]);
   });
 
+  it("startRun round-trips manualRunId for one logical attempt", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    const attempt = "mr_2026-05-11_abc123";
+    const seq = log.startRun({
+      taskId: "manual:review:1",
+      recipeName: "review",
+      trigger: "recipe",
+      createdAt: 1_000,
+      manualRunId: attempt,
+    });
+    expect(log.getBySeq(seq)?.manualRunId).toBe(attempt);
+
+    // Omitting the field leaves it unset (cron / webhook runs).
+    const seq2 = log.startRun({
+      taskId: "cron:nightly:2",
+      recipeName: "nightly",
+      trigger: "cron",
+      createdAt: 2_000,
+    });
+    expect(log.getBySeq(seq2)?.manualRunId).toBeUndefined();
+  });
+
   it("record() stores parentSeq from :p<N> triggerSource suffix", () => {
     const log = new RecipeRunLog({ dir: tmp });
     const rec = log.record({
