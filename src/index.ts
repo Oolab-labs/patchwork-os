@@ -1367,6 +1367,20 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
           attemptId === "new"
             ? `mr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
             : attemptId;
+        // Validate at the CLI boundary so an invalid id fails loudly
+        // before any side effects run (and before it lands in the run
+        // log or hashed into a ledger scope key).
+        try {
+          const { assertValidManualRunId } = await import(
+            "./recipes/idempotencyKey.js"
+          );
+          assertValidManualRunId(resolvedAttempt);
+        } catch (err) {
+          process.stderr.write(
+            `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+          process.exit(1);
+        }
         resolvedLedgerDir = ledgerDir ?? path.join(os.homedir(), ".patchwork");
         process.stdout.write(
           `  Attempt id: ${resolvedAttempt} (ledger: ${resolvedLedgerDir})\n`,

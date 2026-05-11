@@ -3093,7 +3093,15 @@ steps:
         .split("\n")
         .map((l) => JSON.parse(l));
       expect(rows.length).toBeGreaterThanOrEqual(1);
-      expect(rows[0].scopeKey).toBe(`resume-test:${attempt}`);
+      // scopeKey is the SHA-256 prefix of [recipeName, attempt] — collision-
+      // free across the colon-ambiguity case. We don't pin the exact hex
+      // value here (it's tested in idempotencyKey.test.ts); just confirm
+      // shape + stability across two runs in this same scope.
+      expect(rows[0].scopeKey).toMatch(/^[0-9a-f]{32}$/);
+      const firstScopeKey = rows[0].scopeKey;
+      expect(
+        rows.every((r: { scopeKey: string }) => r.scopeKey === firstScopeKey),
+      ).toBe(true);
       rmSync(ledgerDir, { recursive: true, force: true });
     });
 
