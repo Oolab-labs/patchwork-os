@@ -32,11 +32,11 @@ import { Server } from "../server.js";
 const TOKEN = "test-kill-switch-token-00000000000000";
 const KILL_SWITCH_ENV = "PATCHWORK_FLAG_KILL_SWITCH_WRITES";
 
-vi.mock("../patchwork.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../patchwork.js")>();
+vi.mock("../patchworkConfig.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../patchworkConfig.js")>();
   return {
     ...actual,
-    loadPatchworkConfig: vi.fn().mockReturnValue({
+    loadConfig: vi.fn().mockReturnValue({
       dashboard: {
         port: 3000,
         requireApproval: ["high"],
@@ -44,8 +44,8 @@ vi.mock("../patchwork.js", async (importOriginal) => {
       },
       approvalGate: "high",
     }),
-    savePatchworkConfig: vi.fn(),
-    patchworkConfigPath: vi.fn().mockReturnValue("/tmp/patchwork-stub.json"),
+    saveConfig: vi.fn(),
+    defaultConfigPath: vi.fn().mockReturnValue("/tmp/patchwork-stub.json"),
   };
 });
 
