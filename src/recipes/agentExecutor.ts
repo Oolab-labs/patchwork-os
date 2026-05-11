@@ -8,19 +8,41 @@
  * localFn (Ollama/LM Studio) instead of Anthropic API — opt-in behaviour change.
  */
 
+/**
+ * Token usage reported by an adapter. Both fields are integers; absent
+ * `usage` on the parent `AgentResult` means the driver didn't surface
+ * counts (e.g. subprocess / Claude CLI, or local model that doesn't
+ * return usage).
+ */
+export interface AgentUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/**
+ * Agent dispatch result. `text` is the assistant's full response (the
+ * only thing existing callers care about). `usage` is the foundation for
+ * PR2b — recipe-level token budget enforcement. Optional because not
+ * every driver reports it (subscription Claude CLI, some local stacks).
+ */
+export interface AgentResult {
+  text: string;
+  usage?: AgentUsage;
+}
+
 export interface AgentExecutorDeps {
-  anthropicFn: (prompt: string, model: string) => Promise<string>;
+  anthropicFn: (prompt: string, model: string) => Promise<AgentResult>;
   /** Handles openai, grok, gemini — passes driver name through. */
   providerDriverFn: (
     driver: "openai" | "grok" | "gemini",
     prompt: string,
     model: string | undefined,
-  ) => Promise<string>;
+  ) => Promise<AgentResult>;
   claudeCliFn: (
     prompt: string,
     opts?: { mcpAccess?: boolean },
-  ) => Promise<string>;
-  localFn: (prompt: string, model: string) => Promise<string>;
+  ) => Promise<AgentResult>;
+  localFn: (prompt: string, model: string) => Promise<AgentResult>;
   /** Returns true when the `claude` CLI is available on PATH. */
   probeClaudeCli: () => boolean;
   /** Reads ~/.patchwork/config; returns {} when absent. */
@@ -45,7 +67,7 @@ const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 export async function executeAgent(
   input: AgentExecutorInput,
   deps: AgentExecutorDeps,
-): Promise<string> {
+): Promise<AgentResult> {
   const { prompt, driver, model, mcpAccess } = input;
   const cliOpts = mcpAccess !== undefined ? { mcpAccess } : undefined;
 

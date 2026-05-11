@@ -2506,6 +2506,58 @@ describe("resolveClaudeBinary — override precedence", async () => {
   });
 });
 
+// ── PR2a — executeAgent return shape (AgentResult union normalization) ───────
+// The runner's claudeFn dep accepts `Promise<string | AgentResult>`. Test
+// mocks return strings (legacy/cheap); bridge wrappers + real adapters
+// return `{text, usage}` so PR2b's RunBudget can read usage. Both shapes
+// must produce identical recipe-level behaviour today (PR2a is
+// behaviour-neutral).
+
+describe("executeAgent — AgentResult union normalization (PR2a)", () => {
+  it("accepts a plain-string claudeFn (legacy / test-mock shape)", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "summarize",
+            model: "claude-haiku-4-5-20251001",
+            into: "summary",
+          },
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => "plain string output",
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(result.context.summary).toBe("plain string output");
+  });
+
+  it("accepts an AgentResult-shaped claudeFn and uses .text identically", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "summarize",
+            model: "claude-haiku-4-5-20251001",
+            into: "summary",
+          },
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => ({
+        text: "object-shaped output",
+        usage: { inputTokens: 12, outputTokens: 34 },
+      }),
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(result.context.summary).toBe("object-shaped output");
+  });
+});
+
 // ── haltReason population ─────────────────────────────────────────────────────
 // PR1 of the Val-inspired plan: every error-status StepResult must carry a
 // one-sentence, human-actionable haltReason. These tests pin the convention
