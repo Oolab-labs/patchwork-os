@@ -43,7 +43,7 @@ Produced as companion to [`recipe-chaining-wave1-plan.md`](./recipe-chaining-wav
 
 ### What's still missing for 4.5 (Authoring DX)
 
-1. **Editor-distribution story is partial** — `$schema` header + local bridge resolve in dev; SchemaStore publication needed for offline/non-bridge editors. PR body drafted at [docs/recipe-schemastore-pr.md](./recipe-schemastore-pr.md). Hover-quality descriptions on tool params not yet driven from `ToolMetadata`.
+1. **Editor-distribution story is partial** — `$schema` header + local bridge resolve in dev; SchemaStore PR submitted 2026-04-28 ([schemastore/json#5608](https://github.com/SchemaStore/schemastore/pull/5608)), awaiting upstream merge. Hover-quality descriptions on tool params not yet driven from `ToolMetadata`.
 2. **Registry consolidation is near-complete but not done** — `isConnector` + `isWrite` now on `ToolMetadata`; dashboard docs and input/output JSON schemas per tool step still manually maintained.
 3. **Scaffolding is basic, not polished** — `patchwork recipe new` exists with `$schema` header, but connector-aware interactive prompting described in this milestone is not yet built.
 4. **Local test harness deepened but not complete** — `recipe test` now evaluates `expect` block assertions at runtime (`evaluateExpect`), surfaces structured `AssertionFailure[]`, and has `--watch` mode. Per-provider fixture breadth still needs work.
@@ -75,8 +75,8 @@ Produced as companion to [`recipe-chaining-wave1-plan.md`](./recipe-chaining-wav
 2. **OAuth 2.0 refresh primitives in `BaseConnector`** ✅ *Shipped*
    - `BaseConnector.refreshToken()` (`src/connectors/baseConnector.ts:127-175`) implements the RFC 6749 refresh_token grant; `apiCall<T>` (`:198-278`) refreshes preemptively when expired and again on `auth_expired` mid-call before falling back to full re-auth.
    - Tokens persisted via `src/connectors/tokenStorage.ts` to OS keychain — native CLIs (`security` on macOS, DPAPI/PowerShell on Windows, `secret-tool` on Linux) with AES-256-GCM encrypted-file fallback. **No `keytar` dependency** (avoids unmaintained native module + Electron rebuild pain).
-   - All Wave 2 candidates (Zendesk, Stripe, Datadog, Intercom, HubSpot, Confluence, Notion, Jira) extend `BaseConnector` and implement `getOAuthConfig()`.
-   - **Remaining gap (test coverage, ~1 day):** only `gmailRefresh.test.ts` exercises the refresh path today; per-Wave-2-connector refresh tests + a direct `BaseConnector.refreshToken()` unit test are needed before merging Wave 2 connectors. See "Testing" section below.
+   - All Wave 2 candidates (Zendesk, Stripe, Datadog, Intercom, HubSpot, Confluence, Notion, Jira) extend `BaseConnector` but all return `null` from `getOAuthConfig()` — every one ships with API-token / Basic-auth credentials, not OAuth refresh. The `BaseConnector.refreshToken()` path is unreachable for them by design.
+   - **Remaining gap (test coverage, ~half day):** the OAuth-refresh-flow connectors that need `gmailRefresh.test.ts`-style coverage are **Asana, Discord, GitLab** (BaseConnector subclasses with real `tokenEndpoint`) plus the standalone Google modules (`googleCalendar.ts`, `googleDrive.ts`). Wave 2 API-token connectors only need a one-line `getOAuthConfig() === null` lock-test each so future changes can't silently re-enable a broken refresh path.
 
 3. **Feature flags + rollback hooks**
    - Every new surface ships behind `bridge.config.features.<featureName>`.
@@ -99,7 +99,7 @@ Produced as companion to [`recipe-chaining-wave1-plan.md`](./recipe-chaining-wav
 #### What to build
 
 1. **Composable JSON Schema set** ✅ *Shipped alpha.22* — `GET /schemas/recipe.v1.json`, `GET /schemas/tools/<ns>.json` served from bridge. Composable via `$ref`. Per-namespace tool schemas from registry.
-   - **Still open:** publish to SchemaStore so offline/non-bridge editors get autocomplete. PR body drafted at [docs/recipe-schemastore-pr.md](./recipe-schemastore-pr.md).
+   - **In flight:** SchemaStore PR submitted 2026-04-28 ([schemastore/json#5608](https://github.com/SchemaStore/schemastore/pull/5608)), awaiting LGTM. PR body at [docs/recipe-schemastore-pr.md](./recipe-schemastore-pr.md).
 
 2. **`yaml-language-server` metadata block** ✅ *Shipped* — `patchwork recipe new` writes `# yaml-language-server: $schema=https://patchwork.sh/schema/recipe.v1.json`. Local bridge URL also works in dev.
 
@@ -177,7 +177,7 @@ Replace the current flat "Runs" row with a **step-timeline view** at `/runs/<seq
 
 ---
 
-### Agent A4 — Mock connector harness + fixture library
+### Agent A4 — Mock connector harness + fixture library ✅ Shipped (PR #67, 2026-04-29)
 
 **Owner:** Connectors team
 
@@ -203,7 +203,7 @@ Replace the current flat "Runs" row with a **step-timeline view** at `/runs/<seq
 
 ---
 
-### Agent A5 — Curated provider Wave 2 (Confluence, Zendesk, Intercom, HubSpot, Datadog, Stripe)
+### Agent A5 — Curated provider Wave 2 (Confluence, Zendesk, Intercom, HubSpot, Datadog, Stripe) ✅ All 6 connectors shipped
 
 **Owner:** Connectors team (one agent per connector pair)
 
@@ -228,7 +228,7 @@ Follows the exact Wave 1 pattern (`BaseConnector` extension, read/write tools, a
 
 ## Milestone 5 — Community recipes + ecosystem foundation
 
-### Agent B1 — GitHub-backed recipe distribution
+### Agent B1 — GitHub-backed recipe distribution ✅ Mostly shipped (PRs #39, #42, #281)
 
 **Owner:** Platform + web team
 

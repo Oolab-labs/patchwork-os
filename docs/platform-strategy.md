@@ -183,24 +183,24 @@ Pre-fetches relevant sources based on task type — so the agent doesn't burn to
 
 - Build on claude-ide-bridge's existing orchestrator architecture
 - Add upstream MCP server connectors (GitHub, Linear, Sentry as first three)
-- Implement `getTaskContext(ref)` — unified tool cross-referencing ticket/issue/error across all sources
+- ✅ Implement `getTaskContext(ref)` — unified tool cross-referencing ticket/issue/error across all sources (shipped — `ctxGetTaskContext`)
 - Ship as new mode: `--platform`
 
-### Phase 2 — Enrichment Engine
+### Phase 2 — Enrichment Engine ✅ Mostly shipped
 **Goal:** Context that's connected, not just collected
 
-- Commit-to-issue linker: match Sentry errors to the commit that introduced them
-- File-to-ticket mapper: given a file path, find all open issues touching it
+- ✅ Commit-to-issue linker: match Sentry errors to the commit that introduced them (shipped — `enrichCommit`, `enrichStackTrace`)
+- ✅ File-to-ticket mapper: given a file path, find all open issues touching it (shipped — `getCommitsForIssue` covers the reverse direction)
 - Freshness scoring: flag stale ADRs, outdated docs, deprecated APIs
 - Deduplication: normalize overlapping events from multiple tools
 
-### Phase 3 — Persistence Layer (the moat)
+### Phase 3 — Persistence Layer (the moat) ✅ Shipped
 **Goal:** Context that accumulates across sessions
 
-- Decision trace store: every resolved task writes a structured trace
-- Cross-session retrieval: new sessions query trace store before querying upstream tools
+- ✅ Decision trace store: every resolved task writes a structured trace (shipped — `ctxSaveTrace`, `~/.patchwork/decision_traces.jsonl`)
+- ✅ Cross-session retrieval: new sessions query trace store before querying upstream tools (shipped — `ctxQueryTraces` + bridge prepends recent-decisions digest to MCP instructions)
 - Team-scoped: traces owned by workspace/org, not individual developer
-- Storage: SQLite locally → hosted when multi-user
+- ✅ Storage: SQLite locally → hosted when multi-user (local persistence shipped via PRs #128/#132/#167/#174/#185; export/import via `traces:export`/`traces:import`; hosted is M6+)
 
 ### Phase 4 — Hosted Platform
 **Goal:** Multi-team, zero-install, cloud-native
@@ -283,8 +283,8 @@ The platform vision is correct but it's a 2-3 year build. The trap: building inf
 
 **The data needed to build the platform correctly is locked inside the sessions of the 500 people who've cloned the bridge. Get it first.**
 
-### Step 1 — Nail the Setup (4-6 weeks)
-- Make `init` bulletproof — one command, works, no ambiguity
+### Step 1 — Nail the Setup (4-6 weeks) ✅ Shipped
+- ✅ Make `init` bulletproof — one command, works, no ambiguity (shipped — `patchwork init` in `src/commands/patchworkInit.ts`)
 - Add post-init verification confirming tools are visible in Claude Code
 - Write clear "Why your tools aren't showing up" troubleshooting doc
 - Add config file callout box prominently in README
@@ -295,7 +295,7 @@ The platform vision is correct but it's a 2-3 year build. The trap: building inf
 - Write one "building in public" post on a non-obvious technical decision
 - Engage authentically in r/ClaudeAI
 
-**Target: 200 stars.** That's the threshold where organic discovery starts compounding.
+**Target: 200 stars.** That's the threshold where organic discovery starts compounding. **(2026-05-11: still well short — currently 15 stars, down from 18 when this doc was written. Star count is a lagging signal but the trajectory is the wrong direction; revisit the distribution plan in Step 2.)**
 
 ### Step 3 — Instrument Context Usage (ongoing)
 - Opt-in telemetry: which tools are called most, which fail, which are called together
@@ -304,9 +304,9 @@ The platform vision is correct but it's a 2-3 year build. The trap: building inf
 
 This data tells you which Phase 1 federation targets matter.
 
-### Step 4 — Ship One Platform Primitive (3 months out)
+### Step 4 — Ship One Platform Primitive (3 months out) ✅ Shipped
 Best candidate: **GitHub + IDE**
-`getTaskContext(issue_url)` returning the issue, related files, recent commits, and open PRs. No new infrastructure — cross-referencing two sources already reachable.
+`getTaskContext(issue_url)` returning the issue, related files, recent commits, and open PRs. No new infrastructure — cross-referencing two sources already reachable. **Landed earlier than projected — `ctxGetTaskContext` plus full enrichment suite (`enrichCommit`, `getCommitsForIssue`, `enrichStackTrace`, `ctxSaveTrace`, `ctxQueryTraces`) all ship in v0.2.0-beta.2.**
 
 ### The Decision Tree
 
@@ -326,8 +326,27 @@ If people run `claude` with the bridge daily, the context gap is real — they'l
 
 | Now | 3 months | 6-12 months |
 |-----|----------|-------------|
-| Fix `init` + onboarding | 200+ stars, active community | Platform Phase 1 if signal is there |
-| README GIF + distribution | Instrumentation live | One cross-tool integration (GitHub + IDE) |
-| Respond to every issue | Weekly active session data | Persistence layer design |
+| ✅ Fix `init` + onboarding (`patchwork init` shipped) | 15 stars (was 18 when written — wrong direction) | ✅ Platform Phase 1 landed early (`ctxGetTaskContext`) |
+| README GIF + distribution | Instrumentation deferred | ✅ Cross-tool integration shipped (GitHub + IDE via `enrichCommit`/`getCommitsForIssue`/`enrichStackTrace`) |
+| Respond to every issue | Weekly active session data deferred | ✅ Persistence layer shipped (traces stack: PRs #128/#132/#167/#174/#185, plus export/import via `traces:export`/`traces:import`) |
 
 The platform is the right destination. The route there goes through nailing the fundamentals first.
+
+---
+
+## Status update — 2026-05-11
+
+When this doc was written (2026-03-26) the recommendation was "don't build the platform yet — build the on-ramp first." Six weeks in, the on-ramp work has mostly landed earlier than projected, while the distribution metric (stars) has gone backwards.
+
+**What landed:**
+- `patchwork init` (Step 1) — `src/commands/patchworkInit.ts`
+- Platform primitive (Step 4) — `ctxGetTaskContext` plus the full enrichment suite (`enrichCommit`, `getCommitsForIssue`, `enrichStackTrace`, `ctxSaveTrace`, `ctxQueryTraces`)
+- Persistence layer (Phase 3) — local traces stack (PRs #128/#132/#167/#174/#185) and `traces:export` / `traces:import` for cross-machine portability
+- Recent-decisions digest auto-injected at session start via MCP instructions block
+
+**What's open and now bottlenecks the story:**
+- Distribution (Step 2) — README rewrite + asciinema GIF + `awesome-mcp-servers` submission still TODO. Star count drifted from 18 → 15.
+- Telemetry / instrumentation (Step 3) — no opt-in pipeline yet; `RECENT DECISIONS` digest covers some of this implicitly but the explicit "which tools fail / are called together" signal isn't being captured.
+- Hosted platform (Phase 4) — appropriately deferred; no urgency.
+
+**Revised read:** the technical on-ramp is in better shape than the doc predicted. The bottleneck moved from "is the foundation good enough?" to "does anyone know it exists?" The next investment should sit in Step 2 (distribution), not Step 4 (more platform primitives).
