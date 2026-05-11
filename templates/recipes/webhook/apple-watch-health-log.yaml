@@ -2,8 +2,15 @@ apiVersion: patchwork.sh/v1
 name: apple-watch-health-log
 description: |
   Logs Apple Watch sleep duration, quality, and all three activity rings from
-  an iOS Shortcut. Appends a clean daily journal entry, then pushes a one-line
-  summary to your phone via ntfy.sh.
+  an iOS Shortcut. Appends a clean daily journal entry and pushes a one-line
+  summary to your phone via ntfy.sh. Two conditional nudges fire only when the
+  payload looks off:
+
+    - "Short night" — separate priority-5 push when sleep_hours_under_6 is set
+    - "Watch off your wrist" — different topic when move_percent is 0
+
+  Conditional steps are gated by `when:` and read precomputed boolean fields
+  from the iOS Shortcut payload (template substitution can't do arithmetic).
 
   Suggested triggers:
     - iOS Shortcut ("Log my watch" — pulls Health stats + POSTs JSON)
@@ -12,18 +19,20 @@ description: |
     - curl from any device that can POST HTTP
 
   Payload conventions (all optional — missing fields render blank):
-    sleep_hours        numeric, e.g. 7.4
-    sleep_quality      "deep" | "restful" | "light" | "restless" | free text
-    move_percent       0-100+ (rings can exceed 100%)
-    move_calories      active kcal burned
-    exercise_percent   0-100+
-    exercise_min       exercise minutes recorded
-    stand_percent      0-100+
-    notes              free-form journal text
+    sleep_hours              numeric, e.g. 7.4
+    sleep_quality            "deep" | "restful" | "light" | "restless" | free text
+    sleep_hours_under_6      "1" if sleep_hours < 6 (Shortcut precomputes)
+    move_percent             0-100+ (rings can exceed 100%)
+    move_percent_zero        "1" if move_percent == 0 (likely watch was off)
+    move_calories            active kcal burned
+    exercise_percent         0-100+
+    exercise_min             exercise minutes recorded
+    stand_percent            0-100+
+    notes                    free-form journal text
 
   Setup:
-    1. Replace NTFY_TOPIC below with your own unguessable ntfy topic and
-       subscribe to it in the ntfy mobile app.
+    1. Replace NTFY_TOPIC, NTFY_NUDGE_TOPIC, and NTFY_ALERT_TOPIC with your
+       own unguessable ntfy topics and subscribe to all three in the app.
     2. Drop this file in ~/.patchwork/recipes/.
     3. Start the bridge with `--driver subprocess` so /hooks/* is live.
 
@@ -43,17 +52,13 @@ steps:
     content: |
       ## {{date}} Apple Watch Summary
 
-      **Sleep**
-      Hours: {{payload.sleep_hours}}
-      Quality: {{payload.sleep_quality}}
-
-      **Activity Rings**
-      Move (calories): {{payload.move_percent}}% closed - {{payload.move_calories}} kcal
-      Exercise (minutes): {{payload.exercise_percent}}% closed - {{payload.exercise_min}} min
-      Stand (hours): {{payload.stand_percent}}% closed
-
-      **Notes**
-      {{payload.notes}}
+      ```
+      SLEEP   {{payload.sleep_hours}}h   {{payload.sleep_quality}}
+      MOVE    {{payload.move_percent}}%   {{payload.move_calories}} kcal
+      EXER    {{payload.exercise_percent}}%   {{payload.exercise_min}} min
+      STAND   {{payload.stand_percent}}%
+      NOTE    {{payload.notes}}
+      ```
 
       ---
 
@@ -62,16 +67,43 @@ steps:
     url: https://ntfy.sh/NTFY_TOPIC
     contentType: text/plain
     headers:
-      Title: Apple Watch - {{date}}
-      Tags: watch,bulb
+      Title: "{{date}} - the body report"
+      Tags: watch,zzz,fire
     body: |
-      Sleep: {{payload.sleep_hours}}h ({{payload.sleep_quality}})
-      Move: {{payload.move_percent}}% - {{payload.move_calories}} kcal
-      Exercise: {{payload.exercise_percent}}% - {{payload.exercise_min}} min
-      Stand: {{payload.stand_percent}}%
-
-      {{payload.notes}}
+      SLEEP   {{payload.sleep_hours}}h   {{payload.sleep_quality}}
+      MOVE    {{payload.move_percent}}%   {{payload.move_calories}} kcal
+      EXER    {{payload.exercise_percent}}%   {{payload.exercise_min}} min
+      STAND   {{payload.stand_percent}}%
+      NOTE    {{payload.notes}}
     into: push_result
+
+  # Fires only when payload.sleep_hours_under_6 is truthy ("1", "true", etc.)
+  - id: short_night_nudge
+    tool: http.post
+    when: "{{payload.sleep_hours_under_6}}"
+    url: https://ntfy.sh/NTFY_NUDGE_TOPIC
+    contentType: text/plain
+    headers:
+      Title: Short night - go easy today
+      Tags: sleeping_face,warning
+      Priority: "5"
+    body: |
+      You logged {{payload.sleep_hours}}h ({{payload.sleep_quality}}).
+      No PR attempts. Hydrate. Move at half-throttle.
+
+  # Fires only when payload.move_percent_zero is truthy — likely the watch
+  # was off your wrist all day, not that you genuinely moved 0%.
+  - id: watch_off_alert
+    tool: http.post
+    when: "{{payload.move_percent_zero}}"
+    url: https://ntfy.sh/NTFY_ALERT_TOPIC
+    contentType: text/plain
+    headers:
+      Title: Watch reported 0% move
+      Tags: warning,watch
+    body: |
+      Move ring at 0% for {{date}}. Battery dead? Forgot the watch?
+      Today's journal entry may not reflect actual activity.
 
 output:
   path: ~/.patchwork/health-journal/{{date}}.md
