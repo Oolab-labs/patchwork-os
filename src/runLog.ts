@@ -36,6 +36,13 @@ export interface RunStepResult {
   tool?: string;
   status: "ok" | "skipped" | "error";
   error?: string;
+  /**
+   * One-sentence human-actionable halt reason. Populated only for error
+   * rows; present for runs produced by yamlRunner from this version
+   * onward. Older runs.jsonl rows round-trip unchanged. See StepResult in
+   * src/recipes/yamlRunner.ts for the construction sites.
+   */
+  haltReason?: string;
   durationMs: number;
   // VD-2: per-step capture for diff hover + replay. All optional —
   // older `runs.jsonl` rows that pre-date VD-2 round-trip unchanged. Each
