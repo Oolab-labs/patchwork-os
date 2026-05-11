@@ -318,6 +318,20 @@ export interface RunnerDeps {
   recordFixturesDir?: string;
   /** Suppress run logs / notifications for mocked recipe test execution. */
   testMode?: boolean;
+  /**
+   * PR5b — when set, write-effect dedup persists to
+   * `${ledgerDir}/effect_ledger.jsonl` and is rehydrated on construction
+   * for the scope `${recipe.name}:${manualRunId}`. Requires `manualRunId`
+   * to actually go to disk; without it the ledger stays in-memory.
+   */
+  ledgerDir?: string;
+  /**
+   * PR5b — stable id for one *logical* user-initiated execution attempt.
+   * Composed with `recipe.name` into the disk-ledger scope key so a
+   * retry of the same attempt re-uses prior dedup records (resume
+   * semantics). Caller-supplied; left unset for cron / webhook runs.
+   */
+  manualRunId?: string;
 }
 
 export interface RunResult {
@@ -362,7 +376,15 @@ export type StepResult = {
 };
 
 export type StepDeps = Required<
-  Omit<RunnerDeps, "now" | "logDir" | "recordFixturesDir" | "runLog">
+  Omit<
+    RunnerDeps,
+    | "now"
+    | "logDir"
+    | "recordFixturesDir"
+    | "runLog"
+    | "ledgerDir"
+    | "manualRunId"
+  >
 > & {
   workdir: string;
   logDir?: string;
@@ -517,7 +539,7 @@ export async function runYamlRecipe(
     ...seedContext,
   };
 
-  const stepDeps = resolveStepDeps(deps);
+  const stepDeps = resolveStepDeps(deps, { recipeName: recipe.name });
   // PR2b: one per-run budget shared across all agent steps. Absent
   // `recipe.budget` → no enforcement, no overhead.
   const runBudget = new RunBudget(recipe.budget);
@@ -543,6 +565,9 @@ export async function runYamlRecipe(
         trigger: yamlTriggerKind,
         createdAt: recipeStartedAt,
         startedAt: recipeStartedAt,
+        ...(deps.manualRunId !== undefined && {
+          manualRunId: deps.manualRunId,
+        }),
       });
     } catch {
       // Non-fatal — run-log failures must never break recipe execution.
@@ -1191,7 +1216,10 @@ export function defaultGitStaleBranches(
 }
 
 /** Resolve all RunnerDeps to concrete StepDeps with production defaults filled in. */
-function resolveStepDeps(deps: RunnerDeps): StepDeps {
+function resolveStepDeps(
+  deps: RunnerDeps,
+  scope?: { recipeName: string },
+): StepDeps {
   const workdir = deps.workdir ?? process.cwd();
   // Defense-in-depth: even if a file.* tool somehow forgets to call
   // resolveRecipePath in its execute(), the default StepDeps file ops will
@@ -1262,9 +1290,17 @@ function resolveStepDeps(deps: RunnerDeps): StepDeps {
       }),
     logDir: deps.logDir,
     testMode: deps.testMode ?? false,
-    // PR5a: per-run idempotency ledger. Each call to `resolveStepDeps`
-    // produces a fresh ledger, so the scope is one recipe run.
-    writeEffectLedger: new WriteEffectLedger(),
+    // PR5a/b: per-attempt idempotency ledger. Disk-backed when
+    // `ledgerDir` + `manualRunId` + recipe name are all available so a
+    // retry of the same logical attempt re-uses prior records (resume
+    // semantics). Falls back to pure in-memory dedup otherwise.
+    writeEffectLedger:
+      deps.ledgerDir && deps.manualRunId && scope?.recipeName
+        ? new WriteEffectLedger({
+            dir: deps.ledgerDir,
+            scopeKey: `${scope.recipeName}:${deps.manualRunId}`,
+          })
+        : new WriteEffectLedger(),
   };
 }
 
