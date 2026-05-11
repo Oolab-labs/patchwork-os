@@ -6,6 +6,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased] — leverage-moves session, 2026-05-11
+
+### Added
+
+- **`patchwork recipe new --interactive`** (also `-i`) — connector-aware prompt tree for scaffolding recipes. Three modes:
+  1. **Guided** — step-by-step build with multi-step loop, `paramsSchema`-driven prompts for required tool fields, optional agent steps, auto-tail `file.write` to `~/.patchwork/inbox/`.
+  2. **Template** — pick from `{minimal, daily, inbox}`; same flow as the existing `runNew` but inside the interactive entry point.
+  3. **AI suggest** — describe the goal in natural language; CLI discovers the running bridge via `~/.claude/ide/*.lock`, POSTs to `/recipes/generate`, writes the response YAML verbatim (no form normalization). Falls back with a clear actionable error when no bridge is running or when the bridge needs `--driver subprocess`.
+- **Generated YAML always carries the SchemaStore pragma** (`# yaml-language-server: $schema=https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json`), and runs through `validateRecipeDefinition` post-hoc — write proceeds; warnings are surfaced to the caller.
+- **SchemaStore `$schema` pragma on 6 canonical example recipes** so YAML editors get autocomplete out of the box once SchemaStore PR #5608 merges (companion to that PR).
+- **Wave-2 no-OAuth contract lock** — `src/connectors/__tests__/wave2-no-oauth.lock.test.ts` asserts the 8 API-token connectors (Confluence, Datadog, HubSpot, Intercom, Jira, Notion, Stripe, Zendesk) return `null` from `getOAuthConfig()` so future changes can't silently re-enable a broken refresh path.
+- **Per-provider OAuth refresh tests** for the 5 connectors that actually exercise the refresh flow: Asana, Discord, GitLab (`BaseConnector` subclasses with real `tokenEndpoint`) plus Google Calendar and Google Drive (standalone modules following the `gmailRefresh.test.ts` pattern).
+
+### Changed
+
+- **`recipe new` CLI subcommand documented in CLAUDE.md** alongside the new `--interactive` flag.
+- **Plan-doc updates**: `recipe-authoring-wave2-plan.md` now marks Agent A4 (mock harness), A5 (Wave-2 connectors), B1 (GitHub-backed distribution) as shipped with PR citations; the OAuth-refresh "remaining gap" was reframed mid-session (#421) and then closed entirely (#429) after the actual tests landed.
+- **`platform-strategy.md`** gets a "Status update — 2026-05-11" appendix marking the technical on-ramp largely complete; calls out that the bottleneck has shifted from "is the foundation good enough?" to "does anyone know it exists?" (stars went from 18 → 15, wrong direction).
+
+### Removed
+
+- **`patchwork marketplace` subcommand** (issue #279 closed 2026-05-07). The stub only emitted a deprecation message; nothing imported `runMarketplace`. `patchwork marketplace …` now falls through to the unknown-subcommand suggester, which is the desired UX.
+- **`--claude-driver` / `claudeDriver` deprecated alias** (BREAKING). Use `--driver` / `"driver"` instead. Alias was added in alpha.21 as a transitional rename and has been emitting a deprecation warning since. This is the cutover. Covers the CLI flag, the `ConfigFile` field, the `KNOWN_CONFIG_FILE_KEYS` allowlist, the `saveBridgeConfigDriver` cleanup, the `--help` text, user-facing error messages across the codebase, 9 test fixtures that had been quietly using the dead alias via `as Partial<Config>` casts, the macOS `co.patchwork-os.bridge.plist` launchd template's `ProgramArguments`, `start-all.sh`, the 4 automation-policy presets, the `start:automation` npm script, the `cat12-automation` smoke test harness, and ~40 prose substitutions across `docs/`, `documents/`, `examples/`, `vscode-extension/README.md`, `README.bridge.md`, `README.md`, `ARCHITECTURE.md`. Migration: `--claude-driver subprocess` → `--driver subprocess`; `"claudeDriver": "..."` → `"driver": "..."` in `~/.claude/ide/config.json`.
+
+### Issues filed
+
+- **#422 — kill-switch UI + CLI design**. Surfacing the global write-tier kill-switch in dashboard `/settings` + new `patchwork panic` / `patchwork resume` CLI was deferred mid-session after a review surfaced a product-grade safety hazard in the naïve implementation (`patchwork panic` writes `flags.json` but the running bridge doesn't `fs.watch` it — user gets a "stopped" confirmation while writes continue). Filed with the redesign findings (CLI → HTTP via lock-file discovery, `setFlag` must surface env-lock conflicts) so the work isn't lost. **The bridge-discovery + Bearer-auth pattern was subsequently proven in the AI-suggest PR** — the kill-switch implementation can reuse that shape verbatim.
+
+### Process notes
+
+- A near-miss `git add -A` would have committed 47 untracked dashboard screenshots from a 2026-05-09 walkthrough. Caught before push, recovered with `git reset HEAD~1` and explicit-path staging. Lesson recorded: `git add <path>` always, never `-A` or `.`.
+
+---
+
 ## [0.2.0-alpha.35] — 2026-04-27
 
 ### Added
