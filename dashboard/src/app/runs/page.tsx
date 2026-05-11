@@ -90,11 +90,58 @@ function statusPill(r: Run): "ok" | "err" | "warn" | "muted" | "running" {
 
 const RUNS_PAGE_SIZE = 100;
 
+type HaltCategory =
+  | "agent_silent_fail"
+  | "agent_narration_only"
+  | "agent_threw"
+  | "tool_threw"
+  | "tool_error"
+  | "unknown";
+
+interface HaltSummary {
+  total: number;
+  byCategory: Partial<Record<HaltCategory, number>>;
+  recent: Array<{ reason: string; category: HaltCategory; runSeq: number }>;
+}
+
+const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
+  agent_silent_fail: "agent silent-fail",
+  agent_narration_only: "agent narration-only",
+  agent_threw: "agent threw",
+  tool_threw: "tool threw",
+  tool_error: "tool error",
+  unknown: "uncategorised",
+};
+
+type TimeWindow = "any" | "1h" | "24h" | "overnight" | "7d";
+
+const TIME_WINDOW_LABEL: Record<TimeWindow, string> = {
+  any: "Any time",
+  "1h": "Last hour",
+  "24h": "Last 24h",
+  overnight: "Since 6pm yesterday",
+  "7d": "Last 7 days",
+};
+
+function windowCutoffMs(w: TimeWindow): number | null {
+  if (w === "any") return null;
+  if (w === "1h") return 60 * 60 * 1000;
+  if (w === "24h") return 24 * 60 * 60 * 1000;
+  if (w === "7d") return 7 * 24 * 60 * 60 * 1000;
+  // overnight = since 6pm of the previous calendar day in local time.
+  const d = new Date();
+  d.setHours(18, 0, 0, 0);
+  if (d.getTime() > Date.now()) d.setDate(d.getDate() - 1);
+  return Date.now() - d.getTime();
+}
+
 export default function RunsPage() {
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [err, setErr] = useState<string>();
   const [trigger, setTrigger] = useState<TriggerFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
+  const [window, setWindow] = useState<TimeWindow>("any");
+  const [haltSummary, setHaltSummary] = useState<HaltSummary | null>(null);
   const [recipeQuery, setRecipeQuery] = useState("");
   const debouncedRecipeQuery = useDebounced(recipeQuery, 250);
   const [limit, setLimit] = useState(RUNS_PAGE_SIZE);
@@ -124,13 +171,48 @@ export default function RunsPage() {
     return () => clearInterval(id);
   }, [trigger, status, debouncedRecipeQuery, limit]);
 
+  // PR1c: poll halt-summary independently (cheaper payload, fixed cadence).
+  // PR4: window selector feeds the same sinceMs into the summary so the
+  // pills always reflect the same window as the displayed run list.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const sinceMs = windowCutoffMs(window);
+        const qs = sinceMs != null ? `?sinceMs=${sinceMs}` : "";
+        const res = await fetch(
+          apiPath(`/api/bridge/runs/halt-summary${qs}`),
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as HaltSummary;
+        if (!cancelled) setHaltSummary(data);
+      } catch {
+        /* halt summary is best-effort; ignore */
+      }
+    };
+    void load();
+    const id = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [window]);
+
+  const windowedRuns = useMemo(() => {
+    const cutoffMs = windowCutoffMs(window);
+    if (cutoffMs == null) return runs;
+    if (runs == null) return null;
+    const threshold = Date.now() - cutoffMs;
+    return runs.filter((r) => r.createdAt >= threshold);
+  }, [runs, window]);
+
   // Reset page size when filters change so we don't accidentally hold a giant fetch.
   useEffect(() => {
     setLimit(RUNS_PAGE_SIZE);
   }, [trigger, status, debouncedRecipeQuery]);
 
   const stats = useMemo(() => {
-    const list = runs ?? [];
+    const list = windowedRuns ?? [];
     const s = { ok: 0, err: 0, other: 0, totalMs: 0 };
     for (const r of list) {
       if (r.assertionFailures && r.assertionFailures.length > 0) s.err++;
@@ -141,12 +223,12 @@ export default function RunsPage() {
     }
     const avgMs = list.length ? Math.round(s.totalMs / list.length) : 0;
     return { ...s, avgMs, total: list.length };
-  }, [runs]);
+  }, [windowedRuns]);
 
   const maxDur = useMemo(() => {
-    if (!runs || runs.length === 0) return 1;
-    return Math.max(...runs.map((r) => r.durationMs), 1);
-  }, [runs]);
+    if (!windowedRuns || windowedRuns.length === 0) return 1;
+    return Math.max(...windowedRuns.map((r) => r.durationMs), 1);
+  }, [windowedRuns]);
 
   return (
     <section>
@@ -162,6 +244,50 @@ export default function RunsPage() {
         </div>
         <LivePill label="5s" />
       </div>
+
+      {haltSummary && haltSummary.total > 0 && (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            alignItems: "center",
+            marginBottom: "var(--s-4)",
+            padding: "8px 12px",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: 6,
+            background: "var(--bg-0)",
+          }}
+          title={
+            haltSummary.recent
+              .map((r) => `run #${r.runSeq}: ${r.reason}`)
+              .join("\n") || undefined
+          }
+        >
+          <span className="mono muted" style={{ fontSize: "var(--fs-xs)" }}>
+            halts (7d): {haltSummary.total}
+          </span>
+          {(
+            Object.entries(haltSummary.byCategory) as Array<
+              [HaltCategory, number]
+            >
+          )
+            .sort((a, b) => b[1] - a[1])
+            .map(([cat, count]) => (
+              <span
+                key={cat}
+                className="pill"
+                style={{
+                  fontSize: "var(--fs-2xs)",
+                  background: cat === "unknown" ? "var(--bg-1)" : undefined,
+                  color: cat === "unknown" ? "var(--fg-2)" : "var(--err)",
+                }}
+              >
+                {HALT_CATEGORY_LABEL[cat]} · {count}
+              </span>
+            ))}
+        </div>
+      )}
 
       {/* filter bar */}
       <div
@@ -196,13 +322,27 @@ export default function RunsPage() {
           <option value="manual">Manual</option>
           <option value="git_hook">Git hook</option>
         </select>
-        {(recipeQuery || trigger !== "all") && (
+        <select
+          value={window}
+          onChange={(e) => setWindow(e.target.value as TimeWindow)}
+          aria-label="Time window"
+          className="input"
+          style={{ width: "auto", cursor: "pointer" }}
+        >
+          {(Object.keys(TIME_WINDOW_LABEL) as TimeWindow[]).map((w) => (
+            <option key={w} value={w}>
+              {TIME_WINDOW_LABEL[w]}
+            </option>
+          ))}
+        </select>
+        {(recipeQuery || trigger !== "all" || window !== "any") && (
           <button
             type="button"
             className="btn sm ghost"
             onClick={() => {
               setRecipeQuery("");
               setTrigger("all");
+              setWindow("any");
             }}
           >
             Clear
@@ -277,17 +417,26 @@ export default function RunsPage() {
         <div className="alert-err">Refresh failed — {err}</div>
       )}
 
-      {runs === null && !err ? (
+      {windowedRuns === null && !err ? (
         <div className="empty-state">
           <p>Loading…</p>
         </div>
-      ) : !runs || runs.length === 0 ? (
+      ) : !windowedRuns || windowedRuns.length === 0 ? (
         <div className="empty-state">
-          <h3>No runs yet</h3>
+          <h3>{window === "any" ? "No runs yet" : "No runs in this window"}</h3>
           <p>
-            Recipe executions (cron, webhook, or{" "}
-            <code>patchwork recipe run</code>) will appear here once they
-            complete.
+            {window === "any" ? (
+              <>
+                Recipe executions (cron, webhook, or{" "}
+                <code>patchwork recipe run</code>) will appear here once they
+                complete.
+              </>
+            ) : (
+              <>
+                No runs in “{TIME_WINDOW_LABEL[window]}”. Try widening the
+                window.
+              </>
+            )}
           </p>
         </div>
       ) : (
@@ -304,7 +453,7 @@ export default function RunsPage() {
               </tr>
             </thead>
             <tbody>
-              {runs.map((r) => {
+              {windowedRuns.map((r) => {
                 const key = `${r.taskId}-${r.seq}`;
                 const isExpanded = expanded === key;
                 const pct = Math.max(
@@ -548,7 +697,14 @@ export default function RunsPage() {
               })}
             </tbody>
           </table>
-          {runs.length >= limit && (
+          {runs != null &&
+            runs.length >= limit &&
+            // When the time-window selector trims the unfiltered fetch, the
+            // user has already paged past the binding constraint — fetching
+            // more from the server only returns runs older than the window,
+            // which are then filtered out. Hide the button to avoid a no-op
+            // network request.
+            (windowedRuns == null || windowedRuns.length === runs.length) && (
             <div
               style={{
                 display: "flex",
