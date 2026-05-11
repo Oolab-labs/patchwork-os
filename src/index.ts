@@ -176,6 +176,7 @@ const KNOWN_SUBCOMMANDS = [
   "dashboard",
   "launchd",
   "start",
+  "kill-switch",
 ] as const;
 
 const __invokedSubcommand = (() => {
@@ -1715,6 +1716,184 @@ if (process.argv[2] === "traces" && process.argv[3] === "import") {
       for (const f of result.files) {
         process.stdout.write(
           `    - ${f.source}: ${f.count} rows  →  ${f.targetPath}\n`,
+        );
+      }
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
+// `patchwork kill-switch engage|release|status` — issue #422 step 3.
+//
+// Discovers the running bridge via lock file, POSTs /kill-switch with
+// Bearer auth, and surfaces structured errors (env-locked, no-bridge,
+// wedged-bridge). Multi-bridge fan-out: iterates ALL live `isBridge:true`
+// locks and engages/releases each (v2-B2 from #422).
+//
+// v2-I4: mandatory 10s deadline per request. No silent fallback on
+// timeout/ECONNREFUSED/non-2xx — error message + exit non-zero.
+if (process.argv[2] === "kill-switch") {
+  const sub = process.argv[3];
+  if (!sub || (sub !== "engage" && sub !== "release" && sub !== "status")) {
+    process.stderr.write(
+      'Usage: patchwork kill-switch <engage|release|status> [--reason "..."]\n' +
+        "\n" +
+        "  engage   Block all write-tier tool calls across every running bridge.\n" +
+        "  release  Resume writes.\n" +
+        "  status   Print engaged/locked state per running bridge.\n" +
+        "\n" +
+        "Exits non-zero if any bridge is unreachable or env-locked.\n",
+    );
+    process.exit(1);
+  }
+  (async () => {
+    try {
+      // v2-B2: enumerate ALL live bridge locks (not just the first).
+      const { findAllLiveBridges } = await import("./bridgeLockDiscovery.js");
+      const liveLocks = findAllLiveBridges();
+      type BridgeLockInfo = (typeof liveLocks)[number];
+
+      if (liveLocks.length === 0) {
+        process.stderr.write(
+          "No running bridge found.\n" +
+            "  - For `engage`/`release`, kill-switch has no live target to update.\n" +
+            "  - Restart the bridge with `--driver subprocess` to enable orchestration,\n" +
+            "    then re-run this command.\n",
+        );
+        process.exit(2);
+      }
+
+      // Parse optional --reason.
+      const args = process.argv.slice(4);
+      const reasonIdx = args.findIndex((a) => a === "--reason" || a === "-m");
+      const reason =
+        reasonIdx >= 0 && reasonIdx + 1 < args.length
+          ? args[reasonIdx + 1]
+          : undefined;
+
+      // v2-I4: 10s per-request deadline. AbortController per call.
+      async function callBridge(
+        lock: BridgeLockInfo,
+        method: "GET" | "POST",
+        body?: object,
+      ): Promise<{
+        ok: boolean;
+        status: number;
+        json?: Record<string, unknown>;
+        error?: string;
+      }> {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10_000);
+        try {
+          const res = await fetch(`http://127.0.0.1:${lock.port}/kill-switch`, {
+            method,
+            headers: {
+              Authorization: `Bearer ${lock.authToken}`,
+              "Content-Type": "application/json",
+            },
+            ...(body ? { body: JSON.stringify(body) } : {}),
+            signal: controller.signal,
+          });
+          let json: Record<string, unknown> | undefined;
+          try {
+            json = (await res.json()) as Record<string, unknown>;
+          } catch {
+            json = undefined;
+          }
+          return {
+            ok: res.status >= 200 && res.status < 300,
+            status: res.status,
+            ...(json ? { json } : {}),
+          };
+        } catch (err) {
+          return {
+            ok: false,
+            status: 0,
+            error: err instanceof Error ? err.message : String(err),
+          };
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      if (sub === "status") {
+        let anyFailed = false;
+        for (const lock of liveLocks) {
+          const result = await callBridge(lock, "GET");
+          if (!result.ok) {
+            anyFailed = true;
+            process.stderr.write(
+              `  ✗ bridge pid=${lock.pid} port=${lock.port} unreachable (${result.error ?? `status ${result.status}`})\n`,
+            );
+            continue;
+          }
+          const j = result.json ?? {};
+          const engaged = j.engaged === true ? "ENGAGED" : "released";
+          const lockedSuffix = j.locked
+            ? ` [env-locked: ${j.lockedReason ?? "yes"}]`
+            : "";
+          const wsLabel = lock.workspace
+            ? lock.workspace.split("/").slice(-2).join("/")
+            : `pid=${lock.pid}`;
+          process.stdout.write(
+            `  ${engaged}  port=${lock.port} ${wsLabel}${lockedSuffix}\n`,
+          );
+        }
+        process.exit(anyFailed ? 2 : 0);
+      }
+
+      // engage / release: POST to every live bridge, surface aggregate result.
+      const engage = sub === "engage";
+      let anyFailed = false;
+      let anyChanged = false;
+      for (const lock of liveLocks) {
+        const result = await callBridge(lock, "POST", {
+          engage,
+          ...(reason ? { reason } : {}),
+        });
+        const wsLabel = lock.workspace
+          ? lock.workspace.split("/").slice(-2).join("/")
+          : `pid=${lock.pid}`;
+        if (result.status === 409) {
+          anyFailed = true;
+          const lr =
+            (result.json?.lockedReason as string | undefined) ??
+            "env-locked at boot";
+          process.stderr.write(
+            `  ✗ port=${lock.port} ${wsLabel}: cannot ${sub} — ${lr}\n`,
+          );
+          continue;
+        }
+        if (!result.ok) {
+          anyFailed = true;
+          process.stderr.write(
+            `  ✗ port=${lock.port} ${wsLabel}: ${result.error ?? `status ${result.status}`}\n`,
+          );
+          continue;
+        }
+        const j = result.json ?? {};
+        const changedTag =
+          j.changed === true ? "" : " (no-op, already in state)";
+        if (j.changed === true) anyChanged = true;
+        process.stdout.write(
+          `  ✓ port=${lock.port} ${wsLabel}: ${engage ? "ENGAGED" : "released"}${changedTag}\n`,
+        );
+      }
+      if (anyFailed) {
+        process.exit(2);
+      }
+      if (!anyChanged) {
+        process.stdout.write(
+          `\n  All ${liveLocks.length} bridge${liveLocks.length === 1 ? "" : "s"} already in target state — no audit emit.\n`,
+        );
+      } else {
+        process.stdout.write(
+          `\n  Kill-switch ${engage ? "engaged" : "released"} on ${liveLocks.length} bridge${liveLocks.length === 1 ? "" : "s"}.\n`,
         );
       }
       process.exit(0);
