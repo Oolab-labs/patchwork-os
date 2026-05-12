@@ -6,6 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executeTool } from "../../toolRegistry.js";
+import type { RunContext } from "../../yamlRunner.js";
 import { isPrivateHost } from "../http.js";
 
 // Trigger self-registration of http.post into the global registry.
@@ -17,7 +18,7 @@ function makeCtx(params: Record<string, unknown>) {
   return {
     params,
     step: { ...params, tool: "http.post" },
-    ctx: {} as Record<string, unknown>,
+    ctx: { env: {}, steps: {} } as unknown as RunContext,
     deps: {
       workdir: "/tmp",
       // biome-ignore lint/suspicious/noExplicitAny: minimal stub for executeTool
