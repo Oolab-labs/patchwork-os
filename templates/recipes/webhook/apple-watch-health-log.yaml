@@ -1,10 +1,11 @@
 apiVersion: patchwork.sh/v1
 name: apple-watch-health-log
 description: |
-  Logs Apple Watch sleep duration, quality, and all three activity rings from
-  an iOS Shortcut. Appends a clean daily journal entry and pushes a one-line
-  summary to your phone via ntfy.sh. Two conditional nudges fire only when the
-  payload looks off:
+  Logs Apple Watch sleep duration, quality, and activity rings from an iOS
+  Shortcut. Each fire writes a daily journal entry, generates a warm AI Coach
+  insight (Fitbit-Gemini style) via Claude, appends the insight to the
+  journal, and pushes it to your phone via ntfy.sh. Two conditional nudges
+  fire only when the payload looks off:
 
     - "Short night" — separate priority-5 push when sleep_hours_under_6 is set
     - "Watch off your wrist" — different topic when move_percent is 0
@@ -62,12 +63,67 @@ steps:
 
       ---
 
+  - id: coach_insight
+    agent:
+      driver: claude-code
+      model: claude-haiku-4-5-20251001
+      into: insight
+      prompt: |
+        Read the Apple Watch numbers below and write a short, warm coaching note in the voice of a friend who knows health data well. The tone should celebrate something specific, name one pattern, and end with one small doable tip for today. No preamble, no markdown headers, no bullets, no sign-off, no emojis. Plain prose, 80-150 words, 2-3 short paragraphs.
+
+        Hard rules (response is rejected if any are broken):
+        - Anchor every compliment in a number from the data. No generic "great job".
+        - Never lecture, never list ideal ranges, never use clinical jargon.
+        - Never start with "Sure," "Here's," "Of course," or any preamble.
+        - End with one concrete tip for today, framed as a tiny win — not a lifestyle overhaul.
+
+        Tone reference (match the register, not the content):
+
+          Hey there. Your sleep performance hit 87/100 last night — solid 7 hours 45 minutes with a nice chunk of deep sleep. Recovery is looking strong at 82/100 thanks to that solid HRV of 62 ms. The pattern I notice: when you wrap exercise before 6pm your sleep lands in the high 80s pretty reliably. One small win for today: try wrapping up screens 30 minutes earlier tonight. You've got this.
+
+        Apple Watch numbers for today:
+        Sleep: {{payload.sleep_hours}} hours, {{payload.sleep_quality}}
+        Move ring: {{payload.move_percent}}% closed, {{payload.move_calories}} active calories
+        Exercise ring: {{payload.exercise_percent}}% closed, {{payload.exercise_min}} minutes
+        Stand ring: {{payload.stand_percent}}% closed
+        User's notes for the day: {{payload.notes}}
+
+        Write the coaching note now. Output only the prose, nothing else.
+    silentFailDetection: false
+
+  - id: append_insight
+    tool: file.append
+    when: "{{insight}}"
+    path: ~/.patchwork/health-journal/{{date}}.md
+    content: |
+      ### Coach's note
+
+      {{insight}}
+
+      ---
+
   - id: push_to_phone
     tool: http.post
+    when: "{{insight}}"
     url: https://ntfy.sh/NTFY_TOPIC
     contentType: text/plain
     headers:
       Title: "{{date}} - the body report"
+      Tags: watch,zzz,fire
+    body: |
+      {{insight}}
+
+  # Ledger fallback — fires when the agent step skipped or returned empty.
+  # `when: "{{insight_failed}}"` is a placeholder for a future feature; the
+  # current runner never sets this var, so this step is effectively dormant
+  # unless you wire it up via a transform step.
+  - id: push_to_phone_fallback
+    tool: http.post
+    when: "{{insight_failed}}"
+    url: https://ntfy.sh/NTFY_TOPIC
+    contentType: text/plain
+    headers:
+      Title: "{{date}} - the body report (raw)"
       Tags: watch,zzz,fire
     body: |
       SLEEP   {{payload.sleep_hours}}h   {{payload.sleep_quality}}
@@ -75,7 +131,6 @@ steps:
       EXER    {{payload.exercise_percent}}%   {{payload.exercise_min}} min
       STAND   {{payload.stand_percent}}%
       NOTE    {{payload.notes}}
-    into: push_result
 
   # Fires only when payload.sleep_hours_under_6 is truthy ("1", "true", etc.)
   - id: short_night_nudge
