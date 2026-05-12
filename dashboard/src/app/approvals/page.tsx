@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
@@ -909,6 +910,20 @@ function ApprovalsContent() {
             <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
               <KeyChip>⌘K</KeyChip> palette
             </span>
+            {/*
+              Cross-link to Approval Insights. Before this link, the
+              /insights page (per-tool approval/rejection patterns,
+              explain-batch, replay) had no entry point from the
+              approval queue — the two pages share the same data but
+              the dashboard never told the user that.
+            */}
+            <span style={{ color: "var(--line-2)" }} aria-hidden="true">·</span>
+            <Link
+              href="/insights"
+              style={{ color: "var(--ink-2)", textDecoration: "none" }}
+            >
+              See approval patterns →
+            </Link>
           </div>
         </div>
         <span className={`pill ${pending.length > 0 ? "warn" : "ok"}`}>

@@ -7,6 +7,15 @@ export interface BridgeStatus {
   ok: boolean;
   /** /status failed but a fallback endpoint responded — bridge is reachable but reporting degraded. */
   degraded?: boolean;
+  /**
+   * Timestamp (ms since epoch) of the most-recent poll attempt — set on
+   * BOTH success and failure. The offline banner uses this to render
+   * "last attempt N s ago" so users can see polling is still happening
+   * instead of suspecting the dashboard itself has frozen.
+   */
+  lastAttemptAt?: number;
+  /** Short human-readable failure reason from the most-recent failed poll. */
+  lastError?: string;
   port?: number;
   workspace?: string;
   extensionConnected?: boolean;
@@ -55,16 +64,18 @@ export function useBridgeStatus(): BridgeStatus {
 
     const tick = async () => {
       let succeeded = false;
+      const attemptedAt = Date.now();
       try {
         const res = await fetch(apiPath("/api/bridge/status"));
-        if (!res.ok) throw new Error(`status ${res.status}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const ct = res.headers.get("content-type") ?? "";
         if (!ct.includes("application/json") && !ct.includes("text/plain"))
           throw new Error("bad content-type");
         const data = (await res.json()) as Partial<BridgeStatus>;
-        if (alive) setStatus({ ok: true, ...data });
+        if (alive) setStatus({ ok: true, lastAttemptAt: attemptedAt, ...data });
         succeeded = true;
-      } catch {
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "unreachable";
         // /status failed. Probe /approvals as a heartbeat — if it responds we
         // know the dashboard API is reachable, but the bridge itself is not
         // reporting healthy. Surface that as `degraded`, NOT `ok`, so banners
@@ -73,9 +84,21 @@ export function useBridgeStatus(): BridgeStatus {
           const res = await fetch(apiPath("/api/bridge/approvals"));
           const ct = res.headers.get("content-type") ?? "";
           const reachable = res.ok && ct.includes("application/json");
-          if (alive) setStatus({ ok: false, degraded: reachable });
+          if (alive)
+            setStatus({
+              ok: false,
+              degraded: reachable,
+              lastAttemptAt: attemptedAt,
+              lastError: reachable ? "bridge reported unhealthy" : message,
+            });
         } catch {
-          if (alive) setStatus({ ok: false, degraded: false });
+          if (alive)
+            setStatus({
+              ok: false,
+              degraded: false,
+              lastAttemptAt: attemptedAt,
+              lastError: message,
+            });
         }
       }
 
