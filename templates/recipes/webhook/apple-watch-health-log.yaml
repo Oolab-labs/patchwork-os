@@ -113,25 +113,6 @@ steps:
     body: |
       {{insight}}
 
-  # Ledger fallback — fires when the agent step skipped or returned empty.
-  # `when: "{{insight_failed}}"` is a placeholder for a future feature; the
-  # current runner never sets this var, so this step is effectively dormant
-  # unless you wire it up via a transform step.
-  - id: push_to_phone_fallback
-    tool: http.post
-    when: "{{insight_failed}}"
-    url: https://ntfy.sh/NTFY_TOPIC
-    contentType: text/plain
-    headers:
-      Title: "{{date}} - the body report (raw)"
-      Tags: watch,zzz,fire
-    body: |
-      SLEEP   {{payload.sleep_hours}}h   {{payload.sleep_quality}}
-      MOVE    {{payload.move_percent}}%   {{payload.move_calories}} kcal
-      EXER    {{payload.exercise_percent}}%   {{payload.exercise_min}} min
-      STAND   {{payload.stand_percent}}%
-      NOTE    {{payload.notes}}
-
   # Fires only when payload.sleep_hours_under_6 is truthy ("1", "true", etc.)
   - id: short_night_nudge
     tool: http.post
