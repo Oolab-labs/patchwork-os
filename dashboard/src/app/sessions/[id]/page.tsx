@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
+import { BackLink } from "@/components/patchwork";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { ACTIVITY_NOISE_EVENTS } from "@/lib/activityNoise";
@@ -185,11 +186,7 @@ export default function SessionDetailPage() {
     <section>
       <div className="page-head">
         <div>
-          <div style={{ fontSize: "var(--fs-s)", marginBottom: 4 }}>
-            <Link href="/sessions" style={{ color: "var(--fg-2)" }}>
-              ← Sessions
-            </Link>
-          </div>
+          <BackLink href="/sessions" label="Sessions" />
           <h1>
             <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-3xl)" }}>
               {id.slice(0, 8)}

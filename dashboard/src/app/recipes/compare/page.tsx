@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { BackLink } from "@/components/patchwork";
 import { Dialog } from "@/components/Dialog";
 
 interface PlanStep {
@@ -311,9 +312,7 @@ function CompareInner() {
     <section>
       <div className="page-head">
         <div>
-          <Link href="/recipes" style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", textDecoration: "none" }}>
-            ← Recipes
-          </Link>
+          <BackLink href="/recipes" label="Recipes" />
           <h1 style={{ marginTop: 4 }}>Compare variants</h1>
           <div className="page-head-sub">
             Dry-run plan diff — highlighted rows are steps unique to each
