@@ -7,6 +7,7 @@ export {
   type RelationStripProps,
   type RelationTone,
 } from "./RelationStrip";
+export { HintCard } from "./HintCard";
 export { StatusPill, type StatusTone } from "./StatusPill";
 export { StatusDot, type DotTone } from "./StatusDot";
 export { RiskPill, type RiskLevel } from "./RiskPill";

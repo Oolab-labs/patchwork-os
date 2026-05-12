@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { apiPath } from "@/lib/api";
-import { EmptyState } from "@/components/patchwork";
+import { EmptyState, HintCard } from "@/components/patchwork";
 import { useToast } from "@/components/Toast";
 
 function isFilterCategory(v: string | null): v is FilterCategory {
@@ -541,9 +541,12 @@ const filteredItems = items.filter((item) => {
         {/* Page header */}
         <div className="page-head" style={{ marginBottom: 16 }}>
           <div>
-            <h1 className="editorial-h1">
-              Inbox — <span className="accent">what your agents wrote you.</span>
-            </h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h1 className="editorial-h1" style={{ margin: 0 }}>
+                Inbox — <span className="accent">what your agents wrote you.</span>
+              </h1>
+              <HintCard.Toggle id="inbox" />
+            </div>
             <div className="editorial-sub">~/.patchwork/inbox · briefs · summaries · agent reports</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -588,6 +591,8 @@ const filteredItems = items.filter((item) => {
             </button>
           </div>
         </div>
+
+        <HintCard id="inbox" />
 
         {err && (
           <div className="alert-err" role="alert" style={{ marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>

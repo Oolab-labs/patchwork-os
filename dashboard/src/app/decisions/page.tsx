@@ -7,7 +7,7 @@ import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
-import { ErrorState, LivePill } from "@/components/patchwork";
+import { ErrorState, HintCard, LivePill } from "@/components/patchwork";
 
 interface DecisionTrace {
   traceType: "decision";
@@ -154,9 +154,12 @@ function DecisionsContent() {
       <DecisionsTabs />
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Decisions — <span className="accent">the knowledge base your agents wrote.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Decisions — <span className="accent">the knowledge base your agents wrote.</span>
+            </h1>
+            <HintCard.Toggle id="decisions" />
+          </div>
           <div className="editorial-sub" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span>{traces.length} trace{traces.length !== 1 ? "s" : ""} · ctxSaveTrace persists · ctxQueryTraces recalls</span>
             <LivePill label="5s" tone="muted" />
@@ -205,6 +208,8 @@ function DecisionsContent() {
           </label>
         </div>
       </div>
+
+      <HintCard id="decisions" />
 
       {allTags.length > 0 && (
         <div
