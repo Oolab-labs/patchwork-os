@@ -649,6 +649,18 @@ button.topbar-search {
   cursor: pointer;
   font-family: inherit;
 }
+
+/*
+ * Live activity ticker — mounted between the palette button and the
+ * action cluster in the topbar. Hide on narrow viewports where the
+ * topbar already has to drop the brand suffix; mobile users have the
+ * /activity page for the full firehose.
+ */
+@media (max-width: 900px) {
+  .activity-ticker {
+    display: none !important;
+  }
+}
 .kbd {
   /* Keyboard-shortcut hint chip (⌘K, J, K, E, X). On touch devices
      there's no physical keyboard so the chip is misleading — the
