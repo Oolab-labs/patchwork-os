@@ -7,8 +7,28 @@
  * blocks private/loopback hosts unless the recipe explicitly opts in.
  */
 
+import { Agent, fetch as undiciFetch } from "undici";
 import { assertWriteAllowed } from "../../featureFlags.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+
+// Custom dispatcher pinning DNS resolution to IPv4. Node's Happy-Eyeballs
+// implementation (autoSelectFamily) is documented to flip families after
+// 250 ms, but on macOS networks that lack a usable IPv6 path
+// (most home/office LANs, despite the host having public AAAA records)
+// the IPv6 attempt stalls past Node's request timeout and surfaces as
+// ETIMEDOUT — even though IPv4 would have succeeded instantly. Probing
+// repro'd this against ntfy.sh on 2026-05-12.
+//
+// IPv6-only networks are vanishingly rare in 2026; if one comes up we
+// can add a step-level `family: 6` override.
+const httpAgent = new Agent({
+  // biome-ignore lint/suspicious/noExplicitAny: undici's TcpNetConnectOpts type insists on `port` but it isn't required at the Agent-default-connect level
+  connect: { family: 4 } as any,
+  // Keep idle sockets short to avoid stale connections to the same host
+  // hanging across recipe fires.
+  keepAliveTimeout: 5_000,
+  keepAliveMaxTimeout: 10_000,
+});
 
 function isPrivateHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
@@ -136,13 +156,17 @@ registerTool({
 
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    let res: Response;
+    // Use undici.fetch directly (not global fetch) so we can pass the custom
+    // dispatcher with Happy-Eyeballs tuning. Global fetch's type doesn't
+    // expose `dispatcher`, but they're the same implementation underneath.
+    let res: Awaited<ReturnType<typeof undiciFetch>>;
     try {
-      res = await fetch(url, {
+      res = await undiciFetch(url, {
         method,
         body,
         headers,
         signal: ctrl.signal,
+        dispatcher: httpAgent,
       });
     } catch (err) {
       throw new Error(
