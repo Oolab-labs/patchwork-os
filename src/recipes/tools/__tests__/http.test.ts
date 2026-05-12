@@ -1,10 +1,10 @@
 /**
  * http.post tool — SSRF guard + happy-path tests.
  *
- * The execute path uses the global `fetch`; tests stub it.
+ * The execute path calls undiciFetch (not globalThis.fetch); tests mock undici.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeTool } from "../../toolRegistry.js";
 import type { RunContext } from "../../yamlRunner.js";
 import { isPrivateHost } from "../http.js";
@@ -12,7 +12,16 @@ import { isPrivateHost } from "../http.js";
 // Trigger self-registration of http.post into the global registry.
 import "../http.js";
 
-const originalFetch = globalThis.fetch;
+// Mock undici so tests never make real network calls.
+vi.mock("undici", () => {
+  const mockFetch = vi.fn();
+  return {
+    Agent: vi.fn().mockImplementation(() => ({})),
+    fetch: mockFetch,
+  };
+});
+
+import { fetch as mockUndiciFetch } from "undici";
 
 function makeCtx(params: Record<string, unknown>) {
   return {
@@ -21,8 +30,15 @@ function makeCtx(params: Record<string, unknown>) {
     ctx: { env: {}, steps: {} } as unknown as RunContext,
     deps: {
       workdir: "/tmp",
-      // biome-ignore lint/suspicious/noExplicitAny: minimal stub for executeTool
     } as any,
+  };
+}
+
+function makeMockResponse(body: string, status = 202) {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    text: async () => body,
   };
 }
 
@@ -58,22 +74,12 @@ describe("http.post — SSRF guard (lexical)", () => {
 
 describe("http.post — execute", () => {
   beforeEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: fetch stub
-    (globalThis as any).fetch = async (
-      _url: string,
-      init: {
-        method?: string;
-        body?: string;
-        headers?: Record<string, string>;
-      },
-    ) => {
-      return new Response(`echo:${init.method ?? "GET"}:${init.body ?? ""}`, {
-        status: 202,
-      });
-    };
+    vi.mocked(mockUndiciFetch).mockResolvedValue(
+      makeMockResponse("echo:POST:hello") as any,
+    );
   });
   afterEach(() => {
-    globalThis.fetch = originalFetch;
+    vi.clearAllMocks();
   });
 
   it("POSTs body and returns {status, ok, body}", async () => {
@@ -98,6 +104,7 @@ describe("http.post — execute", () => {
   });
 
   it("permits loopback with allowPrivate: true", async () => {
+    vi.mocked(mockUndiciFetch).mockResolvedValue(makeMockResponse("ok") as any);
     const out = await executeTool(
       "http.post",
       makeCtx({
