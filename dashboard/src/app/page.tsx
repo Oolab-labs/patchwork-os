@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { FirstRunChecklist } from "@/components/FirstRunChecklist";
 import { StatCard } from "@/components/StatCard";
 import { SkeletonStatCard } from "@/components/Skeleton";
 import { relTime } from "@/components/time";
@@ -930,6 +931,14 @@ export default function HomePage() {
 
   return (
     <section>
+      {/*
+        First-run checklist: orchestrates the 4-step happy path for
+        brand-new workspaces (connect → install recipe → run → approve).
+        Auto-collapses once all four steps are complete; user-dismissable
+        any time. Lives above the hero so a new user can't miss it.
+      */}
+      <FirstRunChecklist />
+
       {/* ------------------------------------------------------------------ */}
       {/* Quilt hero with LOAD widget                                          */}
       {/* ------------------------------------------------------------------ */}
