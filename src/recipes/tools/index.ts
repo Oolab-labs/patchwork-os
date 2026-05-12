@@ -8,6 +8,7 @@
 import "./file.js";
 import "./git.js";
 import "./diagnostics.js";
+import "./http.js";
 
 // Connector-based tools
 import "./asana.js";

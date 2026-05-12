@@ -1,0 +1,145 @@
+apiVersion: patchwork.sh/v1
+name: apple-watch-health-log
+description: |
+  Logs Apple Watch sleep duration, quality, and activity rings from an iOS
+  Shortcut. Each fire writes a daily journal entry, generates a warm AI Coach
+  insight (Fitbit-Gemini style) via Claude, appends the insight to the
+  journal, and pushes it to your phone via ntfy.sh. Two conditional nudges
+  fire only when the payload looks off:
+
+    - "Short night" — separate priority-5 push when sleep_hours_under_6 is set
+    - "Watch off your wrist" — different topic when move_percent is 0
+
+  Conditional steps are gated by `when:` and read precomputed boolean fields
+  from the iOS Shortcut payload (template substitution can't do arithmetic).
+
+  Suggested triggers:
+    - iOS Shortcut ("Log my watch" — pulls Health stats + POSTs JSON)
+    - Stream Deck button for manual end-of-day log
+    - NFC tag on your nightstand
+    - curl from any device that can POST HTTP
+
+  Payload conventions (all optional — missing fields render blank):
+    sleep_hours              numeric, e.g. 7.4
+    sleep_quality            "deep" | "restful" | "light" | "restless" | free text
+    sleep_hours_under_6      "1" if sleep_hours < 6 (Shortcut precomputes)
+    move_percent             0-100+ (rings can exceed 100%)
+    move_percent_zero        "1" if move_percent == 0 (likely watch was off)
+    move_calories            active kcal burned
+    exercise_percent         0-100+
+    exercise_min             exercise minutes recorded
+    stand_percent            0-100+
+    notes                    free-form journal text
+
+  Setup:
+    1. Replace NTFY_TOPIC, NTFY_NUDGE_TOPIC, and NTFY_ALERT_TOPIC with your
+       own unguessable ntfy topics and subscribe to all three in the app.
+    2. Drop this file in ~/.patchwork/recipes/.
+    3. Start the bridge with `--driver subprocess` so /hooks/* is live.
+
+  Example request:
+    curl -X POST http://localhost:3101/hooks/apple-watch-health \
+      -H 'Content-Type: application/json' \
+      -d '{"sleep_hours":7.4,"sleep_quality":"restful","move_percent":112,"move_calories":645,"exercise_percent":150,"exercise_min":45,"stand_percent":100,"notes":"Closed all three rings."}'
+
+trigger:
+  type: webhook
+  path: /apple-watch-health
+
+steps:
+  - id: write_journal
+    tool: file.append
+    path: ~/.patchwork/health-journal/{{date}}.md
+    content: |
+      ## {{date}} Apple Watch Summary
+
+      ```
+      SLEEP   {{payload.sleep_hours}}h   {{payload.sleep_quality}}
+      MOVE    {{payload.move_percent}}%   {{payload.move_calories}} kcal
+      EXER    {{payload.exercise_percent}}%   {{payload.exercise_min}} min
+      STAND   {{payload.stand_percent}}%
+      NOTE    {{payload.notes}}
+      ```
+
+      ---
+
+  - id: coach_insight
+    agent:
+      driver: claude-code
+      model: claude-haiku-4-5-20251001
+      into: insight
+      prompt: |
+        Read the Apple Watch numbers below and write a short, warm coaching note in the voice of a friend who knows health data well. The tone should celebrate something specific, name one pattern, and end with one small doable tip for today. No preamble, no markdown headers, no bullets, no sign-off, no emojis. Plain prose, 80-150 words, 2-3 short paragraphs.
+
+        Hard rules (response is rejected if any are broken):
+        - Anchor every compliment in a number from the data. No generic "great job".
+        - Never lecture, never list ideal ranges, never use clinical jargon.
+        - Never start with "Sure," "Here's," "Of course," or any preamble.
+        - End with one concrete tip for today, framed as a tiny win — not a lifestyle overhaul.
+
+        Tone reference (match the register, not the content):
+
+          Hey there. Your sleep performance hit 87/100 last night — solid 7 hours 45 minutes with a nice chunk of deep sleep. Recovery is looking strong at 82/100 thanks to that solid HRV of 62 ms. The pattern I notice: when you wrap exercise before 6pm your sleep lands in the high 80s pretty reliably. One small win for today: try wrapping up screens 30 minutes earlier tonight. You've got this.
+
+        Apple Watch numbers for today:
+        Sleep: {{payload.sleep_hours}} hours, {{payload.sleep_quality}}
+        Move ring: {{payload.move_percent}}% closed, {{payload.move_calories}} active calories
+        Exercise ring: {{payload.exercise_percent}}% closed, {{payload.exercise_min}} minutes
+        Stand ring: {{payload.stand_percent}}% closed
+        User's notes for the day: {{payload.notes}}
+
+        Write the coaching note now. Output only the prose, nothing else.
+    silentFailDetection: false
+
+  - id: append_insight
+    tool: file.append
+    when: "{{insight}}"
+    path: ~/.patchwork/health-journal/{{date}}.md
+    content: |
+      ### Coach's note
+
+      {{insight}}
+
+      ---
+
+  - id: push_to_phone
+    tool: http.post
+    when: "{{insight}}"
+    url: https://ntfy.sh/NTFY_TOPIC
+    contentType: text/plain
+    headers:
+      Title: "{{date}} - the body report"
+      Tags: watch,zzz,fire
+    body: |
+      {{insight}}
+
+  # Fires only when payload.sleep_hours_under_6 is truthy ("1", "true", etc.)
+  - id: short_night_nudge
+    tool: http.post
+    when: "{{payload.sleep_hours_under_6}}"
+    url: https://ntfy.sh/NTFY_NUDGE_TOPIC
+    contentType: text/plain
+    headers:
+      Title: Short night - go easy today
+      Tags: sleeping_face,warning
+      Priority: "5"
+    body: |
+      You logged {{payload.sleep_hours}}h ({{payload.sleep_quality}}).
+      No PR attempts. Hydrate. Move at half-throttle.
+
+  # Fires only when payload.move_percent_zero is truthy — likely the watch
+  # was off your wrist all day, not that you genuinely moved 0%.
+  - id: watch_off_alert
+    tool: http.post
+    when: "{{payload.move_percent_zero}}"
+    url: https://ntfy.sh/NTFY_ALERT_TOPIC
+    contentType: text/plain
+    headers:
+      Title: Watch reported 0% move
+      Tags: warning,watch
+    body: |
+      Move ring at 0% for {{date}}. Battery dead? Forgot the watch?
+      Today's journal entry may not reflect actual activity.
+
+output:
+  path: ~/.patchwork/health-journal/{{date}}.md
