@@ -308,10 +308,12 @@ function buildBridgeArgs() {
   const extra = [
     "--workspace",
     WORKSPACE,
+    "--driver",
+    DRIVER,
     ...(BRIDGE_PORT > 0 ? ["--port", String(BRIDGE_PORT)] : []),
     ...(FULL_MODE ? ["--full"] : []),
     ...(AUTO_POLICY
-      ? ["--automation", "--automation-policy", AUTO_POLICY, "--driver", DRIVER]
+      ? ["--automation", "--automation-policy", AUTO_POLICY]
       : []),
   ];
   return { bin, args: [...prefix, ...extra] };

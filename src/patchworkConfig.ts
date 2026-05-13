@@ -80,6 +80,11 @@ const DEFAULTS: PatchworkConfig = {
     pushNotifications: false,
   },
   recipesDir: join(homedir(), ".patchwork", "recipes"),
+  // Default driver so `patchwork-os recipe run X` and dashboard task launches
+  // work immediately after `patchwork init`. Without this the bridge defaults
+  // to "none" and recipe execution returns "Recipe execution unavailable —
+  // requires --driver subprocess", silently breaking the init "Next:" flow.
+  driver: "subprocess",
 };
 
 export function defaultConfigPath(): string {
