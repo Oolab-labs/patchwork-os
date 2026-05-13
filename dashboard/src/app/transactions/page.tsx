@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
-import { ErrorState } from "@/components/patchwork";
+import { ErrorState, HintCard } from "@/components/patchwork";
 
 interface TransactionEdit {
   filePath: string;
@@ -144,9 +144,12 @@ export default function TransactionsPage() {
     <section>
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Transactions — <span className="accent">staged edits, awaiting your nod.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Transactions — <span className="accent">staged edits, awaiting your nod.</span>
+            </h1>
+            <HintCard.Toggle id="transactions" />
+          </div>
           <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
             Active staged multi-file edits — review, then commit from the agent
             (MCP <code>commitTransaction</code>) or discard from here. See{" "}
@@ -167,6 +170,8 @@ export default function TransactionsPage() {
           </span>
         </div>
       </div>
+
+      <HintCard id="transactions" />
 
       {loading && transactions.length === 0 && (
         <p style={{ color: "var(--fg-2)" }}>Loading…</p>

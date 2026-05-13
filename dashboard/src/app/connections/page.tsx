@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import AddConnectionModal from "./AddConnectionModal";
 import { Dialog } from "@/components/Dialog";
+import { HintCard } from "@/components/patchwork";
 import { useToast } from "@/components/Toast";
 import type { ConnectorStatus } from "./types";
 
@@ -1177,9 +1178,12 @@ export default function ConnectionsPage() {
     <section>
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Connections — <span className="accent">writes are gated. Reads are not.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Connections — <span className="accent">writes are gated. Reads are not.</span>
+            </h1>
+            <HintCard.Toggle id="connections" />
+          </div>
           <div className="editorial-sub">
             oauth · scoped to your machine · tokens in ~/.patchwork/secrets
           </div>
@@ -1212,6 +1216,8 @@ export default function ConnectionsPage() {
           </div>
         )}
       </div>
+
+      <HintCard id="connections" />
 
       {err && <div className="alert-err" role="alert">{err}</div>}
 
