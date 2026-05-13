@@ -42,10 +42,16 @@ const SEVERITY_PILL: Record<ToolInsight["severity"], string> = {
   high: "err",
 };
 
+// Severity drives a colored pill on each tool row. The "high" tier fires
+// whenever a tool has ANY rejection in the window (per
+// src/approvalInsights.ts), which is right for surfacing risk — but the
+// previous label "rejected" read as "this tool was rejected" even when
+// the tool ran with a 97% approval rate. Renamed to "has rejections" so
+// the chip describes the signal accurately. Verified by the audit team.
 const SEVERITY_LABEL: Record<ToolInsight["severity"], string> = {
   low: "trusted",
   medium: "new",
-  high: "rejected",
+  high: "has rejections",
 };
 
 const TIER_PILL: Record<RuleExplanation["tier"], string> = {

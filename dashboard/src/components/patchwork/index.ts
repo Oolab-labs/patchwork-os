@@ -1,6 +1,12 @@
 export { PatchCard } from "./PatchCard";
 export { SectionHeader } from "./SectionHeader";
 export { BackLink, type BackLinkProps } from "./BackLink";
+export {
+  RelationStrip,
+  type RelationItem,
+  type RelationStripProps,
+  type RelationTone,
+} from "./RelationStrip";
 export { StatusPill, type StatusTone } from "./StatusPill";
 export { StatusDot, type DotTone } from "./StatusDot";
 export { RiskPill, type RiskLevel } from "./RiskPill";

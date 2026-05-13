@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { BackLink } from "@/components/patchwork";
+import { BackLink, RelationStrip } from "@/components/patchwork";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { ACTIVITY_NOISE_EVENTS } from "@/lib/activityNoise";
@@ -199,6 +199,31 @@ export default function SessionDetailPage() {
           >
             {id}
           </div>
+          {/*
+            What this session touches: the activity stream it emits to,
+            the run ledger (sessions are how recipe-runs reach the
+            bridge), and the live firehose. Lets a debugging user jump
+            to the surrounding context in one click.
+          */}
+          <RelationStrip
+            items={[
+              {
+                label: "Recent runs",
+                href: "/runs",
+                title: "Recipe runs across all sessions",
+              },
+              {
+                label: "Activity stream",
+                href: "/activity",
+                title: "Live event firehose",
+              },
+              {
+                label: "All sessions",
+                href: "/sessions",
+                title: "Other connected clients",
+              },
+            ]}
+          />
         </div>
         {summary && (
           <div style={{ display: "flex", gap: 6 }}>

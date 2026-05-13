@@ -14,6 +14,7 @@ import {
 } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
+import { RecentHaltsPanel } from "@/components/RecentHaltsPanel";
 
 const TABS: readonly Tab[] = ["all", "tools", "recipe_start", "recipe_end"];
 function isTab(v: string | null): v is Tab {
@@ -224,6 +225,16 @@ export default function ActivityPage() {
         </div>
         <LivePill connection={connection} />
       </div>
+
+      {/*
+        Sidebar's Activity nav has a halt-count badge that polls
+        /runs/halt-summary. Clicking the badge used to land here on a
+        page that never mentioned halts. RecentHaltsPanel surfaces the
+        same summary inline so the badge promise is delivered, then
+        collapses to nothing when there are zero halts.
+      */}
+      <RecentHaltsPanel />
+
 
       {/* Charts row: histogram + top tools */}
       <div

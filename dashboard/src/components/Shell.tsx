@@ -9,6 +9,7 @@ import { isDemoMode, onDemoModeChange, setDemoMode } from "@/lib/demoMode";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { subscribeStreamLiveness } from "@/lib/streamLiveness";
 import { NAV_SECTIONS } from "@/lib/navRoutes";
+import { BridgeOfflineBanner } from "./BridgeOfflineBanner";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
 
@@ -375,6 +376,15 @@ export function Shell({ children }: { children: ReactNode }) {
         </button>
         <div className="app-header-actions">
           <IdentityPill ok={status.ok} host={identity.host} port={identity.port} />
+          {/*
+            Hide the demo toggle when the bridge is live AND demo is off.
+            Audit verified: the chip was previously visible unconditionally,
+            which made users (with a working bridge) wonder why a "Demo"
+            label was sitting in their topbar. Keep the chip visible when:
+              - bridge offline (offers demo as fallback experience)
+              - demo already enabled (so the user has a clear way to disable)
+          */}
+          {(!status.ok || demo) && (
           <button
             type="button"
             onClick={toggleDemo}
@@ -413,6 +423,7 @@ export function Shell({ children }: { children: ReactNode }) {
             />
             Demo
           </button>
+          )}
           <button
             className="theme-toggle"
             onClick={toggle}
@@ -574,6 +585,7 @@ export function Shell({ children }: { children: ReactNode }) {
       </aside>
 
       <main id="main-content" className="app-main" tabIndex={-1}>
+        <BridgeOfflineBanner status={status} />
         <div className="app-content">{children}</div>
       </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
