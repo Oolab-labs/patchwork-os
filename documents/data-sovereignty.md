@@ -16,10 +16,17 @@ This guide answers three questions:
 
 **Everything by default.**
 
-Patchwork OS is a local-first runtime. No telemetry, no analytics, no
-cloud sync. The bridge process runs on your machine and writes only to
-your filesystem. The default model provider (Claude Code CLI) sends
-prompts to Anthropic's API — but that is the one thing you can replace.
+Patchwork OS is a local-first runtime. No cloud sync. The bridge
+process runs on your machine and writes only to your filesystem. The
+default model provider (Claude Code CLI) sends prompts to Anthropic's
+API — but that is the one thing you can replace.
+
+**Telemetry is opt-in and disabled by default.** If you explicitly
+enable it, an aggregate usage summary (tool counts, latencies, OS
+family) is POSTed to `analytics.claude-ide-bridge.dev` on bridge
+shutdown. No workspace paths, file contents, prompts, tool arguments,
+or output are ever sent — see the [Telemetry section](../README.md#telemetry)
+of the README for the full list and the source files involved.
 
 | Data | Location | Notes |
 |------|----------|-------|
