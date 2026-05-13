@@ -99,7 +99,9 @@ afterEach(async () => {
   }
 });
 
-describe("recipe CLI integration", () => {
+// tsx shim is .cmd on Win32 (needs shell:true); SIGINT delivery and HOME-env
+// override don't behave like POSIX. Defer cross-platform port to follow-up.
+describe.skipIf(process.platform === "win32")("recipe CLI integration", () => {
   it("recipe run prints the shared local execution summary for an explicit file", () => {
     const homeDir = makeTmpDir();
     const recipeDir = makeTmpDir();
