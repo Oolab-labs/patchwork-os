@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { LivePill, StatusPill } from "@/components/patchwork";
 import { relTime } from "@/components/time";
+import { useRunRecipe } from "@/hooks/useRunRecipe";
 
 /**
  * Horizontal "what's running now" strip for the Overview page. Renders
@@ -58,6 +59,7 @@ export function LiveRunsStrip({
   recentWindowMs = 10 * 60 * 1000,
   limit = 5,
 }: LiveRunsStripProps) {
+  const { run, pending } = useRunRecipe();
   const now = Date.now();
   const visible = runs
     .filter((r) => {
@@ -97,12 +99,16 @@ export function LiveRunsStrip({
         const href = r.seq != null
           ? `/dashboard/runs/${r.seq}`
           : `/dashboard/runs?recipe=${encodeURIComponent(name)}`;
+        const showRerun = !isLive && name.length > 0 && !pending[name];
+        const isQueueing = Boolean(pending[name]);
         return (
-          <Link
+          <div
             key={r.seq ?? `${name}-${r.startedAt}-${i}`}
-            href={href}
+            className="live-run-card"
+            data-live={isLive ? "1" : "0"}
+            data-tone={tone}
             style={{
-              flex: "0 0 240px",
+              flex: "0 0 260px",
               padding: "10px 12px",
               borderRadius: "var(--r-2)",
               border: "1px solid var(--line-3)",
@@ -111,12 +117,23 @@ export function LiveRunsStrip({
                 : tone === "err"
                   ? "color-mix(in srgb, var(--err) 5%, var(--surface))"
                   : "var(--surface)",
-              textDecoration: "none",
-              color: "var(--ink-1)",
               display: "flex",
               flexDirection: "column",
-              gap: 4,
+              gap: 6,
               minWidth: 0,
+              transition: "transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease",
+            }}
+            onMouseEnter={(ev) => {
+              const t = ev.currentTarget;
+              t.style.transform = "translateY(-1px)";
+              t.style.boxShadow = "0 4px 14px -8px rgba(0,0,0,0.18)";
+              t.style.borderColor = "var(--line-2)";
+            }}
+            onMouseLeave={(ev) => {
+              const t = ev.currentTarget;
+              t.style.transform = "";
+              t.style.boxShadow = "";
+              t.style.borderColor = "var(--line-3)";
             }}
             title={
               r.haltReason
@@ -124,6 +141,17 @@ export function LiveRunsStrip({
                 : `${name} · ${r.status} · ${isLive ? "started" : "finished"} ${relTime(isLive ? r.startedAt : r.doneAt ?? r.startedAt)}`
             }
           >
+            <Link
+              href={href}
+              style={{
+                textDecoration: "none",
+                color: "var(--ink-1)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                minWidth: 0,
+              }}
+            >
             <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
               {isLive ? (
                 <LivePill label={elapsed} tone="accent" />
@@ -174,7 +202,33 @@ export function LiveRunsStrip({
                 </span>
               )}
             </div>
-          </Link>
+            </Link>
+            {showRerun && (
+              <button
+                type="button"
+                onClick={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                  void run(name);
+                }}
+                disabled={isQueueing}
+                style={{
+                  alignSelf: "flex-start",
+                  fontSize: "var(--fs-xs)",
+                  padding: "3px 9px",
+                  borderRadius: "var(--r-2)",
+                  border: "1px solid var(--line-2)",
+                  background: "var(--surface)",
+                  color: tone === "err" ? "var(--err)" : "var(--accent)",
+                  cursor: isQueueing ? "wait" : "pointer",
+                  fontWeight: 600,
+                }}
+                title={`Run ${name} again`}
+              >
+                {isQueueing ? "queueing…" : tone === "err" ? "↻ Retry" : "↻ Run again"}
+              </button>
+            )}
+          </div>
         );
       })}
     </section>

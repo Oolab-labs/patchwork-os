@@ -1810,6 +1810,126 @@ button.topbar-search {
   margin-right: 6px;
 }
 
+/* ---- Featured-recipe aside (replaces WeatherRing on hero) ---- */
+.quilt-aside-featured,
+.quilt-aside-empty {
+  position: relative;
+  z-index: 2;
+  align-self: stretch;
+  width: 280px;
+  padding: 22px 24px;
+  border-left: 1px solid var(--line-1);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+}
+.quilt-aside-eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+.quilt-aside-eyebrow-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  display: inline-block;
+}
+.quilt-aside-eyebrow-dot[data-tone="err"] { background: var(--err); }
+.quilt-aside-eyebrow-dot[data-tone="accent"] { background: var(--accent); }
+.quilt-aside-eyebrow-dot[data-pulsing="1"] {
+  background: var(--ok);
+  animation: aside-eyebrow-pulse 1.6s ease-in-out infinite;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent);
+}
+@keyframes aside-eyebrow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--ok) 0%, transparent); }
+}
+.quilt-aside-featured[data-mode="running"] .quilt-aside-eyebrow { color: var(--ok); }
+.quilt-aside-featured[data-mode="needs-retry"] .quilt-aside-eyebrow { color: var(--err); }
+.quilt-aside-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-l);
+  font-weight: 700;
+  color: var(--ink-0);
+  text-decoration: none;
+  line-height: 1.15;
+  word-break: break-all;
+  transition: color 120ms ease;
+}
+.quilt-aside-name:hover { color: var(--accent); }
+.quilt-aside-meta {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+.quilt-aside-spark {
+  margin: 4px 0 6px;
+}
+.quilt-aside-run {
+  align-self: flex-start;
+  font-size: var(--fs-s);
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--r-2);
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 120ms ease, transform 80ms ease;
+}
+.quilt-aside-run:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.quilt-aside-run:active:not(:disabled) { transform: translateY(1px); }
+.quilt-aside-run:disabled { cursor: wait; opacity: 0.7; }
+.quilt-aside-run[data-mode="needs-retry"] {
+  border-color: var(--err);
+  background: color-mix(in srgb, var(--err) 10%, transparent);
+  color: var(--err);
+}
+.quilt-aside-run[data-mode="needs-retry"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--err) 16%, transparent);
+}
+.quilt-aside-run[data-mode="running"] {
+  border-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+  color: var(--ok);
+}
+.quilt-aside-run[data-mode="running"]:hover {
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+}
+.quilt-aside-empty-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+.quilt-aside-empty-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-l);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.quilt-aside-empty-foot {
+  font-size: var(--fs-xs);
+}
+
 /* ---- Weather (stitched-seam gauge) ---- */
 .weather {
   position: relative;

@@ -1,8 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { ActionPill, RunSparkBars, SuccessRing } from "@/components/patchwork";
+import { useState } from "react";
+import {
+  ActionPill,
+  PatchCard,
+  RunSparkBars,
+  SuccessRing,
+} from "@/components/patchwork";
 import { relTime } from "@/components/time";
+import { useRunRecipe } from "@/hooks/useRunRecipe";
 
 /**
  * Recipe activity leaderboard for the Overview page. Replaces the old
@@ -33,9 +40,15 @@ interface RecipeLeaderboardProps {
   runs: LeaderboardRun[];
   /** Maximum rows to display. Defaults to 6. */
   limit?: number;
-  /** Window to consider, in ms. Defaults to 24h. */
-  windowMs?: number;
 }
+
+type WindowKey = "1h" | "24h" | "7d";
+
+const WINDOW_MS: Record<WindowKey, number> = {
+  "1h": 60 * 60 * 1000,
+  "24h": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+};
 
 interface RecipeAgg {
   name: string;
@@ -97,12 +110,13 @@ function statusTone(status: string): "ok" | "err" | "warn" | "muted" {
 export function RecipeLeaderboard({
   runs,
   limit = 6,
-  windowMs = 24 * 60 * 60 * 1000,
 }: RecipeLeaderboardProps) {
-  const agg = aggregateByRecipe(runs, windowMs).slice(0, limit);
+  const [windowKey, setWindowKey] = useState<WindowKey>("24h");
+  const { run, pending } = useRunRecipe();
+  const agg = aggregateByRecipe(runs, WINDOW_MS[windowKey]).slice(0, limit);
 
   return (
-    <div className="card" style={{ padding: "18px 20px" }}>
+    <PatchCard beam padded style={{ padding: "18px 20px" }}>
       <div
         style={{
           display: "flex",
@@ -122,8 +136,45 @@ export function RecipeLeaderboard({
             letterSpacing: "0.06em",
           }}
         >
-          Top recipes · last 24h
+          Top recipes
         </h2>
+        <div
+          role="tablist"
+          aria-label="Time window"
+          style={{
+            display: "inline-flex",
+            border: "1px solid var(--line-3)",
+            borderRadius: "var(--r-2)",
+            padding: 2,
+            background: "var(--surface)",
+          }}
+        >
+          {(["1h", "24h", "7d"] as const).map((k) => {
+            const active = k === windowKey;
+            return (
+              <button
+                key={k}
+                role="tab"
+                aria-selected={active}
+                type="button"
+                onClick={() => setWindowKey(k)}
+                style={{
+                  fontSize: "var(--fs-xs)",
+                  fontFamily: "var(--font-mono)",
+                  padding: "2px 9px",
+                  border: "none",
+                  borderRadius: "var(--r-sm)",
+                  cursor: "pointer",
+                  background: active ? "color-mix(in srgb, var(--accent) 14%, transparent)" : "transparent",
+                  color: active ? "var(--accent)" : "var(--ink-3)",
+                  fontWeight: active ? 600 : 500,
+                }}
+              >
+                {k}
+              </button>
+            );
+          })}
+        </div>
         <ActionPill href="/recipes" ariaLabel="View all recipes">
           all →
         </ActionPill>
@@ -131,7 +182,7 @@ export function RecipeLeaderboard({
 
       {agg.length === 0 ? (
         <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", padding: "8px 0" }}>
-          No runs in the last 24h.{" "}
+          No runs in the last {windowKey}.{" "}
           <Link href="/recipes" style={{ color: "var(--accent)" }}>
             Run a recipe →
           </Link>
@@ -140,23 +191,30 @@ export function RecipeLeaderboard({
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {agg.map((a) => {
             const tone = statusTone(a.lastRun.status);
+            const isQueueing = Boolean(pending[a.name]);
             return (
-              <Link
+              <div
                 key={a.name}
-                href={`/dashboard/runs?recipe=${encodeURIComponent(a.name)}`}
+                className="leaderboard-row"
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
                   padding: "8px 8px",
                   borderRadius: "var(--r-sm)",
-                  textDecoration: "none",
-                  color: "var(--ink-1)",
                   fontSize: "var(--fs-s)",
+                  transition: "background 120ms ease",
+                }}
+                onMouseEnter={(ev) => {
+                  ev.currentTarget.style.background = "var(--recess)";
+                }}
+                onMouseLeave={(ev) => {
+                  ev.currentTarget.style.background = "";
                 }}
               >
                 <SuccessRing pct={a.okRate} size={26} stroke={3} />
-                <span
+                <Link
+                  href={`/dashboard/runs?recipe=${encodeURIComponent(a.name)}`}
                   style={{
                     fontFamily: "var(--font-mono)",
                     color: "var(--ink-0)",
@@ -165,10 +223,12 @@ export function RecipeLeaderboard({
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
+                    textDecoration: "none",
                   }}
+                  title={`View ${a.name} runs`}
                 >
                   {a.name}
-                </span>
+                </Link>
                 <RunSparkBars runs={a.runs.slice(0, 8)} slots={8} width={84} height={16} />
                 <span
                   className="mono muted"
@@ -193,11 +253,30 @@ export function RecipeLeaderboard({
                 >
                   {a.lastRun.status}
                 </span>
-              </Link>
+                <button
+                  type="button"
+                  onClick={() => void run(a.name)}
+                  disabled={isQueueing}
+                  style={{
+                    fontSize: "var(--fs-xs)",
+                    padding: "2px 8px",
+                    border: "1px solid var(--line-2)",
+                    background: isQueueing ? "var(--recess)" : "var(--surface)",
+                    color: "var(--accent)",
+                    borderRadius: "var(--r-2)",
+                    cursor: isQueueing ? "wait" : "pointer",
+                    fontWeight: 600,
+                    flexShrink: 0,
+                  }}
+                  title={`Run ${a.name} now`}
+                >
+                  {isQueueing ? "…" : "▶ Run"}
+                </button>
+              </div>
             );
           })}
         </div>
       )}
-    </div>
+    </PatchCard>
   );
 }
