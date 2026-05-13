@@ -814,7 +814,7 @@ export default function RecipesPage() {
           </div>
           <div className="editorial-sub">
             {recipes
-              ? `templates/recipes · ${installedCount} installed · ${enabledCount} enabled`
+              ? `~/.patchwork/recipes · ${installedCount} installed · ${enabledCount} enabled`
               : "Loading…"}
           </div>
           <RelationStrip

@@ -123,7 +123,7 @@ export function FirstRunChecklist() {
       recipes: {
         done: recipes > 0,
         hint: "Browse the marketplace or scaffold one with patchwork recipe new.",
-        doneHint: "YAML lives in templates/recipes. Tweak triggers and steps in /recipes.",
+        doneHint: "YAML lives in ~/.patchwork/recipes. Tweak triggers and steps in /recipes.",
       },
       runs: {
         done: runs > 0,
