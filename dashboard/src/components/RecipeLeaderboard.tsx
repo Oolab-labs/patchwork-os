@@ -56,6 +56,7 @@ interface RecipeAgg {
   halts: number;
   okRate: number;
   lastRun: LeaderboardRun;
+  isLive: boolean;
 }
 
 function aggregateByRecipe(
@@ -88,6 +89,7 @@ function aggregateByRecipe(
       halts,
       okRate,
       lastRun: sorted[0],
+      isLive: sorted.some((r) => r.status === "running"),
     });
   }
   // Sort by total runs desc; ties broken by halt rate asc (fewer halts wins).
@@ -223,10 +225,21 @@ export function RecipeLeaderboard({
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
                     textDecoration: "none",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
                   }}
-                  title={`View ${a.name} runs`}
+                  title={a.isLive ? `${a.name} · running now` : `View ${a.name} runs`}
                 >
-                  {a.name}
+                  {a.isLive && (
+                    <span
+                      aria-label="running now"
+                      className="leaderboard-live-dot"
+                    />
+                  )}
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {a.name}
+                  </span>
                 </Link>
                 <RunSparkBars runs={a.runs.slice(0, 8)} slots={8} width={84} height={16} />
                 <span

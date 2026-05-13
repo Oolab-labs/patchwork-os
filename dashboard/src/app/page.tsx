@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { FirstRunChecklist } from "@/components/FirstRunChecklist";
 import { StatCard } from "@/components/StatCard";
@@ -378,8 +378,59 @@ function compressActivityRuns(events: ActivityEvent[]): ActivityEvent[] {
   return out;
 }
 
+type ActivityFilter = "all" | "tools" | "approvals" | "errors";
+
+function eventMatchesFilter(e: ActivityEvent, f: ActivityFilter): boolean {
+  if (f === "all") return true;
+  if (f === "errors") return e.status === "error";
+  if (f === "tools") return e.kind === "tool";
+  if (f === "approvals") {
+    return e.kind === "lifecycle" && e.event === "approval_decision";
+  }
+  return true;
+}
+
 function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
-  const events = compressActivityRuns(rawEvents);
+  const [filter, setFilter] = useState<ActivityFilter>("all");
+  // Track which event ids were already seen so we can flash newcomers.
+  // Ref instead of state so we don't re-render on each mutation; the
+  // parent's 5s poll already re-renders us when the data changes.
+  const seenIds = useRef<Set<string | number>>(new Set());
+
+  const filtered = useMemo(
+    () => rawEvents.filter((e) => eventMatchesFilter(e, filter)),
+    [rawEvents, filter],
+  );
+  const events = compressActivityRuns(filtered);
+
+  // Compute the set of fresh keys for this render before mutating the
+  // seen set, so the same render renders with consistent fresh flags.
+  const freshKeys = useMemo(() => {
+    const fresh = new Set<string | number>();
+    for (const e of events) {
+      const k = (e.id ?? `${e.kind}-${e.at ?? 0}-${e.tool ?? e.event ?? ""}`) as
+        | string
+        | number;
+      if (!seenIds.current.has(k)) fresh.add(k);
+    }
+    return fresh;
+  }, [events]);
+  useEffect(() => {
+    // Mark everything seen *after* the render commits so the flash CSS
+    // has a chance to play. Capped at 200 to bound memory across long
+    // sessions; the activity feed itself only retains last 500 events.
+    for (const e of events) {
+      const k = (e.id ?? `${e.kind}-${e.at ?? 0}-${e.tool ?? e.event ?? ""}`) as
+        | string
+        | number;
+      seenIds.current.add(k);
+    }
+    if (seenIds.current.size > 600) {
+      const arr = Array.from(seenIds.current);
+      seenIds.current = new Set(arr.slice(-400));
+    }
+  }, [events]);
+
   return (
     <div className="card" style={{ padding: "18px 20px" }}>
       <div
@@ -387,7 +438,7 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
           display: "flex",
           alignItems: "center",
           gap: 8,
-          marginBottom: 14,
+          marginBottom: 12,
         }}
       >
         <h2
@@ -406,6 +457,27 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
         <ActionPill href="/activity" ariaLabel="View all activity">
           view all →
         </ActionPill>
+      </div>
+      <div
+        role="tablist"
+        aria-label="Filter activity by kind"
+        className="activity-filter-row"
+      >
+        {(["all", "tools", "approvals", "errors"] as const).map((f) => {
+          const active = f === filter;
+          return (
+            <button
+              key={f}
+              role="tab"
+              type="button"
+              aria-selected={active}
+              onClick={() => setFilter(f)}
+              className={`activity-filter-chip${active ? " is-active" : ""}`}
+            >
+              {f}
+            </button>
+          );
+        })}
       </div>
 
       {events.length === 0 ? (
@@ -455,10 +527,15 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
               typeof e.durationMs === "number" ? `${e.durationMs}ms` : null;
             const rawCount = (e as Record<string, unknown>)._count;
             const repeatCount = typeof rawCount === "number" ? rawCount : 0;
+            const eventKey = (e.id ?? `${e.kind}-${e.at ?? 0}-${e.tool ?? e.event ?? ""}`) as
+              | string
+              | number;
+            const isFresh = freshKeys.has(eventKey);
             return (
               <div
                 // biome-ignore lint/suspicious/noArrayIndexKey: stable list
                 key={e.id ?? i}
+                className={`activity-row${isFresh ? " is-fresh" : ""}${isErr ? " is-err" : ""}`}
                 style={{
                   display: "flex",
                   alignItems: "center",

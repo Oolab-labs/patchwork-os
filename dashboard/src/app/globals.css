@@ -1828,6 +1828,123 @@ button.topbar-search {
   margin-right: 6px;
 }
 
+/* ---- Activity thread: filter chips + new-event flash ----
+   The thread used to render whatever came back from /activity in a
+   single take-it-or-leave-it list. Filter chips let users carve out
+   the slice they care about; the flash animation rewards a poll cycle
+   that introduces a new event by briefly tinting the row + sliding it
+   in from the rail. The page feels alive when the bridge is alive. */
+.activity-filter-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 2px;
+  border-radius: var(--r-2);
+  background: var(--recess);
+  width: max-content;
+}
+.activity-filter-chip {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.activity-filter-chip:hover { color: var(--ink-1); }
+.activity-filter-chip.is-active {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent);
+}
+.activity-row {
+  position: relative;
+}
+.activity-row.is-fresh {
+  animation:
+    activity-row-flash 1.6s ease-out 1,
+    activity-row-slide 360ms cubic-bezier(.18,.7,.2,1) 1;
+}
+@keyframes activity-row-flash {
+  0% {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  60% {
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+.activity-row.is-fresh.is-err {
+  animation:
+    activity-row-flash-err 1.6s ease-out 1,
+    activity-row-slide 360ms cubic-bezier(.18,.7,.2,1) 1;
+}
+@keyframes activity-row-flash-err {
+  0% {
+    background: color-mix(in srgb, var(--err) 18%, transparent);
+    box-shadow: inset 3px 0 0 var(--err);
+  }
+  60% {
+    background: color-mix(in srgb, var(--err) 6%, transparent);
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--err) 40%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+@keyframes activity-row-slide {
+  from {
+    transform: translateY(-6px);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-row.is-fresh,
+  .activity-row.is-fresh.is-err { animation: none; }
+}
+
+/* ---- Leaderboard: live-now dot on rows with a run in flight ---- */
+.leaderboard-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex-shrink: 0;
+  display: inline-block;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent);
+  animation: leaderboard-live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes leaderboard-live-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent),
+      0 0 0 8px color-mix(in srgb, var(--ok) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .leaderboard-live-dot { animation: none; }
+}
+
 /* ---- Recipe leaderboard focal-card treatment ----
    Static accent presence (top stripe + subtle accent-tinted bg) so the
    card reads as "this is the protagonist section" without the rotating
