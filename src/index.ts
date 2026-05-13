@@ -229,13 +229,16 @@ if (isStartAll) {
     process.argv[2] === "start-all"
       ? process.argv.slice(3)
       : process.argv.slice(2);
+  // Dispatch the cross-platform Node orchestrator (start-all.mjs). The
+  // bash entry-point is kept as a developer shortcut but Windows has no
+  // `bash` on PATH by default, and the .mjs is functionally equivalent.
   const scriptPath = path.resolve(
     __dirnameTop,
     "..",
     "scripts",
-    "start-all.sh",
+    "start-all.mjs",
   );
-  const result = spawnSync("bash", [scriptPath, ...startAllArgs], {
+  const result = spawnSync(process.execPath, [scriptPath, ...startAllArgs], {
     stdio: "inherit",
   });
   process.exit(result.status ?? 1);
@@ -244,7 +247,7 @@ if (isStartAll) {
 // `patchwork start` — opinionated front door over start-all.
 // Defaults to full mode (all tools registered) and the web dashboard, so the
 // doc-promised "patchwork start → everything works" path actually works.
-// Pass-through args still go to start-all.sh; --help short-circuits.
+// Pass-through args still go to start-all.mjs; --help short-circuits.
 if (process.argv[2] === "start") {
   const passthrough = process.argv.slice(3);
   if (passthrough.includes("--help") || passthrough.includes("-h")) {
@@ -273,17 +276,18 @@ This is a thin wrapper over \`start-all\`. For advanced flags see:
   const args = [...passthrough];
   const slimIdx = args.indexOf("--slim");
   if (slimIdx >= 0) {
-    args.splice(slimIdx, 1); // strip — start-all.sh has no --slim flag, slim is its default
+    args.splice(slimIdx, 1); // slim is the .mjs default; strip so --full isn't re-added below
   } else if (!args.includes("--full")) {
     args.push("--full");
   }
+  // Dispatch to the cross-platform Node orchestrator (see above).
   const scriptPath = path.resolve(
     __dirnameTop,
     "..",
     "scripts",
-    "start-all.sh",
+    "start-all.mjs",
   );
-  const result = spawnSync("bash", [scriptPath, ...args], {
+  const result = spawnSync(process.execPath, [scriptPath, ...args], {
     stdio: "inherit",
   });
   process.exit(result.status ?? 1);
