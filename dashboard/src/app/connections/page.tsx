@@ -831,7 +831,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
             style={{
               width: "100%", fontSize: "var(--fs-s)", fontWeight: 600, padding: "7px 0",
               borderRadius: 6, border: "none",
-              background: "var(--accent)", color: "var(--on-accent)",
+              background: "var(--accent)", color: "var(--on-orange)",
               cursor: loading ? "wait" : "pointer",
               opacity: loading ? 0.55 : 1,
               letterSpacing: "0.01em",

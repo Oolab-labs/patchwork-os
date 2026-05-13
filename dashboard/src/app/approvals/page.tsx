@@ -437,7 +437,7 @@ function BatchActionBar({
     <div
       style={{
         position: "sticky",
-        bottom: "var(--s-6)",
+        bottom: "calc(var(--s-6) + env(safe-area-inset-bottom, 0px))",
         zIndex: 10,
         display: "flex",
         gap: "var(--s-3)",

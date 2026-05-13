@@ -150,7 +150,7 @@ export function ActivityTicker() {
           width: 6,
           height: 6,
           borderRadius: "50%",
-          background: connected ? "var(--green)" : "var(--ink-3)",
+          background: connected ? "var(--green)" : "var(--dot-muted)",
           flexShrink: 0,
           boxShadow: connected
             ? "0 0 6px color-mix(in srgb, var(--green) 60%, transparent)"

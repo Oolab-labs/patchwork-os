@@ -96,6 +96,7 @@ export default function ActivityPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabFromUrl = searchParams?.get("tab");
+  const toolFromUrl = searchParams?.get("tool") ?? "";
   const [tab, setTabState] = useState<Tab>(isTab(tabFromUrl) ? tabFromUrl : "all");
   const setTab = (next: Tab) => {
     setTabState(next);
@@ -105,8 +106,22 @@ export default function ActivityPage() {
     const qs = params.toString();
     router.replace(qs ? `?${qs}` : "?", { scroll: false });
   };
+  const clearToolFilter = () => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.delete("tool");
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+  };
   const [, setTick] = useState(0);
   const esRef = useRef<EventSource | null>(null);
+  // Pause/resume — events that arrive while paused are buffered so the
+  // user doesn't lose context while inspecting a row. Counter drives the
+  // resume button label so the user knows what's accumulating.
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  pausedRef.current = paused;
+  const pendingBufRef = useRef<ActivityEvent[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
 
   // Seed with recent history on mount, then open the live stream.
   useEffect(() => {
@@ -157,6 +172,11 @@ export default function ActivityPage() {
     es.onmessage = (msg) => {
       try {
         const entry = withAt(JSON.parse(msg.data) as ActivityEvent);
+        if (pausedRef.current) {
+          pendingBufRef.current = [entry, ...pendingBufRef.current].slice(0, MAX_EVENTS);
+          setPendingCount(pendingBufRef.current.length);
+          return;
+        }
         setEvents((prev) => {
           // Dedup by (id, kind) so the first live event doesn't duplicate
           // the most recent history row.
@@ -198,8 +218,11 @@ export default function ActivityPage() {
         (e) => !(e.kind === "lifecycle" && ACTIVITY_NOISE_EVENTS.has(e.event ?? "")),
       );
     }
+    if (toolFromUrl) {
+      out = out.filter((e) => e.tool === toolFromUrl);
+    }
     return out;
-  }, [events, tab]);
+  }, [events, tab, toolFromUrl]);
 
   const stats = useMemo(() => {
     let tools = 0;
@@ -239,10 +262,64 @@ export default function ActivityPage() {
             </div>
           )}
         </div>
-        <LivePill connection={connection} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => {
+              if (paused) {
+                // Flush buffered events into the visible list, dedup'd.
+                const buf = pendingBufRef.current;
+                pendingBufRef.current = [];
+                setPendingCount(0);
+                setEvents((prev) => {
+                  const seen = new Set(
+                    prev
+                      .filter((p) => p.id !== undefined)
+                      .map((p) => `${p.id}|${p.kind ?? ""}`),
+                  );
+                  const fresh = buf.filter(
+                    (e) => e.id === undefined || !seen.has(`${e.id}|${e.kind ?? ""}`),
+                  );
+                  return [...fresh, ...prev].slice(0, MAX_EVENTS);
+                });
+                setPaused(false);
+              } else {
+                setPaused(true);
+              }
+            }}
+            aria-pressed={paused}
+            title={paused ? "Resume live updates" : "Pause live updates"}
+          >
+            {paused ? `Resume${pendingCount > 0 ? ` (${pendingCount})` : ""}` : "Pause"}
+          </button>
+          <LivePill connection={connection} />
+        </div>
       </div>
 
       <HintCard id="activity" />
+
+      {toolFromUrl && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "var(--s-2) var(--s-3)",
+            marginBottom: "var(--s-3)",
+            background: "var(--bg-2)",
+            border: "1px solid var(--line-2)",
+            borderRadius: "var(--r-2)",
+            fontSize: "var(--fs-s)",
+          }}
+        >
+          <span style={{ color: "var(--ink-2)" }}>Filtering by tool:</span>
+          <code>{toolFromUrl}</code>
+          <button type="button" className="btn sm ghost" onClick={clearToolFilter}>
+            Clear
+          </button>
+        </div>
+      )}
 
       {/*
         Sidebar's Activity nav has a halt-count badge that polls

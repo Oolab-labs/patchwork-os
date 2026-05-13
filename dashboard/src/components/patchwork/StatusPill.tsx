@@ -24,15 +24,17 @@ export function StatusPill({
   dot = false,
   children,
   className,
+  title,
 }: {
   tone?: StatusTone;
   dot?: boolean;
   children: ReactNode;
   className?: string;
+  title?: string;
 }) {
   const cls = `chip ${TONE_CLASS[tone]}${className ? ` ${className}` : ""}`;
   return (
-    <span className={cls}>
+    <span className={cls} title={title}>
       {dot && <span className="dot" aria-hidden="true" />}
       {children}
     </span>

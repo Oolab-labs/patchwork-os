@@ -65,30 +65,29 @@ export function CommandPalette({
   // offline) so we don't need to gate on bridge status here.
   useEffect(() => {
     if (!open) return;
-    if (recipes.length === 0) {
-      fetch(apiPath("/api/bridge/recipes"))
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          const list = (d?.recipes ?? d ?? []) as { name?: string }[];
-          setRecipes(list.filter((r) => r.name).map((r) => ({ name: r.name as string })));
-        })
-        .catch(() => {});
-    }
-    if (pendingApprovals.length === 0) {
-      fetch(apiPath("/api/bridge/approvals"))
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          const list = (d?.pending ?? d ?? []) as { callId?: string; toolName?: string }[];
-          setPendingApprovals(
-            list
-              .filter((a) => a.callId && a.toolName)
-              .slice(0, 20)
-              .map((a) => ({ callId: a.callId as string, toolName: a.toolName as string })),
-          );
-        })
-        .catch(() => {});
-    }
-  }, [open, recipes.length, pendingApprovals.length]);
+    // Refetch on every open. Approvals especially go stale fast — a user
+    // approving via the queue then re-opening the palette should not see
+    // already-decided calls. Recipes change rarely but it's cheap.
+    fetch(apiPath("/api/bridge/recipes"))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list = (d?.recipes ?? d ?? []) as { name?: string }[];
+        setRecipes(list.filter((r) => r.name).map((r) => ({ name: r.name as string })));
+      })
+      .catch(() => {});
+    fetch(apiPath("/api/bridge/approvals"))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list = (d?.pending ?? d ?? []) as { callId?: string; toolName?: string }[];
+        setPendingApprovals(
+          list
+            .filter((a) => a.callId && a.toolName)
+            .slice(0, 20)
+            .map((a) => ({ callId: a.callId as string, toolName: a.toolName as string })),
+        );
+      })
+      .catch(() => {});
+  }, [open]);
 
   const commands = useMemo<Command[]>(() => {
     const navCmds: Command[] = NAV_DESTINATIONS.map((d) => ({

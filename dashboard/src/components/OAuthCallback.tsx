@@ -33,7 +33,7 @@ function CallbackInner({ provider }: { provider: Provider }) {
       if (window.opener) {
         try {
           window.opener.postMessage(
-            `patchwork:${provider.id}:error:${msg}`,
+            `patchwork:${provider.id}:error:${encodeURIComponent(msg)}`,
             window.location.origin,
           );
         } catch {}

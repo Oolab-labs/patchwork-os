@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { ErrorState, HintCard, RelationStrip } from "@/components/patchwork";
@@ -122,6 +122,29 @@ export default function TransactionsPage() {
     }
   }
 
+  const expiredIds = useMemo(
+    () => transactions.filter((t) => t.expiresAt <= Date.now()).map((t) => t.id),
+    // re-evaluate each tick — the page already polls every 3s + ticks the
+    // TtlPill via a module-scope timer, so we don't need our own clock
+    // dep here.
+    [transactions],
+  );
+
+  async function discardAllExpired() {
+    if (expiredIds.length === 0) return;
+    if (
+      !window.confirm(
+        `Discard ${expiredIds.length} expired transaction${expiredIds.length === 1 ? "" : "s"}?`,
+      )
+    ) return;
+    // Serial to keep rate-limiting predictable and to make the UI state
+    // changes visible row-by-row rather than as one giant flicker.
+    for (const id of expiredIds) {
+      // eslint-disable-next-line no-await-in-loop
+      await rollback(id);
+    }
+  }
+
   // Clear stale busy entries for transactions that are no longer in the list,
   // so a reused id can't pre-disable a brand-new transaction's Discard button.
   useEffect(() => {
@@ -172,7 +195,17 @@ export default function TransactionsPage() {
             ]}
           />
         </div>
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {expiredIds.length > 0 && (
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => void discardAllExpired()}
+              title={`Discard ${expiredIds.length} expired transaction${expiredIds.length === 1 ? "" : "s"}`}
+            >
+              Discard expired ({expiredIds.length})
+            </button>
+          )}
           <span className="pill muted">
             {transactions.length} active
           </span>

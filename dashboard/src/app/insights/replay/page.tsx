@@ -226,7 +226,7 @@ export default function ReplayPage() {
                           {row.incomplete && (
                             <span
                               className="pill muted"
-                              style={{ fontSize: "var(--fs-3xs)", marginTop: 2 }}
+                              style={{ fontSize: "var(--fs-2xs)", marginTop: 2 }}
                               title="Row predates specifier capture — matched on tool name only"
                             >
                               name-only

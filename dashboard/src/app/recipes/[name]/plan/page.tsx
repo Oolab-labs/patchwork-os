@@ -44,7 +44,7 @@ function RiskBadge({ risk }: { risk?: string }) {
   return (
     <span
       style={{
-        background: `color-mix(in srgb, ${RISK_COLORS[risk] ?? "var(--fg-3)"} 15%, transparent)`,
+        background: `color-mix(in srgb, ${RISK_COLORS[risk] ?? "var(--dot-muted)"} 15%, transparent)`,
         border: `1px solid ${RISK_COLORS[risk] ?? "var(--border-default)"}`,
         borderRadius: 4,
         color: RISK_COLORS[risk] ?? "var(--fg-3)",

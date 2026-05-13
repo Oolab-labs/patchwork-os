@@ -426,7 +426,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 width: 6,
                 height: 6,
                 borderRadius: "50%",
-                background: demo ? "var(--orange)" : "var(--ink-3)",
+                background: demo ? "var(--orange)" : "var(--dot-muted)",
                 display: "inline-block",
                 flexShrink: 0,
               }}

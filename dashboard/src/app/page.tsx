@@ -9,6 +9,7 @@ import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useBridgeStatus } from "@/hooks/useBridgeStatus";
 import { isNoiseEvent } from "@/lib/activityNoise";
+import { isHaltStatus } from "@/lib/runStatus";
 import {
   ActionPill,
   AnimatedNumber,
@@ -622,7 +623,7 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                   {repeatCount > 1 && (
                     <span
                       className="pill muted"
-                      style={{ fontSize: "var(--fs-3xs)", flexShrink: 0 }}
+                      style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
                       title={`Last ${repeatCount} events collapsed`}
                     >
                       ×{repeatCount}
@@ -631,7 +632,7 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                 </span>
                 <span
                   className="pill muted"
-                  style={{ fontSize: "var(--fs-3xs)", flexShrink: 0 }}
+                  style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
                 >
                   {kind}
                 </span>
@@ -649,7 +650,7 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                 )}
                 <span
                   className={`pill ${isErr ? "err" : "ok"}`}
-                  style={{ fontSize: "var(--fs-3xs)", flexShrink: 0 }}
+                  style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
                 >
                   {isErr ? "err" : "ok"}
                 </span>
@@ -774,8 +775,6 @@ export default function HomePage() {
   // These two answer that, and unlike the old tiles they're never
   // a permanent zero on a healthy workspace.
   const dayMs = 24 * 60 * 60 * 1000;
-  const isHaltStatus = (s: string) =>
-    s === "error" || s === "failed" || s === "cancelled" || s === "interrupted";
   const runsCount24h = runs.filter((r) => Date.now() - r.startedAt < dayMs).length;
   const haltCount24h = runs.filter(
     (r) => Date.now() - r.startedAt < dayMs && isHaltStatus(r.status),

@@ -4,6 +4,7 @@ import { StatCard } from "@/components/StatCard";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { AreaChart, ErrorState } from "@/components/patchwork";
 import type { AreaChartSeries } from "@/components/patchwork";
+import { isHaltStatus } from "@/lib/runStatus";
 
 interface ToolStat {
   tool: string;
@@ -72,9 +73,13 @@ export default function AnalyticsPage() {
     { intervalMs: 30000 },
   );
 
-  const topTools = (data?.topTools ?? []).slice(0, 15);
-  const totalCalls = topTools.reduce((s, t) => s + t.calls, 0);
-  const totalErrors = topTools.reduce((s, t) => s + t.errors, 0);
+  const allTools = data?.topTools ?? [];
+  const topTools = allTools.slice(0, 15);
+  // KPI must reflect the full dataset, not just the visible top-15 — a
+  // long tail of error-prone tools below the cutoff used to silently
+  // disappear from the headline rate.
+  const totalCalls = allTools.reduce((s, t) => s + t.calls, 0);
+  const totalErrors = allTools.reduce((s, t) => s + t.errors, 0);
   const errorRate = totalCalls > 0 ? (totalErrors / totalCalls) * 100 : 0;
   const hooksFired = data?.hooksLast24h ?? 0;
   const maxCalls = topTools.length > 0 ? topTools[0].calls : 1;
@@ -100,7 +105,7 @@ export default function AnalyticsPage() {
         if (hoursAgo < 0 || hoursAgo >= buckets) continue;
         const slot = buckets - 1 - Math.floor(hoursAgo);
         callsPerHour[slot]++;
-        if (r.status === "error") errorsPerHour[slot]++;
+        if (isHaltStatus(r.status)) errorsPerHour[slot]++;
       }
     }
     // Anchor the axis at the user's clock: 24h ago on the left, "now" on

@@ -170,11 +170,10 @@ export default function InboxDeliveryPage() {
       </div>
 
       <aside
-        role="note"
         style={{
           marginBottom: 18,
           padding: "12px 16px",
-          background: "color-mix(in srgb, var(--ink-3) 8%, var(--surface))",
+          background: "color-mix(in srgb, var(--dot-muted) 8%, var(--surface))",
           border: "1px solid var(--line-2)",
           borderRadius: "var(--r-2)",
           fontSize: "var(--fs-s)",
@@ -205,6 +204,7 @@ export default function InboxDeliveryPage() {
               key={c.id}
               onClick={() => setOpenId(open ? null : c.id)}
               aria-expanded={open}
+              aria-controls="inbox-delivery-setup-panel"
               style={{
                 textAlign: "left",
                 padding: "14px 16px",
@@ -248,7 +248,15 @@ export default function InboxDeliveryPage() {
                 {c.tagline}
               </div>
               <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>
-                {open ? "Hide setup ▴" : "Show setup ▾"}
+                {open ? (
+                  <>
+                    Hide setup<span aria-hidden="true"> ▴</span>
+                  </>
+                ) : (
+                  <>
+                    Show setup<span aria-hidden="true"> ▾</span>
+                  </>
+                )}
               </div>
             </button>
           );
@@ -260,6 +268,9 @@ export default function InboxDeliveryPage() {
         if (!channel) return null;
         return (
           <div
+            id="inbox-delivery-setup-panel"
+            role="region"
+            aria-label={`${channel.name} setup`}
             style={{
               marginTop: 18,
               padding: "16px 18px",
@@ -301,7 +312,8 @@ export default function InboxDeliveryPage() {
                   marginBottom: channel.docs ? 10 : 0,
                 }}
               >
-                ⚠ {channel.caveat}
+                <span aria-hidden="true">⚠ </span>
+                {channel.caveat}
               </div>
             )}
             {channel.docs && (

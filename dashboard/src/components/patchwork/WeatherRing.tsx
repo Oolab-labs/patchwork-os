@@ -68,7 +68,7 @@ export function WeatherRing({
               cx={x}
               cy={y}
               r={i === pts.length - 1 ? 2.2 : 1.2}
-              fill={i === pts.length - 1 ? "var(--orange)" : "var(--ink-3)"}
+              fill={i === pts.length - 1 ? "var(--orange)" : "var(--dot-muted)"}
             />
           ))}
         </svg>
