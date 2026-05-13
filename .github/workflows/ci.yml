@@ -12,6 +12,10 @@ permissions:
 jobs:
   ci:
     runs-on: ${{ matrix.os }}
+    # windows-latest is advisory until the pre-existing POSIX-only test gaps
+    # (mode-bit asserts, bash-script tests, symlink fixtures, hardcoded
+    # /src paths) are closed. Tracked as follow-up work to PR #495.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
