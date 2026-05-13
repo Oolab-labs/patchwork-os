@@ -18,7 +18,11 @@ function makeClient(overrides: Record<string, any> = {}) {
   };
 }
 
-describe("getImportedSignatures", () => {
+// Tests write real fixture files under hard-coded "/tmp/..." and pass
+// "/tmp" as the workspace; both fail on Win32 where the path doesn't
+// exist and `resolveFilePath` rejects POSIX absolutes outside the
+// workspace. The tool is path-agnostic in production.
+describe.skipIf(process.platform === "win32")("getImportedSignatures", () => {
   it("returns extensionRequired when disconnected", async () => {
     const client = makeClient({ isConnected: vi.fn(() => false) });
     const tool = createGetImportedSignaturesTool(workspace, client as never);

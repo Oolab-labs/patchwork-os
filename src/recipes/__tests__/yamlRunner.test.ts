@@ -115,7 +115,7 @@ describe("validateYamlRecipe", () => {
     const r = validateYamlRecipe({
       name: "x",
       trigger: { type: "manual" },
-      steps: [{ tool: "file.read", path: `${TMP}/x` }],
+      steps: [{ tool: "file.read", path: path.join(TMP, "x") }],
     });
     expect(r.name).toBe("x");
   });
@@ -138,7 +138,7 @@ describe("validateYamlRecipe", () => {
         {
           tool: "file.append",
           params: {
-            path: `${TMP}/out.md`,
+            path: path.join(TMP, "out.md"),
             line: "hello",
           },
           output: "saved",
@@ -165,7 +165,7 @@ describe("validateYamlRecipe", () => {
     expect(recipe.steps).toMatchObject([
       {
         tool: "file.append",
-        path: `${TMP}/out.md`,
+        path: path.join(TMP, "out.md"),
         content: "hello",
         into: "saved",
       },
@@ -220,13 +220,13 @@ describe("runYamlRecipe — file.write", () => {
       steps: [
         {
           tool: "file.write",
-          path: `${TMP}/meta.md`,
+          path: path.join(TMP, "meta.md"),
           content: "hello",
           into: "saved",
         },
         {
           tool: "file.write",
-          path: `${TMP}/out.md`,
+          path: path.join(TMP, "out.md"),
           content: "{{saved.path}} ({{saved.bytesWritten}})",
         },
       ],
@@ -238,9 +238,11 @@ describe("runYamlRecipe — file.write", () => {
       },
     });
 
-    expect(result.context["saved.path"]).toBe(`${TMP}/meta.md`);
+    expect(result.context["saved.path"]).toBe(path.join(TMP, "meta.md"));
     expect(result.context["saved.bytesWritten"]).toBe("5");
-    expect(written[`${TMP}/out.md`]).toBe(`${TMP}/meta.md (5)`);
+    expect(written[path.join(TMP, "out.md")]).toBe(
+      path.join(TMP, "meta.md (5)"),
+    );
   });
 });
 
@@ -271,7 +273,7 @@ describe("runYamlRecipe — file.append", () => {
       steps: [
         {
           tool: "file.append",
-          path: `${TMP}/x.md`,
+          path: path.join(TMP, "x.md"),
           content: "x",
           when: "0 > 1",
         },
@@ -294,7 +296,7 @@ describe("runYamlRecipe — file.read", () => {
         { tool: "file.read", path: "~/.patchwork/planned.md", into: "plan" },
         {
           tool: "file.write",
-          path: `${TMP}/out.md`,
+          path: path.join(TMP, "out.md"),
           content: "plan: {{plan}}",
         },
       ],
@@ -307,7 +309,7 @@ describe("runYamlRecipe — file.read", () => {
         written[p] = c;
       },
     });
-    expect(written[`${TMP}/out.md`]).toBe("plan: do stuff");
+    expect(written[path.join(TMP, "out.md")]).toBe("plan: do stuff");
   });
 
   it("optional:true does not throw on missing file", async () => {
@@ -350,7 +352,7 @@ describe("runYamlRecipe — git.log_since", () => {
         { tool: "git.log_since", since: "24h", into: "commits" },
         {
           tool: "file.write",
-          path: `${TMP}/out.md`,
+          path: path.join(TMP, "out.md"),
           content: "commits: {{commits}}",
         },
       ],
@@ -363,7 +365,7 @@ describe("runYamlRecipe — git.log_since", () => {
         written[p] = c;
       },
     });
-    expect(written[`${TMP}/out.md`]).toContain("abc feat: x");
+    expect(written[path.join(TMP, "out.md")]).toContain("abc feat: x");
   });
 });
 
@@ -372,7 +374,11 @@ describe("runYamlRecipe — git.stale_branches", () => {
     const recipe = makeRecipe({
       steps: [
         { tool: "git.stale_branches", days: 30, into: "stale" },
-        { tool: "file.write", path: `${TMP}/stale.md`, content: "{{stale}}" },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "stale.md"),
+          content: "{{stale}}",
+        },
       ],
     });
     const written: Record<string, string> = {};
@@ -383,7 +389,7 @@ describe("runYamlRecipe — git.stale_branches", () => {
         written[p] = c;
       },
     });
-    expect(written[`${TMP}/stale.md`]).toBe("old-branch");
+    expect(written[path.join(TMP, "stale.md")]).toBe("old-branch");
   });
 });
 
@@ -467,7 +473,7 @@ describe("runYamlRecipe — silent-fail detection (P1)", () => {
           into: "stale",
           optional: true,
         },
-        { tool: "file.write", path: `${TMP}/x.md`, content: "ok" },
+        { tool: "file.write", path: path.join(TMP, "x.md"), content: "ok" },
       ],
     });
     const written: Record<string, string> = {};
@@ -480,7 +486,7 @@ describe("runYamlRecipe — silent-fail detection (P1)", () => {
     });
     // Step 1 marked error (silent-fail caught) but optional → run proceeds.
     expect(result.stepResults[0]?.status).toBe("error");
-    expect(written[`${TMP}/x.md`]).toBe("ok");
+    expect(written[path.join(TMP, "x.md")]).toBe("ok");
     expect(result.errorMessage).toBeUndefined();
   });
 });
@@ -496,7 +502,7 @@ describe("runYamlRecipe — on_error retry + fallback", () => {
       steps: [
         {
           tool: "file.read",
-          path: `${TMP}/a`,
+          path: path.join(TMP, "a"),
           into: "data",
           retry: 2,
           retryDelay: 0,
@@ -520,7 +526,7 @@ describe("runYamlRecipe — on_error retry + fallback", () => {
     let calls = 0;
     const recipe = makeRecipe({
       on_error: { retry: 1, retryDelay: 0 },
-      steps: [{ tool: "file.read", path: `${TMP}/a`, into: "data" }],
+      steps: [{ tool: "file.read", path: path.join(TMP, "a"), into: "data" }],
     });
     const result = await runYamlRecipe(
       recipe,
@@ -538,7 +544,7 @@ describe("runYamlRecipe — on_error retry + fallback", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const recipe = makeRecipe({
       on_error: { fallback: "log_only" },
-      steps: [{ tool: "file.read", path: `${TMP}/a`, into: "data" }],
+      steps: [{ tool: "file.read", path: path.join(TMP, "a"), into: "data" }],
     });
     const result = await runYamlRecipe(
       recipe,
@@ -558,7 +564,7 @@ describe("runYamlRecipe — on_error retry + fallback", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const recipe = makeRecipe({
       on_error: { fallback: "deliver_original" },
-      steps: [{ tool: "file.read", path: `${TMP}/a`, into: "data" }],
+      steps: [{ tool: "file.read", path: path.join(TMP, "a"), into: "data" }],
     });
     const result = await runYamlRecipe(
       recipe,
@@ -573,7 +579,7 @@ describe("runYamlRecipe — on_error retry + fallback", () => {
   it("propagates failure when on_error.fallback=abort (default)", async () => {
     const recipe = makeRecipe({
       on_error: { fallback: "abort" },
-      steps: [{ tool: "file.read", path: `${TMP}/a`, into: "data" }],
+      steps: [{ tool: "file.read", path: path.join(TMP, "a"), into: "data" }],
     });
     const result = await runYamlRecipe(
       recipe,
@@ -601,7 +607,7 @@ describe("runYamlRecipe — seed context", () => {
       steps: [
         {
           tool: "file.write",
-          path: `${TMP}/out.md`,
+          path: path.join(TMP, "out.md"),
           content: "file: {{file}}",
         },
       ],
@@ -617,7 +623,7 @@ describe("runYamlRecipe — seed context", () => {
       },
       { file: "src/index.ts" },
     );
-    expect(written[`${TMP}/out.md`]).toBe("file: src/index.ts");
+    expect(written[path.join(TMP, "out.md")]).toBe("file: src/index.ts");
   });
 });
 
@@ -637,10 +643,14 @@ describe("runYamlRecipe — step.when guard", () => {
     const written: Record<string, string> = {};
     const recipe = makeRecipe({
       steps: [
-        { tool: "file.write", path: `${TMP}/first.md`, content: "always" },
         {
           tool: "file.write",
-          path: `${TMP}/second.md`,
+          path: path.join(TMP, "first.md"),
+          content: "always",
+        },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "second.md"),
           content: "guarded",
           when: "{{flag}}",
         },
@@ -656,8 +666,8 @@ describe("runYamlRecipe — step.when guard", () => {
       },
       { flag: "" },
     );
-    expect(written[`${TMP}/first.md`]).toBe("always");
-    expect(written[`${TMP}/second.md`]).toBeUndefined();
+    expect(written[path.join(TMP, "first.md")]).toBe("always");
+    expect(written[path.join(TMP, "second.md")]).toBeUndefined();
     expect(result.stepResults[1]!.status).toBe("skipped");
     expect(result.errorMessage).toBeUndefined();
   });
@@ -666,10 +676,14 @@ describe("runYamlRecipe — step.when guard", () => {
     const written: Record<string, string> = {};
     const recipe = makeRecipe({
       steps: [
-        { tool: "file.write", path: `${TMP}/first.md`, content: "always" },
         {
           tool: "file.write",
-          path: `${TMP}/second.md`,
+          path: path.join(TMP, "first.md"),
+          content: "always",
+        },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "second.md"),
           content: "guarded",
           when: "{{flag}}",
         },
@@ -685,8 +699,8 @@ describe("runYamlRecipe — step.when guard", () => {
       },
       { flag: "yes" },
     );
-    expect(written[`${TMP}/first.md`]).toBe("always");
-    expect(written[`${TMP}/second.md`]).toBe("guarded");
+    expect(written[path.join(TMP, "first.md")]).toBe("always");
+    expect(written[path.join(TMP, "second.md")]).toBe("guarded");
     expect(result.stepResults[1]!.status).toBe("ok");
   });
 
@@ -694,7 +708,11 @@ describe("runYamlRecipe — step.when guard", () => {
     let agentCalls = 0;
     const recipe = makeRecipe({
       steps: [
-        { tool: "file.write", path: `${TMP}/report.md`, content: "report" },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "report.md"),
+          content: "report",
+        },
         {
           when: "{{phone}}",
           agent: {
@@ -726,7 +744,11 @@ describe("runYamlRecipe — step.when guard", () => {
     let agentCalls = 0;
     const recipe = makeRecipe({
       steps: [
-        { tool: "file.write", path: `${TMP}/report.md`, content: "report" },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "report.md"),
+          content: "report",
+        },
         {
           when: "{{phone}}",
           agent: {
@@ -759,7 +781,7 @@ describe("runYamlRecipe — step.when guard", () => {
         steps: [
           {
             tool: "file.write",
-            path: `${TMP}/x.md`,
+            path: path.join(TMP, "x.md"),
             content: "x",
             when: "{{flag}}",
           },
@@ -775,7 +797,7 @@ describe("runYamlRecipe — step.when guard", () => {
         },
         { flag: falsy },
       );
-      expect(written[`${TMP}/x.md`]).toBeUndefined();
+      expect(written[path.join(TMP, "x.md")]).toBeUndefined();
     }
   });
 });
@@ -795,7 +817,7 @@ describe("runYamlRecipe — context: env blocks", () => {
         steps: [
           {
             tool: "file.write",
-            path: `${TMP}/out.md`,
+            path: path.join(TMP, "out.md"),
             content: "channel={{YAMLRUNNER_TEST_CHANNEL}}",
           },
         ],
@@ -807,7 +829,7 @@ describe("runYamlRecipe — context: env blocks", () => {
           written[p] = c;
         },
       });
-      expect(written[`${TMP}/out.md`]).toBe("channel=C12345");
+      expect(written[path.join(TMP, "out.md")]).toBe("channel=C12345");
     } finally {
       delete process.env.YAMLRUNNER_TEST_CHANNEL;
     }
@@ -823,7 +845,7 @@ describe("runYamlRecipe — context: env blocks", () => {
         steps: [
           {
             tool: "file.write",
-            path: `${TMP}/out.md`,
+            path: path.join(TMP, "out.md"),
             content: "v={{YAMLRUNNER_TEST_OVERRIDE}}",
           },
         ],
@@ -840,7 +862,7 @@ describe("runYamlRecipe — context: env blocks", () => {
         { YAMLRUNNER_TEST_OVERRIDE: "from-seed" },
       );
       // Seed context is merged after env block, so it wins on collisions.
-      expect(written[`${TMP}/out.md`]).toBe("v=from-seed");
+      expect(written[path.join(TMP, "out.md")]).toBe("v=from-seed");
     } finally {
       delete process.env.YAMLRUNNER_TEST_OVERRIDE;
     }
@@ -855,7 +877,7 @@ describe("runYamlRecipe — context: env blocks", () => {
       steps: [
         {
           tool: "file.write",
-          path: `${TMP}/out.md`,
+          path: path.join(TMP, "out.md"),
           content: "v={{YAMLRUNNER_TEST_MISSING}}",
         },
       ],
@@ -869,7 +891,7 @@ describe("runYamlRecipe — context: env blocks", () => {
     });
     // Unset env vars render to empty string (existing render contract), not
     // the literal `{{...}}` placeholder.
-    expect(written[`${TMP}/out.md`]).toBe("v=");
+    expect(written[path.join(TMP, "out.md")]).toBe("v=");
   });
 });
 
@@ -882,10 +904,10 @@ describe("runYamlRecipe — JSON parse-on-into for dot-notation lookups", () => 
     const written: Record<string, string> = {};
     const recipe = makeRecipe({
       steps: [
-        { tool: "file.read", path: `${TMP}/in.json`, into: "data" },
+        { tool: "file.read", path: path.join(TMP, "in.json"), into: "data" },
         {
           tool: "file.write",
-          path: `${TMP}/out.md`,
+          path: path.join(TMP, "out.md"),
           content: "name={{data.name}} count={{data.count}}",
         },
       ],
@@ -897,17 +919,17 @@ describe("runYamlRecipe — JSON parse-on-into for dot-notation lookups", () => 
         written[p] = c;
       },
     });
-    expect(written[`${TMP}/out.md`]).toBe("name=patchwork count=7");
+    expect(written[path.join(TMP, "out.md")]).toBe("name=patchwork count=7");
   });
 
   it("falls back to raw string lookup when output is not valid JSON", async () => {
     const written: Record<string, string> = {};
     const recipe = makeRecipe({
       steps: [
-        { tool: "file.read", path: `${TMP}/in.txt`, into: "data" },
+        { tool: "file.read", path: path.join(TMP, "in.txt"), into: "data" },
         {
           tool: "file.write",
-          path: `${TMP}/out.md`,
+          path: path.join(TMP, "out.md"),
           content: "raw={{data}}",
         },
       ],
@@ -919,7 +941,7 @@ describe("runYamlRecipe — JSON parse-on-into for dot-notation lookups", () => 
         written[p] = c;
       },
     });
-    expect(written[`${TMP}/out.md`]).toBe("raw=plain text body");
+    expect(written[path.join(TMP, "out.md")]).toBe("raw=plain text body");
   });
 });
 
@@ -1075,7 +1097,7 @@ describe("runYamlRecipe — gmail.fetch_unread", () => {
         { tool: "gmail.fetch_unread", since: "24h", max: 10, into: "messages" },
         {
           tool: "file.write",
-          path: `${TMP}/out.md`,
+          path: path.join(TMP, "out.md"),
           content: "count: {{messages.count}}",
         },
       ],
@@ -1089,7 +1111,7 @@ describe("runYamlRecipe — gmail.fetch_unread", () => {
         written[p] = c;
       },
     });
-    expect(written[`${TMP}/out.md`]).toBe("count: 2");
+    expect(written[path.join(TMP, "out.md")]).toBe("count: 2");
   });
 
   it("stores message array as JSON in context key", async () => {
@@ -1485,7 +1507,7 @@ describe("gmail-health-check recipe end-to-end", () => {
         },
         {
           tool: "file.write",
-          path: `${TMP}/gmail-health.md`,
+          path: path.join(TMP, "gmail-health.md"),
           content:
             "unread-7d: {{recent.count}}\ntotal-unread: {{unread_check.count}}",
         },
@@ -1500,9 +1522,13 @@ describe("gmail-health-check recipe end-to-end", () => {
         written[p] = c;
       },
     });
-    expect(written[`${TMP}/gmail-health.md`]).toContain("unread-7d: 2");
+    expect(written[path.join(TMP, "gmail-health.md")]).toContain(
+      "unread-7d: 2",
+    );
     // max:1 means at most 1 result returned for unread_check
-    expect(written[`${TMP}/gmail-health.md`]).toContain("total-unread: 1");
+    expect(written[path.join(TMP, "gmail-health.md")]).toContain(
+      "total-unread: 1",
+    );
   });
 });
 
@@ -1530,7 +1556,7 @@ describe("linear.list_issues step", () => {
           },
           {
             tool: "file.write",
-            path: `${TMP}/linear-out.md`,
+            path: path.join(TMP, "linear-out.md"),
             content: "{{linear_issues}}",
           },
         ],
@@ -1542,7 +1568,9 @@ describe("linear.list_issues step", () => {
         },
       },
     );
-    const out = JSON.parse(written[`${TMP}/linear-out.md`] ?? "{}") as {
+    const out = JSON.parse(
+      written[path.join(TMP, "linear-out.md")] ?? "{}",
+    ) as {
       count: number;
       issues: unknown[];
     };
@@ -1562,7 +1590,7 @@ describe("linear.list_issues step", () => {
           { tool: "linear.list_issues", into: "linear_issues" },
           {
             tool: "file.write",
-            path: `${TMP}/linear-out.md`,
+            path: path.join(TMP, "linear-out.md"),
             content: "{{linear_issues}}",
           },
         ],
@@ -1574,7 +1602,9 @@ describe("linear.list_issues step", () => {
         },
       },
     );
-    const out = JSON.parse(written[`${TMP}/linear-out.md`] ?? "{}") as {
+    const out = JSON.parse(
+      written[path.join(TMP, "linear-out.md")] ?? "{}",
+    ) as {
       count: number;
       error: string;
     };
@@ -1595,7 +1625,7 @@ describe("linear.list_issues step", () => {
           { tool: "linear.list_issues", into: "linear_issues" },
           {
             tool: "file.write",
-            path: `${TMP}/linear-out.md`,
+            path: path.join(TMP, "linear-out.md"),
             content: "{{linear_issues}}",
           },
         ],
@@ -1607,7 +1637,9 @@ describe("linear.list_issues step", () => {
         },
       },
     );
-    const out = JSON.parse(written[`${TMP}/linear-out.md`] ?? "{}") as {
+    const out = JSON.parse(
+      written[path.join(TMP, "linear-out.md")] ?? "{}",
+    ) as {
       count: number;
       error: string;
     };
@@ -1638,7 +1670,7 @@ describe("github.list_issues step", () => {
           { tool: "github.list_issues", into: "gh" },
           {
             tool: "file.write",
-            path: `${TMP}/gh.md`,
+            path: path.join(TMP, "gh.md"),
             content: "{{gh}}",
           },
         ],
@@ -1650,7 +1682,7 @@ describe("github.list_issues step", () => {
         },
       },
     );
-    const out = JSON.parse(written[`${TMP}/gh.md`] ?? "{}") as {
+    const out = JSON.parse(written[path.join(TMP, "gh.md")] ?? "{}") as {
       count: number;
       issues: unknown[];
     };
@@ -1685,7 +1717,11 @@ describe("github.list_prs step", () => {
       makeRecipe({
         steps: [
           { tool: "github.list_prs", into: "prs" },
-          { tool: "file.write", path: `${TMP}/prs.md`, content: "{{prs}}" },
+          {
+            tool: "file.write",
+            path: path.join(TMP, "prs.md"),
+            content: "{{prs}}",
+          },
         ],
       }),
       {
@@ -1695,7 +1731,7 @@ describe("github.list_prs step", () => {
         },
       },
     );
-    const out = JSON.parse(written[`${TMP}/prs.md`] ?? "{}") as {
+    const out = JSON.parse(written[path.join(TMP, "prs.md")] ?? "{}") as {
       count: number;
       prs: unknown[];
     };
@@ -1905,7 +1941,7 @@ describe("runYamlRecipe — expect assertions wired end-to-end", () => {
       steps: [
         {
           tool: "file.write",
-          path: `${TMP}/x.txt`,
+          path: path.join(TMP, "x.txt"),
           content: "hello",
           into: "saved",
         },
@@ -1928,12 +1964,16 @@ describe("runYamlRecipe — expect assertions wired end-to-end", () => {
       steps: [
         {
           tool: "file.write",
-          path: `${TMP}/y.txt`,
+          path: path.join(TMP, "y.txt"),
           content: "hi",
           into: "saved",
         },
       ],
-      expect: { stepsRun: 1, outputs: [`${TMP}/y.txt`], errorMessage: null },
+      expect: {
+        stepsRun: 1,
+        outputs: [path.join(TMP, "y.txt")],
+        errorMessage: null,
+      },
     });
     const result = await runYamlRecipe(recipe, {
       ...noop(),
@@ -2282,7 +2322,9 @@ import { dispatchRecipe } from "../yamlRunner.js";
 describe("dispatchRecipe", () => {
   it("routes simple recipe to runYamlRecipe", async () => {
     const recipe = makeRecipe({
-      steps: [{ tool: "file.write", path: `${TMP}/x.txt`, content: "hi" }],
+      steps: [
+        { tool: "file.write", path: path.join(TMP, "x.txt"), content: "hi" },
+      ],
     });
     const result = await dispatchRecipe(recipe, {
       ...noop(),
