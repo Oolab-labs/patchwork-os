@@ -31,8 +31,10 @@ const STORAGE_KEY = "patchwork.firstRun.dismissed";
 
 interface StepStatus {
   done: boolean;
-  /** Optional 1-line detail surfaced when the step is incomplete. */
+  /** One-line nudge surfaced when the step is incomplete — "do this next". */
   hint?: string;
+  /** One-line follow-on surfaced when the step is done — "what good looks like". */
+  doneHint?: string;
 }
 
 interface Status {
@@ -113,15 +115,25 @@ export function FirstRunChecklist() {
         probeArray("/api/bridge/traces?traceType=approval", "traces"),
       ]);
     setStatus({
-      connections: { done: conn > 0, hint: "Pick Gmail, Slack, or another service to start." },
+      connections: {
+        done: conn > 0,
+        hint: "Gmail, Slack, or any HTTP API. Credentials stay in ~/.patchwork.",
+        doneHint: "Add more in /connections — one recipe can fan across services.",
+      },
       recipes: {
         done: recipes > 0,
-        hint: "Install one from Marketplace or scaffold a new one.",
+        hint: "Browse the marketplace or scaffold one with patchwork recipe new.",
+        doneHint: "YAML lives in templates/recipes. Tweak triggers and steps in /recipes.",
       },
-      runs: { done: runs > 0, hint: "Run a recipe by hand or wait for a trigger." },
+      runs: {
+        done: runs > 0,
+        hint: "Hit Run on any recipe, or wait for a scheduled trigger.",
+        doneHint: "Watch live in /activity. Halts and errors land in /runs.",
+      },
       approvals: {
         done: pendingApprovals > 0 || approvalTraces > 0,
-        hint: "Approvals appear here when a recipe asks to run a gated tool.",
+        hint: "Nothing leaves your machine without a nod. The queue is in /approvals.",
+        doneHint: "Approval patterns in /insights surface what's safe to auto-approve.",
       },
       loaded: true,
     });
@@ -144,6 +156,11 @@ export function FirstRunChecklist() {
     status.runs.done &&
     status.approvals.done;
   if (allDone) return null;
+  const doneCount =
+    (status.connections.done ? 1 : 0) +
+    (status.recipes.done ? 1 : 0) +
+    (status.runs.done ? 1 : 0) +
+    (status.approvals.done ? 1 : 0);
 
   const steps: Array<{
     n: number;
@@ -206,7 +223,10 @@ export function FirstRunChecklist() {
             color: "var(--ink-1)",
           }}
         >
-          Get started <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>· 4 steps</span>
+          Get started{" "}
+          <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>
+            · {doneCount} of 4 done
+          </span>
         </h2>
         <button
           type="button"
@@ -287,17 +307,21 @@ export function FirstRunChecklist() {
               >
                 {s.label}
               </div>
-              {!s.step.done && s.step.hint && (
-                <div
-                  style={{
-                    fontSize: "var(--fs-xs)",
-                    color: "var(--ink-3)",
-                    marginTop: 2,
-                  }}
-                >
-                  {s.step.hint}
-                </div>
-              )}
+              {(() => {
+                const tip = s.step.done ? s.step.doneHint : s.step.hint;
+                if (!tip) return null;
+                return (
+                  <div
+                    style={{
+                      fontSize: "var(--fs-xs)",
+                      color: "var(--ink-3)",
+                      marginTop: 2,
+                    }}
+                  >
+                    {tip}
+                  </div>
+                );
+              })()}
             </div>
             {!s.step.done && (
               <Link
