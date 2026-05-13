@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   createBatchFindImplementationsTool,
@@ -5,7 +7,13 @@ import {
   createBatchGoToDefinitionTool,
 } from "../batchLsp.js";
 
-const workspace = "/tmp";
+// Use a real OS-tmp path so the resolveFilePath containment check works on Win32
+// (where literal "/tmp" resolves to C:\tmp and lstat ancestor-walks differently).
+const workspace = os.tmpdir();
+const FOO_TS = path.join(workspace, "foo.ts");
+const LIB_TS = path.join(workspace, "lib.ts");
+const IMPL_TS = path.join(workspace, "impl.ts");
+const A_TS = path.join(workspace, "a.ts");
 
 function makeClient(overrides: Record<string, any> = {}) {
   return {
@@ -14,16 +22,16 @@ function makeClient(overrides: Record<string, any> = {}) {
       Promise.resolve({ contents: ["function foo(): void"], range: null }),
     ),
     goToDefinition: vi.fn(() =>
-      Promise.resolve([{ file: "/tmp/lib.ts", line: 5, column: 1 }]),
+      Promise.resolve([{ file: LIB_TS, line: 5, column: 1 }]),
     ),
     findImplementations: vi.fn(() =>
-      Promise.resolve([{ file: "/tmp/impl.ts", line: 10, column: 1 }]),
+      Promise.resolve([{ file: IMPL_TS, line: 10, column: 1 }]),
     ),
     ...overrides,
   };
 }
 
-const ITEM = { filePath: "/tmp/foo.ts", line: 3, column: 7 };
+const ITEM = { filePath: FOO_TS, line: 3, column: 7 };
 
 // ── batchGetHover ─────────────────────────────────────────────────────────────
 
@@ -109,7 +117,7 @@ describe("batchGetHover", () => {
     const tool = createBatchGetHoverTool(workspace, client as never);
     const result = (await tool.handler({ items: [ITEM] })) as any;
     const data = JSON.parse(result.content[0].text);
-    expect(data.results[0].filePath).toBe("/tmp/foo.ts");
+    expect(data.results[0].filePath).toBe(FOO_TS);
     expect(data.results[0].line).toBe(3);
     expect(data.results[0].column).toBe(7);
   });
@@ -171,7 +179,7 @@ describe("batchGoToDefinition", () => {
     const data = JSON.parse(result.content[0].text);
     expect(data.results).toHaveLength(1);
     expect(data.results[0].result).toEqual([
-      { file: "/tmp/lib.ts", line: 5, column: 1 },
+      { file: LIB_TS, line: 5, column: 1 },
     ]);
   });
 
@@ -179,7 +187,7 @@ describe("batchGoToDefinition", () => {
     const client = makeClient({
       goToDefinition: vi
         .fn()
-        .mockResolvedValueOnce([{ file: "/tmp/a.ts", line: 1, column: 1 }])
+        .mockResolvedValueOnce([{ file: A_TS, line: 1, column: 1 }])
         .mockRejectedValueOnce(new Error("lsp error")),
     });
     const tool = createBatchGoToDefinitionTool(workspace, client as never);
@@ -228,7 +236,7 @@ describe("batchFindImplementations", () => {
     expect(data.results).toHaveLength(1);
     expect(data.count).toBe(1);
     expect(data.results[0].result).toEqual([
-      { file: "/tmp/impl.ts", line: 10, column: 1 },
+      { file: IMPL_TS, line: 10, column: 1 },
     ]);
   });
 
@@ -237,7 +245,7 @@ describe("batchFindImplementations", () => {
     const tool = createBatchFindImplementationsTool(workspace, client as never);
     const result = (await tool.handler({ items: [ITEM] })) as any;
     const data = JSON.parse(result.content[0].text);
-    expect(data.results[0].filePath).toBe("/tmp/foo.ts");
+    expect(data.results[0].filePath).toBe(FOO_TS);
     expect(data.results[0].line).toBe(3);
     expect(data.results[0].column).toBe(7);
   });
@@ -256,7 +264,7 @@ describe("batchFindImplementations", () => {
     const client = makeClient({
       findImplementations: vi
         .fn()
-        .mockResolvedValueOnce([{ file: "/tmp/a.ts", line: 1, column: 1 }])
+        .mockResolvedValueOnce([{ file: A_TS, line: 1, column: 1 }])
         .mockRejectedValueOnce(new Error("lsp error")),
     });
     const tool = createBatchFindImplementationsTool(workspace, client as never);
