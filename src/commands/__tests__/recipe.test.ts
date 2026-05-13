@@ -137,15 +137,17 @@ describe("recipe CLI commands", () => {
       const result = await runSchema(outputDir);
 
       expect(result.outputDir).toBe(outputDir);
-      expect(
-        result.filesWritten.some((file) => file.endsWith("recipe.v1.json")),
-      ).toBe(true);
-      expect(
-        result.filesWritten.some((file) => file.endsWith("tools/file.json")),
-      ).toBe(true);
-      expect(
-        result.filesWritten.some((file) => file.endsWith("tools/gmail.json")),
-      ).toBe(true);
+      // Normalize separators so Win32 ("\") matches the forward-slash assertions.
+      const normalized = result.filesWritten.map((f) => f.replace(/\\/g, "/"));
+      expect(normalized.some((file) => file.endsWith("recipe.v1.json"))).toBe(
+        true,
+      );
+      expect(normalized.some((file) => file.endsWith("tools/file.json"))).toBe(
+        true,
+      );
+      expect(normalized.some((file) => file.endsWith("tools/gmail.json"))).toBe(
+        true,
+      );
 
       const recipeSchema = readFileSync(
         join(outputDir, "recipe.v1.json"),

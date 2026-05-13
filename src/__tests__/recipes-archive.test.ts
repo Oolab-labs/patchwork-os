@@ -41,7 +41,7 @@ describe("archiveRecipe", () => {
     const result = archiveRecipe(recipesDir, "demo");
 
     expect(result.ok).toBe(true);
-    expect(result.path).toMatch(/\.archive\/demo\.yaml$/);
+    expect(result.path.replace(/\\/g, "/")).toMatch(/\.archive\/demo\.yaml$/);
     expect(existsSync(path.join(recipesDir, "demo.yaml"))).toBe(false);
     expect(existsSync(path.join(recipesDir, ".archive", "demo.yaml"))).toBe(
       true,
@@ -78,7 +78,9 @@ describe("archiveRecipe", () => {
     expect(result.path).not.toBe(
       path.join(recipesDir, ".archive", "demo.yaml"),
     );
-    expect(result.path).toMatch(/\.archive\/demo\..+\.yaml$/);
+    expect(result.path.replace(/\\/g, "/")).toMatch(
+      /\.archive\/demo\..+\.yaml$/,
+    );
 
     const archived = readdirSync(path.join(recipesDir, ".archive"));
     expect(archived.filter((f) => f.startsWith("demo")).length).toBe(2);

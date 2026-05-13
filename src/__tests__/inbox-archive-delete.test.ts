@@ -92,7 +92,9 @@ describe("inboxRoutes — archive + delete", () => {
     expect(result.status).toBe(200);
     const body = JSON.parse(result.body) as { ok: boolean; path: string };
     expect(body.ok).toBe(true);
-    expect(body.path.endsWith(`.archive/${filename}`)).toBe(true);
+    expect(body.path.replace(/\\/g, "/").endsWith(`.archive/${filename}`)).toBe(
+      true,
+    );
 
     const inboxDir = path.join(fakeHome, ".patchwork", "inbox");
     expect(existsSync(path.join(inboxDir, filename))).toBe(false);
