@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { RelationStrip } from "@/components/patchwork";
 import { StepDiffHover } from "@/components/StepDiffHover";
 import { Dialog } from "@/components/Dialog";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
@@ -950,6 +951,42 @@ export default function RunDetailPage() {
           <h1 style={{ margin: 0, fontSize: 22 }}>
             {run ? run.recipeName : <span style={{ color: "var(--ink-3)" }}>…</span>}
           </h1>
+          {/*
+            "Feels connected" strip for the run detail. Runs are the
+            canonical hub — they touch the recipe that defined them,
+            the session that emitted events into them, and the activity
+            firehose where their tool calls show up. Chips link out so
+            a debugging user doesn't need to bounce through list pages.
+            Recipe-name chip is conditional because run.recipeName can
+            be undefined while loading.
+          */}
+          {run && (
+            <RelationStrip
+              items={[
+                {
+                  label: `Recipe: ${run.recipeName}`,
+                  href: `/recipes/${encodeURIComponent(run.recipeName)}/edit`,
+                  title: `Open the recipe that produced this run`,
+                  tone: "accent",
+                },
+                {
+                  label: "All runs",
+                  href: `/runs?recipe=${encodeURIComponent(run.recipeName)}`,
+                  title: `Other runs of ${run.recipeName}`,
+                },
+                {
+                  label: "Activity",
+                  href: "/activity",
+                  title: "Events emitted across all recipes + sessions",
+                },
+                {
+                  label: "Traces",
+                  href: `/traces?recipe=${encodeURIComponent(run.recipeName)}`,
+                  title: "Saved reasoning + enrichment for this recipe",
+                },
+              ]}
+            />
+          )}
         </div>
         {run && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
