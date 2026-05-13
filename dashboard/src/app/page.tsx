@@ -194,7 +194,7 @@ function ToolCallsWidget({
           </div>
           {bridgeOk && (
             <Link
-              href="/dashboard/recipes"
+              href="/recipes"
               style={{
                 color: "var(--accent)",
                 fontWeight: 600,
@@ -505,7 +505,7 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                 >
                   {recipe && (
                     <Link
-                      href={`/dashboard/recipes/${encodeURIComponent(recipe)}/edit`}
+                      href={`/recipes/${encodeURIComponent(recipe)}/edit`}
                       title={`Recipe ${recipe}`}
                       onClick={(ev) => ev.stopPropagation()}
                       style={{

@@ -155,7 +155,7 @@ export function FeaturedRecipeAside({
         <div className="quilt-aside-empty-value">No runs yet</div>
         <div className="quilt-aside-empty-foot">
           <Link
-            href="/dashboard/marketplace"
+            href="/marketplace"
             style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}
           >
             Browse recipes →
@@ -204,8 +204,8 @@ export function FeaturedRecipeAside({
   const ctaHref =
     pick.mode === "running"
       ? pick.lastRun.startedAt > 0
-        ? `/dashboard/runs?recipe=${encodeURIComponent(pick.name)}`
-        : "/dashboard/runs"
+        ? `/runs?recipe=${encodeURIComponent(pick.name)}`
+        : "/runs"
       : null;
 
   return (
@@ -221,7 +221,7 @@ export function FeaturedRecipeAside({
         <SuccessRing pct={pick.okRate} size={22} stroke={3} />
       </div>
       <Link
-        href={`/dashboard/recipes/${encodeURIComponent(pick.name)}/edit`}
+        href={`/recipes/${encodeURIComponent(pick.name)}/edit`}
         className="quilt-aside-name"
         title={`Edit ${pick.name}`}
       >

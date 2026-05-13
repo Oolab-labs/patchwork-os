@@ -214,7 +214,7 @@ export function RecipeLeaderboard({
               >
                 <SuccessRing pct={a.okRate} size={26} stroke={3} />
                 <Link
-                  href={`/dashboard/runs?recipe=${encodeURIComponent(a.name)}`}
+                  href={`/runs?recipe=${encodeURIComponent(a.name)}`}
                   style={{
                     fontFamily: "var(--font-mono)",
                     color: "var(--ink-0)",

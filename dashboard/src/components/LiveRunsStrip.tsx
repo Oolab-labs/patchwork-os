@@ -97,8 +97,8 @@ export function LiveRunsStrip({
             ? fmtElapsed(r.durationMs)
             : "—";
         const href = r.seq != null
-          ? `/dashboard/runs/${r.seq}`
-          : `/dashboard/runs?recipe=${encodeURIComponent(name)}`;
+          ? `/runs/${r.seq}`
+          : `/runs?recipe=${encodeURIComponent(name)}`;
         const showRerun = !isLive && name.length > 0 && !pending[name];
         const isQueueing = Boolean(pending[name]);
         return (

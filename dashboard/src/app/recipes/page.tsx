@@ -20,6 +20,24 @@ import {
   SuccessRing,
 } from "@/components/patchwork";
 
+/**
+ * Trigger-type → chip tone. Triggers used to all render in the same
+ * "muted" tone, which turned the trigger column into vertical grey
+ * wallpaper. Color-coding gives the eye a fast way to scan "cron vs
+ * manual vs webhook" without reading the text.
+ */
+function triggerTone(
+  trigger: string | undefined,
+): "ok" | "warn" | "info" | "accent" | "muted" | "purple" {
+  const t = (trigger ?? "manual").toLowerCase();
+  if (t === "cron" || t === "schedule" || t === "scheduled") return "accent";
+  if (t === "webhook" || t === "http") return "info";
+  if (t === "file_watch" || t === "on_file_save" || t === "fs_watch") return "warn";
+  if (t === "channel" || t === "event" || t === "bus") return "purple";
+  if (t === "git_hook" || t === "git") return "ok";
+  return "muted";
+}
+
 // Tool prefix → connector name mapping
 const TOOL_PREFIX_MAP: Record<string, string> = {
   slack_: "slack",
@@ -916,6 +934,7 @@ export default function RecipesPage() {
                     return (
                       <tr
                         key={r.path ?? r.id ?? `${r.name}:${i}`}
+                        className={`recipe-row${sel ? " is-selected" : ""}${enabled ? "" : " is-off"}`}
                         onClick={() =>
                           setSelectedName((prev) => (prev === r.name ? null : r.name))
                         }
@@ -929,10 +948,6 @@ export default function RecipesPage() {
                         role="button"
                         aria-pressed={sel}
                         aria-label={`Select recipe ${r.name}`}
-                        style={{
-                          cursor: "pointer",
-                          background: sel ? "var(--bg-2)" : undefined,
-                        }}
                       >
                         <td style={{ textAlign: "center" }}>
                           <SuccessRing pct={pct} />
@@ -973,7 +988,9 @@ export default function RecipesPage() {
                           )}
                         </td>
                         <td>
-                          <StatusPill tone="muted">{r.trigger ?? "manual"}</StatusPill>
+                          <StatusPill tone={triggerTone(r.trigger)}>
+                            {r.trigger ?? "manual"}
+                          </StatusPill>
                         </td>
                         <td style={{ textAlign: "center" }}>
                           <RunSparkBars

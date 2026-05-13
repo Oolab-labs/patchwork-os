@@ -1246,6 +1246,24 @@ button.topbar-search {
 .table .mono { font-family: var(--font-mono); font-size: 12px; color: var(--ink-1); }
 .table .muted { color: var(--ink-3); }
 
+/* /recipes table — readable, scannable row treatment. The default
+   .table row is dense (designed for log-like data); the recipes page
+   reads more like a product list, so it gets its own breathing room. */
+.recipes-table tbody td { padding: 12px 10px; }
+.recipes-table tr.recipe-row { transition: background 120ms ease; }
+.recipes-table tr.recipe-row:hover {
+  background: color-mix(in srgb, var(--accent) 5%, var(--recess));
+}
+.recipes-table tr.recipe-row.is-selected {
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-2));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.recipes-table tr.recipe-row.is-selected:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-2));
+}
+.recipes-table tr.recipe-row.is-off { opacity: 0.55; }
+.recipes-table tr.recipe-row.is-off:hover { opacity: 0.85; }
+
 /* /recipes table on phone: 7-column desktop layout (%, RECIPE, TRIGGER,
    LAST 14 RUNS, AVG, LAST, Actions) is 700+ px wide. Below ≈768 px the
    declared widths plus padding push horizontal scroll to the point where
@@ -1810,7 +1828,11 @@ button.topbar-search {
   margin-right: 6px;
 }
 
-/* ---- Featured-recipe aside (replaces WeatherRing on hero) ---- */
+/* ---- Featured-recipe aside (replaces WeatherRing on hero) ----
+   Frosted-glass treatment over the quilt pattern. Earlier iteration
+   used 70% surface mix with no blur — quilt squares bled through and
+   ate the eyebrow contrast. Now: 92% surface + backdrop blur for a
+   crisp panel that reads against either theme. */
 .quilt-aside-featured,
 .quilt-aside-empty {
   position: relative;
@@ -1818,59 +1840,82 @@ button.topbar-search {
   align-self: stretch;
   width: 280px;
   padding: 22px 24px;
-  border-left: 1px solid var(--line-1);
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border-left: 1px solid var(--line-2);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(6px) saturate(115%);
+  -webkit-backdrop-filter: blur(6px) saturate(115%);
   display: flex;
   flex-direction: column;
   gap: 8px;
   justify-content: center;
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--ink-0) 4%, transparent);
 }
 .quilt-aside-eyebrow {
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.1em;
-  color: var(--ink-3);
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
   text-transform: uppercase;
 }
 .quilt-aside-eyebrow-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
   display: inline-block;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
 }
-.quilt-aside-eyebrow-dot[data-tone="err"] { background: var(--err); }
-.quilt-aside-eyebrow-dot[data-tone="accent"] { background: var(--accent); }
+.quilt-aside-eyebrow-dot[data-tone="err"] {
+  background: var(--err);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--err) 28%, transparent);
+}
+.quilt-aside-eyebrow-dot[data-tone="accent"] {
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
+}
 .quilt-aside-eyebrow-dot[data-pulsing="1"] {
   background: var(--ok);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent);
   animation: aside-eyebrow-pulse 1.6s ease-in-out infinite;
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent);
 }
 @keyframes aside-eyebrow-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); }
-  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--ok) 0%, transparent); }
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent),
+      0 0 0 7px color-mix(in srgb, var(--ok) 0%, transparent);
+  }
 }
 .quilt-aside-featured[data-mode="running"] .quilt-aside-eyebrow { color: var(--ok); }
 .quilt-aside-featured[data-mode="needs-retry"] .quilt-aside-eyebrow { color: var(--err); }
 .quilt-aside-name {
   font-family: var(--font-mono);
-  font-size: var(--fs-l);
+  font-size: 17px;
   font-weight: 700;
   color: var(--ink-0);
   text-decoration: none;
-  line-height: 1.15;
-  word-break: break-all;
+  line-height: 1.2;
+  /* Long recipe names need to wrap at the dash glyph, not mid-char.
+     `break-word` keeps "apple-watch-health-log" intact and breaks at
+     the next dash if it has to; `break-all` hyphenated mid-word. */
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
   transition: color 120ms ease;
 }
 .quilt-aside-name:hover { color: var(--accent); }
 .quilt-aside-meta {
   font-size: var(--fs-xs);
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .quilt-aside-spark {
   margin: 4px 0 6px;
@@ -1879,52 +1924,56 @@ button.topbar-search {
   align-self: flex-start;
   font-size: var(--fs-s);
   font-weight: 600;
-  padding: 6px 12px;
+  padding: 7px 14px;
   border-radius: var(--r-2);
   border: 1px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent, #fff);
   cursor: pointer;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  transition: background 120ms ease, transform 80ms ease;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--ink-0) 8%, transparent);
+  transition: background 120ms ease, transform 80ms ease, box-shadow 120ms ease, filter 120ms ease;
 }
 .quilt-aside-run:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  filter: brightness(1.06);
+  box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 .quilt-aside-run:active:not(:disabled) { transform: translateY(1px); }
 .quilt-aside-run:disabled { cursor: wait; opacity: 0.7; }
 .quilt-aside-run[data-mode="needs-retry"] {
   border-color: var(--err);
-  background: color-mix(in srgb, var(--err) 10%, transparent);
-  color: var(--err);
+  background: var(--err);
+  color: var(--on-accent, #fff);
 }
 .quilt-aside-run[data-mode="needs-retry"]:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--err) 16%, transparent);
+  filter: brightness(1.08);
+  box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--err) 60%, transparent);
 }
 .quilt-aside-run[data-mode="running"] {
   border-color: var(--ok);
-  background: color-mix(in srgb, var(--ok) 10%, transparent);
-  color: var(--ok);
+  background: var(--ok);
+  color: var(--on-accent, #fff);
 }
 .quilt-aside-run[data-mode="running"]:hover {
-  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  filter: brightness(1.06);
+  box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--ok) 60%, transparent);
 }
 .quilt-aside-empty-label {
   font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.1em;
-  color: var(--ink-3);
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
   text-transform: uppercase;
 }
 .quilt-aside-empty-value {
   font-family: var(--font-mono);
-  font-size: var(--fs-l);
+  font-size: 18px;
   font-weight: 700;
-  color: var(--ink-2);
+  color: var(--ink-1);
 }
 .quilt-aside-empty-foot {
   font-size: var(--fs-xs);
