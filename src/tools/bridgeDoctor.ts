@@ -1,4 +1,4 @@
-import { execFile, execSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -470,11 +470,12 @@ async function checkClaudeDriver(config: Config): Promise<CheckResult> {
     };
   }
   const binary = config.claudeBinary || "claude";
+  const execFileAsync = promisify(execFile);
   try {
-    execSync(
-      process.platform === "win32" ? `where ${binary}` : `which ${binary}`,
-      { stdio: "pipe" },
-    );
+    // Use execFile with argument array to avoid shell injection if --claude-binary
+    // is set to an attacker-influenced value, and to handle paths with spaces.
+    const probe = process.platform === "win32" ? "where" : "which";
+    await execFileAsync(probe, [binary], { timeout: 5_000 });
     return {
       name: "Claude Driver",
       status: "ok",

@@ -53,18 +53,17 @@ describe("SessionCheckpoint", () => {
     expect(path).toContain("checkpoint-9999.json");
   });
 
-  it.skipIf(process.platform === "win32")(
-    "constructor uses CLAUDE_CONFIG_DIR env var",
-    () => {
-      process.env.CLAUDE_CONFIG_DIR = "/custom/config";
-      const sc = new SessionCheckpoint(1111);
-      sc.write(sampleData);
-      const path = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock
-        .calls[0]?.[0] as string;
-      expect(path).toContain("/custom/config");
-      process.env.CLAUDE_CONFIG_DIR = undefined as unknown as string;
-    },
-  );
+  it("constructor uses CLAUDE_CONFIG_DIR env var", () => {
+    // Use a separator-free name so the assertion works on both POSIX ("/") and
+    // Windows ("\") without importing os (which is mocked in this file).
+    process.env.CLAUDE_CONFIG_DIR = "custom-cfg-dir";
+    const sc = new SessionCheckpoint(1111);
+    sc.write(sampleData);
+    const writtenPath = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] as string;
+    expect(writtenPath.replace(/\\/g, "/")).toContain("custom-cfg-dir");
+    process.env.CLAUDE_CONFIG_DIR = undefined as unknown as string;
+  });
 
   it("write() serializes data to JSON", () => {
     const sc = new SessionCheckpoint(1234);

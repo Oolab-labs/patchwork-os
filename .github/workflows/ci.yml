@@ -13,9 +13,14 @@ jobs:
   ci:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, windows-latest]
         node-version: [20, 22]
+        exclude:
+          # Run Windows on Node 22 only to keep matrix lean while coverage is new
+          - os: windows-latest
+            node-version: 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -34,10 +39,13 @@ jobs:
         run: npm run lint
       - name: Guard against optional-chaining on prompt variables
         run: |
-          if grep -nP 'cfg\.prompt\?\..*replace\(' src/automation.ts || grep -nP '^\s+\?\.replace\(' src/automation.ts; then
-            echo "ERROR: optional-chain .replace() on prompt variable — use (cfg.prompt ?? '').replace()" >&2
-            exit 1
-          fi
+          node -e "
+            const fs = require('fs');
+            const src = fs.readFileSync('src/automation.ts', 'utf8');
+            const bad1 = /cfg\.prompt\?\..*replace\(/.test(src);
+            const bad2 = /^\s+\?\.replace\(/m.test(src);
+            if (bad1 || bad2) { console.error('ERROR: optional-chain .replace() on prompt variable'); process.exit(1); }
+          "
       - name: Build
         run: npm run build
       - name: Test
@@ -174,7 +182,7 @@ jobs:
       - name: Build
         run: npm run build
       - name: Run smoke test suite
-        run: BRIDGE="$(pwd)/scripts/smoke/bridge" bash scripts/smoke/run-all.sh
+        run: BRIDGE="$(pwd)/scripts/smoke/bridge" node scripts/smoke/run-all.mjs
         timeout-minutes: 3
 
   benchmark:

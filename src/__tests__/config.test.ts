@@ -111,13 +111,12 @@ describe("parseConfig --allow-command interpreter guard", () => {
 const cfg = (...a: string[]) => parseConfig(["node", "bridge.js", ...a]);
 
 describe("parseConfig flags", () => {
-  it.skipIf(process.platform === "win32")(
-    "sets workspace from --workspace",
-    () => {
-      const config = cfg("--workspace", "/my/project");
-      expect(config.workspace).toBe("/my/project");
-    },
-  );
+  it("sets workspace from --workspace", () => {
+    // Use os.tmpdir() so the path is valid on both POSIX and Windows.
+    const ws = tmpdir();
+    const config = cfg("--workspace", ws);
+    expect(config.workspace).toBe(ws);
+  });
 
   it("sets ideName from --ide-name", () => {
     const config = cfg("--ide-name", "MyIDE");

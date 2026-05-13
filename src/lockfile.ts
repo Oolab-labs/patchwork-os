@@ -142,7 +142,10 @@ export class LockFileManager {
             content.pid > 0
           ) {
             try {
-              process.kill(content.pid, 0); // check if alive — throws if dead
+              // Throws ESRCH if dead. On Windows a dead process whose handle
+              // hasn't been released yet may return EPERM — the nonce check
+              // below is the secondary stale guard for that edge case.
+              process.kill(content.pid, 0);
               // PID appears alive.
               // Only attempt stale-detection on our OWN PID (e.g. a previous crash
               // that left our lock behind and the OS reused our PID for another

@@ -84,7 +84,9 @@ export class BridgeProcess {
       const { stdout } = await execFileAsync(whichCmd, ["claude-ide-bridge"], {
         timeout: 5_000,
       });
-      return stdout.trim().split("\n")[0].trim();
+      // split on \r?\n so a trailing \r from Windows `where` output doesn't
+      // get appended to the binary path and cause ENOENT at spawn time
+      return stdout.trim().split(/\r?\n/)[0].trim();
     } catch {
       // Fall back to bare command name — PATH resolution at spawn time
       return "claude-ide-bridge";
@@ -138,7 +140,10 @@ export class BridgeProcess {
           isStale = true;
         } else if (!Number.isNaN(pid)) {
           try {
-            process.kill(pid, 0); // throws ESRCH if dead, EPERM if alive+different user
+            // throws ESRCH if process doesn't exist.
+            // On Windows a dead-but-handle-held process may return EPERM
+            // instead of ESRCH; the 60s TTL above is the primary stale guard.
+            process.kill(pid, 0);
           } catch (err: unknown) {
             const code = (err as NodeJS.ErrnoException).code;
             if (code === "ESRCH") isStale = true;
@@ -208,8 +213,12 @@ export class BridgeProcess {
               if (!content.authToken) continue;
               if (
                 content.workspace &&
-                path.resolve(content.workspace) !==
-                  path.resolve(this.workspacePath)
+                // Normalise both sides to forward slashes before comparing so
+                // a lock file written with a Unix path (e.g. from WSL or a
+                // cross-platform tool) matches a Windows backslash path and
+                // vice-versa.
+                path.resolve(content.workspace).replace(/\\/g, "/") !==
+                  path.resolve(this.workspacePath).replace(/\\/g, "/")
               )
                 continue;
 
@@ -304,9 +313,15 @@ export class BridgeProcess {
     this.spawnedAt = Date.now();
     this.stderrTail = ""; // reset stderr tail from any previous spawn attempt
 
+    // On Windows, npm global bins are .cmd wrappers. Node's spawn() can't
+    // execute .cmd files without shell:true — without it the process errors
+    // with ENOENT even though the path is valid.
+    const needsShell =
+      process.platform === "win32" && binary.toLowerCase().endsWith(".cmd");
     const child = spawn(binary, spawnArgs, {
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
+      shell: needsShell,
     });
 
     this.child = child;
@@ -417,7 +432,14 @@ export class BridgeProcess {
     return new Promise((resolve) => {
       const forceKill = setTimeout(() => {
         try {
-          child.kill("SIGKILL");
+          // SIGKILL is not a real signal on Windows; child.kill() with no
+          // argument maps to TerminateProcess() and is the correct way to
+          // force-stop a process on Win32.
+          if (process.platform === "win32") {
+            child.kill();
+          } else {
+            child.kill("SIGKILL");
+          }
         } catch {
           /* best-effort */
         }
@@ -430,7 +452,14 @@ export class BridgeProcess {
       });
 
       try {
-        child.kill("SIGTERM");
+        // SIGTERM is not a real signal on Windows and will throw
+        // ERR_INVALID_SIGNAL on some Node versions. Use no-argument kill()
+        // which maps to TerminateProcess() on Win32.
+        if (process.platform === "win32") {
+          child.kill();
+        } else {
+          child.kill("SIGTERM");
+        }
       } catch {
         clearTimeout(forceKill);
         resolve();
