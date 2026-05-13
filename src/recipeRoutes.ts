@@ -1341,31 +1341,34 @@ export function tryHandleRecipeRoute(
         // -----------------------------------------------------------------
         // BUNDLE INSTALL DISPATCH (#130 PR A).
         //
-        // `github:patchworkos/recipes/bundles/<name>` installs every recipe
+        // `github:<owner>/<repo>/bundles/<name>` installs every recipe
         // listed in the bundle's `patchwork-bundle.json`. Plugin (`plugin`)
         // and policy template (`policy_template`) declared in the manifest
         // are surfaced as advisory-only — wiring those needs separate
         // decisions (npm-install surface, policy application UX) tracked
-        // outside this PR. See the #130 scoping comment.
+        // outside this PR.
+        //
+        // Org allowlist (#audit-thread): historically the path was hard-
+        // coded to `patchworkos/recipes`. Now any allowlisted org/repo
+        // can host a bundle; parse + validate via the shared helper so
+        // single-recipe and bundle install share one source-of-truth.
         // -----------------------------------------------------------------
-        const bundlePrefix = "github:patchworkos/recipes/bundles/";
-        if (source.startsWith(bundlePrefix)) {
-          const bundleName = source.slice(bundlePrefix.length);
-          const { isSafeBasename } = await import(
-            "./commands/recipeInstall.js"
+        const bundleParse = source.startsWith("github:")
+          ? await (async () => {
+              const { parseGithubInstallSource } = await import(
+                "./recipes/githubInstallSource.js"
+              );
+              return parseGithubInstallSource(source);
+            })()
+          : null;
+        if (bundleParse?.ok && bundleParse.parsed.kind === "bundle") {
+          const { buildGithubRawUrl } = await import(
+            "./recipes/githubInstallSource.js"
           );
-          if (!isSafeBasename(bundleName)) {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                ok: false,
-                error: "Invalid bundle name in source",
-                code: "invalid_bundle_name",
-              }),
-            );
-            return;
-          }
-          const manifestUrl = `https://raw.githubusercontent.com/patchworkos/recipes/main/bundles/${bundleName}/patchwork-bundle.json`;
+          const bundleName = bundleParse.parsed.name;
+          const bundleOwner = bundleParse.parsed.owner;
+          const bundleRepo = bundleParse.parsed.repo;
+          const manifestUrl = buildGithubRawUrl(bundleParse.parsed);
 
           const ctl = new AbortController();
           const timeout = setTimeout(() => ctl.abort(), 30_000);
@@ -1442,6 +1445,12 @@ export function tryHandleRecipeRoute(
             );
             return;
           }
+          // Validate each declared recipe basename to block traversal +
+          // junk segments. `isSafeBasename` lives in the legacy recipe-
+          // install command but the predicate is the right shape here.
+          const { isSafeBasename } = await import(
+            "./commands/recipeInstall.js"
+          );
           if (
             !Array.isArray(manifest.recipes) ||
             manifest.recipes.length === 0 ||
@@ -1479,7 +1488,10 @@ export function tryHandleRecipeRoute(
           mkdirSync(recipesDir, { recursive: true });
 
           for (const r of manifest.recipes as string[]) {
-            const recipeUrl = `https://raw.githubusercontent.com/patchworkos/recipes/main/recipes/${r}/${r}.yaml`;
+            // Bundle's manifest is allowed to declare recipes that
+            // live in the same repo as the bundle. Build the URL with
+            // the parsed owner/repo, not the hard-coded original.
+            const recipeUrl = `https://raw.githubusercontent.com/${bundleOwner}/${bundleRepo}/main/recipes/${r}/${r}.yaml`;
             const recipeCtl = new AbortController();
             const recipeTimeout = setTimeout(() => recipeCtl.abort(), 30_000);
             try {
@@ -1563,28 +1575,47 @@ export function tryHandleRecipeRoute(
           return;
         }
 
-        const githubPrefix = "github:patchworkos/recipes/recipes/";
         let fetchUrl: string;
         let recipeName: string;
-        if (source.startsWith(githubPrefix)) {
-          recipeName = source.slice(githubPrefix.length);
-          // The constructed URL is internal — recipeName must be a safe
-          // single-segment so we don't end up encoding `../etc/passwd` into
-          // the path. Reuse the strict basename predicate from `recipeInstall`.
-          const { isSafeBasename } = await import(
-            "./commands/recipeInstall.js"
+        if (source.startsWith("github:")) {
+          // Parse the new generalised shape (any allowlisted org/repo)
+          // instead of only `github:patchworkos/recipes/recipes/<name>`.
+          // Distinguishes bad shape (400) from not-on-allowlist (403)
+          // so operators can spot a config error vs. a typo.
+          const { parseGithubInstallSource, buildGithubRawUrl } = await import(
+            "./recipes/githubInstallSource.js"
           );
-          if (!isSafeBasename(recipeName)) {
-            res.writeHead(400, { "Content-Type": "application/json" });
+          const parsed = parseGithubInstallSource(source);
+          if (!parsed.ok) {
+            const status = parsed.code === "not_allowlisted" ? 403 : 400;
+            res.writeHead(status, { "Content-Type": "application/json" });
             res.end(
               JSON.stringify({
                 ok: false,
-                error: "Invalid recipe name in source",
+                error: parsed.error,
+                code: parsed.code,
               }),
             );
             return;
           }
-          fetchUrl = `https://raw.githubusercontent.com/patchworkos/recipes/main/recipes/${recipeName}/${recipeName}.yaml`;
+          // Bundle shape on /recipes/install (single-recipe path) is a
+          // mistake — surface it explicitly rather than silently fetching
+          // an unrelated URL. Bundle installs have their own code path
+          // above this block.
+          if (parsed.parsed.kind === "bundle") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error:
+                  "Bundle source on single-recipe install. Use the bundle install path.",
+                code: "bad_shape",
+              }),
+            );
+            return;
+          }
+          recipeName = parsed.parsed.name;
+          fetchUrl = buildGithubRawUrl(parsed.parsed);
         } else if (source.startsWith("https://")) {
           // Non-github source: must clear the env-var allowlist AND the SSRF
           // guard. Default-deny when env var unset (R3 DP-2 confirmed).
