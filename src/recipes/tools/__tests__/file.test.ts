@@ -249,7 +249,9 @@ describe("file.* jail — exploit fixtures from G-security G2", () => {
     // resolved path must be inside the user's real home/.patchwork — we
     // assert the suffix rather than an exact string because $HOME varies.
     expect(
-      target.endsWith(".patchwork/inbox/recipe-dogfood-A-PR1-baseline.txt"),
+      target
+        .replace(/\\/g, "/")
+        .endsWith(".patchwork/inbox/recipe-dogfood-A-PR1-baseline.txt"),
     ).toBe(true);
   });
 });
