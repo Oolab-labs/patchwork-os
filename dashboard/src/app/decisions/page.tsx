@@ -7,7 +7,7 @@ import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
-import { ErrorState, HintCard, LivePill } from "@/components/patchwork";
+import { ErrorState, Glossary, HintCard, LivePill } from "@/components/patchwork";
 
 interface DecisionTrace {
   traceType: "decision";
@@ -161,7 +161,11 @@ function DecisionsContent() {
             <HintCard.Toggle id="decisions" />
           </div>
           <div className="editorial-sub" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span>{traces.length} trace{traces.length !== 1 ? "s" : ""} · ctxSaveTrace persists · ctxQueryTraces recalls</span>
+            <span>
+              {traces.length}{" "}
+              <Glossary term="trace">trace{traces.length !== 1 ? "s" : ""}</Glossary>{" "}
+              · ctxSaveTrace persists · ctxQueryTraces recalls
+            </span>
             <LivePill label="5s" tone="muted" />
           </div>
         </div>

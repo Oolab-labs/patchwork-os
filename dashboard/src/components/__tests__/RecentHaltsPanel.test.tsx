@@ -63,8 +63,13 @@ describe("<RecentHaltsPanel/>", () => {
         { reason: "killed by user", category: "kill_switch", runSeq: 88 },
       ],
     });
-    const { findByText, container } = render(<RecentHaltsPanel />);
-    expect(await findByText(/Recent halts/)).toBeInTheDocument();
+    const { container } = render(<RecentHaltsPanel />);
+    // Heading reads "Recent <Glossary>halts</Glossary> · last 24h" — the
+    // glossary primitive wraps "halts" in a button, so the text is
+    // broken across nodes. Match on container.textContent.
+    await waitFor(() => {
+      expect(container.textContent).toMatch(/Recent halts/);
+    });
     expect(container.textContent).toMatch(/5 halts/);
     expect(container.textContent).toMatch(/tool threw/);
     expect(container.textContent).toMatch(/kill switch/);
