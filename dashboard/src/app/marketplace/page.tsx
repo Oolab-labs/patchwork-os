@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
 import { HintCard } from "@/components/patchwork";
@@ -148,6 +149,23 @@ function connectorColor(id: string): string {
   return PROVIDER_COLORS[norm] ?? "#4a5568";
 }
 
+/**
+ * Render a connector id (e.g. "google-calendar", "slack") as a
+ * user-facing label. Title-cases each hyphen segment; special-cases a
+ * couple of acronyms that look wrong with vanilla title-case.
+ * Used by the post-install missingConnectors toast — keep terse, no
+ * marketing copy.
+ */
+function formatConnectorLabel(id: string): string {
+  if (id === "github") return "GitHub";
+  if (id === "gitlab") return "GitLab";
+  if (id === "pagerduty") return "PagerDuty";
+  if (id === "hubspot") return "HubSpot";
+  return id
+    .split("-")
+    .map((part) => (part.length === 0 ? "" : part[0].toUpperCase() + part.slice(1)))
+    .join(" ");
+}
 
 // ------------------------------------------------------------------ card
 
@@ -436,6 +454,7 @@ export default function MarketplacePage() {
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const toast = useToast();
+  const router = useRouter();
 
   // Re-probe bridge + refresh the installed-names Set. Extracted so the
   // post-install handler can call it to (a) catch the name-divergence
@@ -543,6 +562,18 @@ export default function MarketplacePage() {
       throw new Error("Install requires bridge v0.2.0-alpha.26+");
     }
 
+    // Parse the response body once — both success and failure paths need it.
+    let parsed: {
+      ok?: boolean;
+      error?: string;
+      missingConnectors?: string[];
+    } = {};
+    try {
+      parsed = (await res.json()) as typeof parsed;
+    } catch {
+      // ignore parse failure — fall back to status-only error below
+    }
+
     if (!res.ok) {
       // 502 / 503 / 504 from our Next.js proxy means the bridge stopped
       // responding to bridgeFetch — flip the offline banner so the next
@@ -554,14 +585,7 @@ export default function MarketplacePage() {
           "Bridge isn't responding. Start it with `patchwork start` and try again.",
         );
       }
-      let msg = `Error ${res.status}`;
-      try {
-        const body = (await res.json()) as { error?: string };
-        if (body.error) msg = body.error;
-      } catch {
-        // ignore parse failure
-      }
-      throw new Error(msg);
+      throw new Error(parsed.error ?? `Error ${res.status}`);
     }
 
     // Optimistic update so the card flips to "Installed" immediately.
@@ -572,6 +596,34 @@ export default function MarketplacePage() {
     // but the bridge writes the recipe under its own YAML `name` field.
     // Without this, the green pill would lie until the next page load.
     void refreshInstalled();
+
+    // Bridge-side connector preflight (#488) ships a `missingConnectors`
+    // array when the recipe uses connectors the user hasn't authorised
+    // yet. Surface as a follow-up warn toast with an action link to
+    // /connections — non-blocking, can be dismissed, but tells the user
+    // exactly what they need to do before this recipe will run.
+    const missing = Array.isArray(parsed.missingConnectors)
+      ? parsed.missingConnectors.filter(
+          (c): c is string => typeof c === "string",
+        )
+      : [];
+    if (missing.length > 0) {
+      const labels = missing.slice(0, 3).map(formatConnectorLabel);
+      const overflow = missing.length - labels.length;
+      const list =
+        overflow > 0
+          ? `${labels.join(", ")} + ${overflow} more`
+          : labels.join(", ");
+      toast.warn(`Connect ${list} before this recipe can run.`, {
+        duration: 8000,
+        action: {
+          label: "Open connections",
+          onClick: () => {
+            router.push("/connections");
+          },
+        },
+      });
+    }
   }
 
   const filtered = (registry ?? []).filter((r) => {
