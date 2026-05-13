@@ -117,12 +117,6 @@ export const NAV_SECTIONS: NavSection[] = [
         paletteLabel: "Insights — Approval patterns",
         icon: "monitor",
       },
-      {
-        href: "/metrics",
-        label: "Metrics",
-        paletteLabel: "Insights — Prometheus metrics",
-        icon: "trending",
-      },
       { href: "/transactions", label: "Transactions", icon: "diff" },
     ],
   },
