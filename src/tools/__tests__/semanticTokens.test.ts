@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ExtensionTimeoutError } from "../../extensionClient.js";
 import { createGetSemanticTokensTool } from "../semanticTokens.js";
@@ -16,13 +18,14 @@ function makeClient(
   };
 }
 
-const workspace = "/tmp";
+const workspace = os.tmpdir();
+const filePath = path.join(workspace, "foo.ts");
 
 describe("getSemanticTokens", () => {
   it("returns extensionRequired error when disconnected", async () => {
     const client = makeClient({ isConnected: () => false });
     const tool = createGetSemanticTokensTool(workspace, client as never);
-    const result = (await tool.handler({ filePath: "/tmp/foo.ts" })) as any;
+    const result = (await tool.handler({ filePath: filePath })) as any;
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/extension/i);
   });
@@ -32,7 +35,7 @@ describe("getSemanticTokens", () => {
       getSemanticTokens: () => Promise.resolve(null),
     });
     const tool = createGetSemanticTokensTool(workspace, client as never);
-    const result = (await tool.handler({ filePath: "/tmp/foo.ts" })) as any;
+    const result = (await tool.handler({ filePath: filePath })) as any;
     expect(result.isError).toBeFalsy();
     const data = JSON.parse(result.content[0].text);
     expect(data.tokens).toEqual([]);
@@ -57,7 +60,7 @@ describe("getSemanticTokens", () => {
       getSemanticTokens: () => Promise.resolve(tokenData),
     });
     const tool = createGetSemanticTokensTool(workspace, client as never);
-    const result = (await tool.handler({ filePath: "/tmp/foo.ts" })) as any;
+    const result = (await tool.handler({ filePath: filePath })) as any;
     expect(result.isError).toBeFalsy();
     const data = JSON.parse(result.content[0].text);
     expect(data.tokens).toHaveLength(1);
@@ -71,7 +74,7 @@ describe("getSemanticTokens", () => {
         Promise.reject(new ExtensionTimeoutError("timeout")),
     });
     const tool = createGetSemanticTokensTool(workspace, client as never);
-    const result = (await tool.handler({ filePath: "/tmp/foo.ts" })) as any;
+    const result = (await tool.handler({ filePath: filePath })) as any;
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/indexing|timed out/i);
   });
@@ -80,13 +83,13 @@ describe("getSemanticTokens", () => {
     const client = makeClient();
     const tool = createGetSemanticTokensTool(workspace, client as never);
     await tool.handler({
-      filePath: "/tmp/foo.ts",
+      filePath: filePath,
       startLine: 5,
       endLine: 10,
       maxTokens: 100,
     });
     expect(client.getSemanticTokens).toHaveBeenCalledWith(
-      "/tmp/foo.ts",
+      filePath,
       5,
       10,
       100,

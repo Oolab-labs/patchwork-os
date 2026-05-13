@@ -764,7 +764,10 @@ export function mimeTypeFromPath(filePath: string): string {
 }
 
 export function makeRelative(absPath: string, workspace: string): string {
-  return absPath.startsWith(workspace + path.sep)
-    ? absPath.slice(workspace.length + 1)
-    : absPath;
+  // Normalise separators so that Unix-style paths returned by fd/find/git on
+  // Windows still match a workspace that was resolved with backslashes (and
+  // vice-versa). Accept either "/" or "\" as the trailing separator.
+  const norm = absPath.replace(/\\/g, "/");
+  const ws = workspace.replace(/\\/g, "/");
+  return norm.startsWith(ws + "/") ? norm.slice(ws.length + 1) : norm;
 }

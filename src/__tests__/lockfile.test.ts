@@ -44,6 +44,22 @@ describe("LockFileManager", () => {
     },
   );
 
+  // On Windows chmod is a no-op (NTFS uses ACLs, not POSIX mode bits), so
+  // the mode assertion above is skipped. This variant asserts that the lock
+  // file is still created with the correct content on Win32.
+  it.skipIf(process.platform !== "win32")(
+    "creates lock file with correct content (Windows — no mode check)",
+    () => {
+      const mgr = new LockFileManager(logger);
+      const lockPath = mgr.write(12345, "test-token", [os.tmpdir()], "TestIDE");
+      expect(fs.existsSync(lockPath)).toBe(true);
+      const content = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
+      expect(content.authToken).toBe("test-token");
+      expect(content.pid).toBe(process.pid);
+      expect(content.ideName).toBe("TestIDE");
+    },
+  );
+
   it.skipIf(process.platform === "win32")(
     "enforces directory permissions on existing dirs",
     () => {

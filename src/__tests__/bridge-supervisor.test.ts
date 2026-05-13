@@ -225,6 +225,83 @@ child.on('exit', () => {
     },
     10_000,
   );
+
+  // Windows equivalent: SIGTERM is not a real signal on Win32.
+  // child.kill() with no argument maps to TerminateProcess() which is the
+  // correct way to stop a child process on Windows.
+  it.skipIf(process.platform !== "win32")(
+    "kill() stops the supervisor child without restarting (Windows)",
+    async () => {
+      const scriptDir = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-sup-"));
+      tmpDirs.push(scriptDir);
+
+      const helperPath = path.join(scriptDir, "helper.mjs");
+      fs.writeFileSync(helperPath, "setTimeout(() => {}, 60_000);\n", "utf-8");
+
+      const supervisorPath = path.join(scriptDir, "supervisor.mjs");
+      fs.writeFileSync(
+        supervisorPath,
+        `
+import { spawn } from 'node:child_process';
+let stopping = false;
+const child = spawn(process.execPath, [${JSON.stringify(helperPath)}], { stdio: 'inherit' });
+process.stderr.write('[supervisor] starting bridge\\n');
+// On Windows use an exit hook via a flag file rather than signals
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const stopFile = join(${JSON.stringify(scriptDir)}, 'stop');
+const poll = setInterval(() => {
+  try { require('node:fs').accessSync(stopFile); } catch { return; }
+  clearInterval(poll);
+  stopping = true;
+  child.kill();
+}, 50);
+child.on('exit', () => {
+  if (stopping) {
+    process.stderr.write('[supervisor] bridge stopped\\n');
+    process.exit(0);
+  }
+  process.stderr.write('[supervisor] unexpected restart\\n');
+  process.exit(1);
+});
+`,
+        "utf-8",
+      );
+
+      const proc = spawn(process.execPath, [supervisorPath], {
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+
+      const allLines: string[] = [];
+      proc.stderr?.on("data", (chunk: Buffer) => {
+        chunk
+          .toString()
+          .split("\n")
+          .filter(Boolean)
+          .forEach((l) => {
+            allLines.push(l);
+          });
+      });
+
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (allLines.some((l) => l.includes("starting bridge"))) resolve();
+        };
+        proc.stderr?.on("data", check);
+        check();
+      });
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Signal via flag file (no SIGTERM on Windows)
+      fs.writeFileSync(path.join(scriptDir, "stop"), "");
+      await new Promise<void>((resolve) => proc.on("exit", resolve));
+
+      const allOutput = allLines.join("\n");
+      expect(allOutput).toContain("[supervisor] bridge stopped");
+      expect(allOutput).not.toContain("unexpected restart");
+    },
+    10_000,
+  );
 });
 
 // ── Regression: orchestrator subcommand must not fall through to parseConfig ──

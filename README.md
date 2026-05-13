@@ -85,6 +85,85 @@ Bridge-only docs: [documents/platform-docs.md](documents/platform-docs.md)
 
 ---
 
+## 🪟 Windows Quick Start
+
+The bridge and VS Code extension work natively on Windows. The full Patchwork OS orchestrator (`patchwork start`) requires WSL2 or Git Bash for now; a native PowerShell orchestrator is included as `npm run start-all:win`.
+
+### Prerequisites
+
+- Node.js 20+ (from [nodejs.org](https://nodejs.org))
+- VS Code, Cursor, or Windsurf
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
+- PowerShell 5.1+ (built into Windows 10/11) or PowerShell 7+ (`pwsh`)
+
+### Bridge-only (recommended starting point)
+
+Open **PowerShell** or **cmd.exe**:
+
+```powershell
+# 1. Install
+npm install -g patchwork-os
+
+# 2. Install the VS Code extension
+claude-ide-bridge install-extension
+
+# 3. Start the bridge (bash-free entry point)
+npm run start:bridge
+# or equivalently:
+node "$(npm root -g)/patchwork-os/dist/index.js" --workspace .
+
+# 4. Connect Claude Code (new terminal)
+claude --ide
+```
+
+Type `/ide` in Claude Code to confirm the connection.
+
+### Full orchestrator (bridge + Claude + dashboard)
+
+Two options — both work on Windows, macOS, and Linux:
+
+```powershell
+# Option A: cross-platform Node.js orchestrator (recommended)
+npm run start-all:node
+npm run start-all:node -- --workspace C:\myproj --full --no-dashboard
+
+# Option B: PowerShell-native orchestrator (Windows only, no Node wrapper overhead)
+npm run start-all:win
+npm run start-all:win -- -NoDashboard -Workspace C:\myproj -Full
+```
+
+Both start the bridge, wait for the lock file, launch `claude --ide` and `remote-control`, start the Next.js dashboard on `http://localhost:3200`, poll until it's ready, then open it in your default browser. The health monitor restarts the bridge automatically if it crashes, with exponential backoff.
+
+```powershell
+# Node orchestrator options (--key value form)
+npm run start-all:node -- --full               # all ~170 tools
+npm run start-all:node -- --no-dashboard       # skip dashboard
+npm run start-all:node -- --dashboard-port 3300
+npm run start-all:node -- --no-remote          # skip remote-control
+npm run start-all:node -- --notify my-topic    # ntfy.sh push notifications
+```
+
+### Known limitations on native Windows
+
+| Feature | Status |
+|---|---|
+| Bridge + extension (LSP, debugger, editor state) | ✅ Full support |
+| `npm run start:bridge` | ✅ Supported |
+| `npm run start-all:node` (Node.js orchestrator) | ✅ Supported — cross-platform |
+| `npm run start-all:win` (PS1 orchestrator) | ✅ Supported — Windows-native |
+| Dashboard (`http://localhost:3200`) | ✅ Opens automatically |
+| `patchwork start` / `npm run start-all` | ⚠️ Requires WSL2 or Git Bash (uses bash + tmux) |
+| `npm run remote:node` | ✅ Supported — cross-platform Node auto-restart wrapper |
+| `npm run remote` / `npm run vps` | ⚠️ Requires WSL2 or Git Bash |
+| Screenshot capture (standalone bridge) | ⚠️ Not yet supported; extension screenshot works via VS Code |
+| Credential storage | ✅ Uses DPAPI (Windows Data Protection API) via PowerShell |
+
+### WSL2 alternative
+
+For full Patchwork OS functionality including orchestrator, recipes, and morning-brief, run everything inside WSL2 and install the VS Code Remote-WSL extension. The bridge extension loads on the WSL side automatically (`extensionKind: ["workspace"]`), giving full tool coverage.
+
+---
+
 ## 🤖 Patchwork OS — Quick Start
 
 ```bash

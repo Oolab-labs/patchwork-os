@@ -29,9 +29,13 @@ function parseCoverageSummary(
   const entries: FileCoverageEntry[] = [];
   for (const [key, val] of Object.entries(json)) {
     if (key === "total") continue;
-    const relFile = key.startsWith(workspace + path.sep)
-      ? key.slice(workspace.length + 1)
-      : key;
+    // Normalise separators so Unix-style keys (from coverage tools running on
+    // Windows via WSL or cross-compiled) match a backslash workspace root.
+    const normKey = key.replace(/\\/g, "/");
+    const normWs = workspace.replace(/\\/g, "/");
+    const relFile = normKey.startsWith(normWs + "/")
+      ? normKey.slice(normWs.length + 1)
+      : normKey;
     entries.push({
       file: relFile,
       lines: val.lines?.pct ?? 0,

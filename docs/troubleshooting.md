@@ -206,6 +206,19 @@ export PATH="$(npm config get prefix)/bin:$PATH"
 # Add this line to ~/.zshrc or ~/.bashrc
 ```
 
+### Native Windows orchestrator (no WSL required)
+
+The bridge, extension, smoke tests, and orchestrator all run natively on Windows. Use:
+
+- `npm run start:bridge` — bridge only
+- `npm run start-all:node` — cross-platform Node orchestrator (bridge + Claude + dashboard + remote-control + health monitor)
+- `npm run start-all:win` — PowerShell-native equivalent
+- `npm run start-orchestrator:win` — multi-IDE-window orchestrator
+- `npm run remote:node` — auto-restart wrapper for `claude remote-control`
+- `npm run test:smoke` — cross-platform smoke suite
+
+WSL2 is only required for `patchwork start`, `npm run remote` (bash), and `npm run vps`.
+
 ### WSL2 — bridge in WSL, Claude Code on Windows
 
 **Cause:** The bridge writes its lock file to the WSL filesystem (`~/.claude/ide/`). Claude Code running on the Windows host cannot read that path, so the shim cannot discover the bridge.
