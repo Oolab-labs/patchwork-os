@@ -234,6 +234,16 @@ export default function ApprovalDetailPage() {
           */}
           <RelationStrip
             items={[
+              ...(sessionId
+                ? [
+                    {
+                      label: "Session",
+                      href: `/sessions/${encodeURIComponent(sessionId)}`,
+                      tone: "accent" as const,
+                      title: `Session ${sessionId} that requested this approval`,
+                    },
+                  ]
+                : []),
               {
                 label: "Approval patterns",
                 href: "/insights",

@@ -297,6 +297,17 @@ export default function RecipeEditPage({
                 title: `Recent runs of ${name}`,
               },
               {
+                label: "Halts",
+                href: `/runs?recipe=${encodeURIComponent(name)}&halt=1`,
+                tone: "warn",
+                title: `Runs of ${name} that hit a halt reason`,
+              },
+              {
+                label: "Traces",
+                href: `/traces?recipe=${encodeURIComponent(name)}`,
+                title: `Decision logs for ${name}`,
+              },
+              {
                 label: "Live activity",
                 href: "/activity",
                 title: "Stream of every event from this and other recipes",

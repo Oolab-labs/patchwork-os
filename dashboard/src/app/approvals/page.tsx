@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
 import { apiPath } from "@/lib/api";
-import { CodeBlock, EmptyState, HintCard, KeyChip } from "@/components/patchwork";
+import { CodeBlock, EmptyState, HintCard, KeyChip, RelationStrip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
 import { useToast } from "@/components/Toast";
@@ -885,6 +885,19 @@ function ApprovalsContent() {
               return `~/.patchwork/inbox · ${pending.length} pending${oldestTs ? ` · oldest ${relTime(oldestTs)}` : ""}`;
             })()}
           </div>
+          <RelationStrip
+            items={[
+              { label: "Insights", href: "/insights", title: "Approve/reject patterns across tools" },
+              {
+                label: "Suggestions",
+                href: "/suggestions",
+                tone: pending.length > 0 ? "accent" : "neutral",
+                title: "Policy tweaks the system suggests",
+              },
+              { label: "Settings", href: "/settings#approvals", title: "Configure approval rules" },
+              { label: "Knowledge", href: "/decisions", title: "Saved reasoning your agents wrote down" },
+            ]}
+          />
           <div
             className="kbd-hint-row"
             style={{
