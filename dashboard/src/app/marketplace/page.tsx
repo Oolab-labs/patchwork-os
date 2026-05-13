@@ -533,8 +533,17 @@ export default function MarketplacePage() {
         }
       }
 
-      setRegistry(recipes ?? FALLBACK_REGISTRY.recipes);
-      setBundles(registryBundles);
+      if (recipes) {
+        setRegistry(recipes);
+        setBundles(registryBundles);
+      } else {
+        // Both bridge and GitHub failed — show the hardcoded fallback BUT
+        // surface the failure so users know they're looking at stale,
+        // pre-seeded data rather than live registry contents.
+        setRegistry(FALLBACK_REGISTRY.recipes);
+        setBundles(registryBundles);
+        setLoadErr("registry unreachable — showing built-in fallback");
+      }
     }
 
     load().catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));
