@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   ActionPill,
-  PatchCard,
   RunSparkBars,
   SuccessRing,
 } from "@/components/patchwork";
@@ -116,7 +115,7 @@ export function RecipeLeaderboard({
   const agg = aggregateByRecipe(runs, WINDOW_MS[windowKey]).slice(0, limit);
 
   return (
-    <PatchCard beam padded style={{ padding: "18px 20px" }}>
+    <div className="card recipe-leaderboard-card" style={{ padding: "18px 20px" }}>
       <div
         style={{
           display: "flex",
@@ -277,6 +276,6 @@ export function RecipeLeaderboard({
           })}
         </div>
       )}
-    </PatchCard>
+    </div>
   );
 }

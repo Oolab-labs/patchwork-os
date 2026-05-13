@@ -1828,6 +1828,28 @@ button.topbar-search {
   margin-right: 6px;
 }
 
+/* ---- Recipe leaderboard focal-card treatment ----
+   Static accent presence (top stripe + subtle accent-tinted bg) so the
+   card reads as "this is the protagonist section" without the rotating
+   conic-gradient beam we previously used — that radar sweep was a
+   gimmick and showed through even at rest. */
+.recipe-leaderboard-card {
+  position: relative;
+  border-top: 2px solid color-mix(in srgb, var(--accent) 80%, transparent);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 4%, var(--surface)) 0%,
+    var(--surface) 80px
+  );
+}
+[data-theme="dark"] .recipe-leaderboard-card {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 7%, var(--bg-2)) 0%,
+    var(--bg-2) 80px
+  );
+}
+
 /* ---- Featured-recipe aside (replaces WeatherRing on hero) ----
    Frosted-glass treatment over the quilt pattern. Earlier iteration
    used 70% surface mix with no blur — quilt squares bled through and
