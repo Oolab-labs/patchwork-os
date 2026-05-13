@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { apiPath } from "@/lib/api";
 import { EmptyState, HintCard } from "@/components/patchwork";
+import { InboxDeliveryCard } from "@/components/InboxDeliveryCard";
 import { useToast } from "@/components/Toast";
 
 function isFilterCategory(v: string | null): v is FilterCategory {
@@ -594,6 +595,14 @@ const filteredItems = items.filter((item) => {
 
         <HintCard id="inbox" />
 
+        {/*
+          Discovery card for the "deliver to phone" capability. Lives
+          above the items list so it surfaces to every user who hasn't
+          dismissed it — the people who already use /inbox in a browser
+          are exactly the audience for "stop coming here, get pushed".
+        */}
+        <InboxDeliveryCard />
+
         {err && (
           <div className="alert-err" role="alert" style={{ marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <span>{err}</span>
@@ -621,7 +630,19 @@ const filteredItems = items.filter((item) => {
               </svg>
             }
             title="No items yet"
-            description="Run a recipe to generate your first brief."
+            description={
+              <>
+                Run a recipe to generate your first brief.
+                {/*
+                  Empty-state variant of the delivery card — reframes "no
+                  items here" as "set up phone delivery so you don't have
+                  to come back". Single-line, no dismissal needed.
+                */}
+                <div>
+                  <InboxDeliveryCard variant="empty" />
+                </div>
+              </>
+            }
           />
         ) : (
           <div
