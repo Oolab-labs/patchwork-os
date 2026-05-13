@@ -208,8 +208,10 @@ describe("runInstall", () => {
   });
 
   describe("--target cli", () => {
-    // CLAUDE_CONFIG_DIR overrides the home dir base for the CLI config path
-    const testHomeDir = "/tmp/test-home";
+    // CLAUDE_CONFIG_DIR overrides the home dir base for the CLI config path.
+    // Normalize so production's path.join() doesn't rewrite forward slashes
+    // to backslashes on Win32 — otherwise startsWith() below mismatches.
+    const testHomeDir = path.normalize("/tmp/test-home");
 
     beforeEach(() => {
       process.env.CLAUDE_CONFIG_DIR = testHomeDir;
