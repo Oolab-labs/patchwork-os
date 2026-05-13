@@ -210,6 +210,49 @@ if (process.argv[2] === "--version" || process.argv[2] === "-v") {
   process.exit(0);
 }
 
+// Handle top-level --help / -h / help — print a grouped command index so a
+// first-time user has a discoverable entry point. Without this, bare
+// `patchwork --help` falls through to bridge-daemon arg parsing and errors.
+if (
+  process.argv[2] === "--help" ||
+  process.argv[2] === "-h" ||
+  process.argv[2] === "help"
+) {
+  const binName = path.basename(process.argv[1] ?? "patchwork");
+  process.stdout.write(
+    `${binName} ${PACKAGE_VERSION}\n\n` +
+      `First time? Run:\n` +
+      `  ${binName} init                          # set up ~/.patchwork + Claude Code hooks\n` +
+      `  ${binName} start-all                     # bridge + Claude + dashboard\n\n` +
+      `Get started\n` +
+      `  init [--workspace <dir>]                  Scaffold ~/.patchwork; register CC hooks\n` +
+      `  install-extension                         Install the VS Code / Cursor / Windsurf extension\n` +
+      `  start-all [--no-dashboard]                Launch bridge + Claude --ide + dashboard\n` +
+      `  start-orchestrator                        Multi-IDE-window meta-bridge\n\n` +
+      `Recipes\n` +
+      `  recipe new <name> [-i]                    Scaffold a recipe\n` +
+      `  recipe list                               List installed recipes\n` +
+      `  recipe run <name> [--vars k=v]            Run a recipe by name\n` +
+      `  recipe install <source>                   Install from a path or GitHub source\n` +
+      `  recipe --help                             Full recipe subcommand index\n\n` +
+      `Diagnose\n` +
+      `  halts [--window 1h|24h|overnight|7d]      Morning summary of recent recipe halts\n` +
+      `  traces export                             Bundle approval / recipe / decision traces\n` +
+      `  print-token [--port N]                    Print the active bridge auth token\n\n` +
+      `Daemon (no subcommand)\n` +
+      `  --workspace <dir>                         Start the bridge in foreground\n` +
+      `  --watch                                   Auto-restart supervisor\n` +
+      `  --slim                                    27 IDE-only tools (default: full)\n\n` +
+      `Other\n` +
+      `  --version, -v                             Print package version\n` +
+      `  shim                                      stdio↔WebSocket shim (used by MCP clients)\n` +
+      `  notify <event>                            Notify a running bridge of a CC hook event\n\n` +
+      `Bridge-daemon flags: run \`${binName} --workspace . --help-flags\` for the full list,\n` +
+      `or see https://github.com/Oolab-labs/patchwork-os#readme.\n`,
+  );
+  process.exit(0);
+}
+
 // Handle patchwork-init subcommand — T2 from docs/install-ux-plan.md.
 // Separate from the bridge-only `init` to preserve back-compat. See ADR-0008.
 if (process.argv[2] === "patchwork-init") {
@@ -1080,6 +1123,36 @@ Edit, save, hot-reload — Claude's next turn sees the new tool. See [documents/
       `  3. Or add to your config: { "plugins": ["${outDir}"] }\n`,
     );
   }
+  process.exit(0);
+}
+
+// Patchwork: `patchwork recipe` (no subcommand) / `recipe --help` — print
+// the subcommand index. Without this branch, `patchwork recipe` falls through
+// to the bridge daemon, leaving subcommands completely undiscoverable from
+// the CLI (the only way to find them today is to read CLAUDE.md or source).
+if (
+  process.argv[2] === "recipe" &&
+  (process.argv[3] === undefined ||
+    process.argv[3] === "--help" ||
+    process.argv[3] === "-h" ||
+    process.argv[3] === "help")
+) {
+  process.stdout.write(
+    `Usage: patchwork recipe <subcommand> [args...]\n\n` +
+      `Subcommands:\n` +
+      `  new <name>       Scaffold a recipe (interactive with -i)\n` +
+      `  list             List installed recipes (workspace + user)\n` +
+      `  run <name>       Run a recipe by name\n` +
+      `  install <src>    Install a recipe from a path or GitHub source\n` +
+      `  uninstall <name> Remove an installed recipe\n` +
+      `  enable <name>    Re-enable a disabled recipe\n` +
+      `  disable <name>   Pause a recipe (scheduled triggers stop firing)\n` +
+      `  preflight <file> Static-validate a recipe YAML before running\n` +
+      `  lint <file>      Run all lint checks on a recipe YAML\n` +
+      `  fmt <file>       Format a recipe YAML in place\n` +
+      `  schema           Print the recipe JSON Schema\n\n` +
+      `Run \`patchwork recipe <subcommand> --help\` for subcommand-specific options.\n`,
+  );
   process.exit(0);
 }
 
@@ -3379,23 +3452,8 @@ Steps performed:
   let hooksWired = false;
   try {
     const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
-    const sj = JSON.parse(readFileSync(settingsPath, "utf-8")) as Record<
-      string,
-      unknown
-    >;
-    const hooksObj = sj?.hooks;
-    if (hooksObj && typeof hooksObj === "object") {
-      hooksWired = (
-        Object.values(hooksObj as Record<string, unknown[]>).flat() as unknown[]
-      ).some(
-        (e) =>
-          typeof (e as Record<string, string | undefined>)?.command ===
-            "string" &&
-          ((e as Record<string, string>).command ?? "").includes(
-            "claude-ide-bridge",
-          ),
-      );
-    }
+    const { isPreToolUseHookRegistered } = await import("./preToolUseHook.js");
+    hooksWired = isPreToolUseHookRegistered(settingsPath);
   } catch {
     /* file may not exist yet — non-fatal */
   }
@@ -3803,6 +3861,21 @@ if (process.argv[2] === "launchd") {
     binName === "patchwork" ||
     binName === "patchwork.js";
   if (isPatchworkBin && (!process.argv[2] || process.argv[2] === "dashboard")) {
+    // First-run guard: if the user hasn't run `patchwork init` yet, launching
+    // the dashboard renders an empty panel with no signpost. Print an
+    // actionable pointer instead and exit cleanly.
+    const cfgPath = path.join(os.homedir(), ".patchwork", "config.json");
+    if (!existsSync(cfgPath) && !process.argv[2]) {
+      process.stdout.write(
+        `No Patchwork config found at ${cfgPath}.\n\n` +
+          `Run \`${binName} init\` to scaffold ~/.patchwork and wire up\n` +
+          `Claude Code hooks, then \`${binName}\` again to open the dashboard.\n\n` +
+          `For just the IDE bridge (no recipes / approval queue), run:\n` +
+          `  ${binName} install-extension\n` +
+          `  ${binName} --workspace .\n`,
+      );
+      process.exit(0);
+    }
     (async () => {
       const { runDashboard } = await import("./commands/dashboard.js");
       await runDashboard();
@@ -3995,23 +4068,32 @@ if (__subcommandWillRun) {
       process.exit(1);
     });
 
-    // F5: Silent self-update nudge (fire-and-forget)
-    import("node:child_process")
-      .then(({ exec }) => {
-        exec(
-          "npm view claude-ide-bridge version",
-          { timeout: 5000 },
-          (err, stdout) => {
-            if (err || !stdout) return;
-            const latest = stdout.trim();
-            if (latest && semverGt(latest, PACKAGE_VERSION)) {
-              console.log(
-                `\n  Bridge v${latest} available — run: npm update -g claude-ide-bridge\n`,
-              );
-            }
-          },
-        );
-      })
-      .catch(() => {});
+    // F5: Silent self-update nudge (fire-and-forget).
+    // Skip when running from a source tree (any of: a `.git` sibling of the
+    // package, or __dirnameTop not under a node_modules/). Otherwise a dev
+    // who built locally sees "Bridge v<X> available" pointing at an npm
+    // install path they're not using.
+    const isSourceBuild =
+      existsSync(path.join(__dirnameTop, "..", ".git")) ||
+      !__dirnameTop.includes(`${path.sep}node_modules${path.sep}`);
+    if (!isSourceBuild) {
+      import("node:child_process")
+        .then(({ exec }) => {
+          exec(
+            "npm view claude-ide-bridge version",
+            { timeout: 5000 },
+            (err, stdout) => {
+              if (err || !stdout) return;
+              const latest = stdout.trim();
+              if (latest && semverGt(latest, PACKAGE_VERSION)) {
+                console.log(
+                  `\n  Bridge v${latest} available — run: npm update -g claude-ide-bridge\n`,
+                );
+              }
+            },
+          );
+        })
+        .catch(() => {});
+    }
   }
 } // end of `else` for `if (__subcommandWillRun)` (bridge-mode block)
