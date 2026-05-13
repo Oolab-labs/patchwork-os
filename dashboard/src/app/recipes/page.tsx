@@ -14,6 +14,7 @@ import {
   highlightYaml,
   LivePill,
   PatchCard,
+  RelationStrip,
   RunSparkBars,
   StatusPill,
 } from "@/components/patchwork";
@@ -867,6 +868,14 @@ export default function RecipesPage() {
               ? `templates/recipes · ${installedCount} installed · ${enabledCount} enabled`
               : "Loading…"}
           </div>
+          <RelationStrip
+            items={[
+              { label: "Runs", href: "/runs", title: "Runs produced by these recipes" },
+              { label: "Halts", href: "/runs?halt=1", tone: "warn", title: "Runs that hit a halt reason" },
+              { label: "Marketplace", href: "/marketplace", title: "Community-published recipes" },
+              { label: "New recipe", href: "/recipes/new", tone: "accent", title: "Author a new recipe" },
+            ]}
+          />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>
           <button

@@ -209,8 +209,8 @@ export default function SessionDetailPage() {
             items={[
               {
                 label: "Recent runs",
-                href: "/runs",
-                title: "Recipe runs across all sessions",
+                href: `/runs?session=${encodeURIComponent(id)}`,
+                title: `Recipe runs from session ${id}`,
               },
               {
                 label: "Activity stream",

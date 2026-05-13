@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LivePill } from "@/components/patchwork/LivePill";
-import { ErrorState } from "@/components/patchwork";
+import { ErrorState, RelationStrip } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useDebounced } from "@/hooks/useDebounced";
 
@@ -301,6 +301,14 @@ export default function RunsPage() {
           <div className="editorial-sub">
             {runs ? `${runs.length} runs` : "— runs"} · last 24h · avg {fmtDur(stats.avgMs)}
           </div>
+          <RelationStrip
+            items={[
+              { label: "Recipes", href: "/recipes", title: "The YAML that produced these runs" },
+              { label: "Halts", href: "/runs?halt=1", tone: "warn", title: "Runs that hit a halt reason" },
+              { label: "Traces", href: "/traces", title: "Decision logs for these runs" },
+              { label: "Activity", href: "/activity", title: "Live event firehose" },
+            ]}
+          />
         </div>
         <LivePill label="5s" />
       </div>

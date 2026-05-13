@@ -984,6 +984,16 @@ export default function RunDetailPage() {
                   href: `/traces?recipe=${encodeURIComponent(run.recipeName)}`,
                   title: "Saved reasoning + enrichment for this recipe",
                 },
+                ...((run.stepResults ?? []).some((s) => s.haltReason)
+                  ? [
+                      {
+                        label: "Halts",
+                        href: `/runs?recipe=${encodeURIComponent(run.recipeName)}&halt=1`,
+                        tone: "warn" as const,
+                        title: "Other halted runs of this recipe",
+                      },
+                    ]
+                  : []),
               ]}
             />
           )}

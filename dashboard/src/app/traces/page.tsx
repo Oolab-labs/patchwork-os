@@ -5,7 +5,7 @@ import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
-import { EmptyState, ErrorState, HintCard, LivePill } from "@/components/patchwork";
+import { EmptyState, ErrorState, HintCard, LivePill, RelationStrip } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
 
 type TraceType = "approval" | "enrichment" | "recipe_run" | "decision";
@@ -643,6 +643,14 @@ export default function TracesPage() {
             </span>
             <LivePill label="3s" tone="muted" />
           </div>
+          <RelationStrip
+            items={[
+              { label: "Knowledge", href: "/decisions", title: "Saved reasoning your agents wrote down" },
+              { label: "Approvals", href: "/approvals", title: "Approvals these traces touched" },
+              { label: "Runs", href: "/runs", title: "Recipe runs these traces came from" },
+              { label: "Insights", href: "/insights", title: "Cross-tool approval patterns" },
+            ]}
+          />
         </div>
         <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}>
           <input

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
-import { ErrorState, HintCard } from "@/components/patchwork";
+import { ErrorState, HintCard, RelationStrip } from "@/components/patchwork";
 
 interface TransactionEdit {
   filePath: string;
@@ -163,6 +163,14 @@ export default function TransactionsPage() {
             </a>{" "}
             for the full flow.
           </div>
+          <RelationStrip
+            items={[
+              { label: "Approvals", href: "/approvals", title: "Approval queue gating commit" },
+              { label: "Recipes", href: "/recipes", title: "Recipes that stage edits" },
+              { label: "Activity", href: "/activity", title: "Live event firehose" },
+              { label: "Runs", href: "/runs", title: "Runs that produced these edits" },
+            ]}
+          />
         </div>
         <div>
           <span className="pill muted">

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { fmtDuration } from "@/components/time";
 import { SkeletonList } from "@/components/Skeleton";
-import { EmptyState, ErrorState } from "@/components/patchwork";
+import { EmptyState, ErrorState, RelationStrip } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
 
 interface Task {
@@ -429,6 +429,14 @@ export default function TasksPage() {
           <div className="editorial-sub">
             {tasks.length} task{tasks.length !== 1 ? "s" : ""} · avg {fmtAvg(avgMs)} · driver: {driverLabel}
           </div>
+          <RelationStrip
+            items={[
+              { label: "Sessions", href: "/sessions", title: "Clients that spawned these tasks" },
+              { label: "Runs", href: "/runs", title: "Recipe runs that enqueued tasks" },
+              { label: "Activity", href: "/activity", title: "Tool calls emitted by tasks" },
+              { label: "Approvals", href: "/approvals", title: "Tasks waiting on a human nod" },
+            ]}
+          />
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <button
