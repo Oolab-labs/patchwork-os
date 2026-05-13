@@ -1881,11 +1881,16 @@ export function tryHandleRecipeRoute(
           errName === "YAMLParseError" ||
           /yaml/i.test(errName);
         if (isParseError) {
+          // Return only the first line of the parser message — strips any
+          // embedded file path or stack frame that downstream parsers
+          // sometimes include (CodeQL: js/stack-trace-exposure).
+          const safeMsg =
+            errMsg.split("\n", 1)[0]?.slice(0, 500) ?? "invalid recipe";
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
               ok: false,
-              error: errMsg,
+              error: safeMsg,
               code: "invalid_recipe",
             }),
           );

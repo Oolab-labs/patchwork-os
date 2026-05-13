@@ -98,9 +98,12 @@ function notify(msg, priority = "default") {
 const procs = new Map(); // name → ChildProcess
 
 function spawnProc(name, cmd, cmdArgs, opts = {}) {
+  // shell:false everywhere — on Windows we always invoke cmd.exe explicitly
+  // for .cmd shim resolution, so shell:true would only widen the attack
+  // surface by interpolating env-derived paths into a shell string.
   const child = spawn(cmd, cmdArgs, {
     stdio: ["ignore", "pipe", "pipe"],
-    shell: IS_WIN && (cmd.endsWith(".cmd") || cmd === "cmd.exe"),
+    shell: false,
     cwd: opts.cwd ?? BRIDGE_DIR,
     env: { ...process.env, ...opts.env },
   });
