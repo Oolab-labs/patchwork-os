@@ -1753,7 +1753,11 @@ export function tryHandleRecipeRoute(
           "node:fs"
         );
         writeFileSync(tmpFile, yamlText, "utf-8");
-        let result: { action: "created" | "replaced"; name: string };
+        let result: {
+          action: "created" | "replaced";
+          name: string;
+          missingConnectors?: string[];
+        };
         try {
           const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
           mkdirSync(recipesDir, { recursive: true });
@@ -1763,7 +1767,58 @@ export function tryHandleRecipeRoute(
           const installResult = installRecipeFromFile(tmpFile, {
             recipesDir,
           });
-          result = { action: installResult.action, name: recipeName };
+          // Soft preflight: detect which connectors the recipe uses
+          // and surface the unconfigured ones as a warning. The recipe
+          // is already on disk — this is a hint for the dashboard to
+          // prompt "you'll need to connect Slack + Gmail to run this",
+          // not a gate on the install itself. Defensive: any failure
+          // here MUST NOT roll the install back, so the whole block is
+          // wrapped in try/catch.
+          let missingConnectors: string[] | undefined;
+          try {
+            const { readFileSync } = await import("node:fs");
+            const installedJson = readFileSync(
+              installResult.installedPath,
+              "utf-8",
+            );
+            const recipe = JSON.parse(installedJson) as {
+              steps?: unknown[];
+            };
+            if (Array.isArray(recipe.steps)) {
+              const { detectRequiredConnectors, findMissingConnectors } =
+                await import("./recipes/connectorPreflight.js");
+              const required = detectRequiredConnectors(
+                recipe as Parameters<typeof detectRequiredConnectors>[0],
+              );
+              if (required.length > 0) {
+                const { handleConnectionsList } = await import(
+                  "./connectors/gmail.js"
+                );
+                const connsResult = await handleConnectionsList();
+                let connections: Array<{ id?: string; status?: string }> = [];
+                try {
+                  const body = JSON.parse(connsResult.body) as {
+                    connectors?: Array<{ id?: string; status?: string }>;
+                  };
+                  connections = body.connectors ?? [];
+                } catch {
+                  /* malformed body — treat as no connections */
+                }
+                const missing = findMissingConnectors(required, connections);
+                if (missing.length > 0) missingConnectors = missing;
+              }
+            }
+          } catch (preflightErr) {
+            console.warn(
+              `[recipes/install] connector preflight failed (non-blocking):`,
+              preflightErr,
+            );
+          }
+          result = {
+            action: installResult.action,
+            name: recipeName,
+            ...(missingConnectors ? { missingConnectors } : {}),
+          };
         } finally {
           try {
             unlinkSync(tmpFile);

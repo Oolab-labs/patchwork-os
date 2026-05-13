@@ -1,0 +1,174 @@
+/**
+ * Unit tests for the connector-preflight helper. The HTTP-level
+ * integration (install handler surfaces `missingConnectors` in the
+ * response) lives in src/__tests__/recipeRoutes-install.test.ts.
+ */
+
+import { describe, expect, it } from "vitest";
+import {
+  detectRequiredConnectors,
+  findMissingConnectors,
+  TOOL_PREFIX_TO_CONNECTOR,
+} from "../connectorPreflight.js";
+import type { Recipe } from "../schema.js";
+
+// Minimal Recipe builder — only the fields the helper actually reads.
+function recipe(steps: Recipe["steps"]): Recipe {
+  return {
+    name: "test",
+    version: "1.0.0",
+    trigger: { type: "manual" },
+    steps,
+  };
+}
+
+describe("detectRequiredConnectors", () => {
+  it("returns empty for recipes with no tool steps", () => {
+    expect(
+      detectRequiredConnectors(
+        recipe([
+          { id: "s1", agent: true, prompt: "think", tools: undefined },
+        ] as Recipe["steps"]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("detects connectors from agent:false tool fields", () => {
+    expect(
+      detectRequiredConnectors(
+        recipe([
+          { id: "s1", agent: false, tool: "slack_chat", params: {} },
+          { id: "s2", agent: false, tool: "gmail_send", params: {} },
+        ] as Recipe["steps"]),
+      ),
+    ).toEqual(["gmail", "slack"]);
+  });
+
+  it("detects connectors from agent:true tools[] arrays", () => {
+    expect(
+      detectRequiredConnectors(
+        recipe([
+          {
+            id: "s1",
+            agent: true,
+            prompt: "compose",
+            tools: ["linear_list_issues", "calendar_list_events"],
+          },
+        ] as Recipe["steps"]),
+      ),
+    ).toEqual(["google-calendar", "linear"]);
+  });
+
+  it("de-duplicates connectors used by multiple steps", () => {
+    expect(
+      detectRequiredConnectors(
+        recipe([
+          { id: "s1", agent: false, tool: "slack_chat", params: {} },
+          { id: "s2", agent: false, tool: "slack_search", params: {} },
+        ] as Recipe["steps"]),
+      ),
+    ).toEqual(["slack"]);
+  });
+
+  it("returns results in sorted order so the response is stable", () => {
+    expect(
+      detectRequiredConnectors(
+        recipe([
+          { id: "s1", agent: false, tool: "stripe_charge", params: {} },
+          { id: "s2", agent: false, tool: "asana_create_task", params: {} },
+          { id: "s3", agent: false, tool: "github_open_pr", params: {} },
+        ] as Recipe["steps"]),
+      ),
+    ).toEqual(["asana", "github", "stripe"]);
+  });
+
+  it("ignores tool names that don't match any known prefix", () => {
+    expect(
+      detectRequiredConnectors(
+        recipe([
+          { id: "s1", agent: false, tool: "shell.run", params: {} },
+          { id: "s2", agent: false, tool: "file.write", params: {} },
+        ] as Recipe["steps"]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("matches every entry in the public prefix map", () => {
+    // Sanity: every prefix in the map should match a tool we synthesize
+    // from it. Guards against typos that would silently break the map.
+    for (const [prefix, connector] of Object.entries(
+      TOOL_PREFIX_TO_CONNECTOR,
+    )) {
+      const detected = detectRequiredConnectors(
+        recipe([
+          { id: "s", agent: false, tool: `${prefix}example`, params: {} },
+        ] as Recipe["steps"]),
+      );
+      expect(
+        detected,
+        `prefix '${prefix}' should map to '${connector}'`,
+      ).toEqual([connector]);
+    }
+  });
+});
+
+describe("findMissingConnectors", () => {
+  it("returns required ids that aren't in the connected set", () => {
+    expect(
+      findMissingConnectors(
+        ["slack", "gmail", "linear"],
+        [
+          { id: "slack", status: "connected" },
+          { id: "gmail", status: "disconnected" },
+          // linear: absent from the list entirely
+        ],
+      ),
+    ).toEqual(["gmail", "linear"]);
+  });
+
+  it("treats only status === 'connected' as connected", () => {
+    // Defensive: any other status string ("error", "expired", "reauth",
+    // "disconnected", undefined) means the recipe can't currently use
+    // the connector, so it should show up as missing.
+    expect(
+      findMissingConnectors(["slack"], [{ id: "slack", status: "expired" }]),
+    ).toEqual(["slack"]);
+  });
+
+  it("preserves the input order of `required` in the output", () => {
+    // The install handler relies on `detectRequiredConnectors` for the
+    // sort; this layer must NOT re-sort the input.
+    expect(
+      findMissingConnectors(
+        ["zendesk", "asana", "github"],
+        [{ id: "asana", status: "connected" }],
+      ),
+    ).toEqual(["zendesk", "github"]);
+  });
+
+  it("returns [] when all required connectors are connected", () => {
+    expect(
+      findMissingConnectors(
+        ["slack", "gmail"],
+        [
+          { id: "slack", status: "connected" },
+          { id: "gmail", status: "connected" },
+          { id: "linear", status: "connected" },
+        ],
+      ),
+    ).toEqual([]);
+  });
+
+  it("tolerates malformed entries (missing id or status)", () => {
+    expect(
+      findMissingConnectors(
+        ["slack"],
+        [
+          { id: undefined, status: "connected" } as never,
+          { status: "connected" } as never,
+          { id: "slack" }, // status missing — treated as not connected
+        ],
+      ),
+    ).toEqual(["slack"]);
+  });
+});
