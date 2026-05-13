@@ -1828,6 +1828,73 @@ button.topbar-search {
   margin-right: 6px;
 }
 
+/* ---- Telemetry-tile value-change flash ----
+   AnimatedNumber stamps a flash class + key on its inner span whenever
+   the upstream value changes (not on initial mount). Using `key`
+   forces React to mount a fresh element each change, which restarts
+   the CSS animation cleanly — without that, the class is added once
+   and the animation never replays on subsequent updates.
+   Tone-aware: +N gets accent up-flash, -N gets a muted down-flash. */
+.animated-number-flash {
+  display: inline-block;
+  animation: animated-number-flash-up 1.4s ease-out 1;
+}
+.animated-number-flash-down {
+  animation: animated-number-flash-down 1.4s ease-out 1;
+}
+@keyframes animated-number-flash-up {
+  0% {
+    color: var(--accent);
+    text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  100% {
+    color: inherit;
+    text-shadow: none;
+  }
+}
+@keyframes animated-number-flash-down {
+  0% {
+    color: var(--ink-3);
+    text-shadow: 0 0 10px color-mix(in srgb, var(--ink-3) 40%, transparent);
+  }
+  100% {
+    color: inherit;
+    text-shadow: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animated-number-flash { animation: none; }
+}
+
+/* ---- Leaderboard row stagger-in on first render ----
+   Rows fade up with a 50ms cascade so the leaderboard feels assembled
+   instead of plonked. Hard-cap the staggered delay at row 8 so really
+   long lists don't have a noticeable trailing reveal. */
+.leaderboard-row {
+  animation: leaderboard-row-in 360ms cubic-bezier(.18,.7,.2,1) both;
+}
+.leaderboard-row:nth-child(1) { animation-delay: 0ms; }
+.leaderboard-row:nth-child(2) { animation-delay: 60ms; }
+.leaderboard-row:nth-child(3) { animation-delay: 120ms; }
+.leaderboard-row:nth-child(4) { animation-delay: 180ms; }
+.leaderboard-row:nth-child(5) { animation-delay: 240ms; }
+.leaderboard-row:nth-child(6) { animation-delay: 300ms; }
+.leaderboard-row:nth-child(7) { animation-delay: 340ms; }
+.leaderboard-row:nth-child(n+8) { animation-delay: 380ms; }
+@keyframes leaderboard-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .leaderboard-row { animation: none; }
+}
+
 /* ---- Activity thread: filter chips + new-event flash ----
    The thread used to render whatever came back from /activity in a
    single take-it-or-leave-it list. Filter chips let users carve out
