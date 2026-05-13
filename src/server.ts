@@ -263,6 +263,14 @@ export class Server extends EventEmitter<ServerEvents> {
         vars?: Record<string, string>,
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null = null;
+  /**
+   * Patchwork: set by bridge to re-prime the recipe scheduler when the
+   * on-disk recipe set changes (install / save / delete). Lets cron-
+   * triggered recipes start firing without a bridge restart. Optional —
+   * tests + headless tooling leave it null; the install handler treats
+   * the callback as best-effort fire-and-forget.
+   */
+  public onRecipesChangedFn: (() => void) | null = null;
   /** Patchwork: admin-controlled managed settings path (highest rule precedence). */
   public managedSettingsPath: string | undefined = undefined;
   /** Effective bridge config path to update when dashboard saves driver changes. */
@@ -1410,6 +1418,7 @@ export class Server extends EventEmitter<ServerEvents> {
           runPlanFn: this.runPlanFn,
           runReplayFn: this.runReplayFn,
           runRecipeFn: this.runRecipeFn,
+          onRecipesChangedFn: this.onRecipesChangedFn,
         })
       ) {
         return;

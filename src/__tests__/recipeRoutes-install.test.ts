@@ -218,6 +218,132 @@ describe("Server /recipes/install — A-PR2 (dogfood F-05 / H-routes Bug 2)", ()
     expect(parsed.code).toBe("ssrf_blocked");
   });
 
+  it("install-hot-reload: success path invokes server.onRecipesChangedFn exactly once", async () => {
+    // Bridge wires server.onRecipesChangedFn = () => scheduler.start();
+    // route handler must fire it post-success so cron-trigger recipes
+    // installed from the marketplace start firing without a bridge
+    // restart. Test in isolation with a vi.fn() stub — we don't need a
+    // real scheduler here, just that the callback gets called.
+    const onChange = vi.fn();
+    server!.onRecipesChangedFn = onChange;
+
+    // Well-formed manual-trigger YAML (manual bypasses compileRecipeFull
+    // so the test doesn't depend on a passing compile path).
+    const yamlBody = [
+      "name: hot-reload-test-recipe",
+      "version: 1.0.0",
+      "trigger:",
+      "  type: manual",
+      "steps:",
+      "  - id: s1",
+      "    agent: false",
+      "    tool: file.write",
+      "    params:",
+      "      path: /tmp/x",
+      "      content: y",
+      "",
+    ].join("\n");
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        fakeResponse(200, yamlBody),
+      ) as unknown as typeof fetch;
+
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/install",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({
+        source: "github:patchworkos/recipes/recipes/hot-reload-test-recipe",
+      }),
+    );
+    expect(status).toBe(200);
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    // Clean up the file the install wrote so a stale entry doesn't
+    // pollute the user's recipes dir or future test runs.
+    try {
+      const { unlinkSync } = await import("node:fs");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      unlinkSync(
+        path.join(
+          os.homedir(),
+          ".patchwork",
+          "recipes",
+          "hot-reload-test-recipe.json",
+        ),
+      );
+    } catch {
+      // best-effort
+    }
+  });
+
+  it("install-hot-reload-callback-throws: scheduler error does NOT fail the request", async () => {
+    // Contract: onRecipesChangedFn is best-effort. If the scheduler's
+    // restart throws, the install was still a real success on disk —
+    // the caller must see 200, not 500.
+    server!.onRecipesChangedFn = () => {
+      throw new Error("simulated scheduler crash");
+    };
+    const yamlBody = [
+      "name: hot-reload-throws-recipe",
+      "version: 1.0.0",
+      "trigger:",
+      "  type: manual",
+      "steps:",
+      "  - id: s1",
+      "    agent: false",
+      "    tool: file.write",
+      "    params:",
+      "      path: /tmp/x",
+      "      content: y",
+      "",
+    ].join("\n");
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        fakeResponse(200, yamlBody),
+      ) as unknown as typeof fetch;
+
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/install",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({
+        source: "github:patchworkos/recipes/recipes/hot-reload-throws-recipe",
+      }),
+    );
+    expect(status).toBe(200);
+    expect(JSON.parse(body).ok).toBe(true);
+
+    try {
+      const { unlinkSync } = await import("node:fs");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      unlinkSync(
+        path.join(
+          os.homedir(),
+          ".patchwork",
+          "recipes",
+          "hot-reload-throws-recipe.json",
+        ),
+      );
+    } catch {
+      // best-effort
+    }
+  });
+
   it("install-allowlist-env: without env var → 403, with env var → fetch attempted", async () => {
     // Without env var: rejected.
     {

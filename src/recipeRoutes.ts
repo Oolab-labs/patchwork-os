@@ -406,6 +406,21 @@ export interface RecipeRouteDeps {
         vars?: Record<string, string>,
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null;
+  /**
+   * Best-effort notification that the on-disk recipe set just changed
+   * (install, save, delete, archive, …). The bridge wires this to
+   * `recipeScheduler.start()` so cron-triggered recipes start firing
+   * without a restart. Optional — non-bridge callers (tests, headless
+   * tooling) leave it null.
+   *
+   * Contract:
+   *   - Synchronous fire-and-forget. Implementations MUST NOT throw.
+   *   - Idempotent. Multiple calls in quick succession should coalesce
+   *     to at-least-once scheduler restart behaviour.
+   *   - Hot path is post-success: routes invoke after the disk write,
+   *     so a callback failure must never roll back the user's action.
+   */
+  onRecipesChangedFn: (() => void) | null;
 }
 
 /**
@@ -1489,6 +1504,22 @@ export function tryHandleRecipeRoute(
           // 200 if any recipe installed; 502 otherwise. Always include both
           // arrays so callers (CLI + dashboard) can render partial-success.
           const status = installed.length > 0 ? 200 : 502;
+          // Notify the scheduler so cron-trigger recipes in the bundle
+          // start firing without a bridge restart. Fired once per bundle
+          // (not per recipe inside) since scheduler.start() reads the
+          // whole recipes dir anyway. Guarded by the partial-success
+          // check — no point waking up the scheduler for a 0-installed
+          // failure.
+          if (installed.length > 0) {
+            try {
+              deps.onRecipesChangedFn?.();
+            } catch (err) {
+              // Contract: callback MUST NOT throw, but be defensive —
+              // a scheduler restart bug must never make a successful
+              // install look failed to the caller.
+              console.error(`[recipes/install] onRecipesChangedFn threw:`, err);
+            }
+          }
           res.writeHead(status, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
@@ -1710,6 +1741,18 @@ export function tryHandleRecipeRoute(
           } catch {
             // best-effort cleanup
           }
+        }
+        // Notify the scheduler so the new recipe's cron/webhook trigger
+        // starts firing without a bridge restart. The recipe file is
+        // already on disk (`writeFileSync` above), so the next
+        // `scheduler.start()` will pick it up via its directory scan.
+        // Errors here are logged but never surface to the caller — the
+        // install itself succeeded; a scheduler restart bug must not
+        // make the response look failed.
+        try {
+          deps.onRecipesChangedFn?.();
+        } catch (err) {
+          console.error(`[recipes/install] onRecipesChangedFn threw:`, err);
         }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, ...result }));
