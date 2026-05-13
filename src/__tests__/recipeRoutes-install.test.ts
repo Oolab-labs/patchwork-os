@@ -425,7 +425,56 @@ describe("Server /recipes/install — A-PR2 (dogfood F-05 / H-routes Bug 2)", ()
     expect(status).toBe(400);
     const parsed = JSON.parse(body);
     expect(parsed.ok).toBe(false);
-    expect(parsed.error).toMatch(/invalid recipe name/i);
+    // Post-org-allowlist refactor: traversal trips bad_shape (too many
+    // segments) before bad_segment (bad chars). Either is a correct
+    // 400; assert on the code rather than legacy "invalid recipe name"
+    // phrasing.
+    expect(["bad_shape", "bad_segment"]).toContain(parsed.code);
+  });
+
+  it("install-third-party-org: allowlisted via env var passes the 403 gate", async () => {
+    // Default-deny: random orgs hit not_allowlisted (403).
+    {
+      const { status, body } = await makeRequest(
+        {
+          method: "POST",
+          path: "/recipes/install",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({
+          source: "github:acme/cookbook/recipes/incident-pager",
+        }),
+      );
+      expect(status).toBe(403);
+      expect(JSON.parse(body).code).toBe("not_allowlisted");
+    }
+    // Opt-in via env: install proceeds past the allowlist check.
+    // We don't stub fetch here — outcome can be 200 (parses + installs)
+    // or 502 (no fetch mock so the request bombs out at the network).
+    // Either way, status MUST NOT be 403 — that's the proof the gate
+    // passed.
+    process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST = "acme/cookbook";
+    try {
+      const { status } = await makeRequest(
+        {
+          method: "POST",
+          path: "/recipes/install",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({
+          source: "github:acme/cookbook/recipes/incident-pager",
+        }),
+      );
+      expect(status).not.toBe(403);
+    } finally {
+      delete process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST;
+    }
   });
 
   it("install-malformed-yaml: invalid YAML body → 400 invalid_recipe (was 500)", async () => {
