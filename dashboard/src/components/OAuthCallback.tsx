@@ -23,6 +23,16 @@ function CallbackInner({ provider }: { provider: Provider }) {
     const state = params.get("state");
     const error = params.get("error");
 
+    // Strip OAuth params from the address bar so they don't linger in
+    // history or get accidentally shared via copy-paste.
+    if (code || state || error) {
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("code");
+      clean.searchParams.delete("state");
+      clean.searchParams.delete("error");
+      window.history.replaceState(null, "", clean.toString());
+    }
+
     const qs = new URLSearchParams();
     if (code) qs.set("code", code);
     if (state) qs.set("state", state);
@@ -46,8 +56,14 @@ function CallbackInner({ provider }: { provider: Provider }) {
       }
     };
 
-    fetch(apiPath(`/api/connections/${provider.id}/callback?${qs.toString()}`))
+    const abort = new AbortController();
+    const timeout = setTimeout(() => abort.abort(), 30_000);
+
+    fetch(apiPath(`/api/connections/${provider.id}/callback?${qs.toString()}`), {
+      signal: abort.signal,
+    })
       .then(async (r) => {
+        clearTimeout(timeout);
         let body: unknown = null;
         try {
           body = await r.json();
@@ -80,6 +96,11 @@ function CallbackInner({ provider }: { provider: Provider }) {
         }
       })
       .catch((err) => {
+        clearTimeout(timeout);
+        if (err instanceof DOMException && err.name === "AbortError") {
+          fail("connection_timeout");
+          return;
+        }
         fail(err instanceof Error ? err.message : "network_error");
       });
   }, [params, router, provider.id]);

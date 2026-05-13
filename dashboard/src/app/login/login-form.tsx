@@ -64,7 +64,6 @@ export function LoginForm({ next }: { next: string }) {
             fontSize: "var(--fs-m)",
             fontFamily: "var(--font-mono)",
             padding: "8px 10px",
-            outline: "none",
           }}
         />
       </label>
