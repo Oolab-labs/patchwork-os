@@ -160,13 +160,13 @@ export const HINTS: Record<string, Hint> = {
     title: "What's the Marketplace?",
     body: (
       <>
-        <Glossary term="recipe">Recipes</Glossary> published by the Patchwork
-        community. Each card shows install count, required{" "}
-        <Glossary term="connection">connections</Glossary>, and the YAML
-        you&apos;d land in your project.
+        Curated <Glossary term="recipe">recipes</Glossary> from{" "}
+        <code>github.com/patchworkos/recipes</code>. Each card shows the
+        required <Glossary term="connection">connections</Glossary> and the
+        YAML that lands in your local recipe folder when you install.
       </>
     ),
-    tip: "Bundles install several related recipes at once.",
+    tip: "Bundles install several related recipes at once. Propose new entries via GitHub PR.",
   },
   transactions: {
     id: "transactions",
