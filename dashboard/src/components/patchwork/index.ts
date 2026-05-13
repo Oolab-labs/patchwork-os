@@ -32,3 +32,4 @@ export { EventsHistogram } from "./EventsHistogram";
 export { MetricsDonut, type DonutSegment } from "./MetricsDonut";
 export { AreaChart, type AreaChartSeries } from "./AreaChart";
 export { RunSparkBars } from "./RunSparkBars";
+export { SuccessRing, type SuccessRingProps } from "./SuccessRing";

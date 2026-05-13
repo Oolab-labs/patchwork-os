@@ -17,6 +17,11 @@ import {
   QuiltHero,
   WeatherRing,
 } from "@/components/patchwork";
+import {
+  RecipeLeaderboard,
+  type LeaderboardRun,
+} from "@/components/RecipeLeaderboard";
+import { LiveRunsStrip, type LiveRun } from "@/components/LiveRunsStrip";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -204,6 +209,23 @@ function activityKind(e: ActivityEvent): string {
   return e.kind ?? "event";
 }
 
+/**
+ * Extract the recipe a row belongs to. Every step/recipe event the
+ * bridge emits carries metadata.recipeName, but pre-2026-05-13 the
+ * Overview activity thread dropped it on the floor. Surfacing it makes
+ * recipes feel like the protagonist of the activity stream instead of
+ * a hidden parent of disconnected tool calls.
+ */
+function activityRecipe(e: ActivityEvent): string | undefined {
+  const m = e.metadata;
+  if (!m || typeof m !== "object") return undefined;
+  const direct = (m as Record<string, unknown>).recipeName ?? (m as Record<string, unknown>).recipe;
+  if (typeof direct === "string" && direct.length > 0) {
+    return direct.replace(/:agent$/, "");
+  }
+  return undefined;
+}
+
 function greetingFromHour(h: number): string {
   if (h < 12) return "Good morning";
   if (h < 18) return "Good afternoon";
@@ -380,6 +402,7 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
             const ts = e.at ?? Date.now();
             const tool = activityLabel(e);
             const kind = activityKind(e);
+            const recipe = activityRecipe(e);
             const isErr = e.status === "error";
             const dur =
               typeof e.durationMs === "number" ? `${e.durationMs}ms` : null;
@@ -424,18 +447,51 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
                 </span>
                 <span
                   style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "var(--fs-s)",
-                    color: "var(--ink-0)",
-                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
                     flex: 1,
                     minWidth: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
                   }}
                 >
-                  {tool}
+                  {recipe && (
+                    <Link
+                      href={`/dashboard/recipes/${encodeURIComponent(recipe)}/edit`}
+                      title={`Recipe ${recipe}`}
+                      onClick={(ev) => ev.stopPropagation()}
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: "var(--fs-xs)",
+                        color: "var(--accent)",
+                        textDecoration: "none",
+                        flexShrink: 0,
+                        maxWidth: 140,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {recipe}
+                    </Link>
+                  )}
+                  {recipe && (
+                    <span aria-hidden="true" style={{ color: "var(--ink-3)" }}>·</span>
+                  )}
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "var(--fs-s)",
+                      color: "var(--ink-0)",
+                      fontWeight: 600,
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {tool}
+                  </span>
                 </span>
                 <span
                   className="pill muted"
@@ -474,76 +530,6 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
 // Active recipe (live YAML + spinner)
 // ---------------------------------------------------------------------------
 
-function RecentRecipesCard({ recipes }: { recipes: Recipe[] }) {
-  const top = [...recipes]
-    .filter((r) => r.enabled !== false)
-    .sort((a, b) => (b.lastRun ?? 0) - (a.lastRun ?? 0))
-    .slice(0, 6);
-  return (
-    <div className="card" style={{ padding: "18px 20px" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 14,
-        }}
-      >
-        <h2
-          style={{
-            fontSize: "var(--fs-m)",
-            fontWeight: 700,
-            margin: 0,
-            color: "var(--ink-0)",
-            flex: 1,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
-          Recent recipes
-        </h2>
-        <ActionPill href="/recipes" ariaLabel="View all recipes">
-          all →
-        </ActionPill>
-      </div>
-
-      {top.length === 0 ? (
-        <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", padding: "8px 0" }}>
-          No enabled recipes yet.{" "}
-          <Link href="/recipes/new" style={{ color: "var(--accent)" }}>
-            Create one →
-          </Link>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {top.map((r) => (
-            <Link
-              key={r.id ?? r.name}
-              href={`/recipes/${encodeURIComponent(r.name)}/edit`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "6px 8px",
-                borderRadius: "var(--r-sm)",
-                textDecoration: "none",
-                color: "var(--ink-1)",
-                fontSize: "var(--fs-s)",
-              }}
-            >
-              <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink-0)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {r.name}
-              </span>
-              <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>
-                {r.lastRun ? relTime(r.lastRun) : "never run"}
-              </span>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Health card
@@ -688,6 +674,7 @@ export default function HomePage() {
 
   const [pendingApprovals, setPendingApprovals] = useState<Pending[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [runs, setRuns] = useState<LiveRun[]>([]);
   const [toolCallTotal, setToolCallTotal] = useState(0);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const tickRef = useRef<() => void>(() => {});
@@ -697,7 +684,7 @@ export default function HomePage() {
     let alive = true;
     const tick = async () => {
       try {
-        const [approvalsRes, metricsRes, recipesRes, activityRes] =
+        const [approvalsRes, metricsRes, recipesRes, activityRes, runsRes] =
           await Promise.all([
             fetch(apiPath("/api/bridge/approvals")),
             fetch(apiPath("/api/bridge/metrics")),
@@ -709,6 +696,10 @@ export default function HomePage() {
             // simply shows the most recent N events bucketed into 24
             // hours, which still beats showing nothing.
             fetch(apiPath("/api/bridge/activity?last=500")),
+            // Recipe-runs power the new LiveRunsStrip + RecipeLeaderboard.
+            // catch() so an older bridge missing the endpoint just shows
+            // empty surfaces — the rest of Overview keeps working.
+            fetch(apiPath("/api/bridge/runs")).catch(() => null),
           ]);
         if (!alive) return;
 
@@ -730,9 +721,14 @@ export default function HomePage() {
           ? recipesData
           : (recipesData as { recipes?: Recipe[] }).recipes ?? [];
 
+        const runsData = runsRes?.ok
+          ? ((await runsRes.json()) as { runs?: LiveRun[] })
+          : { runs: [] };
+
         setToolCallTotal(total);
         setPendingApprovals(Array.isArray(approvalsData) ? approvalsData : []);
         setRecipes(list);
+        setRuns(Array.isArray(runsData.runs) ? runsData.runs : []);
         setActivityEvents(
           (activityData.events ?? []).map(withAt),
         );
@@ -993,6 +989,13 @@ export default function HomePage() {
       />
 
       {/* ------------------------------------------------------------------ */}
+      {/* LIVE RUNS — pulses any currently-running or recently-finished       */}
+      {/* recipe so a user landing on Overview can see motion at a glance.    */}
+      {/* Component auto-hides when there's nothing in-flight or recent.      */}
+      {/* ------------------------------------------------------------------ */}
+      <LiveRunsStrip runs={runs} />
+
+      {/* ------------------------------------------------------------------ */}
       {/* TELEMETRY eyebrow                                                    */}
       {/* ------------------------------------------------------------------ */}
       <div
@@ -1159,7 +1162,7 @@ export default function HomePage() {
         <ActivityThread
           events={activityEvents.filter((e) => !isNoiseEvent(e)).slice(-8).reverse()}
         />
-        <RecentRecipesCard recipes={recipes} />
+        <RecipeLeaderboard runs={runs as LeaderboardRun[]} />
       </div>
 
       {/* ------------------------------------------------------------------ */}
