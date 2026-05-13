@@ -112,14 +112,18 @@ describe("createFindFilesTool — find fallback", () => {
     expect(result.files).toContain("src/main.ts");
   });
 
-  it("passes pattern with -name to find", async () => {
-    mockExecSafe.mockResolvedValue(ok(""));
-    const tool = createFindFilesTool(ws, probes);
-    await tool.handler({ pattern: "*.ts" });
-    const args = mockExecSafe.mock.calls[0]?.[1] as string[];
-    expect(args).toContain("-name");
-    expect(args).toContain("*.ts");
-  });
+  // find-fallback branch shells out to the POSIX `find` binary; not on Windows.
+  it.skipIf(process.platform === "win32")(
+    "passes pattern with -name to find",
+    async () => {
+      mockExecSafe.mockResolvedValue(ok(""));
+      const tool = createFindFilesTool(ws, probes);
+      await tool.handler({ pattern: "*.ts" });
+      const args = mockExecSafe.mock.calls[0]?.[1] as string[];
+      expect(args).toContain("-name");
+      expect(args).toContain("*.ts");
+    },
+  );
 });
 
 describe("createFindFilesTool — missing pattern", () => {

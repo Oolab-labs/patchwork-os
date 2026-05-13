@@ -216,19 +216,23 @@ describe("runTracesExport", () => {
     }
   });
 
-  it("writes the bundle with 0o600 perms (no group/world read)", async () => {
-    writeFileSync(
-      path.join(patchworkDir, "runs.jsonl"),
-      `${JSON.stringify({ seq: 1 })}\n`,
-    );
-    const result = await runTracesExport({
-      patchworkDir,
-      activityDir,
-      output: path.join(tmpRoot, "out.jsonl.gz"),
-    });
-    const mode = statSync(result.outputPath).mode & 0o777;
-    expect(mode).toBe(0o600);
-  });
+  // POSIX mode bits — Windows fs.stat always reports 0o666 regardless of chmod.
+  it.skipIf(process.platform === "win32")(
+    "writes the bundle with 0o600 perms (no group/world read)",
+    async () => {
+      writeFileSync(
+        path.join(patchworkDir, "runs.jsonl"),
+        `${JSON.stringify({ seq: 1 })}\n`,
+      );
+      const result = await runTracesExport({
+        patchworkDir,
+        activityDir,
+        output: path.join(tmpRoot, "out.jsonl.gz"),
+      });
+      const mode = statSync(result.outputPath).mode & 0o777;
+      expect(mode).toBe(0o600);
+    },
+  );
 
   it("default output filename is ISO-stamped under patchworkDir", async () => {
     writeFileSync(

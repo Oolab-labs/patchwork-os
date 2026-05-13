@@ -42,18 +42,24 @@ describe("detectWorkspaceSymlinkInstall", () => {
     expect(detectWorkspaceSymlinkInstall()).toBeNull();
   });
 
-  it("returns SymlinkInstallInfo when the global slot is a symlink to a workspace", () => {
-    const globalRoot = "/opt/homebrew/lib/node_modules";
-    const logicalRoot = `${globalRoot}/patchwork-os`;
-    const realRoot = "/Users/wesh/Documents/Anthropic Workspace/Patchwork OS";
+  // fs.symlinkSync requires admin / Developer Mode on Windows; not portable.
+  it.skipIf(process.platform === "win32")(
+    "returns SymlinkInstallInfo when the global slot is a symlink to a workspace",
+    () => {
+      const globalRoot = "/opt/homebrew/lib/node_modules";
+      const logicalRoot = `${globalRoot}/patchwork-os`;
+      const realRoot = "/Users/wesh/Documents/Anthropic Workspace/Patchwork OS";
 
-    mockNpmRoot(globalRoot);
-    mockedLstatSync.mockReturnValue(makeStatResult(true));
-    mockedRealpathSync.mockReturnValue(realRoot as unknown as string & Buffer);
+      mockNpmRoot(globalRoot);
+      mockedLstatSync.mockReturnValue(makeStatResult(true));
+      mockedRealpathSync.mockReturnValue(
+        realRoot as unknown as string & Buffer,
+      );
 
-    const result = detectWorkspaceSymlinkInstall();
-    expect(result).toEqual({ logicalRoot, realRoot });
-  });
+      const result = detectWorkspaceSymlinkInstall();
+      expect(result).toEqual({ logicalRoot, realRoot });
+    },
+  );
 
   it("returns null when npm root command fails", () => {
     mockedSpawnSync.mockReturnValue({

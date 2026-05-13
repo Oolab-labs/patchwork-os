@@ -100,12 +100,16 @@ describe("activationMetrics", () => {
     expect(() => statSync(file)).toThrow();
   });
 
-  it("writes the telemetry file with 0o600 permissions", () => {
-    recordRecipeRun(tmp);
-    const file = path.join(tmp, "telemetry.json");
-    const mode = statSync(file).mode & 0o777;
-    expect(mode).toBe(0o600);
-  });
+  // POSIX mode bits — Windows fs.stat always reports 0o666 regardless of chmod.
+  it.skipIf(process.platform === "win32")(
+    "writes the telemetry file with 0o600 permissions",
+    () => {
+      recordRecipeRun(tmp);
+      const file = path.join(tmp, "telemetry.json");
+      const mode = statSync(file).mode & 0o777;
+      expect(mode).toBe(0o600);
+    },
+  );
 
   it("tolerates a malformed telemetry file by returning fresh empty state", () => {
     writeFileSync(path.join(tmp, "telemetry.json"), "{ not json");
