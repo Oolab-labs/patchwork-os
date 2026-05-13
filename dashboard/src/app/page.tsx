@@ -622,7 +622,7 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                   {repeatCount > 1 && (
                     <span
                       className="pill muted"
-                      style={{ fontSize: "var(--fs-3xs)", flexShrink: 0 }}
+                      style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
                       title={`Last ${repeatCount} events collapsed`}
                     >
                       ×{repeatCount}
@@ -631,7 +631,7 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                 </span>
                 <span
                   className="pill muted"
-                  style={{ fontSize: "var(--fs-3xs)", flexShrink: 0 }}
+                  style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
                 >
                   {kind}
                 </span>
@@ -649,7 +649,7 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                 )}
                 <span
                   className={`pill ${isErr ? "err" : "ok"}`}
-                  style={{ fontSize: "var(--fs-3xs)", flexShrink: 0 }}
+                  style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
                 >
                   {isErr ? "err" : "ok"}
                 </span>

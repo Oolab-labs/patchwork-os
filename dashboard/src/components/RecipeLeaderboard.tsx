@@ -252,7 +252,7 @@ export function RecipeLeaderboard({
                 {a.halts > 0 && (
                   <span
                     className="pill warn"
-                    style={{ fontSize: "var(--fs-3xs)", flexShrink: 0 }}
+                    style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
                     title={`${a.halts} halted run${a.halts === 1 ? "" : "s"}`}
                   >
                     {a.halts} halt{a.halts === 1 ? "" : "s"}
@@ -260,7 +260,7 @@ export function RecipeLeaderboard({
                 )}
                 <span
                   className={`pill ${tone}`}
-                  style={{ fontSize: "var(--fs-3xs)", flexShrink: 0, minWidth: 64, textAlign: "center" }}
+                  style={{ fontSize: "var(--fs-2xs)", flexShrink: 0, minWidth: 72, textAlign: "center" }}
                   title={`Last run ${relTime(a.lastRun.startedAt)} · ${a.lastRun.status}`}
                 >
                   {a.lastRun.status}

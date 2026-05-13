@@ -41,7 +41,7 @@ function StepRow({ step, highlight }: { step: PlanStep; highlight?: boolean }) {
         background: highlight ? "color-mix(in srgb, var(--warn) 8%, transparent)" : undefined,
       }}
     >
-      <td style={{ padding: "8px 0", fontSize: "var(--fs-s)", fontFamily: "monospace" }}>
+      <td style={{ padding: "8px 0", fontSize: "var(--fs-s)", fontFamily: "var(--font-mono)" }}>
         {step.tool ?? step.type}
       </td>
       <td style={{ padding: "8px 6px", textAlign: "center" }}>

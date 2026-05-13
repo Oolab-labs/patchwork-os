@@ -20,7 +20,12 @@
   --ink-0: #2a2418;
   --ink-1: #4a4030;
   --ink-2: #6e6450;
-  --ink-3: #9a907a;
+  /* #9a907a on cream surface = 2.94:1, failed WCAG AA for text <18px.
+     Darkened to ~4.8:1; the ~190 text sites that use --ink-3/--fg-3/--text-3
+     pass AA in one swap. Non-text idle/offline dots and tinted swatches now
+     point at --dot-muted (defined below) to preserve their soft tone. */
+  --ink-3: #7a6f57;
+  --dot-muted: #9a907a;
   --text-0: var(--ink-0);
   --text-1: var(--ink-1);
   --text-2: var(--ink-2);
@@ -70,6 +75,12 @@
   --overlay-bg:    rgba(10, 11, 13, 0.55);
   --shadow-modal:  0 20px 50px rgba(10, 11, 13, 0.35);
   --on-accent:     #fff;
+  /* On the bright dark-mode --orange #ff7a45, white text scores 2.59:1
+     (fails AA). --on-orange flips to dark text in dark mode so primary
+     orange CTAs pass AA. Light mode keeps #fff (4.5:1 on #c5532a is the
+     designed look). Green/err CTAs still use --on-accent; those need
+     their own audit pass. */
+  --on-orange:     #fff;
 
   /* type scale — px values inline as comments. Migrate inline fontSize
      literals to these tokens incrementally; see tokens.json. */
@@ -223,6 +234,8 @@
      subtitles pass AA on dark theme. ~16+ contrast-flagged sites covered
      in one swap. */
   --ink-3:   #9ea2ad;
+  --dot-muted: #9ea2ad;
+  --on-orange: #1f0e05;
   --orange:  #ff7a45;
   --orange-hover: #ff8f62;
   --orange-soft:  rgba(255,122,69,0.14);
@@ -910,7 +923,7 @@ button.topbar-search {
 .btn.primary {
   background: var(--orange);
   border-color: var(--orange);
-  color: #fff;
+  color: var(--on-orange);
   box-shadow: 0 1px 0 0 rgba(255,255,255,0.35) inset, 0 2px 8px rgba(var(--orange-rgb), 0.25), 0 0 20px rgba(var(--orange-rgb), 0.12);
 }
 .btn.primary::before {
@@ -1869,7 +1882,7 @@ button.topbar-search {
   animation: live-wire-pulse 1.6s ease-in-out infinite;
 }
 .live-wire-dot-idle {
-  background: var(--ink-3);
+  background: var(--dot-muted);
   opacity: 0.7;
 }
 .live-wire-dot-off {
@@ -2211,7 +2224,7 @@ button.topbar-search {
   border-radius: var(--r-2);
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: var(--on-accent, #fff);
+  color: var(--on-orange, #fff);
   cursor: pointer;
   text-decoration: none;
   display: inline-flex;
@@ -2726,7 +2739,7 @@ button.topbar-search {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--ink-3);
+  background: var(--dot-muted);
   flex-shrink: 0;
 }
 .identity-pill-dot.online {
@@ -2846,7 +2859,7 @@ button.topbar-search {
   box-shadow: 0 0 0 3px var(--green-soft);
   animation: pulse-ring 2.5s ease-in-out infinite;
 }
-.app-sidebar-bridge-dot.offline { background: var(--ink-3); }
+.app-sidebar-bridge-dot.offline { background: var(--dot-muted); }
 .app-sidebar-bridge-meta {
   display: flex;
   align-items: center;

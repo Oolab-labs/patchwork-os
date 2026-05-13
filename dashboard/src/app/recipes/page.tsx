@@ -1047,7 +1047,7 @@ export default function RecipesPage() {
                                   width: 10,
                                   height: 10,
                                   borderRadius: "50%",
-                                  background: enabled ? "var(--ok)" : "var(--ink-3)",
+                                  background: enabled ? "var(--ok)" : "var(--dot-muted)",
                                   transform: enabled ? "translateX(12px)" : "translateX(0)",
                                   transition: "transform 0.18s ease, background 0.15s",
                                   boxShadow: "0 1px 1px rgba(0,0,0,0.12)",

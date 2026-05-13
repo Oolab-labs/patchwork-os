@@ -273,7 +273,7 @@ function RecipeCard({
           {recipe.risk_level && (
             <span
               className={`pill ${RISK_PILL_CLASS[recipe.risk_level]}`}
-              style={{ fontSize: "var(--fs-3xs)" }}
+              style={{ fontSize: "var(--fs-2xs)" }}
               title={`Risk level: ${recipe.risk_level}`}
             >
               {recipe.risk_level} risk
@@ -282,19 +282,19 @@ function RecipeCard({
           {recipe.approval_behavior && (
             <span
               className="pill muted"
-              style={{ fontSize: "var(--fs-3xs)" }}
+              style={{ fontSize: "var(--fs-2xs)" }}
               title={`Approval: ${recipe.approval_behavior}`}
             >
               {APPROVAL_LABEL[recipe.approval_behavior]}
             </span>
           )}
           {recipe.network_access && (
-            <span className="pill muted" style={{ fontSize: "var(--fs-3xs)" }} title="Makes outbound network requests">
+            <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }} title="Makes outbound network requests">
               network
             </span>
           )}
           {recipe.file_access && (
-            <span className="pill muted" style={{ fontSize: "var(--fs-3xs)" }} title="Reads or writes local files">
+            <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }} title="Reads or writes local files">
               file I/O
             </span>
           )}

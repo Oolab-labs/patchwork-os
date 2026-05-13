@@ -174,7 +174,7 @@ export default function InboxDeliveryPage() {
         style={{
           marginBottom: 18,
           padding: "12px 16px",
-          background: "color-mix(in srgb, var(--ink-3) 8%, var(--surface))",
+          background: "color-mix(in srgb, var(--dot-muted) 8%, var(--surface))",
           border: "1px solid var(--line-2)",
           borderRadius: "var(--r-2)",
           fontSize: "var(--fs-s)",

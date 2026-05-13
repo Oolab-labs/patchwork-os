@@ -1028,7 +1028,7 @@ export default function SettingsPage() {
                       borderRadius: "var(--r-2)",
                       border: "none",
                       background: "var(--accent)",
-                      color: "var(--on-accent)",
+                      color: "var(--on-orange)",
                       cursor: gateSaving || gatePending === gateValue ? "default" : "pointer",
                       opacity: gateSaving || gatePending === gateValue ? 0.5 : 1,
                     }}
@@ -1241,7 +1241,7 @@ export default function SettingsPage() {
                         borderRadius: "var(--r-2)",
                         border: "none",
                         background: "var(--accent)",
-                        color: "var(--on-accent)",
+                        color: "var(--on-orange)",
                         cursor:
                           pushBusy ||
                           !vapidPublicKey ||
@@ -1281,7 +1281,7 @@ export default function SettingsPage() {
                           borderRadius: "var(--r-2)",
                           border: "none",
                           background: "var(--accent)",
-                          color: "var(--on-accent)",
+                          color: "var(--on-orange)",
                           cursor:
                             pushBusy || !vapidPublicKey ? "default" : "pointer",
                           opacity: pushBusy || !vapidPublicKey ? 0.5 : 1,

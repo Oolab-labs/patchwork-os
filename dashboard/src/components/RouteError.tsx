@@ -61,7 +61,7 @@ export function RouteError({
             background: "var(--accent)",
             border: "none",
             borderRadius: "var(--r-s)",
-            color: "var(--on-accent)",
+            color: "var(--on-orange)",
             cursor: "pointer",
             fontFamily: "var(--font-sans)",
             fontSize: "0.875rem",

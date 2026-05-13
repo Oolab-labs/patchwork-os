@@ -177,7 +177,7 @@ export function InboxDeliveryCard({ variant = "card" }: InboxDeliveryCardProps) 
           borderRadius: "var(--r-2)",
           border: "1px solid var(--accent)",
           background: "var(--accent)",
-          color: "var(--on-accent, #fff)",
+          color: "var(--on-orange, #fff)",
           textDecoration: "none",
           whiteSpace: "nowrap",
         }}
