@@ -1828,6 +1828,83 @@ button.topbar-search {
   margin-right: 6px;
 }
 
+/* ---- Live-wire heartbeat above the telemetry tiles ----
+   Always-on, 1-row, low-chrome status line. Dot tone reflects state:
+   green pulse when running, soft amber when quiet, muted red when
+   bridge offline. Sits in the same vertical rhythm as the telemetry
+   eyebrow so it reads as a label-of-labels for the section. */
+.live-wire {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  margin-top: var(--s-5);
+  margin-bottom: var(--s-3);
+  border-radius: var(--r-2);
+  border: 1px solid var(--line-3);
+  background: var(--surface);
+  font-size: var(--fs-xs);
+  color: var(--ink-1);
+  font-family: var(--font-mono);
+  transition: border-color 200ms ease, background 200ms ease;
+}
+.live-wire[data-state="live"] {
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--line-3));
+  background: color-mix(in srgb, var(--ok) 4%, var(--surface));
+}
+.live-wire[data-state="offline"] {
+  border-color: color-mix(in srgb, var(--err) 40%, var(--line-3));
+  background: color-mix(in srgb, var(--err) 4%, var(--surface));
+}
+.live-wire-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.live-wire-dot-on {
+  background: var(--ok);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent);
+  animation: live-wire-pulse 1.6s ease-in-out infinite;
+}
+.live-wire-dot-idle {
+  background: var(--ink-3);
+  opacity: 0.7;
+}
+.live-wire-dot-off {
+  background: var(--err);
+  opacity: 0.85;
+}
+@keyframes live-wire-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent),
+      0 0 0 7px color-mix(in srgb, var(--ok) 0%, transparent);
+  }
+}
+.live-wire-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-wire-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.live-wire-link:hover { text-decoration: underline; }
+@media (prefers-reduced-motion: reduce) {
+  .live-wire-dot-on { animation: none; }
+}
+
 /* ---- Telemetry-tile value-change flash ----
    AnimatedNumber stamps a flash class + key on its inner span whenever
    the upstream value changes (not on initial mount). Using `key`

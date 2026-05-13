@@ -22,6 +22,7 @@ import {
   type LeaderboardRun,
 } from "@/components/RecipeLeaderboard";
 import { LiveRunsStrip, type LiveRun } from "@/components/LiveRunsStrip";
+import { LiveWire } from "@/components/LiveWire";
 import { FeaturedRecipeAside } from "@/components/FeaturedRecipeAside";
 
 // ---------------------------------------------------------------------------
@@ -811,6 +812,21 @@ export default function HomePage() {
     }
     return buckets;
   })();
+  // Per-day labels for the sparkline hover inspector. Indices match
+  // the bucket order: oldest → newest, rightmost is "today".
+  const days7dLabels = (() => {
+    const fmt = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+    const out: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      if (i === 0) {
+        out.push("today");
+        continue;
+      }
+      const d = new Date(Date.now() - i * dayMs);
+      out.push(fmt.format(d).toLowerCase());
+    }
+    return out;
+  })();
 
   // "Tools called today" used to display toolCallTotal — the cumulative
   // Prometheus counter since bridge restart. The label promised "today" but
@@ -965,6 +981,14 @@ export default function HomePage() {
       />
 
       {/* ------------------------------------------------------------------ */}
+      {/* LIVE WIRE — always-present 1-row heartbeat ("● 2 running · last    */}
+      {/* finished 4m ago"). Pairs with LiveRunsStrip below, which only shows */}
+      {/* when there's something in flight or just-finished — keeps the page */}
+      {/* feeling alive even during quiet stretches.                          */}
+      {/* ------------------------------------------------------------------ */}
+      <LiveWire runs={runs} bridgeOk={bridgeStatus.ok === true} />
+
+      {/* ------------------------------------------------------------------ */}
       {/* LIVE RUNS — pulses any currently-running or recently-finished       */}
       {/* recipe so a user landing on Overview can see motion at a glance.    */}
       {/* Component auto-hides when there's nothing in-flight or recent.      */}
@@ -979,7 +1003,7 @@ export default function HomePage() {
           display: "flex",
           alignItems: "center",
           gap: "var(--s-3)",
-          marginTop: "var(--s-5)",
+          marginTop: "var(--s-2)",
           marginBottom: "var(--s-3)",
         }}
       >
@@ -1057,7 +1081,13 @@ export default function HomePage() {
                   <div>{runsFootLabel}</div>
                   {runs7dSeries.some((v) => v > 0) && (
                     <div style={{ marginTop: 4 }}>
-                      <Sparkline values={runs7dSeries} color="var(--accent)" height={22} />
+                      <Sparkline
+                        values={runs7dSeries}
+                        color="var(--accent)"
+                        height={22}
+                        labels={days7dLabels}
+                        unit="runs"
+                      />
                     </div>
                   )}
                 </div>
@@ -1080,7 +1110,13 @@ export default function HomePage() {
                   <div>{haltsFootLabel}</div>
                   {halts7dSeries.some((v) => v > 0) && (
                     <div style={{ marginTop: 4 }}>
-                      <Sparkline values={halts7dSeries} color="var(--err)" height={22} />
+                      <Sparkline
+                        values={halts7dSeries}
+                        color="var(--err)"
+                        height={22}
+                        labels={days7dLabels}
+                        unit="halts"
+                      />
                     </div>
                   )}
                 </div>
