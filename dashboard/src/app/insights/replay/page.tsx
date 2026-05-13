@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
-import { EmptyState } from "@/components/patchwork";
+import { BackLink, EmptyState } from "@/components/patchwork";
 
 type ReplayDecision = "allow" | "deny" | "ask" | "none";
 type ChangeKind = "now_allowed" | "now_denied" | "now_asked";
@@ -73,12 +73,7 @@ export default function ReplayPage() {
     <section>
       <div className="page-head">
         <div>
-          <Link
-            href="/insights"
-            style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", textDecoration: "none" }}
-          >
-            ← Approval Insights
-          </Link>
+          <BackLink href="/insights" label="Approval Insights" />
           <h1 style={{ marginTop: 4 }}>Decision Replay</h1>
           <div className="page-head-sub">
             What would have happened if your current policy had been active in

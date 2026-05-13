@@ -28,6 +28,27 @@ const nextConfig = {
         permanent: false,
         basePath: false,
       },
+      // IA reorg (2026-05-12): /metrics was folded into /analytics.
+      // Permanent 308 so external bookmarks + cached search results
+      // funnel cleanly into the surviving page.
+      {
+        source: '/metrics',
+        destination: '/analytics',
+        permanent: true,
+      },
+      {
+        source: '/metrics/:path*',
+        destination: '/analytics',
+        permanent: true,
+      },
+      // /recipes/marketplace was a vestigial redirect page (a 5-line
+      // Next route that called `redirect("/marketplace")`). Replaced
+      // here so the request never enters React.
+      {
+        source: '/recipes/marketplace',
+        destination: '/marketplace',
+        permanent: true,
+      },
     ];
   },
 };

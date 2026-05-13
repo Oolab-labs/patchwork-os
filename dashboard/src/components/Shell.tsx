@@ -8,6 +8,7 @@ import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
 import { isDemoMode, onDemoModeChange, setDemoMode } from "@/lib/demoMode";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { subscribeStreamLiveness } from "@/lib/streamLiveness";
+import { NAV_SECTIONS } from "@/lib/navRoutes";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
 
@@ -41,6 +42,7 @@ const PATHS: Record<string, string> = {
   plus:       "M12 4v16m8-8H4",
   diff:       "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 12h6m-3-3v6",
   person:     "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z",
+  bookmark:   "M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2v16z",
   chevron:    "M6 9l6 6 6-6",
 };
 
@@ -64,6 +66,11 @@ function BrandMark() {
 }
 
 // ------------------------------------------------------------------ nav structure
+//
+// NAV_SECTIONS is now exported from src/lib/navRoutes.ts (single source
+// of truth shared with CommandPalette + MobileBottomNav). The local
+// rename + adapter keeps the existing JSX (which reads `section.items`)
+// working without a sweeping rewrite of the render code.
 
 type NavItem = {
   href: string;
@@ -72,38 +79,15 @@ type NavItem = {
   badge?: "approvals" | "halts";
 };
 
-const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
-  {
-    title: "Workspace",
-    items: [
-      { href: "/",           label: "Overview",    icon: "home" },
-      { href: "/inbox",      label: "Inbox",       icon: "inbox" },
-      { href: "/approvals",  label: "Approvals",   icon: "check",  badge: "approvals" },
-      { href: "/activity",   label: "Activity",    icon: "activity", badge: "halts" },
-    ],
-  },
-  {
-    title: "Automation",
-    items: [
-      { href: "/recipes",     label: "Recipes",     icon: "book" },
-      { href: "/marketplace", label: "Marketplace", icon: "store" },
-    ],
-  },
-  {
-    title: "Insights",
-    items: [
-      { href: "/analytics",    label: "Analytics",    icon: "trending" },
-      { href: "/transactions",  label: "Transactions", icon: "diff" },
-    ],
-  },
-  {
-    title: "Setup",
-    items: [
-      { href: "/connections", label: "Connections", icon: "plug" },
-      { href: "/settings",    label: "Settings",    icon: "settings" },
-    ],
-  },
-];
+const SECTIONS: { title: string; items: NavItem[] }[] = NAV_SECTIONS.map((s) => ({
+  title: s.title,
+  items: s.routes.map((r) => ({
+    href: r.href,
+    label: r.label,
+    icon: r.icon ?? "home",
+    badge: r.badge,
+  })),
+}));
 
 const MORE_ITEMS: NavItem[] = [];
 
@@ -501,7 +485,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </Link>
 
         <nav className="app-nav" aria-label="Main navigation">
-          {NAV_SECTIONS.map((section) => (
+          {SECTIONS.map((section) => (
             <div key={section.title}>
               <div className="app-nav-section-label">{section.title}</div>
               {section.items.map((item) => {

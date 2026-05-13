@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiPath } from '@/lib/api';
+import { BackLink } from "@/components/patchwork";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 
@@ -215,11 +216,7 @@ export default function ApprovalDetailPage() {
     <section>
       <div className="page-head">
         <div>
-          <div style={{ fontSize: "var(--fs-s)", marginBottom: 4 }}>
-            <Link href="/approvals" style={{ color: "var(--fg-2)" }}>
-              ← Approvals
-            </Link>
-          </div>
+          <BackLink href="/approvals" label="Approvals" />
           <h1>{toolName}</h1>
           <div className="page-head-sub">
             <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}>

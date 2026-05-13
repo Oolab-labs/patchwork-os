@@ -2,6 +2,7 @@
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { flatRoutes } from "@/lib/navRoutes";
 
 interface Command {
   id: string;
@@ -11,26 +12,17 @@ interface Command {
   perform: () => void;
 }
 
-const NAV_DESTINATIONS: { href: string; label: string; hint?: string }[] = [
-  { href: "/", label: "Overview", hint: "Home" },
-  { href: "/inbox", label: "Inbox" },
-  { href: "/approvals", label: "Approvals — Pending" },
-  { href: "/suggestions", label: "Approvals — Suggested" },
-  { href: "/decisions", label: "Approvals — History" },
-  { href: "/activity", label: "Activity — Live" },
-  { href: "/runs", label: "Activity — Runs" },
-  { href: "/tasks", label: "Activity — Tasks" },
-  { href: "/sessions", label: "Activity — Sessions" },
-  { href: "/traces", label: "Activity — Traces" },
-  { href: "/recipes", label: "Recipes" },
-  { href: "/marketplace", label: "Marketplace" },
-  { href: "/analytics", label: "Analytics — Overview" },
-  { href: "/insights", label: "Analytics — Insights" },
-  { href: "/metrics", label: "Analytics — Metrics" },
-  { href: "/transactions", label: "Transactions" },
-  { href: "/connections", label: "Connections" },
-  { href: "/settings", label: "Settings" },
-];
+/**
+ * Nav destinations are derived from the single-source-of-truth navRoutes
+ * module so any new sidebar page is reachable from ⌘K automatically.
+ * `paletteLabel` overrides give disambiguated names like
+ * "Decisions — Approvals" instead of the bare sidebar "Approvals".
+ */
+const NAV_DESTINATIONS: { href: string; label: string; hint?: string }[] = flatRoutes().map((r) => ({
+  href: r.href,
+  label: r.paletteLabel ?? r.label,
+  hint: r.paletteHint ?? (r.href === "/" ? "Home" : undefined),
+}));
 
 function score(haystack: string, needle: string): number {
   if (!needle) return 1;

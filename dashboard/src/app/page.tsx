@@ -1117,7 +1117,11 @@ export default function HomePage() {
                     ].join("\n")
                   : undefined
               }
-              href="/metrics"
+              // /metrics was folded into /analytics on 2026-05-12 (IA reorg).
+              // next.config.js issues a 308 redirect, so this href works
+              // either way — but linking to the live destination avoids
+              // an extra redirect hop on every Overview hero click.
+              href="/analytics"
             />
           </>
         )}
