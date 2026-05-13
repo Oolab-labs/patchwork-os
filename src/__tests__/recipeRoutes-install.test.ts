@@ -495,6 +495,118 @@ describe("Server /recipes/install — A-PR2 (dogfood F-05 / H-routes Bug 2)", ()
     expect(parsed.code).toBe("invalid_recipe");
     expect(parsed.error).toMatch(/steps/i);
   });
+
+  it("install-connector-preflight: response carries missingConnectors when recipe needs unconnected services", async () => {
+    // The install handler reads the recipe just written to disk, walks
+    // its steps for tool-prefix matches against the known connector
+    // map, and (if anything's missing in /connections) surfaces the
+    // list under `missingConnectors` in the response body. The recipe
+    // STILL installs — this is a soft warning, not a 4xx gate.
+    const yamlBody = [
+      "name: slack-pinger",
+      "version: 1.0.0",
+      "trigger:",
+      "  type: manual",
+      "steps:",
+      "  - id: ping",
+      "    agent: false",
+      "    tool: slack_chat",
+      "    params:",
+      "      channel: '#general'",
+      "      text: hello",
+      "",
+    ].join("\n");
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        fakeResponse(200, yamlBody),
+      ) as unknown as typeof fetch;
+
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/install",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({
+        source: "github:patchworkos/recipes/recipes/slack-pinger",
+      }),
+    );
+    expect(status).toBe(200);
+    const parsed = JSON.parse(body);
+    expect(parsed.ok).toBe(true);
+    // Recipe needs slack; the test bridge has no slack connector
+    // configured, so it should appear in missingConnectors.
+    expect(parsed.missingConnectors).toEqual(["slack"]);
+
+    try {
+      const { unlinkSync } = await import("node:fs");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      unlinkSync(
+        path.join(os.homedir(), ".patchwork", "recipes", "slack-pinger.json"),
+      );
+    } catch {
+      // best-effort
+    }
+  });
+
+  it("install-connector-preflight: no missingConnectors field when recipe uses only built-in tools", async () => {
+    // file.write / shell.run / etc. don't match any connector prefix,
+    // so the response body must NOT include a missingConnectors key
+    // (avoids the dashboard showing an empty "connect:" toast).
+    const yamlBody = [
+      "name: file-writer",
+      "version: 1.0.0",
+      "trigger:",
+      "  type: manual",
+      "steps:",
+      "  - id: w",
+      "    agent: false",
+      "    tool: file.write",
+      "    params:",
+      "      path: /tmp/x",
+      "      content: y",
+      "",
+    ].join("\n");
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        fakeResponse(200, yamlBody),
+      ) as unknown as typeof fetch;
+
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/install",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({
+        source: "github:patchworkos/recipes/recipes/file-writer",
+      }),
+    );
+    expect(status).toBe(200);
+    const parsed = JSON.parse(body);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.missingConnectors).toBeUndefined();
+
+    try {
+      const { unlinkSync } = await import("node:fs");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      unlinkSync(
+        path.join(os.homedir(), ".patchwork", "recipes", "file-writer.json"),
+      );
+    } catch {
+      // best-effort
+    }
+  });
 });
 
 describe("Server /recipes/:name/run — A-PR2 body cap (32 KB)", () => {
