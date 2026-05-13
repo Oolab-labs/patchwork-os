@@ -18,6 +18,55 @@ interface ConnectorRequest {
   requestedAt: string;
 }
 
+/**
+ * Returns the list of connector requests the user has submitted via
+ * this endpoint. Plumbing audit flagged the route as write-only —
+ * users filled out the request form and the result vanished into
+ * ~/.patchwork/connector-requests.json. The GET handler closes that
+ * loop so the dashboard can surface "Your requests" inline on the
+ * connections page.
+ */
+export async function GET(): Promise<Response> {
+  try {
+    const file = path.join(os.homedir(), ".patchwork", "connector-requests.json");
+    if (!fs.existsSync(file)) {
+      return NextResponse.json({ requests: [] });
+    }
+    const raw = fs.readFileSync(file, "utf8");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // Same defensive handling as POST — surface a clear 500 rather
+      // than silently returning an empty list when the file is
+      // malformed (which would mask a real disk problem).
+      return NextResponse.json(
+        { error: "connector-requests.json is malformed — fix or delete it and retry" },
+        { status: 500 },
+      );
+    }
+    if (!Array.isArray(parsed)) {
+      return NextResponse.json(
+        { error: "connector-requests.json has unexpected format — expected an array" },
+        { status: 500 },
+      );
+    }
+    // Newest first; cap at a sensible window so the dashboard panel
+    // doesn't render hundreds of historical requests.
+    const requests = (parsed as ConnectorRequest[])
+      .slice()
+      .sort((a, b) => (a.requestedAt < b.requestedAt ? 1 : -1))
+      .slice(0, 50);
+    return NextResponse.json({ requests });
+  } catch (e) {
+    console.error("[connector-requests] read error", e);
+    return NextResponse.json(
+      { error: "Failed to read connector requests" },
+      { status: 500 },
+    );
+  }
+}
+
 export async function POST(req: Request): Promise<Response> {
   const guard = requireSameOrigin(req);
   if (guard) return guard;

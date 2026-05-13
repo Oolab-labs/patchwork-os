@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import AddConnectionModal from "./AddConnectionModal";
+import { YourConnectorRequests } from "./YourConnectorRequests";
 import { Dialog } from "@/components/Dialog";
 import { HintCard } from "@/components/patchwork";
 import { useToast } from "@/components/Toast";
@@ -1218,6 +1219,14 @@ export default function ConnectionsPage() {
       </div>
 
       <HintCard id="connections" />
+
+      {/*
+        Plumbing-audit fix: the connector-request form used to be
+        write-only — submitted requests vanished into
+        ~/.patchwork/connector-requests.json. This panel reads from
+        the new GET handler so users can see what they've asked for.
+      */}
+      <YourConnectorRequests />
 
       {err && <div className="alert-err" role="alert">{err}</div>}
 
