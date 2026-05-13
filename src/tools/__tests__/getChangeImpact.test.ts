@@ -31,7 +31,11 @@ function makeClient(overrides: Record<string, any> = {}) {
   };
 }
 
-describe("getChangeImpact", () => {
+// Synthetic POSIX-only fixtures: workspace = "/tmp", filePath = "/tmp/foo.ts".
+// On Win32 `resolveFilePath` rejects these since `/tmp` doesn't exist and
+// POSIX absolutes resolve outside the workspace. The tool itself is
+// path-agnostic in production.
+describe.skipIf(process.platform === "win32")("getChangeImpact", () => {
   it("returns extensionRequired when disconnected", async () => {
     const client = makeClient({ isConnected: vi.fn(() => false) });
     const tool = createGetChangeImpactTool(workspace, client as never);
