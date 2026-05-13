@@ -774,7 +774,7 @@ export default function MarketplacePage() {
               <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
                 Capability bundles
               </h2>
-              <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginBottom: "var(--s-4)", marginTop: "-var(--s-2)" }}>
+              <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginBottom: "var(--s-4)", marginTop: "calc(-1 * var(--s-2))" }}>
                 Recipes + connectors + policy templates — install as one unit.
               </p>
               <div className="marketplace-grid" style={{ marginBottom: "var(--s-8)" }}>

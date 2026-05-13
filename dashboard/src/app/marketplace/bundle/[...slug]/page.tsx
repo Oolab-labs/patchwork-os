@@ -161,7 +161,7 @@ function WhatIsIncluded({
               {recipes.map((r) => (
                 <li key={r} style={{ fontSize: "var(--fs-s)", fontFamily: "var(--font-mono)", color: "var(--fg-1)" }}>
                   <Link
-                    href={`/marketplace/${encodeURIComponent(r)}`}
+                    href={`/marketplace/${r.split("/").map(encodeURIComponent).join("/")}`}
                     style={{ color: "inherit", textDecoration: "underline", textDecorationColor: "var(--line-2)" }}
                   >
                     {r}
