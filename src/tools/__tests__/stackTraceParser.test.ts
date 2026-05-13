@@ -96,7 +96,9 @@ describe("resolveFrameFile", () => {
   const ws = "/repo";
 
   it("passes through absolute paths inside workspace", () => {
-    expect(resolveFrameFile(ws, "/repo/src/a.ts")).toBe("/repo/src/a.ts");
+    expect(resolveFrameFile(ws, "/repo/src/a.ts")).toBe(
+      path.resolve("/repo/src/a.ts"),
+    );
   });
 
   it("joins relative paths with workspace", () => {
