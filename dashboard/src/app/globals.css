@@ -1246,6 +1246,24 @@ button.topbar-search {
 .table .mono { font-family: var(--font-mono); font-size: 12px; color: var(--ink-1); }
 .table .muted { color: var(--ink-3); }
 
+/* /recipes table — readable, scannable row treatment. The default
+   .table row is dense (designed for log-like data); the recipes page
+   reads more like a product list, so it gets its own breathing room. */
+.recipes-table tbody td { padding: 12px 10px; }
+.recipes-table tr.recipe-row { transition: background 120ms ease; }
+.recipes-table tr.recipe-row:hover {
+  background: color-mix(in srgb, var(--accent) 5%, var(--recess));
+}
+.recipes-table tr.recipe-row.is-selected {
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-2));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.recipes-table tr.recipe-row.is-selected:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-2));
+}
+.recipes-table tr.recipe-row.is-off { opacity: 0.55; }
+.recipes-table tr.recipe-row.is-off:hover { opacity: 0.85; }
+
 /* /recipes table on phone: 7-column desktop layout (%, RECIPE, TRIGGER,
    LAST 14 RUNS, AVG, LAST, Actions) is 700+ px wide. Below ≈768 px the
    declared widths plus padding push horizontal scroll to the point where
@@ -1808,6 +1826,440 @@ button.topbar-search {
   font-weight: 600;
   font-family: var(--font-mono);
   margin-right: 6px;
+}
+
+/* ---- Live-wire heartbeat above the telemetry tiles ----
+   Always-on, 1-row, low-chrome status line. Dot tone reflects state:
+   green pulse when running, soft amber when quiet, muted red when
+   bridge offline. Sits in the same vertical rhythm as the telemetry
+   eyebrow so it reads as a label-of-labels for the section. */
+.live-wire {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  margin-top: var(--s-5);
+  margin-bottom: var(--s-3);
+  border-radius: var(--r-2);
+  border: 1px solid var(--line-3);
+  background: var(--surface);
+  font-size: var(--fs-xs);
+  color: var(--ink-1);
+  font-family: var(--font-mono);
+  transition: border-color 200ms ease, background 200ms ease;
+}
+.live-wire[data-state="live"] {
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--line-3));
+  background: color-mix(in srgb, var(--ok) 4%, var(--surface));
+}
+.live-wire[data-state="offline"] {
+  border-color: color-mix(in srgb, var(--err) 40%, var(--line-3));
+  background: color-mix(in srgb, var(--err) 4%, var(--surface));
+}
+.live-wire-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.live-wire-dot-on {
+  background: var(--ok);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent);
+  animation: live-wire-pulse 1.6s ease-in-out infinite;
+}
+.live-wire-dot-idle {
+  background: var(--ink-3);
+  opacity: 0.7;
+}
+.live-wire-dot-off {
+  background: var(--err);
+  opacity: 0.85;
+}
+@keyframes live-wire-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent),
+      0 0 0 7px color-mix(in srgb, var(--ok) 0%, transparent);
+  }
+}
+.live-wire-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-wire-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.live-wire-link:hover { text-decoration: underline; }
+@media (prefers-reduced-motion: reduce) {
+  .live-wire-dot-on { animation: none; }
+}
+
+/* ---- Telemetry-tile value-change flash ----
+   AnimatedNumber stamps a flash class + key on its inner span whenever
+   the upstream value changes (not on initial mount). Using `key`
+   forces React to mount a fresh element each change, which restarts
+   the CSS animation cleanly — without that, the class is added once
+   and the animation never replays on subsequent updates.
+   Tone-aware: +N gets accent up-flash, -N gets a muted down-flash. */
+.animated-number-flash {
+  display: inline-block;
+  animation: animated-number-flash-up 1.4s ease-out 1;
+}
+.animated-number-flash-down {
+  animation: animated-number-flash-down 1.4s ease-out 1;
+}
+@keyframes animated-number-flash-up {
+  0% {
+    color: var(--accent);
+    text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  100% {
+    color: inherit;
+    text-shadow: none;
+  }
+}
+@keyframes animated-number-flash-down {
+  0% {
+    color: var(--ink-3);
+    text-shadow: 0 0 10px color-mix(in srgb, var(--ink-3) 40%, transparent);
+  }
+  100% {
+    color: inherit;
+    text-shadow: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animated-number-flash { animation: none; }
+}
+
+/* ---- Leaderboard row stagger-in on first render ----
+   Rows fade up with a 50ms cascade so the leaderboard feels assembled
+   instead of plonked. Hard-cap the staggered delay at row 8 so really
+   long lists don't have a noticeable trailing reveal. */
+.leaderboard-row {
+  animation: leaderboard-row-in 360ms cubic-bezier(.18,.7,.2,1) both;
+}
+.leaderboard-row:nth-child(1) { animation-delay: 0ms; }
+.leaderboard-row:nth-child(2) { animation-delay: 60ms; }
+.leaderboard-row:nth-child(3) { animation-delay: 120ms; }
+.leaderboard-row:nth-child(4) { animation-delay: 180ms; }
+.leaderboard-row:nth-child(5) { animation-delay: 240ms; }
+.leaderboard-row:nth-child(6) { animation-delay: 300ms; }
+.leaderboard-row:nth-child(7) { animation-delay: 340ms; }
+.leaderboard-row:nth-child(n+8) { animation-delay: 380ms; }
+@keyframes leaderboard-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .leaderboard-row { animation: none; }
+}
+
+/* ---- Activity thread: filter chips + new-event flash ----
+   The thread used to render whatever came back from /activity in a
+   single take-it-or-leave-it list. Filter chips let users carve out
+   the slice they care about; the flash animation rewards a poll cycle
+   that introduces a new event by briefly tinting the row + sliding it
+   in from the rail. The page feels alive when the bridge is alive. */
+.activity-filter-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 2px;
+  border-radius: var(--r-2);
+  background: var(--recess);
+  width: max-content;
+}
+.activity-filter-chip {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.activity-filter-chip:hover { color: var(--ink-1); }
+.activity-filter-chip.is-active {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent);
+}
+.activity-row {
+  position: relative;
+}
+.activity-row.is-fresh {
+  animation:
+    activity-row-flash 1.6s ease-out 1,
+    activity-row-slide 360ms cubic-bezier(.18,.7,.2,1) 1;
+}
+@keyframes activity-row-flash {
+  0% {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  60% {
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+.activity-row.is-fresh.is-err {
+  animation:
+    activity-row-flash-err 1.6s ease-out 1,
+    activity-row-slide 360ms cubic-bezier(.18,.7,.2,1) 1;
+}
+@keyframes activity-row-flash-err {
+  0% {
+    background: color-mix(in srgb, var(--err) 18%, transparent);
+    box-shadow: inset 3px 0 0 var(--err);
+  }
+  60% {
+    background: color-mix(in srgb, var(--err) 6%, transparent);
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--err) 40%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+@keyframes activity-row-slide {
+  from {
+    transform: translateY(-6px);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-row.is-fresh,
+  .activity-row.is-fresh.is-err { animation: none; }
+}
+
+/* ---- Leaderboard: live-now dot on rows with a run in flight ---- */
+.leaderboard-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex-shrink: 0;
+  display: inline-block;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent);
+  animation: leaderboard-live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes leaderboard-live-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent),
+      0 0 0 8px color-mix(in srgb, var(--ok) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .leaderboard-live-dot { animation: none; }
+}
+
+/* ---- Recipe leaderboard focal-card treatment ----
+   Static accent presence (top stripe + subtle accent-tinted bg) so the
+   card reads as "this is the protagonist section" without the rotating
+   conic-gradient beam we previously used — that radar sweep was a
+   gimmick and showed through even at rest. */
+.recipe-leaderboard-card {
+  position: relative;
+  border-top: 2px solid color-mix(in srgb, var(--accent) 80%, transparent);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 4%, var(--surface)) 0%,
+    var(--surface) 80px
+  );
+}
+[data-theme="dark"] .recipe-leaderboard-card {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 7%, var(--bg-2)) 0%,
+    var(--bg-2) 80px
+  );
+}
+
+/* ---- Featured-recipe aside (replaces WeatherRing on hero) ----
+   Frosted-glass treatment over the quilt pattern. Earlier iteration
+   used 70% surface mix with no blur — quilt squares bled through and
+   ate the eyebrow contrast. Now: 92% surface + backdrop blur for a
+   crisp panel that reads against either theme. */
+.quilt-aside-featured,
+.quilt-aside-empty {
+  position: relative;
+  z-index: 2;
+  align-self: stretch;
+  width: 280px;
+  padding: 22px 24px;
+  border-left: 1px solid var(--line-2);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(6px) saturate(115%);
+  -webkit-backdrop-filter: blur(6px) saturate(115%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--ink-0) 4%, transparent);
+}
+.quilt-aside-eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
+  text-transform: uppercase;
+}
+.quilt-aside-eyebrow-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  display: inline-block;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.quilt-aside-eyebrow-dot[data-tone="err"] {
+  background: var(--err);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--err) 28%, transparent);
+}
+.quilt-aside-eyebrow-dot[data-tone="accent"] {
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.quilt-aside-eyebrow-dot[data-pulsing="1"] {
+  background: var(--ok);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent);
+  animation: aside-eyebrow-pulse 1.6s ease-in-out infinite;
+}
+@keyframes aside-eyebrow-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent),
+      0 0 0 7px color-mix(in srgb, var(--ok) 0%, transparent);
+  }
+}
+.quilt-aside-featured[data-mode="running"] .quilt-aside-eyebrow { color: var(--ok); }
+.quilt-aside-featured[data-mode="needs-retry"] .quilt-aside-eyebrow { color: var(--err); }
+.quilt-aside-name {
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink-0);
+  text-decoration: none;
+  line-height: 1.2;
+  /* Long recipe names need to wrap at the dash glyph, not mid-char.
+     `break-word` keeps "apple-watch-health-log" intact and breaks at
+     the next dash if it has to; `break-all` hyphenated mid-word. */
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
+  transition: color 120ms ease;
+}
+.quilt-aside-name:hover { color: var(--accent); }
+.quilt-aside-meta {
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+}
+.quilt-aside-spark {
+  margin: 4px 0 6px;
+}
+.quilt-aside-run {
+  align-self: flex-start;
+  font-size: var(--fs-s);
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: var(--r-2);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--ink-0) 8%, transparent);
+  transition: background 120ms ease, transform 80ms ease, box-shadow 120ms ease, filter 120ms ease;
+}
+.quilt-aside-run:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.quilt-aside-run:active:not(:disabled) { transform: translateY(1px); }
+.quilt-aside-run:disabled { cursor: wait; opacity: 0.7; }
+.quilt-aside-run[data-mode="needs-retry"] {
+  border-color: var(--err);
+  background: var(--err);
+  color: var(--on-accent, #fff);
+}
+.quilt-aside-run[data-mode="needs-retry"]:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--err) 60%, transparent);
+}
+.quilt-aside-run[data-mode="running"] {
+  border-color: var(--ok);
+  background: var(--ok);
+  color: var(--on-accent, #fff);
+}
+.quilt-aside-run[data-mode="running"]:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--ok) 60%, transparent);
+}
+.quilt-aside-empty-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
+  text-transform: uppercase;
+}
+.quilt-aside-empty-value {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink-1);
+}
+.quilt-aside-empty-foot {
+  font-size: var(--fs-xs);
 }
 
 /* ---- Weather (stitched-seam gauge) ---- */

@@ -463,7 +463,7 @@ export default function ActivityPage() {
                     <td className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>
                       {meta.recipeName ? (
                         <Link
-                          href={`/dashboard/recipes/${encodeURIComponent(meta.recipeName)}/edit`}
+                          href={`/recipes/${encodeURIComponent(meta.recipeName)}/edit`}
                           onClick={(ev) => ev.stopPropagation()}
                           style={{ color: "var(--accent)", textDecoration: "none" }}
                           title={`Recipe ${meta.recipeName}`}
