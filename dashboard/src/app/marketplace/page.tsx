@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
 import { HintCard } from "@/components/patchwork";
 import { apiPath } from "@/lib/api";
@@ -437,26 +437,35 @@ export default function MarketplacePage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const toast = useToast();
 
+  // Re-probe bridge + refresh the installed-names Set. Extracted so the
+  // post-install handler can call it to (a) catch the name-divergence
+  // bug where the dashboard tracks marketplace name but the bridge keys
+  // on the recipe's own YAML `name` field — without a refresh the
+  // "Installed" pill can lie — and (b) flip the offline banner if the
+  // bridge died mid-session.
+  const refreshInstalled = useCallback(async () => {
+    try {
+      const r = await fetch(apiPath("/api/bridge/recipes"));
+      if (!r.ok) {
+        setBridgeOnline(false);
+        return;
+      }
+      const data = await r.json();
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.recipes)
+          ? data.recipes
+          : [];
+      setBridgeOnline(true);
+      setInstalledNames(new Set(list.map((r: { name: string }) => r.name) as string[]));
+    } catch {
+      setBridgeOnline(false);
+    }
+  }, []);
+
   useEffect(() => {
     async function load() {
-      // Check bridge + fetch installed in parallel
-      const [installedResult] = await Promise.allSettled([
-        fetch(apiPath("/api/bridge/recipes")).then(async (r) => {
-          if (!r.ok) return { online: false, names: [] as string[] };
-          const data = await r.json();
-          const list = Array.isArray(data)
-            ? data
-            : Array.isArray(data?.recipes)
-              ? data.recipes
-              : [];
-          return { online: true, names: list.map((r: { name: string }) => r.name) as string[] };
-        }),
-      ]);
-
-      if (installedResult.status === "fulfilled") {
-        setBridgeOnline(installedResult.value.online);
-        setInstalledNames(new Set(installedResult.value.names));
-      }
+      await refreshInstalled();
 
       // Fetch registry: bridge → raw GitHub → hardcoded fallback. Each
       // hop has a 4s timeout so a slow CDN can't keep the user staring
@@ -535,6 +544,16 @@ export default function MarketplacePage() {
     }
 
     if (!res.ok) {
+      // 502 / 503 / 504 from our Next.js proxy means the bridge stopped
+      // responding to bridgeFetch — flip the offline banner so the next
+      // click renders "Get Patchwork" instead of another opaque retry,
+      // and surface a friendlier message than the raw upstream body.
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        setBridgeOnline(false);
+        throw new Error(
+          "Bridge isn't responding. Start it with `patchwork start` and try again.",
+        );
+      }
       let msg = `Error ${res.status}`;
       try {
         const body = (await res.json()) as { error?: string };
@@ -545,8 +564,14 @@ export default function MarketplacePage() {
       throw new Error(msg);
     }
 
+    // Optimistic update so the card flips to "Installed" immediately.
     setInstalledNames((prev) => new Set([...prev, recipe.name]));
     toast.success("Recipe installed successfully");
+    // Authoritative refresh from the bridge — catches the name-
+    // divergence case where the dashboard tracks the marketplace name
+    // but the bridge writes the recipe under its own YAML `name` field.
+    // Without this, the green pill would lie until the next page load.
+    void refreshInstalled();
   }
 
   const filtered = (registry ?? []).filter((r) => {
@@ -611,12 +636,12 @@ export default function MarketplacePage() {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <h1 className="editorial-h1" style={{ margin: 0 }}>
-              Marketplace — <span className="accent">recipes built by the community.</span>
+              Marketplace — <span className="accent">open-source YAML, curated.</span>
             </h1>
             <HintCard.Toggle id="marketplace" />
           </div>
           <div className="editorial-sub">
-            {`${registry?.length ?? FALLBACK_REGISTRY.recipes.length} recipes · open-source YAML · audited weekly`}
+            {`${registry?.length ?? FALLBACK_REGISTRY.recipes.length} recipes · sourced from github.com/patchworkos/recipes`}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -634,11 +659,12 @@ export default function MarketplacePage() {
             href="https://github.com/patchworkos/recipes/blob/main/CONTRIBUTING.md"
             target="_blank"
             rel="noopener noreferrer"
-            className="btn sm"
+            className="btn sm ghost"
             style={{ textDecoration: "none", fontSize: "var(--fs-s)" }}
-            aria-label="Submit a recipe to the marketplace"
+            aria-label="Propose a recipe by opening a pull request on GitHub"
+            title="Opens GitHub. Submissions are reviewed as PRs against patchworkos/recipes — there is no in-app submission flow."
           >
-            + Submit recipe
+            Propose via GitHub PR ↗
           </a>
         </div>
       </div>
