@@ -10,6 +10,7 @@ import { useToast } from "@/components/Toast";
 import {
   CodeBlock,
   ErrorState,
+  HintCard,
   highlightYaml,
   LivePill,
   PatchCard,
@@ -855,9 +856,12 @@ export default function RecipesPage() {
 
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Recipes — <span className="accent">YAML, declarative, yours.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Recipes — <span className="accent">YAML, declarative, yours.</span>
+            </h1>
+            <HintCard.Toggle id="recipes" />
+          </div>
           <div className="editorial-sub">
             {recipes
               ? `templates/recipes · ${installedCount} installed · ${enabledCount} enabled`
@@ -893,6 +897,8 @@ export default function RecipesPage() {
           style={{ maxWidth: 320 }}
         />
       </div>
+
+      <HintCard id="recipes" />
 
       {err && (recipes === null || recipes.length === 0) && (
         <ErrorState

@@ -9,6 +9,7 @@ import {
   EmptyState,
   EventsHistogram,
   HBarList,
+  HintCard,
   LivePill,
   type LivePillConnection,
 } from "@/components/patchwork";
@@ -214,9 +215,12 @@ export default function ActivityPage() {
       <ActivityTabs />
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Activity — <span className="accent">every tool, every event, in real time.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Activity — <span className="accent">every tool, every event, in real time.</span>
+            </h1>
+            <HintCard.Toggle id="activity" />
+          </div>
           {events.length > 0 && (
             <div className="editorial-sub">
               {events.length} events · last 24h · {stats.errors} errored
@@ -226,6 +230,8 @@ export default function ActivityPage() {
         <LivePill connection={connection} />
       </div>
 
+      <HintCard id="activity" />
+
       {/*
         Sidebar's Activity nav has a halt-count badge that polls
         /runs/halt-summary. Clicking the badge used to land here on a
@@ -234,7 +240,6 @@ export default function ActivityPage() {
         collapses to nothing when there are zero halts.
       */}
       <RecentHaltsPanel />
-
 
       {/* Charts row: histogram + top tools */}
       <div

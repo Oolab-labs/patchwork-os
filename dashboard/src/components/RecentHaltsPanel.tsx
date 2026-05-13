@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { Glossary } from "@/components/patchwork";
 
 /**
  * "Recent halts (24h)" panel for /activity.
@@ -119,7 +120,8 @@ export function RecentHaltsPanel() {
             color: "var(--ink-1)",
           }}
         >
-          Recent halts <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>· last 24h</span>
+          Recent <Glossary term="halt">halts</Glossary>{" "}
+          <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>· last 24h</span>
         </h2>
         <Link
           href="/runs"

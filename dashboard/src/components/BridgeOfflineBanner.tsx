@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { BridgeStatus } from "@/hooks/useBridgeStatus";
+import { Glossary } from "@/components/patchwork";
 
 /**
  * Dismissable banner that surfaces a diagnostic when the bridge is
@@ -98,9 +99,12 @@ export function BridgeOfflineBanner({ status }: { status: BridgeStatus }) {
           flexShrink: 0,
         }}
       />
-      <strong style={{ fontWeight: 600 }}>Bridge offline.</strong>
+      <strong style={{ fontWeight: 600 }}>
+        <Glossary term="bridge">Bridge</Glossary> offline.
+      </strong>
       <span style={{ color: "var(--ink-2)" }}>
-        The dashboard can&apos;t reach the Patchwork bridge.
+        The dashboard can&apos;t reach the Patchwork{" "}
+        <Glossary term="bridge">bridge</Glossary>.
         {lastAttempt && ` Last attempt ${relSeconds(lastAttempt)}.`}
         {status.lastError && ` Reason: ${status.lastError}.`}
       </span>

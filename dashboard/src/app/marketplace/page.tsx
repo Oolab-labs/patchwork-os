@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
+import { HintCard } from "@/components/patchwork";
 import { apiPath } from "@/lib/api";
 import {
   assertValidInstallSource,
@@ -608,9 +609,12 @@ export default function MarketplacePage() {
 
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Marketplace — <span className="accent">recipes built by the community.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Marketplace — <span className="accent">recipes built by the community.</span>
+            </h1>
+            <HintCard.Toggle id="marketplace" />
+          </div>
           <div className="editorial-sub">
             {`${registry?.length ?? FALLBACK_REGISTRY.recipes.length} recipes · open-source YAML · audited weekly`}
           </div>
@@ -638,6 +642,8 @@ export default function MarketplacePage() {
           </a>
         </div>
       </div>
+
+      <HintCard id="marketplace" />
 
       {searchOpen && (
         <div style={{ marginBottom: "var(--s-6)" }}>

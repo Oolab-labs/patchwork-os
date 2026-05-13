@@ -35,7 +35,7 @@ describe("<BridgeOfflineBanner/>", () => {
   });
 
   it("renders the diagnostic when bridge is fully offline", () => {
-    const { getByText, container } = render(
+    const { container } = render(
       <BridgeOfflineBanner
         status={{
           ok: false,
@@ -45,7 +45,11 @@ describe("<BridgeOfflineBanner/>", () => {
         }}
       />,
     );
-    expect(getByText(/Bridge offline/i)).toBeInTheDocument();
+    // The headline is "<Bridge> offline." where <Bridge> is the
+    // Glossary trigger button — so the rendered tree has the heading
+    // text broken across nodes. Match via container.textContent which
+    // concatenates descendants.
+    expect(container.textContent).toMatch(/Bridge offline/i);
     expect(container.textContent).toMatch(/last attempt/i);
     expect(container.textContent).toMatch(/Failed to fetch/);
     expect(container.textContent).toMatch(/patchwork start --port/);

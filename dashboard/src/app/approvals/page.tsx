@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
 import { apiPath } from "@/lib/api";
-import { CodeBlock, EmptyState, KeyChip } from "@/components/patchwork";
+import { CodeBlock, EmptyState, HintCard, KeyChip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
 import { useToast } from "@/components/Toast";
@@ -868,9 +868,12 @@ function ApprovalsContent() {
 
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Approval queue — <span className="accent">nothing leaves your machine without a nod.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Approval queue — <span className="accent">nothing leaves your machine without a nod.</span>
+            </h1>
+            <HintCard.Toggle id="approvals" />
+          </div>
           <div className="editorial-sub">
             {(() => {
               const oldestTs = pending.length > 0
@@ -943,6 +946,8 @@ function ApprovalsContent() {
           Sync inbox
         </button>
       </div>
+
+      <HintCard id="approvals" />
 
       {/* Hero status bar — counts by tier. When the queue is empty the
           tier breakdown is all zeros — collapse it to avoid repeating

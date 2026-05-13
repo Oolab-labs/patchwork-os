@@ -5,7 +5,7 @@ import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
-import { EmptyState, ErrorState, LivePill } from "@/components/patchwork";
+import { EmptyState, ErrorState, HintCard, LivePill } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
 
 type TraceType = "approval" | "enrichment" | "recipe_run" | "decision";
@@ -629,9 +629,12 @@ export default function TracesPage() {
       <ActivityTabs />
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Traces — <em className="accent" style={{ fontStyle: "italic" }}>recipe runs and their decision logs.</em>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Traces — <em className="accent" style={{ fontStyle: "italic" }}>recipe runs and their decision logs.</em>
+            </h1>
+            <HintCard.Toggle id="traces" />
+          </div>
           <div className="editorial-sub" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span>
               {traces.length} traces · {doneCount} done · {errorCount} error{errorCount === 1 ? "" : "s"}
@@ -661,6 +664,8 @@ export default function TracesPage() {
           <ExportButton disabled={traces.length === 0} />
         </div>
       </div>
+
+      <HintCard id="traces" />
 
       {/* filter bar */}
       <div
