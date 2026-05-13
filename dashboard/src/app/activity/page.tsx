@@ -300,7 +300,9 @@ export default function ActivityPage() {
                   ? events.filter(
                       (e) => RECIPE_END_EVENTS.has(e.kind ?? "") || RECIPE_END_EVENTS.has(e.event ?? ""),
                     ).length
-                  : events.length;
+                  : events.filter(
+                      (e) => !(e.kind === "lifecycle" && ACTIVITY_NOISE_EVENTS.has(e.event ?? "")),
+                    ).length;
           return (
             <button
               key={t}
