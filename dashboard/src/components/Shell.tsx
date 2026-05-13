@@ -9,6 +9,7 @@ import { isDemoMode, onDemoModeChange, setDemoMode } from "@/lib/demoMode";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { subscribeStreamLiveness } from "@/lib/streamLiveness";
 import { NAV_SECTIONS } from "@/lib/navRoutes";
+import { ActivityTicker } from "./ActivityTicker";
 import { BridgeOfflineBanner } from "./BridgeOfflineBanner";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
@@ -374,6 +375,15 @@ export function Shell({ children }: { children: ReactNode }) {
           <span className="topbar-search-placeholder">Jump to anything…</span>
           <span className="kbd">⌘K</span>
         </button>
+        {/*
+          Live activity ticker. Sits between the command-palette button
+          and the right-side action cluster. Renders the last 3 events
+          the bridge has emitted (tool calls, approval decisions,
+          lifecycle events) with a live green pulse — gives the
+          dashboard a "feels alive" axis on every page, not just on
+          /activity. Hidden below the desktop breakpoint via CSS.
+        */}
+        <ActivityTicker />
         <div className="app-header-actions">
           <IdentityPill ok={status.ok} host={identity.host} port={identity.port} />
           {/*
