@@ -16,6 +16,8 @@ describe("mcpOAuth storage", () => {
 
   beforeEach(() => {
     process.env.HOME = homeDir;
+    // os.homedir() reads USERPROFILE on Win32, HOME on POSIX — set both.
+    process.env.USERPROFILE = homeDir;
     process.env.PATCHWORK_HOME = patchworkHome;
     process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
     mkdirSync(tokensDir, { recursive: true });
@@ -23,6 +25,7 @@ describe("mcpOAuth storage", () => {
 
   afterEach(() => {
     delete process.env.HOME;
+    delete process.env.USERPROFILE;
     delete process.env.PATCHWORK_HOME;
     delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
     if (existsSync(tmpDir)) {

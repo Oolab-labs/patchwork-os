@@ -60,7 +60,8 @@ function commitOnNewBranch(name: string, ageDays: number) {
   execSync("git checkout -q main", { cwd: repoDir });
 }
 
-describe("defaultGitStaleBranches", () => {
+// shell:"/bin/bash" + `&&` chaining + single-quoted -m args are POSIX-only.
+describe.skipIf(process.platform === "win32")("defaultGitStaleBranches", () => {
   it("returns branches with last commit older than the cutoff", () => {
     commitOnNewBranch("ancient", 90);
     commitOnNewBranch("kinda-old", 45);

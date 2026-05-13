@@ -2497,7 +2497,8 @@ describe("AutomationHooks — promptName support", () => {
     );
     hooks.handleFileSaved("id1", "save", "/src/bar.ts");
     const task = orch.list()[0];
-    expect(task?.prompt).toContain("/src/bar.ts");
+    // Path may be resolved to native form (D:\src\bar.ts) on Win32 — normalise.
+    expect(task?.prompt?.replace(/\\/g, "/")).toContain("/src/bar.ts");
   });
 
   it("skips task when promptName does not resolve", () => {

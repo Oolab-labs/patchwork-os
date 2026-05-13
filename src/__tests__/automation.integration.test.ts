@@ -96,7 +96,9 @@ describe("automation hook integration — placeholder substitution", () => {
 
     const tasks = orch.list();
     expect(tasks.length).toBe(1);
-    expect(tasks[0]!.prompt).toContain("/src/foo.ts");
+    // Path may be resolved into a platform-native form (e.g. D:\src\foo.ts
+    // on Win32) before substitution — normalise separators for the assertion.
+    expect(tasks[0]!.prompt.replace(/\\/g, "/")).toContain("/src/foo.ts");
     expect(tasks[0]!.prompt).toContain("Type mismatch");
   });
 
