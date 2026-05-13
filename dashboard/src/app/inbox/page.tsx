@@ -538,7 +538,7 @@ const filteredItems = items.filter((item) => {
         .copy-section-btn.copied { background: var(--green-soft); color: var(--green); border-color: transparent; }
       `}</style>
 
-      <section style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)", minHeight: 500 }}>
+      <section style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 120px)", minHeight: 500 }}>
         {/* Page header */}
         <div className="page-head" style={{ marginBottom: 16 }}>
           <div>
