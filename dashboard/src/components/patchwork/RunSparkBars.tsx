@@ -1,6 +1,8 @@
 "use client";
 interface RunSparkBarsProps {
   runs: { status: string }[];
+  /** Number of slots to render. Defaults to 5. */
+  slots?: number;
   width?: number;
   height?: number;
 }
@@ -13,11 +15,16 @@ function statusColor(status: string): string {
   return "var(--ink-3, #9ca3af)";
 }
 
-export function RunSparkBars({ runs, width = 56, height = 18 }: RunSparkBarsProps) {
-  const slots = Array.from({ length: 5 }, (_, i) => runs[i] ?? null);
+export function RunSparkBars({
+  runs,
+  slots: slotCount = 5,
+  width = 56,
+  height = 18,
+}: RunSparkBarsProps) {
+  const slots = Array.from({ length: slotCount }, (_, i) => runs[i] ?? null);
   const barW = 6;
   const gap = 4;
-  const totalW = 5 * barW + 4 * gap; // 46
+  const totalW = slotCount * barW + (slotCount - 1) * gap;
   const offsetX = (width - totalW) / 2;
 
   return (

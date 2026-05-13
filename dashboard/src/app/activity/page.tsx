@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
@@ -46,6 +47,16 @@ interface ActivityEvent {
 
 function getLifecycleMeta(e: ActivityEvent) {
   const m = e.metadata ?? {};
+  // recipeName lives in metadata for both lifecycle rows AND tool-call
+  // rows the bridge emits inside a recipe step. Surfacing it on the row
+  // lets users trace tool calls back to the recipe that produced them
+  // without bouncing through /runs.
+  const rawRecipe =
+    typeof m.recipeName === "string"
+      ? m.recipeName
+      : typeof m.recipe === "string"
+        ? m.recipe
+        : undefined;
   return {
     toolName: typeof m.toolName === "string" ? m.toolName : undefined,
     decision: typeof m.decision === "string" ? m.decision : undefined,
@@ -54,6 +65,7 @@ function getLifecycleMeta(e: ActivityEvent) {
     sessionId:
       typeof m.sessionId === "string" ? m.sessionId.slice(0, 8) : undefined,
     summary: typeof m.summary === "string" ? m.summary : undefined,
+    recipeName: rawRecipe ? rawRecipe.replace(/:agent$/, "") : undefined,
   };
 }
 
@@ -389,6 +401,7 @@ export default function ActivityPage() {
               <tr>
                 <th style={{ width: 140 }}>Time</th>
                 <th style={{ width: 110 }}>Kind</th>
+                <th style={{ width: 160 }}>Recipe</th>
                 <th>Tool / Event</th>
                 <th style={{ width: 110 }}>Duration</th>
                 <th style={{ width: 130 }}>Status / Decision</th>
@@ -446,6 +459,20 @@ export default function ActivityPage() {
                     </td>
                     <td>
                       <span className={`pill ${kindClass}`}>{kindLabel}</span>
+                    </td>
+                    <td className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>
+                      {meta.recipeName ? (
+                        <Link
+                          href={`/dashboard/recipes/${encodeURIComponent(meta.recipeName)}/edit`}
+                          onClick={(ev) => ev.stopPropagation()}
+                          style={{ color: "var(--accent)", textDecoration: "none" }}
+                          title={`Recipe ${meta.recipeName}`}
+                        >
+                          {meta.recipeName}
+                        </Link>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
                     </td>
                     <td className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 300 }}>
                       {mainLabel}
