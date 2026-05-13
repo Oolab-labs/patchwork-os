@@ -65,11 +65,19 @@ function fakeRequest(method: string): IncomingMessage {
   return { method } as IncomingMessage;
 }
 
-async function flush(): Promise<void> {
+async function flush(result?: { status: number }): Promise<void> {
   // Route handlers are dispatched via `void (async () => {...})()` and may
-  // call `await import("node:fs/promises")` internally, so we need a real
-  // tick (not just the microtask queue) before asserting.
-  await new Promise((r) => setTimeout(r, 30));
+  // call `await import("node:fs/promises")` internally. A fixed 30ms wait
+  // is enough on a warm darwin laptop but flakes on slow Windows CI
+  // runners — poll until status is set (or 2s cap) when a result is passed.
+  if (!result) {
+    await new Promise((r) => setTimeout(r, 30));
+    return;
+  }
+  const deadline = Date.now() + 2000;
+  while (result.status === 0 && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
 }
 
 describe("inboxRoutes — archive + delete", () => {
@@ -87,7 +95,7 @@ describe("inboxRoutes — archive + delete", () => {
       new URL(`http://x/inbox/${filename}/archive`),
     );
     expect(handled).toBe(true);
-    await flush();
+    await flush(result);
 
     expect(result.status).toBe(200);
     const body = JSON.parse(result.body) as { ok: boolean; path: string };
@@ -113,7 +121,7 @@ describe("inboxRoutes — archive + delete", () => {
       new URL(`http://x/inbox/${filename}`),
     );
     expect(handled).toBe(true);
-    await flush();
+    await flush(result);
 
     expect(result.status).toBe(200);
     expect(JSON.parse(result.body).ok).toBe(true);
@@ -129,7 +137,7 @@ describe("inboxRoutes — archive + delete", () => {
       res,
       new URL("http://x/inbox/nope.md/archive"),
     );
-    await flush();
+    await flush(result);
     expect(result.status).toBe(404);
     expect(JSON.parse(result.body).ok).toBe(false);
   });
@@ -141,7 +149,7 @@ describe("inboxRoutes — archive + delete", () => {
       res,
       new URL("http://x/inbox/nope.md"),
     );
-    await flush();
+    await flush(result);
     expect(result.status).toBe(404);
   });
 
@@ -154,7 +162,7 @@ describe("inboxRoutes — archive + delete", () => {
       // slash decodes back to `/` — must still be rejected.
       new URL("http://x/inbox/%2E%2E%2Fpasswd.md/archive"),
     );
-    await flush();
+    await flush(result);
     expect(result.status).toBe(400);
   });
 
@@ -169,7 +177,7 @@ describe("inboxRoutes — archive + delete", () => {
       r1.res,
       new URL(`http://x/inbox/${filename}/archive`),
     );
-    await flush();
+    await flush(r1.result);
     expect(r1.result.status).toBe(200);
 
     // Re-create at the same name and archive again.
@@ -180,7 +188,7 @@ describe("inboxRoutes — archive + delete", () => {
       r2.res,
       new URL(`http://x/inbox/${filename}/archive`),
     );
-    await flush();
+    await flush(r2.result);
     expect(r2.result.status).toBe(200);
 
     const archived = readdirSync(path.join(inboxDir, ".archive"));
@@ -201,11 +209,11 @@ describe("inboxRoutes — archive + delete", () => {
       arch.res,
       new URL(`http://x/inbox/${filename}/archive`),
     );
-    await flush();
+    await flush(arch.result);
 
     const { res, result } = captureResponse();
     tryHandleInboxRoute(fakeRequest("GET"), res, new URL("http://x/inbox"));
-    await flush();
+    await flush(result);
     expect(result.status).toBe(200);
     const body = JSON.parse(result.body) as { items: { name: string }[] };
     expect(body.items.find((i) => i.name === filename)).toBeUndefined();
