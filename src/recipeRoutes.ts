@@ -424,6 +424,23 @@ export interface RecipeRouteDeps {
 }
 
 /**
+ * Best-effort fire of the recipe-changed notification. Wraps the
+ * callback in try/catch + console.error so a misbehaving notifier
+ * (most likely scheduler.start() throwing) cannot turn a successful
+ * disk-write into a failed-looking HTTP response. Used by install /
+ * save / delete / archive / duplicate / setEnabled / saveContent
+ * routes after their respective success paths.
+ */
+function fireOnRecipesChanged(deps: RecipeRouteDeps): void {
+  if (!deps.onRecipesChangedFn) return;
+  try {
+    deps.onRecipesChangedFn();
+  } catch (err) {
+    console.error(`[recipeRoutes] onRecipesChangedFn threw:`, err);
+  }
+}
+
+/**
  * Try to handle a recipe / run-audit / template route. Returns true if
  * the route was dispatched (caller should `return` from the request
  * handler), false if no route matched.
@@ -849,6 +866,7 @@ export function tryHandleRecipeRoute(
           return;
         }
         const result = deps.saveRecipeFn(draft);
+        if (result.ok) fireOnRecipesChanged(deps);
         res.writeHead(result.ok ? 201 : 400, {
           "Content-Type": "application/json",
         });
@@ -940,6 +958,10 @@ export function tryHandleRecipeRoute(
           return;
         }
         const result = deps.setRecipeEnabledFn(name, body.enabled);
+        // Enable/disable changes which cron triggers should fire — the
+        // RecipeScheduler honours the disabled set on every start(), so
+        // re-priming after a toggle picks up the change without a restart.
+        if (result.ok) fireOnRecipesChanged(deps);
         res.writeHead(result.ok ? 200 : 400, {
           "Content-Type": "application/json",
         });
@@ -1091,6 +1113,10 @@ export function tryHandleRecipeRoute(
           return;
         }
         const result = deps.saveRecipeContentFn(name, body.content);
+        // Editing recipe YAML can change cron schedule, webhook path,
+        // or trigger type entirely — re-prime the scheduler so the new
+        // shape takes effect without a bridge restart.
+        if (result.ok) fireOnRecipesChanged(deps);
         res.writeHead(result.ok ? 200 : 400, {
           "Content-Type": "application/json",
         });
@@ -1115,6 +1141,9 @@ export function tryHandleRecipeRoute(
       return true;
     }
     const result = deps.deleteRecipeContentFn(name);
+    // Deleting a cron recipe leaves an orphaned interval in the scheduler
+    // until the next start() — re-prime so it goes away.
+    if (result.ok) fireOnRecipesChanged(deps);
     const status = result.ok
       ? 200
       : result.error === "Recipe not found"
@@ -1137,6 +1166,9 @@ export function tryHandleRecipeRoute(
       return true;
     }
     const result = deps.archiveRecipeFn(name);
+    // Archiving moves the recipe under .archive/ where the scheduler
+    // ignores it — same orphan-interval cleanup needed as for delete.
+    if (result.ok) fireOnRecipesChanged(deps);
     const status = result.ok
       ? 200
       : result.error === "Recipe not found"
@@ -1159,6 +1191,9 @@ export function tryHandleRecipeRoute(
       return true;
     }
     const result = deps.duplicateRecipeFn(name);
+    // Duplication adds a new recipe file to the dir — re-prime so any
+    // cron trigger inside the duplicate starts firing immediately.
+    if (result.ok) fireOnRecipesChanged(deps);
     const status = result.ok
       ? 201
       : result.error === "Recipe not found"
@@ -1202,6 +1237,9 @@ export function tryHandleRecipeRoute(
             force: force === true,
           },
         );
+        // Promotion overwrites the canonical file with the variant's
+        // contents — same scheduler refresh story as save/edit.
+        if (result.ok) fireOnRecipesChanged(deps);
         const httpStatus = result.ok
           ? 200
           : result.targetExists
@@ -1510,16 +1548,7 @@ export function tryHandleRecipeRoute(
           // whole recipes dir anyway. Guarded by the partial-success
           // check — no point waking up the scheduler for a 0-installed
           // failure.
-          if (installed.length > 0) {
-            try {
-              deps.onRecipesChangedFn?.();
-            } catch (err) {
-              // Contract: callback MUST NOT throw, but be defensive —
-              // a scheduler restart bug must never make a successful
-              // install look failed to the caller.
-              console.error(`[recipes/install] onRecipesChangedFn threw:`, err);
-            }
-          }
+          if (installed.length > 0) fireOnRecipesChanged(deps);
           res.writeHead(status, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
@@ -1749,11 +1778,7 @@ export function tryHandleRecipeRoute(
         // Errors here are logged but never surface to the caller — the
         // install itself succeeded; a scheduler restart bug must not
         // make the response look failed.
-        try {
-          deps.onRecipesChangedFn?.();
-        } catch (err) {
-          console.error(`[recipes/install] onRecipesChangedFn threw:`, err);
-        }
+        fireOnRecipesChanged(deps);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, ...result }));
       } catch (err) {
