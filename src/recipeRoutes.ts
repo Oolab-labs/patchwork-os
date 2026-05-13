@@ -406,6 +406,38 @@ export interface RecipeRouteDeps {
         vars?: Record<string, string>,
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null;
+  /**
+   * Best-effort notification that the on-disk recipe set just changed
+   * (install, save, delete, archive, …). The bridge wires this to
+   * `recipeScheduler.start()` so cron-triggered recipes start firing
+   * without a restart. Optional — non-bridge callers (tests, headless
+   * tooling) leave it null.
+   *
+   * Contract:
+   *   - Synchronous fire-and-forget. Implementations MUST NOT throw.
+   *   - Idempotent. Multiple calls in quick succession should coalesce
+   *     to at-least-once scheduler restart behaviour.
+   *   - Hot path is post-success: routes invoke after the disk write,
+   *     so a callback failure must never roll back the user's action.
+   */
+  onRecipesChangedFn: (() => void) | null;
+}
+
+/**
+ * Best-effort fire of the recipe-changed notification. Wraps the
+ * callback in try/catch + console.error so a misbehaving notifier
+ * (most likely scheduler.start() throwing) cannot turn a successful
+ * disk-write into a failed-looking HTTP response. Used by install /
+ * save / delete / archive / duplicate / setEnabled / saveContent
+ * routes after their respective success paths.
+ */
+function fireOnRecipesChanged(deps: RecipeRouteDeps): void {
+  if (!deps.onRecipesChangedFn) return;
+  try {
+    deps.onRecipesChangedFn();
+  } catch (err) {
+    console.error(`[recipeRoutes] onRecipesChangedFn threw:`, err);
+  }
 }
 
 /**
@@ -834,6 +866,7 @@ export function tryHandleRecipeRoute(
           return;
         }
         const result = deps.saveRecipeFn(draft);
+        if (result.ok) fireOnRecipesChanged(deps);
         res.writeHead(result.ok ? 201 : 400, {
           "Content-Type": "application/json",
         });
@@ -925,6 +958,10 @@ export function tryHandleRecipeRoute(
           return;
         }
         const result = deps.setRecipeEnabledFn(name, body.enabled);
+        // Enable/disable changes which cron triggers should fire — the
+        // RecipeScheduler honours the disabled set on every start(), so
+        // re-priming after a toggle picks up the change without a restart.
+        if (result.ok) fireOnRecipesChanged(deps);
         res.writeHead(result.ok ? 200 : 400, {
           "Content-Type": "application/json",
         });
@@ -1076,6 +1113,10 @@ export function tryHandleRecipeRoute(
           return;
         }
         const result = deps.saveRecipeContentFn(name, body.content);
+        // Editing recipe YAML can change cron schedule, webhook path,
+        // or trigger type entirely — re-prime the scheduler so the new
+        // shape takes effect without a bridge restart.
+        if (result.ok) fireOnRecipesChanged(deps);
         res.writeHead(result.ok ? 200 : 400, {
           "Content-Type": "application/json",
         });
@@ -1100,6 +1141,9 @@ export function tryHandleRecipeRoute(
       return true;
     }
     const result = deps.deleteRecipeContentFn(name);
+    // Deleting a cron recipe leaves an orphaned interval in the scheduler
+    // until the next start() — re-prime so it goes away.
+    if (result.ok) fireOnRecipesChanged(deps);
     const status = result.ok
       ? 200
       : result.error === "Recipe not found"
@@ -1122,6 +1166,9 @@ export function tryHandleRecipeRoute(
       return true;
     }
     const result = deps.archiveRecipeFn(name);
+    // Archiving moves the recipe under .archive/ where the scheduler
+    // ignores it — same orphan-interval cleanup needed as for delete.
+    if (result.ok) fireOnRecipesChanged(deps);
     const status = result.ok
       ? 200
       : result.error === "Recipe not found"
@@ -1144,6 +1191,9 @@ export function tryHandleRecipeRoute(
       return true;
     }
     const result = deps.duplicateRecipeFn(name);
+    // Duplication adds a new recipe file to the dir — re-prime so any
+    // cron trigger inside the duplicate starts firing immediately.
+    if (result.ok) fireOnRecipesChanged(deps);
     const status = result.ok
       ? 201
       : result.error === "Recipe not found"
@@ -1187,6 +1237,9 @@ export function tryHandleRecipeRoute(
             force: force === true,
           },
         );
+        // Promotion overwrites the canonical file with the variant's
+        // contents — same scheduler refresh story as save/edit.
+        if (result.ok) fireOnRecipesChanged(deps);
         const httpStatus = result.ok
           ? 200
           : result.targetExists
@@ -1489,6 +1542,13 @@ export function tryHandleRecipeRoute(
           // 200 if any recipe installed; 502 otherwise. Always include both
           // arrays so callers (CLI + dashboard) can render partial-success.
           const status = installed.length > 0 ? 200 : 502;
+          // Notify the scheduler so cron-trigger recipes in the bundle
+          // start firing without a bridge restart. Fired once per bundle
+          // (not per recipe inside) since scheduler.start() reads the
+          // whole recipes dir anyway. Guarded by the partial-success
+          // check — no point waking up the scheduler for a 0-installed
+          // failure.
+          if (installed.length > 0) fireOnRecipesChanged(deps);
           res.writeHead(status, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
@@ -1711,6 +1771,14 @@ export function tryHandleRecipeRoute(
             // best-effort cleanup
           }
         }
+        // Notify the scheduler so the new recipe's cron/webhook trigger
+        // starts firing without a bridge restart. The recipe file is
+        // already on disk (`writeFileSync` above), so the next
+        // `scheduler.start()` will pick it up via its directory scan.
+        // Errors here are logged but never surface to the caller — the
+        // install itself succeeded; a scheduler restart bug must not
+        // make the response look failed.
+        fireOnRecipesChanged(deps);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, ...result }));
       } catch (err) {

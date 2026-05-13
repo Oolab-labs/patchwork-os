@@ -1068,6 +1068,26 @@ export class Bridge {
         });
         // scheduler.start() deferred to after this.port is set (see below)
         // so bridgeMcp callback has a valid port when first cron fires.
+        //
+        // Hot-reload: re-prime the scheduler whenever the recipe set
+        // changes on disk (install / save / delete). RecipeScheduler.start()
+        // is idempotent (calls this.stop() first) and reads the recipes
+        // directory fresh, so calling it again cleanly picks up the new
+        // file. Stored as a callback on the Server so route handlers can
+        // fire it post-success without owning a reference to the scheduler.
+        this.server.onRecipesChangedFn = () => {
+          if (!this.recipeScheduler) return;
+          try {
+            const scheduled = this.recipeScheduler.start();
+            this.logger.info(
+              `[patchwork] scheduler re-primed after recipe change · ${scheduled.length} cron recipe${scheduled.length === 1 ? "" : "s"} active`,
+            );
+          } catch (err) {
+            this.logger.warn?.(
+              `[patchwork] scheduler restart failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        };
       }
     }
 
