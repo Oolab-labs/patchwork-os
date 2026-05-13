@@ -73,6 +73,7 @@ function DecisionsContent() {
   const [showAllTags, setShowAllTags] = useState(false);
   const [keyQuery, setKeyQuery] = useState(searchParams.get("ref") ?? "");
   const [textQuery, setTextQuery] = useState(searchParams.get("q") ?? "");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [since, setSince] = useState<SinceFilter>(() => {
     const sp = searchParams.get("since");
     return isSinceFilter(sp) ? sp : "30d";
@@ -107,6 +108,19 @@ function DecisionsContent() {
     params.set("limit", "200");
     return `?${params.toString()}`;
   }, [tag, debouncedKey, debouncedText, since]);
+
+  // Press "/" to focus the search input (GitHub / Linear convention).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+      e.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const { data, error, loading, refetch } = useBridgeFetch<TracesResponse>(
     `/api/bridge/traces${qs}`,
@@ -175,12 +189,13 @@ function DecisionsContent() {
               Search decisions
             </span>
             <input
+              ref={searchInputRef}
               type="text"
               value={textQuery}
               onChange={(e) => setTextQuery(e.target.value)}
               placeholder="Search problems & solutions…"
               className="input"
-              aria-label="Search decisions"
+              aria-label="Search decisions (press / to focus)"
               style={{ minWidth: "min(240px, 100%)", width: 280, maxWidth: "100%" }}
             />
           </label>

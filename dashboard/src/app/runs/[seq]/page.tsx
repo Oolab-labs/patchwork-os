@@ -47,7 +47,7 @@ interface RunDetail {
   taskId: string;
   recipeName: string;
   trigger: string;
-  status: "running" | "done" | "error" | "cancelled" | "interrupted";
+  status: "pending" | "running" | "done" | "error" | "cancelled" | "interrupted";
   createdAt: number;
   startedAt?: number;
   doneAt: number;
@@ -805,14 +805,19 @@ export default function RunDetailPage() {
           return null;
         });
 
+    const isInFlight = (r: RunDetail | null) =>
+      r?.status === "running" || r?.status === "pending";
+
     doFetch().then((initialRun) => {
-      if (!initialRun || initialRun.status !== "running") return;
+      if (!isInFlight(initialRun)) return;
       // Slower polling now that SSE delivers the live step deltas — polling
       // is just a backstop to canonicalize when the run transitions to
       // terminal (no `recipe_run_done` event yet; keep this until VD-1C).
+      // Also covers the pending → running transition so the page stays live
+      // when a queued run is picked up by the worker.
       intervalId = setInterval(() => {
         doFetch().then((r) => {
-          if (!r || r.status !== "running") {
+          if (!isInFlight(r)) {
             clearInterval(intervalId);
             intervalId = undefined;
           }
