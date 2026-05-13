@@ -140,19 +140,23 @@ describe("search tools", () => {
       expect(data2.totalMatches).toBeGreaterThanOrEqual(1);
     });
 
-    it("finds text with fileGlob filter", async () => {
-      const tool = createSearchWorkspaceTool(tmpDir, { ...allFalseProbes });
-      const result = await tool.handler({
-        query: "hello world",
-        fileGlob: "*.ts",
-      });
-      const data = parse(result);
+    // Uses grep/find fallback when rg unavailable; neither exists on Win32.
+    it.skipIf(process.platform === "win32")(
+      "finds text with fileGlob filter",
+      async () => {
+        const tool = createSearchWorkspaceTool(tmpDir, { ...allFalseProbes });
+        const result = await tool.handler({
+          query: "hello world",
+          fileGlob: "*.ts",
+        });
+        const data = parse(result);
 
-      expect(data.totalMatches).toBeGreaterThanOrEqual(1);
-      for (const m of data.matches) {
-        expect(m.file).toMatch(/\.ts$/);
-      }
-    });
+        expect(data.totalMatches).toBeGreaterThanOrEqual(1);
+        for (const m of data.matches) {
+          expect(m.file).toMatch(/\.ts$/);
+        }
+      },
+    );
   });
 
   describe("findFiles", () => {
@@ -176,15 +180,19 @@ describe("search tools", () => {
       },
     );
 
-    it("finds json files in subdirectory", async () => {
-      const tool = createFindFilesTool(tmpDir, { ...allFalseProbes });
-      const result = await tool.handler({ pattern: "*.json" });
-      const data = parse(result);
+    // Uses find fallback when no rg/fd/git probe; find isn't on Win32.
+    it.skipIf(process.platform === "win32")(
+      "finds json files in subdirectory",
+      async () => {
+        const tool = createFindFilesTool(tmpDir, { ...allFalseProbes });
+        const result = await tool.handler({ pattern: "*.json" });
+        const data = parse(result);
 
-      expect(data.files.length).toBeGreaterThanOrEqual(1);
-      const found = data.files.some((f: string) => f.includes("data.json"));
-      expect(found).toBe(true);
-    });
+        expect(data.files.length).toBeGreaterThanOrEqual(1);
+        const found = data.files.some((f: string) => f.includes("data.json"));
+        expect(found).toBe(true);
+      },
+    );
 
     it("returns empty for non-matching pattern", async () => {
       const tool = createFindFilesTool(tmpDir, { ...allFalseProbes });

@@ -123,13 +123,18 @@ describe("analyticsPrefs", () => {
     expect(getAnalyticsPref()).toBe(false);
   });
 
-  it("creates file with 0o600 permissions", () => {
-    setAnalyticsPref(true);
-    const prefsFile = path.join(tmpDir, "ide", "analytics.json");
-    const stat = fs.statSync(prefsFile);
-    // Check owner read/write only (0o600)
-    expect(stat.mode & 0o777).toBe(0o600);
-  });
+  // Win32 doesn't honour POSIX mode bits — stat returns a synthetic mode that
+  // doesn't reflect chmod(0o600). The fchmod call still runs in production.
+  it.skipIf(process.platform === "win32")(
+    "creates file with 0o600 permissions",
+    () => {
+      setAnalyticsPref(true);
+      const prefsFile = path.join(tmpDir, "ide", "analytics.json");
+      const stat = fs.statSync(prefsFile);
+      // Check owner read/write only (0o600)
+      expect(stat.mode & 0o777).toBe(0o600);
+    },
+  );
 
   it("returns null for corrupt JSON", () => {
     const prefsFile = path.join(tmpDir, "ide", "analytics.json");

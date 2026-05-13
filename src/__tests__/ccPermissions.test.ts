@@ -1,9 +1,17 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   evaluateRules,
   explainRules,
   loadCcPermissions,
 } from "../ccPermissions.js";
+
+// loadCcPermissions builds candidate paths via path.join, which uses \\ on
+// Win32. Tests stub readFile/exists with a lookup table — the keys must use
+// the platform's native separator or the lookups miss.
+const wsSettings = path.join("/ws", ".claude", "settings.json");
+const wsLocalSettings = path.join("/ws", ".claude", "settings.local.json");
+const managedSettings = path.join("/managed", "settings.json");
 
 describe("evaluateRules", () => {
   it("deny wins over ask and allow", () => {
@@ -91,17 +99,17 @@ describe("evaluateRules", () => {
 describe("loadCcPermissions — managed path", () => {
   it("managed deny wins over workspace allow", () => {
     const files: Record<string, string> = {
-      "/managed/settings.json": JSON.stringify({
+      [managedSettings]: JSON.stringify({
         permissions: { deny: ["gitPush"] },
       }),
-      "/ws/.claude/settings.json": JSON.stringify({
+      [wsSettings]: JSON.stringify({
         permissions: { allow: ["gitPush"] },
       }),
     };
     const rules = loadCcPermissions("/ws", {
       readFile: (p) => files[p] ?? "",
-      exists: (p) => p in files,
-      managedPath: "/managed/settings.json",
+      exists: (p) => Object.hasOwn(files, p),
+      managedPath: managedSettings,
     });
     expect(rules.deny).toContain("gitPush");
     expect(rules.allow).toContain("gitPush");
@@ -124,16 +132,16 @@ describe("loadCcPermissions — managed path", () => {
 describe("loadCcPermissions", () => {
   it("merges allow/ask/deny across files in precedence order", () => {
     const files: Record<string, string> = {
-      "/ws/.claude/settings.local.json": JSON.stringify({
+      [wsLocalSettings]: JSON.stringify({
         permissions: { allow: ["LocalTool"] },
       }),
-      "/ws/.claude/settings.json": JSON.stringify({
+      [wsSettings]: JSON.stringify({
         permissions: { deny: ["gitPush"], ask: ["gitCommit"] },
       }),
     };
     const rules = loadCcPermissions("/ws", {
       readFile: (p) => files[p] ?? "",
-      exists: (p) => p in files,
+      exists: (p) => Object.hasOwn(files, p),
     });
     expect(rules.allow).toContain("LocalTool");
     expect(rules.deny).toContain("gitPush");
