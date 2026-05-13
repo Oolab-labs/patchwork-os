@@ -241,8 +241,9 @@ describe("runTracesExport", () => {
     );
     const result = await runTracesExport({ patchworkDir, activityDir });
     expect(result.outputPath.startsWith(patchworkDir)).toBe(true);
+    // Accept either / or \ before the filename (Win32 path.join uses \\).
     expect(
-      /\/traces-export-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.jsonl\.gz$/.test(
+      /[\\/]traces-export-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.jsonl\.gz$/.test(
         result.outputPath,
       ),
     ).toBe(true);
