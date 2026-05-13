@@ -600,8 +600,30 @@ export default function RecipesPage() {
 
   useEffect(() => {
     void load();
-    const id = setInterval(() => void load(), 5000);
-    return () => clearInterval(id);
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (id == null) id = setInterval(() => void load(), 5000);
+    };
+    const stop = () => {
+      if (id != null) {
+        clearInterval(id);
+        id = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void load();
+        start();
+      } else {
+        stop();
+      }
+    };
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [load]);
 
   async function executeRun(name: string, vars?: Record<string, string>) {
@@ -872,7 +894,7 @@ export default function RecipesPage() {
 
       {recipes === null && !err ? (
         <SkeletonList rows={4} columns={3} />
-      ) : recipes === null || recipes.length === 0 ? (
+      ) : recipes === null && err ? null : recipes === null || recipes.length === 0 ? (
         <div className="empty-state">
           <h3>No recipes installed</h3>
           <p>Browse the marketplace or author your own.</p>
@@ -971,6 +993,14 @@ export default function RecipesPage() {
                             </Link>
                             {live && <LivePill tone="ok" />}
                             {!enabled && <StatusPill tone="muted">off</StatusPill>}
+                            {r.lint && r.lint.ok === false && (
+                              <StatusPill
+                                tone="err"
+                                title={r.lint.firstError ?? `${r.lint.errorCount} lint error(s)`}
+                              >
+                                lint
+                              </StatusPill>
+                            )}
                           </div>
                           {r.description && (
                             <div
@@ -1025,6 +1055,7 @@ export default function RecipesPage() {
                               aria-label={`${enabled ? "Disable" : "Enable"} ${r.name}`}
                               title={enabled ? "Enabled — click to disable" : "Disabled — click to enable"}
                               onClick={() => void handleToggleEnabled(r)}
+                              className="recipe-toggle"
                               style={{
                                 position: "relative",
                                 width: 26,
