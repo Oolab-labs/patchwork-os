@@ -51,13 +51,17 @@ describe("loadOrCreateBridgeToken", () => {
     expect(token1).toBe(token2);
   });
 
-  it("token snapshot is persisted through file-backed secure storage with 0o600 permissions", () => {
-    const configDir = makeTmpDir();
-    loadOrCreateBridgeToken(configDir);
-    const filePath = tokenStoreFilePath(configDir);
-    const stat = fs.statSync(filePath);
-    expect(stat.mode & 0o777).toBe(0o600);
-  });
+  // POSIX mode bits — Windows fs.stat always reports 0o666 regardless of chmod.
+  it.skipIf(process.platform === "win32")(
+    "token snapshot is persisted through file-backed secure storage with 0o600 permissions",
+    () => {
+      const configDir = makeTmpDir();
+      loadOrCreateBridgeToken(configDir);
+      const filePath = tokenStoreFilePath(configDir);
+      const stat = fs.statSync(filePath);
+      expect(stat.mode & 0o777).toBe(0o600);
+    },
+  );
 
   it("migrates a legacy bridge-token.json file into secure storage", () => {
     const configDir = makeTmpDir();

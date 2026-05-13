@@ -823,14 +823,18 @@ describe("OAuthServerImpl — token persistence", () => {
     oauth.destroy();
   });
 
-  it("token snapshot is persisted through file-backed secure storage with 0o600 permissions", async () => {
-    const configDir = makeTmpDir();
-    const { oauth } = await issueTokenWithDir(configDir);
-    const tokenFile = tokenStoreFilePath(oauth);
-    const stat = fs.statSync(tokenFile);
-    expect(stat.mode & 0o777).toBe(0o600);
-    oauth.destroy();
-  });
+  // POSIX mode bits — Windows fs.stat always reports 0o666 regardless of chmod.
+  it.skipIf(process.platform === "win32")(
+    "token snapshot is persisted through file-backed secure storage with 0o600 permissions",
+    async () => {
+      const configDir = makeTmpDir();
+      const { oauth } = await issueTokenWithDir(configDir);
+      const tokenFile = tokenStoreFilePath(oauth);
+      const stat = fs.statSync(tokenFile);
+      expect(stat.mode & 0o777).toBe(0o600);
+      oauth.destroy();
+    },
+  );
 
   it("migrates a legacy oauth-tokens.json snapshot into secure storage on startup", () => {
     const configDir = makeTmpDir();
