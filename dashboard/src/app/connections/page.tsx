@@ -1493,7 +1493,7 @@ export default function ConnectionsPage() {
                 Disconnect {displayName}?
               </strong>
               <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: 0, lineHeight: 1.5 }}>
-                Recipes and automations that use {displayName} will fail until you reconnect.
+                Recipes that use {displayName} will fail until you reconnect.
                 Patchwork will keep your existing recipe definitions; only the auth token is removed.
               </p>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>

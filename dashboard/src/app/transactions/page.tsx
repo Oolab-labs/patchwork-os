@@ -161,7 +161,7 @@ export default function TransactionsPage() {
             >
               the speculative-refactoring doc
             </a>{" "}
-            for the workflow.
+            for the full flow.
           </div>
         </div>
         <div>

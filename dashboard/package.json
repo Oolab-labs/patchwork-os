@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "tokens:check": "node scripts/check-tokens.mjs",
     "lint:inline-fontsize": "node scripts/check-inline-fontsize.mjs",
+    "lint:vocabulary": "node scripts/check-vocabulary.mjs",
     "clean": "rm -rf .next tsconfig.tsbuildinfo"
   },
   "dependencies": {
