@@ -1714,7 +1714,29 @@ export function tryHandleRecipeRoute(
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, ...result }));
       } catch (err) {
-        // Truly unexpected — installer crash, manifest validation throw, etc.
+        // Distinguish "the recipe YAML is malformed" (user-actionable, 400)
+        // from "the installer itself crashed" (server bug, 500). Before this
+        // every parser error came back as the same opaque 500 — dashboards
+        // surfaced "Internal server error" with no way to know what was wrong.
+        const errName = err instanceof Error ? err.name : "";
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isParseError =
+          errName === "RecipeParseError" ||
+          // js-yaml / the `yaml` package both throw YAMLException / YAMLParseError.
+          errName === "YAMLException" ||
+          errName === "YAMLParseError" ||
+          /yaml/i.test(errName);
+        if (isParseError) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: errMsg,
+              code: "invalid_recipe",
+            }),
+          );
+          return;
+        }
         console.error(`[recipes/install] internal install error:`, err);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(

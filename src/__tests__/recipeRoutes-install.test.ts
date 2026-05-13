@@ -257,10 +257,13 @@ describe("Server /recipes/install — A-PR2 (dogfood F-05 / H-routes Bug 2)", ()
       },
       JSON.stringify({ source: "https://example.org/foo.yaml" }),
     );
-    // Either the install completes (200) or the installer fails because we
-    // didn't actually populate ~/.patchwork/recipes — both prove the
-    // allowlist gate passed (the body is no longer 403).
-    expect([200, 500]).toContain(status);
+    // Either the install completes (200), the recipe parses but doesn't
+    // satisfy the schema (400 invalid_recipe), or the installer itself
+    // crashes (500). All three prove the allowlist gate passed (status
+    // is no longer 403). 400 is the post-2026-05-13 baseline — parser
+    // errors used to come back as 500 indistinguishably from installer
+    // crashes.
+    expect([200, 400, 500]).toContain(status);
   });
 
   it("install-bad-source: rejects non-https / non-github source → 400", async () => {
@@ -297,6 +300,74 @@ describe("Server /recipes/install — A-PR2 (dogfood F-05 / H-routes Bug 2)", ()
     const parsed = JSON.parse(body);
     expect(parsed.ok).toBe(false);
     expect(parsed.error).toMatch(/invalid recipe name/i);
+  });
+
+  it("install-malformed-yaml: invalid YAML body → 400 invalid_recipe (was 500)", async () => {
+    // Body that successfully fetches but won't parse as YAML. The previous
+    // behaviour was to bubble the parser/yaml exception up to the generic
+    // 500 catch-all — dashboards then surfaced "Internal server error"
+    // with no signal that the recipe itself was the problem. Now the
+    // handler distinguishes parser failures and returns 400 with the
+    // actual error message.
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        fakeResponse(200, "this: is: not: valid: yaml: ::"),
+      ) as unknown as typeof fetch;
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/install",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({
+        source: "github:patchworkos/recipes/recipes/malformed-recipe",
+      }),
+    );
+    expect(status).toBe(400);
+    const parsed = JSON.parse(body);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.code).toBe("invalid_recipe");
+    // Error should carry the parser's message, not the generic
+    // "Internal server error" string.
+    expect(parsed.error).not.toBe("Internal server error");
+    expect(typeof parsed.error).toBe("string");
+    expect(parsed.error.length).toBeGreaterThan(0);
+  });
+
+  it("install-schema-violation: well-formed YAML missing required fields → 400 invalid_recipe", async () => {
+    // YAML parses fine but parseRecipe throws RecipeParseError because
+    // `steps` is missing. Same 400 + message-passthrough behaviour as
+    // the malformed-yaml case.
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        fakeResponse(
+          200,
+          "name: malformed-recipe\nversion: 1.0.0\ntrigger:\n  type: manual\n",
+        ),
+      ) as unknown as typeof fetch;
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/install",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({
+        source: "github:patchworkos/recipes/recipes/malformed-recipe",
+      }),
+    );
+    expect(status).toBe(400);
+    const parsed = JSON.parse(body);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.code).toBe("invalid_recipe");
+    expect(parsed.error).toMatch(/steps/i);
   });
 });
 
