@@ -37,8 +37,7 @@ Same codebase. Bridge is the foundation; Patchwork OS is the optional layer on t
 
 The dashboard is a standalone Next.js app that communicates with the bridge over HTTP. No editor extension required.
 
-**Prereqs:** [Node.js 20+](https://nodejs.org) · tmux (`brew install tmux` macOS / `apt install tmux` Linux)
-**Windows users:** [WSL 2](https://learn.microsoft.com/windows/wsl/install) required — run all commands inside a WSL terminal. Native cmd/PowerShell not supported.
+**Prereqs:** [Node.js 20+](https://nodejs.org) · tmux on macOS/Linux (`brew install tmux` / `apt install tmux`) — auto-detected, falls back to background mode if absent. **Windows:** natively supported — no WSL required.
 
 ```bash
 npm install -g patchwork-os
@@ -97,7 +96,20 @@ The bridge runs without any flags. No recipes, no automation, no dashboard — j
 |---|---|
 | Claude Code CLI | WebSocket `ws://127.0.0.1:<port>` |
 | Claude Desktop | stdio shim → WebSocket |
-| Remote (claude.ai, Codex CLI) | Streamable HTTP + Bearer token |
+| Gemini CLI, Codex CLI, claude.ai | Streamable HTTP + Bearer token |
+
+**Connecting Gemini CLI:**
+
+```bash
+# Get the auth token from the bridge's lock file
+patchwork-os print-token
+
+# Add the bridge as an MCP server
+gemini mcp add patchwork http://127.0.0.1:<port>/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+The bridge auto-responds to the GET probe Gemini sends before initializing, so it shows as **Connected** immediately.
 
 **Tool modes:**
 
@@ -112,7 +124,7 @@ Bridge-only docs: [documents/platform-docs.md](documents/platform-docs.md)
 
 ## 🪟 Windows Quick Start
 
-The bridge and VS Code extension work natively on Windows. The full Patchwork OS orchestrator (`patchwork start`) requires WSL2 or Git Bash for now; a native PowerShell orchestrator is included as `npm run start-all:win`.
+The bridge, VS Code extension, and full Patchwork OS orchestrator (`patchwork start`) all work natively on Windows — no WSL required. A PowerShell-native orchestrator is also available as `npm run start-all:win`.
 
 ### Prerequisites
 

@@ -383,17 +383,49 @@ function startRemote() {
   );
 }
 
+// ── Load ~/.patchwork/.env into process.env ───────────────────────────────────
+function loadPatchworkEnv() {
+  const envPath = path.join(os.homedir(), ".patchwork", ".env");
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, "utf-8").split("\n")) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
+  }
+}
+loadPatchworkEnv();
+
 // ── Start dashboard ───────────────────────────────────────────────────────────
 async function startDashboard(bridgePort) {
   if (NO_DASHBOARD) return;
   if (!fs.existsSync(path.join(DASH_DIR, "node_modules"))) {
-    log(
-      "dashboard",
-      "node_modules not found — run 'npm ci' in dashboard/ or pass --no-dashboard",
-      C.yellow,
-    );
-    return;
+    log("dashboard", "node_modules not found — installing...", C.yellow);
+    try {
+      execFileSync(
+        IS_WIN ? "cmd.exe" : "npm",
+        IS_WIN
+          ? ["/c", "npm", "install", "--prefer-offline"]
+          : ["install", "--prefer-offline"],
+        { cwd: DASH_DIR, stdio: "inherit" },
+      );
+    } catch {
+      log(
+        "dashboard",
+        "npm install failed — pass --no-dashboard to skip",
+        C.red,
+      );
+      return;
+    }
   }
+
+  const dashEnv = {
+    PATCHWORK_BRIDGE_PORT: String(bridgePort),
+    ...(process.env.DASHBOARD_PASSWORD
+      ? { DASHBOARD_PASSWORD: process.env.DASHBOARD_PASSWORD }
+      : {}),
+    ...(process.env.DASHBOARD_SESSION_SECRET
+      ? { DASHBOARD_SESSION_SECRET: process.env.DASHBOARD_SESSION_SECRET }
+      : {}),
+  };
 
   log("dashboard", `Starting on http://localhost:${DASHBOARD_PORT}`);
   spawnProc(
@@ -402,7 +434,7 @@ async function startDashboard(bridgePort) {
     IS_WIN
       ? ["/c", "npx", "next", "dev", "-p", String(DASHBOARD_PORT)]
       : ["next", "dev", "-p", String(DASHBOARD_PORT)],
-    { cwd: DASH_DIR, env: { PATCHWORK_BRIDGE_PORT: String(bridgePort) } },
+    { cwd: DASH_DIR, env: dashEnv },
   );
 
   const ready = await waitForPort(DASHBOARD_PORT, 60_000);

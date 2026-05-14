@@ -259,15 +259,28 @@ describe("Streamable HTTP: session lifecycle", () => {
     const res = await httpReq(port, "DELETE", "nonexistent");
     expect(res.status).toBe(404);
   });
+
+  it("GET without session ID returns 200 server info (Gemini CLI probe)", async () => {
+    // Gemini CLI (and other MCP clients) probe GET /mcp before initializing.
+    // Must return 200, not 400, so the client considers the server reachable.
+    const res = await httpReq(port, "GET");
+    expect(res.status).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.server).toBe("claude-ide-bridge");
+  });
 });
 
 // ── Ownership token ───────────────────────────────────────────────────────────
 
 describe("Streamable HTTP: per-session ownership token", () => {
-  it("DELETE without Mcp-Session-Token returns 403", async () => {
+  // Absent token is allowed — standard MCP clients (Gemini CLI, Codex, etc.)
+  // don't send Mcp-Session-Token; the Bearer token already authenticated them.
+  // Only a WRONG token (header present but mismatched) is rejected.
+
+  it("DELETE without Mcp-Session-Token succeeds (token optional)", async () => {
     const { sid } = await initSession(port);
     const res = await httpReq(port, "DELETE", sid); // no token
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(204);
   });
 
   it("DELETE with wrong Mcp-Session-Token returns 403", async () => {
@@ -277,20 +290,39 @@ describe("Streamable HTTP: per-session ownership token", () => {
     expect(res.status).toBe(403);
   });
 
-  it("GET without Mcp-Session-Token returns 403", async () => {
+  it("GET without Mcp-Session-Token succeeds (token optional)", async () => {
     const { sid } = await initSession(port);
-    const res = await httpReq(port, "GET", sid); // no token
-    expect(res.status).toBe(403);
+    // GET opens an SSE stream — resolve on headers only, then destroy
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: "127.0.0.1",
+          port,
+          path: "/mcp",
+          method: "GET",
+          headers: { Authorization: `Bearer ${TOKEN}`, "Mcp-Session-Id": sid },
+        },
+        (res) => {
+          resolve(res.statusCode!);
+          req.destroy();
+        },
+      );
+      req.on("error", (e) => {
+        if ((e as NodeJS.ErrnoException).code !== "ECONNRESET") reject(e);
+      });
+      req.end();
+    });
+    expect(status).toBe(200);
   });
 
-  it("POST on existing session without Mcp-Session-Token returns 403", async () => {
+  it("POST on existing session without Mcp-Session-Token succeeds (token optional)", async () => {
     const { sid } = await initSession(port);
     const res = await post(
       port,
       { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
       sid, // no token
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
   });
 
   it("session A's token cannot DELETE session B (cross-session takeover)", async () => {
@@ -716,9 +748,11 @@ describe("Streamable HTTP: SSE event IDs", () => {
 // ── GET SSE ────────────────────────────────────────────────────────────────────
 
 describe("Streamable HTTP: GET SSE", () => {
-  it("GET returns 400 without session ID", async () => {
+  it("GET without session ID returns 200 server info", async () => {
     const res = await httpReq(port, "GET");
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.server).toBe("claude-ide-bridge");
   });
 
   it("GET returns 404 for unknown session", async () => {

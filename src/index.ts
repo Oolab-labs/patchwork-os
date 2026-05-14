@@ -315,8 +315,10 @@ if (process.argv[2] === "start") {
   if (passthrough.includes("--help") || passthrough.includes("-h")) {
     process.stdout.write(`patchwork start — Launch the full Patchwork stack
 
-Starts bridge + Claude Code + dashboard in a tmux session.
+Starts bridge + Claude + dashboard via the cross-platform Node orchestrator.
 Defaults to full mode so all bridge tools are registered.
+On macOS/Linux: uses tmux when available, falls back to background mode.
+On Windows: runs natively via the Node orchestrator (no WSL required).
 
 Usage: patchwork start [options]
 
@@ -334,14 +336,6 @@ This is a thin wrapper over \`start-all\`. For advanced flags see:
 `);
     process.exit(0);
   }
-  // patchwork start requires bash via start-all.sh — not supported on Windows natively.
-  if (process.platform === "win32") {
-    process.stderr.write(
-      "patchwork start is not supported on Windows natively.\n" +
-        "Install WSL 2 and run from a WSL terminal: https://learn.microsoft.com/windows/wsl/install\n",
-    );
-    process.exit(1);
-  }
   // Default to --full unless caller opted into slim explicitly.
   const args = [...passthrough];
   const slimIdx = args.indexOf("--slim");
@@ -350,8 +344,8 @@ This is a thin wrapper over \`start-all\`. For advanced flags see:
   } else if (!args.includes("--full")) {
     args.push("--full");
   }
-  // Auto-detect tmux; fall back to --no-tmux background mode if absent.
-  if (!args.includes("--no-tmux")) {
+  // On non-Windows: auto-detect tmux; fall back to --no-tmux background mode if absent.
+  if (process.platform !== "win32" && !args.includes("--no-tmux")) {
     const tmuxCheck = spawnSync("which", ["tmux"], { stdio: "ignore" });
     if (tmuxCheck.status !== 0) args.push("--no-tmux");
   }

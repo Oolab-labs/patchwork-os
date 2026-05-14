@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   copyFileSync,
@@ -141,6 +142,18 @@ function findTemplatesDir(): string | null {
   return null;
 }
 
+function detectGeminiCli(): boolean {
+  try {
+    const r = spawnSync("gemini", ["--version"], {
+      stdio: "pipe",
+      timeout: 3000,
+    });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+
 async function detectOllama(timeoutMs = 500): Promise<boolean> {
   try {
     const controller = new AbortController();
@@ -161,6 +174,7 @@ interface InitResult {
   recipesCopied: number;
   recipesSkipped: number;
   ollamaDetected: boolean;
+  geminiCliDetected: boolean;
   configAction: "created" | "merged" | "overwritten";
   /**
    * State of the Claude Code PreToolUse hook after init ran.
@@ -232,6 +246,13 @@ export async function runPatchworkInit(
     log(`  ! recipe templates not found (expected templates/recipes/)\n`);
   }
 
+  const geminiCliDetected = detectGeminiCli();
+  log(
+    geminiCliDetected
+      ? `  ✓ Gemini CLI detected — driver will default to gemini\n`
+      : `  · Gemini CLI not detected (install from https://github.com/google-gemini/gemini-cli)\n`,
+  );
+
   let ollamaDetected = false;
   if (!parsed.skipOllama) {
     ollamaDetected = await detectOllama();
@@ -267,6 +288,7 @@ export async function runPatchworkInit(
     const fresh: PatchworkConfig = {
       model: ollamaDetected ? "local" : "claude",
       recipesDir,
+      ...(geminiCliDetected ? { driver: "gemini" } : {}),
       dashboard: {
         port: 3200,
         requireApproval: ["high"],
@@ -332,6 +354,7 @@ Next:
     recipesCopied,
     recipesSkipped,
     ollamaDetected,
+    geminiCliDetected,
     configAction,
     preToolUseHook,
   };
