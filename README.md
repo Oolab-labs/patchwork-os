@@ -4,7 +4,7 @@
 
 > Patchwork OS is a local-first personal AI runtime: pluggable model providers, hot-reloadable tools, YAML recipes, a delegation policy with approval queue, and a durable trace memory — all running on your machine, all under your policy.
 
-You decide which model. You decide which actions need a human nod. You own the credentials, the logs, and the deployment. Nothing phones home.
+You decide which model. You decide which actions need a human nod. You own the credentials, the logs, and the deployment. Nothing phones home unless you [opt in to anonymous analytics](#telemetry).
 
 **Five primitives, one runtime:**
 
@@ -204,9 +204,9 @@ Think of it as a background agent that acts on your behalf — but asks before s
 
 **Recipes** are plain YAML files. They declare a trigger (cron, file save, git commit, test run, webhook) and an action (run a prompt, write to inbox, call a connector). No code required. Share them like dotfiles.
 
-**Models** are yours. Claude, GPT, Gemini, Grok, or local Ollama. Swap at any time. Nothing phones home.
+**Models** are yours. Claude, GPT, Gemini, Grok, or local Ollama. Swap at any time. Nothing phones home unless you opt in (see [Telemetry](#telemetry)).
 
-**Oversight** is non-negotiable. Every write or external action lands in `~/.patchwork/inbox/` for approval. The web UI at `http://localhost:3200` shows pending approvals, live sessions, recipe run history, and analytics.
+**Oversight** is non-negotiable. Every write or external action lands in `~/.patchwork/inbox/` for approval. The web UI at `http://localhost:3200` shows pending approvals, live sessions, recipe run history, and local analytics (the dashboard's analytics panel is computed entirely from on-disk logs — it does not transmit anything).
 
 ### Patchwork commands
 
@@ -401,6 +401,27 @@ npm pack
 npm install -g patchwork-os-*.tgz
 patchwork init
 ```
+
+---
+
+## Telemetry
+
+Patchwork ships an **opt-in** anonymous usage summary. It is **disabled by default** — the bridge sends nothing unless you explicitly turn it on.
+
+**If you opt in**, on bridge shutdown an aggregate summary is POSTed to `https://analytics.claude-ide-bridge.dev/v1/usage`:
+
+- Total session count and total tool-call count (no per-call payloads)
+- Tool name → call count + median/p95 latency, capped at the top-N tools
+- Bridge version, Node version, OS family (`darwin` / `linux` / `win32`)
+- A per-install random salt (regenerated at any time by deleting `~/.claude/ide/analytics-salt`) used to coalesce repeated installs from the same machine without sending machine identifiers
+
+**What is never sent:** workspace paths, file contents, prompts, tool arguments, tool output, project names, git history, credentials, IPs (transport-level only, dropped server-side), or anything from `~/.patchwork/`.
+
+**How to opt in:** set `analyticsEnabled: true` in the dashboard's Settings panel, or write `{"enabled": true, "decidedAt": "<iso>"}` to `~/.claude/ide/analytics.json` (mode 0600).
+
+**How to opt out / stay out:** do nothing. Default state is `null` (no preference) which behaves as opt-out. To explicitly opt out and silence future prompts, write `{"enabled": false, ...}` to the same file.
+
+**Source:** [src/analyticsSend.ts](src/analyticsSend.ts), [src/analyticsAggregator.ts](src/analyticsAggregator.ts), [src/analyticsPrefs.ts](src/analyticsPrefs.ts) — endpoint is hardcoded (not runtime-configurable, by design, to prevent redirect attacks).
 
 ---
 
