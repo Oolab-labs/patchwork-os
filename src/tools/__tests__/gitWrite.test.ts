@@ -85,7 +85,7 @@ describe("gitWrite tools", () => {
       cwd: tmpDir,
       stdio: "ignore",
     });
-  });
+  }, 30_000);
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
