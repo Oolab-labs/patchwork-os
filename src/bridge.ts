@@ -1373,6 +1373,28 @@ export class Bridge {
       }
       return out;
     };
+    this.server.restartCheckFn = () => {
+      let totalSessions = 0;
+      let totalInFlight = 0;
+      const busySessions: string[] = [];
+
+      for (const [sid, session] of this.sessions) {
+        totalSessions++;
+        const stats = session.transport.getStats();
+        if (stats.activeToolCalls > 0) {
+          totalInFlight += stats.activeToolCalls;
+          busySessions.push(
+            `${sid.slice(0, 8)} (${stats.activeToolCalls} tool${stats.activeToolCalls === 1 ? "" : "s"}: ${stats.inFlightTools.join(", ")})`,
+          );
+        }
+      }
+
+      return {
+        totalSessions,
+        inFlightCalls: totalInFlight,
+        busySessions,
+      };
+    };
     this.server.tasksFn = () => ({
       tasks: (this.orchestrator?.list() ?? []).map((t) => ({
         taskId: t.id,
