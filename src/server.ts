@@ -508,6 +508,13 @@ export class Server extends EventEmitter<ServerEvents> {
     | null = null;
 
   /**
+   * Called when /restart decides it is safe to shut down. Defaults to
+   * `process.kill(process.pid, 'SIGTERM')`. Override in tests to a no-op so
+   * the Vitest runner process is not actually killed.
+   */
+  public restartKillFn: () => void = () => process.kill(process.pid, "SIGTERM");
+
+  /**
    * Attach an OAuth 2.0 Authorization Server.
    * When set, the bridge exposes:
    *   GET  /.well-known/oauth-authorization-server
@@ -2010,10 +2017,12 @@ export class Server extends EventEmitter<ServerEvents> {
           }),
         );
 
-        // Trigger SIGTERM after response is sent (100ms delay to ensure response delivery)
+        // Trigger shutdown after response is sent (100ms delay to ensure response delivery).
+        // Uses this.restartKillFn so tests can override without killing the runner.
+        const killFn = this.restartKillFn;
         setTimeout(() => {
           this.logger.info("[/restart] Sending SIGTERM to self");
-          process.kill(process.pid, "SIGTERM");
+          killFn();
         }, 100);
         return;
       }

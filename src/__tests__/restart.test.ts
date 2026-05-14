@@ -66,6 +66,7 @@ describe("POST /restart endpoint", () => {
   });
 
   it("returns 202 when no sessions are active", async () => {
+    server.restartKillFn = () => {}; // prevent SIGTERM during tests
     server.restartCheckFn = () => ({
       totalSessions: 0,
       inFlightCalls: 0,
@@ -103,6 +104,7 @@ describe("POST /restart endpoint", () => {
   });
 
   it("returns 202 when sessions exist but no tool calls are active", async () => {
+    server.restartKillFn = () => {}; // prevent SIGTERM during tests
     server.restartCheckFn = () => ({
       totalSessions: 3,
       inFlightCalls: 0,
@@ -122,17 +124,23 @@ describe("POST /restart endpoint", () => {
       busySessions: [],
     });
 
-    const req = http.request(
-      {
-        hostname: "127.0.0.1",
-        port,
-        path: "/restart",
-        method: "POST",
-      },
-      (res) => {
-        expect(res.statusCode).toBe(401);
-      },
-    );
-    req.end();
+    const res = await new Promise<{ status: number }>((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: "127.0.0.1",
+          port,
+          path: "/restart",
+          method: "POST",
+          // deliberately omit Authorization header
+        },
+        (res) => {
+          res.resume(); // drain so socket closes cleanly
+          resolve({ status: res.statusCode ?? 0 });
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+    expect(res.status).toBe(401);
   });
 });
