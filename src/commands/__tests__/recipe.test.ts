@@ -137,15 +137,17 @@ describe("recipe CLI commands", () => {
       const result = await runSchema(outputDir);
 
       expect(result.outputDir).toBe(outputDir);
-      expect(
-        result.filesWritten.some((file) => file.endsWith("recipe.v1.json")),
-      ).toBe(true);
-      expect(
-        result.filesWritten.some((file) => file.endsWith("tools/file.json")),
-      ).toBe(true);
-      expect(
-        result.filesWritten.some((file) => file.endsWith("tools/gmail.json")),
-      ).toBe(true);
+      // Normalize separators so Win32 ("\") matches the forward-slash assertions.
+      const normalized = result.filesWritten.map((f) => f.replace(/\\/g, "/"));
+      expect(normalized.some((file) => file.endsWith("recipe.v1.json"))).toBe(
+        true,
+      );
+      expect(normalized.some((file) => file.endsWith("tools/file.json"))).toBe(
+        true,
+      );
+      expect(normalized.some((file) => file.endsWith("tools/gmail.json"))).toBe(
+        true,
+      );
 
       const recipeSchema = readFileSync(
         join(outputDir, "recipe.v1.json"),
@@ -2297,6 +2299,9 @@ expect:
 
     it("has empty assertionFailures when expect block passes", async () => {
       const recipePath = join(tmpDir, "expect-pass.yaml");
+      // Use a path inside the per-test tmpDir so file.write succeeds on Win32
+      // (hard-coded /tmp resolves to D:\tmp which doesn't exist).
+      const writeTarget = join(tmpDir, "p.txt").replace(/\\/g, "/");
       writeFileSync(
         recipePath,
         `name: expect-pass
@@ -2305,7 +2310,7 @@ trigger:
   type: manual
 steps:
   - tool: file.write
-    path: /tmp/p.txt
+    path: ${writeTarget}
     content: "hello"
     into: saved
 expect:
@@ -2731,6 +2736,8 @@ steps:
       vi.useFakeTimers();
       try {
         const recipePath = join(tmpDir, "test-watch-basic.yaml");
+        // Use a per-test tmpDir target (cross-platform); /tmp doesn't exist on Win32.
+        const writeTarget = join(tmpDir, "tw.txt").replace(/\\/g, "/");
         writeFileSync(
           recipePath,
           `name: test-watch-basic
@@ -2739,7 +2746,7 @@ trigger:
   type: manual
 steps:
   - tool: file.write
-    path: /tmp/tw.txt
+    path: ${writeTarget}
     content: "hello"
     into: saved
 expect:

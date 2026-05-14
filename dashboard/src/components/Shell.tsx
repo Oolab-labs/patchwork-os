@@ -8,6 +8,9 @@ import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
 import { isDemoMode, onDemoModeChange, setDemoMode } from "@/lib/demoMode";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { subscribeStreamLiveness } from "@/lib/streamLiveness";
+import { NAV_SECTIONS } from "@/lib/navRoutes";
+import { ActivityTicker } from "./ActivityTicker";
+import { BridgeOfflineBanner } from "./BridgeOfflineBanner";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
 
@@ -41,6 +44,7 @@ const PATHS: Record<string, string> = {
   plus:       "M12 4v16m8-8H4",
   diff:       "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 12h6m-3-3v6",
   person:     "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z",
+  bookmark:   "M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2v16z",
   chevron:    "M6 9l6 6 6-6",
 };
 
@@ -64,6 +68,11 @@ function BrandMark() {
 }
 
 // ------------------------------------------------------------------ nav structure
+//
+// NAV_SECTIONS is now exported from src/lib/navRoutes.ts (single source
+// of truth shared with CommandPalette + MobileBottomNav). The local
+// rename + adapter keeps the existing JSX (which reads `section.items`)
+// working without a sweeping rewrite of the render code.
 
 type NavItem = {
   href: string;
@@ -72,40 +81,15 @@ type NavItem = {
   badge?: "approvals" | "halts";
 };
 
-const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
-  {
-    title: "Workspace",
-    items: [
-      { href: "/",           label: "Overview",    icon: "home" },
-      { href: "/inbox",      label: "Inbox",       icon: "inbox" },
-      { href: "/approvals",  label: "Approvals",   icon: "check",  badge: "approvals" },
-      { href: "/activity",   label: "Activity",    icon: "activity", badge: "halts" },
-    ],
-  },
-  {
-    title: "Automation",
-    items: [
-      { href: "/recipes",     label: "Recipes",     icon: "book" },
-      { href: "/marketplace", label: "Marketplace", icon: "store" },
-    ],
-  },
-  {
-    title: "Insights",
-    items: [
-      { href: "/analytics",    label: "Analytics",    icon: "trending" },
-      { href: "/transactions",  label: "Transactions", icon: "diff" },
-    ],
-  },
-  {
-    title: "Setup",
-    items: [
-      { href: "/connections", label: "Connections", icon: "plug" },
-      { href: "/settings",    label: "Settings",    icon: "settings" },
-    ],
-  },
-];
-
-const MORE_ITEMS: NavItem[] = [];
+const SECTIONS: { title: string; items: NavItem[] }[] = NAV_SECTIONS.map((s) => ({
+  title: s.title,
+  items: s.routes.map((r) => ({
+    href: r.href,
+    label: r.label,
+    icon: r.icon ?? "home",
+    badge: r.badge,
+  })),
+}));
 
 // ------------------------------------------------------------------ approval count
 
@@ -301,7 +285,6 @@ export function Shell({ children }: { children: ReactNode }) {
   const { demo, toggle: toggleDemo } = useDemo();
   const identity = useIdentity(status);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   // Demo: replace with real notification count when available
   const hasNotifications = approvalCount > 0;
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -334,11 +317,6 @@ export function Shell({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
-  // Auto-expand More if we navigate into one of its routes
-  useEffect(() => {
-    if (MORE_ITEMS.some((it) => pathname?.startsWith(it.href))) setMoreOpen(true);
-  }, [pathname]);
 
   return (
     <div className={`app-shell${mobileOpen ? " mobile-open" : ""}`}>
@@ -389,8 +367,26 @@ export function Shell({ children }: { children: ReactNode }) {
           <span className="topbar-search-placeholder">Jump to anything…</span>
           <span className="kbd">⌘K</span>
         </button>
+        {/*
+          Live activity ticker. Sits between the command-palette button
+          and the right-side action cluster. Renders the last 3 events
+          the bridge has emitted (tool calls, approval decisions,
+          lifecycle events) with a live green pulse — gives the
+          dashboard a "feels alive" axis on every page, not just on
+          /activity. Hidden below the desktop breakpoint via CSS.
+        */}
+        <ActivityTicker />
         <div className="app-header-actions">
           <IdentityPill ok={status.ok} host={identity.host} port={identity.port} />
+          {/*
+            Hide the demo toggle when the bridge is live AND demo is off.
+            Audit verified: the chip was previously visible unconditionally,
+            which made users (with a working bridge) wonder why a "Demo"
+            label was sitting in their topbar. Keep the chip visible when:
+              - bridge offline (offers demo as fallback experience)
+              - demo already enabled (so the user has a clear way to disable)
+          */}
+          {(!status.ok || demo) && (
           <button
             type="button"
             onClick={toggleDemo}
@@ -422,13 +418,14 @@ export function Shell({ children }: { children: ReactNode }) {
                 width: 6,
                 height: 6,
                 borderRadius: "50%",
-                background: demo ? "var(--orange)" : "var(--ink-3)",
+                background: demo ? "var(--orange)" : "var(--dot-muted)",
                 display: "inline-block",
                 flexShrink: 0,
               }}
             />
             Demo
           </button>
+          )}
           <button
             className="theme-toggle"
             onClick={toggle}
@@ -501,7 +498,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </Link>
 
         <nav className="app-nav" aria-label="Main navigation">
-          {NAV_SECTIONS.map((section) => (
+          {SECTIONS.map((section) => (
             <div key={section.title}>
               <div className="app-nav-section-label">{section.title}</div>
               {section.items.map((item) => {
@@ -542,54 +539,13 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
           ))}
 
-          {MORE_ITEMS.length > 0 && (
-            <div className="app-nav-more">
-              <button
-                type="button"
-                className="app-nav-link app-nav-more-toggle"
-                aria-expanded={moreOpen}
-                onClick={() => setMoreOpen((v) => !v)}
-              >
-                <span className="app-nav-link-icon" aria-hidden="true">
-                  <NavIcon path={PATHS.chevron} />
-                </span>
-                <span>More</span>
-                <span
-                  className="app-nav-more-caret"
-                  data-open={moreOpen ? "1" : "0"}
-                  aria-hidden="true"
-                >
-                  <NavIcon path={PATHS.chevron} />
-                </span>
-              </button>
-              {moreOpen && (
-                <div className="app-nav-more-items">
-                  {MORE_ITEMS.map((item) => {
-                    const isActive = pathname?.startsWith(item.href);
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={`app-nav-link${isActive ? " is-active" : ""}`}
-                        aria-current={isActive ? "page" : undefined}
-                      >
-                        <span className="app-nav-link-icon" aria-hidden="true">
-                          <NavIcon path={PATHS[item.icon]} />
-                        </span>
-                        <span>{item.label}</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
         </nav>
 
         <BridgeStatusBlock status={status} />
       </aside>
 
       <main id="main-content" className="app-main" tabIndex={-1}>
+        <BridgeOfflineBanner status={status} />
         <div className="app-content">{children}</div>
       </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/useFocusTrap";
+import { MOBILE_PRIMARY_HREFS, findRoute, moreRoutes } from "@/lib/navRoutes";
 
 interface BottomNavItem {
   href: string;
@@ -11,29 +12,35 @@ interface BottomNavItem {
   match?: (pathname: string) => boolean;
 }
 
-const PRIMARY: BottomNavItem[] = [
-  { href: "/",          label: "Overview",  d: "M3 12L12 3l9 9v8a1 1 0 01-1 1h-5v-5H9v5H4a1 1 0 01-1-1v-8z", match: (p) => p === "/" },
-  { href: "/inbox",     label: "Inbox",     d: "M22 12H16l-2 3H10l-2-3H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" },
-  { href: "/approvals", label: "Approvals", d: "M9 12l2 2 4-4M22 12a10 10 0 11-20 0 10 10 0 0120 0z" },
-  { href: "/activity",  label: "Activity",  d: "M22 12H18L15 21 9 3 6 12H2" },
-];
+/**
+ * Mobile bottom-tab SVG paths. Kept here (not in navRoutes) because
+ * these are full mobile-sized icons (24×24, single-path-per-glyph)
+ * tuned for the bottom-nav touch target — distinct from the sidebar's
+ * smaller multi-path glyphs in Shell.PATHS.
+ */
+const MOBILE_ICONS: Record<string, { d: string; match?: (p: string) => boolean }> = {
+  "/":          { d: "M3 12L12 3l9 9v8a1 1 0 01-1 1h-5v-5H9v5H4a1 1 0 01-1-1v-8z", match: (p) => p === "/" },
+  "/inbox":     { d: "M22 12H16l-2 3H10l-2-3H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" },
+  "/approvals": { d: "M9 12l2 2 4-4M22 12a10 10 0 11-20 0 10 10 0 0120 0z" },
+  "/recipes":   { d: "M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 016.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z" },
+  "/activity":  { d: "M22 12H18L15 21 9 3 6 12H2" },
+};
 
-const MORE_LINKS: { href: string; label: string }[] = [
-  { href: "/recipes", label: "Recipes" },
-  { href: "/runs", label: "Runs" },
-  { href: "/tasks", label: "Tasks" },
-  { href: "/sessions", label: "Sessions" },
-  { href: "/traces", label: "Traces" },
-  { href: "/decisions", label: "Decisions" },
-  { href: "/suggestions", label: "Suggestions" },
-  { href: "/analytics", label: "Analytics" },
-  { href: "/insights", label: "Insights" },
-  { href: "/metrics", label: "Metrics" },
-  { href: "/transactions", label: "Transactions" },
-  { href: "/marketplace", label: "Marketplace" },
-  { href: "/connections", label: "Connections" },
-  { href: "/settings", label: "Settings" },
-];
+const PRIMARY: BottomNavItem[] = MOBILE_PRIMARY_HREFS.map((href) => {
+  const route = findRoute(href);
+  const icon = MOBILE_ICONS[href];
+  return {
+    href,
+    label: route?.label ?? href,
+    d: icon?.d ?? "",
+    match: icon?.match,
+  };
+});
+
+const MORE_LINKS: { href: string; label: string }[] = moreRoutes().map((r) => ({
+  href: r.href,
+  label: r.label,
+}));
 
 const MORE_ICON = "M12 6h.01M12 12h.01M12 18h.01";
 

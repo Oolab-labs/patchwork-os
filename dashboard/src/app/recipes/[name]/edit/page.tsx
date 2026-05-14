@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { use, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { BackLink, RelationStrip } from "@/components/patchwork";
 import { useToast } from "@/components/Toast";
 import dynamic from "next/dynamic";
 
@@ -263,21 +264,7 @@ export default function RecipeEditPage({
       {/* Header */}
       <div className="page-head">
         <div>
-          <div style={{ marginBottom: "var(--s-1)" }}>
-            <Link
-              href="/recipes"
-              style={{
-                color: "var(--fg-3)",
-                fontSize: "var(--fs-m)",
-                textDecoration: "none",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-              }}
-            >
-              &#8592; Recipes
-            </Link>
-          </div>
+          <BackLink href="/recipes" label="Recipes" />
           <h1 style={{ marginTop: 0 }}>
             Edit{" "}
             <code
@@ -293,6 +280,45 @@ export default function RecipeEditPage({
             </code>
           </h1>
           <div className="page-head-sub">Edit recipe YAML and save or run.</div>
+          {/*
+            "Feels connected" strip for the recipe detail. Lets users
+            jump from editing the YAML straight to: the runs this
+            recipe has produced (filtered by name), the live activity
+            stream (where its events show up in real time), and the
+            marketplace (to see published variants). Each chip is a
+            link to a filtered list — the recipe detail used to dead-
+            end into the editor with no outbound context.
+          */}
+          <RelationStrip
+            items={[
+              {
+                label: "Recent runs",
+                href: `/runs?recipe=${encodeURIComponent(name)}`,
+                title: `Recent runs of ${name}`,
+              },
+              {
+                label: "Halts",
+                href: `/runs?recipe=${encodeURIComponent(name)}&halt=1`,
+                tone: "warn",
+                title: `Runs of ${name} that hit a halt reason`,
+              },
+              {
+                label: "Traces",
+                href: `/traces?recipe=${encodeURIComponent(name)}`,
+                title: `Decision logs for ${name}`,
+              },
+              {
+                label: "Live activity",
+                href: "/activity",
+                title: "Stream of every event from this and other recipes",
+              },
+              {
+                label: "Marketplace",
+                href: "/marketplace",
+                title: "Community-published recipes",
+              },
+            ]}
+          />
         </div>
         <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}>
           <Link

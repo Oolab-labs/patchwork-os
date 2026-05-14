@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiPath } from '@/lib/api';
+import { BackLink, RelationStrip } from "@/components/patchwork";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 
@@ -215,17 +216,51 @@ export default function ApprovalDetailPage() {
     <section>
       <div className="page-head">
         <div>
-          <div style={{ fontSize: "var(--fs-s)", marginBottom: 4 }}>
-            <Link href="/approvals" style={{ color: "var(--fg-2)" }}>
-              ← Approvals
-            </Link>
-          </div>
+          <BackLink href="/approvals" label="Approvals" />
           <h1>{toolName}</h1>
           <div className="page-head-sub">
             <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}>
               {callId}
             </code>
           </div>
+          {/*
+            "Feels connected" strip — shows what this approval touches.
+            Lets the user fan out from the call detail to: the policy
+            that gated it (Settings → cc-permissions), the cross-tool
+            approval patterns (/insights), and the saved-reasoning
+            knowledge base (/decisions). Before this strip the approval
+            detail was an island with no outbound links beyond the
+            BackLink to the queue.
+          */}
+          <RelationStrip
+            items={[
+              ...(sessionId
+                ? [
+                    {
+                      label: "Session",
+                      href: `/sessions/${encodeURIComponent(sessionId)}`,
+                      tone: "accent" as const,
+                      title: `Session ${sessionId} that requested this approval`,
+                    },
+                  ]
+                : []),
+              {
+                label: "Approval patterns",
+                href: "/insights",
+                title: "See approve/reject rates across every tool",
+              },
+              {
+                label: "Knowledge",
+                href: "/decisions",
+                title: "Saved reasoning your agents wrote down",
+              },
+              {
+                label: "Approval rules",
+                href: "/settings",
+                title: "Configure cc-permissions and the approval gate",
+              },
+            ]}
+          />
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {pending && (

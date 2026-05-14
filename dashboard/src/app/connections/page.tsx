@@ -2,7 +2,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import AddConnectionModal from "./AddConnectionModal";
+import { YourConnectorRequests } from "./YourConnectorRequests";
 import { Dialog } from "@/components/Dialog";
+import { HintCard } from "@/components/patchwork";
 import { useToast } from "@/components/Toast";
 import type { ConnectorStatus } from "./types";
 
@@ -829,7 +831,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
             style={{
               width: "100%", fontSize: "var(--fs-s)", fontWeight: 600, padding: "7px 0",
               borderRadius: 6, border: "none",
-              background: "var(--accent)", color: "var(--on-accent)",
+              background: "var(--accent)", color: "var(--on-orange)",
               cursor: loading ? "wait" : "pointer",
               opacity: loading ? 0.55 : 1,
               letterSpacing: "0.01em",
@@ -1177,9 +1179,12 @@ export default function ConnectionsPage() {
     <section>
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Connections — <span className="accent">writes are gated. Reads are not.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Connections — <span className="accent">writes are gated. Reads are not.</span>
+            </h1>
+            <HintCard.Toggle id="connections" />
+          </div>
           <div className="editorial-sub">
             oauth · scoped to your machine · tokens in ~/.patchwork/secrets
           </div>
@@ -1212,6 +1217,16 @@ export default function ConnectionsPage() {
           </div>
         )}
       </div>
+
+      <HintCard id="connections" />
+
+      {/*
+        Plumbing-audit fix: the connector-request form used to be
+        write-only — submitted requests vanished into
+        ~/.patchwork/connector-requests.json. This panel reads from
+        the new GET handler so users can see what they've asked for.
+      */}
+      <YourConnectorRequests />
 
       {err && <div className="alert-err" role="alert">{err}</div>}
 
@@ -1478,7 +1493,7 @@ export default function ConnectionsPage() {
                 Disconnect {displayName}?
               </strong>
               <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: 0, lineHeight: 1.5 }}>
-                Recipes and automations that use {displayName} will fail until you reconnect.
+                Recipes that use {displayName} will fail until you reconnect.
                 Patchwork will keep your existing recipe definitions; only the auth token is removed.
               </p>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>

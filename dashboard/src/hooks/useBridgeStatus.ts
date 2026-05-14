@@ -7,6 +7,15 @@ export interface BridgeStatus {
   ok: boolean;
   /** /status failed but a fallback endpoint responded — bridge is reachable but reporting degraded. */
   degraded?: boolean;
+  /**
+   * Timestamp (ms since epoch) of the most-recent poll attempt — set on
+   * BOTH success and failure. The offline banner uses this to render
+   * "last attempt N s ago" so users can see polling is still happening
+   * instead of suspecting the dashboard itself has frozen.
+   */
+  lastAttemptAt?: number;
+  /** Short human-readable failure reason from the most-recent failed poll. */
+  lastError?: string;
   port?: number;
   workspace?: string;
   extensionConnected?: boolean;
@@ -22,6 +31,7 @@ export interface BridgeStatus {
     model?: string;
     version?: string;
   };
+  killSwitch?: { engaged: boolean; locked: boolean } | null;
 }
 
 const BASE_INTERVAL_MS = 5000;
@@ -35,6 +45,8 @@ function nextDelay(failures: number): number {
   const exp = Math.min(BASE_INTERVAL_MS * 2 ** failures, MAX_BACKOFF_MS);
   return exp * (0.8 + Math.random() * 0.4); // ±20% jitter
 }
+
+const KILL_SWITCH_POLL_MS = 10_000;
 
 export function useBridgeStatus(): BridgeStatus {
   const [status, setStatus] = useState<BridgeStatus>({ ok: false });
@@ -55,16 +67,18 @@ export function useBridgeStatus(): BridgeStatus {
 
     const tick = async () => {
       let succeeded = false;
+      const attemptedAt = Date.now();
       try {
         const res = await fetch(apiPath("/api/bridge/status"));
-        if (!res.ok) throw new Error(`status ${res.status}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const ct = res.headers.get("content-type") ?? "";
         if (!ct.includes("application/json") && !ct.includes("text/plain"))
           throw new Error("bad content-type");
         const data = (await res.json()) as Partial<BridgeStatus>;
-        if (alive) setStatus({ ok: true, ...data });
+        if (alive) setStatus({ ok: true, lastAttemptAt: attemptedAt, ...data });
         succeeded = true;
-      } catch {
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "unreachable";
         // /status failed. Probe /approvals as a heartbeat — if it responds we
         // know the dashboard API is reachable, but the bridge itself is not
         // reporting healthy. Surface that as `degraded`, NOT `ok`, so banners
@@ -73,9 +87,21 @@ export function useBridgeStatus(): BridgeStatus {
           const res = await fetch(apiPath("/api/bridge/approvals"));
           const ct = res.headers.get("content-type") ?? "";
           const reachable = res.ok && ct.includes("application/json");
-          if (alive) setStatus({ ok: false, degraded: reachable });
+          if (alive)
+            setStatus({
+              ok: false,
+              degraded: reachable,
+              lastAttemptAt: attemptedAt,
+              lastError: reachable ? "bridge reported unhealthy" : message,
+            });
         } catch {
-          if (alive) setStatus({ ok: false, degraded: false });
+          if (alive)
+            setStatus({
+              ok: false,
+              degraded: false,
+              lastAttemptAt: attemptedAt,
+              lastError: message,
+            });
         }
       }
 
@@ -107,5 +133,37 @@ export function useBridgeStatus(): BridgeStatus {
       unsubLiveness();
     };
   }, []);
+
+  // Poll kill-switch state independently — it can change at any time and
+  // the status endpoint doesn't include it.
+  useEffect(() => {
+    let alive = true;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(apiPath("/api/bridge/kill-switch"));
+        if (res.ok) {
+          const data = (await res.json()) as {
+            engaged: boolean;
+            locked: boolean;
+          };
+          if (alive) {
+            setStatus((prev) => ({ ...prev, killSwitch: data }));
+          }
+        }
+      } catch {
+        // Bridge offline — leave killSwitch as-is
+      }
+      if (alive) timerId = setTimeout(poll, KILL_SWITCH_POLL_MS);
+    };
+
+    poll();
+    return () => {
+      alive = false;
+      if (timerId !== null) clearTimeout(timerId);
+    };
+  }, []);
+
   return status;
 }

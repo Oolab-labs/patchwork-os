@@ -150,18 +150,45 @@ export async function listStoredProviders(): Promise<string[]> {
 // Windows DPAPI (via PowerShell)
 // ============================================================================
 
+// Prefer pwsh (PowerShell 7+) over powershell (Windows PowerShell 5.x) when
+// both are installed. pwsh is increasingly the default on modern Windows.
+// Resolved once per process; falls back to "powershell" if pwsh is absent.
+function resolvePs(): string {
+  if (process.platform !== "win32") return "powershell";
+  try {
+    const r = spawnSync("where", ["pwsh"], {
+      encoding: "utf-8",
+      timeout: 3_000,
+    });
+    return r.status === 0 ? "pwsh" : "powershell";
+  } catch {
+    return "powershell";
+  }
+}
+const PS_BIN = resolvePs();
+
 function setWindowsCredentialSync(key: string, value: string): boolean {
   if (process.platform !== "win32") return false;
 
   try {
+    // Base64-encode both key and value before embedding in PowerShell to
+    // eliminate all quoting and injection hazards. The key is decoded inside
+    // PowerShell so it can be used as a filename safely.
+    const keyB64 = Buffer.from(key, "utf-8").toString("base64");
+    const valueB64 = Buffer.from(value, "utf-8").toString("base64");
+    // -AsByteStream replaces -Encoding Byte (removed in PowerShell 7).
+    // Fall back to -Encoding Byte for Windows PowerShell 5.x.
     const script = `
-      $bytes = [System.Text.Encoding]::UTF8.GetBytes('${value.replace(/'/g, "''")}')
-      $protected = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-      $path = Join-Path $env:LOCALAPPDATA "PatchworkOS" "tokens"
-      if (-not (Test-Path $path)) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
-      $protected | Set-Content -Path (Join-Path $path "${key}.bin") -Encoding Byte
+      $keyBytes = [System.Convert]::FromBase64String('${keyB64}')
+      $safeKey = [System.Text.Encoding]::UTF8.GetString($keyBytes)
+      $valueBytes = [System.Convert]::FromBase64String('${valueB64}')
+      $protected = [System.Security.Cryptography.ProtectedData]::Protect($valueBytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+      $dir = Join-Path $env:LOCALAPPDATA "PatchworkOS" "tokens"
+      if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+      $filePath = Join-Path $dir ($safeKey + ".bin")
+      try { [System.IO.File]::WriteAllBytes($filePath, $protected) } catch { $protected | Set-Content -Path $filePath -Encoding Byte }
     `;
-    const result = spawnSync("powershell", ["-Command", script], {
+    const result = spawnSync(PS_BIN, ["-NoProfile", "-Command", script], {
       encoding: "utf-8",
       timeout: 10000,
     });
@@ -175,15 +202,23 @@ function getWindowsCredentialSync(key: string): string | null {
   if (process.platform !== "win32") return null;
 
   try {
+    // Base64-encode the key so it is never interpolated as PS code — a key
+    // containing $, backtick, or $() in a double-quoted PS string would
+    // execute arbitrary code.
+    // [System.IO.File]::ReadAllBytes works on both PS5 and PS7, replacing
+    // Get-Content -Encoding Byte which was removed in PowerShell 7.
+    const keyB64 = Buffer.from(key, "utf-8").toString("base64");
     const script = `
-      $path = Join-Path $env:LOCALAPPDATA "PatchworkOS" "tokens" "${key}.bin"
-      if (Test-Path $path) {
-        $bytes = Get-Content -Path $path -Encoding Byte -Raw
+      $keyBytes = [System.Convert]::FromBase64String('${keyB64}')
+      $safeKey = [System.Text.Encoding]::UTF8.GetString($keyBytes)
+      $filePath = Join-Path $env:LOCALAPPDATA "PatchworkOS" "tokens" ($safeKey + ".bin")
+      if (Test-Path $filePath) {
+        $bytes = [System.IO.File]::ReadAllBytes($filePath)
         $unprotected = [System.Security.Cryptography.ProtectedData]::Unprotect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
         [System.Text.Encoding]::UTF8.GetString($unprotected)
       }
     `;
-    const result = spawnSync("powershell", ["-Command", script], {
+    const result = spawnSync(PS_BIN, ["-NoProfile", "-Command", script], {
       encoding: "utf-8",
       timeout: 10000,
     });

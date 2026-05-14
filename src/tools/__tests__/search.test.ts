@@ -98,24 +98,28 @@ describe("search tools", () => {
       );
     });
 
-    it("finds text in a file using grep fallback", async () => {
-      const tool = createSearchWorkspaceTool(tmpDir, {
-        ...allFalseProbes,
-        rg: false,
-      });
-      const result = await tool.handler({ query: "hello world" });
-      const data = parse(result);
+    // grep fallback shells out to POSIX `grep` binary; not available on Windows.
+    it.skipIf(process.platform === "win32")(
+      "finds text in a file using grep fallback",
+      async () => {
+        const tool = createSearchWorkspaceTool(tmpDir, {
+          ...allFalseProbes,
+          rg: false,
+        });
+        const result = await tool.handler({ query: "hello world" });
+        const data = parse(result);
 
-      expect(data.tool).toBe("grep");
-      expect(data.totalMatches).toBeGreaterThanOrEqual(1);
-      expect(data.matches.length).toBeGreaterThanOrEqual(1);
+        expect(data.tool).toBe("grep");
+        expect(data.totalMatches).toBeGreaterThanOrEqual(1);
+        expect(data.matches.length).toBeGreaterThanOrEqual(1);
 
-      const match = data.matches.find((m: { file: string }) =>
-        m.file.includes("main.ts"),
-      );
-      expect(match).toBeDefined();
-      expect(match.matchText).toContain("hello world");
-    });
+        const match = data.matches.find((m: { file: string }) =>
+          m.file.includes("main.ts"),
+        );
+        expect(match).toBeDefined();
+        expect(match.matchText).toContain("hello world");
+      },
+    );
 
     it("respects caseSensitive option", async () => {
       const tool = createSearchWorkspaceTool(tmpDir, { ...allFalseProbes });
@@ -136,47 +140,59 @@ describe("search tools", () => {
       expect(data2.totalMatches).toBeGreaterThanOrEqual(1);
     });
 
-    it("finds text with fileGlob filter", async () => {
-      const tool = createSearchWorkspaceTool(tmpDir, { ...allFalseProbes });
-      const result = await tool.handler({
-        query: "hello world",
-        fileGlob: "*.ts",
-      });
-      const data = parse(result);
+    // Uses grep/find fallback when rg unavailable; neither exists on Win32.
+    it.skipIf(process.platform === "win32")(
+      "finds text with fileGlob filter",
+      async () => {
+        const tool = createSearchWorkspaceTool(tmpDir, { ...allFalseProbes });
+        const result = await tool.handler({
+          query: "hello world",
+          fileGlob: "*.ts",
+        });
+        const data = parse(result);
 
-      expect(data.totalMatches).toBeGreaterThanOrEqual(1);
-      for (const m of data.matches) {
-        expect(m.file).toMatch(/\.ts$/);
-      }
-    });
+        expect(data.totalMatches).toBeGreaterThanOrEqual(1);
+        for (const m of data.matches) {
+          expect(m.file).toMatch(/\.ts$/);
+        }
+      },
+    );
   });
 
   describe("findFiles", () => {
-    it("finds files by glob pattern using find fallback", async () => {
-      const tool = createFindFilesTool(tmpDir, {
-        ...allFalseProbes,
-        fd: false,
-        git: false,
-      });
-      const result = await tool.handler({ pattern: "*.ts" });
-      const data = parse(result);
+    // find fallback shells out to POSIX `find` binary; not available on Windows.
+    it.skipIf(process.platform === "win32")(
+      "finds files by glob pattern using find fallback",
+      async () => {
+        const tool = createFindFilesTool(tmpDir, {
+          ...allFalseProbes,
+          fd: false,
+          git: false,
+        });
+        const result = await tool.handler({ pattern: "*.ts" });
+        const data = parse(result);
 
-      expect(data.tool).toBe("find");
-      expect(data.files.length).toBe(2);
-      const basenames = data.files.map((f: string) => path.basename(f));
-      expect(basenames).toContain("main.ts");
-      expect(basenames).toContain("utils.ts");
-    });
+        expect(data.tool).toBe("find");
+        expect(data.files.length).toBe(2);
+        const basenames = data.files.map((f: string) => path.basename(f));
+        expect(basenames).toContain("main.ts");
+        expect(basenames).toContain("utils.ts");
+      },
+    );
 
-    it("finds json files in subdirectory", async () => {
-      const tool = createFindFilesTool(tmpDir, { ...allFalseProbes });
-      const result = await tool.handler({ pattern: "*.json" });
-      const data = parse(result);
+    // Uses find fallback when no rg/fd/git probe; find isn't on Win32.
+    it.skipIf(process.platform === "win32")(
+      "finds json files in subdirectory",
+      async () => {
+        const tool = createFindFilesTool(tmpDir, { ...allFalseProbes });
+        const result = await tool.handler({ pattern: "*.json" });
+        const data = parse(result);
 
-      expect(data.files.length).toBeGreaterThanOrEqual(1);
-      const found = data.files.some((f: string) => f.includes("data.json"));
-      expect(found).toBe(true);
-    });
+        expect(data.files.length).toBeGreaterThanOrEqual(1);
+        const found = data.files.some((f: string) => f.includes("data.json"));
+        expect(found).toBe(true);
+      },
+    );
 
     it("returns empty for non-matching pattern", async () => {
       const tool = createFindFilesTool(tmpDir, { ...allFalseProbes });

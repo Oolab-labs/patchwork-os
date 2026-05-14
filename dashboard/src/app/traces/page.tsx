@@ -5,7 +5,7 @@ import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
-import { EmptyState, ErrorState, LivePill } from "@/components/patchwork";
+import { EmptyState, ErrorState, HintCard, LivePill, RelationStrip } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
 
 type TraceType = "approval" | "enrichment" | "recipe_run" | "decision";
@@ -16,6 +16,7 @@ interface DecisionTrace {
   key: string;
   summary: string;
   body: Record<string, unknown>;
+  tags?: string[];
 }
 
 interface TracesResponse {
@@ -574,6 +575,7 @@ export default function TracesPage() {
   const [since, setSince] = useState<SinceFilter>("24h");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"flat" | "tree">("tree");
+  const [ksOnly, setKsOnly] = useState(false);
 
   const qs = useMemo(() => {
     const params = new URLSearchParams();
@@ -586,9 +588,12 @@ export default function TracesPage() {
       params.set("since", String(Date.now() - sinceMs));
     }
     params.set("limit", "50");
+    if (ksOnly) {
+      params.set("tag", "kill-switch");
+    }
     const s = params.toString();
     return s ? `?${s}` : "";
-  }, [debouncedSearch, since]);
+  }, [debouncedSearch, since, ksOnly]);
 
   const { data, error, loading, refetch } = useBridgeFetch<TracesResponse>(
     `/api/bridge/traces${qs}`,
@@ -629,9 +634,12 @@ export default function TracesPage() {
       <ActivityTabs />
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Traces — <em className="accent" style={{ fontStyle: "italic" }}>recipe runs and their decision logs.</em>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Traces — <em className="accent" style={{ fontStyle: "italic" }}>recipe runs and their decision logs.</em>
+            </h1>
+            <HintCard.Toggle id="traces" />
+          </div>
           <div className="editorial-sub" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span>
               {traces.length} traces · {doneCount} done · {errorCount} error{errorCount === 1 ? "" : "s"}
@@ -640,6 +648,14 @@ export default function TracesPage() {
             </span>
             <LivePill label="3s" tone="muted" />
           </div>
+          <RelationStrip
+            items={[
+              { label: "Knowledge", href: "/decisions", title: "Saved reasoning your agents wrote down" },
+              { label: "Approvals", href: "/approvals", title: "Approvals these traces touched" },
+              { label: "Runs", href: "/runs", title: "Recipe runs these traces came from" },
+              { label: "Insights", href: "/insights", title: "Cross-tool approval patterns" },
+            ]}
+          />
         </div>
         <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}>
           <input
@@ -661,6 +677,8 @@ export default function TracesPage() {
           <ExportButton disabled={traces.length === 0} />
         </div>
       </div>
+
+      <HintCard id="traces" />
 
       {/* filter bar */}
       <div
@@ -684,6 +702,21 @@ export default function TracesPage() {
               {k === "all" ? `All (${traces.length})` : k === "done" ? `Done (${doneCount})` : `Errors (${errorCount})`}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setKsOnly((v) => !v)}
+            className={ksOnly ? "pill accent" : "pill muted"}
+            style={{
+              cursor: "pointer",
+              border: "none",
+              fontSize: "var(--fs-s)",
+              ...(ksOnly
+                ? { background: "var(--err-soft)", color: "var(--err)" }
+                : {}),
+            }}
+          >
+            Kill-switch
+          </button>
         </div>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
           <span>since</span>
@@ -761,8 +794,17 @@ export default function TracesPage() {
             const statusColor = status === "done" ? "var(--ok)" : status === "error" ? "var(--err)" : "var(--ink-3)";
             const statusBg = status === "done" ? "var(--ok-soft)" : status === "error" ? "var(--err-soft)" : "var(--recess)";
             const statusLabel = status === "done" ? "done" : status === "error" ? "error" : "running";
+            const isKillSwitch = Array.isArray(t.tags) && t.tags.includes("kill-switch");
             return (
-              <div key={rowKey} style={{ borderBottom: "1px solid var(--line-3)" }}>
+              <div
+                key={rowKey}
+                style={{
+                  borderBottom: "1px solid var(--line-3)",
+                  ...(isKillSwitch
+                    ? { borderLeft: "3px solid var(--err)" }
+                    : {}),
+                }}
+              >
                 <div
                   style={{
                     display: "grid",

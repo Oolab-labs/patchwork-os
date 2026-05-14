@@ -1,7 +1,9 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
+import { HintCard } from "@/components/patchwork";
 import { apiPath } from "@/lib/api";
 import {
   assertValidInstallSource,
@@ -147,6 +149,23 @@ function connectorColor(id: string): string {
   return PROVIDER_COLORS[norm] ?? "#4a5568";
 }
 
+/**
+ * Render a connector id (e.g. "google-calendar", "slack") as a
+ * user-facing label. Title-cases each hyphen segment; special-cases a
+ * couple of acronyms that look wrong with vanilla title-case.
+ * Used by the post-install missingConnectors toast — keep terse, no
+ * marketing copy.
+ */
+function formatConnectorLabel(id: string): string {
+  if (id === "github") return "GitHub";
+  if (id === "gitlab") return "GitLab";
+  if (id === "pagerduty") return "PagerDuty";
+  if (id === "hubspot") return "HubSpot";
+  return id
+    .split("-")
+    .map((part) => (part.length === 0 ? "" : part[0].toUpperCase() + part.slice(1)))
+    .join(" ");
+}
 
 // ------------------------------------------------------------------ card
 
@@ -254,7 +273,7 @@ function RecipeCard({
           {recipe.risk_level && (
             <span
               className={`pill ${RISK_PILL_CLASS[recipe.risk_level]}`}
-              style={{ fontSize: "var(--fs-3xs)" }}
+              style={{ fontSize: "var(--fs-2xs)" }}
               title={`Risk level: ${recipe.risk_level}`}
             >
               {recipe.risk_level} risk
@@ -263,19 +282,19 @@ function RecipeCard({
           {recipe.approval_behavior && (
             <span
               className="pill muted"
-              style={{ fontSize: "var(--fs-3xs)" }}
+              style={{ fontSize: "var(--fs-2xs)" }}
               title={`Approval: ${recipe.approval_behavior}`}
             >
               {APPROVAL_LABEL[recipe.approval_behavior]}
             </span>
           )}
           {recipe.network_access && (
-            <span className="pill muted" style={{ fontSize: "var(--fs-3xs)" }} title="Makes outbound network requests">
+            <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }} title="Makes outbound network requests">
               network
             </span>
           )}
           {recipe.file_access && (
-            <span className="pill muted" style={{ fontSize: "var(--fs-3xs)" }} title="Reads or writes local files">
+            <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }} title="Reads or writes local files">
               file I/O
             </span>
           )}
@@ -435,27 +454,37 @@ export default function MarketplacePage() {
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const toast = useToast();
+  const router = useRouter();
+
+  // Re-probe bridge + refresh the installed-names Set. Extracted so the
+  // post-install handler can call it to (a) catch the name-divergence
+  // bug where the dashboard tracks marketplace name but the bridge keys
+  // on the recipe's own YAML `name` field — without a refresh the
+  // "Installed" pill can lie — and (b) flip the offline banner if the
+  // bridge died mid-session.
+  const refreshInstalled = useCallback(async () => {
+    try {
+      const r = await fetch(apiPath("/api/bridge/recipes"));
+      if (!r.ok) {
+        setBridgeOnline(false);
+        return;
+      }
+      const data = await r.json();
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.recipes)
+          ? data.recipes
+          : [];
+      setBridgeOnline(true);
+      setInstalledNames(new Set(list.map((r: { name: string }) => r.name) as string[]));
+    } catch {
+      setBridgeOnline(false);
+    }
+  }, []);
 
   useEffect(() => {
     async function load() {
-      // Check bridge + fetch installed in parallel
-      const [installedResult] = await Promise.allSettled([
-        fetch(apiPath("/api/bridge/recipes")).then(async (r) => {
-          if (!r.ok) return { online: false, names: [] as string[] };
-          const data = await r.json();
-          const list = Array.isArray(data)
-            ? data
-            : Array.isArray(data?.recipes)
-              ? data.recipes
-              : [];
-          return { online: true, names: list.map((r: { name: string }) => r.name) as string[] };
-        }),
-      ]);
-
-      if (installedResult.status === "fulfilled") {
-        setBridgeOnline(installedResult.value.online);
-        setInstalledNames(new Set(installedResult.value.names));
-      }
+      await refreshInstalled();
 
       // Fetch registry: bridge → raw GitHub → hardcoded fallback. Each
       // hop has a 4s timeout so a slow CDN can't keep the user staring
@@ -504,8 +533,17 @@ export default function MarketplacePage() {
         }
       }
 
-      setRegistry(recipes ?? FALLBACK_REGISTRY.recipes);
-      setBundles(registryBundles);
+      if (recipes) {
+        setRegistry(recipes);
+        setBundles(registryBundles);
+      } else {
+        // Both bridge and GitHub failed — show the hardcoded fallback BUT
+        // surface the failure so users know they're looking at stale,
+        // pre-seeded data rather than live registry contents.
+        setRegistry(FALLBACK_REGISTRY.recipes);
+        setBundles(registryBundles);
+        setLoadErr("registry unreachable — showing built-in fallback");
+      }
     }
 
     load().catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));
@@ -533,19 +571,68 @@ export default function MarketplacePage() {
       throw new Error("Install requires bridge v0.2.0-alpha.26+");
     }
 
-    if (!res.ok) {
-      let msg = `Error ${res.status}`;
-      try {
-        const body = (await res.json()) as { error?: string };
-        if (body.error) msg = body.error;
-      } catch {
-        // ignore parse failure
-      }
-      throw new Error(msg);
+    // Parse the response body once — both success and failure paths need it.
+    let parsed: {
+      ok?: boolean;
+      error?: string;
+      missingConnectors?: string[];
+    } = {};
+    try {
+      parsed = (await res.json()) as typeof parsed;
+    } catch {
+      // ignore parse failure — fall back to status-only error below
     }
 
+    if (!res.ok) {
+      // 502 / 503 / 504 from our Next.js proxy means the bridge stopped
+      // responding to bridgeFetch — flip the offline banner so the next
+      // click renders "Get Patchwork" instead of another opaque retry,
+      // and surface a friendlier message than the raw upstream body.
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        setBridgeOnline(false);
+        throw new Error(
+          "Bridge isn't responding. Start it with `patchwork start` and try again.",
+        );
+      }
+      throw new Error(parsed.error ?? `Error ${res.status}`);
+    }
+
+    // Optimistic update so the card flips to "Installed" immediately.
     setInstalledNames((prev) => new Set([...prev, recipe.name]));
     toast.success("Recipe installed successfully");
+    // Authoritative refresh from the bridge — catches the name-
+    // divergence case where the dashboard tracks the marketplace name
+    // but the bridge writes the recipe under its own YAML `name` field.
+    // Without this, the green pill would lie until the next page load.
+    void refreshInstalled();
+
+    // Bridge-side connector preflight (#488) ships a `missingConnectors`
+    // array when the recipe uses connectors the user hasn't authorised
+    // yet. Surface as a follow-up warn toast with an action link to
+    // /connections — non-blocking, can be dismissed, but tells the user
+    // exactly what they need to do before this recipe will run.
+    const missing = Array.isArray(parsed.missingConnectors)
+      ? parsed.missingConnectors.filter(
+          (c): c is string => typeof c === "string",
+        )
+      : [];
+    if (missing.length > 0) {
+      const labels = missing.slice(0, 3).map(formatConnectorLabel);
+      const overflow = missing.length - labels.length;
+      const list =
+        overflow > 0
+          ? `${labels.join(", ")} + ${overflow} more`
+          : labels.join(", ");
+      toast.warn(`Connect ${list} before this recipe can run.`, {
+        duration: 8000,
+        action: {
+          label: "Open connections",
+          onClick: () => {
+            router.push("/connections");
+          },
+        },
+      });
+    }
   }
 
   const filtered = (registry ?? []).filter((r) => {
@@ -608,11 +695,14 @@ export default function MarketplacePage() {
 
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Marketplace — <span className="accent">recipes built by the community.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Marketplace — <span className="accent">open-source YAML, curated.</span>
+            </h1>
+            <HintCard.Toggle id="marketplace" />
+          </div>
           <div className="editorial-sub">
-            {`${registry?.length ?? FALLBACK_REGISTRY.recipes.length} recipes · open-source YAML · audited weekly`}
+            {`${registry?.length ?? FALLBACK_REGISTRY.recipes.length} recipes · sourced from github.com/patchworkos/recipes`}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -630,14 +720,17 @@ export default function MarketplacePage() {
             href="https://github.com/patchworkos/recipes/blob/main/CONTRIBUTING.md"
             target="_blank"
             rel="noopener noreferrer"
-            className="btn sm"
+            className="btn sm ghost"
             style={{ textDecoration: "none", fontSize: "var(--fs-s)" }}
-            aria-label="Submit a recipe to the marketplace"
+            aria-label="Propose a recipe by opening a pull request on GitHub"
+            title="Opens GitHub. Submissions are reviewed as PRs against patchworkos/recipes — there is no in-app submission flow."
           >
-            + Submit recipe
+            Propose via GitHub PR ↗
           </a>
         </div>
       </div>
+
+      <HintCard id="marketplace" />
 
       {searchOpen && (
         <div style={{ marginBottom: "var(--s-6)" }}>
@@ -690,7 +783,7 @@ export default function MarketplacePage() {
               <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
                 Capability bundles
               </h2>
-              <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginBottom: "var(--s-4)", marginTop: "-var(--s-2)" }}>
+              <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginBottom: "var(--s-4)", marginTop: "calc(-1 * var(--s-2))" }}>
                 Recipes + connectors + policy templates — install as one unit.
               </p>
               <div className="marketplace-grid" style={{ marginBottom: "var(--s-8)" }}>

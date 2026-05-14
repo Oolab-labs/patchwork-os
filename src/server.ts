@@ -3,6 +3,11 @@ import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { ActivityListener } from "./activityTypes.js";
+import {
+  getAnalyticsPrefsAll,
+  getTelemetryPrefs,
+  setTelemetryPrefs,
+} from "./analyticsPrefs.js";
 import { handleApprovalsStream, routeApprovalRequest } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import type { AttributedPermissionRules } from "./ccPermissions.js";
@@ -14,6 +19,7 @@ import {
 import { timingSafeStringEqual } from "./crypto.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import {
+  EnvLockedFlagError,
   getEnvLockedValue,
   isEnvLockedFor,
   isWriteKillSwitchActive,
@@ -263,6 +269,14 @@ export class Server extends EventEmitter<ServerEvents> {
         vars?: Record<string, string>,
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null = null;
+  /**
+   * Patchwork: set by bridge to re-prime the recipe scheduler when the
+   * on-disk recipe set changes (install / save / delete). Lets cron-
+   * triggered recipes start firing without a bridge restart. Optional —
+   * tests + headless tooling leave it null; the install handler treats
+   * the callback as best-effort fire-and-forget.
+   */
+  public onRecipesChangedFn: (() => void) | null = null;
   /** Patchwork: admin-controlled managed settings path (highest rule precedence). */
   public managedSettingsPath: string | undefined = undefined;
   /** Effective bridge config path to update when dashboard saves driver changes. */
@@ -339,6 +353,15 @@ export class Server extends EventEmitter<ServerEvents> {
         reason: string | undefined;
         ts: number;
       }) => void)
+    | null = null;
+  /**
+   * Set by bridge to broadcast a `kind: "kill-switch"` SSE event from
+   * `/stream` when the kill-switch state changes (issue #422 v2, pitfall I8).
+   * Bridge wires this to `activityLog.broadcastKillSwitch()` or an equivalent
+   * that notifies all active SSE listeners so the dashboard updates in <1s.
+   */
+  public broadcastKillSwitchEventFn:
+    | ((engaged: boolean, reason?: string) => void)
     | null = null;
   /** Patchwork: set by bridge to match + fire webhook-triggered recipes. */
   public webhookFn:
@@ -1410,6 +1433,7 @@ export class Server extends EventEmitter<ServerEvents> {
           runPlanFn: this.runPlanFn,
           runReplayFn: this.runReplayFn,
           runRecipeFn: this.runRecipeFn,
+          onRecipesChangedFn: this.onRecipesChangedFn,
         })
       ) {
         return;
@@ -1817,7 +1841,28 @@ export class Server extends EventEmitter<ServerEvents> {
           const next = body.engage;
           const changed = prev !== next;
           if (changed) {
-            setFlag(KILL_SWITCH_WRITES, next, true);
+            try {
+              setFlag(KILL_SWITCH_WRITES, next, true);
+            } catch (err) {
+              // Belt-and-suspenders: setFlag now throws EnvLockedFlagError if
+              // the flag was env-locked (we already checked isEnvLockedFor above,
+              // but a race with lockKillSwitchEnv() in tests warrants this).
+              if (err instanceof EnvLockedFlagError) {
+                res.writeHead(409, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({
+                    error: "env_locked",
+                    flag: KILL_SWITCH_WRITES,
+                    frozenValue: err.frozenValue,
+                    lockedReason: `PATCHWORK_FLAG_KILL_SWITCH_WRITES=${
+                      err.frozenValue ? "1" : "0"
+                    } at bridge startup`,
+                  }),
+                );
+                return;
+              }
+              throw err;
+            }
             // v2-I6: audit emit on every state transition; no-ops skip.
             // When the bridge wires recordKillSwitchTraceFn (step 5),
             // this writes to ~/.patchwork/decision_traces.jsonl. The
@@ -1834,6 +1879,9 @@ export class Server extends EventEmitter<ServerEvents> {
               reason,
               ts: Date.now(),
             });
+            // v2-I8: broadcast SSE kind:"kill-switch" so dashboard updates
+            // in <1s without changing the poll cadence.
+            this.broadcastKillSwitchEventFn?.(next, reason);
           }
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(
@@ -1843,6 +1891,62 @@ export class Server extends EventEmitter<ServerEvents> {
               locked: false,
             }),
           );
+          return;
+        }
+      }
+
+      // /telemetry-prefs — read/write per-flag telemetry preferences.
+      // GET  → {crashReports, usageStats, localDiagnostics}
+      // POST {crashReports?, usageStats?, localDiagnostics?} → same shape (partial update)
+      if (parsedUrl.pathname === "/telemetry-prefs") {
+        if (req.method === "GET") {
+          const prefs = getTelemetryPrefs();
+          const all = getAnalyticsPrefsAll();
+          const response: Record<string, unknown> = { ...prefs };
+          if (all?.lastSentAt !== undefined) {
+            response.lastSentAt = all.lastSentAt;
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(response));
+          return;
+        }
+        if (req.method === "POST") {
+          const TP_BODY_CAP = 1 * 1024;
+          const parsed = await readJsonBody<{
+            crashReports?: unknown;
+            usageStats?: unknown;
+            localDiagnostics?: unknown;
+          }>(req, TP_BODY_CAP);
+          if (!parsed.ok) {
+            if (parsed.code === "too_large") {
+              respond413(res, TP_BODY_CAP);
+              return;
+            }
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({ error: "invalid_request", reason: "bad_json" }),
+            );
+            return;
+          }
+          const body = parsed.value ?? {};
+          const update: {
+            crashReports?: boolean;
+            usageStats?: boolean;
+            localDiagnostics?: boolean;
+          } = {};
+          if (typeof body.crashReports === "boolean") {
+            update.crashReports = body.crashReports;
+          }
+          if (typeof body.usageStats === "boolean") {
+            update.usageStats = body.usageStats;
+          }
+          if (typeof body.localDiagnostics === "boolean") {
+            update.localDiagnostics = body.localDiagnostics;
+          }
+          setTelemetryPrefs(update);
+          const prefs = getTelemetryPrefs();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(prefs));
           return;
         }
       }

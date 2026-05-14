@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
+import { useMemo, useState } from "react";
+import { BackLink, RelationStrip } from "@/components/patchwork";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { ACTIVITY_NOISE_EVENTS } from "@/lib/activityNoise";
@@ -175,21 +177,29 @@ export default function SessionDetailPage() {
   // streams arbitrarily (lifecycle row 5 is not the same instant as tool
   // row 5). Use the wall-clock timestamp instead so the merged stream
   // reflects actual chronology.
-  const stream: StreamRow[] = [
-    ...lifecycle.map((entry) => ({ kind: "lifecycle" as const, entry })),
-    ...tools.map((entry) => ({ kind: "tool" as const, entry })),
-  ]
-    .sort((a, b) => Date.parse(b.entry.timestamp) - Date.parse(a.entry.timestamp));
+  const [hideNoise, setHideNoise] = useState(true);
+  const stream: StreamRow[] = useMemo(() => {
+    const merged: StreamRow[] = [
+      ...lifecycle.map((entry) => ({ kind: "lifecycle" as const, entry })),
+      ...tools.map((entry) => ({ kind: "tool" as const, entry })),
+    ].sort(
+      (a, b) => Date.parse(b.entry.timestamp) - Date.parse(a.entry.timestamp),
+    );
+    if (!hideNoise) return merged;
+    return merged.filter(
+      (row) => row.kind !== "lifecycle" || !NOISE_EVENTS.has(row.entry.event),
+    );
+  }, [lifecycle, tools, hideNoise]);
+  const noiseCount = useMemo(
+    () => lifecycle.filter((e) => NOISE_EVENTS.has(e.event)).length,
+    [lifecycle],
+  );
 
   return (
     <section>
       <div className="page-head">
         <div>
-          <div style={{ fontSize: "var(--fs-s)", marginBottom: 4 }}>
-            <Link href="/sessions" style={{ color: "var(--fg-2)" }}>
-              ← Sessions
-            </Link>
-          </div>
+          <BackLink href="/sessions" label="Sessions" />
           <h1>
             <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-3xl)" }}>
               {id.slice(0, 8)}
@@ -202,6 +212,31 @@ export default function SessionDetailPage() {
           >
             {id}
           </div>
+          {/*
+            What this session touches: the activity stream it emits to,
+            the run ledger (sessions are how recipe-runs reach the
+            bridge), and the live firehose. Lets a debugging user jump
+            to the surrounding context in one click.
+          */}
+          <RelationStrip
+            items={[
+              {
+                label: "Recent runs",
+                href: `/runs?session=${encodeURIComponent(id)}`,
+                title: `Recipe runs from session ${id}`,
+              },
+              {
+                label: "Activity stream",
+                href: "/activity",
+                title: "Live event firehose",
+              },
+              {
+                label: "All sessions",
+                href: "/sessions",
+                title: "Other connected clients",
+              },
+            ]}
+          />
         </div>
         {summary && (
           <div style={{ display: "flex", gap: 6 }}>
@@ -505,6 +540,18 @@ export default function SessionDetailPage() {
               live
             </span>
             <span className="pill muted">{stream.length}</span>
+            {noiseCount > 0 && (
+              <button
+                type="button"
+                className="btn sm ghost"
+                style={{ marginLeft: "auto" }}
+                onClick={() => setHideNoise((v) => !v)}
+                aria-pressed={hideNoise}
+                title={hideNoise ? "Show noise events" : "Hide low-signal lifecycle events"}
+              >
+                {hideNoise ? `Show noise (+${noiseCount})` : "Hide noise"}
+              </button>
+            )}
           </div>
           <div className="table-wrap">
             <table className="table">

@@ -115,7 +115,9 @@ function parseJsonReport(
   const results: TestResult[] = [];
   for (const file of report.testResults ?? []) {
     const rawFilePath = file.testFilePath ?? file.name ?? "";
-    const filePath = rawFilePath ? path.relative(workspace, rawFilePath) : "";
+    const filePath = rawFilePath
+      ? path.relative(workspace, rawFilePath).replace(/\\/g, "/")
+      : "";
 
     for (const test of file.assertionResults ?? file.testResults ?? []) {
       const name = test.fullName ?? test.title ?? "unknown";

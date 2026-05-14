@@ -7,7 +7,7 @@ import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
-import { ErrorState, LivePill } from "@/components/patchwork";
+import { ErrorState, Glossary, HintCard, LivePill } from "@/components/patchwork";
 
 interface DecisionTrace {
   traceType: "decision";
@@ -73,6 +73,7 @@ function DecisionsContent() {
   const [showAllTags, setShowAllTags] = useState(false);
   const [keyQuery, setKeyQuery] = useState(searchParams.get("ref") ?? "");
   const [textQuery, setTextQuery] = useState(searchParams.get("q") ?? "");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [since, setSince] = useState<SinceFilter>(() => {
     const sp = searchParams.get("since");
     return isSinceFilter(sp) ? sp : "30d";
@@ -107,6 +108,19 @@ function DecisionsContent() {
     params.set("limit", "200");
     return `?${params.toString()}`;
   }, [tag, debouncedKey, debouncedText, since]);
+
+  // Press "/" to focus the search input (GitHub / Linear convention).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+      e.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const { data, error, loading, refetch } = useBridgeFetch<TracesResponse>(
     `/api/bridge/traces${qs}`,
@@ -154,11 +168,18 @@ function DecisionsContent() {
       <DecisionsTabs />
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Decisions — <span className="accent">the knowledge base your agents wrote.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Decisions — <span className="accent">the knowledge base your agents wrote.</span>
+            </h1>
+            <HintCard.Toggle id="decisions" />
+          </div>
           <div className="editorial-sub" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span>{traces.length} trace{traces.length !== 1 ? "s" : ""} · ctxSaveTrace persists · ctxQueryTraces recalls</span>
+            <span>
+              {traces.length}{" "}
+              <Glossary term="trace">trace{traces.length !== 1 ? "s" : ""}</Glossary>{" "}
+              · ctxSaveTrace persists · ctxQueryTraces recalls
+            </span>
             <LivePill label="5s" tone="muted" />
           </div>
         </div>
@@ -168,12 +189,13 @@ function DecisionsContent() {
               Search decisions
             </span>
             <input
+              ref={searchInputRef}
               type="text"
               value={textQuery}
               onChange={(e) => setTextQuery(e.target.value)}
               placeholder="Search problems & solutions…"
               className="input"
-              aria-label="Search decisions"
+              aria-label="Search decisions (press / to focus)"
               style={{ minWidth: "min(240px, 100%)", width: 280, maxWidth: "100%" }}
             />
           </label>
@@ -205,6 +227,8 @@ function DecisionsContent() {
           </label>
         </div>
       </div>
+
+      <HintCard id="decisions" />
 
       {allTags.length > 0 && (
         <div

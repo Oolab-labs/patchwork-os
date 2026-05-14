@@ -33,7 +33,8 @@ afterEach(() => {
   rmSync(repoDir, { recursive: true, force: true });
 });
 
-describe("defaultGitLogSince", () => {
+// shell:"/bin/bash" + `&&` chaining in setup are POSIX-only; cmd.exe rejects them.
+describe.skipIf(process.platform === "win32")("defaultGitLogSince", () => {
   it("returns oneline log on success", () => {
     writeFileSync(path.join(repoDir, "a.txt"), "x");
     execSync("git add . && git commit -q -m 'first commit'", {

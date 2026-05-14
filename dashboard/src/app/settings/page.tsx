@@ -215,10 +215,34 @@ export default function SettingsPage() {
   );
   const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
-  // Telemetry (local only — no backend yet)
+  // Telemetry — persisted via GET/POST /api/bridge/telemetry-prefs
   const [telCrash, setTelCrash] = useState(false);
   const [telUsage, setTelUsage] = useState(false);
   const [telDiag, setTelDiag] = useState(true);
+  const telInitialized = useRef(false);
+  const [telLastSentAt, setTelLastSentAt] = useState<string | null>(null);
+
+  // Fetch analytics prefs (including lastSentAt) from bridge
+  useEffect(() => {
+    let alive = true;
+    const fetch_ = async () => {
+      try {
+        const res = await fetch(apiPath("/api/bridge/telemetry-prefs"));
+        if (res.ok) {
+          const data = (await res.json()) as { lastSentAt?: string };
+          if (alive && typeof data.lastSentAt === "string") {
+            setTelLastSentAt(data.lastSentAt);
+          }
+        }
+      } catch {
+        // Bridge offline — no-op
+      }
+    };
+    fetch_();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Kill-switch state — fetched from /api/bridge/kill-switch (proxy to
   // bridge `GET /kill-switch`). Polls in tandem with /status below.
@@ -309,6 +333,27 @@ export default function SettingsPage() {
     return () => clearInterval(id);
   }, []);
 
+  // v2-I8 (#422): SSE consumer for kind:"kill-switch" events from /stream.
+  // When the bridge emits a state-change event the toggle updates in <1s
+  // without waiting for the next 5-second poll cycle.
+  useEffect(() => {
+    const es = new EventSource(apiPath("/api/bridge/stream"));
+    es.onmessage = (msg) => {
+      try {
+        const evt = JSON.parse(msg.data) as {
+          kind?: string;
+          engaged?: boolean;
+        };
+        if (evt.kind === "kill-switch" && typeof evt.engaged === "boolean") {
+          setKsEngaged(evt.engaged);
+        }
+      } catch {
+        // ignore malformed events
+      }
+    };
+    return () => es.close();
+  }, []);
+
   // Load CC permission rules for the approval policy section
   useEffect(() => {
     let cancel = false;
@@ -330,6 +375,35 @@ export default function SettingsPage() {
     return () => {
       cancel = true;
     };
+  }, []);
+
+  // Load telemetry prefs on mount (once). Fail-soft — if bridge is offline
+  // the toggles remain at their default values.
+  useEffect(() => {
+    if (telInitialized.current) return;
+    let cancel = false;
+    (async () => {
+      try {
+        const res = await fetch(apiPath("/api/bridge/telemetry-prefs"));
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          crashReports?: boolean;
+          usageStats?: boolean;
+          localDiagnostics?: boolean;
+        };
+        if (cancel) return;
+        if (typeof data.crashReports === "boolean") setTelCrash(data.crashReports);
+        if (typeof data.usageStats === "boolean") setTelUsage(data.usageStats);
+        if (typeof data.localDiagnostics === "boolean") setTelDiag(data.localDiagnostics);
+        telInitialized.current = true;
+      } catch {
+        /* fail-soft — bridge may not be running */
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Read current Web Push subscription status on mount. Idempotently
@@ -371,6 +445,23 @@ export default function SettingsPage() {
     setSaveState("saving");
     setTimeout(() => setSaveState("saved"), 600);
     setTimeout(() => setSaveState("idle"), 2400);
+  }
+
+  async function saveTelemetryPref(
+    field: "crashReports" | "usageStats" | "localDiagnostics",
+    value: boolean,
+  ) {
+    // Optimistic local update already applied by the caller via setter.
+    try {
+      await fetch(apiPath("/api/bridge/telemetry-prefs"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: value }),
+      });
+      flashSaved();
+    } catch {
+      /* fail-soft — UI already shows the optimistic value */
+    }
   }
 
   async function saveApiKey(provider: ApiKeyProvider) {
@@ -1028,7 +1119,7 @@ export default function SettingsPage() {
                       borderRadius: "var(--r-2)",
                       border: "none",
                       background: "var(--accent)",
-                      color: "var(--on-accent)",
+                      color: "var(--on-orange)",
                       cursor: gateSaving || gatePending === gateValue ? "default" : "pointer",
                       opacity: gateSaving || gatePending === gateValue ? 0.5 : 1,
                     }}
@@ -1241,7 +1332,7 @@ export default function SettingsPage() {
                         borderRadius: "var(--r-2)",
                         border: "none",
                         background: "var(--accent)",
-                        color: "var(--on-accent)",
+                        color: "var(--on-orange)",
                         cursor:
                           pushBusy ||
                           !vapidPublicKey ||
@@ -1281,7 +1372,7 @@ export default function SettingsPage() {
                           borderRadius: "var(--r-2)",
                           border: "none",
                           background: "var(--accent)",
-                          color: "var(--on-accent)",
+                          color: "var(--on-orange)",
                           cursor:
                             pushBusy || !vapidPublicKey ? "default" : "pointer",
                           opacity: pushBusy || !vapidPublicKey ? 0.5 : 1,
@@ -1348,30 +1439,54 @@ export default function SettingsPage() {
               </div>
 
               <div style={{ padding: "16px 0", display: "flex", flexDirection: "column", gap: 14 }}>
-                <div role="status" style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)", marginBottom: 4 }}>
-                  Preview only — toggles do not yet persist between reloads.
-                </div>
                 <ToggleRow
                   id="tel-crash"
                   label="Crash reports"
                   help="Send anonymized stack traces to help diagnose bridge crashes. No source files, no env vars."
                   checked={telCrash}
-                  onChange={setTelCrash}
+                  onChange={(v) => {
+                    setTelCrash(v);
+                    void saveTelemetryPref("crashReports", v);
+                  }}
                 />
                 <ToggleRow
                   id="tel-usage"
                   label="Anonymous usage stats"
                   help="Tool-call counts and feature flag usage. No prompts, no file paths, no identifiers."
                   checked={telUsage}
-                  onChange={setTelUsage}
+                  onChange={(v) => {
+                    setTelUsage(v);
+                    void saveTelemetryPref("usageStats", v);
+                  }}
                 />
                 <ToggleRow
                   id="tel-diag"
                   label="Local diagnostics retention"
                   help="Keep last 7 days of bridge logs on this machine for debugging. Never leaves your computer."
                   checked={telDiag}
-                  onChange={setTelDiag}
+                  onChange={(v) => {
+                    setTelDiag(v);
+                    void saveTelemetryPref("localDiagnostics", v);
+                  }}
                 />
+                {telLastSentAt && (
+                  <div
+                    style={{
+                      fontSize: "var(--fs-s)",
+                      color: "var(--ink-2)",
+                      paddingTop: 4,
+                    }}
+                  >
+                    Last sent:{" "}
+                    {new Date(telLastSentAt).toLocaleDateString(undefined, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>

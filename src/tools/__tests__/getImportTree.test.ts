@@ -49,7 +49,10 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("createGetImportTreeTool", () => {
+// Synthetic POSIX-only fixtures ("/workspace/..." paths); resolveFilePath
+// rejects POSIX absolutes on Win32. The tool itself is path-agnostic in
+// production where callers pass real workspace-relative paths.
+describe.skipIf(process.platform === "win32")("createGetImportTreeTool", () => {
   it("returns tree for a file with ES module imports", async () => {
     setupFiles({
       "/workspace/src/index.ts": `import { foo } from "./foo.ts";\nimport bar from "./bar.ts";`,

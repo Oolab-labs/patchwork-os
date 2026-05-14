@@ -406,6 +406,38 @@ export interface RecipeRouteDeps {
         vars?: Record<string, string>,
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null;
+  /**
+   * Best-effort notification that the on-disk recipe set just changed
+   * (install, save, delete, archive, …). The bridge wires this to
+   * `recipeScheduler.start()` so cron-triggered recipes start firing
+   * without a restart. Optional — non-bridge callers (tests, headless
+   * tooling) leave it null.
+   *
+   * Contract:
+   *   - Synchronous fire-and-forget. Implementations MUST NOT throw.
+   *   - Idempotent. Multiple calls in quick succession should coalesce
+   *     to at-least-once scheduler restart behaviour.
+   *   - Hot path is post-success: routes invoke after the disk write,
+   *     so a callback failure must never roll back the user's action.
+   */
+  onRecipesChangedFn: (() => void) | null;
+}
+
+/**
+ * Best-effort fire of the recipe-changed notification. Wraps the
+ * callback in try/catch + console.error so a misbehaving notifier
+ * (most likely scheduler.start() throwing) cannot turn a successful
+ * disk-write into a failed-looking HTTP response. Used by install /
+ * save / delete / archive / duplicate / setEnabled / saveContent
+ * routes after their respective success paths.
+ */
+function fireOnRecipesChanged(deps: RecipeRouteDeps): void {
+  if (!deps.onRecipesChangedFn) return;
+  try {
+    deps.onRecipesChangedFn();
+  } catch (err) {
+    console.error(`[recipeRoutes] onRecipesChangedFn threw:`, err);
+  }
 }
 
 /**
@@ -834,6 +866,7 @@ export function tryHandleRecipeRoute(
           return;
         }
         const result = deps.saveRecipeFn(draft);
+        if (result.ok) fireOnRecipesChanged(deps);
         res.writeHead(result.ok ? 201 : 400, {
           "Content-Type": "application/json",
         });
@@ -925,6 +958,10 @@ export function tryHandleRecipeRoute(
           return;
         }
         const result = deps.setRecipeEnabledFn(name, body.enabled);
+        // Enable/disable changes which cron triggers should fire — the
+        // RecipeScheduler honours the disabled set on every start(), so
+        // re-priming after a toggle picks up the change without a restart.
+        if (result.ok) fireOnRecipesChanged(deps);
         res.writeHead(result.ok ? 200 : 400, {
           "Content-Type": "application/json",
         });
@@ -1076,6 +1113,10 @@ export function tryHandleRecipeRoute(
           return;
         }
         const result = deps.saveRecipeContentFn(name, body.content);
+        // Editing recipe YAML can change cron schedule, webhook path,
+        // or trigger type entirely — re-prime the scheduler so the new
+        // shape takes effect without a bridge restart.
+        if (result.ok) fireOnRecipesChanged(deps);
         res.writeHead(result.ok ? 200 : 400, {
           "Content-Type": "application/json",
         });
@@ -1100,6 +1141,9 @@ export function tryHandleRecipeRoute(
       return true;
     }
     const result = deps.deleteRecipeContentFn(name);
+    // Deleting a cron recipe leaves an orphaned interval in the scheduler
+    // until the next start() — re-prime so it goes away.
+    if (result.ok) fireOnRecipesChanged(deps);
     const status = result.ok
       ? 200
       : result.error === "Recipe not found"
@@ -1122,6 +1166,9 @@ export function tryHandleRecipeRoute(
       return true;
     }
     const result = deps.archiveRecipeFn(name);
+    // Archiving moves the recipe under .archive/ where the scheduler
+    // ignores it — same orphan-interval cleanup needed as for delete.
+    if (result.ok) fireOnRecipesChanged(deps);
     const status = result.ok
       ? 200
       : result.error === "Recipe not found"
@@ -1144,6 +1191,9 @@ export function tryHandleRecipeRoute(
       return true;
     }
     const result = deps.duplicateRecipeFn(name);
+    // Duplication adds a new recipe file to the dir — re-prime so any
+    // cron trigger inside the duplicate starts firing immediately.
+    if (result.ok) fireOnRecipesChanged(deps);
     const status = result.ok
       ? 201
       : result.error === "Recipe not found"
@@ -1187,6 +1237,9 @@ export function tryHandleRecipeRoute(
             force: force === true,
           },
         );
+        // Promotion overwrites the canonical file with the variant's
+        // contents — same scheduler refresh story as save/edit.
+        if (result.ok) fireOnRecipesChanged(deps);
         const httpStatus = result.ok
           ? 200
           : result.targetExists
@@ -1288,31 +1341,34 @@ export function tryHandleRecipeRoute(
         // -----------------------------------------------------------------
         // BUNDLE INSTALL DISPATCH (#130 PR A).
         //
-        // `github:patchworkos/recipes/bundles/<name>` installs every recipe
+        // `github:<owner>/<repo>/bundles/<name>` installs every recipe
         // listed in the bundle's `patchwork-bundle.json`. Plugin (`plugin`)
         // and policy template (`policy_template`) declared in the manifest
         // are surfaced as advisory-only — wiring those needs separate
         // decisions (npm-install surface, policy application UX) tracked
-        // outside this PR. See the #130 scoping comment.
+        // outside this PR.
+        //
+        // Org allowlist (#audit-thread): historically the path was hard-
+        // coded to `patchworkos/recipes`. Now any allowlisted org/repo
+        // can host a bundle; parse + validate via the shared helper so
+        // single-recipe and bundle install share one source-of-truth.
         // -----------------------------------------------------------------
-        const bundlePrefix = "github:patchworkos/recipes/bundles/";
-        if (source.startsWith(bundlePrefix)) {
-          const bundleName = source.slice(bundlePrefix.length);
-          const { isSafeBasename } = await import(
-            "./commands/recipeInstall.js"
+        const bundleParse = source.startsWith("github:")
+          ? await (async () => {
+              const { parseGithubInstallSource } = await import(
+                "./recipes/githubInstallSource.js"
+              );
+              return parseGithubInstallSource(source);
+            })()
+          : null;
+        if (bundleParse?.ok && bundleParse.parsed.kind === "bundle") {
+          const { buildGithubRawUrl } = await import(
+            "./recipes/githubInstallSource.js"
           );
-          if (!isSafeBasename(bundleName)) {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                ok: false,
-                error: "Invalid bundle name in source",
-                code: "invalid_bundle_name",
-              }),
-            );
-            return;
-          }
-          const manifestUrl = `https://raw.githubusercontent.com/patchworkos/recipes/main/bundles/${bundleName}/patchwork-bundle.json`;
+          const bundleName = bundleParse.parsed.name;
+          const bundleOwner = bundleParse.parsed.owner;
+          const bundleRepo = bundleParse.parsed.repo;
+          const manifestUrl = buildGithubRawUrl(bundleParse.parsed);
 
           const ctl = new AbortController();
           const timeout = setTimeout(() => ctl.abort(), 30_000);
@@ -1389,6 +1445,12 @@ export function tryHandleRecipeRoute(
             );
             return;
           }
+          // Validate each declared recipe basename to block traversal +
+          // junk segments. `isSafeBasename` lives in the legacy recipe-
+          // install command but the predicate is the right shape here.
+          const { isSafeBasename } = await import(
+            "./commands/recipeInstall.js"
+          );
           if (
             !Array.isArray(manifest.recipes) ||
             manifest.recipes.length === 0 ||
@@ -1426,7 +1488,10 @@ export function tryHandleRecipeRoute(
           mkdirSync(recipesDir, { recursive: true });
 
           for (const r of manifest.recipes as string[]) {
-            const recipeUrl = `https://raw.githubusercontent.com/patchworkos/recipes/main/recipes/${r}/${r}.yaml`;
+            // Bundle's manifest is allowed to declare recipes that
+            // live in the same repo as the bundle. Build the URL with
+            // the parsed owner/repo, not the hard-coded original.
+            const recipeUrl = `https://raw.githubusercontent.com/${bundleOwner}/${bundleRepo}/main/recipes/${r}/${r}.yaml`;
             const recipeCtl = new AbortController();
             const recipeTimeout = setTimeout(() => recipeCtl.abort(), 30_000);
             try {
@@ -1489,6 +1554,13 @@ export function tryHandleRecipeRoute(
           // 200 if any recipe installed; 502 otherwise. Always include both
           // arrays so callers (CLI + dashboard) can render partial-success.
           const status = installed.length > 0 ? 200 : 502;
+          // Notify the scheduler so cron-trigger recipes in the bundle
+          // start firing without a bridge restart. Fired once per bundle
+          // (not per recipe inside) since scheduler.start() reads the
+          // whole recipes dir anyway. Guarded by the partial-success
+          // check — no point waking up the scheduler for a 0-installed
+          // failure.
+          if (installed.length > 0) fireOnRecipesChanged(deps);
           res.writeHead(status, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
@@ -1503,28 +1575,47 @@ export function tryHandleRecipeRoute(
           return;
         }
 
-        const githubPrefix = "github:patchworkos/recipes/recipes/";
         let fetchUrl: string;
         let recipeName: string;
-        if (source.startsWith(githubPrefix)) {
-          recipeName = source.slice(githubPrefix.length);
-          // The constructed URL is internal — recipeName must be a safe
-          // single-segment so we don't end up encoding `../etc/passwd` into
-          // the path. Reuse the strict basename predicate from `recipeInstall`.
-          const { isSafeBasename } = await import(
-            "./commands/recipeInstall.js"
+        if (source.startsWith("github:")) {
+          // Parse the new generalised shape (any allowlisted org/repo)
+          // instead of only `github:patchworkos/recipes/recipes/<name>`.
+          // Distinguishes bad shape (400) from not-on-allowlist (403)
+          // so operators can spot a config error vs. a typo.
+          const { parseGithubInstallSource, buildGithubRawUrl } = await import(
+            "./recipes/githubInstallSource.js"
           );
-          if (!isSafeBasename(recipeName)) {
-            res.writeHead(400, { "Content-Type": "application/json" });
+          const parsed = parseGithubInstallSource(source);
+          if (!parsed.ok) {
+            const status = parsed.code === "not_allowlisted" ? 403 : 400;
+            res.writeHead(status, { "Content-Type": "application/json" });
             res.end(
               JSON.stringify({
                 ok: false,
-                error: "Invalid recipe name in source",
+                error: parsed.error,
+                code: parsed.code,
               }),
             );
             return;
           }
-          fetchUrl = `https://raw.githubusercontent.com/patchworkos/recipes/main/recipes/${recipeName}/${recipeName}.yaml`;
+          // Bundle shape on /recipes/install (single-recipe path) is a
+          // mistake — surface it explicitly rather than silently fetching
+          // an unrelated URL. Bundle installs have their own code path
+          // above this block.
+          if (parsed.parsed.kind === "bundle") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error:
+                  "Bundle source on single-recipe install. Use the bundle install path.",
+                code: "bad_shape",
+              }),
+            );
+            return;
+          }
+          recipeName = parsed.parsed.name;
+          fetchUrl = buildGithubRawUrl(parsed.parsed);
         } else if (source.startsWith("https://")) {
           // Non-github source: must clear the env-var allowlist AND the SSRF
           // guard. Default-deny when env var unset (R3 DP-2 confirmed).
@@ -1693,7 +1784,11 @@ export function tryHandleRecipeRoute(
           "node:fs"
         );
         writeFileSync(tmpFile, yamlText, "utf-8");
-        let result: { action: "created" | "replaced"; name: string };
+        let result: {
+          action: "created" | "replaced";
+          name: string;
+          missingConnectors?: string[];
+        };
         try {
           const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
           mkdirSync(recipesDir, { recursive: true });
@@ -1703,7 +1798,58 @@ export function tryHandleRecipeRoute(
           const installResult = installRecipeFromFile(tmpFile, {
             recipesDir,
           });
-          result = { action: installResult.action, name: recipeName };
+          // Soft preflight: detect which connectors the recipe uses
+          // and surface the unconfigured ones as a warning. The recipe
+          // is already on disk — this is a hint for the dashboard to
+          // prompt "you'll need to connect Slack + Gmail to run this",
+          // not a gate on the install itself. Defensive: any failure
+          // here MUST NOT roll the install back, so the whole block is
+          // wrapped in try/catch.
+          let missingConnectors: string[] | undefined;
+          try {
+            const { readFileSync } = await import("node:fs");
+            const installedJson = readFileSync(
+              installResult.installedPath,
+              "utf-8",
+            );
+            const recipe = JSON.parse(installedJson) as {
+              steps?: unknown[];
+            };
+            if (Array.isArray(recipe.steps)) {
+              const { detectRequiredConnectors, findMissingConnectors } =
+                await import("./recipes/connectorPreflight.js");
+              const required = detectRequiredConnectors(
+                recipe as Parameters<typeof detectRequiredConnectors>[0],
+              );
+              if (required.length > 0) {
+                const { handleConnectionsList } = await import(
+                  "./connectors/gmail.js"
+                );
+                const connsResult = await handleConnectionsList();
+                let connections: Array<{ id?: string; status?: string }> = [];
+                try {
+                  const body = JSON.parse(connsResult.body) as {
+                    connectors?: Array<{ id?: string; status?: string }>;
+                  };
+                  connections = body.connectors ?? [];
+                } catch {
+                  /* malformed body — treat as no connections */
+                }
+                const missing = findMissingConnectors(required, connections);
+                if (missing.length > 0) missingConnectors = missing;
+              }
+            }
+          } catch (preflightErr) {
+            console.warn(
+              `[recipes/install] connector preflight failed (non-blocking):`,
+              preflightErr,
+            );
+          }
+          result = {
+            action: installResult.action,
+            name: recipeName,
+            ...(missingConnectors ? { missingConnectors } : {}),
+          };
         } finally {
           try {
             unlinkSync(tmpFile);
@@ -1711,10 +1857,45 @@ export function tryHandleRecipeRoute(
             // best-effort cleanup
           }
         }
+        // Notify the scheduler so the new recipe's cron/webhook trigger
+        // starts firing without a bridge restart. The recipe file is
+        // already on disk (`writeFileSync` above), so the next
+        // `scheduler.start()` will pick it up via its directory scan.
+        // Errors here are logged but never surface to the caller — the
+        // install itself succeeded; a scheduler restart bug must not
+        // make the response look failed.
+        fireOnRecipesChanged(deps);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, ...result }));
       } catch (err) {
-        // Truly unexpected — installer crash, manifest validation throw, etc.
+        // Distinguish "the recipe YAML is malformed" (user-actionable, 400)
+        // from "the installer itself crashed" (server bug, 500). Before this
+        // every parser error came back as the same opaque 500 — dashboards
+        // surfaced "Internal server error" with no way to know what was wrong.
+        const errName = err instanceof Error ? err.name : "";
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isParseError =
+          errName === "RecipeParseError" ||
+          // js-yaml / the `yaml` package both throw YAMLException / YAMLParseError.
+          errName === "YAMLException" ||
+          errName === "YAMLParseError" ||
+          /yaml/i.test(errName);
+        if (isParseError) {
+          // Return only the first line of the parser message — strips any
+          // embedded file path or stack frame that downstream parsers
+          // sometimes include (CodeQL: js/stack-trace-exposure).
+          const safeMsg =
+            errMsg.split("\n", 1)[0]?.slice(0, 500) ?? "invalid recipe";
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: safeMsg,
+              code: "invalid_recipe",
+            }),
+          );
+          return;
+        }
         console.error(`[recipes/install] internal install error:`, err);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(

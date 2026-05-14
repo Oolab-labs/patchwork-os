@@ -3,7 +3,7 @@ import { Fragment, useState } from "react";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { apiPath } from "@/lib/api";
-import { ErrorState } from "@/components/patchwork";
+import { ErrorState, RelationStrip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 
@@ -84,7 +84,7 @@ function SessionSummaryPanel({
           <span style={{ color: "var(--ink-2)" }}>session</span> · {shortId}
         </span>
         <a
-          href={`/dashboard/sessions/${session.id}`}
+          href={`/sessions/${encodeURIComponent(session.id)}`}
           className="btn sm ghost"
           style={{ fontSize: "var(--fs-xs)" }}
         >
@@ -156,6 +156,14 @@ export default function SessionsPage() {
           <div className="editorial-sub">
             {liveCount} live · {idleCount} idle
           </div>
+          <RelationStrip
+            items={[
+              { label: "Tasks", href: "/tasks", title: "Subprocess invocations from these sessions" },
+              { label: "Activity", href: "/activity", title: "Events emitted by these sessions" },
+              { label: "Approvals", href: "/approvals", title: "Approvals these sessions are waiting on" },
+              { label: "Connections", href: "/connections", title: "Configured services these sessions can call" },
+            ]}
+          />
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button

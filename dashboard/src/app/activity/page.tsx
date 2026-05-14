@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
@@ -9,11 +10,13 @@ import {
   EmptyState,
   EventsHistogram,
   HBarList,
+  HintCard,
   LivePill,
   type LivePillConnection,
 } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
+import { RecentHaltsPanel } from "@/components/RecentHaltsPanel";
 
 const TABS: readonly Tab[] = ["all", "tools", "recipe_start", "recipe_end"];
 function isTab(v: string | null): v is Tab {
@@ -44,6 +47,16 @@ interface ActivityEvent {
 
 function getLifecycleMeta(e: ActivityEvent) {
   const m = e.metadata ?? {};
+  // recipeName lives in metadata for both lifecycle rows AND tool-call
+  // rows the bridge emits inside a recipe step. Surfacing it on the row
+  // lets users trace tool calls back to the recipe that produced them
+  // without bouncing through /runs.
+  const rawRecipe =
+    typeof m.recipeName === "string"
+      ? m.recipeName
+      : typeof m.recipe === "string"
+        ? m.recipe
+        : undefined;
   return {
     toolName: typeof m.toolName === "string" ? m.toolName : undefined,
     decision: typeof m.decision === "string" ? m.decision : undefined,
@@ -52,6 +65,7 @@ function getLifecycleMeta(e: ActivityEvent) {
     sessionId:
       typeof m.sessionId === "string" ? m.sessionId.slice(0, 8) : undefined,
     summary: typeof m.summary === "string" ? m.summary : undefined,
+    recipeName: rawRecipe ? rawRecipe.replace(/:agent$/, "") : undefined,
   };
 }
 
@@ -82,6 +96,7 @@ export default function ActivityPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabFromUrl = searchParams?.get("tab");
+  const toolFromUrl = searchParams?.get("tool") ?? "";
   const [tab, setTabState] = useState<Tab>(isTab(tabFromUrl) ? tabFromUrl : "all");
   const setTab = (next: Tab) => {
     setTabState(next);
@@ -91,8 +106,22 @@ export default function ActivityPage() {
     const qs = params.toString();
     router.replace(qs ? `?${qs}` : "?", { scroll: false });
   };
+  const clearToolFilter = () => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.delete("tool");
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+  };
   const [, setTick] = useState(0);
   const esRef = useRef<EventSource | null>(null);
+  // Pause/resume — events that arrive while paused are buffered so the
+  // user doesn't lose context while inspecting a row. Counter drives the
+  // resume button label so the user knows what's accumulating.
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  pausedRef.current = paused;
+  const pendingBufRef = useRef<ActivityEvent[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
 
   // Seed with recent history on mount, then open the live stream.
   useEffect(() => {
@@ -143,6 +172,11 @@ export default function ActivityPage() {
     es.onmessage = (msg) => {
       try {
         const entry = withAt(JSON.parse(msg.data) as ActivityEvent);
+        if (pausedRef.current) {
+          pendingBufRef.current = [entry, ...pendingBufRef.current].slice(0, MAX_EVENTS);
+          setPendingCount(pendingBufRef.current.length);
+          return;
+        }
         setEvents((prev) => {
           // Dedup by (id, kind) so the first live event doesn't duplicate
           // the most recent history row.
@@ -184,8 +218,11 @@ export default function ActivityPage() {
         (e) => !(e.kind === "lifecycle" && ACTIVITY_NOISE_EVENTS.has(e.event ?? "")),
       );
     }
+    if (toolFromUrl) {
+      out = out.filter((e) => e.tool === toolFromUrl);
+    }
     return out;
-  }, [events, tab]);
+  }, [events, tab, toolFromUrl]);
 
   const stats = useMemo(() => {
     let tools = 0;
@@ -213,17 +250,85 @@ export default function ActivityPage() {
       <ActivityTabs />
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Activity — <span className="accent">every tool, every event, in real time.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Activity — <span className="accent">every tool, every event, in real time.</span>
+            </h1>
+            <HintCard.Toggle id="activity" />
+          </div>
           {events.length > 0 && (
             <div className="editorial-sub">
               {events.length} events · last 24h · {stats.errors} errored
             </div>
           )}
         </div>
-        <LivePill connection={connection} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => {
+              if (paused) {
+                // Flush buffered events into the visible list, dedup'd.
+                const buf = pendingBufRef.current;
+                pendingBufRef.current = [];
+                setPendingCount(0);
+                setEvents((prev) => {
+                  const seen = new Set(
+                    prev
+                      .filter((p) => p.id !== undefined)
+                      .map((p) => `${p.id}|${p.kind ?? ""}`),
+                  );
+                  const fresh = buf.filter(
+                    (e) => e.id === undefined || !seen.has(`${e.id}|${e.kind ?? ""}`),
+                  );
+                  return [...fresh, ...prev].slice(0, MAX_EVENTS);
+                });
+                setPaused(false);
+              } else {
+                setPaused(true);
+              }
+            }}
+            aria-pressed={paused}
+            title={paused ? "Resume live updates" : "Pause live updates"}
+          >
+            {paused ? `Resume${pendingCount > 0 ? ` (${pendingCount})` : ""}` : "Pause"}
+          </button>
+          <LivePill connection={connection} />
+        </div>
       </div>
+
+      <HintCard id="activity" />
+
+      {toolFromUrl && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "var(--s-2) var(--s-3)",
+            marginBottom: "var(--s-3)",
+            background: "var(--bg-2)",
+            border: "1px solid var(--line-2)",
+            borderRadius: "var(--r-2)",
+            fontSize: "var(--fs-s)",
+          }}
+        >
+          <span style={{ color: "var(--ink-2)" }}>Filtering by tool:</span>
+          <code>{toolFromUrl}</code>
+          <button type="button" className="btn sm ghost" onClick={clearToolFilter}>
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/*
+        Sidebar's Activity nav has a halt-count badge that polls
+        /runs/halt-summary. Clicking the badge used to land here on a
+        page that never mentioned halts. RecentHaltsPanel surfaces the
+        same summary inline so the badge promise is delivered, then
+        collapses to nothing when there are zero halts.
+      */}
+      <RecentHaltsPanel />
 
       {/* Charts row: histogram + top tools */}
       <div
@@ -300,7 +405,9 @@ export default function ActivityPage() {
                   ? events.filter(
                       (e) => RECIPE_END_EVENTS.has(e.kind ?? "") || RECIPE_END_EVENTS.has(e.event ?? ""),
                     ).length
-                  : events.length;
+                  : events.filter(
+                      (e) => !(e.kind === "lifecycle" && ACTIVITY_NOISE_EVENTS.has(e.event ?? "")),
+                    ).length;
           return (
             <button
               key={t}
@@ -373,6 +480,7 @@ export default function ActivityPage() {
               <tr>
                 <th style={{ width: 140 }}>Time</th>
                 <th style={{ width: 110 }}>Kind</th>
+                <th style={{ width: 160 }}>Recipe</th>
                 <th>Tool / Event</th>
                 <th style={{ width: 110 }}>Duration</th>
                 <th style={{ width: 130 }}>Status / Decision</th>
@@ -430,6 +538,20 @@ export default function ActivityPage() {
                     </td>
                     <td>
                       <span className={`pill ${kindClass}`}>{kindLabel}</span>
+                    </td>
+                    <td className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>
+                      {meta.recipeName ? (
+                        <Link
+                          href={`/recipes/${encodeURIComponent(meta.recipeName)}/edit`}
+                          onClick={(ev) => ev.stopPropagation()}
+                          style={{ color: "var(--accent)", textDecoration: "none" }}
+                          title={`Recipe ${meta.recipeName}`}
+                        >
+                          {meta.recipeName}
+                        </Link>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
                     </td>
                     <td className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 300 }}>
                       {mainLabel}

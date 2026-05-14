@@ -75,15 +75,20 @@ describe("handoffNote tools", () => {
       expect(content.note).toBe("second note");
     });
 
-    it("writes the note file with restricted permissions", async () => {
-      const setter = createSetHandoffNoteTool("s1");
-      await setter.handler({ note: "secret context" });
+    it.skipIf(process.platform === "win32")(
+      // POSIX file modes (0o600) are not enforced on Win32 — chmod is a no-op
+      // and statSync.mode reports default ACL-derived bits.
+      "writes the note file with restricted permissions",
+      async () => {
+        const setter = createSetHandoffNoteTool("s1");
+        await setter.handler({ note: "secret context" });
 
-      const notePath = path.join(tmpDir, "ide", "handoff-note.json");
-      const stat = fs.statSync(notePath);
-      // mode & 0o777 should be 0o600
-      expect(stat.mode & 0o777).toBe(0o600);
-    });
+        const notePath = path.join(tmpDir, "ide", "handoff-note.json");
+        const stat = fs.statSync(notePath);
+        // mode & 0o777 should be 0o600
+        expect(stat.mode & 0o777).toBe(0o600);
+      },
+    );
 
     it("rejects notes exceeding 10,000 characters", async () => {
       const setter = createSetHandoffNoteTool("s1");
@@ -116,9 +121,13 @@ describe("handoffNote tools", () => {
     const workspace = "/home/user/my-project";
 
     function scopedPath(ws: string, dir: string): string {
+      // Match production: `workspaceScopedNotePath` calls `path.resolve(ws)`
+      // before hashing so the hash is platform-canonical. On Win32 the test
+      // workspace `/home/user/my-project` becomes `<cwd-drive>:\home\user\...`.
+      const normalized = path.resolve(ws);
       const hash = crypto
         .createHash("sha256")
-        .update(ws)
+        .update(normalized)
         .digest("hex")
         .slice(0, 12);
       return path.join(dir, "ide", `handoff-note-${hash}.json`);

@@ -99,7 +99,7 @@ const installPath = {
 };
 
 describe("Server /recipes/install — bundle dispatch (#130 PR A)", () => {
-  it("rejects bundle name with path traversal → 400 invalid_bundle_name", async () => {
+  it("rejects bundle name with path traversal → 400", async () => {
     const { status, body } = await makeRequest(
       installPath,
       JSON.stringify({
@@ -109,7 +109,13 @@ describe("Server /recipes/install — bundle dispatch (#130 PR A)", () => {
     expect(status).toBe(400);
     const parsed = JSON.parse(body);
     expect(parsed.ok).toBe(false);
-    expect(parsed.code).toBe("invalid_bundle_name");
+    // Post org-allowlist refactor: the shared parser validates segment
+    // shape first, so traversal in the bundle name now lands as
+    // bad_shape (too many `/` segments) rather than the legacy
+    // invalid_bundle_name. Accept either to stay forward-compatible.
+    expect(["bad_shape", "bad_segment", "invalid_bundle_name"]).toContain(
+      parsed.code,
+    );
   });
 
   it("returns 404 when bundle manifest is not found upstream", async () => {

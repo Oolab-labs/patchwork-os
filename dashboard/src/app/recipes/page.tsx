@@ -10,12 +10,33 @@ import { useToast } from "@/components/Toast";
 import {
   CodeBlock,
   ErrorState,
+  HintCard,
   highlightYaml,
   LivePill,
   PatchCard,
+  RelationStrip,
   RunSparkBars,
   StatusPill,
+  SuccessRing,
 } from "@/components/patchwork";
+
+/**
+ * Trigger-type → chip tone. Triggers used to all render in the same
+ * "muted" tone, which turned the trigger column into vertical grey
+ * wallpaper. Color-coding gives the eye a fast way to scan "cron vs
+ * manual vs webhook" without reading the text.
+ */
+function triggerTone(
+  trigger: string | undefined,
+): "ok" | "warn" | "info" | "accent" | "muted" | "purple" {
+  const t = (trigger ?? "manual").toLowerCase();
+  if (t === "cron" || t === "schedule" || t === "scheduled") return "accent";
+  if (t === "webhook" || t === "http") return "info";
+  if (t === "file_watch" || t === "on_file_save" || t === "fs_watch") return "warn";
+  if (t === "channel" || t === "event" || t === "bus") return "purple";
+  if (t === "git_hook" || t === "git") return "ok";
+  return "muted";
+}
 
 // Tool prefix → connector name mapping
 const TOOL_PREFIX_MAP: Record<string, string> = {
@@ -243,76 +264,6 @@ function RunModal({
         </>
       )}
     </Dialog>
-  );
-}
-
-/** Small donut ring showing success rate (0-100). */
-function SuccessRing({
-  pct,
-  size = 28,
-  stroke = 4,
-}: {
-  pct: number | null;
-  size?: number;
-  stroke?: number;
-}) {
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const safePct = pct == null ? 0 : Math.max(0, Math.min(100, pct));
-  const dash = (safePct / 100) * c;
-  const color =
-    pct == null
-      ? "var(--line-3)"
-      : safePct >= 90
-        ? "var(--ok)"
-        : safePct >= 60
-          ? "var(--warn)"
-          : "var(--err)";
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      style={{ display: "block", flexShrink: 0 }}
-      aria-label={pct == null ? "no run data" : `${Math.round(safePct)}% success`}
-    >
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke="var(--line-3)"
-        strokeWidth={stroke}
-      />
-      {pct != null && (
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke={color}
-          strokeWidth={stroke}
-          strokeDasharray={`${dash} ${c - dash}`}
-          strokeDashoffset={c / 4}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      )}
-      <text
-        x="50%"
-        y="50%"
-        textAnchor="middle"
-        dominantBaseline="central"
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: size <= 28 ? 8 : 10,
-          fontWeight: 700,
-          fill: "var(--ink-1)",
-        }}
-      >
-        {pct == null ? "—" : `${Math.round(safePct)}`}
-      </text>
-    </svg>
   );
 }
 
@@ -649,8 +600,30 @@ export default function RecipesPage() {
 
   useEffect(() => {
     void load();
-    const id = setInterval(() => void load(), 5000);
-    return () => clearInterval(id);
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (id == null) id = setInterval(() => void load(), 5000);
+    };
+    const stop = () => {
+      if (id != null) {
+        clearInterval(id);
+        id = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void load();
+        start();
+      } else {
+        stop();
+      }
+    };
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [load]);
 
   async function executeRun(name: string, vars?: Record<string, string>) {
@@ -855,14 +828,25 @@ export default function RecipesPage() {
 
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Recipes — <span className="accent">YAML, declarative, yours.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Recipes — <span className="accent">YAML, declarative, yours.</span>
+            </h1>
+            <HintCard.Toggle id="recipes" />
+          </div>
           <div className="editorial-sub">
             {recipes
-              ? `templates/recipes · ${installedCount} installed · ${enabledCount} enabled`
+              ? `~/.patchwork/recipes · ${installedCount} installed · ${enabledCount} enabled`
               : "Loading…"}
           </div>
+          <RelationStrip
+            items={[
+              { label: "Runs", href: "/runs", title: "Runs produced by these recipes" },
+              { label: "Halts", href: "/runs?halt=1", tone: "warn", title: "Runs that hit a halt reason" },
+              { label: "Marketplace", href: "/marketplace", title: "Community-published recipes" },
+              { label: "New recipe", href: "/recipes/new", tone: "accent", title: "Author a new recipe" },
+            ]}
+          />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>
           <button
@@ -894,6 +878,8 @@ export default function RecipesPage() {
         />
       </div>
 
+      <HintCard id="recipes" />
+
       {err && (recipes === null || recipes.length === 0) && (
         <ErrorState
           title="Couldn't load recipes"
@@ -908,7 +894,7 @@ export default function RecipesPage() {
 
       {recipes === null && !err ? (
         <SkeletonList rows={4} columns={3} />
-      ) : recipes === null || recipes.length === 0 ? (
+      ) : recipes === null && err ? null : recipes === null || recipes.length === 0 ? (
         <div className="empty-state">
           <h3>No recipes installed</h3>
           <p>Browse the marketplace or author your own.</p>
@@ -970,6 +956,7 @@ export default function RecipesPage() {
                     return (
                       <tr
                         key={r.path ?? r.id ?? `${r.name}:${i}`}
+                        className={`recipe-row${sel ? " is-selected" : ""}${enabled ? "" : " is-off"}`}
                         onClick={() =>
                           setSelectedName((prev) => (prev === r.name ? null : r.name))
                         }
@@ -983,10 +970,6 @@ export default function RecipesPage() {
                         role="button"
                         aria-pressed={sel}
                         aria-label={`Select recipe ${r.name}`}
-                        style={{
-                          cursor: "pointer",
-                          background: sel ? "var(--bg-2)" : undefined,
-                        }}
                       >
                         <td style={{ textAlign: "center" }}>
                           <SuccessRing pct={pct} />
@@ -1010,6 +993,14 @@ export default function RecipesPage() {
                             </Link>
                             {live && <LivePill tone="ok" />}
                             {!enabled && <StatusPill tone="muted">off</StatusPill>}
+                            {r.lint && r.lint.ok === false && (
+                              <StatusPill
+                                tone="err"
+                                title={r.lint.firstError ?? `${r.lint.errorCount} lint error(s)`}
+                              >
+                                lint
+                              </StatusPill>
+                            )}
                           </div>
                           {r.description && (
                             <div
@@ -1027,12 +1018,15 @@ export default function RecipesPage() {
                           )}
                         </td>
                         <td>
-                          <StatusPill tone="muted">{r.trigger ?? "manual"}</StatusPill>
+                          <StatusPill tone={triggerTone(r.trigger)}>
+                            {r.trigger ?? "manual"}
+                          </StatusPill>
                         </td>
                         <td style={{ textAlign: "center" }}>
                           <RunSparkBars
                             runs={(allRunsMap.get(r.name) ?? []).slice(0, 14)}
-                            width={90}
+                            slots={14}
+                            width={140}
                             height={20}
                           />
                         </td>
@@ -1061,6 +1055,7 @@ export default function RecipesPage() {
                               aria-label={`${enabled ? "Disable" : "Enable"} ${r.name}`}
                               title={enabled ? "Enabled — click to disable" : "Disabled — click to enable"}
                               onClick={() => void handleToggleEnabled(r)}
+                              className="recipe-toggle"
                               style={{
                                 position: "relative",
                                 width: 26,
@@ -1083,7 +1078,7 @@ export default function RecipesPage() {
                                   width: 10,
                                   height: 10,
                                   borderRadius: "50%",
-                                  background: enabled ? "var(--ok)" : "var(--ink-3)",
+                                  background: enabled ? "var(--ok)" : "var(--dot-muted)",
                                   transform: enabled ? "translateX(12px)" : "translateX(0)",
                                   transition: "transform 0.18s ease, background 0.15s",
                                   boxShadow: "0 1px 1px rgba(0,0,0,0.12)",

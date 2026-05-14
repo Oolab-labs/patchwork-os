@@ -2,6 +2,7 @@
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { flatRoutes } from "@/lib/navRoutes";
 
 interface Command {
   id: string;
@@ -11,26 +12,17 @@ interface Command {
   perform: () => void;
 }
 
-const NAV_DESTINATIONS: { href: string; label: string; hint?: string }[] = [
-  { href: "/", label: "Overview", hint: "Home" },
-  { href: "/inbox", label: "Inbox" },
-  { href: "/approvals", label: "Approvals — Pending" },
-  { href: "/suggestions", label: "Approvals — Suggested" },
-  { href: "/decisions", label: "Approvals — History" },
-  { href: "/activity", label: "Activity — Live" },
-  { href: "/runs", label: "Activity — Runs" },
-  { href: "/tasks", label: "Activity — Tasks" },
-  { href: "/sessions", label: "Activity — Sessions" },
-  { href: "/traces", label: "Activity — Traces" },
-  { href: "/recipes", label: "Recipes" },
-  { href: "/marketplace", label: "Marketplace" },
-  { href: "/analytics", label: "Analytics — Overview" },
-  { href: "/insights", label: "Analytics — Insights" },
-  { href: "/metrics", label: "Analytics — Metrics" },
-  { href: "/transactions", label: "Transactions" },
-  { href: "/connections", label: "Connections" },
-  { href: "/settings", label: "Settings" },
-];
+/**
+ * Nav destinations are derived from the single-source-of-truth navRoutes
+ * module so any new sidebar page is reachable from ⌘K automatically.
+ * `paletteLabel` overrides give disambiguated names like
+ * "Decisions — Approvals" instead of the bare sidebar "Approvals".
+ */
+const NAV_DESTINATIONS: { href: string; label: string; hint?: string }[] = flatRoutes().map((r) => ({
+  href: r.href,
+  label: r.paletteLabel ?? r.label,
+  hint: r.paletteHint ?? (r.href === "/" ? "Home" : undefined),
+}));
 
 function score(haystack: string, needle: string): number {
   if (!needle) return 1;
@@ -73,30 +65,29 @@ export function CommandPalette({
   // offline) so we don't need to gate on bridge status here.
   useEffect(() => {
     if (!open) return;
-    if (recipes.length === 0) {
-      fetch(apiPath("/api/bridge/recipes"))
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          const list = (d?.recipes ?? d ?? []) as { name?: string }[];
-          setRecipes(list.filter((r) => r.name).map((r) => ({ name: r.name as string })));
-        })
-        .catch(() => {});
-    }
-    if (pendingApprovals.length === 0) {
-      fetch(apiPath("/api/bridge/approvals"))
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          const list = (d?.pending ?? d ?? []) as { callId?: string; toolName?: string }[];
-          setPendingApprovals(
-            list
-              .filter((a) => a.callId && a.toolName)
-              .slice(0, 20)
-              .map((a) => ({ callId: a.callId as string, toolName: a.toolName as string })),
-          );
-        })
-        .catch(() => {});
-    }
-  }, [open, recipes.length, pendingApprovals.length]);
+    // Refetch on every open. Approvals especially go stale fast — a user
+    // approving via the queue then re-opening the palette should not see
+    // already-decided calls. Recipes change rarely but it's cheap.
+    fetch(apiPath("/api/bridge/recipes"))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list = (d?.recipes ?? d ?? []) as { name?: string }[];
+        setRecipes(list.filter((r) => r.name).map((r) => ({ name: r.name as string })));
+      })
+      .catch(() => {});
+    fetch(apiPath("/api/bridge/approvals"))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list = (d?.pending ?? d ?? []) as { callId?: string; toolName?: string }[];
+        setPendingApprovals(
+          list
+            .filter((a) => a.callId && a.toolName)
+            .slice(0, 20)
+            .map((a) => ({ callId: a.callId as string, toolName: a.toolName as string })),
+        );
+      })
+      .catch(() => {});
+  }, [open]);
 
   const commands = useMemo<Command[]>(() => {
     const navCmds: Command[] = NAV_DESTINATIONS.map((d) => ({

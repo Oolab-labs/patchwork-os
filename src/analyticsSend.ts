@@ -6,6 +6,7 @@
  */
 
 import type { AnalyticsSummary } from "./analyticsAggregator.js";
+import { recordAnalyticsSent } from "./analyticsPrefs.js";
 
 /** Hardcoded endpoint — not configurable at runtime. */
 const ANALYTICS_ENDPOINT = "https://analytics.claude-ide-bridge.dev/v1/usage";
@@ -21,12 +22,15 @@ export async function sendAnalytics(summary: AnalyticsSummary): Promise<void> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
     try {
-      await fetch(ANALYTICS_ENDPOINT, {
+      const res = await fetch(ANALYTICS_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(summary),
         signal: controller.signal,
       });
+      if (res.ok) {
+        recordAnalyticsSent();
+      }
     } finally {
       clearTimeout(timer);
     }

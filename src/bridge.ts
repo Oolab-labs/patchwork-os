@@ -1068,6 +1068,26 @@ export class Bridge {
         });
         // scheduler.start() deferred to after this.port is set (see below)
         // so bridgeMcp callback has a valid port when first cron fires.
+        //
+        // Hot-reload: re-prime the scheduler whenever the recipe set
+        // changes on disk (install / save / delete). RecipeScheduler.start()
+        // is idempotent (calls this.stop() first) and reads the recipes
+        // directory fresh, so calling it again cleanly picks up the new
+        // file. Stored as a callback on the Server so route handlers can
+        // fire it post-success without owning a reference to the scheduler.
+        this.server.onRecipesChangedFn = () => {
+          if (!this.recipeScheduler) return;
+          try {
+            const scheduled = this.recipeScheduler.start();
+            this.logger.info(
+              `[patchwork] scheduler re-primed after recipe change · ${scheduled.length} cron recipe${scheduled.length === 1 ? "" : "s"} active`,
+            );
+          } catch (err) {
+            this.logger.warn?.(
+              `[patchwork] scheduler restart failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        };
       }
     }
 
@@ -1306,6 +1326,22 @@ export class Bridge {
       };
     };
     this.server.streamFn = (listener) => this.activityLog.subscribe(listener);
+    // v2-I8 (#422): broadcast kind:"kill-switch" SSE when state changes.
+    // The activityLog subscriber list fans out to all open /stream clients.
+    this.server.broadcastKillSwitchEventFn = (engaged, reason) => {
+      for (const listener of this.activityLog.getListeners()) {
+        try {
+          listener("kill-switch", {
+            id: 0,
+            timestamp: new Date().toISOString(),
+            event: engaged ? "engage" : "release",
+            metadata: { engaged, ...(reason ? { reason } : {}) },
+          });
+        } catch {
+          /* listener must not crash broadcast */
+        }
+      }
+    };
     this.server.cancelTaskFn = (id: string) =>
       this.orchestrator?.cancel(id, "user") ?? false;
     // Wire `/sessions` for the dashboard's Sessions page. The same Map is

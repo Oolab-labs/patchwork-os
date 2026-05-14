@@ -64,7 +64,6 @@ export function LoginForm({ next }: { next: string }) {
             fontSize: "var(--fs-m)",
             fontFamily: "var(--font-mono)",
             padding: "8px 10px",
-            outline: "none",
           }}
         />
       </label>
@@ -78,7 +77,7 @@ export function LoginForm({ next }: { next: string }) {
           borderRadius: "var(--r-2)",
           border: "none",
           background: "var(--accent)",
-          color: "var(--on-accent)",
+          color: "var(--on-orange)",
           cursor: busy || !pw ? "default" : "pointer",
           opacity: busy || !pw ? 0.5 : 1,
         }}

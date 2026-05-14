@@ -43,24 +43,28 @@ describe("createOpenInBrowserTool", () => {
     vi.restoreAllMocks();
   });
 
-  it("writes to tmpdir with default filename and opens with `open` on darwin", async () => {
-    const html = "<html><body>Hello</body></html>";
-    const result = await tool.handler({ html });
+  // darwin-only spawn path; uses tmpdir + `open` binary that don't exist on Windows.
+  it.skipIf(process.platform !== "darwin")(
+    "writes to tmpdir with default filename and opens with `open` on darwin",
+    async () => {
+      const html = "<html><body>Hello</body></html>";
+      const result = await tool.handler({ html });
 
-    expect(fs.writeFile).toHaveBeenCalledOnce();
-    const [writtenPath, writtenContent, encoding] = (
-      fs.writeFile as ReturnType<typeof vi.fn>
-    ).mock.calls[0];
-    expect(writtenPath).toMatch(/^\/.*\/report-\d+\.html$/);
-    expect(writtenPath.startsWith(os.tmpdir())).toBe(true);
-    expect(writtenContent).toBe(html);
-    expect(encoding).toBe("utf8");
+      expect(fs.writeFile).toHaveBeenCalledOnce();
+      const [writtenPath, writtenContent, encoding] = (
+        fs.writeFile as ReturnType<typeof vi.fn>
+      ).mock.calls[0];
+      expect(writtenPath).toMatch(/^\/.*\/report-\d+\.html$/);
+      expect(writtenPath.startsWith(os.tmpdir())).toBe(true);
+      expect(writtenContent).toBe(html);
+      expect(encoding).toBe("utf8");
 
-    expect(execSafe).toHaveBeenCalledWith("open", [writtenPath]);
+      expect(execSafe).toHaveBeenCalledWith("open", [writtenPath]);
 
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.path).toBe(writtenPath);
-  });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.path).toBe(writtenPath);
+    },
+  );
 
   it("uses the provided filename when valid", async () => {
     const html = "<html><body>Report</body></html>";

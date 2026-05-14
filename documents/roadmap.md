@@ -774,7 +774,7 @@ Research (2026-03-17) against current Claude Code docs revealed gaps between the
 ### Remaining (deferred)
 - Verify Tool Search compatibility — with 135+ tools active; low priority (automatic, no bridge changes needed)
 - Agent Teams — when Claude Code's multi-session Teams feature ships; plan session namespacing then
-- **Claude Code Routines integration** — revisit when API exits research preview (`experimental-cc-routine-2026-04-01`). Immediate value: thin `runRoutine`/`getRoutineStatus`/`listRoutines` MCP tools (Phase 3 only — ~1 file, no driver changes). Full `RoutinesDriver` (`--driver routines`) deferred until auth is stable (currently claude.ai accounts only, not open API). Policy-layer `routineId` on automation hooks also deferred. See: https://claude.ai/code/routines
+- **Claude Code Routines** — Closed. Routines overlaps with Patchwork's recipe scheduling system (cron triggers, connector steps, run history, dashboard visibility). Not worth integrating as a parallel scheduling layer. Revisit only if Routines adds something recipes genuinely can't do (e.g. stateful multi-step agents with persistent memory).
 
 ---
 

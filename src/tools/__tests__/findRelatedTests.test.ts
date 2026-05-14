@@ -58,25 +58,37 @@ describe("createFindRelatedTestsTool", () => {
     expect(typeof result.coverageAvailable).toBe("boolean");
   });
 
-  it("finds test file by name-pattern via find", async () => {
-    const tool = createFindRelatedTestsTool(workspace, noProbes);
-    const result = parse(
-      await tool.handler({ filePath: path.join(workspace, "src", "utils.ts") }),
-    );
-    const nameMatches = result.testFiles.filter(
-      (f: { matchReason: string }) => f.matchReason === "name-pattern",
-    );
-    expect(nameMatches.length).toBeGreaterThan(0);
-    expect(
-      nameMatches.some((f: { file: string }) => f.file.includes("utils.test")),
-    ).toBe(true);
-  });
+  // Uses POSIX `find` fallback when rg isn't available; `find` isn't on Win32.
+  it.skipIf(process.platform === "win32")(
+    "finds test file by name-pattern via find",
+    async () => {
+      const tool = createFindRelatedTestsTool(workspace, noProbes);
+      const result = parse(
+        await tool.handler({
+          filePath: path.join(workspace, "src", "utils.ts"),
+        }),
+      );
+      const nameMatches = result.testFiles.filter(
+        (f: { matchReason: string }) => f.matchReason === "name-pattern",
+      );
+      expect(nameMatches.length).toBeGreaterThan(0);
+      expect(
+        nameMatches.some((f: { file: string }) =>
+          f.file.includes("utils.test"),
+        ),
+      ).toBe(true);
+    },
+  );
 
-  it("accepts workspace-relative path", async () => {
-    const tool = createFindRelatedTestsTool(workspace, noProbes);
-    const result = parse(await tool.handler({ filePath: "src/utils.ts" }));
-    expect(result.totalFound).toBeGreaterThan(0);
-  });
+  // Same as above — depends on find fallback (no rg in test probes).
+  it.skipIf(process.platform === "win32")(
+    "accepts workspace-relative path",
+    async () => {
+      const tool = createFindRelatedTestsTool(workspace, noProbes);
+      const result = parse(await tool.handler({ filePath: "src/utils.ts" }));
+      expect(result.totalFound).toBeGreaterThan(0);
+    },
+  );
 
   it("coverageAvailable is false when no coverage file exists", async () => {
     const tool = createFindRelatedTestsTool(workspace, noProbes);

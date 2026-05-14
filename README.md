@@ -4,7 +4,7 @@
 
 > Patchwork OS is a local-first personal AI runtime: pluggable model providers, hot-reloadable tools, YAML recipes, a delegation policy with approval queue, and a durable trace memory — all running on your machine, all under your policy.
 
-You decide which model. You decide which actions need a human nod. You own the credentials, the logs, and the deployment. Nothing phones home.
+You decide which model. You decide which actions need a human nod. You own the credentials, the logs, and the deployment. Nothing phones home unless you [opt in to anonymous analytics](#telemetry).
 
 **Five primitives, one runtime:**
 
@@ -110,6 +110,85 @@ Bridge-only docs: [documents/platform-docs.md](documents/platform-docs.md)
 
 ---
 
+## 🪟 Windows Quick Start
+
+The bridge and VS Code extension work natively on Windows. The full Patchwork OS orchestrator (`patchwork start`) requires WSL2 or Git Bash for now; a native PowerShell orchestrator is included as `npm run start-all:win`.
+
+### Prerequisites
+
+- Node.js 20+ (from [nodejs.org](https://nodejs.org))
+- VS Code, Cursor, or Windsurf
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
+- PowerShell 5.1+ (built into Windows 10/11) or PowerShell 7+ (`pwsh`)
+
+### Bridge-only (recommended starting point)
+
+Open **PowerShell** or **cmd.exe**:
+
+```powershell
+# 1. Install
+npm install -g patchwork-os
+
+# 2. Install the VS Code extension
+claude-ide-bridge install-extension
+
+# 3. Start the bridge (bash-free entry point)
+npm run start:bridge
+# or equivalently:
+node "$(npm root -g)/patchwork-os/dist/index.js" --workspace .
+
+# 4. Connect Claude Code (new terminal)
+claude --ide
+```
+
+Type `/ide` in Claude Code to confirm the connection.
+
+### Full orchestrator (bridge + Claude + dashboard)
+
+Two options — both work on Windows, macOS, and Linux:
+
+```powershell
+# Option A: cross-platform Node.js orchestrator (recommended)
+npm run start-all:node
+npm run start-all:node -- --workspace C:\myproj --full --no-dashboard
+
+# Option B: PowerShell-native orchestrator (Windows only, no Node wrapper overhead)
+npm run start-all:win
+npm run start-all:win -- -NoDashboard -Workspace C:\myproj -Full
+```
+
+Both start the bridge, wait for the lock file, launch `claude --ide` and `remote-control`, start the Next.js dashboard on `http://localhost:3200`, poll until it's ready, then open it in your default browser. The health monitor restarts the bridge automatically if it crashes, with exponential backoff.
+
+```powershell
+# Node orchestrator options (--key value form)
+npm run start-all:node -- --full               # all ~170 tools
+npm run start-all:node -- --no-dashboard       # skip dashboard
+npm run start-all:node -- --dashboard-port 3300
+npm run start-all:node -- --no-remote          # skip remote-control
+npm run start-all:node -- --notify my-topic    # ntfy.sh push notifications
+```
+
+### Known limitations on native Windows
+
+| Feature | Status |
+|---|---|
+| Bridge + extension (LSP, debugger, editor state) | ✅ Full support |
+| `npm run start:bridge` | ✅ Supported |
+| `npm run start-all:node` (Node.js orchestrator) | ✅ Supported — cross-platform |
+| `npm run start-all:win` (PS1 orchestrator) | ✅ Supported — Windows-native |
+| Dashboard (`http://localhost:3200`) | ✅ Opens automatically |
+| `patchwork start` / `npm run start-all` | ⚠️ Requires WSL2 or Git Bash (uses bash + tmux) |
+| `npm run remote:node` | ✅ Supported — cross-platform Node auto-restart wrapper |
+| `npm run remote` / `npm run vps` | ⚠️ Requires WSL2 or Git Bash |
+| Screenshot capture (standalone bridge) | ⚠️ Not yet supported; extension screenshot works via VS Code |
+| Credential storage | ✅ Uses DPAPI (Windows Data Protection API) via PowerShell |
+
+### WSL2 alternative
+
+For full Patchwork OS functionality including orchestrator, recipes, and morning-brief, run everything inside WSL2 and install the VS Code Remote-WSL extension. The bridge extension loads on the WSL side automatically (`extensionKind: ["workspace"]`), giving full tool coverage.
+
+---
+
 ## 🤖 Patchwork OS — Quick Start
 
 ```bash
@@ -150,9 +229,9 @@ Think of it as a background agent that acts on your behalf — but asks before s
 
 **Recipes** are plain YAML files. They declare a trigger (cron, file save, git commit, test run, webhook) and an action (run a prompt, write to inbox, call a connector). No code required. Share them like dotfiles.
 
-**Models** are yours. Claude, GPT, Gemini, Grok, or local Ollama. Swap at any time. Nothing phones home.
+**Models** are yours. Claude, GPT, Gemini, Grok, or local Ollama. Swap at any time. Nothing phones home unless you opt in (see [Telemetry](#telemetry)).
 
-**Oversight** is non-negotiable. Every write or external action lands in `~/.patchwork/inbox/` for approval. The web UI at `http://localhost:3200` shows pending approvals, live sessions, recipe run history, and analytics.
+**Oversight** is non-negotiable. Every write or external action lands in `~/.patchwork/inbox/` for approval. The web UI at `http://localhost:3200` shows pending approvals, live sessions, recipe run history, and local analytics (the dashboard's analytics panel is computed entirely from on-disk logs — it does not transmit anything).
 
 ### Patchwork commands
 
@@ -250,7 +329,7 @@ Use whichever fits your mental model.
 
 ---
 
-## Tool surface (v0.2.0-beta.0)
+## Tool surface
 
 170+ MCP tools across 15 categories. Highlights:
 
@@ -350,6 +429,27 @@ patchwork init
 
 ---
 
+## Telemetry
+
+Patchwork ships an **opt-in** anonymous usage summary. It is **disabled by default** — the bridge sends nothing unless you explicitly turn it on.
+
+**If you opt in**, on bridge shutdown an aggregate summary is POSTed to `https://analytics.claude-ide-bridge.dev/v1/usage`:
+
+- Total session count and total tool-call count (no per-call payloads)
+- Tool name → call count + median/p95 latency, capped at the top-N tools
+- Bridge version, Node version, OS family (`darwin` / `linux` / `win32`)
+- A per-install random salt (regenerated at any time by deleting `~/.claude/ide/analytics-salt`) used to coalesce repeated installs from the same machine without sending machine identifiers
+
+**What is never sent:** workspace paths, file contents, prompts, tool arguments, tool output, project names, git history, credentials, IPs (transport-level only, dropped server-side), or anything from `~/.patchwork/`.
+
+**How to opt in:** set `analyticsEnabled: true` in the dashboard's Settings panel, or write `{"enabled": true, "decidedAt": "<iso>"}` to `~/.claude/ide/analytics.json` (mode 0600).
+
+**How to opt out / stay out:** do nothing. Default state is `null` (no preference) which behaves as opt-out. To explicitly opt out and silence future prompts, write `{"enabled": false, ...}` to the same file.
+
+**Source:** [src/analyticsSend.ts](src/analyticsSend.ts), [src/analyticsAggregator.ts](src/analyticsAggregator.ts), [src/analyticsPrefs.ts](src/analyticsPrefs.ts) — endpoint is hardcoded (not runtime-configurable, by design, to prevent redirect attacks).
+
+---
+
 ## Documentation
 
 | Doc | Contents |
@@ -367,6 +467,13 @@ patchwork init
 | [documents/comparison.md](documents/comparison.md) | Patchwork vs MCP server / Zapier / hosted assistants / agent frameworks — honest tradeoffs |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
 | [docs/remote-access.md](docs/remote-access.md) | VPS deployment guide |
+
+---
+
+## Support
+
+- **Bugs & feature requests:** [GitHub Issues](https://github.com/Oolab-labs/patchwork-os/issues)
+- **Questions & community:** [GitHub Discussions](https://github.com/Oolab-labs/patchwork-os/discussions)
 
 ---
 

@@ -30,6 +30,7 @@ import {
 } from "../yamlRunner.js";
 
 const tmpLogDir = mkdtempSync(path.join(os.tmpdir(), "dispatch-parity-"));
+const TMP = tmpLogDir;
 
 function baseDeps(): RunnerDeps {
   return {
@@ -51,7 +52,7 @@ function flatRecipe(overrides: Partial<YamlRecipe> = {}): YamlRecipe {
   return {
     name: "flat",
     trigger: { type: "manual" },
-    steps: [{ tool: "file.write", path: "/tmp/x", content: "hi" }],
+    steps: [{ tool: "file.write", path: `${TMP}/x`, content: "hi" }],
     ...overrides,
   };
 }
@@ -150,7 +151,7 @@ describe("RunResult envelope (yaml runner) — orchestrator must preserve", () =
   it("on_error.fallback=abort: errorMessage set, stepResults still array", async () => {
     const recipe = flatRecipe({
       on_error: { fallback: "abort" },
-      steps: [{ tool: "file.read", path: "/tmp/a", into: "data" }],
+      steps: [{ tool: "file.read", path: `${TMP}/a`, into: "data" }],
     });
     const result = (await dispatchRecipe(recipe, {
       ...baseDeps(),
@@ -168,7 +169,7 @@ describe("RunResult envelope (yaml runner) — orchestrator must preserve", () =
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const recipe = flatRecipe({
       on_error: { fallback: "log_only" },
-      steps: [{ tool: "file.read", path: "/tmp/a", into: "data" }],
+      steps: [{ tool: "file.read", path: `${TMP}/a`, into: "data" }],
     });
     const result = (await dispatchRecipe(recipe, {
       ...baseDeps(),
@@ -185,7 +186,7 @@ describe("RunResult envelope (yaml runner) — orchestrator must preserve", () =
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const recipe = flatRecipe({
       on_error: { fallback: "deliver_original" },
-      steps: [{ tool: "file.read", path: "/tmp/a", into: "data" }],
+      steps: [{ tool: "file.read", path: `${TMP}/a`, into: "data" }],
     });
     const result = (await dispatchRecipe(recipe, {
       ...baseDeps(),
@@ -210,7 +211,7 @@ describe("RunResult envelope (yaml runner) — orchestrator must preserve", () =
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const recipe = flatRecipe({
       on_error: { fallback: "log_only" },
-      steps: [{ tool: "file.read", path: "/tmp/a", into: "data" }],
+      steps: [{ tool: "file.read", path: `${TMP}/a`, into: "data" }],
     });
     await dispatchRecipe(recipe, {
       ...baseDeps(),

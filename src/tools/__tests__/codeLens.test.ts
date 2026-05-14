@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ExtensionTimeoutError } from "../../extensionClient.js";
 import { createGetCodeLensTool } from "../codeLens.js";
 
@@ -16,13 +19,27 @@ function makeClient(
   };
 }
 
-const workspace = "/tmp";
+// resolveFilePath needs the workspace + file to actually exist on disk
+// (it calls realpathSync for symlink-escape protection). On Win32 a hard-coded
+// "/tmp/..." path resolves to "D:\tmp" which doesn't exist.
+let workspace: string;
+let filePath: string;
+
+beforeAll(() => {
+  workspace = fs.mkdtempSync(path.join(os.tmpdir(), "code-lens-"));
+  filePath = path.join(workspace, "foo.ts");
+  fs.writeFileSync(filePath, "export const x = 1;\n");
+});
+
+afterAll(() => {
+  fs.rmSync(workspace, { recursive: true, force: true });
+});
 
 describe("getCodeLens", () => {
   it("returns extensionRequired error when disconnected", async () => {
     const client = makeClient({ isConnected: () => false });
     const tool = createGetCodeLensTool(workspace, client as never);
-    const result = (await tool.handler({ filePath: "/tmp/foo.ts" })) as any;
+    const result = (await tool.handler({ filePath })) as any;
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/extension/i);
   });
@@ -30,7 +47,7 @@ describe("getCodeLens", () => {
   it("returns empty lenses on null from extension", async () => {
     const client = makeClient({ getCodeLens: () => Promise.resolve(null) });
     const tool = createGetCodeLensTool(workspace, client as never);
-    const result = (await tool.handler({ filePath: "/tmp/foo.ts" })) as any;
+    const result = (await tool.handler({ filePath })) as any;
     expect(result.isError).toBeFalsy();
     const data = JSON.parse(result.content[0].text);
     expect(data.lenses).toEqual([]);
@@ -52,7 +69,7 @@ describe("getCodeLens", () => {
     };
     const client = makeClient({ getCodeLens: () => Promise.resolve(lensData) });
     const tool = createGetCodeLensTool(workspace, client as never);
-    const result = (await tool.handler({ filePath: "/tmp/foo.ts" })) as any;
+    const result = (await tool.handler({ filePath })) as any;
     expect(result.isError).toBeFalsy();
     const data = JSON.parse(result.content[0].text);
     expect(data.lenses).toHaveLength(1);
@@ -65,7 +82,7 @@ describe("getCodeLens", () => {
       getCodeLens: () => Promise.reject(new ExtensionTimeoutError("timeout")),
     });
     const tool = createGetCodeLensTool(workspace, client as never);
-    const result = (await tool.handler({ filePath: "/tmp/foo.ts" })) as any;
+    const result = (await tool.handler({ filePath })) as any;
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/indexing|timed out/i);
   });

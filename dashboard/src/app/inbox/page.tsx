@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { apiPath } from "@/lib/api";
-import { EmptyState } from "@/components/patchwork";
+import { EmptyState, HintCard } from "@/components/patchwork";
+import { InboxDeliveryCard } from "@/components/InboxDeliveryCard";
 import { useToast } from "@/components/Toast";
 
 function isFilterCategory(v: string | null): v is FilterCategory {
@@ -537,13 +538,16 @@ const filteredItems = items.filter((item) => {
         .copy-section-btn.copied { background: var(--green-soft); color: var(--green); border-color: transparent; }
       `}</style>
 
-      <section style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)", minHeight: 500 }}>
+      <section style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 120px)", minHeight: 500 }}>
         {/* Page header */}
         <div className="page-head" style={{ marginBottom: 16 }}>
           <div>
-            <h1 className="editorial-h1">
-              Inbox — <span className="accent">what your agents wrote you.</span>
-            </h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h1 className="editorial-h1" style={{ margin: 0 }}>
+                Inbox — <span className="accent">what your agents wrote you.</span>
+              </h1>
+              <HintCard.Toggle id="inbox" />
+            </div>
             <div className="editorial-sub">~/.patchwork/inbox · briefs · summaries · agent reports</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -589,6 +593,16 @@ const filteredItems = items.filter((item) => {
           </div>
         </div>
 
+        <HintCard id="inbox" />
+
+        {/*
+          Discovery card for the "deliver to phone" capability. Lives
+          above the items list so it surfaces to every user who hasn't
+          dismissed it — the people who already use /inbox in a browser
+          are exactly the audience for "stop coming here, get pushed".
+        */}
+        <InboxDeliveryCard />
+
         {err && (
           <div className="alert-err" role="alert" style={{ marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <span>{err}</span>
@@ -616,7 +630,19 @@ const filteredItems = items.filter((item) => {
               </svg>
             }
             title="No items yet"
-            description="Run a recipe to generate your first brief."
+            description={
+              <>
+                Run a recipe to generate your first brief.
+                {/*
+                  Empty-state variant of the delivery card — reframes "no
+                  items here" as "set up phone delivery so you don't have
+                  to come back". Single-line, no dismissal needed.
+                */}
+                <div>
+                  <InboxDeliveryCard variant="empty" />
+                </div>
+              </>
+            }
           />
         ) : (
           <div

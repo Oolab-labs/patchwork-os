@@ -1,9 +1,10 @@
 "use client";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
 import { apiPath } from "@/lib/api";
-import { CodeBlock, EmptyState, KeyChip } from "@/components/patchwork";
+import { CodeBlock, EmptyState, HintCard, KeyChip, RelationStrip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
 import { useToast } from "@/components/Toast";
@@ -436,7 +437,7 @@ function BatchActionBar({
     <div
       style={{
         position: "sticky",
-        bottom: "var(--s-6)",
+        bottom: "calc(var(--s-6) + env(safe-area-inset-bottom, 0px))",
         zIndex: 10,
         display: "flex",
         gap: "var(--s-3)",
@@ -867,9 +868,12 @@ function ApprovalsContent() {
 
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Approval queue — <span className="accent">nothing leaves your machine without a nod.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Approval queue — <span className="accent">nothing leaves your machine without a nod.</span>
+            </h1>
+            <HintCard.Toggle id="approvals" />
+          </div>
           <div className="editorial-sub">
             {(() => {
               const oldestTs = pending.length > 0
@@ -881,6 +885,19 @@ function ApprovalsContent() {
               return `~/.patchwork/inbox · ${pending.length} pending${oldestTs ? ` · oldest ${relTime(oldestTs)}` : ""}`;
             })()}
           </div>
+          <RelationStrip
+            items={[
+              { label: "Insights", href: "/insights", title: "Approve/reject patterns across tools" },
+              {
+                label: "Suggestions",
+                href: "/suggestions",
+                tone: pending.length > 0 ? "accent" : "neutral",
+                title: "Policy tweaks the system suggests",
+              },
+              { label: "Settings", href: "/settings#approvals", title: "Configure approval rules" },
+              { label: "Knowledge", href: "/decisions", title: "Saved reasoning your agents wrote down" },
+            ]}
+          />
           <div
             className="kbd-hint-row"
             style={{
@@ -909,6 +926,20 @@ function ApprovalsContent() {
             <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
               <KeyChip>⌘K</KeyChip> palette
             </span>
+            {/*
+              Cross-link to Approval Insights. Before this link, the
+              /insights page (per-tool approval/rejection patterns,
+              explain-batch, replay) had no entry point from the
+              approval queue — the two pages share the same data but
+              the dashboard never told the user that.
+            */}
+            <span style={{ color: "var(--line-2)" }} aria-hidden="true">·</span>
+            <Link
+              href="/insights"
+              style={{ color: "var(--ink-2)", textDecoration: "none" }}
+            >
+              See approval patterns →
+            </Link>
           </div>
         </div>
         <span className={`pill ${pending.length > 0 ? "warn" : "ok"}`}>
@@ -928,6 +959,8 @@ function ApprovalsContent() {
           Sync inbox
         </button>
       </div>
+
+      <HintCard id="approvals" />
 
       {/* Hero status bar — counts by tier. When the queue is empty the
           tier breakdown is all zeros — collapse it to avoid repeating

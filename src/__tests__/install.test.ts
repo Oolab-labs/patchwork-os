@@ -1,3 +1,4 @@
+import path from "node:path";
 import {
   afterEach,
   beforeEach,
@@ -207,8 +208,10 @@ describe("runInstall", () => {
   });
 
   describe("--target cli", () => {
-    // CLAUDE_CONFIG_DIR overrides the home dir base for the CLI config path
-    const testHomeDir = "/tmp/test-home";
+    // CLAUDE_CONFIG_DIR overrides the home dir base for the CLI config path.
+    // Normalize so production's path.join() doesn't rewrite forward slashes
+    // to backslashes on Win32 — otherwise startsWith() below mismatches.
+    const testHomeDir = path.normalize("/tmp/test-home");
 
     beforeEach(() => {
       process.env.CLAUDE_CONFIG_DIR = testHomeDir;
@@ -223,11 +226,11 @@ describe("runInstall", () => {
 
       const writeCalls = mockedWriteFileSync.mock.calls;
       expect(writeCalls.length).toBeGreaterThan(0);
-      // atomic write uses .tmp suffix; check any call targets the right base path
+      // atomic write uses .tmp suffix; check any call targets the right base path.
+      // Production uses path.join → backslash separator on Win32, forward slash elsewhere.
       const allPaths = writeCalls.map((c) => c[0] as string);
-      const hasCli = allPaths.some((p) =>
-        p.startsWith(`${testHomeDir}/.claude.json`),
-      );
+      const expectedBase = `${testHomeDir}${path.sep}.claude.json`;
+      const hasCli = allPaths.some((p) => p.startsWith(expectedBase));
       expect(hasCli).toBe(true);
       expect(allPaths.every((p) => !p.includes("claude_desktop_config"))).toBe(
         true,

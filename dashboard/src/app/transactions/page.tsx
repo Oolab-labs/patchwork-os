@@ -1,8 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
-import { ErrorState } from "@/components/patchwork";
+import { ErrorState, HintCard, RelationStrip } from "@/components/patchwork";
 
 interface TransactionEdit {
   filePath: string;
@@ -122,6 +122,29 @@ export default function TransactionsPage() {
     }
   }
 
+  const expiredIds = useMemo(
+    () => transactions.filter((t) => t.expiresAt <= Date.now()).map((t) => t.id),
+    // re-evaluate each tick — the page already polls every 3s + ticks the
+    // TtlPill via a module-scope timer, so we don't need our own clock
+    // dep here.
+    [transactions],
+  );
+
+  async function discardAllExpired() {
+    if (expiredIds.length === 0) return;
+    if (
+      !window.confirm(
+        `Discard ${expiredIds.length} expired transaction${expiredIds.length === 1 ? "" : "s"}?`,
+      )
+    ) return;
+    // Serial to keep rate-limiting predictable and to make the UI state
+    // changes visible row-by-row rather than as one giant flicker.
+    for (const id of expiredIds) {
+      // eslint-disable-next-line no-await-in-loop
+      await rollback(id);
+    }
+  }
+
   // Clear stale busy entries for transactions that are no longer in the list,
   // so a reused id can't pre-disable a brand-new transaction's Discard button.
   useEffect(() => {
@@ -144,9 +167,12 @@ export default function TransactionsPage() {
     <section>
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Transactions — <span className="accent">staged edits, awaiting your nod.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Transactions — <span className="accent">staged edits, awaiting your nod.</span>
+            </h1>
+            <HintCard.Toggle id="transactions" />
+          </div>
           <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
             Active staged multi-file edits — review, then commit from the agent
             (MCP <code>commitTransaction</code>) or discard from here. See{" "}
@@ -158,15 +184,35 @@ export default function TransactionsPage() {
             >
               the speculative-refactoring doc
             </a>{" "}
-            for the workflow.
+            for the full flow.
           </div>
+          <RelationStrip
+            items={[
+              { label: "Approvals", href: "/approvals", title: "Approval queue gating commit" },
+              { label: "Recipes", href: "/recipes", title: "Recipes that stage edits" },
+              { label: "Activity", href: "/activity", title: "Live event firehose" },
+              { label: "Runs", href: "/runs", title: "Runs that produced these edits" },
+            ]}
+          />
         </div>
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {expiredIds.length > 0 && (
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => void discardAllExpired()}
+              title={`Discard ${expiredIds.length} expired transaction${expiredIds.length === 1 ? "" : "s"}`}
+            >
+              Discard expired ({expiredIds.length})
+            </button>
+          )}
           <span className="pill muted">
             {transactions.length} active
           </span>
         </div>
       </div>
+
+      <HintCard id="transactions" />
 
       {loading && transactions.length === 0 && (
         <p style={{ color: "var(--fg-2)" }}>Loading…</p>

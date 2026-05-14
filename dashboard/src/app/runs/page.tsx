@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LivePill } from "@/components/patchwork/LivePill";
-import { ErrorState } from "@/components/patchwork";
+import { ErrorState, RelationStrip } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useDebounced } from "@/hooks/useDebounced";
 
@@ -177,6 +177,12 @@ export default function RunsPage() {
   const [attemptFilter, setAttemptFilter] = useState<string>("");
   useEffect(() => {
     setAttemptFilter(searchParams?.get("attempt") ?? "");
+    // RelationStrip on /runs and the dashboard hero link to ?recipe= and
+    // ?halt=1 — seed the recipe filter and (for halt=1) flip status to
+    // "error" so the page actually reflects the deep-link intent.
+    const r = searchParams?.get("recipe");
+    if (r) setRecipeQuery(r);
+    if (searchParams?.get("halt") === "1") setStatus("error");
   }, [searchParams]);
   const [limit, setLimit] = useState(RUNS_PAGE_SIZE);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -301,6 +307,14 @@ export default function RunsPage() {
           <div className="editorial-sub">
             {runs ? `${runs.length} runs` : "— runs"} · last 24h · avg {fmtDur(stats.avgMs)}
           </div>
+          <RelationStrip
+            items={[
+              { label: "Recipes", href: "/recipes", title: "The YAML that produced these runs" },
+              { label: "Halts", href: "/runs?halt=1", tone: "warn", title: "Runs that hit a halt reason" },
+              { label: "Traces", href: "/traces", title: "Decision logs for these runs" },
+              { label: "Activity", href: "/activity", title: "Live event firehose" },
+            ]}
+          />
         </div>
         <LivePill label="5s" />
       </div>
@@ -483,10 +497,16 @@ export default function RunsPage() {
               const g = globalThis as typeof globalThis & {
                 window?: Window;
               };
-              if (g.window && attemptFilter) {
+              if (g.window) {
                 const url = new URL(g.window.location.href);
-                url.searchParams.delete("attempt");
-                g.window.history.replaceState({}, "", url.toString());
+                let dirty = false;
+                for (const k of ["attempt", "recipe", "halt"]) {
+                  if (url.searchParams.has(k)) {
+                    url.searchParams.delete(k);
+                    dirty = true;
+                  }
+                }
+                if (dirty) g.window.history.replaceState({}, "", url.toString());
               }
             }}
           >

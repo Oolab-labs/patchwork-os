@@ -1,21 +1,31 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { FirstRunChecklist } from "@/components/FirstRunChecklist";
 import { StatCard } from "@/components/StatCard";
 import { SkeletonStatCard } from "@/components/Skeleton";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useBridgeStatus } from "@/hooks/useBridgeStatus";
+import { KillSwitchBanner } from "@/components/KillSwitchBanner";
 import { isNoiseEvent } from "@/lib/activityNoise";
+import { isHaltStatus } from "@/lib/runStatus";
 import {
   ActionPill,
   AnimatedNumber,
   AreaChart,
   LivePill,
   QuiltHero,
-  WeatherRing,
+  Sparkline,
 } from "@/components/patchwork";
+import {
+  RecipeLeaderboard,
+  type LeaderboardRun,
+} from "@/components/RecipeLeaderboard";
+import { LiveRunsStrip, type LiveRun } from "@/components/LiveRunsStrip";
+import { LiveWire } from "@/components/LiveWire";
+import { FeaturedRecipeAside } from "@/components/FeaturedRecipeAside";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -167,22 +177,37 @@ function ToolCallsWidget({
             borderRadius: "var(--r-2)",
             color: "var(--ink-3)",
             display: "flex",
-            flexDirection: "column",
             fontSize: "var(--fs-xs)",
-            gap: 4,
-            height: 120,
-            justifyContent: "center",
-            textAlign: "center",
+            gap: 10,
+            height: 56,
+            justifyContent: "space-between",
+            padding: "0 14px",
+            textAlign: "left",
           }}
         >
-          <div style={{ color: "var(--ink-2)", fontWeight: 600 }}>
-            No tool calls in the last 24 hours
+          <div>
+            <span style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+              No tool calls in the last 24h.
+            </span>{" "}
+            <span>
+              {bridgeOk
+                ? "Run a recipe and the curve fills in."
+                : "Bridge offline."}
+            </span>
           </div>
-          <div style={{ maxWidth: 480 }}>
-            {bridgeOk
-              ? "Connect a Claude Code session to the bridge and call any MCP tool — the curve fills in within a tick."
-              : "Bridge offline. Once it's running, tool calls from connected agents show up here."}
-          </div>
+          {bridgeOk && (
+            <Link
+              href="/recipes"
+              style={{
+                color: "var(--accent)",
+                fontWeight: 600,
+                textDecoration: "none",
+                flexShrink: 0,
+              }}
+            >
+              Browse recipes →
+            </Link>
+          )}
         </div>
       )}
     </div>
@@ -201,6 +226,23 @@ function activityKind(e: ActivityEvent): string {
     return ns ?? "tool";
   }
   return e.kind ?? "event";
+}
+
+/**
+ * Extract the recipe a row belongs to. Every step/recipe event the
+ * bridge emits carries metadata.recipeName, but pre-2026-05-13 the
+ * Overview activity thread dropped it on the floor. Surfacing it makes
+ * recipes feel like the protagonist of the activity stream instead of
+ * a hidden parent of disconnected tool calls.
+ */
+function activityRecipe(e: ActivityEvent): string | undefined {
+  const m = e.metadata;
+  if (!m || typeof m !== "object") return undefined;
+  const direct = (m as Record<string, unknown>).recipeName ?? (m as Record<string, unknown>).recipe;
+  if (typeof direct === "string" && direct.length > 0) {
+    return direct.replace(/:agent$/, "");
+  }
+  return undefined;
 }
 
 function greetingFromHour(h: number): string {
@@ -284,16 +326,6 @@ function TileIconSun() {
   );
 }
 
-// Compact human-readable counts: 4_752_583_497 → "4.8B", 58_376_273 → "58M".
-// Used in tile sub-stats where digits would crowd out other content. Falls
-// back to toLocaleString below 10k where readable digits are still cheap.
-function formatCompact(n: number): string {
-  if (n < 10_000) return n.toLocaleString();
-  if (n < 1_000_000) return `${(n / 1_000).toFixed(n < 100_000 ? 1 : 0)}K`;
-  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(n < 100_000_000 ? 1 : 0)}M`;
-  return `${(n / 1_000_000_000).toFixed(n < 100_000_000_000 ? 1 : 0)}B`;
-}
-
 function parseToolCallTotal(text: string): number {
   if (!text) return 0;
   let total = 0;
@@ -309,7 +341,99 @@ function parseToolCallTotal(text: string): number {
 // Activity thread (wireframe spec)
 // ---------------------------------------------------------------------------
 
-function ActivityThread({ events }: { events: ActivityEvent[] }) {
+/**
+ * Collapse runs of consecutive events that share the same (kind, tool/event,
+ * status) signature into a single row carrying a count. Without this, a
+ * workspace with eight back-to-back "approval rejected" lifecycle events
+ * fills the entire thread with identical-looking wallpaper — the audits
+ * called this out as the single biggest "flat" contributor.
+ *
+ * The first event in a run is kept (so the recipe name + most recent
+ * timestamp survive), and an extra `_count` field is grafted on for the
+ * renderer. We never collapse runs of length 1 — the count badge only
+ * appears when it adds information.
+ */
+function compressActivityRuns(events: ActivityEvent[]): ActivityEvent[] {
+  if (events.length < 2) return events;
+  const sigOf = (e: ActivityEvent) =>
+    [
+      e.kind ?? "",
+      e.kind === "tool" ? e.tool ?? "" : e.event ?? "",
+      e.status ?? "",
+    ].join("|");
+  const out: ActivityEvent[] = [];
+  let current: ActivityEvent | null = null;
+  let count = 0;
+  for (const e of events) {
+    if (current && sigOf(current) === sigOf(e)) {
+      count += 1;
+      continue;
+    }
+    if (current) {
+      out.push(count > 1 ? { ...current, _count: count } : current);
+    }
+    current = e;
+    count = 1;
+  }
+  if (current) {
+    out.push(count > 1 ? { ...current, _count: count } : current);
+  }
+  return out;
+}
+
+type ActivityFilter = "all" | "tools" | "approvals" | "errors";
+
+function eventMatchesFilter(e: ActivityEvent, f: ActivityFilter): boolean {
+  if (f === "all") return true;
+  if (f === "errors") return e.status === "error";
+  if (f === "tools") return e.kind === "tool";
+  if (f === "approvals") {
+    return e.kind === "lifecycle" && e.event === "approval_decision";
+  }
+  return true;
+}
+
+function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
+  const [filter, setFilter] = useState<ActivityFilter>("all");
+  // Track which event ids were already seen so we can flash newcomers.
+  // Ref instead of state so we don't re-render on each mutation; the
+  // parent's 5s poll already re-renders us when the data changes.
+  const seenIds = useRef<Set<string | number>>(new Set());
+
+  const filtered = useMemo(
+    () => rawEvents.filter((e) => eventMatchesFilter(e, filter)),
+    [rawEvents, filter],
+  );
+  const events = compressActivityRuns(filtered);
+
+  // Compute the set of fresh keys for this render before mutating the
+  // seen set, so the same render renders with consistent fresh flags.
+  const freshKeys = useMemo(() => {
+    const fresh = new Set<string | number>();
+    for (const e of events) {
+      const k = (e.id ?? `${e.kind}-${e.at ?? 0}-${e.tool ?? e.event ?? ""}`) as
+        | string
+        | number;
+      if (!seenIds.current.has(k)) fresh.add(k);
+    }
+    return fresh;
+  }, [events]);
+  useEffect(() => {
+    // Mark everything seen *after* the render commits so the flash CSS
+    // has a chance to play. Capped at 200 to bound memory across long
+    // sessions; the activity feed itself only retains last 500 events.
+    for (const e of events) {
+      const k = (e.id ?? `${e.kind}-${e.at ?? 0}-${e.tool ?? e.event ?? ""}`) as
+        | string
+        | number;
+      seenIds.current.add(k);
+    }
+    if (seenIds.current.size > 600) {
+      const arr = Array.from(seenIds.current);
+      seenIds.current = new Set(arr.slice(-400));
+    }
+  }, [events]);
+
   return (
     <div className="card" style={{ padding: "18px 20px" }}>
       <div
@@ -317,7 +441,7 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
           display: "flex",
           alignItems: "center",
           gap: 8,
-          marginBottom: 14,
+          marginBottom: 12,
         }}
       >
         <h2
@@ -336,6 +460,27 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
         <ActionPill href="/activity" ariaLabel="View all activity">
           view all →
         </ActionPill>
+      </div>
+      <div
+        role="tablist"
+        aria-label="Filter activity by kind"
+        className="activity-filter-row"
+      >
+        {(["all", "tools", "approvals", "errors"] as const).map((f) => {
+          const active = f === filter;
+          return (
+            <button
+              key={f}
+              role="tab"
+              type="button"
+              aria-selected={active}
+              onClick={() => setFilter(f)}
+              className={`activity-filter-chip${active ? " is-active" : ""}`}
+            >
+              {f}
+            </button>
+          );
+        })}
       </div>
 
       {events.length === 0 ? (
@@ -379,13 +524,21 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
             const ts = e.at ?? Date.now();
             const tool = activityLabel(e);
             const kind = activityKind(e);
+            const recipe = activityRecipe(e);
             const isErr = e.status === "error";
             const dur =
               typeof e.durationMs === "number" ? `${e.durationMs}ms` : null;
+            const rawCount = (e as Record<string, unknown>)._count;
+            const repeatCount = typeof rawCount === "number" ? rawCount : 0;
+            const eventKey = (e.id ?? `${e.kind}-${e.at ?? 0}-${e.tool ?? e.event ?? ""}`) as
+              | string
+              | number;
+            const isFresh = freshKeys.has(eventKey);
             return (
               <div
                 // biome-ignore lint/suspicious/noArrayIndexKey: stable list
                 key={e.id ?? i}
+                className={`activity-row${isFresh ? " is-fresh" : ""}${isErr ? " is-err" : ""}`}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -423,22 +576,64 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
                 </span>
                 <span
                   style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "var(--fs-s)",
-                    color: "var(--ink-0)",
-                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
                     flex: 1,
                     minWidth: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
                   }}
                 >
-                  {tool}
+                  {recipe && (
+                    <Link
+                      href={`/recipes/${encodeURIComponent(recipe)}/edit`}
+                      title={`Recipe ${recipe}`}
+                      onClick={(ev) => ev.stopPropagation()}
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: "var(--fs-xs)",
+                        color: "var(--accent)",
+                        textDecoration: "none",
+                        flexShrink: 0,
+                        maxWidth: 140,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {recipe}
+                    </Link>
+                  )}
+                  {recipe && (
+                    <span aria-hidden="true" style={{ color: "var(--ink-3)" }}>·</span>
+                  )}
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "var(--fs-s)",
+                      color: "var(--ink-0)",
+                      fontWeight: 600,
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {tool}
+                  </span>
+                  {repeatCount > 1 && (
+                    <span
+                      className="pill muted"
+                      style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
+                      title={`Last ${repeatCount} events collapsed`}
+                    >
+                      ×{repeatCount}
+                    </span>
+                  )}
                 </span>
                 <span
                   className="pill muted"
-                  style={{ fontSize: "var(--fs-3xs)", flexShrink: 0 }}
+                  style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
                 >
                   {kind}
                 </span>
@@ -456,7 +651,7 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
                 )}
                 <span
                   className={`pill ${isErr ? "err" : "ok"}`}
-                  style={{ fontSize: "var(--fs-3xs)", flexShrink: 0 }}
+                  style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
                 >
                   {isErr ? "err" : "ok"}
                 </span>
@@ -473,206 +668,11 @@ function ActivityThread({ events }: { events: ActivityEvent[] }) {
 // Active recipe (live YAML + spinner)
 // ---------------------------------------------------------------------------
 
-function RecentRecipesCard({ recipes }: { recipes: Recipe[] }) {
-  const top = [...recipes]
-    .filter((r) => r.enabled !== false)
-    .sort((a, b) => (b.lastRun ?? 0) - (a.lastRun ?? 0))
-    .slice(0, 6);
-  return (
-    <div className="card" style={{ padding: "18px 20px" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 14,
-        }}
-      >
-        <h2
-          style={{
-            fontSize: "var(--fs-m)",
-            fontWeight: 700,
-            margin: 0,
-            color: "var(--ink-0)",
-            flex: 1,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
-          Recent recipes
-        </h2>
-        <ActionPill href="/recipes" ariaLabel="View all recipes">
-          all →
-        </ActionPill>
-      </div>
-
-      {top.length === 0 ? (
-        <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", padding: "8px 0" }}>
-          No enabled recipes yet.{" "}
-          <Link href="/recipes/new" style={{ color: "var(--accent)" }}>
-            Create one →
-          </Link>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {top.map((r) => (
-            <Link
-              key={r.id ?? r.name}
-              href={`/recipes/${encodeURIComponent(r.name)}/edit`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "6px 8px",
-                borderRadius: "var(--r-sm)",
-                textDecoration: "none",
-                color: "var(--ink-1)",
-                fontSize: "var(--fs-s)",
-              }}
-            >
-              <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink-0)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {r.name}
-              </span>
-              <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>
-                {r.lastRun ? relTime(r.lastRun) : "never run"}
-              </span>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Health card
 // ---------------------------------------------------------------------------
 
-function HealthCard({
-  bridgeVersion,
-  extensionVersion,
-  bridgeOk,
-  extensionConnected,
-}: {
-  bridgeVersion: string;
-  extensionVersion: string;
-  bridgeOk: boolean;
-  extensionConnected: boolean;
-}) {
-  const rows: { label: string; value: string; tone?: "ok" | "muted" | "warn" }[] = [
-    {
-      label: "Bridge",
-      value: bridgeOk ? bridgeVersion : "offline",
-      tone: bridgeOk ? "ok" : "warn",
-    },
-    {
-      label: "VS Code extension",
-      value: extensionConnected ? extensionVersion : "disconnected",
-      tone: extensionConnected ? "ok" : "muted",
-    },
-  ];
-
-  return (
-    <div className="card" style={{ padding: "18px 20px" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 12,
-        }}
-      >
-        <h2
-          style={{
-            fontSize: "var(--fs-m)",
-            fontWeight: 700,
-            margin: 0,
-            color: "var(--ink-0)",
-            flex: 1,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
-          Health
-        </h2>
-        <span
-          className={`pill ${bridgeOk && extensionConnected ? "ok" : bridgeOk ? "muted" : "warn"}`}
-          style={{ fontSize: "var(--fs-2xs)" }}
-        >
-          {bridgeOk && extensionConnected
-            ? "all green"
-            : bridgeOk
-              ? "extension off"
-              : "bridge offline"}
-        </span>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {rows.map((r) => {
-          const toneLabel =
-            r.tone === "ok"
-              ? "healthy"
-              : r.tone === "warn"
-                ? "degraded"
-                : "inactive";
-          const toneColor =
-            r.tone === "ok"
-              ? "var(--ok)"
-              : r.tone === "warn"
-                ? "var(--warn)"
-                : "var(--ink-3)";
-          return (
-            <div
-              key={r.label}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                fontSize: 12.5,
-              }}
-            >
-              <span
-                aria-hidden="true"
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background: toneColor,
-                  flexShrink: 0,
-                }}
-              />
-              <span style={{ color: "var(--ink-1)", flex: 1 }}>
-                {r.label}
-                <span
-                  style={{
-                    position: "absolute",
-                    width: 1,
-                    height: 1,
-                    overflow: "hidden",
-                    clip: "rect(0,0,0,0)",
-                  }}
-                >
-                  {" "}
-                  ({toneLabel})
-                </span>
-              </span>
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11.5,
-                  color: "var(--ink-0)",
-                  fontWeight: 600,
-                }}
-              >
-                {r.value}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Main page
@@ -687,6 +687,7 @@ export default function HomePage() {
 
   const [pendingApprovals, setPendingApprovals] = useState<Pending[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [runs, setRuns] = useState<LiveRun[]>([]);
   const [toolCallTotal, setToolCallTotal] = useState(0);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const tickRef = useRef<() => void>(() => {});
@@ -696,7 +697,7 @@ export default function HomePage() {
     let alive = true;
     const tick = async () => {
       try {
-        const [approvalsRes, metricsRes, recipesRes, activityRes] =
+        const [approvalsRes, metricsRes, recipesRes, activityRes, runsRes] =
           await Promise.all([
             fetch(apiPath("/api/bridge/approvals")),
             fetch(apiPath("/api/bridge/metrics")),
@@ -708,6 +709,10 @@ export default function HomePage() {
             // simply shows the most recent N events bucketed into 24
             // hours, which still beats showing nothing.
             fetch(apiPath("/api/bridge/activity?last=500")),
+            // Recipe-runs power the new LiveRunsStrip + RecipeLeaderboard.
+            // catch() so an older bridge missing the endpoint just shows
+            // empty surfaces — the rest of Overview keeps working.
+            fetch(apiPath("/api/bridge/runs")).catch(() => null),
           ]);
         if (!alive) return;
 
@@ -729,9 +734,14 @@ export default function HomePage() {
           ? recipesData
           : (recipesData as { recipes?: Recipe[] }).recipes ?? [];
 
+        const runsData = runsRes?.ok
+          ? ((await runsRes.json()) as { runs?: LiveRun[] })
+          : { runs: [] };
+
         setToolCallTotal(total);
         setPendingApprovals(Array.isArray(approvalsData) ? approvalsData : []);
         setRecipes(list);
+        setRuns(Array.isArray(runsData.runs) ? runsData.runs : []);
         setActivityEvents(
           (activityData.events ?? []).map(withAt),
         );
@@ -749,20 +759,7 @@ export default function HomePage() {
   }, []);
 
   // Telemetry numbers — real bridge values, no floors.
-  const recipesShipped = recipes.length;
   const pendingCount = pendingApprovals.length;
-  // Recipes-shipped delta vs last week. Uses recipe.installedAt; recipes
-  // missing installedAt are excluded from the delta but count toward the
-  // total. "↑ +N this week" matches the wireframe pattern.
-  const recipesThisWeekLabel = (() => {
-    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const shipped = recipes.filter(
-      (r) => typeof r.installedAt === "number" && r.installedAt >= weekAgo,
-    ).length;
-    if (recipesShipped === 0) return "none yet";
-    if (shipped === 0) return "no new this week";
-    return `↑ +${shipped} this week`;
-  })();
 
   const oldestApprovalLabel = (() => {
     if (pendingApprovals.length === 0) return "none pending";
@@ -772,31 +769,63 @@ export default function HomePage() {
     return `· oldest ${relTime(oldest)}`;
   })();
 
-  // Token spend in USD using the primary-driver rate card. Sonnet defaults —
-  // matches the wireframe's "$3.42 spend" foot. Caveat: the bridge tracks
-  // tokens cumulatively since restart, not per-day, so this is "spend since
-  // restart" not "today's spend". Documented in the title tooltip on the tile.
-  // Rates from anthropic.com/pricing as of 2026:
-  //   input         $3.00 / 1M
-  //   output       $15.00 / 1M
-  //   cache write   $3.75 / 1M  (1.25× input)
-  //   cache read    $0.30 / 1M  (0.10× input)
-  const tokenSpendUsd = (() => {
-    const t = health?.tokens;
-    if (!t) return null;
-    const usd =
-      (t.input * 3) / 1_000_000 +
-      (t.output * 15) / 1_000_000 +
-      (t.cacheCreate * 3.75) / 1_000_000 +
-      (t.cacheRead * 0.3) / 1_000_000;
-    return usd;
+  // Runs + halts aggregations for the rebalanced telemetry tiles.
+  // The old "Recipes shipped" + "Tokens burnt" tiles were a static
+  // install count (changes weekly at best) and a since-restart
+  // cumulative — neither answered "what's happening right now?".
+  // These two answer that, and unlike the old tiles they're never
+  // a permanent zero on a healthy workspace.
+  const dayMs = 24 * 60 * 60 * 1000;
+  const runsCount24h = runs.filter((r) => Date.now() - r.startedAt < dayMs).length;
+  const haltCount24h = runs.filter(
+    (r) => Date.now() - r.startedAt < dayMs && isHaltStatus(r.status),
+  ).length;
+  const runs24h = runs.filter((r) => Date.now() - r.startedAt < dayMs);
+  const okCount24h = runs24h.filter((r) => r.status === "done" || r.status === "success").length;
+  const errCount24h = runs24h.filter((r) => isHaltStatus(r.status)).length;
+  const runsFootLabel = runsCount24h === 0
+    ? "no runs yet"
+    : `${okCount24h} ok · ${errCount24h} err`;
+  const haltsFootLabel = (() => {
+    if (haltCount24h === 0) return "clean";
+    const lastHalt = runs24h.find((r) => isHaltStatus(r.status));
+    return lastHalt ? `last ${relTime(lastHalt.startedAt)}` : "—";
   })();
-  const tokenSpendLabel = (() => {
-    if (tokenSpendUsd == null) return undefined;
-    if (tokenSpendUsd < 0.01) return "· < $0.01 spend";
-    if (tokenSpendUsd < 1) return `· $${tokenSpendUsd.toFixed(2)} spend`;
-    if (tokenSpendUsd < 100) return `· $${tokenSpendUsd.toFixed(2)} spend`;
-    return `· $${Math.round(tokenSpendUsd).toLocaleString()} spend`;
+  // 7-day daily-bucket series for the micro-sparkline. Buckets are
+  // ordered oldest → newest so the curve reads left-to-right.
+  const runs7dSeries = (() => {
+    const buckets = new Array(7).fill(0);
+    const now = Date.now();
+    for (const r of runs) {
+      const idx = Math.floor((now - r.startedAt) / dayMs);
+      if (idx >= 0 && idx < 7) buckets[6 - idx] += 1;
+    }
+    return buckets;
+  })();
+  const halts7dSeries = (() => {
+    const buckets = new Array(7).fill(0);
+    const now = Date.now();
+    for (const r of runs) {
+      if (!isHaltStatus(r.status)) continue;
+      const idx = Math.floor((now - r.startedAt) / dayMs);
+      if (idx >= 0 && idx < 7) buckets[6 - idx] += 1;
+    }
+    return buckets;
+  })();
+  // Per-day labels for the sparkline hover inspector. Indices match
+  // the bucket order: oldest → newest, rightmost is "today".
+  const days7dLabels = (() => {
+    const fmt = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+    const out: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      if (i === 0) {
+        out.push("today");
+        continue;
+      }
+      const d = new Date(Date.now() - i * dayMs);
+      out.push(fmt.format(d).toLowerCase());
+    }
+    return out;
   })();
 
   // "Tools called today" used to display toolCallTotal — the cumulative
@@ -834,22 +863,6 @@ export default function HomePage() {
     }
     return { toolsToday: today, toolsTrendLabel: label };
   })();
-
-  // LOAD widget — running tasks + connections heuristic, + 4 trend
-  const conns = health?.connections ?? 0;
-  const sess = health?.activeSessions ?? 0;
-  const loadPct = Math.max(
-    0,
-    Math.min(100, 38 + sess * 12 + (bridgeStatus.ok ? 18 : 0) + conns * 4),
-  );
-  const loadTrend = bridgeStatus.ok
-    ? [
-        Math.max(8, loadPct - 22),
-        Math.max(8, loadPct - 14),
-        Math.max(8, loadPct - 8),
-        loadPct,
-      ]
-    : [0, 0, 0, 0];
 
   // Hero copy follows the design's narrative shape — "stitched N patches
    // overnight, drafted M things that need a nod, and woke up clean" — but
@@ -921,15 +934,22 @@ export default function HomePage() {
   ).size;
   const activeRecipesCount = recipes.filter((r) => r.enabled !== false).length;
 
-  // The bridge's /health endpoint doesn't currently expose a version
-  // string, so these are usually missing in practice. Render an em-dash
-  // (matches the "—" used elsewhere for missing values) instead of the
-  // contradictory "unknown" word next to the green "all green" pill.
-  const bridgeVersion = bridgeStatus.patchwork?.version ?? "—";
-  const extensionVersion = health?.extensionVersion ?? "—";
-
   return (
     <section>
+      {bridgeStatus.killSwitch?.engaged && (
+        <KillSwitchBanner
+          engaged={bridgeStatus.killSwitch.engaged}
+          locked={bridgeStatus.killSwitch.locked}
+        />
+      )}
+      {/*
+        First-run checklist: orchestrates the 4-step happy path for
+        brand-new workspaces (connect → install recipe → run → approve).
+        Auto-collapses once all four steps are complete; user-dismissable
+        any time. Lives above the hero so a new user can't miss it.
+      */}
+      <FirstRunChecklist />
+
       {/* ------------------------------------------------------------------ */}
       {/* Quilt hero with LOAD widget                                          */}
       {/* ------------------------------------------------------------------ */}
@@ -963,25 +983,23 @@ export default function HomePage() {
           }
           return stats.length > 0 ? stats : undefined;
         })()}
-        aside={
-          <WeatherRing
-            label="LOAD"
-            percent={loadPct}
-            trend={loadTrend}
-            live={bridgeStatus.ok}
-            mood={
-              !bridgeStatus.ok
-                ? "bridge offline"
-                : loadPct >= 80
-                  ? "high load"
-                  : loadPct >= 50
-                    ? "warming up"
-                    : "quiet"
-            }
-            meta={`${recipes.length} recipes · ${pendingApprovals.length} pending`}
-          />
-        }
+        aside={<FeaturedRecipeAside runs={runs as LeaderboardRun[]} />}
       />
+
+      {/* ------------------------------------------------------------------ */}
+      {/* LIVE WIRE — always-present 1-row heartbeat ("● 2 running · last    */}
+      {/* finished 4m ago"). Pairs with LiveRunsStrip below, which only shows */}
+      {/* when there's something in flight or just-finished — keeps the page */}
+      {/* feeling alive even during quiet stretches.                          */}
+      {/* ------------------------------------------------------------------ */}
+      <LiveWire runs={runs} bridgeOk={bridgeStatus.ok === true} />
+
+      {/* ------------------------------------------------------------------ */}
+      {/* LIVE RUNS — pulses any currently-running or recently-finished       */}
+      {/* recipe so a user landing on Overview can see motion at a glance.    */}
+      {/* Component auto-hides when there's nothing in-flight or recent.      */}
+      {/* ------------------------------------------------------------------ */}
+      <LiveRunsStrip runs={runs} />
 
       {/* ------------------------------------------------------------------ */}
       {/* TELEMETRY eyebrow                                                    */}
@@ -991,7 +1009,7 @@ export default function HomePage() {
           display: "flex",
           alignItems: "center",
           gap: "var(--s-3)",
-          marginTop: "var(--s-5)",
+          marginTop: "var(--s-2)",
           marginBottom: "var(--s-3)",
         }}
       >
@@ -1061,11 +1079,26 @@ export default function HomePage() {
         ) : (
           <>
             <StatCard
-              label="Recipes shipped"
+              label="Runs · 24h"
               icon={<TileIconLines />}
-              value={<AnimatedNumber value={recipesShipped} />}
-              foot={recipesThisWeekLabel}
-              href="/recipes"
+              value={<AnimatedNumber value={runsCount24h} />}
+              foot={
+                <div>
+                  <div>{runsFootLabel}</div>
+                  {runs7dSeries.some((v) => v > 0) && (
+                    <div style={{ marginTop: 4 }}>
+                      <Sparkline
+                        values={runs7dSeries}
+                        color="var(--accent)"
+                        height={22}
+                        labels={days7dLabels}
+                        unit="runs"
+                      />
+                    </div>
+                  )}
+                </div>
+              }
+              href="/runs"
             />
             <StatCard
               label="Pending approvals"
@@ -1075,49 +1108,33 @@ export default function HomePage() {
               href="/approvals"
             />
             <StatCard
+              label="Halts · 24h"
+              icon={<TileIconSun />}
+              value={<AnimatedNumber value={haltCount24h} />}
+              foot={
+                <div>
+                  <div>{haltsFootLabel}</div>
+                  {halts7dSeries.some((v) => v > 0) && (
+                    <div style={{ marginTop: 4 }}>
+                      <Sparkline
+                        values={halts7dSeries}
+                        color="var(--err)"
+                        height={22}
+                        labels={days7dLabels}
+                        unit="halts"
+                      />
+                    </div>
+                  )}
+                </div>
+              }
+              href="/runs?halt=1"
+            />
+            <StatCard
               label="Tools called today"
               icon={<TileIconShell />}
               value={<AnimatedNumber value={toolsToday} />}
               foot={toolsTrendLabel}
               href="/activity"
-            />
-            <StatCard
-              label="Tokens burnt"
-              icon={<TileIconSun />}
-              value={
-                health?.tokens ? (
-                  <AnimatedNumber
-                    // The bridge's tokens.total is just input + output, but cache
-                    // creation is also billed (~1.25× input rate). Cache reads
-                    // (often 100×–1000× larger than the rest combined) are billed
-                    // at 0.1× and excluded — they'd dwarf the headline and
-                    // mislead. Show the full-rate-ish slice; cache reads get a
-                    // sub-stat in the foot. Compact format ("68.5M" not
-                    // "68,540,195") so the digit count doesn't hijack the tile.
-                    value={
-                      health.tokens.input +
-                      health.tokens.output +
-                      health.tokens.cacheCreate
-                    }
-                    format={formatCompact}
-                  />
-                ) : (
-                  "—"
-                )
-              }
-              foot={tokenSpendLabel}
-              title={
-                health?.tokens
-                  ? [
-                      `Input:        ${health.tokens.input.toLocaleString()}`,
-                      `Output:       ${health.tokens.output.toLocaleString()}`,
-                      `Cache create: ${health.tokens.cacheCreate.toLocaleString()}  (billed ~1.25× input)`,
-                      `Cache read:   ${health.tokens.cacheRead.toLocaleString()}  (billed 0.1× input)`,
-                      `Messages:     ${health.tokens.messages.toLocaleString()}`,
-                    ].join("\n")
-                  : undefined
-              }
-              href="/metrics"
             />
           </>
         )}
@@ -1144,22 +1161,15 @@ export default function HomePage() {
           activity timestamps + recipe slugs collide. */}
       <div className="grid-2" style={{ marginBottom: "var(--s-5)" }}>
         <ActivityThread
-          events={activityEvents.filter((e) => !isNoiseEvent(e)).slice(-8).reverse()}
+          events={activityEvents
+            .filter((e) => !isNoiseEvent(e))
+            .slice(-40)
+            .reverse()
+            .slice(0, 12)}
         />
-        <RecentRecipesCard recipes={recipes} />
+        <RecipeLeaderboard runs={runs as LeaderboardRun[]} />
       </div>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Health card                                                          */}
-      {/* ------------------------------------------------------------------ */}
-      <div style={{ marginBottom: "var(--s-6)" }}>
-        <HealthCard
-          bridgeVersion={bridgeVersion}
-          extensionVersion={extensionVersion}
-          bridgeOk={bridgeStatus.ok === true}
-          extensionConnected={Boolean(health?.extensionConnected)}
-        />
-      </div>
     </section>
   );
 }

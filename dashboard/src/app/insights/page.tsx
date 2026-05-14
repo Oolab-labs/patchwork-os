@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { apiPath } from "@/lib/api";
 import { EmptyState, ErrorState } from "@/components/patchwork";
@@ -42,10 +42,16 @@ const SEVERITY_PILL: Record<ToolInsight["severity"], string> = {
   high: "err",
 };
 
+// Severity drives a colored pill on each tool row. The "high" tier fires
+// whenever a tool has ANY rejection in the window (per
+// src/approvalInsights.ts), which is right for surfacing risk — but the
+// previous label "rejected" read as "this tool was rejected" even when
+// the tool ran with a 97% approval rate. Renamed to "has rejections" so
+// the chip describes the signal accurately. Verified by the audit team.
 const SEVERITY_LABEL: Record<ToolInsight["severity"], string> = {
   low: "trusted",
   medium: "new",
-  high: "rejected",
+  high: "has rejections",
 };
 
 const TIER_PILL: Record<RuleExplanation["tier"], string> = {
@@ -135,7 +141,54 @@ export default function InsightsPage() {
     Record<string, RuleExplanation | null>
   >({});
 
-  const tools = data?.tools ?? [];
+  type SortKey = "rejections" | "approvals" | "rate" | "last" | "tool";
+  const [sortKey, setSortKey] = useState<SortKey>("rejections");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const toggleSort = (k: SortKey) => {
+    if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(k);
+      // Tool name reads more naturally A→Z by default; numeric columns
+      // default to "biggest first" since the actionable signal is at the top.
+      setSortDir(k === "tool" ? "asc" : "desc");
+    }
+  };
+
+  const rawTools = data?.tools ?? [];
+  const tools = useMemo(() => {
+    const arr = [...rawTools];
+    const dir = sortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      switch (sortKey) {
+        case "tool":
+          return a.toolName.localeCompare(b.toolName) * dir;
+        case "approvals":
+          return (a.approvals - b.approvals) * dir;
+        case "rejections":
+          return (a.rejections - b.rejections) * dir;
+        case "rate":
+          return ((a.approvalRate ?? -1) - (b.approvalRate ?? -1)) * dir;
+        case "last": {
+          const ta = a.lastDecisionAt ? Date.parse(a.lastDecisionAt) : 0;
+          const tb = b.lastDecisionAt ? Date.parse(b.lastDecisionAt) : 0;
+          return (ta - tb) * dir;
+        }
+      }
+    });
+    return arr;
+  }, [rawTools, sortKey, sortDir]);
+
+  // The "has rejections" severity fires on any rejection — useful, but the
+  // err-tone pill screams "broken" for a tool with a 97% approval rate.
+  // Drop to warn-tone once approval rate clears the 90% bar.
+  function pillToneFor(t: ToolInsight): "ok" | "warn" | "err" {
+    if (t.severity !== "high") return SEVERITY_PILL[t.severity] as "ok" | "warn" | "err";
+    if (t.approvalRate != null && t.approvalRate >= 0.9) return "warn";
+    return "err";
+  }
+
+  const sortIndicator = (k: SortKey) =>
+    sortKey === k ? (sortDir === "asc" ? " ▲" : " ▼") : "";
 
   useEffect(() => {
     document.title = "Insights — Patchwork OS";
@@ -245,9 +298,13 @@ export default function InsightsPage() {
                     fontWeight: 500,
                     color: "var(--fg-2)",
                     fontSize: "var(--fs-xs)",
+                    cursor: "pointer",
+                    userSelect: "none",
                   }}
+                  onClick={() => toggleSort("tool")}
+                  aria-sort={sortKey === "tool" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                 >
-                  Tool
+                  Tool{sortIndicator("tool")}
                 </th>
                 <th
                   style={{
@@ -278,9 +335,14 @@ export default function InsightsPage() {
                     fontWeight: 500,
                     color: "var(--fg-2)",
                     fontSize: "var(--fs-xs)",
+                    cursor: "pointer",
+                    userSelect: "none",
                   }}
+                  onClick={() => toggleSort("approvals")}
+                  aria-sort={sortKey === "approvals" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                  title="Approvals"
                 >
-                  ✓
+                  ✓{sortIndicator("approvals")}
                 </th>
                 <th
                   style={{
@@ -289,9 +351,14 @@ export default function InsightsPage() {
                     fontWeight: 500,
                     color: "var(--fg-2)",
                     fontSize: "var(--fs-xs)",
+                    cursor: "pointer",
+                    userSelect: "none",
                   }}
+                  onClick={() => toggleSort("rejections")}
+                  aria-sort={sortKey === "rejections" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                  title="Rejections"
                 >
-                  ✗
+                  ✗{sortIndicator("rejections")}
                 </th>
                 <th
                   style={{
@@ -300,9 +367,13 @@ export default function InsightsPage() {
                     fontWeight: 500,
                     color: "var(--fg-2)",
                     fontSize: "var(--fs-xs)",
+                    cursor: "pointer",
+                    userSelect: "none",
                   }}
+                  onClick={() => toggleSort("rate")}
+                  aria-sort={sortKey === "rate" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                 >
-                  Rate
+                  Rate{sortIndicator("rate")}
                 </th>
                 <th
                   style={{
@@ -311,9 +382,13 @@ export default function InsightsPage() {
                     fontWeight: 500,
                     color: "var(--fg-2)",
                     fontSize: "var(--fs-xs)",
+                    cursor: "pointer",
+                    userSelect: "none",
                   }}
+                  onClick={() => toggleSort("last")}
+                  aria-sort={sortKey === "last" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                 >
-                  Last
+                  Last{sortIndicator("last")}
                 </th>
               </tr>
             </thead>
@@ -326,12 +401,18 @@ export default function InsightsPage() {
                   <td style={{ padding: "10px 0", verticalAlign: "middle" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span
-                        className={`pill ${SEVERITY_PILL[t.severity]}`}
+                        className={`pill ${pillToneFor(t)}`}
                         style={{ fontSize: "var(--fs-2xs)" }}
                       >
                         {SEVERITY_LABEL[t.severity]}
                       </span>
-                      <code style={{ fontSize: "var(--fs-s)" }}>{t.toolName}</code>
+                      <Link
+                        href={`/activity?tool=${encodeURIComponent(t.toolName)}`}
+                        style={{ color: "inherit", textDecoration: "none" }}
+                        title={`View ${t.toolName} activity`}
+                      >
+                        <code style={{ fontSize: "var(--fs-s)" }}>{t.toolName}</code>
+                      </Link>
                     </div>
                   </td>
                   <td

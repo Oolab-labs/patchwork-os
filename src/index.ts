@@ -177,6 +177,7 @@ const KNOWN_SUBCOMMANDS = [
   "launchd",
   "start",
   "kill-switch",
+  "panic",
   "halts",
   "judgments",
 ] as const;
@@ -220,6 +221,49 @@ if (process.argv[2] === "--version" || process.argv[2] === "-v") {
   process.exit(0);
 }
 
+// Handle top-level --help / -h / help — print a grouped command index so a
+// first-time user has a discoverable entry point. Without this, bare
+// `patchwork --help` falls through to bridge-daemon arg parsing and errors.
+if (
+  process.argv[2] === "--help" ||
+  process.argv[2] === "-h" ||
+  process.argv[2] === "help"
+) {
+  const binName = path.basename(process.argv[1] ?? "patchwork");
+  process.stdout.write(
+    `${binName} ${PACKAGE_VERSION}\n\n` +
+      `First time? Run:\n` +
+      `  ${binName} init                          # set up ~/.patchwork + Claude Code hooks\n` +
+      `  ${binName} start-all                     # bridge + Claude + dashboard\n\n` +
+      `Get started\n` +
+      `  init [--workspace <dir>]                  Scaffold ~/.patchwork; register CC hooks\n` +
+      `  install-extension                         Install the VS Code / Cursor / Windsurf extension\n` +
+      `  start-all [--no-dashboard]                Launch bridge + Claude --ide + dashboard\n` +
+      `  start-orchestrator                        Multi-IDE-window meta-bridge\n\n` +
+      `Recipes\n` +
+      `  recipe new <name> [-i]                    Scaffold a recipe\n` +
+      `  recipe list                               List installed recipes\n` +
+      `  recipe run <name> [--vars k=v]            Run a recipe by name\n` +
+      `  recipe install <source>                   Install from a path or GitHub source\n` +
+      `  recipe --help                             Full recipe subcommand index\n\n` +
+      `Diagnose\n` +
+      `  halts [--window 1h|24h|overnight|7d]      Morning summary of recent recipe halts\n` +
+      `  traces export                             Bundle approval / recipe / decision traces\n` +
+      `  print-token [--port N]                    Print the active bridge auth token\n\n` +
+      `Daemon (no subcommand)\n` +
+      `  --workspace <dir>                         Start the bridge in foreground\n` +
+      `  --watch                                   Auto-restart supervisor\n` +
+      `  --slim                                    27 IDE-only tools (default: full)\n\n` +
+      `Other\n` +
+      `  --version, -v                             Print package version\n` +
+      `  shim                                      stdio↔WebSocket shim (used by MCP clients)\n` +
+      `  notify <event>                            Notify a running bridge of a CC hook event\n\n` +
+      `Bridge-daemon flags: run \`${binName} --workspace . --help-flags\` for the full list,\n` +
+      `or see https://github.com/Oolab-labs/patchwork-os#readme.\n`,
+  );
+  process.exit(0);
+}
+
 // Handle patchwork-init subcommand — T2 from docs/install-ux-plan.md.
 // Separate from the bridge-only `init` to preserve back-compat. See ADR-0008.
 if (process.argv[2] === "patchwork-init") {
@@ -247,13 +291,16 @@ if (isStartAll) {
     process.argv[2] === "start-all"
       ? process.argv.slice(3)
       : process.argv.slice(2);
+  // Dispatch the cross-platform Node orchestrator (start-all.mjs). The
+  // bash entry-point is kept as a developer shortcut but Windows has no
+  // `bash` on PATH by default, and the .mjs is functionally equivalent.
   const scriptPath = path.resolve(
     __dirnameTop,
     "..",
     "scripts",
-    "start-all.sh",
+    "start-all.mjs",
   );
-  const result = spawnSync("bash", [scriptPath, ...startAllArgs], {
+  const result = spawnSync(process.execPath, [scriptPath, ...startAllArgs], {
     stdio: "inherit",
   });
   process.exit(result.status ?? 1);
@@ -262,7 +309,7 @@ if (isStartAll) {
 // `patchwork start` — opinionated front door over start-all.
 // Defaults to full mode (all tools registered) and the web dashboard, so the
 // doc-promised "patchwork start → everything works" path actually works.
-// Pass-through args still go to start-all.sh; --help short-circuits.
+// Pass-through args still go to start-all.mjs; --help short-circuits.
 if (process.argv[2] === "start") {
   const passthrough = process.argv.slice(3);
   if (passthrough.includes("--help") || passthrough.includes("-h")) {
@@ -299,7 +346,7 @@ This is a thin wrapper over \`start-all\`. For advanced flags see:
   const args = [...passthrough];
   const slimIdx = args.indexOf("--slim");
   if (slimIdx >= 0) {
-    args.splice(slimIdx, 1); // strip — start-all.sh has no --slim flag, slim is its default
+    args.splice(slimIdx, 1); // slim is the .mjs default; strip so --full isn't re-added below
   } else if (!args.includes("--full")) {
     args.push("--full");
   }
@@ -308,13 +355,14 @@ This is a thin wrapper over \`start-all\`. For advanced flags see:
     const tmuxCheck = spawnSync("which", ["tmux"], { stdio: "ignore" });
     if (tmuxCheck.status !== 0) args.push("--no-tmux");
   }
+  // Dispatch to the cross-platform Node orchestrator (see above).
   const scriptPath = path.resolve(
     __dirnameTop,
     "..",
     "scripts",
-    "start-all.sh",
+    "start-all.mjs",
   );
-  const result = spawnSync("bash", [scriptPath, ...args], {
+  const result = spawnSync(process.execPath, [scriptPath, ...args], {
     stdio: "inherit",
   });
   process.exit(result.status ?? 1);
@@ -1114,6 +1162,36 @@ Edit, save, hot-reload — Claude's next turn sees the new tool. See [documents/
   process.exit(0);
 }
 
+// Patchwork: `patchwork recipe` (no subcommand) / `recipe --help` — print
+// the subcommand index. Without this branch, `patchwork recipe` falls through
+// to the bridge daemon, leaving subcommands completely undiscoverable from
+// the CLI (the only way to find them today is to read CLAUDE.md or source).
+if (
+  process.argv[2] === "recipe" &&
+  (process.argv[3] === undefined ||
+    process.argv[3] === "--help" ||
+    process.argv[3] === "-h" ||
+    process.argv[3] === "help")
+) {
+  process.stdout.write(
+    `Usage: patchwork recipe <subcommand> [args...]\n\n` +
+      `Subcommands:\n` +
+      `  new <name>       Scaffold a recipe (interactive with -i)\n` +
+      `  list             List installed recipes (workspace + user)\n` +
+      `  run <name>       Run a recipe by name\n` +
+      `  install <src>    Install a recipe from a path or GitHub source\n` +
+      `  uninstall <name> Remove an installed recipe\n` +
+      `  enable <name>    Re-enable a disabled recipe\n` +
+      `  disable <name>   Pause a recipe (scheduled triggers stop firing)\n` +
+      `  preflight <file> Static-validate a recipe YAML before running\n` +
+      `  lint <file>      Run all lint checks on a recipe YAML\n` +
+      `  fmt <file>       Format a recipe YAML in place\n` +
+      `  schema           Print the recipe JSON Schema\n\n` +
+      `Run \`patchwork recipe <subcommand> --help\` for subcommand-specific options.\n`,
+  );
+  process.exit(0);
+}
+
 // Patchwork: `patchwork recipe list` — enumerate installed recipes.
 if (process.argv[2] === "recipe" && process.argv[3] === "list") {
   (async () => {
@@ -1850,28 +1928,67 @@ if (process.argv[2] === "kill-switch") {
   }
   (async () => {
     try {
-      // v2-B2: enumerate ALL live bridge locks (not just the first).
-      const { findAllLiveBridges } = await import("./bridgeLockDiscovery.js");
-      const liveLocks = findAllLiveBridges();
-      type BridgeLockInfo = (typeof liveLocks)[number];
-
-      if (liveLocks.length === 0) {
-        process.stderr.write(
-          "No running bridge found.\n" +
-            "  - For `engage`/`release`, kill-switch has no live target to update.\n" +
-            "  - Restart the bridge with `--driver subprocess` to enable orchestration,\n" +
-            "    then re-run this command.\n",
-        );
-        process.exit(2);
-      }
-
-      // Parse optional --reason.
+      // Parse optional flags early so --force-local can be used without a bridge.
       const args = process.argv.slice(4);
       const reasonIdx = args.findIndex((a) => a === "--reason" || a === "-m");
       const reason =
         reasonIdx >= 0 && reasonIdx + 1 < args.length
           ? args[reasonIdx + 1]
           : undefined;
+      // v2-I4: --force-local writes flags.json directly when no live bridge
+      // is reachable. The running bridge's fs.watch (v2-S1) picks up the
+      // change within ~100ms; without a running bridge this is "effective
+      // next boot" — which is still better than a silent noop.
+      const forceLocal = args.includes("--force-local");
+
+      // v2-B2: enumerate ALL live bridge locks (not just the first).
+      const { findAllLiveBridges } = await import("./bridgeLockDiscovery.js");
+      const liveLocks = findAllLiveBridges();
+      type BridgeLockInfo = (typeof liveLocks)[number];
+
+      if (liveLocks.length === 0) {
+        if (forceLocal && (sub === "engage" || sub === "release")) {
+          // --force-local: write flags.json directly. The running bridge's
+          // fs.watch picks this up within ~100ms; if the bridge is wedged
+          // or not started, this is effective on next start.
+          const { setFlag, KILL_SWITCH_WRITES } = await import(
+            "./featureFlags.js"
+          );
+          const engage = sub === "engage";
+          setFlag(KILL_SWITCH_WRITES, engage, true);
+          // Audit in a sibling CLI-only JSONL (v2-I10: bridge-only writes
+          // go to decision_traces.jsonl; CLI fallback is distinct).
+          const os = await import("node:os");
+          const path = await import("node:path");
+          const fs = await import("node:fs");
+          const cliTraceFile = path.join(
+            process.env.PATCHWORK_HOME ??
+              path.join(os.default.homedir(), ".patchwork"),
+            "decision_traces.cli.jsonl",
+          );
+          const dir = path.dirname(cliTraceFile);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          const entry = JSON.stringify({
+            ts: new Date().toISOString(),
+            event: engage ? "engage" : "release",
+            actor: "cli-force-local",
+            ...(reason ? { reason } : {}),
+          });
+          fs.appendFileSync(cliTraceFile, `${entry}\n`);
+          process.stdout.write(
+            `  ✓ kill-switch ${engage ? "ENGAGED" : "released"} via --force-local (flags.json written directly).\n` +
+              "    Running bridges will pick this up via fs.watch within ~100ms.\n",
+          );
+          process.exit(0);
+        }
+        process.stderr.write(
+          "No running bridge found.\n" +
+            "  - For `engage`/`release`, kill-switch has no live target to update.\n" +
+            "  - Use --force-local to write flags.json directly (bridge fs.watch picks it up).\n" +
+            "  - Or restart the bridge and re-run this command.\n",
+        );
+        process.exit(2);
+      }
 
       // v2-I4: 10s per-request deadline. AbortController per call.
       async function callBridge(
@@ -2001,6 +2118,26 @@ if (process.argv[2] === "kill-switch") {
       process.exit(1);
     }
   })();
+}
+
+// `patchwork panic` — alias for `patchwork kill-switch engage` (v2-Strong-2).
+//
+// Discoverable under stress (short command, obvious intent). Canonical noun
+// form is `kill-switch engage`; this alias matches it so shell history six
+// months later still makes sense. Does not accept sub-verbs — just runs engage.
+if (process.argv[2] === "panic") {
+  // Spawn self with kill-switch engage to reuse the full handler without
+  // duplicating 200+ LOC. Passes through any flags (--reason, --force-local).
+  import("node:child_process").then(({ spawnSync }) => {
+    const self = process.argv[1] ?? process.execPath;
+    const extra = process.argv.slice(3); // e.g. --reason "..." --force-local
+    const result = spawnSync(
+      process.execPath,
+      [self, "kill-switch", "engage", ...extra],
+      { stdio: "inherit" },
+    );
+    process.exit(result.status ?? 1);
+  });
 }
 
 // `patchwork halts` — one-screen morning summary of recent recipe halts.
@@ -3410,23 +3547,8 @@ Steps performed:
   let hooksWired = false;
   try {
     const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
-    const sj = JSON.parse(readFileSync(settingsPath, "utf-8")) as Record<
-      string,
-      unknown
-    >;
-    const hooksObj = sj?.hooks;
-    if (hooksObj && typeof hooksObj === "object") {
-      hooksWired = (
-        Object.values(hooksObj as Record<string, unknown[]>).flat() as unknown[]
-      ).some(
-        (e) =>
-          typeof (e as Record<string, string | undefined>)?.command ===
-            "string" &&
-          ((e as Record<string, string>).command ?? "").includes(
-            "claude-ide-bridge",
-          ),
-      );
-    }
+    const { isPreToolUseHookRegistered } = await import("./preToolUseHook.js");
+    hooksWired = isPreToolUseHookRegistered(settingsPath);
   } catch {
     /* file may not exist yet — non-fatal */
   }
@@ -3834,6 +3956,21 @@ if (process.argv[2] === "launchd") {
     binName === "patchwork" ||
     binName === "patchwork.js";
   if (isPatchworkBin && (!process.argv[2] || process.argv[2] === "dashboard")) {
+    // First-run guard: if the user hasn't run `patchwork init` yet, launching
+    // the dashboard renders an empty panel with no signpost. Print an
+    // actionable pointer instead and exit cleanly.
+    const cfgPath = path.join(os.homedir(), ".patchwork", "config.json");
+    if (!existsSync(cfgPath) && !process.argv[2]) {
+      process.stdout.write(
+        `No Patchwork config found at ${cfgPath}.\n\n` +
+          `Run \`${binName} init\` to scaffold ~/.patchwork and wire up\n` +
+          `Claude Code hooks, then \`${binName}\` again to open the dashboard.\n\n` +
+          `For just the IDE bridge (no recipes / approval queue), run:\n` +
+          `  ${binName} install-extension\n` +
+          `  ${binName} --workspace .\n`,
+      );
+      process.exit(0);
+    }
     (async () => {
       const { runDashboard } = await import("./commands/dashboard.js");
       await runDashboard();
@@ -4029,23 +4166,32 @@ if (__subcommandWillRun) {
       process.exit(1);
     });
 
-    // F5: Silent self-update nudge (fire-and-forget)
-    import("node:child_process")
-      .then(({ exec }) => {
-        exec(
-          "npm view claude-ide-bridge version",
-          { timeout: 5000 },
-          (err, stdout) => {
-            if (err || !stdout) return;
-            const latest = stdout.trim();
-            if (latest && semverGt(latest, PACKAGE_VERSION)) {
-              console.log(
-                `\n  Bridge v${latest} available — run: npm update -g claude-ide-bridge\n`,
-              );
-            }
-          },
-        );
-      })
-      .catch(() => {});
+    // F5: Silent self-update nudge (fire-and-forget).
+    // Skip when running from a source tree (any of: a `.git` sibling of the
+    // package, or __dirnameTop not under a node_modules/). Otherwise a dev
+    // who built locally sees "Bridge v<X> available" pointing at an npm
+    // install path they're not using.
+    const isSourceBuild =
+      existsSync(path.join(__dirnameTop, "..", ".git")) ||
+      !__dirnameTop.includes(`${path.sep}node_modules${path.sep}`);
+    if (!isSourceBuild) {
+      import("node:child_process")
+        .then(({ exec }) => {
+          exec(
+            "npm view claude-ide-bridge version",
+            { timeout: 5000 },
+            (err, stdout) => {
+              if (err || !stdout) return;
+              const latest = stdout.trim();
+              if (latest && semverGt(latest, PACKAGE_VERSION)) {
+                console.log(
+                  `\n  Bridge v${latest} available — run: npm update -g claude-ide-bridge\n`,
+                );
+              }
+            },
+          );
+        })
+        .catch(() => {});
+    }
   }
 } // end of `else` for `if (__subcommandWillRun)` (bridge-mode block)

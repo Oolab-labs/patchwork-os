@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
-import { ErrorState } from "@/components/patchwork";
+import { ErrorState, HintCard } from "@/components/patchwork";
 
 const SINCE_DAYS_OPTIONS = [1, 7, 30, 90] as const;
 type SinceDays = (typeof SINCE_DAYS_OPTIONS)[number];
@@ -180,9 +180,12 @@ export default function SuggestionsPage() {
       <DecisionsTabs />
       <div className="page-head">
         <div>
-          <h1 className="editorial-h1">
-            Suggestions — <span className="accent">patterns mined from your runs.</span>
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 className="editorial-h1" style={{ margin: 0 }}>
+              Suggestions — <span className="accent">patterns mined from your runs.</span>
+            </h1>
+            <HintCard.Toggle id="suggestions" />
+          </div>
           <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
             Read-only — nothing on this page changes policy. Same data <code>patchwork suggest</code> prints.
           </div>
@@ -215,6 +218,8 @@ export default function SuggestionsPage() {
           </span>
         </div>
       </div>
+
+      <HintCard id="suggestions" />
 
       {loading && suggestions.length === 0 && (
         <p style={{ color: "var(--fg-2)" }}>Loading…</p>

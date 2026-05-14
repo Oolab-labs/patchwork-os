@@ -96,11 +96,14 @@ export type InstallSource = GitHubInstallSource | LocalInstallSource;
  * Empty ref (`...@`) is rejected.
  */
 export function parseInstallSource(source: string): InstallSource {
-  // Local path: starts with . or /
+  // Local path: starts with . or any absolute path (POSIX or Windows).
+  // Win32 absolute paths like `C:\foo` or `\\server\share` must be accepted
+  // alongside POSIX `/foo` — the original `source.startsWith("/")` test
+  // silently rejected every Windows local install source.
   if (
     source.startsWith("./") ||
-    source.startsWith("/") ||
-    source.startsWith("../")
+    source.startsWith("../") ||
+    path.isAbsolute(source)
   ) {
     return { type: "local", path: source };
   }
