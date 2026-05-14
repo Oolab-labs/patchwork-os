@@ -498,6 +498,22 @@ export class Server extends EventEmitter<ServerEvents> {
     | ((name: string, enabled: boolean) => { ok: boolean; error?: string })
     | null = null;
 
+  /** Set by bridge to check if restart is safe (no in-flight tool calls). */
+  public restartCheckFn:
+    | (() => {
+        totalSessions: number;
+        inFlightCalls: number;
+        busySessions: string[];
+      })
+    | null = null;
+
+  /**
+   * Called when /restart decides it is safe to shut down. Defaults to
+   * `process.kill(process.pid, 'SIGTERM')`. Override in tests to a no-op so
+   * the Vitest runner process is not actually killed.
+   */
+  public restartKillFn: () => void = () => process.kill(process.pid, "SIGTERM");
+
   /**
    * Attach an OAuth 2.0 Authorization Server.
    * When set, the bridge exposes:
@@ -1949,6 +1965,66 @@ export class Server extends EventEmitter<ServerEvents> {
           res.end(JSON.stringify(prefs));
           return;
         }
+      }
+
+      // /restart — graceful bridge restart endpoint.
+      // POST → triggers SIGTERM if no active work; returns 409 if busy.
+      // Safety checks: rejects restart if sessions have in-flight tool calls.
+      if (parsedUrl.pathname === "/restart" && req.method === "POST") {
+        if (!this.restartCheckFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "restart_unavailable",
+              reason: "Restart endpoint not configured",
+            }),
+          );
+          return;
+        }
+
+        const check = this.restartCheckFn();
+
+        // Reject restart if there's active work
+        if (check.inFlightCalls > 0) {
+          this.logger.warn(
+            `[/restart] Rejected — ${check.inFlightCalls} in-flight tool call${check.inFlightCalls === 1 ? "" : "s"} across ${check.busySessions.length} session${check.busySessions.length === 1 ? "" : "s"}`,
+          );
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "restart_blocked",
+              reason: `${check.inFlightCalls} tool call${check.inFlightCalls === 1 ? "" : "s"} in progress`,
+              activeSessions: check.totalSessions,
+              inFlightCalls: check.inFlightCalls,
+              busySessions: check.busySessions,
+            }),
+          );
+          return;
+        }
+
+        // Safe to restart — log and trigger SIGTERM
+        this.logger.info(
+          `[/restart] Initiating graceful restart — ${check.totalSessions} session${check.totalSessions === 1 ? "" : "s"}, 0 in-flight calls`,
+        );
+        res.writeHead(202, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: true,
+            message: "Restart initiated. Bridge will shut down gracefully.",
+            activeSessions: check.totalSessions,
+          }),
+        );
+
+        // Trigger shutdown after response is sent (100ms delay to ensure response delivery).
+        // Uses this.restartKillFn so tests can override without killing the runner.
+        const killFn = this.restartKillFn;
+        setTimeout(() => {
+          this.logger.info("[/restart] Sending SIGTERM to self");
+          killFn();
+        }, 100);
+        return;
       }
 
       // CC hook notify endpoint — lightweight alternative to full MCP session for hook wiring.

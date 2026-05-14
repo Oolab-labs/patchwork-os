@@ -161,6 +161,9 @@ export default function SettingsPage() {
   const [driverSaving, setDriverSaving] = useState<string | null>(null);
   const [driverMsg, setDriverMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const driverInitialized = useRef(false);
+  const [restartPending, setRestartPending] = useState(false);
+  const [restartBusy, setRestartBusy] = useState(false);
+  const [restartMsg, setRestartMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Per-row API key entry state. Inputs are uncontrolled w.r.t. /status —
   // the dashboard never sees the stored value (secure store is one-way),
@@ -556,10 +559,12 @@ export default function SettingsPage() {
       };
       if (res.ok) {
         setPrimaryDriver(rowId);
-        const text = body.restartRequired
-          ? `${row.name} set as primary. Restart Claude Code (quit and re-open, then run /ide) to activate the new driver.`
-          : `${row.name} set as primary.`;
-        setDriverMsg({ ok: true, text });
+        if (body.restartRequired) {
+          setRestartPending(true);
+          setDriverMsg({ ok: true, text: `${row.name} set as primary. Click "Restart Bridge" below to activate.` });
+        } else {
+          setDriverMsg({ ok: true, text: `${row.name} set as primary.` });
+        }
         flashSaved();
       } else {
         setDriverMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
@@ -568,6 +573,45 @@ export default function SettingsPage() {
       setDriverMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
       setDriverSaving(null);
+    }
+  }
+
+  async function restartBridge() {
+    setRestartBusy(true);
+    setRestartMsg(null);
+    try {
+      const res = await fetch(apiPath("/api/bridge/restart"), {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+        reason?: string;
+        inFlightCalls?: number;
+        busySessions?: string[];
+      };
+      if (res.ok) {
+        setRestartPending(false);
+        setRestartMsg({ ok: true, text: body.message ?? "Bridge is restarting..." });
+        // Clear the message after a few seconds since the page will reload
+        setTimeout(() => setRestartMsg(null), 3000);
+      } else if (res.status === 409) {
+        // Restart blocked due to active work
+        const busyDetails = body.busySessions?.length
+          ? `\n\nBusy sessions:\n${body.busySessions.join("\n")}`
+          : "";
+        setRestartMsg({
+          ok: false,
+          text: `${body.reason ?? "Restart blocked"}${busyDetails}`,
+        });
+      } else {
+        setRestartMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
+      }
+    } catch (e) {
+      setRestartMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setRestartBusy(false);
     }
   }
 
@@ -1070,6 +1114,43 @@ export default function SettingsPage() {
                   <p style={{ fontSize: "var(--fs-s)", marginTop: 4, color: driverMsg.ok ? "var(--ok)" : "var(--err)" }}>
                     {driverMsg.text}
                   </p>
+                )}
+                {restartPending && (
+                  <div style={{ marginTop: 12, padding: "12px 14px", background: "var(--bg-3)", border: "1px solid var(--line-1)", borderRadius: "var(--r-2)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-0)", marginBottom: 4 }}>
+                          Restart Required
+                        </div>
+                        <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
+                          The bridge needs to restart to apply the new driver configuration.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={restartBridge}
+                        disabled={restartBusy}
+                        style={{
+                          background: "var(--accent)",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "var(--r-2)",
+                          padding: "8px 16px",
+                          fontSize: "var(--fs-m)",
+                          fontWeight: 600,
+                          cursor: restartBusy ? "default" : "pointer",
+                          opacity: restartBusy ? 0.6 : 1,
+                        }}
+                      >
+                        {restartBusy ? "Restarting..." : "Restart Bridge"}
+                      </button>
+                    </div>
+                    {restartMsg && (
+                      <p style={{ fontSize: "var(--fs-s)", marginTop: 8, color: restartMsg.ok ? "var(--ok)" : "var(--err)", whiteSpace: "pre-wrap" }}>
+                        {restartMsg.text}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
