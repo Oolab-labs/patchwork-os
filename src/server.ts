@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { ActivityListener } from "./activityTypes.js";
+import { getTelemetryPrefs, setTelemetryPrefs } from "./analyticsPrefs.js";
 import { handleApprovalsStream, routeApprovalRequest } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import type { AttributedPermissionRules } from "./ccPermissions.js";
@@ -1886,6 +1887,57 @@ export class Server extends EventEmitter<ServerEvents> {
               locked: false,
             }),
           );
+          return;
+        }
+      }
+
+      // /telemetry-prefs — read/write per-flag telemetry preferences.
+      // GET  → {crashReports, usageStats, localDiagnostics}
+      // POST {crashReports?, usageStats?, localDiagnostics?} → same shape (partial update)
+      if (parsedUrl.pathname === "/telemetry-prefs") {
+        if (req.method === "GET") {
+          const prefs = getTelemetryPrefs();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(prefs));
+          return;
+        }
+        if (req.method === "POST") {
+          const TP_BODY_CAP = 1 * 1024;
+          const parsed = await readJsonBody<{
+            crashReports?: unknown;
+            usageStats?: unknown;
+            localDiagnostics?: unknown;
+          }>(req, TP_BODY_CAP);
+          if (!parsed.ok) {
+            if (parsed.code === "too_large") {
+              respond413(res, TP_BODY_CAP);
+              return;
+            }
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({ error: "invalid_request", reason: "bad_json" }),
+            );
+            return;
+          }
+          const body = parsed.value ?? {};
+          const update: {
+            crashReports?: boolean;
+            usageStats?: boolean;
+            localDiagnostics?: boolean;
+          } = {};
+          if (typeof body.crashReports === "boolean") {
+            update.crashReports = body.crashReports;
+          }
+          if (typeof body.usageStats === "boolean") {
+            update.usageStats = body.usageStats;
+          }
+          if (typeof body.localDiagnostics === "boolean") {
+            update.localDiagnostics = body.localDiagnostics;
+          }
+          setTelemetryPrefs(update);
+          const prefs = getTelemetryPrefs();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(prefs));
           return;
         }
       }
