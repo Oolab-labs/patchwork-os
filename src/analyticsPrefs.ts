@@ -116,7 +116,9 @@ function writePrefs(content: PrefsFileV2): void {
  * Returns the raw prefs file contents including optional `lastSentAt` timestamp.
  * Returns null when no prefs file exists yet.
  */
-export function getAnalyticsPrefsAll(): (PrefsFileV2 & { lastSentAt?: string }) | null {
+export function getAnalyticsPrefsAll():
+  | (PrefsFileV2 & { lastSentAt?: string })
+  | null {
   const p = prefsPath();
   try {
     const raw = fs.readFileSync(p, "utf-8");
