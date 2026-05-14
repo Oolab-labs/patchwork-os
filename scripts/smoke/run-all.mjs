@@ -12,6 +12,33 @@ const BRIDGE = process.env.BRIDGE ?? "claude-ide-bridge";
 const PORT = 37210;
 const CAT2_PORT = 37211;
 
+// Security: shell metacharacters that could enable command injection
+const SHELL_METACHARACTERS = /[;&|`$(){}\[\]<>"'\\\n\r]/;
+
+/**
+ * Validate that a binary path is safe to execute.
+ * Prevents command injection by checking for shell metacharacters.
+ * @throws Error if path contains dangerous characters
+ */
+function validateBinaryPath(binaryPath) {
+  if (!binaryPath || typeof binaryPath !== "string") {
+    throw new Error("Binary path is empty or invalid");
+  }
+  if (SHELL_METACHARACTERS.test(binaryPath)) {
+    throw new Error(
+      `Binary path contains shell metacharacters (potential injection): ${binaryPath}`,
+    );
+  }
+}
+
+// Validate BRIDGE path on startup
+try {
+  validateBinaryPath(BRIDGE);
+} catch (err) {
+  console.error(`ERROR: ${err.message}`);
+  process.exit(1);
+}
+
 const TMPWS = fs.mkdtempSync(path.join(os.tmpdir(), "patchwork-smoke-ws-"));
 const CLAUDE_CFG = fs.mkdtempSync(
   path.join(os.tmpdir(), "patchwork-smoke-cfg-"),
@@ -60,10 +87,12 @@ function waitForLock(cfgDir, port, timeoutMs = 10_000) {
 
 // Spawn bridge for the given port and config dir. Returns {proc, token}.
 function startBridge(port, cfgDir, wsDir) {
+  // Security: BRIDGE path already validated on startup
   const proc = spawn(BRIDGE, ["--port", String(port), "--workspace", wsDir], {
     env: { ...process.env, CLAUDE_CONFIG_DIR: cfgDir },
     stdio: "ignore",
     // On Windows, npm global bins are .cmd wrappers that need shell:true
+    // Safe because BRIDGE path is validated for injection chars on startup
     shell: process.platform === "win32",
   });
   return proc;

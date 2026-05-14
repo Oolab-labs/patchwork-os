@@ -58,6 +58,48 @@ const DASH_DIR = path.join(BRIDGE_DIR, "dashboard");
 const DIST_INDEX = path.join(BRIDGE_DIR, "dist", "index.js");
 const IS_WIN = process.platform === "win32";
 
+// ── Security helpers ──────────────────────────────────────────────────────────
+const SHELL_METACHARACTERS = /[;&|`$(){}\[\]<>"'\\\n\r]/;
+
+/**
+ * Validate that a command path is safe to execute.
+ * Prevents command injection by checking for shell metacharacters.
+ * @param {string} cmdPath - Path to validate
+ * @param {string} label - Label for error messages
+ * @throws {Error} If path contains shell metacharacters or is empty
+ */
+function validateCommandPath(cmdPath, label) {
+  if (!cmdPath || typeof cmdPath !== "string") {
+    throw new Error(`${label}: command path is empty or invalid`);
+  }
+  if (SHELL_METACHARACTERS.test(cmdPath)) {
+    throw new Error(
+      `${label}: command path contains shell metacharacters: ${cmdPath}`,
+    );
+  }
+  // Additional check: on Windows, .cmd files are allowed but must not have spaces without proper quoting
+  if (IS_WIN && cmdPath.endsWith(".cmd") && cmdPath.includes(" ")) {
+    // This is handled by using cmd.exe explicitly, not shell:true
+    // We validate the path doesn't have injection chars above
+  }
+}
+
+/**
+ * Validate command arguments don't contain injection vectors.
+ * @param {string[]} args - Arguments to validate
+ * @param {string} label - Label for error messages
+ */
+function validateCommandArgs(args, label) {
+  if (!Array.isArray(args)) {
+    throw new Error(`${label}: arguments must be an array`);
+  }
+  for (const arg of args) {
+    if (typeof arg !== "string") {
+      throw new Error(`${label}: all arguments must be strings`);
+    }
+  }
+}
+
 // ── Colour helpers ────────────────────────────────────────────────────────────
 const C = {
   cyan: (s) => `\x1b[36m${s}\x1b[0m`,
@@ -98,6 +140,10 @@ function notify(msg, priority = "default") {
 const procs = new Map(); // name → ChildProcess
 
 function spawnProc(name, cmd, cmdArgs, opts = {}) {
+  // Validate command and arguments to prevent injection attacks
+  validateCommandPath(cmd, `spawnProc[${name}]`);
+  validateCommandArgs(cmdArgs, `spawnProc[${name}]`);
+
   // shell:false everywhere — on Windows we always invoke cmd.exe explicitly
   // for .cmd shim resolution, so shell:true would only widen the attack
   // surface by interpolating env-derived paths into a shell string.

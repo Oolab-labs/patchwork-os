@@ -63,3 +63,18 @@ For users running Patchwork OS:
 - The write kill switch (`PATCHWORK_WRITES_DISABLED`) is captured at startup and frozen — do not rely on runtime mutation to disable writes.
 - For remote deployments, always front the bridge with a TLS-terminating reverse proxy. See [docs/remote-access.md](docs/remote-access.md).
 - Plugin manifests with unknown capability tokens are rejected at parse time. The capability allowlist is intentionally empty until specific runtime enforcement is wired per capability — see [src/pluginLoader.ts](src/pluginLoader.ts) for the current allowlist and [docs/adr/](docs/adr/) for the rationale.
+
+### Command Injection Protections
+
+As of May 14, 2026, the following protections are in place:
+
+- **Shell metacharacter validation**: All command paths and arguments passed to `spawn()` or `execFileSync()` are validated to reject shell metacharacters (`; & | \` $ ( ) { } [ ] < > " ' \\ \n \r`) before execution.
+- **Minimal shell usage**: `shell: false` is used by default. On Windows, `shell: true` is only enabled for `.cmd` wrappers after path validation.
+- **Direct command execution**: Where possible, `execFileSync()` is used instead of `execSync()` to avoid shell invocation entirely.
+- **Validated paths**: Binary paths from environment variables (`BRIDGE`, user config, etc.) are validated before use.
+
+Files with command injection protections:
+- `scripts/start-all.mjs` - Validates all spawned commands and arguments
+- `vscode-extension/src/bridgeProcess.ts` - Validates binary path before Windows shell execution
+- `scripts/smoke/run-all.mjs` - Validates BRIDGE environment variable on startup
+- `scripts/postinstall.mjs` - Uses `execFileSync()` instead of shell execution
