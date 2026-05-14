@@ -10,6 +10,25 @@ import { LOCK_DIR } from "./constants";
 
 const execFileAsync = promisify(execFile);
 
+// Security: shell metacharacters that could enable command injection
+const SHELL_METACHARACTERS = /[;&|`$(){}\[\]<>"'\\\n\r]/;
+
+/**
+ * Validate that a binary path is safe to execute, especially when shell:true is used.
+ * Prevents command injection by checking for shell metacharacters.
+ * @throws Error if path contains dangerous characters
+ */
+function validateBinaryPath(binaryPath: string): void {
+  if (!binaryPath || typeof binaryPath !== "string") {
+    throw new Error("Binary path is empty or invalid");
+  }
+  if (SHELL_METACHARACTERS.test(binaryPath)) {
+    throw new Error(
+      `Binary path contains shell metacharacters (potential injection): ${binaryPath}`,
+    );
+  }
+}
+
 export interface BridgeStartedEvent {
   port: number;
   authToken: string;
@@ -313,6 +332,17 @@ export class BridgeProcess {
     this.spawnedAt = Date.now();
     this.stderrTail = ""; // reset stderr tail from any previous spawn attempt
 
+    // Security: validate binary path before execution to prevent command injection
+    try {
+      validateBinaryPath(binary);
+    } catch (err) {
+      const msg = `Bridge spawn blocked: ${err instanceof Error ? err.message : String(err)}`;
+      this.log(msg);
+      await this.releaseSentinel();
+      this.onStartupFailed?.(msg);
+      return;
+    }
+
     // On Windows, npm global bins are .cmd wrappers. Node's spawn() can't
     // execute .cmd files without shell:true — without it the process errors
     // with ENOENT even though the path is valid.
@@ -393,7 +423,7 @@ export class BridgeProcess {
           `Claude IDE Bridge failed to start (crashed ${MAX_RESTARTS} times). Check the Claude IDE Bridge output channel.`,
           "Show Logs",
         )
-        .then((choice) => {
+        .then((choice: string | undefined) => {
           if (choice === "Show Logs") this.output.show();
         });
       // Notify the connection so it falls back to watching for a manually-started bridge

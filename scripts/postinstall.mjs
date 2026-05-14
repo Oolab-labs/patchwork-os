@@ -8,7 +8,7 @@
  *   @vscode/ripgrep  →  node_modules/.bin/rg
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -78,10 +78,11 @@ if (
     "[postinstall] Installing dashboard dependencies (first-time setup)...",
   );
   try {
-    execSync("npm install --prefer-offline", {
+    // Use execFileSync instead of execSync to avoid shell invocation
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+    execFileSync(npmCmd, ["install", "--prefer-offline"], {
       cwd: dashboardDir,
       stdio: "inherit",
-      shell: true,
     });
     console.log("[postinstall] Dashboard dependencies installed.");
   } catch {
