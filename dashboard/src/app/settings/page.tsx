@@ -220,6 +220,29 @@ export default function SettingsPage() {
   const [telUsage, setTelUsage] = useState(false);
   const [telDiag, setTelDiag] = useState(true);
   const telInitialized = useRef(false);
+  const [telLastSentAt, setTelLastSentAt] = useState<string | null>(null);
+
+  // Fetch analytics prefs (including lastSentAt) from bridge
+  useEffect(() => {
+    let alive = true;
+    const fetch_ = async () => {
+      try {
+        const res = await fetch(apiPath("/api/bridge/telemetry-prefs"));
+        if (res.ok) {
+          const data = (await res.json()) as { lastSentAt?: string };
+          if (alive && typeof data.lastSentAt === "string") {
+            setTelLastSentAt(data.lastSentAt);
+          }
+        }
+      } catch {
+        // Bridge offline — no-op
+      }
+    };
+    fetch_();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Kill-switch state — fetched from /api/bridge/kill-switch (proxy to
   // bridge `GET /kill-switch`). Polls in tandem with /status below.
@@ -1446,6 +1469,24 @@ export default function SettingsPage() {
                     void saveTelemetryPref("localDiagnostics", v);
                   }}
                 />
+                {telLastSentAt && (
+                  <div
+                    style={{
+                      fontSize: "var(--fs-s)",
+                      color: "var(--ink-2)",
+                      paddingTop: 4,
+                    }}
+                  >
+                    Last sent:{" "}
+                    {new Date(telLastSentAt).toLocaleDateString(undefined, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>

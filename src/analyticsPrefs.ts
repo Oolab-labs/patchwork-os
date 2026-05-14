@@ -20,6 +20,7 @@ interface PrefsFileV2 {
   usageStats: boolean;
   localDiagnostics: boolean;
   decidedAt: string; // ISO8601
+  lastSentAt?: string; // ISO8601 — updated after each successful analytics send
 }
 
 function prefsPath(): string {
@@ -109,6 +110,55 @@ function writePrefs(content: PrefsFileV2): void {
     mode: 0o600,
   });
   fs.renameSync(tmp, p);
+}
+
+/**
+ * Returns the raw prefs file contents including optional `lastSentAt` timestamp.
+ * Returns null when no prefs file exists yet.
+ */
+export function getAnalyticsPrefsAll():
+  | (PrefsFileV2 & { lastSentAt?: string })
+  | null {
+  const p = prefsPath();
+  try {
+    const raw = fs.readFileSync(p, "utf-8");
+    const obj = JSON.parse(raw) as unknown;
+    if (typeof obj === "object" && obj !== null) {
+      return obj as PrefsFileV2 & { lastSentAt?: string };
+    }
+    return null;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return null;
+    return null;
+  }
+}
+
+/**
+ * Records the current time as `lastSentAt` in the prefs file.
+ * No-op if no prefs file exists yet (user never opted in, nothing to record).
+ */
+export function recordAnalyticsSent(): void {
+  const p = prefsPath();
+  try {
+    const raw = fs.readFileSync(p, "utf-8");
+    const obj = JSON.parse(raw) as unknown;
+    if (typeof obj === "object" && obj !== null) {
+      const updated = {
+        ...(obj as PrefsFileV2),
+        lastSentAt: new Date().toISOString(),
+      };
+      const dir = path.dirname(p);
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const tmp = `${p}.tmp`;
+      fs.writeFileSync(tmp, `${JSON.stringify(updated, null, 2)}\n`, {
+        mode: 0o600,
+      });
+      fs.renameSync(tmp, p);
+    }
+  } catch {
+    // No prefs file or unreadable — nothing to update
+  }
 }
 
 // ---------------------------------------------------------------------------

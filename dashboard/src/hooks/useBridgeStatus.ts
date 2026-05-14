@@ -31,6 +31,7 @@ export interface BridgeStatus {
     model?: string;
     version?: string;
   };
+  killSwitch?: { engaged: boolean; locked: boolean } | null;
 }
 
 const BASE_INTERVAL_MS = 5000;
@@ -44,6 +45,8 @@ function nextDelay(failures: number): number {
   const exp = Math.min(BASE_INTERVAL_MS * 2 ** failures, MAX_BACKOFF_MS);
   return exp * (0.8 + Math.random() * 0.4); // ±20% jitter
 }
+
+const KILL_SWITCH_POLL_MS = 10_000;
 
 export function useBridgeStatus(): BridgeStatus {
   const [status, setStatus] = useState<BridgeStatus>({ ok: false });
@@ -130,5 +133,37 @@ export function useBridgeStatus(): BridgeStatus {
       unsubLiveness();
     };
   }, []);
+
+  // Poll kill-switch state independently — it can change at any time and
+  // the status endpoint doesn't include it.
+  useEffect(() => {
+    let alive = true;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(apiPath("/api/bridge/kill-switch"));
+        if (res.ok) {
+          const data = (await res.json()) as {
+            engaged: boolean;
+            locked: boolean;
+          };
+          if (alive) {
+            setStatus((prev) => ({ ...prev, killSwitch: data }));
+          }
+        }
+      } catch {
+        // Bridge offline — leave killSwitch as-is
+      }
+      if (alive) timerId = setTimeout(poll, KILL_SWITCH_POLL_MS);
+    };
+
+    poll();
+    return () => {
+      alive = false;
+      if (timerId !== null) clearTimeout(timerId);
+    };
+  }, []);
+
   return status;
 }
