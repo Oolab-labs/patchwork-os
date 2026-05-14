@@ -14,6 +14,7 @@ import {
 import { timingSafeStringEqual } from "./crypto.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import {
+  EnvLockedFlagError,
   getEnvLockedValue,
   isEnvLockedFor,
   isWriteKillSwitchActive,
@@ -347,6 +348,15 @@ export class Server extends EventEmitter<ServerEvents> {
         reason: string | undefined;
         ts: number;
       }) => void)
+    | null = null;
+  /**
+   * Set by bridge to broadcast a `kind: "kill-switch"` SSE event from
+   * `/stream` when the kill-switch state changes (issue #422 v2, pitfall I8).
+   * Bridge wires this to `activityLog.broadcastKillSwitch()` or an equivalent
+   * that notifies all active SSE listeners so the dashboard updates in <1s.
+   */
+  public broadcastKillSwitchEventFn:
+    | ((engaged: boolean, reason?: string) => void)
     | null = null;
   /** Patchwork: set by bridge to match + fire webhook-triggered recipes. */
   public webhookFn:
@@ -1826,7 +1836,28 @@ export class Server extends EventEmitter<ServerEvents> {
           const next = body.engage;
           const changed = prev !== next;
           if (changed) {
-            setFlag(KILL_SWITCH_WRITES, next, true);
+            try {
+              setFlag(KILL_SWITCH_WRITES, next, true);
+            } catch (err) {
+              // Belt-and-suspenders: setFlag now throws EnvLockedFlagError if
+              // the flag was env-locked (we already checked isEnvLockedFor above,
+              // but a race with lockKillSwitchEnv() in tests warrants this).
+              if (err instanceof EnvLockedFlagError) {
+                res.writeHead(409, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({
+                    error: "env_locked",
+                    flag: KILL_SWITCH_WRITES,
+                    frozenValue: err.frozenValue,
+                    lockedReason: `PATCHWORK_FLAG_KILL_SWITCH_WRITES=${
+                      err.frozenValue ? "1" : "0"
+                    } at bridge startup`,
+                  }),
+                );
+                return;
+              }
+              throw err;
+            }
             // v2-I6: audit emit on every state transition; no-ops skip.
             // When the bridge wires recordKillSwitchTraceFn (step 5),
             // this writes to ~/.patchwork/decision_traces.jsonl. The
@@ -1843,6 +1874,9 @@ export class Server extends EventEmitter<ServerEvents> {
               reason,
               ts: Date.now(),
             });
+            // v2-I8: broadcast SSE kind:"kill-switch" so dashboard updates
+            // in <1s without changing the poll cadence.
+            this.broadcastKillSwitchEventFn?.(next, reason);
           }
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(

@@ -21,6 +21,7 @@ import http from "node:http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   _resetEnvLockForTesting,
+  EnvLockedFlagError,
   isWriteKillSwitchActive,
   KILL_SWITCH_WRITES,
   lockKillSwitchEnv,
@@ -355,5 +356,114 @@ describe("POST /kill-switch — audit emit (step 5)", () => {
     expect(status).toBe(200);
     // No assertion on side effect — verifying the optional-callback
     // pattern doesn't crash the handler.
+  });
+});
+
+describe("POST /kill-switch — SSE broadcast (v2-I8)", () => {
+  it("calls broadcastKillSwitchEventFn with engaged:true on engage", async () => {
+    const broadcasts: Array<{ engaged: boolean; reason?: string }> = [];
+    server!.broadcastKillSwitchEventFn = (engaged, reason) =>
+      broadcasts.push({ engaged, reason });
+
+    const { status } = await request(
+      "POST",
+      JSON.stringify({ engage: true, reason: "test-broadcast" }),
+    );
+    expect(status).toBe(200);
+    expect(broadcasts).toHaveLength(1);
+    expect(broadcasts[0]?.engaged).toBe(true);
+    expect(broadcasts[0]?.reason).toBe("test-broadcast");
+  });
+
+  it("calls broadcastKillSwitchEventFn with engaged:false on release", async () => {
+    setFlag(KILL_SWITCH_WRITES, true, false);
+    const broadcasts: Array<{ engaged: boolean }> = [];
+    server!.broadcastKillSwitchEventFn = (engaged) =>
+      broadcasts.push({ engaged });
+
+    await request("POST", JSON.stringify({ engage: false }));
+    expect(broadcasts).toHaveLength(1);
+    expect(broadcasts[0]?.engaged).toBe(false);
+  });
+
+  it("does NOT call broadcastKillSwitchEventFn on no-op (already-engaged)", async () => {
+    setFlag(KILL_SWITCH_WRITES, true, false);
+    const broadcasts: Array<unknown> = [];
+    server!.broadcastKillSwitchEventFn = (engaged) => broadcasts.push(engaged);
+
+    const { body } = await request("POST", JSON.stringify({ engage: true }));
+    expect(JSON.parse(body).changed).toBe(false);
+    expect(broadcasts).toHaveLength(0);
+  });
+
+  it("does NOT call broadcastKillSwitchEventFn on 409 env-locked", async () => {
+    process.env[KILL_SWITCH_ENV] = "1";
+    lockKillSwitchEnv();
+    const broadcasts: Array<unknown> = [];
+    server!.broadcastKillSwitchEventFn = (engaged) => broadcasts.push(engaged);
+
+    const { status } = await request("POST", JSON.stringify({ engage: false }));
+    expect(status).toBe(409);
+    expect(broadcasts).toHaveLength(0);
+  });
+
+  it("does not throw when broadcastKillSwitchEventFn is unset", async () => {
+    server!.broadcastKillSwitchEventFn = null;
+    const { status } = await request("POST", JSON.stringify({ engage: true }));
+    expect(status).toBe(200);
+  });
+});
+
+describe("EnvLockedFlagError — setFlag throws when env-locked (v2-I9)", () => {
+  it("setFlag throws EnvLockedFlagError when kill-switch flag is env-locked to true", () => {
+    process.env[KILL_SWITCH_ENV] = "1";
+    lockKillSwitchEnv();
+
+    expect(() => setFlag(KILL_SWITCH_WRITES, false)).toThrow(
+      EnvLockedFlagError,
+    );
+  });
+
+  it("setFlag throws EnvLockedFlagError when kill-switch flag is env-locked to false", () => {
+    process.env[KILL_SWITCH_ENV] = "0";
+    lockKillSwitchEnv();
+
+    expect(() => setFlag(KILL_SWITCH_WRITES, true)).toThrow(EnvLockedFlagError);
+  });
+
+  it("EnvLockedFlagError carries correct frozenValue when locked to true", () => {
+    process.env[KILL_SWITCH_ENV] = "1";
+    lockKillSwitchEnv();
+
+    let err: EnvLockedFlagError | null = null;
+    try {
+      setFlag(KILL_SWITCH_WRITES, false);
+    } catch (e) {
+      err = e as EnvLockedFlagError;
+    }
+    expect(err).toBeInstanceOf(EnvLockedFlagError);
+    expect(err?.frozenValue).toBe(true);
+    expect(err?.flagId).toBe(KILL_SWITCH_WRITES);
+    expect(err?.name).toBe("EnvLockedFlagError");
+  });
+
+  it("EnvLockedFlagError carries correct frozenValue when locked to false", () => {
+    process.env[KILL_SWITCH_ENV] = "0";
+    lockKillSwitchEnv();
+
+    let err: EnvLockedFlagError | null = null;
+    try {
+      setFlag(KILL_SWITCH_WRITES, true);
+    } catch (e) {
+      err = e as EnvLockedFlagError;
+    }
+    expect(err?.frozenValue).toBe(false);
+  });
+
+  it("setFlag does NOT throw when env var is absent (env lock exists but no freeze)", () => {
+    // lockKillSwitchEnv with no env var → FROZEN_KILL_SWITCH_ENV.get() returns
+    // undefined → isEnvLockedFor returns false → no throw.
+    lockKillSwitchEnv();
+    expect(() => setFlag(KILL_SWITCH_WRITES, true)).not.toThrow();
   });
 });
