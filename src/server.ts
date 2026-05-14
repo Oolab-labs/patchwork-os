@@ -3,7 +3,11 @@ import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { ActivityListener } from "./activityTypes.js";
-import { getAnalyticsPrefsAll, getTelemetryPrefs, setTelemetryPrefs } from "./analyticsPrefs.js";
+import {
+  getAnalyticsPrefsAll,
+  getTelemetryPrefs,
+  setTelemetryPrefs,
+} from "./analyticsPrefs.js";
 import { handleApprovalsStream, routeApprovalRequest } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import type { AttributedPermissionRules } from "./ccPermissions.js";
