@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-beta.3] — 2026-05-14
+
+### Fixed
+
+- **Gemini CLI (and all standard MCP HTTP clients) now connect successfully** over Streamable HTTP transport. Two bugs blocked connection:
+  1. `GET /mcp` with no `Mcp-Session-Id` returned `400 Bad Request` — Gemini CLI probes with a bare GET before initializing a session, causing it to mark the server as Disconnected. Now returns `200` with a server-info JSON body.
+  2. `Mcp-Session-Token` was required on every POST/GET/DELETE after `initialize`, but this header is non-standard (not in the MCP spec) and unknown to Gemini CLI, Codex CLI, and other standard clients, causing `403` on all requests. The header is now **optional** — absent means allowed (Bearer token already authenticated the client); only a *wrong* token value is rejected. The guard still protects against session-ID hijacking in shared-bridge-token / OAuth deployments.
+
+---
+
 ## [Unreleased] — leverage-moves session, 2026-05-11
 
 ### Added
