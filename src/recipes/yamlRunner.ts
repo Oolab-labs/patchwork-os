@@ -56,7 +56,7 @@ import {
 import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
-} from "./legacyRecipeCompat.js";
+} from "./migrations/index.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import type { ErrorPolicy } from "./schema.js";

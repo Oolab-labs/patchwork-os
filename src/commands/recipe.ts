@@ -22,7 +22,7 @@ import { MockConnector } from "../connectors/mockConnector.js";
 import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
-} from "../recipes/legacyRecipeCompat.js";
+} from "../recipes/migrations/index.js";
 import { tryResolveRecipePath } from "../recipes/resolveRecipePath.js";
 import { generateSchemaSet, writeSchemas } from "../recipes/schemaGenerator.js";
 import {
