@@ -4,7 +4,7 @@ import { FLAG_SCHEMA_LINT, isEnabled } from "../featureFlags.js";
 import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
-} from "./legacyRecipeCompat.js";
+} from "./migrations/index.js";
 import {
   RECIPE_NAME_RE,
   RECIPE_VAR_NAME_RE,
