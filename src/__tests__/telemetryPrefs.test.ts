@@ -4,7 +4,9 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   getAnalyticsPref,
+  getAnalyticsPrefsAll,
   getTelemetryPrefs,
+  recordAnalyticsSent,
   setAnalyticsPref,
   setTelemetryPrefs,
 } from "../analyticsPrefs.js";
@@ -118,5 +120,58 @@ describe("legacy getAnalyticsPref / setAnalyticsPref", () => {
     setAnalyticsPref(true);
     setAnalyticsPref(false);
     expect(getAnalyticsPref()).toBe(false);
+  });
+});
+
+describe("recordAnalyticsSent", () => {
+  it("is a no-op when no prefs file exists", () => {
+    // Should not throw
+    expect(() => recordAnalyticsSent()).not.toThrow();
+  });
+
+  it("writes lastSentAt after setAnalyticsPref(true)", () => {
+    setAnalyticsPref(true);
+
+    const before = Date.now();
+    recordAnalyticsSent();
+    const after = Date.now();
+
+    const prefs = getAnalyticsPrefsAll();
+    expect(prefs).not.toBeNull();
+    expect(typeof prefs!.lastSentAt).toBe("string");
+
+    const ts = new Date(prefs!.lastSentAt!).getTime();
+    expect(ts).toBeGreaterThanOrEqual(before);
+    expect(ts).toBeLessThanOrEqual(after);
+  });
+
+  it("preserves enabled state when recording lastSentAt", () => {
+    setAnalyticsPref(false);
+    recordAnalyticsSent();
+
+    expect(getAnalyticsPref()).toBe(false);
+    const prefs = getAnalyticsPrefsAll();
+    expect(typeof prefs!.lastSentAt).toBe("string");
+  });
+
+  it("updates lastSentAt on repeated calls", () => {
+    setAnalyticsPref(true);
+    recordAnalyticsSent();
+    const prefs1 = getAnalyticsPrefsAll();
+
+    // Small delay to ensure timestamp advances
+    const ts1 = new Date(prefs1!.lastSentAt!).getTime();
+
+    // Force clock to advance by at least 1 ms
+    const spin = Date.now() + 1;
+    while (Date.now() < spin) {
+      /* busy wait */
+    }
+
+    recordAnalyticsSent();
+    const prefs2 = getAnalyticsPrefsAll();
+    const ts2 = new Date(prefs2!.lastSentAt!).getTime();
+
+    expect(ts2).toBeGreaterThanOrEqual(ts1);
   });
 });

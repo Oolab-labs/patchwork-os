@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { ActivityListener } from "./activityTypes.js";
-import { getTelemetryPrefs, setTelemetryPrefs } from "./analyticsPrefs.js";
+import { getAnalyticsPrefsAll, getTelemetryPrefs, setTelemetryPrefs } from "./analyticsPrefs.js";
 import { handleApprovalsStream, routeApprovalRequest } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import type { AttributedPermissionRules } from "./ccPermissions.js";
@@ -1897,8 +1897,13 @@ export class Server extends EventEmitter<ServerEvents> {
       if (parsedUrl.pathname === "/telemetry-prefs") {
         if (req.method === "GET") {
           const prefs = getTelemetryPrefs();
+          const all = getAnalyticsPrefsAll();
+          const response: Record<string, unknown> = { ...prefs };
+          if (all?.lastSentAt !== undefined) {
+            response.lastSentAt = all.lastSentAt;
+          }
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify(prefs));
+          res.end(JSON.stringify(response));
           return;
         }
         if (req.method === "POST") {
