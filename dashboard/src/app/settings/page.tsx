@@ -215,10 +215,11 @@ export default function SettingsPage() {
   );
   const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
-  // Telemetry (local only — no backend yet)
+  // Telemetry — persisted via GET/POST /api/bridge/telemetry-prefs
   const [telCrash, setTelCrash] = useState(false);
   const [telUsage, setTelUsage] = useState(false);
   const [telDiag, setTelDiag] = useState(true);
+  const telInitialized = useRef(false);
 
   // Kill-switch state — fetched from /api/bridge/kill-switch (proxy to
   // bridge `GET /kill-switch`). Polls in tandem with /status below.
@@ -332,6 +333,35 @@ export default function SettingsPage() {
     };
   }, []);
 
+  // Load telemetry prefs on mount (once). Fail-soft — if bridge is offline
+  // the toggles remain at their default values.
+  useEffect(() => {
+    if (telInitialized.current) return;
+    let cancel = false;
+    (async () => {
+      try {
+        const res = await fetch(apiPath("/api/bridge/telemetry-prefs"));
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          crashReports?: boolean;
+          usageStats?: boolean;
+          localDiagnostics?: boolean;
+        };
+        if (cancel) return;
+        if (typeof data.crashReports === "boolean") setTelCrash(data.crashReports);
+        if (typeof data.usageStats === "boolean") setTelUsage(data.usageStats);
+        if (typeof data.localDiagnostics === "boolean") setTelDiag(data.localDiagnostics);
+        telInitialized.current = true;
+      } catch {
+        /* fail-soft — bridge may not be running */
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Read current Web Push subscription status on mount. Idempotently
   // register the SW so a fresh visit can later subscribe without a reload —
   // pushManager.subscribe() requires an active registration.
@@ -371,6 +401,23 @@ export default function SettingsPage() {
     setSaveState("saving");
     setTimeout(() => setSaveState("saved"), 600);
     setTimeout(() => setSaveState("idle"), 2400);
+  }
+
+  async function saveTelemetryPref(
+    field: "crashReports" | "usageStats" | "localDiagnostics",
+    value: boolean,
+  ) {
+    // Optimistic local update already applied by the caller via setter.
+    try {
+      await fetch(apiPath("/api/bridge/telemetry-prefs"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: value }),
+      });
+      flashSaved();
+    } catch {
+      /* fail-soft — UI already shows the optimistic value */
+    }
   }
 
   async function saveApiKey(provider: ApiKeyProvider) {
@@ -1348,29 +1395,35 @@ export default function SettingsPage() {
               </div>
 
               <div style={{ padding: "16px 0", display: "flex", flexDirection: "column", gap: 14 }}>
-                <div role="status" style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)", marginBottom: 4 }}>
-                  Preview only — toggles do not yet persist between reloads.
-                </div>
                 <ToggleRow
                   id="tel-crash"
                   label="Crash reports"
                   help="Send anonymized stack traces to help diagnose bridge crashes. No source files, no env vars."
                   checked={telCrash}
-                  onChange={setTelCrash}
+                  onChange={(v) => {
+                    setTelCrash(v);
+                    void saveTelemetryPref("crashReports", v);
+                  }}
                 />
                 <ToggleRow
                   id="tel-usage"
                   label="Anonymous usage stats"
                   help="Tool-call counts and feature flag usage. No prompts, no file paths, no identifiers."
                   checked={telUsage}
-                  onChange={setTelUsage}
+                  onChange={(v) => {
+                    setTelUsage(v);
+                    void saveTelemetryPref("usageStats", v);
+                  }}
                 />
                 <ToggleRow
                   id="tel-diag"
                   label="Local diagnostics retention"
                   help="Keep last 7 days of bridge logs on this machine for debugging. Never leaves your computer."
                   checked={telDiag}
-                  onChange={setTelDiag}
+                  onChange={(v) => {
+                    setTelDiag(v);
+                    void saveTelemetryPref("localDiagnostics", v);
+                  }}
                 />
               </div>
             </div>
