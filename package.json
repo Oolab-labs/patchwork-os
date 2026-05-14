@@ -103,7 +103,7 @@
     "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
     "typecheck:tests:core": "tsc --noEmit -p tsconfig.tests.core.json",
     "postinstall": "node scripts/postinstall.mjs || true",
-    "prepublishOnly": "npm run build && node -e \"const h=require('child_process').execFileSync('node',['dist/index.js','--help'],{encoding:'utf8'});if(!h.includes('issuer-url'))process.exit(1)\" && node scripts/publish-schemas.mjs",
+    "prepublishOnly": "npm run build && node -e \"const h=require('child_process').execFileSync('node',['dist/index.js','--workspace','.','--help'],{encoding:'utf8'});if(!h.includes('issuer-url'))process.exit(1)\" && node scripts/publish-schemas.mjs",
     "smoke": "node smoke-test-v2.mjs",
     "remote": "bash scripts/start-remote.sh",
     "remote:node": "node scripts/start-remote.mjs",
