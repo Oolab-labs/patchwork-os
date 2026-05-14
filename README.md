@@ -96,7 +96,20 @@ The bridge runs without any flags. No recipes, no automation, no dashboard — j
 |---|---|
 | Claude Code CLI | WebSocket `ws://127.0.0.1:<port>` |
 | Claude Desktop | stdio shim → WebSocket |
-| Remote (claude.ai, Codex CLI) | Streamable HTTP + Bearer token |
+| Gemini CLI, Codex CLI, claude.ai | Streamable HTTP + Bearer token |
+
+**Connecting Gemini CLI:**
+
+```bash
+# Get the auth token from the bridge's lock file
+patchwork-os print-token
+
+# Add the bridge as an MCP server
+gemini mcp add patchwork http://127.0.0.1:<port>/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+The bridge auto-responds to the GET probe Gemini sends before initializing, so it shows as **Connected** immediately.
 
 **Tool modes:**
 

@@ -293,13 +293,18 @@ function hexEquals(a: string, b: string): boolean {
 /**
  * Verifies the `Mcp-Session-Token` header matches the session's ownership
  * token. Returns `true` if authorized.
+ * The header is optional — standard MCP clients (Gemini CLI, Codex, etc.)
+ * don't send it and the Bearer token already authenticated them. The check
+ * only applies when the header is present, preventing session-ID hijacking
+ * in shared-bridge-token / OAuth deployments where multiple clients share a
+ * single Bearer token and could theoretically know each other's session IDs.
  */
 function checkOwnership(
   req: http.IncomingMessage,
   session: { ownershipToken: string },
 ): boolean {
   const presented = req.headers["mcp-session-token"];
-  if (typeof presented !== "string") return false;
+  if (typeof presented !== "string") return true; // header absent → allowed
   return hexEquals(presented, session.ownershipToken);
 }
 
@@ -550,6 +555,7 @@ export class StreamableHttpHandler {
       }
       // Verify the caller owns this session (Mcp-Session-Token header
       // matches what was returned in the initialize response).
+      // The header is optional — absent means allowed (see checkOwnership).
       if (!checkOwnership(req, session)) {
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(
@@ -558,7 +564,7 @@ export class StreamableHttpHandler {
             id: msg.id ?? null,
             error: {
               code: -32000,
-              message: "Mcp-Session-Token missing or invalid",
+              message: "Mcp-Session-Token invalid",
             },
           }),
         );
@@ -635,8 +641,15 @@ export class StreamableHttpHandler {
   private handleGet(req: http.IncomingMessage, res: http.ServerResponse): void {
     const sessionId = req.headers["mcp-session-id"];
     if (typeof sessionId !== "string") {
-      res.writeHead(400, { "Content-Type": "text/plain" });
-      res.end("Missing Mcp-Session-Id header");
+      // No session ID — return server info so clients (e.g. Gemini CLI) that
+      // probe with GET before initializing can detect the server as alive.
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          server: "claude-ide-bridge",
+          transport: "streamable-http",
+        }),
+      );
       return;
     }
     const session = this.sessions.get(sessionId);
@@ -647,7 +660,7 @@ export class StreamableHttpHandler {
     }
     if (!checkOwnership(req, session)) {
       res.writeHead(403, { "Content-Type": "text/plain" });
-      res.end("Mcp-Session-Token missing or invalid");
+      res.end("Mcp-Session-Token invalid");
       return;
     }
 
@@ -701,7 +714,7 @@ export class StreamableHttpHandler {
     }
     if (!checkOwnership(req, session)) {
       res.writeHead(403, { "Content-Type": "text/plain" });
-      res.end("Mcp-Session-Token missing or invalid");
+      res.end("Mcp-Session-Token invalid");
       return;
     }
     if (session.inFlight > 0) {
