@@ -120,7 +120,8 @@ function writePrefs(content: PrefsFileV2): void {
 export function getAnalyticsPref(): boolean | null {
   const p = prefsPath();
   try {
-    fs.accessSync(p);
+    const raw = fs.readFileSync(p, "utf-8");
+    JSON.parse(raw);
   } catch {
     return null;
   }
