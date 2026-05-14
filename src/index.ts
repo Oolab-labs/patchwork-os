@@ -192,9 +192,19 @@ const __invokedSubcommand = (() => {
     : null;
 })();
 
+// bash/zsh set process.env._ to the actual invoked binary path (e.g. /usr/local/bin/patchwork-os).
+// More reliable than argv[1] which resolves to the .js entrypoint via npm global shim.
+function invokedBinaryName(): string {
+  const fromEnv = process.env._
+    ? path.basename(process.env._).replace(/\.(cmd|js)$/i, "")
+    : "";
+  if (fromEnv && fromEnv !== "node" && fromEnv !== "npm") return fromEnv;
+  return path.basename(process.argv[1] ?? "").replace(/\.js$/, "");
+}
+
 const __invokedBareBinaryDashboard = (() => {
   if (process.argv[2] && process.argv[2] !== "dashboard") return false;
-  const binName = path.basename(process.argv[1] ?? "");
+  const binName = invokedBinaryName();
   return (
     binName === "patchwork-os" ||
     binName === "patchwork" ||
@@ -262,6 +272,14 @@ if (process.argv[2] === "patchwork-init") {
   process.exit(0);
 }
 
+// `patchwork-os init` → dashboard setup, not IDE bridge installer.
+// patchwork init / claude-ide-bridge init still go to the bridge path below.
+if (process.argv[2] === "init" && invokedBinaryName() === "patchwork-os") {
+  const { runPatchworkInit } = await import("./commands/patchworkInit.js");
+  await runPatchworkInit(process.argv.slice(3));
+  process.exit(0);
+}
+
 // Handle start-all subcommand — launches the full 3-pane tmux orchestrator.
 // Also triggered when invoked as `claude-ide-bridge-start` directly.
 const isStartAll =
@@ -316,6 +334,14 @@ This is a thin wrapper over \`start-all\`. For advanced flags see:
 `);
     process.exit(0);
   }
+  // patchwork start requires bash via start-all.sh — not supported on Windows natively.
+  if (process.platform === "win32") {
+    process.stderr.write(
+      "patchwork start is not supported on Windows natively.\n" +
+        "Install WSL 2 and run from a WSL terminal: https://learn.microsoft.com/windows/wsl/install\n",
+    );
+    process.exit(1);
+  }
   // Default to --full unless caller opted into slim explicitly.
   const args = [...passthrough];
   const slimIdx = args.indexOf("--slim");
@@ -323,6 +349,11 @@ This is a thin wrapper over \`start-all\`. For advanced flags see:
     args.splice(slimIdx, 1); // slim is the .mjs default; strip so --full isn't re-added below
   } else if (!args.includes("--full")) {
     args.push("--full");
+  }
+  // Auto-detect tmux; fall back to --no-tmux background mode if absent.
+  if (!args.includes("--no-tmux")) {
+    const tmuxCheck = spawnSync("which", ["tmux"], { stdio: "ignore" });
+    if (tmuxCheck.status !== 0) args.push("--no-tmux");
   }
   // Dispatch to the cross-platform Node orchestrator (see above).
   const scriptPath = path.resolve(
@@ -3919,7 +3950,7 @@ if (process.argv[2] === "launchd") {
 // F6: "Did you mean?" for unknown CLI subcommands
 // Patchwork: no-args → terminal dashboard (when invoked as patchwork-os or patchwork).
 {
-  const binName = path.basename(process.argv[1] ?? "");
+  const binName = invokedBinaryName();
   const isPatchworkBin =
     binName === "patchwork-os" ||
     binName === "patchwork" ||
@@ -4039,8 +4070,11 @@ if (__subcommandWillRun) {
       .slice(0, 6);
     const sessionName = `claude-bridge-${ws}${hash}`;
 
-    // Check if tmux is available
-    const tmuxCheck = spawnSync("which", ["tmux"], { stdio: "ignore" });
+    // Check if tmux is available (skip on Windows — tmux doesn't exist there)
+    const tmuxCheck =
+      process.platform !== "win32"
+        ? spawnSync("which", ["tmux"], { stdio: "ignore" })
+        : { status: 1 };
     if (tmuxCheck.status !== 0) {
       process.stderr.write(
         "WARNING: --auto-tmux requested but tmux is not installed. Running without tmux.\n",
