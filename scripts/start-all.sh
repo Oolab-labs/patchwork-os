@@ -52,6 +52,7 @@ IDE_NAME=""
 VPS=""
 FULL_MODE=""
 NO_DASHBOARD=""
+NO_TMUX=""
 DASHBOARD_PORT="3200"
 BRIDGE_PORT_FLAG=""
 AUTOMATION_POLICY=""
@@ -71,6 +72,7 @@ while [[ $# -gt 0 ]]; do
     --vps)               VPS="$2"; shift 2 ;;
     --full)              FULL_MODE="--full"; shift ;;
     --no-dashboard)      NO_DASHBOARD=1; shift ;;
+    --no-tmux)           NO_TMUX=1; shift ;;
     --dashboard-port)    DASHBOARD_PORT="$2"; shift 2 ;;
     --bridge-port)       BRIDGE_PORT_FLAG="--port $2"; shift 2 ;;
     --automation-policy) AUTOMATION_POLICY="$2"; shift 2 ;;
@@ -128,10 +130,12 @@ except Exception:
 done < <(ls ~/.claude/ide/*.lock 2>/dev/null)
 
 # --- Dependency checks ---
-command -v tmux >/dev/null 2>&1 || {
-  echo "Error: tmux is required. Install with: brew install tmux" >&2
-  exit 1
-}
+if [[ -z "$NO_TMUX" ]]; then
+  command -v tmux >/dev/null 2>&1 || {
+    echo "Error: tmux is required. Install with: brew install tmux (or pass --no-tmux for background mode)" >&2
+    exit 1
+  }
+fi
 command -v claude >/dev/null 2>&1 || {
   echo "Error: claude CLI not found on PATH." >&2
   exit 1
@@ -140,6 +144,56 @@ command -v node >/dev/null 2>&1 || {
   echo "Error: node is required." >&2
   exit 1
 }
+
+# --- No-tmux background mode ---
+if [[ -n "$NO_TMUX" ]]; then
+  PIDS_DIR="$HOME/.patchwork/pids"
+  mkdir -p "$PIDS_DIR"
+
+  # Load credentials from ~/.patchwork/.env
+  if [[ -f "$HOME/.patchwork/.env" ]]; then
+    set -a; source "$HOME/.patchwork/.env"; set +a
+  fi
+
+  BRIDGE_DIR_ABS="$(cd "$BRIDGE_DIR" && pwd)"
+  BRIDGE_BIN="$BRIDGE_DIR_ABS/node_modules/.bin/claude-ide-bridge"
+  [[ -f "$BRIDGE_BIN" ]] || BRIDGE_BIN="claude-ide-bridge"
+
+  echo "=== Patchwork OS — background mode (--no-tmux) ==="
+
+  # Start bridge
+  echo "  Starting bridge..."
+  "$BRIDGE_BIN" ${FULL_MODE} ${BRIDGE_PORT_FLAG} \
+    ${AUTOMATION_POLICY:+--automation --automation-policy "$AUTOMATION_POLICY" --driver "$DRIVER"} \
+    >> "$HOME/.patchwork/bridge.log" 2>&1 &
+  echo $! > "$PIDS_DIR/bridge.pid"
+  echo "  Bridge PID: $! (log: ~/.patchwork/bridge.log)"
+
+  # Start dashboard if available
+  DASHBOARD_DIR="$BRIDGE_DIR_ABS/dashboard"
+  if [[ -z "$NO_DASHBOARD" ]] && [[ -d "$DASHBOARD_DIR" ]]; then
+    if [[ ! -d "$DASHBOARD_DIR/node_modules" ]]; then
+      echo "  Installing dashboard dependencies..."
+      npm install --prefer-offline --prefix "$DASHBOARD_DIR" || {
+        echo "Warning: dashboard npm install failed — skipping dashboard." >&2
+      }
+    fi
+    if [[ -d "$DASHBOARD_DIR/node_modules" ]]; then
+      (cd "$DASHBOARD_DIR" && \
+        DASHBOARD_PASSWORD="${DASHBOARD_PASSWORD:-}" \
+        DASHBOARD_SESSION_SECRET="${DASHBOARD_SESSION_SECRET:-}" \
+        npx next dev -p "$DASHBOARD_PORT" \
+        >> "$HOME/.patchwork/dashboard.log" 2>&1) &
+      echo $! > "$PIDS_DIR/dashboard.pid"
+      echo "  Dashboard PID: $! (log: ~/.patchwork/dashboard.log)"
+      echo "  Dashboard: http://localhost:${DASHBOARD_PORT}"
+    fi
+  fi
+
+  echo ""
+  echo "To stop: kill \$(cat ~/.patchwork/pids/bridge.pid) \$(cat ~/.patchwork/pids/dashboard.pid) 2>/dev/null"
+  exit 0
+fi
 
 # --- tmux session management ---
 if [[ -z "${TMUX:-}" ]]; then
@@ -381,22 +435,24 @@ tmux send-keys -t "${SESSION}:0.3" "$REMOTE_CMD" Enter
 # Pane 4: Dashboard (only if not --no-dashboard and dashboard dir exists)
 DASHBOARD_DIR="$BRIDGE_DIR/dashboard"
 if [[ -z "$NO_DASHBOARD" ]] && [[ -d "$DASHBOARD_DIR" ]]; then
-  # First-run guard: missing node_modules silently breaks `npm run dev` with
-  # an unhelpful error in pane 4. Surface a concrete remediation step in the
-  # orchestrator pane so the user knows what to do.
+  # Self-healing: install dashboard deps if node_modules is missing.
   if [[ ! -d "$DASHBOARD_DIR/node_modules" ]]; then
-    echo "" >&2
-    echo "Error: dashboard/node_modules not found." >&2
-    echo "Run: cd $(printf '%q' "$DASHBOARD_DIR") && npm install" >&2
-    echo "Then re-run start-all (or pass --no-dashboard to skip)." >&2
-    exit 1
+    echo "[orchestrator] Installing dashboard dependencies (first-time setup)..."
+    npm install --prefer-offline --prefix "$DASHBOARD_DIR" || {
+      echo "Error: dashboard npm install failed. Run manually: cd $(printf '%q' "$DASHBOARD_DIR") && npm install" >&2
+      exit 1
+    }
+  fi
+  # Load dashboard credentials from ~/.patchwork/.env so Next.js picks them up.
+  if [[ -f "$HOME/.patchwork/.env" ]]; then
+    set -a; source "$HOME/.patchwork/.env"; set +a
   fi
   BRIDGE_PORT=$(basename "$LOCK_FILE" .lock)
   # Call `next dev -p` directly. `npm run dev` hardcodes `-p 3200`, so
   # `--dashboard-port` previously only changed the printed URL while
   # Next.js stayed on 3200. Bypassing the npm script makes the flag
   # actually configure the dev server end-to-end.
-  DASHBOARD_CMD="cd $(printf '%q' "$DASHBOARD_DIR") && PATCHWORK_BRIDGE_PORT=${BRIDGE_PORT} npx next dev -p ${DASHBOARD_PORT}"
+  DASHBOARD_CMD="cd $(printf '%q' "$DASHBOARD_DIR") && PATCHWORK_BRIDGE_PORT=${BRIDGE_PORT} DASHBOARD_PASSWORD=$(printf '%q' "${DASHBOARD_PASSWORD:-}") DASHBOARD_SESSION_SECRET=$(printf '%q' "${DASHBOARD_SESSION_SECRET:-}") npx next dev -p ${DASHBOARD_PORT}"
   notify "Starting dashboard on http://localhost:${DASHBOARD_PORT}"
   tmux send-keys -t "${SESSION}:0.4" "$DASHBOARD_CMD" Enter
   # Poll the dashboard port until Next.js answers, then open the browser.

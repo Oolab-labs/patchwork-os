@@ -31,7 +31,32 @@ Same codebase. Bridge is the foundation; Patchwork OS is the optional layer on t
 
 ---
 
+## Dashboard Only — No Code Editor Required
+
+> You do not need VS Code, Windsurf, Cursor, or Claude Code CLI to use the Patchwork dashboard.
+
+The dashboard is a standalone Next.js app that communicates with the bridge over HTTP. No editor extension required.
+
+**Prereqs:** [Node.js 20+](https://nodejs.org) · tmux (`brew install tmux` macOS / `apt install tmux` Linux)
+**Windows users:** [WSL 2](https://learn.microsoft.com/windows/wsl/install) required — run all commands inside a WSL terminal. Native cmd/PowerShell not supported.
+
+```bash
+npm install -g patchwork-os
+patchwork-os init     # scaffolds ~/.patchwork and generates a dashboard login
+patchwork start       # launches bridge + dashboard (auto-detects tmux; falls back to background mode if absent)
+```
+
+Open **http://localhost:3200** — that's it. `patchwork-os init` auto-generates a dashboard password and saves it to `~/.patchwork/.env` — it prints the password at the end of setup, save it for your first login.
+
+**What you get:** run and schedule YAML recipes, connect external services (Gmail, Calendar, Slack), review AI drafts in the approval queue, read your AI inbox — all from the browser. No coding required.
+
+> **Want IDE features too?** See [Claude IDE Bridge — Quick Start](#-claude-ide-bridge--quick-start) below to add LSP, debugger, and editor tools on top.
+
+---
+
 ## 🔌 Claude IDE Bridge — Quick Start
+
+> Developers only — skip to [Dashboard Only](#dashboard-only--no-code-editor-required) above if you just want the web dashboard.
 
 **Prerequisites:** a supported code editor — **VS Code, Cursor, Windsurf, or Google Antigravity** (or JetBrains via the [companion plugin](#jetbrains-plugin)) — plus Node.js 20+ and the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code). The bridge's LSP, debugger, and editor-state tools run through the editor extension; without one you're limited to the headless CLI subset.
 

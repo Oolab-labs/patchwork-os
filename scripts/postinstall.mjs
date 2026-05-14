@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * postinstall.mjs — wire up optional local binaries into node_modules/.bin
  * so that probeAll() can discover them via the standard local-bin lookup.
@@ -7,6 +8,7 @@
  *   @vscode/ripgrep  →  node_modules/.bin/rg
  */
 
+import { execSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -65,4 +67,29 @@ try {
 
 console.log("[postinstall] Linking optional local binaries...");
 linkBin("@vscode/ripgrep", "rg");
+
+// Auto-install dashboard dependencies on first global install
+const dashboardDir = fileURLToPath(new URL("../dashboard", import.meta.url));
+if (
+  existsSync(dashboardDir) &&
+  !existsSync(path.join(dashboardDir, "node_modules"))
+) {
+  console.log(
+    "[postinstall] Installing dashboard dependencies (first-time setup)...",
+  );
+  try {
+    execSync("npm install --prefer-offline", {
+      cwd: dashboardDir,
+      stdio: "inherit",
+      shell: true,
+    });
+    console.log("[postinstall] Dashboard dependencies installed.");
+  } catch {
+    console.warn(
+      "[postinstall] Warning: could not install dashboard dependencies automatically.",
+    );
+    console.warn(`  Run manually: cd ${dashboardDir} && npm install`);
+  }
+}
+
 console.log("[postinstall] Done.");

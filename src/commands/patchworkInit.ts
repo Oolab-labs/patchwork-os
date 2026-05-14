@@ -1,4 +1,12 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,6 +69,64 @@ What it does:
      so Claude Code routes tool calls through your delegation policy
   5. Print next steps
 `);
+}
+
+function findDashboardDir(): string | null {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(here, "..", "..", "dashboard"),
+    join(here, "..", "..", "..", "dashboard"),
+  ];
+  for (const c of candidates) {
+    if (existsSync(join(c, "package.json"))) return c;
+  }
+  return null;
+}
+
+export function ensureDashboardEnv(patchworkDir: string): {
+  password: string;
+  generated: boolean;
+} {
+  const envPath = join(patchworkDir, ".env");
+  let existing = "";
+  if (existsSync(envPath)) existing = readFileSync(envPath, "utf8");
+  const hasPassword = /^DASHBOARD_PASSWORD=.+$/m.test(existing);
+  const hasSecret = /^DASHBOARD_SESSION_SECRET=.+$/m.test(existing);
+  if (hasPassword && hasSecret)
+    return { password: "[already set]", generated: false };
+  const password = randomBytes(8).toString("hex");
+  const secret = randomBytes(32).toString("hex");
+  const additions: string[] = [];
+  if (!hasPassword) additions.push(`DASHBOARD_PASSWORD=${password}`);
+  if (!hasSecret) additions.push(`DASHBOARD_SESSION_SECRET=${secret}`);
+  const sep = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
+  writeFileSync(envPath, `${existing + sep + additions.join("\n")}\n`, {
+    mode: 0o600,
+  });
+  // Also write dashboard/.env.local so Next.js picks up credentials without start-all sourcing
+  const dashDir = findDashboardDir();
+  if (dashDir) {
+    const localPath = join(dashDir, ".env.local");
+    let local = existsSync(localPath) ? readFileSync(localPath, "utf8") : "";
+    if (/^DASHBOARD_PASSWORD=/m.test(local)) {
+      local = local.replace(
+        /^DASHBOARD_PASSWORD=.*$/m,
+        `DASHBOARD_PASSWORD=${password}`,
+      );
+    } else {
+      local += `${local.endsWith("\n") ? "" : "\n"}DASHBOARD_PASSWORD=${password}\n`;
+    }
+    if (/^DASHBOARD_SESSION_SECRET=/m.test(local)) {
+      local = local.replace(
+        /^DASHBOARD_SESSION_SECRET=.*$/m,
+        `DASHBOARD_SESSION_SECRET=${secret}`,
+      );
+    } else {
+      local += `DASHBOARD_SESSION_SECRET=${secret}\n`;
+    }
+    writeFileSync(localPath, local, { mode: 0o600 });
+  }
+  return { password, generated: true };
 }
 
 function findTemplatesDir(): string | null {
@@ -131,6 +197,10 @@ export async function runPatchworkInit(
     mkdirSync(dir, { recursive: true });
   }
   log(`  ✓ ~/.patchwork scaffolded\n`);
+
+  const dashEnv = ensureDashboardEnv(patchworkDir);
+  if (dashEnv.generated)
+    log(`  ✓ ~/.patchwork/.env created with dashboard credentials\n`);
 
   const templatesDir = findTemplatesDir();
   let recipesCopied = 0;
@@ -245,12 +315,16 @@ export async function runPatchworkInit(
       ? `\n  ⚠  Restart Claude Code so the new PreToolUse hook takes effect.\n     (CC reads hooks at session start — existing sessions won't see the change.)\n`
       : "";
 
-  log(`${restartLine}\nNext:
-  1. patchwork start                           # launch bridge + Claude + dashboard (one command)
-  2. patchwork-os recipe run daily-status      # zero-config: yesterday's commits + today's hints
-  3. patchwork-os                              # terminal dashboard (TUI, alternative to web)
-  4. patchwork-os recipe list                  # browse installed recipes
-  5. patchwork-os init --with-connectors       # add gmail/github/linear/etc. recipes\n`);
+  const dashPasswordLine = dashEnv.generated
+    ? `\n  Dashboard password: ${dashEnv.password}  (saved to ~/.patchwork/.env)\n`
+    : "";
+
+  log(`${restartLine}${dashPasswordLine}
+Next:
+  1. patchwork start                           # launch bridge + dashboard
+  2. open http://localhost:3200                # dashboard (use password printed above)
+  3. patchwork-os recipe run daily-status      # zero-config: yesterday's commits + today's hints
+  4. patchwork-os init --with-connectors       # add gmail/github/linear/etc. recipes\n`);
 
   return {
     configPath,
