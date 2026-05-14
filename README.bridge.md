@@ -5,7 +5,7 @@
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2FOolab--labs%2Fclaude--ide--bridge-blue)](https://github.com/Oolab-labs/claude-ide-bridge/pkgs/container/claude-ide-bridge)
 [![License: MIT](https://img.shields.io/npm/l/claude-ide-bridge)](https://opensource.org/licenses/MIT)
 
-**MCP bridge giving Claude Code IDE superpowers: 141 tools for LSP, debugging, git, GitHub, terminals, and more.**
+**MCP bridge giving Claude Code IDE superpowers — 170+ tools for LSP, debugging, git, GitHub, terminals, and more (see [platform-docs](documents/platform-docs.md) for the full list).**
 
 A WebSocket bridge between Claude Code CLI and your VS Code extension. Claude sees what your IDE sees — live diagnostics, go-to-definition, call hierarchies, hover types, breakpoints, debugger state — and can act on it: edit files, run tests, commit, open PRs, all without you copy-pasting anything.
 
@@ -314,7 +314,7 @@ claude-ide-bridge install claude-mem
 | File | Description |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System topology, request lifecycle, component map, design decisions |
-| [documents/platform-docs.md](documents/platform-docs.md) | Full tool reference — all 141 tools with parameters and examples |
+| [documents/platform-docs.md](documents/platform-docs.md) | Full tool reference — all 170+ tools with parameters and examples |
 | [documents/prompts-reference.md](documents/prompts-reference.md) | All MCP prompts (31 prompts, 12 plugin skills, 4 subagents) |
 | [docs/automation.md](docs/automation.md) | Automation hooks reference — all 18 events, policy schema, condition filters |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Diagnostics, common errors, and fixes |
