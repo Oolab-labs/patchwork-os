@@ -177,6 +177,7 @@ const KNOWN_SUBCOMMANDS = [
   "launchd",
   "start",
   "kill-switch",
+  "panic",
   "halts",
   "judgments",
 ] as const;
@@ -1819,28 +1820,67 @@ if (process.argv[2] === "kill-switch") {
   }
   (async () => {
     try {
-      // v2-B2: enumerate ALL live bridge locks (not just the first).
-      const { findAllLiveBridges } = await import("./bridgeLockDiscovery.js");
-      const liveLocks = findAllLiveBridges();
-      type BridgeLockInfo = (typeof liveLocks)[number];
-
-      if (liveLocks.length === 0) {
-        process.stderr.write(
-          "No running bridge found.\n" +
-            "  - For `engage`/`release`, kill-switch has no live target to update.\n" +
-            "  - Restart the bridge with `--driver subprocess` to enable orchestration,\n" +
-            "    then re-run this command.\n",
-        );
-        process.exit(2);
-      }
-
-      // Parse optional --reason.
+      // Parse optional flags early so --force-local can be used without a bridge.
       const args = process.argv.slice(4);
       const reasonIdx = args.findIndex((a) => a === "--reason" || a === "-m");
       const reason =
         reasonIdx >= 0 && reasonIdx + 1 < args.length
           ? args[reasonIdx + 1]
           : undefined;
+      // v2-I4: --force-local writes flags.json directly when no live bridge
+      // is reachable. The running bridge's fs.watch (v2-S1) picks up the
+      // change within ~100ms; without a running bridge this is "effective
+      // next boot" — which is still better than a silent noop.
+      const forceLocal = args.includes("--force-local");
+
+      // v2-B2: enumerate ALL live bridge locks (not just the first).
+      const { findAllLiveBridges } = await import("./bridgeLockDiscovery.js");
+      const liveLocks = findAllLiveBridges();
+      type BridgeLockInfo = (typeof liveLocks)[number];
+
+      if (liveLocks.length === 0) {
+        if (forceLocal && (sub === "engage" || sub === "release")) {
+          // --force-local: write flags.json directly. The running bridge's
+          // fs.watch picks this up within ~100ms; if the bridge is wedged
+          // or not started, this is effective on next start.
+          const { setFlag, KILL_SWITCH_WRITES } = await import(
+            "./featureFlags.js"
+          );
+          const engage = sub === "engage";
+          setFlag(KILL_SWITCH_WRITES, engage, true);
+          // Audit in a sibling CLI-only JSONL (v2-I10: bridge-only writes
+          // go to decision_traces.jsonl; CLI fallback is distinct).
+          const os = await import("node:os");
+          const path = await import("node:path");
+          const fs = await import("node:fs");
+          const cliTraceFile = path.join(
+            process.env.PATCHWORK_HOME ??
+              path.join(os.default.homedir(), ".patchwork"),
+            "decision_traces.cli.jsonl",
+          );
+          const dir = path.dirname(cliTraceFile);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          const entry = JSON.stringify({
+            ts: new Date().toISOString(),
+            event: engage ? "engage" : "release",
+            actor: "cli-force-local",
+            ...(reason ? { reason } : {}),
+          });
+          fs.appendFileSync(cliTraceFile, `${entry}\n`);
+          process.stdout.write(
+            `  ✓ kill-switch ${engage ? "ENGAGED" : "released"} via --force-local (flags.json written directly).\n` +
+              "    Running bridges will pick this up via fs.watch within ~100ms.\n",
+          );
+          process.exit(0);
+        }
+        process.stderr.write(
+          "No running bridge found.\n" +
+            "  - For `engage`/`release`, kill-switch has no live target to update.\n" +
+            "  - Use --force-local to write flags.json directly (bridge fs.watch picks it up).\n" +
+            "  - Or restart the bridge and re-run this command.\n",
+        );
+        process.exit(2);
+      }
 
       // v2-I4: 10s per-request deadline. AbortController per call.
       async function callBridge(
@@ -1970,6 +2010,26 @@ if (process.argv[2] === "kill-switch") {
       process.exit(1);
     }
   })();
+}
+
+// `patchwork panic` — alias for `patchwork kill-switch engage` (v2-Strong-2).
+//
+// Discoverable under stress (short command, obvious intent). Canonical noun
+// form is `kill-switch engage`; this alias matches it so shell history six
+// months later still makes sense. Does not accept sub-verbs — just runs engage.
+if (process.argv[2] === "panic") {
+  // Spawn self with kill-switch engage to reuse the full handler without
+  // duplicating 200+ LOC. Passes through any flags (--reason, --force-local).
+  import("node:child_process").then(({ spawnSync }) => {
+    const self = process.argv[1] ?? process.execPath;
+    const extra = process.argv.slice(3); // e.g. --reason "..." --force-local
+    const result = spawnSync(
+      process.execPath,
+      [self, "kill-switch", "engage", ...extra],
+      { stdio: "inherit" },
+    );
+    process.exit(result.status ?? 1);
+  });
 }
 
 // `patchwork halts` — one-screen morning summary of recent recipe halts.

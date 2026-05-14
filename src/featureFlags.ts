@@ -176,11 +176,51 @@ export function getEnvLockedValue(flagId: string): boolean | null {
 }
 
 /**
+ * Thrown by `setFlag` when a kill-switch flag is env-locked (its value was
+ * frozen at startup via `PATCHWORK_FLAG_<ID>`) and the caller attempts to
+ * mutate it. The `/kill-switch` POST handler catches this and returns a
+ * structured 409 Conflict so the CLI / dashboard can distinguish
+ * "policy-locked" from "bad request" (issue #422, pitfall I9).
+ *
+ * `frozenValue` is the locked direction — callers can surface
+ * "env-locked to on" vs "env-locked to off" in error messages.
+ */
+export class EnvLockedFlagError extends Error {
+  public readonly flagId: string;
+  public readonly frozenValue: boolean;
+
+  constructor(flagId: string, frozenValue: boolean) {
+    super(
+      `Feature flag "${flagId}" is env-locked to ${frozenValue ? "true" : "false"} ` +
+        `(set at startup via PATCHWORK_FLAG_${flagId.replace(/[.-]/g, "_").toUpperCase()}). ` +
+        `Unset the environment variable to allow runtime mutation.`,
+    );
+    this.name = "EnvLockedFlagError";
+    this.flagId = flagId;
+    this.frozenValue = frozenValue;
+  }
+}
+
+/**
  * Set a flag value (persists to config file if persist=true).
+ *
+ * Throws `EnvLockedFlagError` if the flag is a kill-switch flag that has been
+ * frozen by `lockKillSwitchEnv()` — a sysadmin env-var override takes
+ * precedence over runtime mutation. The `/kill-switch` POST handler catches
+ * this and returns 409 (pitfall I9 from issue #422).
  */
 export function setFlag(flagId: string, value: boolean, persist = false): void {
   if (!FLAG_REGISTRY.has(flagId)) {
     throw new Error(`Unknown feature flag: "${flagId}"`);
+  }
+
+  // v2-I9: kill-switch flags that were env-locked at startup must not be
+  // silently overridden — throw so callers (the /kill-switch handler) can
+  // surface a structured 409 instead of returning 200 for a mutation that
+  // won't take effect.
+  if (isEnvLockedFor(flagId)) {
+    const frozen = FROZEN_KILL_SWITCH_ENV.get(flagId);
+    throw new EnvLockedFlagError(flagId, frozen === true);
   }
 
   FLAG_VALUES.set(flagId, value);

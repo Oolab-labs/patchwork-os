@@ -309,6 +309,27 @@ export default function SettingsPage() {
     return () => clearInterval(id);
   }, []);
 
+  // v2-I8 (#422): SSE consumer for kind:"kill-switch" events from /stream.
+  // When the bridge emits a state-change event the toggle updates in <1s
+  // without waiting for the next 5-second poll cycle.
+  useEffect(() => {
+    const es = new EventSource(apiPath("/api/bridge/stream"));
+    es.onmessage = (msg) => {
+      try {
+        const evt = JSON.parse(msg.data) as {
+          kind?: string;
+          engaged?: boolean;
+        };
+        if (evt.kind === "kill-switch" && typeof evt.engaged === "boolean") {
+          setKsEngaged(evt.engaged);
+        }
+      } catch {
+        // ignore malformed events
+      }
+    };
+    return () => es.close();
+  }, []);
+
   // Load CC permission rules for the approval policy section
   useEffect(() => {
     let cancel = false;

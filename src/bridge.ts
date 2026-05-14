@@ -1306,6 +1306,22 @@ export class Bridge {
       };
     };
     this.server.streamFn = (listener) => this.activityLog.subscribe(listener);
+    // v2-I8 (#422): broadcast kind:"kill-switch" SSE when state changes.
+    // The activityLog subscriber list fans out to all open /stream clients.
+    this.server.broadcastKillSwitchEventFn = (engaged, reason) => {
+      for (const listener of this.activityLog.getListeners()) {
+        try {
+          listener("kill-switch", {
+            id: 0,
+            timestamp: new Date().toISOString(),
+            event: engaged ? "engage" : "release",
+            metadata: { engaged, ...(reason ? { reason } : {}) },
+          });
+        } catch {
+          /* listener must not crash broadcast */
+        }
+      }
+    };
     this.server.cancelTaskFn = (id: string) =>
       this.orchestrator?.cancel(id, "user") ?? false;
     // Wire `/sessions` for the dashboard's Sessions page. The same Map is

@@ -62,6 +62,15 @@ export class ActivityLog {
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * Returns all current listeners. Used by bridge to broadcast custom
+   * SSE kinds (e.g. `kind: "kill-switch"`) that don't go through
+   * `recordEvent` (which would emit them as `kind: "lifecycle"`).
+   */
+  getListeners(): ReadonlySet<ActivityListener> {
+    return this.listeners;
+  }
+
   setPersistPath(p: string): void {
     this.persistPath = p;
     this._loadFromDisk();
