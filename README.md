@@ -225,7 +225,7 @@ Use whichever fits your mental model.
 
 ---
 
-## Tool surface (v0.2.0-beta.0)
+## Tool surface
 
 170+ MCP tools across 15 categories. Highlights:
 
@@ -342,6 +342,13 @@ patchwork init
 | [documents/comparison.md](documents/comparison.md) | Patchwork vs MCP server / Zapier / hosted assistants / agent frameworks — honest tradeoffs |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
 | [docs/remote-access.md](docs/remote-access.md) | VPS deployment guide |
+
+---
+
+## Support
+
+- **Bugs & feature requests:** [GitHub Issues](https://github.com/Oolab-labs/patchwork-os/issues)
+- **Questions & community:** [GitHub Discussions](https://github.com/Oolab-labs/patchwork-os/discussions)
 
 ---
 

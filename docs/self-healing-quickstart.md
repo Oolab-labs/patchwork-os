@@ -35,8 +35,8 @@ The command detects your IDE and installs the VSIX. Restart the IDE once after.
 ## 3. Grab the demo
 
 ```bash
-git clone https://github.com/Oolab-labs/claude-ide-bridge.git
-cd claude-ide-bridge/examples/self-healing-demo
+git clone https://github.com/Oolab-labs/patchwork-os.git
+cd patchwork-os/examples/self-healing-demo
 npm install
 ```
 
