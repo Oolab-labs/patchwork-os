@@ -1,21 +1,20 @@
-// TODO(windows): test fixtures use POSIX-only literal paths (e.g. fsPath: "/workspace")
-// that path.resolve() on win32 rewrites to drive-prefixed absolutes, breaking the
-// workspace-containment check in handleEditText. Migrate to platform-aware fixtures
-// before flipping windows-latest extension CI from advisory to blocking.
-
+import * as path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { handleEditText } from "../../handlers/editText";
 import { __reset, _mockTextDocument } from "../__mocks__/vscode";
 
+const WORKSPACE = path.resolve("/workspace");
+const TEST_FILE = path.join(WORKSPACE, "test.ts");
+
 beforeEach(() => {
   __reset();
 });
 
-describe.skipIf(process.platform === "win32")("handleEditText", () => {
+describe("handleEditText", () => {
   it("applies an insert edit", async () => {
     const result = (await handleEditText({
-      filePath: "/workspace/test.ts",
+      filePath: TEST_FILE,
       edits: [{ type: "insert", line: 1, column: 1, text: "hello" }],
     })) as any;
     expect(result.success).toBe(true);
@@ -25,7 +24,7 @@ describe.skipIf(process.platform === "win32")("handleEditText", () => {
 
   it("applies a delete edit", async () => {
     const result = (await handleEditText({
-      filePath: "/workspace/test.ts",
+      filePath: TEST_FILE,
       edits: [{ type: "delete", line: 1, column: 1, endLine: 1, endColumn: 5 }],
     })) as any;
     expect(result.success).toBe(true);
@@ -33,7 +32,7 @@ describe.skipIf(process.platform === "win32")("handleEditText", () => {
 
   it("applies a replace edit", async () => {
     const result = (await handleEditText({
-      filePath: "/workspace/test.ts",
+      filePath: TEST_FILE,
       edits: [
         {
           type: "replace",
@@ -50,7 +49,7 @@ describe.skipIf(process.platform === "win32")("handleEditText", () => {
 
   it("applies multiple edits", async () => {
     const result = (await handleEditText({
-      filePath: "/workspace/test.ts",
+      filePath: TEST_FILE,
       edits: [
         { type: "insert", line: 1, column: 1, text: "a" },
         { type: "insert", line: 2, column: 1, text: "b" },
@@ -62,7 +61,7 @@ describe.skipIf(process.platform === "win32")("handleEditText", () => {
 
   it("throws when edits is not an array", async () => {
     await expect(
-      handleEditText({ filePath: "/workspace/test.ts", edits: "bad" }),
+      handleEditText({ filePath: TEST_FILE, edits: "bad" }),
     ).rejects.toThrow("must be an array");
   });
 
@@ -74,14 +73,14 @@ describe.skipIf(process.platform === "win32")("handleEditText", () => {
       text: "x",
     }));
     await expect(
-      handleEditText({ filePath: "/workspace/test.ts", edits }),
+      handleEditText({ filePath: TEST_FILE, edits }),
     ).rejects.toThrow("Maximum 1000");
   });
 
   it("throws on unknown edit type", async () => {
     await expect(
       handleEditText({
-        filePath: "/workspace/test.ts",
+        filePath: TEST_FILE,
         edits: [{ type: "unknown", line: 1, column: 1 }],
       }),
     ).rejects.toThrow("Unknown edit type");
@@ -89,14 +88,14 @@ describe.skipIf(process.platform === "win32")("handleEditText", () => {
 
   it("throws when edit is not an object", async () => {
     await expect(
-      handleEditText({ filePath: "/workspace/test.ts", edits: ["bad"] }),
+      handleEditText({ filePath: TEST_FILE, edits: ["bad"] }),
     ).rejects.toThrow("must be an object");
   });
 
   it("returns error when applyEdit fails", async () => {
     vi.mocked(vscode.workspace.applyEdit).mockResolvedValue(false);
     const result = (await handleEditText({
-      filePath: "/workspace/test.ts",
+      filePath: TEST_FILE,
       edits: [{ type: "insert", line: 1, column: 1, text: "x" }],
     })) as any;
     expect(result.success).toBe(false);
@@ -104,11 +103,11 @@ describe.skipIf(process.platform === "win32")("handleEditText", () => {
 
   it("saves document when save=true", async () => {
     const save = vi.fn(async () => true);
-    const doc = _mockTextDocument({ fsPath: "/workspace/test.ts", save });
+    const doc = _mockTextDocument({ fsPath: TEST_FILE, save });
     vscode.workspace.textDocuments = [doc];
 
     const result = (await handleEditText({
-      filePath: "/workspace/test.ts",
+      filePath: TEST_FILE,
       edits: [{ type: "insert", line: 1, column: 1, text: "x" }],
       save: true,
     })) as any;
@@ -118,7 +117,7 @@ describe.skipIf(process.platform === "win32")("handleEditText", () => {
 
   it("does not save when save is not set", async () => {
     const result = (await handleEditText({
-      filePath: "/workspace/test.ts",
+      filePath: TEST_FILE,
       edits: [{ type: "insert", line: 1, column: 1, text: "x" }],
     })) as any;
     expect(result.saved).toBe(false);
