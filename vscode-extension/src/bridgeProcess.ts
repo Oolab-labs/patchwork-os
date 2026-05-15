@@ -1,6 +1,7 @@
 import type * as cp from "node:child_process";
 import { execFile, spawn } from "node:child_process";
 import * as crypto from "node:crypto";
+import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
 import * as path from "node:path";
 import { promisify } from "node:util";
@@ -10,8 +11,14 @@ import { LOCK_DIR } from "./constants";
 
 const execFileAsync = promisify(execFile);
 
-// Security: shell metacharacters that could enable command injection
-const SHELL_METACHARACTERS = /[;&|`$(){}\[\]<>"'\\\n\r]/;
+// Security: shell metacharacters that could enable command injection.
+// Backslash is excluded on Windows where it is the native path separator
+// (every absolute path from `where` contains `\`). Newlines and the other
+// shell metacharacters are still rejected on all platforms.
+const SHELL_METACHARACTERS =
+  process.platform === "win32"
+    ? /[;&|`$(){}[\]<>"'\n\r]/
+    : /[;&|`$(){}[\]<>"'\\\n\r]/;
 
 /**
  * Validate that a binary path is safe to execute, especially when shell:true is used.
@@ -98,7 +105,25 @@ export class BridgeProcess {
 
   /** Resolve the path to the `claude-ide-bridge` binary. */
   private async resolveBinary(): Promise<string> {
-    const whichCmd = process.platform === "win32" ? "where" : "which";
+    const isWin = process.platform === "win32";
+    const binBaseName = isWin ? "claude-ide-bridge.cmd" : "claude-ide-bridge";
+
+    // Probe workspace-local install first — covers `npm i --save-dev
+    // patchwork-os` where the binary isn't on system PATH. Synchronous and
+    // single-level: avoids racing real fs against the listener-attachment
+    // window in callers (and the deeper-walk case is rare enough that
+    // global install is the right answer).
+    if (this.workspacePath && fs.existsSync(this.workspacePath)) {
+      const candidate = path.join(
+        this.workspacePath,
+        "node_modules",
+        ".bin",
+        binBaseName,
+      );
+      if (fs.existsSync(candidate)) return candidate;
+    }
+
+    const whichCmd = isWin ? "where" : "which";
     try {
       const { stdout } = await execFileAsync(whichCmd, ["claude-ide-bridge"], {
         timeout: 5_000,
@@ -107,8 +132,10 @@ export class BridgeProcess {
       // get appended to the binary path and cause ENOENT at spawn time
       return stdout.trim().split(/\r?\n/)[0].trim();
     } catch {
-      // Fall back to bare command name — PATH resolution at spawn time
-      return "claude-ide-bridge";
+      // Fall back to a bare name that the OS can resolve at spawn time. On
+      // Windows that means the `.cmd` shim — bare "claude-ide-bridge" would
+      // ENOENT under spawn(shell:false).
+      return binBaseName;
     }
   }
 

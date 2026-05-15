@@ -304,8 +304,13 @@ export async function handleWaitForTerminalOutput(
 
 const MAX_EXECUTE_OUTPUT_BYTES = 512 * 1024; // 500 KB cap
 
-/** Shell metacharacters — defense-in-depth validation even though bridge validates too */
-const EXEC_METACHAR_RE = /[;&|`$()<>{}!\\]/;
+/**
+ * Shell metacharacters — defense-in-depth validation even though bridge
+ * validates too. Backslash is excluded on Windows because it's the native
+ * path separator (`dir C:\Users\foo` is a normal command, not an injection).
+ */
+const EXEC_METACHAR_RE =
+  process.platform === "win32" ? /[;&|`$()<>{}!]/ : /[;&|`$()<>{}!\\]/;
 
 export async function handleExecuteInTerminal(
   params: Record<string, unknown>,
