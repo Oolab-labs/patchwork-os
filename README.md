@@ -1,5 +1,8 @@
 # Patchwork OS
 
+[![npm version](https://img.shields.io/npm/v/patchwork-os.svg)](https://www.npmjs.com/package/patchwork-os)
+[![license](https://img.shields.io/npm/l/patchwork-os.svg)](LICENSE)
+
 ### Your personal AI runtime, local-first.
 
 > Patchwork OS is a local-first personal AI runtime: pluggable model providers, hot-reloadable tools, YAML recipes, a delegation policy with approval queue, and a durable trace memory — all running on your machine, all under your policy.
@@ -8,7 +11,7 @@ You decide which model. You decide which actions need a human nod. You own the c
 
 **Five primitives, one runtime:**
 
-- **Tools** — 170+ built-in (LSP, git, terminal, debugger, files) plus any plugin you write. Plugins hot-reload — Claude can author a tool mid-session and call it on the next turn. See [Live Toolsmithing](documents/live-toolsmithing.md).
+- **Tools** — 177 built-in (LSP, git, terminal, debugger, files) plus any plugin you write. Plugins hot-reload — Claude can author a tool mid-session and call it on the next turn. See [Live Toolsmithing](documents/live-toolsmithing.md).
 - **Recipes** — YAML automations triggered by cron, file save, git commit, test run, or webhook. Anything that can POST a JSON payload can fire a recipe.
 - **Delegation Policy** — three risk tiers, four-source precedence (managed → project-local → project → user). Auto-approve safe, require approval for risky, block dangerous.
 - **Trace memory** — every approval, every recipe run, every enrichment is durable JSONL. Past decisions are surfaced into future sessions automatically. Bundle and back up with [`patchwork traces export`](src/commands/tracesExport.ts).
@@ -24,7 +27,7 @@ The same codebase ships **two ways to use it.** Pick the layer you need.
 
 | | What you get | Install | Best for |
 |---|---|---|---|
-| **🔌 Claude IDE Bridge** | MCP bridge connecting Claude Code to your IDE. 170+ tools — diagnostics, LSP, debugger, terminal, git, GitHub, file ops. | `npm i -g patchwork-os` then run `claude-ide-bridge` | Anyone who wants Claude Code to see and act on their editor state |
+| **🔌 Claude IDE Bridge** | MCP bridge connecting Claude Code to your IDE. 177 tools — diagnostics, LSP, debugger, terminal, git, GitHub, file ops. | `npm i -g patchwork-os` then run `claude-ide-bridge` | Anyone who wants Claude Code to see and act on their editor state |
 | **🤖 Patchwork OS** | Everything in the bridge **plus** YAML recipes, approval queue, oversight dashboard, mobile push approvals, multi-model providers, JetBrains companion. | Same package, run `patchwork init` | Power users running automation, agent workflows, or background tasks |
 
 Same codebase. Bridge is the foundation; Patchwork OS is the optional layer on top. **No vendor lock-in. Runs on your machine.**
@@ -40,12 +43,11 @@ The dashboard is a standalone Next.js app that communicates with the bridge over
 **Prereqs:** [Node.js 20+](https://nodejs.org) · tmux on macOS/Linux (`brew install tmux` / `apt install tmux`) — auto-detected, falls back to background mode if absent. **Windows:** natively supported — no WSL required.
 
 ```bash
-npm install -g patchwork-os
-patchwork-os init     # scaffolds ~/.patchwork and generates a dashboard login
-patchwork start       # launches bridge + dashboard (auto-detects tmux; falls back to background mode if absent)
+npx patchwork-os@beta init   # scaffolds ~/.patchwork and generates a dashboard login (no install needed)
+patchwork start              # launches bridge + dashboard (auto-detects tmux; falls back to background mode if absent)
 ```
 
-Open **http://localhost:3200** — that's it. `patchwork-os init` auto-generates a dashboard password and saves it to `~/.patchwork/.env` — it prints the password at the end of setup, save it for your first login.
+Open **http://localhost:3200** — that's it. `npx patchwork-os@beta init` auto-generates a dashboard password and saves it to `~/.patchwork/.env` — it prints the password at the end of setup, save it for your first login.
 
 **What you get:** run and schedule YAML recipes, connect external services (Gmail, Calendar, Slack), review AI drafts in the approval queue, read your AI inbox — all from the browser. No coding required.
 
@@ -74,7 +76,7 @@ claude-ide-bridge --workspace .
 CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide
 ```
 
-Type `/ide` in Claude Code to confirm the connection. That's it — Claude now sees your diagnostics, open files, and editor state, and can call 170+ tools to act on them.
+Type `/ide` in Claude Code to confirm the connection. That's it — Claude now sees your diagnostics, open files, and editor state, and can call 177 tools to act on them.
 
 **What the bridge gives Claude:**
 
@@ -115,7 +117,7 @@ The bridge auto-responds to the GET probe Gemini sends before initializing, so i
 
 | Mode | Tools | When to use |
 |---|---|---|
-| Full _(default)_ | ~170 | All git, GitHub, terminal, file ops, orchestration |
+| Full _(default)_ | 177 | All git, GitHub, terminal, file ops, orchestration |
 | Slim (`--slim`) | ~60 | LSP + debugger + editor state only |
 
 Bridge-only docs: [documents/platform-docs.md](documents/platform-docs.md)
@@ -173,7 +175,7 @@ Both start the bridge, wait for the lock file, launch `claude --ide` and `remote
 
 ```powershell
 # Node orchestrator options (--key value form)
-npm run start-all:node -- --full               # all ~170 tools
+npm run start-all:node -- --full               # all 177 tools
 npm run start-all:node -- --no-dashboard       # skip dashboard
 npm run start-all:node -- --dashboard-port 3300
 npm run start-all:node -- --no-remote          # skip remote-control
@@ -247,19 +249,57 @@ Think of it as a background agent that acts on your behalf — but asks before s
 
 ### Patchwork commands
 
+Grouped by what they do. Full list: `patchwork --help`.
+
+**Setup**
+
 ```bash
-# One-command setup: extension + CLAUDE.md + starter recipes
-patchwork init
+npx patchwork-os@beta init                # one-command first-time setup (no install needed)
+patchwork install-extension               # install the VS Code / Cursor / Windsurf extension
+patchwork gen-claude-md                   # generate a starter CLAUDE.md for this workspace
+patchwork gen-plugin-stub ./my-plugin --name "org/name" --prefix "myPrefix"
+```
 
-# Explore
-patchwork recipe list                      # installed recipes
+**Runtime**
+
+```bash
+patchwork start                           # bridge + dashboard (auto-detects tmux)
+patchwork start-all                       # bridge + extension watcher in tmux
+patchwork dashboard                       # launch dashboard standalone
+patchwork shim                            # stdio shim for Claude Desktop
+patchwork status                          # one-shot health check
+patchwork print-token                     # auth token from the active lock file
+```
+
+**Recipes & tasks**
+
+```bash
+patchwork recipe list                     # installed recipes
 patchwork recipe run daily-status         # run one now
-patchwork recipe run morning-brief --local # run with local Ollama
-patchwork tools list                      # browse 170+ tools
-patchwork                                 # open terminal dashboard
+patchwork recipe new my-recipe --interactive
+patchwork start-task "<description>"      # enqueue a free-form Claude task
+patchwork quick-task fixErrors            # context-aware preset task
+patchwork continue-handoff                # resume from stored handoff note
+patchwork suggest                         # AI-suggest a recipe for a goal
+```
 
-# Web UI — bridge + extension watcher in tmux
-patchwork start-all                       # then http://localhost:3200
+**Ops & insight**
+
+```bash
+patchwork halts --window overnight        # morning summary of recent recipe halts
+patchwork judgments                       # review recent approval / decision traces
+patchwork traces export                   # bundle durable trace memory for backup
+patchwork launchd                         # macOS LaunchAgent management
+patchwork notify <Event>                  # bridge ←→ Claude Code hook wiring
+```
+
+**Safety**
+
+```bash
+patchwork kill-switch engage              # stop all background automation immediately
+patchwork kill-switch status              # is the kill-switch active?
+patchwork kill-switch release             # resume automation
+patchwork panic                           # alias for `kill-switch engage`
 ```
 
 ### Starter recipes
@@ -309,13 +349,37 @@ All hooks support inline prompts, named prompt references, and a minimum 5s cool
 
 ---
 
+## More features
+
+### 🖥️ Cowork (computer-use handoff)
+
+Hand a task off to Claude's computer-use sandbox without losing IDE context. Run `/mcp__bridge__cowork` in a regular Claude chat to snapshot editor state, then open Cowork — it reads the handoff note for instant continuity. Cowork runs in an isolated git worktree. See [docs/cowork.md](docs/cowork.md).
+
+### 🔐 OAuth 2.0 — turn your runtime into a personal API
+
+Start the bridge with `--issuer-url https://your-domain.com` to expose a full OAuth 2.0 surface: PKCE S256, dynamic client registration (RFC 7591), `/oauth/authorize` approval page, opaque 24h access tokens. Connect claude.ai, Codex CLI, or any MCP client over Streamable HTTP. See [docs/remote-access.md](docs/remote-access.md).
+
+### 🛑 Kill-switch — stop everything, now
+
+`patchwork kill-switch engage` (or the `patchwork panic` alias) halts all running automation, recipes, and orchestrator tasks immediately. `patchwork kill-switch status` reports state; `release` resumes. Designed for the moment you realise an agent is doing the wrong thing.
+
+### 🪟 Native Windows support
+
+Bridge, VS Code extension, smoke harness, and CI are all green on native Windows — no WSL required. See [Windows Quick Start](#-windows-quick-start) above.
+
+### ☀️ Morning summary
+
+`patchwork halts --window overnight` prints a one-screen digest of recipe halts (categorised, 5 most recent reasons). Pair with `patchwork judgments` to review what Claude decided overnight before approving anything.
+
+---
+
 ## Architecture
 
 ```
 patchwork-os (npm package)
 │
 ├── claude-ide-bridge          ← run alone for bridge-only mode
-│   ├── MCP server             170+ tools over WebSocket / HTTP / stdio
+│   ├── MCP server             177 tools over WebSocket / HTTP / stdio
 │   ├── VS Code extension      LSP, debugger, editor state, live diagnostics
 │   ├── Git / GitHub           gitCommit, gitPush, githubCreatePR, …
 │   ├── Terminal               runInTerminal, getTerminalOutput, …
@@ -343,7 +407,7 @@ Use whichever fits your mental model.
 
 ## Tool surface
 
-170+ MCP tools across 15 categories. Highlights:
+177 MCP tools across 15 categories. Highlights:
 
 | Category | Tools |
 |---|---|
@@ -409,7 +473,7 @@ Systemd service and deploy scripts in [`deploy/`](deploy/). Full guide: [docs/re
 
 | Feature | Status |
 |---|---|
-| 170+ MCP tools (LSP, git, tests, debugger, diagnostics) | **shipped** |
+| 177 MCP tools (LSP, git, tests, debugger, diagnostics) | **shipped** |
 | VS Code / Cursor / Windsurf / Antigravity extension | **shipped** |
 | JetBrains plugin (49 handlers) | **shipped** |
 | `patchwork init` — one-command setup | **shipped** |
@@ -419,7 +483,7 @@ Systemd service and deploy scripts in [`deploy/`](deploy/). Full guide: [docs/re
 | Multi-provider LLM (Claude, Gemini, OpenAI, Grok, Ollama) | **shipped** |
 | Connectors: Linear, Sentry, Slack, Google Calendar, Intercom, HubSpot, Datadog, Stripe | **shipped** |
 | Cross-session memory (traces, handoff notes) | **shipped** |
-| Mobile oversight PWA (push approvals) | **shipped (beta)** |
+| Mobile oversight PWA (push approvals) | **shipped** |
 | Community recipe bundles (`patchwork recipe install github:<org>/<repo>`) | **shipped** |
 | Community recipe registry / discovery UI | TBD |
 
@@ -466,7 +530,7 @@ Patchwork ships an **opt-in** anonymous usage summary. It is **disabled by defau
 
 | Doc | Contents |
 |---|---|
-| [documents/platform-docs.md](documents/platform-docs.md) | Full tool reference (170+ tools), automation hooks, connectors |
+| [documents/platform-docs.md](documents/platform-docs.md) | Full tool reference (177 tools), automation hooks, connectors |
 | [documents/prompts-reference.md](documents/prompts-reference.md) | All 72 MCP prompts |
 | [documents/styleguide.md](documents/styleguide.md) | Code conventions, UI patterns |
 | [documents/roadmap.md](documents/roadmap.md) | Development direction |

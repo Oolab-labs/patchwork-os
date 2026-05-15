@@ -1,8 +1,8 @@
 {
   "name": "claude-ide-bridge-extension",
   "displayName": "Claude IDE Bridge",
-  "description": "MCP bridge between Claude Code and your IDE. 170+ tools — diagnostics, LSP, debugger, terminal, git. Optional Patchwork OS layer adds recipes, oversight, and approval queue.",
-  "version": "1.4.15",
+  "description": "MCP bridge between Claude Code and your IDE. 177 tools — diagnostics, LSP, debugger, terminal, git. Optional Patchwork OS layer adds recipes, oversight, and approval queue.",
+  "version": "1.4.16",
   "extensionKind": [
     "workspace"
   ],
@@ -28,7 +28,7 @@
   "categories": [
     "AI",
     "Programming Languages",
-    "Other"
+    "Debuggers"
   ],
   "keywords": [
     "claude",
@@ -41,8 +41,12 @@
     "agent",
     "automation",
     "patchwork",
+    "patchwork-os",
     "anthropic",
-    "copilot"
+    "copilot",
+    "jetbrains",
+    "cowork",
+    "windsurf"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
