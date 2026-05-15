@@ -12,8 +12,13 @@ const BRIDGE = process.env.BRIDGE ?? "claude-ide-bridge";
 const PORT = 37210;
 const CAT2_PORT = 37211;
 
-// Security: shell metacharacters that could enable command injection
-const SHELL_METACHARACTERS = /[;&|`$(){}\[\]<>"'\\\n\r]/;
+// Security: shell metacharacters that could enable command injection.
+// On Windows `\` is the path separator (D:\…\bridge.cmd), not an injection
+// vector. Same fix PR #527 applied to scripts/start-all.mjs.
+const SHELL_METACHARACTERS =
+  process.platform === "win32"
+    ? /[;&|`$(){}[\]<>"'\n\r]/
+    : /[;&|`$(){}[\]<>"'\\\n\r]/;
 
 /**
  * Validate that a binary path is safe to execute.

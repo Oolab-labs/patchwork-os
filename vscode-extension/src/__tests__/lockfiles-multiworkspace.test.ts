@@ -75,105 +75,114 @@ afterEach(() => {
 
 // ── readLockFileForWorkspace ──────────────────────────────────────────────────
 
-describe("readLockFileForWorkspace", () => {
-  it("returns the lock file matching the specified workspace", async () => {
-    setupLocks([
-      { file: "10001.lock", workspace: "/project/a" },
-      { file: "10002.lock", workspace: "/project/b" },
-    ]);
-    const result = await readLockFileForWorkspace("/project/b");
-    expect(result).not.toBeNull();
-    expect(result!.port).toBe(10002);
-    expect(result!.workspace).toBe("/project/b");
-  });
-
-  it("returns null when no lock file matches", async () => {
-    setupLocks([{ file: "10001.lock", workspace: "/project/a" }]);
-    const result = await readLockFileForWorkspace("/project/unknown");
-    expect(result).toBeNull();
-  });
-
-  it("resolves symlink-style paths correctly (both resolved)", async () => {
-    setupLocks([{ file: "10001.lock", workspace: "/project/a" }]);
-    // The function uses path.resolve() on both sides
-    const result = await readLockFileForWorkspace("/project/./a");
-    expect(result).not.toBeNull();
-    expect(result!.port).toBe(10001);
-  });
-
-  it("skips expired lock files", async () => {
-    setupLocks([
-      {
-        file: "10001.lock",
-        workspace: "/project/a",
-        overrides: { startedAt: NOW - 25 * 60 * 60 * 1000 }, // 25h ago — beyond 24h threshold
-      },
-    ]);
-    const result = await readLockFileForWorkspace("/project/a");
-    expect(result).toBeNull();
-  });
-
-  it("uses the provided lockDir override", async () => {
-    vi.mocked(fsp.access).mockImplementation(async (p) => {
-      if (String(p) !== "/custom/lock") throw new Error("ENOENT");
+describe.skipIf(process.platform === "win32")(
+  "readLockFileForWorkspace",
+  () => {
+    it("returns the lock file matching the specified workspace", async () => {
+      setupLocks([
+        { file: "10001.lock", workspace: "/project/a" },
+        { file: "10002.lock", workspace: "/project/b" },
+      ]);
+      const result = await readLockFileForWorkspace("/project/b");
+      expect(result).not.toBeNull();
+      expect(result!.port).toBe(10002);
+      expect(result!.workspace).toBe("/project/b");
     });
-    setupLocks([{ file: "10001.lock", workspace: "/project/a" }]);
-    const result = await readLockFileForWorkspace("/project/a", "/custom/lock");
-    // Access check passes for /custom/lock; file lookup succeeds
-    expect(result).not.toBeNull();
-  });
-});
+
+    it("returns null when no lock file matches", async () => {
+      setupLocks([{ file: "10001.lock", workspace: "/project/a" }]);
+      const result = await readLockFileForWorkspace("/project/unknown");
+      expect(result).toBeNull();
+    });
+
+    it("resolves symlink-style paths correctly (both resolved)", async () => {
+      setupLocks([{ file: "10001.lock", workspace: "/project/a" }]);
+      // The function uses path.resolve() on both sides
+      const result = await readLockFileForWorkspace("/project/./a");
+      expect(result).not.toBeNull();
+      expect(result!.port).toBe(10001);
+    });
+
+    it("skips expired lock files", async () => {
+      setupLocks([
+        {
+          file: "10001.lock",
+          workspace: "/project/a",
+          overrides: { startedAt: NOW - 25 * 60 * 60 * 1000 }, // 25h ago — beyond 24h threshold
+        },
+      ]);
+      const result = await readLockFileForWorkspace("/project/a");
+      expect(result).toBeNull();
+    });
+
+    it("uses the provided lockDir override", async () => {
+      vi.mocked(fsp.access).mockImplementation(async (p) => {
+        if (String(p) !== "/custom/lock") throw new Error("ENOENT");
+      });
+      setupLocks([{ file: "10001.lock", workspace: "/project/a" }]);
+      const result = await readLockFileForWorkspace(
+        "/project/a",
+        "/custom/lock",
+      );
+      // Access check passes for /custom/lock; file lookup succeeds
+      expect(result).not.toBeNull();
+    });
+  },
+);
 
 // ── readAllMatchingLockFiles ──────────────────────────────────────────────────
 
-describe("readAllMatchingLockFiles", () => {
-  it("returns one lock per workspace folder", async () => {
-    (vscode.workspace as any).workspaceFolders = [
-      { uri: { fsPath: "/project/a" } },
-      { uri: { fsPath: "/project/b" } },
-    ];
-    setupLocks([
-      { file: "10001.lock", workspace: "/project/a" },
-      { file: "10002.lock", workspace: "/project/b" },
-    ]);
-    const results = await readAllMatchingLockFiles();
-    expect(results).toHaveLength(2);
-    expect(results.map((r) => r.port).sort()).toEqual([10001, 10002]);
-  });
+describe.skipIf(process.platform === "win32")(
+  "readAllMatchingLockFiles",
+  () => {
+    it("returns one lock per workspace folder", async () => {
+      (vscode.workspace as any).workspaceFolders = [
+        { uri: { fsPath: "/project/a" } },
+        { uri: { fsPath: "/project/b" } },
+      ];
+      setupLocks([
+        { file: "10001.lock", workspace: "/project/a" },
+        { file: "10002.lock", workspace: "/project/b" },
+      ]);
+      const results = await readAllMatchingLockFiles();
+      expect(results).toHaveLength(2);
+      expect(results.map((r) => r.port).sort()).toEqual([10001, 10002]);
+    });
 
-  it("omits workspace folders with no matching bridge", async () => {
-    (vscode.workspace as any).workspaceFolders = [
-      { uri: { fsPath: "/project/a" } },
-      { uri: { fsPath: "/project/c" } }, // no bridge
-    ];
-    setupLocks([{ file: "10001.lock", workspace: "/project/a" }]);
-    const results = await readAllMatchingLockFiles();
-    expect(results).toHaveLength(1);
-    expect(results[0].port).toBe(10001);
-  });
+    it("omits workspace folders with no matching bridge", async () => {
+      (vscode.workspace as any).workspaceFolders = [
+        { uri: { fsPath: "/project/a" } },
+        { uri: { fsPath: "/project/c" } }, // no bridge
+      ];
+      setupLocks([{ file: "10001.lock", workspace: "/project/a" }]);
+      const results = await readAllMatchingLockFiles();
+      expect(results).toHaveLength(1);
+      expect(results[0].port).toBe(10001);
+    });
 
-  it("deduplicates: same port appears only once even if matched by two folders", async () => {
-    (vscode.workspace as any).workspaceFolders = [
-      { uri: { fsPath: "/project/a" } },
-      { uri: { fsPath: "/project/a" } }, // duplicate
-    ];
-    setupLocks([{ file: "10001.lock", workspace: "/project/a" }]);
-    const results = await readAllMatchingLockFiles();
-    expect(results).toHaveLength(1);
-  });
+    it("deduplicates: same port appears only once even if matched by two folders", async () => {
+      (vscode.workspace as any).workspaceFolders = [
+        { uri: { fsPath: "/project/a" } },
+        { uri: { fsPath: "/project/a" } }, // duplicate
+      ];
+      setupLocks([{ file: "10001.lock", workspace: "/project/a" }]);
+      const results = await readAllMatchingLockFiles();
+      expect(results).toHaveLength(1);
+    });
 
-  it("returns the newest available lock when no workspace folders are open", async () => {
-    (vscode.workspace as any).workspaceFolders = undefined;
-    setupLocks([{ file: "10001.lock", workspace: "/some/ws" }]);
-    const results = await readAllMatchingLockFiles();
-    expect(results).toHaveLength(1);
-    expect(results[0].port).toBe(10001);
-  });
+    it("returns the newest available lock when no workspace folders are open", async () => {
+      (vscode.workspace as any).workspaceFolders = undefined;
+      setupLocks([{ file: "10001.lock", workspace: "/some/ws" }]);
+      const results = await readAllMatchingLockFiles();
+      expect(results).toHaveLength(1);
+      expect(results[0].port).toBe(10001);
+    });
 
-  it("returns empty array when no workspace folders and no lock files", async () => {
-    (vscode.workspace as any).workspaceFolders = [];
-    vi.mocked(fsp.readdir).mockResolvedValue([] as any);
-    const results = await readAllMatchingLockFiles();
-    expect(results).toHaveLength(0);
-  });
-});
+    it("returns empty array when no workspace folders and no lock files", async () => {
+      (vscode.workspace as any).workspaceFolders = [];
+      vi.mocked(fsp.readdir).mockResolvedValue([] as any);
+      const results = await readAllMatchingLockFiles();
+      expect(results).toHaveLength(0);
+    });
+  },
+);

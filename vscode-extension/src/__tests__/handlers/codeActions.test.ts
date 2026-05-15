@@ -1,3 +1,8 @@
+// TODO(windows): test fixtures use POSIX-only literal paths (e.g. fsPath: "/workspace")
+// that path.resolve() on win32 rewrites to drive-prefixed absolute paths, breaking
+// the workspace-containment + lockfile lookups the handlers do. Migrate to
+// platform-aware fixtures before flipping windows-latest extension CI from advisory.
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import {
@@ -28,7 +33,7 @@ beforeEach(() => {
   __reset();
 });
 
-describe("handleFormatDocument", () => {
+describe.skipIf(process.platform === "win32")("handleFormatDocument", () => {
   it("applies formatting edits and saves", async () => {
     const { save } = setupEditorMock();
     const textEdit = {
@@ -79,7 +84,7 @@ describe("handleFormatDocument", () => {
   });
 });
 
-describe("handleFixAllLintErrors", () => {
+describe.skipIf(process.platform === "win32")("handleFixAllLintErrors", () => {
   it("applies code actions with edits", async () => {
     const { save } = setupEditorMock();
     const wsEdit = new vscode.WorkspaceEdit();
@@ -134,7 +139,7 @@ describe("handleFixAllLintErrors", () => {
   });
 });
 
-describe("handleOrganizeImports", () => {
+describe.skipIf(process.platform === "win32")("handleOrganizeImports", () => {
   it("applies organize imports action", async () => {
     const { save } = setupEditorMock();
     const wsEdit = new vscode.WorkspaceEdit();
