@@ -64,6 +64,9 @@ export class HeadlessLspClient {
     try {
       proc = spawn("typescript-language-server", ["--stdio"], {
         stdio: ["pipe", "pipe", "pipe"],
+        // Windows: typescript-language-server is a `.cmd` shim; Node's
+        // spawn can't launch a .cmd without a shell.
+        shell: process.platform === "win32",
       });
     } catch (err) {
       this.initPromise = null;
