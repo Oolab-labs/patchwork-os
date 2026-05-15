@@ -46,13 +46,18 @@ describe("treeKill", () => {
   describe("on win32", () => {
     beforeEach(() => setPlatform("win32"));
 
-    it("invokes taskkill /F /T /PID for live children", () => {
-      treeKill(fakeChild({ pid: 1234 }));
+    it("invokes taskkill /F /T /PID AND child.kill backstop", () => {
+      const kill = vi.fn(() => true);
+      treeKill(fakeChild({ pid: 1234, kill }));
       expect(execFileSyncMock).toHaveBeenCalledWith(
         "taskkill",
         ["/F", "/T", "/PID", "1234"],
         expect.objectContaining({ stdio: "ignore", windowsHide: true }),
       );
+      // Backstop fires the `close` event for test stubs that override
+      // child.kill, and is a no-op on real Windows since taskkill already
+      // killed the immediate child.
+      expect(kill).toHaveBeenCalledWith("SIGTERM");
       expect(processKillSpy).not.toHaveBeenCalled();
     });
 

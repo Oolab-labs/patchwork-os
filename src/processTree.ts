@@ -38,18 +38,21 @@ export function treeKill(
       // Best-effort. Common reasons: child already exited, permission denied,
       // taskkill not on PATH (locked-down Windows installs).
     }
-    return;
+  } else {
+    // POSIX: process-group kill (works when child was spawned detached:true →
+    // setsid → process-group leader). ESRCH for non-detached children is
+    // expected; child.kill() below handles the single-child case.
+    try {
+      process.kill(-pid, signal);
+    } catch {
+      /* not a group leader */
+    }
   }
 
-  // POSIX: try process-group kill first (works when child was spawned
-  // detached:true → setsid → process-group leader). ESRCH for non-detached
-  // children is expected and swallowed; child.kill() below handles the
-  // single-child case so the immediate child always gets signaled.
-  try {
-    process.kill(-pid, signal);
-  } catch {
-    /* not a group leader */
-  }
+  // Single-child backstop on every platform. On Windows, taskkill /T should
+  // have killed the immediate child already, making this a no-op; but it
+  // ensures the ChildProcess fires its `close` event in test stubs that
+  // override `child.kill` and short-circuits the spawn/auto-kill flow.
   try {
     child.kill(signal);
   } catch {
