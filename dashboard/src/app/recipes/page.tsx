@@ -146,6 +146,30 @@ interface RunModalState {
   recipe: Recipe;
 }
 
+// Per-session confirmation gate for the Run button. The audit critique was that
+// confirming on EVERY Run trains users to dismiss the dialog. Confirming once
+// per browser session keeps the "you're about to spend money" signal at first
+// touch without becoming friction noise on iteration.
+const SESSION_RUN_CONFIRMED_KEY = "patchwork:run-confirmed";
+
+function hasConfirmedRunThisSession(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(SESSION_RUN_CONFIRMED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markRunConfirmedThisSession(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(SESSION_RUN_CONFIRMED_KEY, "1");
+  } catch {
+    /* sessionStorage may be unavailable (private mode); fail open. */
+  }
+}
+
 interface RecipeContentResponse {
   name?: string;
   content?: string;
@@ -216,6 +240,32 @@ function RunModal({
               onConfirm(values);
             }}
           >
+            {vars.length === 0 && (
+              <div
+                style={{
+                  marginBottom: "var(--s-4)",
+                  padding: "var(--s-3) var(--s-4)",
+                  border: "1px solid var(--line-2)",
+                  borderRadius: "var(--r-1)",
+                  background: "var(--bg-2)",
+                  fontSize: "var(--fs-m)",
+                  color: "var(--fg-2)",
+                }}
+              >
+                Running this recipe will execute its steps immediately and may
+                use API credits or call external services.
+                {state.recipe.trigger && state.recipe.trigger !== "manual" && (
+                  <>
+                    {" "}
+                    Trigger:{" "}
+                    <code style={{ fontFamily: "var(--font-mono)" }}>
+                      {state.recipe.trigger}
+                    </code>
+                    .
+                  </>
+                )}
+              </div>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
               {vars.map((v) => (
                 <div key={v.name}>
@@ -256,7 +306,7 @@ function RunModal({
               <button type="button" className="btn ghost" onClick={onClose} disabled={running}>
                 Cancel
               </button>
-              <button type="submit" className="btn" disabled={running}>
+              <button type="submit" className="btn warn" disabled={running}>
                 {running ? "Starting…" : "Run recipe"}
               </button>
             </div>
@@ -659,7 +709,11 @@ export default function RecipesPage() {
 
   function handleRunClick(recipe: Recipe) {
     const vars = recipe.vars ?? [];
-    if (vars.length === 0) {
+    // Vars-less recipes used to fire on first click with no confirm. We open
+    // the same RunModal (which has zero fields when there are no vars, so it
+    // becomes a pure confirm dialog) UNLESS the user has already acknowledged
+    // a Run this session.
+    if (vars.length === 0 && hasConfirmedRunThisSession()) {
       void executeRun(recipe.name);
       return;
     }
@@ -769,6 +823,7 @@ export default function RecipesPage() {
     setModalRunning(true);
     try {
       await executeRun(name, vars);
+      markRunConfirmedThisSession();
     } finally {
       setModal(null);
       setModalRunning(false);

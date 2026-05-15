@@ -329,9 +329,10 @@ export default function RecipeEditPage({
           </Link>
           <button
             type="button"
-            className="btn"
+            className="btn warn"
             onClick={() => void handleRun()}
             disabled={running || loading}
+            title="Run the saved recipe immediately. May use API credits or call external services."
           >
             {running ? "Starting…" : "Run"}
           </button>
