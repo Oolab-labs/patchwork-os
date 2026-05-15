@@ -4177,14 +4177,14 @@ if (__subcommandWillRun) {
       import("node:child_process")
         .then(({ exec }) => {
           exec(
-            "npm view claude-ide-bridge version",
+            "npm view patchwork-os version",
             { timeout: 5000 },
             (err, stdout) => {
               if (err || !stdout) return;
               const latest = stdout.trim();
               if (latest && semverGt(latest, PACKAGE_VERSION)) {
                 console.log(
-                  `\n  Bridge v${latest} available — run: npm update -g claude-ide-bridge\n`,
+                  `\n  Patchwork OS v${latest} available — run: npm update -g patchwork-os\n`,
                 );
               }
             },

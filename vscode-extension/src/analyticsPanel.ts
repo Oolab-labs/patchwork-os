@@ -191,9 +191,16 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
           handoffPreview,
           perfReport,
           codiconsUri,
+          webviewView.webview,
         );
       } catch {
-        webviewView.webview.html = this._buildHtml(null, null);
+        webviewView.webview.html = this._buildHtml(
+          null,
+          null,
+          undefined,
+          undefined,
+          webviewView.webview,
+        );
       }
     };
 
@@ -760,9 +767,22 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     handoffPreview: string | null,
     perfReport?: PerformanceReport | null,
     codiconsUri?: vscode.Uri,
+    webview?: vscode.Webview,
   ): string {
+    // Per-render CSP nonce — used to allow only the one inline <script> we
+    // emit. Without it, any string sneaked into the report (e.g. a malicious
+    // bridge response with `</script><script>…` inside report.generatedAt)
+    // can break out of JSON.stringify and execute in the webview.
+    const nonce = Array.from({ length: 16 }, () =>
+      Math.floor(Math.random() * 256)
+        .toString(16)
+        .padStart(2, "0"),
+    ).join("");
+    const cspSource = webview?.cspSource ?? "";
+    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; font-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">`;
+
     if (!report) {
-      return `<!DOCTYPE html><html><body style="font-family:var(--vscode-font-family);padding:8px;color:var(--vscode-foreground)">
+      return `<!DOCTYPE html><html><head>${csp}</head><body style="font-family:var(--vscode-font-family);padding:8px;color:var(--vscode-foreground)">
 <p style="color:var(--vscode-descriptionForeground);font-size:12px">Bridge not connected.</p>
 <p style="font-size:11px">Start the bridge with:<br><code>claude-ide-bridge --watch --full</code></p>
 </body></html>`;
@@ -922,6 +942,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     return `<!DOCTYPE html>
 <html>
 <head>
+${csp}
 ${codiconsUri ? `<link rel="stylesheet" href="${codiconsUri}">` : ""}
 <style>
   * { box-sizing: border-box; }
@@ -1044,7 +1065,7 @@ ${
   Also works headless: <code>claude-ide-bridge quick-task fix-errors</code>
 </div>
 
-<script>
+<script nonce="${nonce}">
 const vscodeApi = acquireVsCodeApi();
 const generatedAt = new Date(${JSON.stringify(report.generatedAt)});
 const currentP95 = ${JSON.stringify(currentP95)};
