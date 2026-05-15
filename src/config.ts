@@ -157,7 +157,10 @@ export const DB_ALLOWLIST_EXTRAS = [
 ];
 
 /** Commands that can execute arbitrary code via flags like -e, -c, --eval.
- *  These are blocked from the default allowlist but can be added via --allow-command. */
+ *  These are blocked from the default allowlist and from --allow-command /
+ *  commandAllowlist additions. Entries are bare names; Windows extensions
+ *  (`.exe` / `.cmd` / `.bat` / `.com` / `.ps1`) are stripped before lookup
+ *  by `isInterpreterCommand()`. */
 export const INTERPRETER_COMMANDS = new Set([
   "node",
   "python",
@@ -175,7 +178,33 @@ export const INTERPRETER_COMMANDS = new Set([
   "perl",
   "lua",
   "php",
+  // Windows shells & interpreters. cmd.exe `/c` and PowerShell `-Command`
+  // both accept arbitrary command strings; `pwsh` is PowerShell 7+.
+  "cmd",
+  "powershell",
+  "pwsh",
+  "wscript",
+  "cscript",
 ]);
+
+/**
+ * Case-insensitive interpreter check that also strips Windows executable
+ * extensions and any leading path. Defends against bypass attempts like:
+ *   --allow-command node.exe
+ *   --allow-command C:\\Windows\\System32\\cmd.exe
+ *   --allow-command Powershell.EXE
+ */
+export function isInterpreterCommand(cmd: string): boolean {
+  // Strip any directory prefix — `C:\Windows\System32\cmd.exe` → `cmd.exe`.
+  // Handle both POSIX and Windows separators since the input is user-supplied
+  // and may be authored on either platform.
+  let base = cmd;
+  const lastSep = Math.max(base.lastIndexOf("/"), base.lastIndexOf("\\"));
+  if (lastSep >= 0) base = base.slice(lastSep + 1);
+  // Lowercase, then strip a single trailing executable extension.
+  base = base.toLowerCase().replace(/\.(exe|cmd|bat|com|ps1)$/i, "");
+  return INTERPRETER_COMMANDS.has(base);
+}
 
 const EDITOR_IDE_NAMES: Record<string, string> = {
   windsurf: "Windsurf",
@@ -424,7 +453,7 @@ export function parseConfig(argv: string[]): Config {
   let jsonl = false;
   let linters: string[] = fileConfig.linters ?? [];
   for (const cmd of fileConfig.commandAllowlist ?? []) {
-    if (INTERPRETER_COMMANDS.has(cmd)) {
+    if (isInterpreterCommand(cmd)) {
       throw new Error(
         `"${cmd}" is an interpreter and cannot be added via commandAllowlist in config file (arbitrary code execution risk)`,
       );
@@ -614,7 +643,7 @@ export function parseConfig(argv: string[]): Config {
         const cmd = requireArg(args, ++i, "--allow-command");
         if (cmd.length > 256)
           throw new Error("--allow-command value too long (max 256 chars)");
-        if (INTERPRETER_COMMANDS.has(cmd.toLowerCase())) {
+        if (isInterpreterCommand(cmd)) {
           throw new Error(
             `"${cmd}" is an interpreter and cannot be added via --allow-command (arbitrary code execution risk)`,
           );

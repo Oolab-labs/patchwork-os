@@ -105,6 +105,47 @@ describe("parseConfig --allow-command interpreter guard", () => {
     ]);
     expect(config.commandAllowlist).toContain("prettier");
   });
+
+  // Regression: before isInterpreterCommand(), a Windows attacker could
+  // bypass the interpreter block with `--allow-command node.exe` since the
+  // set only contained bare names. Extensions, casing, and path prefixes
+  // are now normalised.
+  it("blocks Windows .exe / .cmd / .bat extensions", () => {
+    for (const cmd of ["node.exe", "Node.EXE", "python.exe", "make.cmd"]) {
+      expect(() =>
+        parseConfig(["--workspace", "/tmp", "--allow-command", cmd]),
+      ).toThrow(/interpreter/);
+    }
+  });
+
+  it("blocks Windows shells (cmd, powershell, pwsh)", () => {
+    for (const cmd of [
+      "cmd",
+      "cmd.exe",
+      "powershell",
+      "powershell.exe",
+      "pwsh",
+      "pwsh.exe",
+      "wscript.exe",
+      "cscript.exe",
+    ]) {
+      expect(() =>
+        parseConfig(["--workspace", "/tmp", "--allow-command", cmd]),
+      ).toThrow(/interpreter/);
+    }
+  });
+
+  it("blocks interpreters supplied with an absolute path", () => {
+    for (const cmd of [
+      "/usr/local/bin/node",
+      "C:\\Windows\\System32\\cmd.exe",
+      "C:/Windows/System32/powershell.exe",
+    ]) {
+      expect(() =>
+        parseConfig(["--workspace", "/tmp", "--allow-command", cmd]),
+      ).toThrow(/interpreter/);
+    }
+  });
 });
 
 // Helper: parseConfig slices argv at index 2, so prefix with two dummy entries
