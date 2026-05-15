@@ -1,5 +1,5 @@
 import fc from "fast-check";
-import { describe, expect, it, test } from "vitest";
+import { afterEach, describe, expect, it, test } from "vitest";
 import {
   evaluateWhen,
   executeAutomationPolicy,
@@ -62,6 +62,64 @@ describe("matchesCondition", () => {
   it("returns false on invalid glob", () => {
     // Extremely malformed pattern — just ensure no throw
     expect(() => matchesCondition("[invalid", "value")).not.toThrow();
+  });
+
+  // Regression: before this normalisation, every onFileSave/onFileChanged
+  // hook with a POSIX-style glob silently never fired on Windows because
+  // VS Code's Uri.fsPath surfaces paths with backslashes (C:\Users\…) and
+  // minimatch is strict on `/`.
+  describe("Windows path normalisation", () => {
+    const ORIG_PLATFORM = process.platform;
+    afterEach(() => {
+      Object.defineProperty(process, "platform", {
+        value: ORIG_PLATFORM,
+        configurable: true,
+      });
+    });
+
+    function setWin() {
+      Object.defineProperty(process, "platform", {
+        value: "win32",
+        configurable: true,
+      });
+    }
+
+    it("matches POSIX glob against backslash-separated Windows path", () => {
+      setWin();
+      expect(matchesCondition("**/*.ts", "C:\\repo\\src\\foo.ts")).toBe(true);
+      expect(matchesCondition("**/*.ts", "C:\\repo\\src\\foo.js")).toBe(false);
+    });
+
+    it("respects nocase on Windows (NTFS is case-insensitive)", () => {
+      setWin();
+      expect(matchesCondition("**/*.ts", "C:\\repo\\SRC\\Foo.TS")).toBe(true);
+    });
+
+    it("normalises backslashes in the user-supplied pattern too", () => {
+      setWin();
+      // A Windows user writing the glob with native separators should still
+      // match — minimatch ordinarily treats `\` as an escape character.
+      expect(matchesCondition("**\\*.ts", "C:\\repo\\src\\foo.ts")).toBe(true);
+    });
+
+    it("negation pattern still works on Windows", () => {
+      setWin();
+      expect(matchesCondition("!**/*.test.ts", "C:\\repo\\src\\foo.ts")).toBe(
+        true,
+      );
+      expect(
+        matchesCondition("!**/*.test.ts", "C:\\repo\\src\\foo.test.ts"),
+      ).toBe(false);
+    });
+
+    it("POSIX nocase is OFF (Linux/macOS case-sensitive filesystems)", () => {
+      Object.defineProperty(process, "platform", {
+        value: "linux",
+        configurable: true,
+      });
+      // POSIX path with mismatched case should not match without nocase.
+      expect(matchesCondition("**/foo.ts", "/repo/src/FOO.TS")).toBe(false);
+    });
   });
 });
 
