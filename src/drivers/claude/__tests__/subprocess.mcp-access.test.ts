@@ -125,6 +125,40 @@ describe("SubprocessDriver mcpAccess opt-in", () => {
     ).toBe(true);
   });
 
+  // Regression: PR #525 fixed `effectiveBinary` resolution for claude -p's
+  // own spawn, but `claude -p` then re-spawns the bridge via the stdio MCP
+  // config — and that spawn ALSO can't resolve a bare `.cmd` on Windows.
+  // Before this fix, the config wrote `command: "claude-ide-bridge"`, so
+  // MCP-over-claude-CLI silently failed on Windows.
+  it("writes .cmd shim into MCP stdio config on win32", async () => {
+    const ORIG_PLATFORM = process.platform;
+    Object.defineProperty(process, "platform", {
+      value: "win32",
+      configurable: true,
+    });
+    try {
+      const driver = new SubprocessDriver("claude", "ant", vi.fn(), () => ({
+        url: "http://127.0.0.1:3101/mcp",
+        authToken: "tkn-abc",
+      }));
+      await finishRun(
+        driver.run(makeInput({ providerOptions: { mcpAccess: true } })),
+      );
+      const args = spawnMock.mock.calls[0]![1] as string[];
+      const idx = args.indexOf("--mcp-config");
+      const cfgPath = args[idx + 1]!;
+      const cfg = JSON.parse(readFileSync(cfgPath, "utf-8")) as {
+        mcpServers: { patchwork: { command: string } };
+      };
+      expect(cfg.mcpServers.patchwork.command).toBe("claude-ide-bridge.cmd");
+    } finally {
+      Object.defineProperty(process, "platform", {
+        value: ORIG_PLATFORM,
+        configurable: true,
+      });
+    }
+  });
+
   it("logs a warning when mcpAccess: true but no bridgeMcp accessor wired", async () => {
     const log = vi.fn();
     const driver = new SubprocessDriver("claude", "ant", log);

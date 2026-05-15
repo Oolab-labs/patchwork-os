@@ -59,7 +59,15 @@ const DIST_INDEX = path.join(BRIDGE_DIR, "dist", "index.js");
 const IS_WIN = process.platform === "win32";
 
 // ── Security helpers ──────────────────────────────────────────────────────────
-const SHELL_METACHARACTERS = /[;&|`$(){}[\]<>"'\\\n\r]/;
+// On Windows `\` is the path separator (e.g. `C:\Program Files\nodejs\node.exe`),
+// not a shell-injection vector. cmd.exe's actual metacharacters are
+// `^ & < > | ( )` — `\` does not need escaping. Including it in the regex
+// would reject every legitimate Windows path that spawnProc validates
+// (process.execPath, npm.cmd, npx.cmd, etc.) and fail-stop the whole script.
+// Same fix that PR #525 applied to vscode-extension/src/bridgeProcess.ts.
+const SHELL_METACHARACTERS = IS_WIN
+  ? /[;&|`$(){}[\]<>"'\n\r]/
+  : /[;&|`$(){}[\]<>"'\\\n\r]/;
 
 /**
  * Validate that a command path is safe to execute.

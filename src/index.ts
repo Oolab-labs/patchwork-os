@@ -61,6 +61,7 @@ import {
   SYMLINK_INSTALL_FIX,
 } from "./installGuard.js";
 import { PACKAGE_VERSION, semverGt } from "./version.js";
+import { ensureCmdShim } from "./winShim.js";
 
 const __dirnameTop = path.dirname(fileURLToPath(import.meta.url));
 
@@ -3335,8 +3336,11 @@ Steps performed:
         `  ✓ MCP shim — already registered in ${claudeJsonAbs}\n\n`,
       );
     } else {
+      // claude -p spawns the stdio command via Node's child_process, which
+      // can't resolve a bare `.cmd` shim on Windows. Record the `.cmd` form
+      // on win32 so the bridge binary is findable by the spawned process.
       mcpServers["claude-ide-bridge"] = {
-        command: "claude-ide-bridge",
+        command: ensureCmdShim("claude-ide-bridge"),
         args: ["shim"],
         type: "stdio",
       };
