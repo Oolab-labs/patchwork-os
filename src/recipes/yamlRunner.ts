@@ -38,6 +38,7 @@ import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { loadConfig as loadPatchworkConfigSync } from "../patchworkConfig.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
 import type { RecipeRunLog } from "../runLog.js";
+import { ensureCmdShim } from "../winShim.js";
 import {
   executeAgent as _executeAgent,
   type AgentExecutorDeps,
@@ -1397,15 +1398,15 @@ function buildAgentExecutorDeps(
  */
 export function resolveClaudeBinary(): string {
   const envOverride = process.env.PATCHWORK_CLAUDE_BINARY;
-  if (envOverride && envOverride.length > 0) return envOverride;
+  if (envOverride && envOverride.length > 0) return ensureCmdShim(envOverride);
   try {
     const cfg = loadPatchworkConfigSync();
     if (cfg.claudeBinary && cfg.claudeBinary.length > 0)
-      return cfg.claudeBinary;
+      return ensureCmdShim(cfg.claudeBinary);
   } catch {
     // ignore — fall through to the "claude" default
   }
-  return "claude";
+  return ensureCmdShim("claude");
 }
 
 function defaultClaudeCodeFn(

@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { ensureCmdShim } from "../../winShim.js";
 import { sanitizeEnv } from "../claude/envSanitizer.js";
 import { splitLines } from "../claude/streamParser.js";
 import type {
@@ -236,11 +237,16 @@ export class GeminiSubprocessDriver implements ProviderDriver {
         }
       }
 
+      // On Windows, npm-installed gemini is a `.cmd` shim that spawn(shell:false)
+      // can't launch by bare name (Node only auto-resolves `.exe` via PATHEXT).
+      // Same fix that PR #525 applied to the Claude subprocess driver.
+      const spawnBinary = ensureCmdShim(this.binary);
+
       this.log(
-        `[GeminiSubprocessDriver] spawning: ${this.binary} -p <prompt> (workspace: ${input.workspace})`,
+        `[GeminiSubprocessDriver] spawning: ${spawnBinary} -p <prompt> (workspace: ${input.workspace})`,
       );
 
-      const child = spawn(this.binary, args, {
+      const child = spawn(spawnBinary, args, {
         cwd: homedir(),
         env,
         signal: input.signal,

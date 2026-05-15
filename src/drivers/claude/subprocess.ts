@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import path, { join } from "node:path";
+import { join } from "node:path";
+import { ensureCmdShim } from "../../winShim.js";
 import type {
   ProviderDriver,
   ProviderTaskInput,
@@ -38,11 +39,15 @@ const OUTPUT_CAP = 50 * 1024; // 50KB
 function writeMcpConfigFile(_mcp: { url: string; authToken: string }): string {
   const dir = mkdtempSync(join(tmpdir(), "patchwork-mcp-"));
   const path = join(dir, "mcp.json");
+  // claude -p spawns the stdio command itself via Node's child_process, which
+  // can't resolve a bare `.cmd` shim on Windows (shell:false; only PATHEXT-
+  // listed `.exe` files auto-resolve). Record the `.cmd` form on win32 so
+  // claude -p can find the bridge binary that npm installed.
   const config = {
     mcpServers: {
       patchwork: {
         type: "stdio",
-        command: "claude-ide-bridge",
+        command: ensureCmdShim("claude-ide-bridge"),
         args: ["shim"],
       },
     },
@@ -96,17 +101,12 @@ export class SubprocessDriver implements ProviderDriver {
     const maxBudgetUsd =
       typeof opts.maxBudgetUsd === "number" ? opts.maxBudgetUsd : undefined;
 
-    let effectiveBinary = useAnt ? this.antBinary : this.binary;
     // npm-installed shims on Windows are `.cmd` files. Node's spawn with
     // shell:false can't launch them via a bare name — without the explicit
     // extension every Claude subprocess spawn ENOENTs on Windows.
-    if (
-      process.platform === "win32" &&
-      !path.extname(effectiveBinary) &&
-      !effectiveBinary.includes(path.sep)
-    ) {
-      effectiveBinary = `${effectiveBinary}.cmd`;
-    }
+    const effectiveBinary = ensureCmdShim(
+      useAnt ? this.antBinary : this.binary,
+    );
     // Re-write before each run — /tmp may be cleared on long-running servers.
     this.settings.write();
 

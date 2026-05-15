@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Isolate from the developer's real ~/.patchwork/config.json — agent steps
 // now read it via a static import (was a broken `require()` under ESM that
@@ -2544,8 +2544,10 @@ describe("resolveClaudeBinary — override precedence", async () => {
     withEnv("", () => {
       // No PatchworkConfig.claudeBinary mocked here, so this falls through
       // to the literal "claude" default. The point is: empty string in
-      // env shouldn't mean "spawn empty-string-binary".
-      expect(resolveClaudeBinary()).toBe("claude");
+      // env shouldn't mean "spawn empty-string-binary". On Windows the
+      // default is suffixed with `.cmd` so spawn(shell:false) can resolve it.
+      const expected = process.platform === "win32" ? "claude.cmd" : "claude";
+      expect(resolveClaudeBinary()).toBe(expected);
     });
   });
 
@@ -2560,6 +2562,51 @@ describe("resolveClaudeBinary — override precedence", async () => {
       const result = resolveClaudeBinary();
       expect(typeof result).toBe("string");
       expect(result.length).toBeGreaterThan(0);
+    });
+  });
+
+  // Regression: PR #525 fixed the parallel resolver in
+  // src/drivers/claude/subprocess.ts but missed this one. Before the fix,
+  // every recipe `agent` step on Windows ENOENT'd because npm installs
+  // `claude` as a `.cmd` shim and spawn(shell:false) won't auto-resolve.
+  describe("Windows .cmd shim resolution", () => {
+    const ORIG_PLATFORM = process.platform;
+    afterEach(() => {
+      Object.defineProperty(process, "platform", {
+        value: ORIG_PLATFORM,
+        configurable: true,
+      });
+    });
+
+    it("appends .cmd to bare 'claude' default on win32", () => {
+      Object.defineProperty(process, "platform", {
+        value: "win32",
+        configurable: true,
+      });
+      withEnv(undefined, () => {
+        const result = resolveClaudeBinary();
+        // Either the default `claude` was found (→ `claude.cmd`) or the
+        // dev's ~/.patchwork/config.json sets `claudeBinary` to an absolute
+        // path (which we leave alone). Both endings are acceptable; bare
+        // `claude` with no extension is the regression.
+        expect(
+          result === "claude.cmd" ||
+            result.includes("\\") ||
+            result.includes("/"),
+        ).toBe(true);
+      });
+    });
+
+    it("leaves env-provided absolute paths alone on win32", () => {
+      Object.defineProperty(process, "platform", {
+        value: "win32",
+        configurable: true,
+      });
+      withEnv("C:\\Program Files\\nodejs\\claude.cmd", () => {
+        expect(resolveClaudeBinary()).toBe(
+          "C:\\Program Files\\nodejs\\claude.cmd",
+        );
+      });
     });
   });
 });
