@@ -206,7 +206,9 @@ export function register(ctx) {
     },
   );
   try {
-    await waitForBridge(brokenPort, 5000, ENV.CLAUDE_CONFIG_DIR);
+    // 10s (not 5s) — matches 7.1 and gives the bridge headroom on Windows
+    // where shell:true wraps the .cmd shim and slows startup.
+    await waitForBridge(brokenPort, 10_000, ENV.CLAUDE_CONFIG_DIR);
     const token = readLockFrom(brokenPort, ENV.CLAUDE_CONFIG_DIR).authToken;
     const ws = await mcpHandshake(brokenPort, token);
     const tools = await listTools(ws);

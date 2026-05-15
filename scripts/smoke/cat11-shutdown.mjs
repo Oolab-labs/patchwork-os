@@ -96,25 +96,32 @@ try {
     `11.4 exit code is 0 or 143 (got ${exitCode})`,
   );
 
-  // 11.5 Lock file removed
-  // Give OS a brief moment to flush — lock removal happens before process exit
-  await sleep(300);
-  assert(
-    !lockExistsIn(PORT, ENV.CLAUDE_CONFIG_DIR),
-    "11.5 lock file removed after shutdown",
-  );
+  // 11.5 / 11.6 — clean-shutdown invariants. On POSIX SIGTERM hits the
+  // bridge's signal handlers, which unlink the lock file + close the HTTP
+  // server. Windows `process.kill('SIGTERM')` is documented as
+  // TerminateProcess (no clean-shutdown handlers fire), so the lockfile
+  // cleanup + HTTP-server close paths aren't exercised by SIGTERM here.
+  // Skip these two on win32 until the harness uses a Windows-clean exit
+  // path (HTTP /shutdown endpoint, CTRL_BREAK_EVENT, etc).
+  if (process.platform !== "win32") {
+    // Give OS a brief moment to flush — lock removal happens before process exit
+    await sleep(300);
+    assert(
+      !lockExistsIn(PORT, ENV.CLAUDE_CONFIG_DIR),
+      "11.5 lock file removed after shutdown",
+    );
 
-  // 11.6 HTTP endpoint no longer accepts connections
-  const BASE = `http://127.0.0.1:${PORT}`;
-  const r = await httpPost(
-    `${BASE}/mcp`,
-    { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
-    { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-  ).catch(() => ({ status: 0 }));
-  assert(
-    r.status === 0 || r.status === 503 || r.status === 404,
-    `11.6 HTTP endpoint closed after shutdown (got ${r.status})`,
-  );
+    const BASE = `http://127.0.0.1:${PORT}`;
+    const r = await httpPost(
+      `${BASE}/mcp`,
+      { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
+      { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    ).catch(() => ({ status: 0 }));
+    assert(
+      r.status === 0 || r.status === 503 || r.status === 404,
+      `11.6 HTTP endpoint closed after shutdown (got ${r.status})`,
+    );
+  }
 } finally {
   // Ensure bridge is dead even if test throws
   try {
