@@ -91,9 +91,13 @@ export function createRefactorPreviewTool(
       const endColumn = requireInt(args, "endColumn");
       const actionTitle = requireString(args, "actionTitle");
 
-      let result: unknown;
+      let envelope: {
+        value: unknown;
+        error: string | null;
+        errorData: Record<string, unknown> | null;
+      };
       try {
-        result = await extensionClient.previewCodeAction(
+        envelope = await extensionClient.previewCodeAction(
           filePath,
           startLine,
           startColumn,
@@ -111,6 +115,15 @@ export function createRefactorPreviewTool(
         }
         throw err;
       }
+      if (envelope.error) {
+        const available = envelope.errorData?.available;
+        const suffix =
+          Array.isArray(available) && available.length > 0
+            ? ` Available: ${available.join(", ")}`
+            : "";
+        return error(`${envelope.error}.${suffix}`);
+      }
+      const result = envelope.value;
 
       if (!result) return error("No response from extension");
       const r = result as Record<string, unknown>;

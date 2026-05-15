@@ -811,6 +811,30 @@ export function createPreviewCodeActionTool(
           "Extension returned no result — code action may not be available",
         );
       }
+      // previewCodeAction returns an envelope { value, error, errorData };
+      // unwrap to preserve the upstream error message and any `available`
+      // alternative-action list when the requested title wasn't found.
+      if (
+        typeof result === "object" &&
+        result !== null &&
+        "value" in result &&
+        "error" in result
+      ) {
+        const env = result as {
+          value: unknown;
+          error: string | null;
+          errorData: Record<string, unknown> | null;
+        };
+        if (env.error) {
+          const available = env.errorData?.available;
+          const suffix =
+            Array.isArray(available) && available.length > 0
+              ? ` Available: ${available.join(", ")}`
+              : "";
+          return error(`${env.error}.${suffix}`);
+        }
+        return successStructured(env.value as Record<string, unknown>);
+      }
       return successStructured(result);
     },
   };

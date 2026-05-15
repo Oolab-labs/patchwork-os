@@ -109,9 +109,13 @@ export function createOrganizeImportsTool(
         });
       }
 
-      let result: unknown;
+      let envelope: {
+        value: unknown;
+        error: string | null;
+        errorData: Record<string, unknown> | null;
+      };
       try {
-        result = await extensionClient.organizeImports(resolved);
+        envelope = await extensionClient.organizeImports(resolved);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(
@@ -120,9 +124,12 @@ export function createOrganizeImportsTool(
         }
         throw err;
       }
+      const result = envelope.value;
       if (result === null) {
         return error({
-          error: "Extension failed to organize imports",
+          error:
+            envelope.error ??
+            "Extension failed to organize imports (no further detail)",
         });
       }
 

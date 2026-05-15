@@ -85,10 +85,13 @@ export function createFixAllLintErrorsTool(
       }
 
       // Try extension first
+      let extensionError: string | null = null;
       if (extensionClient.isConnected()) {
         try {
-          const result = await extensionClient.fixAllLintErrors(resolved);
-          if (result !== null) {
+          const { value, error: extErr } =
+            await extensionClient.fixAllLintErrors(resolved);
+          extensionError = extErr;
+          if (value !== null) {
             const contentAfter = fs.readFileSync(resolved, "utf-8");
             return successStructured({
               fixed: true,
@@ -103,6 +106,9 @@ export function createFixAllLintErrorsTool(
           // Timeout — fall through to CLI fallback
         }
       }
+      const extErrPrefix = extensionError
+        ? `Extension fix-all failed (${extensionError}); `
+        : "";
 
       // CLI fallback
       const ext = path.extname(resolved).toLowerCase();
@@ -111,7 +117,7 @@ export function createFixAllLintErrorsTool(
         return error({
           fixed: false,
           source: "cli",
-          error: `No lint fixer configured for extension "${ext}"`,
+          error: `${extErrPrefix}No lint fixer configured for extension "${ext}"`,
         });
       }
 
@@ -121,7 +127,7 @@ export function createFixAllLintErrorsTool(
         return error({
           fixed: false,
           source: "cli",
-          error: `No available lint fixer found. Tried: ${names}`,
+          error: `${extErrPrefix}No available lint fixer found. Tried: ${names}`,
         });
       }
 
@@ -136,7 +142,7 @@ export function createFixAllLintErrorsTool(
           fixed: false,
           source: "cli",
           fixerUsed: fixer.cmd,
-          error: result.stderr,
+          error: `${extErrPrefix}${result.stderr}`,
         });
       }
 
