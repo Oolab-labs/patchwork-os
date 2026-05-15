@@ -8,6 +8,7 @@ import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
 import { isDemoMode, onDemoModeChange, setDemoMode } from "@/lib/demoMode";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { subscribeStreamLiveness } from "@/lib/streamLiveness";
+import { getHaltsLookbackMs, subscribeHaltsSeen } from "@/lib/haltsSeen";
 import { NAV_SECTIONS } from "@/lib/navRoutes";
 import { ActivityTicker } from "./ActivityTicker";
 import { BridgeOfflineBanner } from "./BridgeOfflineBanner";
@@ -164,10 +165,18 @@ function useApprovalCount(): number {
 // ------------------------------------------------------------------ halt count
 
 /**
- * Polls `/runs/halt-summary` for the count of halts in the last 24h.
- * Drives a small red badge on the Activity nav item so the user sees
- * overnight halt pressure from any page. Slower cadence than approvals
- * (halts are post-hoc; no SSE), low priority.
+ * Polls `/runs/halt-summary` for the count of halts since the user last
+ * visited /activity (capped at 24h). Drives a small red badge on the
+ * Activity nav item so users see new halt pressure from any page.
+ *
+ * Was previously a fixed 24h count which monotonically grew with no UI
+ * to acknowledge — visiting /activity didn't dismiss it; the only "clear"
+ * was waiting 24h. The lookback now shrinks to "since last visit" via
+ * lib/haltsSeen, matching how every other notification badge behaves.
+ *
+ * Slower cadence than approvals (halts are post-hoc; no SSE), low priority.
+ * Re-fetches immediately on `markHaltsSeen()` so the badge clears on
+ * visit instead of waiting for the next 60s tick.
  */
 function useHaltCount(): number {
   const [count, setCount] = useState(0);
@@ -181,9 +190,17 @@ function useHaltCount(): number {
         timerId = setTimeout(tick, PERIOD);
         return;
       }
+      const sinceMs = getHaltsLookbackMs();
+      // Lookback of 0 means the user just acknowledged; surface that as
+      // an immediate zero instead of a pointless backend round-trip.
+      if (sinceMs === 0) {
+        if (alive) setCount(0);
+        timerId = setTimeout(tick, PERIOD);
+        return;
+      }
       try {
         const res = await fetch(
-          apiPath(`/api/bridge/runs/halt-summary?sinceMs=${24 * 60 * 60 * 1000}`),
+          apiPath(`/api/bridge/runs/halt-summary?sinceMs=${sinceMs}`),
         );
         if (res.ok) {
           const data = (await res.json()) as { total?: number };
@@ -196,9 +213,28 @@ function useHaltCount(): number {
     };
 
     tick();
+    // Refetch immediately when any tab marks halts seen (covers same-tab
+    // events; the `storage` listener below covers other tabs).
+    const unsubSeen = subscribeHaltsSeen(() => {
+      if (timerId !== null) clearTimeout(timerId);
+      void tick();
+    });
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "patchwork.haltsLastSeenAt") {
+        if (timerId !== null) clearTimeout(timerId);
+        void tick();
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("storage", onStorage);
+    }
     return () => {
       alive = false;
       if (timerId !== null) clearTimeout(timerId);
+      unsubSeen();
+      if (typeof window !== "undefined") {
+        window.removeEventListener("storage", onStorage);
+      }
     };
   }, []);
   return count;
@@ -515,7 +551,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 const badgeLabel =
                   item.badge === "approvals"
                     ? `${badgeCount} pending`
-                    : `${badgeCount} halts in last 24h`;
+                    : `${badgeCount} new halt${badgeCount === 1 ? "" : "s"} since last visit`;
                 const showBadge = !!item.badge && badgeCount > 0;
                 return (
                   <Link

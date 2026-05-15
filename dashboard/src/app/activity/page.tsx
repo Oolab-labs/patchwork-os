@@ -6,6 +6,7 @@ import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
 import { ACTIVITY_NOISE_EVENTS } from "@/lib/activityNoise";
 import { isDemoMode } from "@/lib/demoMode";
+import { markHaltsSeen } from "@/lib/haltsSeen";
 import {
   EmptyState,
   EventsHistogram,
@@ -85,6 +86,13 @@ function withAt(e: ActivityEvent): ActivityEvent {
 
 
 export default function ActivityPage() {
+  // Acknowledge any pending halts the moment the user arrives — the Live
+  // sidebar badge clears on next poll. Without this, the badge would sit
+  // at "36" forever (no UI affordance to dismiss it). See lib/haltsSeen.
+  useEffect(() => {
+    markHaltsSeen();
+  }, []);
+
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [seeded, setSeeded] = useState(false);
   // Tri-state: "reconnecting" while EventSource is opening or has errored
