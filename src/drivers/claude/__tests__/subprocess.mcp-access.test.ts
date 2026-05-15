@@ -99,9 +99,15 @@ describe("SubprocessDriver mcpAccess opt-in", () => {
     };
     // Stdio shim — auto-discovers the bridge from ~/.claude/ide/*.lock at
     // runtime, so url/authToken from bridgeMcp() aren't echoed into the file.
+    // On Windows the command is suffixed with `.cmd` so claude -p's own
+    // spawn(shell:false) can resolve the npm-installed bridge shim.
+    const expectedCommand =
+      process.platform === "win32"
+        ? "claude-ide-bridge.cmd"
+        : "claude-ide-bridge";
     expect(cfg.mcpServers.patchwork).toEqual({
       type: "stdio",
-      command: "claude-ide-bridge",
+      command: expectedCommand,
       args: ["shim"],
     });
   });

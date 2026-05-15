@@ -2544,8 +2544,10 @@ describe("resolveClaudeBinary — override precedence", async () => {
     withEnv("", () => {
       // No PatchworkConfig.claudeBinary mocked here, so this falls through
       // to the literal "claude" default. The point is: empty string in
-      // env shouldn't mean "spawn empty-string-binary".
-      expect(resolveClaudeBinary()).toBe("claude");
+      // env shouldn't mean "spawn empty-string-binary". On Windows the
+      // default is suffixed with `.cmd` so spawn(shell:false) can resolve it.
+      const expected = process.platform === "win32" ? "claude.cmd" : "claude";
+      expect(resolveClaudeBinary()).toBe(expected);
     });
   });
 
