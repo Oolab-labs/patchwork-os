@@ -115,11 +115,19 @@ export function httpDelete(url, headers = {}) {
 }
 
 // ── Bridge readiness ──────────────────────────────────────────────────────────
+// Default Windows multiplier: cmd.exe shim cold-start on GH runners is slow
+// enough that 10s isn't always enough — especially when two bridges spawn in
+// parallel (cat4). Bump the floor to 2× on win32 unless a caller explicitly
+// overrides. Saw transient CAT-4 / CAT-6 / CAT-7 timeouts in the first post-
+// advisory CI run (main, b121a98b).
+const WIN_TIMEOUT_MULTIPLIER = process.platform === "win32" ? 2 : 1;
+
 export async function waitForBridge(port, timeoutMs = 10_000, claudeConfigDir) {
   // Wait for lock file — written just before bridge accepts WS connections.
   const dir = claudeConfigDir ? path.join(claudeConfigDir, "ide") : lockDir();
   const lockPath = path.join(dir, `${port}.lock`);
-  const deadline = Date.now() + timeoutMs;
+  const effectiveTimeout = timeoutMs * WIN_TIMEOUT_MULTIPLIER;
+  const deadline = Date.now() + effectiveTimeout;
   while (Date.now() < deadline) {
     if (fs.existsSync(lockPath)) {
       await sleep(200); // tiny buffer for WS listener to bind after lock write
@@ -128,7 +136,7 @@ export async function waitForBridge(port, timeoutMs = 10_000, claudeConfigDir) {
     await sleep(100);
   }
   throw new Error(
-    `Bridge lock file for port ${port} not found after ${timeoutMs}ms`,
+    `Bridge lock file for port ${port} not found after ${effectiveTimeout}ms`,
   );
 }
 
