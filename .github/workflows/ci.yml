@@ -170,8 +170,17 @@ jobs:
 
   smoke:
     name: Smoke tests (live bridge)
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     needs: ci
+    # Windows starts advisory (continue-on-error) — the smoke harness has
+    # never run on win32 before. Tighten to blocking once green for ~5
+    # consecutive runs, same pattern PRs #497–#501 used for the bridge
+    # test matrix. ubuntu remains the blocking gate.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -184,9 +193,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build
         run: npm run build
-      - name: Run smoke test suite
+      - name: Run smoke test suite (POSIX)
+        if: matrix.os != 'windows-latest'
         run: BRIDGE="$(pwd)/scripts/smoke/bridge" node scripts/smoke/run-all.mjs
         timeout-minutes: 3
+      - name: Run smoke test suite (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: cmd
+        run: |
+          set "BRIDGE=%CD%\scripts\smoke\bridge.cmd"
+          node scripts\smoke\run-all.mjs
+        timeout-minutes: 5
 
   benchmark:
     runs-on: ubuntu-latest
@@ -267,11 +284,21 @@ jobs:
         run: npm test
 
   extension:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     needs: ci
+    # Windows starts advisory — the extension build + test suite has never
+    # exercised win32 in CI. Tighten to blocking once green for ~5
+    # consecutive runs (same playbook the bridge matrix used in #497–#501).
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         node-version: [20, 22]
+        exclude:
+          # Match the bridge `ci` job: Windows on Node 22 only.
+          - os: windows-latest
+            node-version: 20
     defaults:
       run:
         working-directory: vscode-extension
