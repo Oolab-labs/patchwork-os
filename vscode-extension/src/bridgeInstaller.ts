@@ -56,14 +56,17 @@ export class BridgeInstaller {
    * or null if the binary is not found or cannot be executed.
    */
   async getInstalledVersion(): Promise<string | null> {
+    // Node's execFile does NOT auto-resolve `.cmd` shims on Windows, so a
+    // bare name ENOENTs and `getInstalledVersion` returns null on every cold
+    // start — triggering an unnecessary `npm install -g` reinstall loop.
+    const binary =
+      process.platform === "win32"
+        ? "claude-ide-bridge.cmd"
+        : "claude-ide-bridge";
     try {
-      const { stdout } = await execFileAsync(
-        "claude-ide-bridge",
-        ["--version"],
-        {
-          timeout: 10_000,
-        },
-      );
+      const { stdout } = await execFileAsync(binary, ["--version"], {
+        timeout: 10_000,
+      });
       const match = stdout.trim().match(/(\d+\.\d+\.\d+[^\s]*)/);
       return match ? match[1] : null;
     } catch {
