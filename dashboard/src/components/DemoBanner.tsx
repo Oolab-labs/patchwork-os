@@ -2,15 +2,36 @@
 import { useEffect, useState } from "react";
 import { isDemoMode, onDemoModeChange } from "@/lib/demoMode";
 
+const DISMISS_KEY = "patchwork.demoBanner.dismissed";
+
+function readDismissed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(DISMISS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeDismissed() {
+  try {
+    window.sessionStorage.setItem(DISMISS_KEY, "1");
+  } catch {
+    /* private mode */
+  }
+}
+
 export function DemoBanner() {
   const [demo, setDemo] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     setDemo(isDemoMode());
+    setDismissed(readDismissed());
     return onDemoModeChange(setDemo);
   }, []);
 
-  if (!demo) return null;
+  if (!demo || dismissed) return null;
 
   return (
     <div role="status" className="demo-banner">
@@ -27,6 +48,17 @@ export function DemoBanner() {
       >
         Install →
       </a>
+      <button
+        type="button"
+        onClick={() => {
+          writeDismissed();
+          setDismissed(true);
+        }}
+        aria-label="Dismiss demo banner"
+        className="demo-banner-dismiss"
+      >
+        ×
+      </button>
     </div>
   );
 }

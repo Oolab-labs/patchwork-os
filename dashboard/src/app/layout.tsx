@@ -3,7 +3,6 @@ import { Albert_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google"
 import "./globals.css";
 import { Shell } from "@/components/Shell";
 import { DemoBanner } from "@/components/DemoBanner";
-import { BridgeBanner } from "@/components/BridgeBanner";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { ToastProvider } from "@/components/Toast";
 
@@ -118,7 +117,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ToastProvider>
           <div data-app-root>
             <DemoBanner />
-            <BridgeBanner />
             <Shell>{children}</Shell>
             <MobileBottomNav />
           </div>
