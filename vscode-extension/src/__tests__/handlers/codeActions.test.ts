@@ -1,8 +1,4 @@
-// TODO(windows): test fixtures use POSIX-only literal paths (e.g. fsPath: "/workspace")
-// that path.resolve() on win32 rewrites to drive-prefixed absolute paths, breaking
-// the workspace-containment + lockfile lookups the handlers do. Migrate to
-// platform-aware fixtures before flipping windows-latest extension CI from advisory.
-
+import * as path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import {
@@ -16,10 +12,13 @@ import {
   _mockTextEditor,
 } from "../__mocks__/vscode";
 
+const WORKSPACE = path.resolve("/workspace");
+const TEST_FILE = path.join(WORKSPACE, "file.ts");
+
 function setupEditorMock() {
   const save = vi.fn(async () => true);
   const doc = _mockTextDocument({
-    fsPath: "/workspace/file.ts",
+    fsPath: TEST_FILE,
     lineCount: 20,
     save,
   });
@@ -33,7 +32,7 @@ beforeEach(() => {
   __reset();
 });
 
-describe.skipIf(process.platform === "win32")("handleFormatDocument", () => {
+describe("handleFormatDocument", () => {
   it("applies formatting edits and saves", async () => {
     const { save } = setupEditorMock();
     const textEdit = {
@@ -46,7 +45,7 @@ describe.skipIf(process.platform === "win32")("handleFormatDocument", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([textEdit]);
 
     const result = (await handleFormatDocument({
-      file: "/workspace/file.ts",
+      file: TEST_FILE,
     })) as any;
     expect(result.success).toBe(true);
     expect(result.editsApplied).toBe(1);
@@ -59,7 +58,7 @@ describe.skipIf(process.platform === "win32")("handleFormatDocument", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
 
     const result = (await handleFormatDocument({
-      file: "/workspace/file.ts",
+      file: TEST_FILE,
     })) as any;
     expect(result.success).toBe(true);
     expect(result.editsApplied).toBe(0);
@@ -77,14 +76,14 @@ describe.skipIf(process.platform === "win32")("handleFormatDocument", () => {
     );
 
     const result = (await handleFormatDocument({
-      file: "/workspace/file.ts",
+      file: TEST_FILE,
     })) as any;
     expect(result.error).toBe("provider failed");
     expect(result.success).toBeUndefined();
   });
 });
 
-describe.skipIf(process.platform === "win32")("handleFixAllLintErrors", () => {
+describe("handleFixAllLintErrors", () => {
   it("applies code actions with edits", async () => {
     const { save } = setupEditorMock();
     const wsEdit = new vscode.WorkspaceEdit();
@@ -92,7 +91,7 @@ describe.skipIf(process.platform === "win32")("handleFixAllLintErrors", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([action]);
 
     const result = (await handleFixAllLintErrors({
-      file: "/workspace/file.ts",
+      file: TEST_FILE,
     })) as any;
     expect(result.success).toBe(true);
     expect(result.actionsApplied).toBe(1);
@@ -110,7 +109,7 @@ describe.skipIf(process.platform === "win32")("handleFixAllLintErrors", () => {
       .mockResolvedValueOnce(undefined); // execute command
 
     const result = (await handleFixAllLintErrors({
-      file: "/workspace/file.ts",
+      file: TEST_FILE,
     })) as any;
     expect(result.actionsApplied).toBe(1);
   });
@@ -120,7 +119,7 @@ describe.skipIf(process.platform === "win32")("handleFixAllLintErrors", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
 
     const result = (await handleFixAllLintErrors({
-      file: "/workspace/file.ts",
+      file: TEST_FILE,
     })) as any;
     expect(result.success).toBe(true);
     expect(result.actionsApplied).toBe(0);
@@ -133,13 +132,13 @@ describe.skipIf(process.platform === "win32")("handleFixAllLintErrors", () => {
     );
 
     const result = (await handleFixAllLintErrors({
-      file: "/workspace/file.ts",
+      file: TEST_FILE,
     })) as any;
     expect(result.error).toBe("lint provider crashed");
   });
 });
 
-describe.skipIf(process.platform === "win32")("handleOrganizeImports", () => {
+describe("handleOrganizeImports", () => {
   it("applies organize imports action", async () => {
     const { save } = setupEditorMock();
     const wsEdit = new vscode.WorkspaceEdit();
@@ -147,7 +146,7 @@ describe.skipIf(process.platform === "win32")("handleOrganizeImports", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([action]);
 
     const result = (await handleOrganizeImports({
-      file: "/workspace/file.ts",
+      file: TEST_FILE,
     })) as any;
     expect(result.success).toBe(true);
     expect(result.actionsApplied).toBe(1);

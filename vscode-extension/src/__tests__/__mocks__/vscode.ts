@@ -3,7 +3,12 @@
  * Only mocks what the extension handlers actually use.
  * Resolved via vitest alias so handler source code needs zero changes.
  */
+import * as path from "node:path";
 import { vi } from "vitest";
+
+/** Platform-aware workspace root used by __reset defaults and exported for tests. */
+export const MOCK_WORKSPACE_ROOT = path.resolve("/workspace");
+export const MOCK_TEST_ROOT = path.resolve("/test-root");
 
 // ── Constructors ──────────────────────────────────────────────
 
@@ -432,8 +437,8 @@ export function _mockTerminal(
 export function __reset() {
   workspace.isTrusted = true;
   workspace.workspaceFolders = [
-    { uri: { fsPath: "/workspace" } },
-    { uri: { fsPath: "/test-root" } },
+    { uri: { fsPath: MOCK_WORKSPACE_ROOT } },
+    { uri: { fsPath: MOCK_TEST_ROOT } },
   ] as any;
   workspace.textDocuments = [];
   workspace.openTextDocument

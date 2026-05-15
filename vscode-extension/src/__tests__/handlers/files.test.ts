@@ -1,8 +1,4 @@
-// TODO(windows): test fixtures use POSIX-only literal paths (e.g. fsPath: "/workspace")
-// that path.resolve() on win32 rewrites to drive-prefixed absolute paths, breaking
-// the workspace-containment + lockfile lookups the handlers do. Migrate to
-// platform-aware fixtures before flipping windows-latest extension CI from advisory.
-
+import * as path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import {
@@ -22,67 +18,64 @@ import {
   Uri,
 } from "../__mocks__/vscode";
 
+const WORKSPACE = path.resolve("/workspace");
+const OTHER_ROOT = path.resolve("/other");
+const ANYWHERE = path.resolve("/anywhere");
+const wsFile = (...parts: string[]) => path.join(WORKSPACE, ...parts);
+const otherFile = (...parts: string[]) => path.join(OTHER_ROOT, ...parts);
+
 beforeEach(() => {
   __reset();
 });
 
 // ── Workspace boundary (tested through handlers) ──────────────
 
-describe.skipIf(process.platform === "win32")(
-  "workspace boundary checks",
-  () => {
-    it("rejects all paths when no workspace folders", async () => {
-      vscode.workspace.workspaceFolders = undefined;
-      await expect(
-        handleOpenFile({ file: "/anywhere/file.ts" }),
-      ).rejects.toThrow("No workspace is open");
-    });
+describe("workspace boundary checks", () => {
+  it("rejects all paths when no workspace folders", async () => {
+    vscode.workspace.workspaceFolders = undefined;
+    await expect(
+      handleOpenFile({ file: path.join(ANYWHERE, "file.ts") }),
+    ).rejects.toThrow("No workspace is open");
+  });
 
-    it("allows paths inside workspace", async () => {
-      vscode.workspace.workspaceFolders = [
-        { uri: { fsPath: "/workspace" } },
-      ] as any;
-      await expect(
-        handleOpenFile({ file: "/workspace/src/file.ts" }),
-      ).resolves.not.toThrow();
-    });
+  it("allows paths inside workspace", async () => {
+    vscode.workspace.workspaceFolders = [{ uri: { fsPath: WORKSPACE } }] as any;
+    await expect(
+      handleOpenFile({ file: wsFile("src", "file.ts") }),
+    ).resolves.not.toThrow();
+  });
 
-    it("allows exact workspace root", async () => {
-      vscode.workspace.workspaceFolders = [
-        { uri: { fsPath: "/workspace" } },
-      ] as any;
-      await expect(
-        handleIsDirty({ file: "/workspace" }),
-      ).resolves.not.toThrow();
-    });
+  it("allows exact workspace root", async () => {
+    vscode.workspace.workspaceFolders = [{ uri: { fsPath: WORKSPACE } }] as any;
+    await expect(handleIsDirty({ file: WORKSPACE })).resolves.not.toThrow();
+  });
 
-    it("rejects paths outside workspace", async () => {
-      vscode.workspace.workspaceFolders = [
-        { uri: { fsPath: "/workspace" } },
-      ] as any;
-      await expect(handleOpenFile({ file: "/other/file.ts" })).rejects.toThrow(
-        "outside the workspace",
-      );
-    });
-  },
-);
+  it("rejects paths outside workspace", async () => {
+    vscode.workspace.workspaceFolders = [{ uri: { fsPath: WORKSPACE } }] as any;
+    await expect(
+      handleOpenFile({ file: otherFile("file.ts") }),
+    ).rejects.toThrow("outside the workspace");
+  });
+});
 
 // ── handleGetOpenFiles ────────────────────────────────────────
 
-describe.skipIf(process.platform === "win32")("handleGetOpenFiles", () => {
+describe("handleGetOpenFiles", () => {
   it("returns empty array when no tabs", async () => {
     vscode.window.tabGroups.all = [];
     expect(await handleGetOpenFiles()).toEqual([]);
   });
 
   it("returns file info for TabInputText tabs", async () => {
-    const uri = Uri.file("/workspace/test.ts");
+    const fileA = wsFile("test.ts");
+    const fileB = wsFile("other.ts");
+    const uri = Uri.file(fileA);
     vscode.window.tabGroups.all = [
       {
         tabs: [
           { input: new TabInputText(uri), isActive: true, isDirty: false },
           {
-            input: new TabInputText(Uri.file("/workspace/other.ts")),
+            input: new TabInputText(Uri.file(fileB)),
             isActive: false,
             isDirty: true,
           },
@@ -93,12 +86,12 @@ describe.skipIf(process.platform === "win32")("handleGetOpenFiles", () => {
     const result = (await handleGetOpenFiles()) as any[];
     expect(result).toHaveLength(2);
     expect(result[0]).toEqual({
-      filePath: "/workspace/test.ts",
+      filePath: fileA,
       isActive: true,
       isDirty: false,
     });
     expect(result[1]).toEqual({
-      filePath: "/workspace/other.ts",
+      filePath: fileB,
       isActive: false,
       isDirty: true,
     });
@@ -122,7 +115,7 @@ describe.skipIf(process.platform === "win32")("handleGetOpenFiles", () => {
 
 // ── handleIsDirty ─────────────────────────────────────────────
 
-describe.skipIf(process.platform === "win32")("handleIsDirty", () => {
+describe("handleIsDirty", () => {
   it("throws on non-string file param", async () => {
     await expect(handleIsDirty({ file: 123 } as any)).rejects.toThrow(
       "must be a non-empty string",
@@ -130,34 +123,34 @@ describe.skipIf(process.platform === "win32")("handleIsDirty", () => {
   });
 
   it("returns true for dirty document", async () => {
-    const doc = _mockTextDocument({ fsPath: "/workspace/f.ts", isDirty: true });
+    const doc = _mockTextDocument({ fsPath: wsFile("f.ts"), isDirty: true });
     vscode.workspace.textDocuments = [doc];
-    expect(await handleIsDirty({ file: "/workspace/f.ts" })).toBe(true);
+    expect(await handleIsDirty({ file: wsFile("f.ts") })).toBe(true);
   });
 
   it("returns false for clean document", async () => {
     const doc = _mockTextDocument({
-      fsPath: "/workspace/f.ts",
+      fsPath: wsFile("f.ts"),
       isDirty: false,
     });
     vscode.workspace.textDocuments = [doc];
-    expect(await handleIsDirty({ file: "/workspace/f.ts" })).toBe(false);
+    expect(await handleIsDirty({ file: wsFile("f.ts") })).toBe(false);
   });
 
   it("returns false when document not found", async () => {
     vscode.workspace.textDocuments = [];
-    expect(await handleIsDirty({ file: "/workspace/missing.ts" })).toBe(false);
+    expect(await handleIsDirty({ file: wsFile("missing.ts") })).toBe(false);
   });
 });
 
 // ── handleOpenFile ────────────────────────────────────────────
 
-describe.skipIf(process.platform === "win32")("handleOpenFile", () => {
+describe("handleOpenFile", () => {
   it("opens document and shows with position", async () => {
-    const doc = _mockTextDocument({ fsPath: "/workspace/f.ts" });
+    const doc = _mockTextDocument({ fsPath: wsFile("f.ts") });
     vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue(doc);
 
-    const result = await handleOpenFile({ file: "/workspace/f.ts", line: 10 });
+    const result = await handleOpenFile({ file: wsFile("f.ts"), line: 10 });
     expect(result).toBe(true);
     expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
     expect(vscode.window.showTextDocument).toHaveBeenCalledWith(
@@ -167,9 +160,9 @@ describe.skipIf(process.platform === "win32")("handleOpenFile", () => {
   });
 
   it("defaults to line 1", async () => {
-    const doc = _mockTextDocument({ fsPath: "/workspace/f.ts" });
+    const doc = _mockTextDocument({ fsPath: wsFile("f.ts") });
     vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue(doc);
-    await handleOpenFile({ file: "/workspace/f.ts" });
+    await handleOpenFile({ file: wsFile("f.ts") });
     // Position should be (0, 0) since line defaults to 1, converted to 0-based
     expect(vscode.window.showTextDocument).toHaveBeenCalled();
   });
@@ -177,38 +170,38 @@ describe.skipIf(process.platform === "win32")("handleOpenFile", () => {
 
 // ── handleSaveFile ────────────────────────────────────────────
 
-describe.skipIf(process.platform === "win32")("handleSaveFile", () => {
+describe("handleSaveFile", () => {
   it("saves an open document", async () => {
     const save = vi.fn(async () => true);
-    const doc = _mockTextDocument({ fsPath: "/workspace/f.ts", save });
+    const doc = _mockTextDocument({ fsPath: wsFile("f.ts"), save });
     vscode.workspace.textDocuments = [doc];
-    expect(await handleSaveFile({ file: "/workspace/f.ts" })).toBe(true);
+    expect(await handleSaveFile({ file: wsFile("f.ts") })).toBe(true);
     expect(save).toHaveBeenCalled();
   });
 
   it("returns error for untitled document", async () => {
     const doc = _mockTextDocument({
-      fsPath: "/workspace/f.ts",
+      fsPath: wsFile("f.ts"),
       isUntitled: true,
     });
     vscode.workspace.textDocuments = [doc];
-    const result = (await handleSaveFile({ file: "/workspace/f.ts" })) as any;
+    const result = (await handleSaveFile({ file: wsFile("f.ts") })) as any;
     expect(result.success).toBe(false);
     expect(result.error).toContain("untitled");
   });
 
   it("returns error when document not open", async () => {
     vscode.workspace.textDocuments = [];
-    const result = (await handleSaveFile({ file: "/workspace/f.ts" })) as any;
+    const result = (await handleSaveFile({ file: wsFile("f.ts") })) as any;
     expect(result.success).toBe(false);
   });
 });
 
 // ── handleCloseTab ────────────────────────────────────────────
 
-describe.skipIf(process.platform === "win32")("handleCloseTab", () => {
+describe("handleCloseTab", () => {
   it("closes a matching tab", async () => {
-    const uri = Uri.file("/workspace/f.ts");
+    const uri = Uri.file(wsFile("f.ts"));
     const tab = {
       input: new TabInputText(uri),
       isActive: true,
@@ -217,14 +210,14 @@ describe.skipIf(process.platform === "win32")("handleCloseTab", () => {
     vscode.window.tabGroups.all = [{ tabs: [tab] }] as any;
     vi.mocked(vscode.window.tabGroups.close).mockResolvedValue(true);
 
-    const result = (await handleCloseTab({ file: "/workspace/f.ts" })) as any;
+    const result = (await handleCloseTab({ file: wsFile("f.ts") })) as any;
     expect(result.success).toBe(true);
     expect(result.promptedToSave).toBe(false);
   });
 
   it("returns error when tab not found", async () => {
     vscode.window.tabGroups.all = [];
-    const result = (await handleCloseTab({ file: "/workspace/f.ts" })) as any;
+    const result = (await handleCloseTab({ file: wsFile("f.ts") })) as any;
     expect(result.success).toBe(false);
     expect(result.error).toContain("not found");
   });
@@ -232,10 +225,10 @@ describe.skipIf(process.platform === "win32")("handleCloseTab", () => {
 
 // ── handleCreateFile ──────────────────────────────────────────
 
-describe.skipIf(process.platform === "win32")("handleCreateFile", () => {
+describe("handleCreateFile", () => {
   it("creates a file and opens it", async () => {
     const result = (await handleCreateFile({
-      filePath: "/workspace/new.ts",
+      filePath: wsFile("new.ts"),
       content: "hello",
     })) as any;
     expect(result.success).toBe(true);
@@ -246,7 +239,7 @@ describe.skipIf(process.platform === "win32")("handleCreateFile", () => {
 
   it("creates a directory", async () => {
     const result = (await handleCreateFile({
-      filePath: "/workspace/dir",
+      filePath: wsFile("dir"),
       isDirectory: true,
     })) as any;
     expect(result.success).toBe(true);
@@ -256,7 +249,7 @@ describe.skipIf(process.platform === "win32")("handleCreateFile", () => {
 
   it("skips opening when openAfterCreate=false", async () => {
     await handleCreateFile({
-      filePath: "/workspace/new.ts",
+      filePath: wsFile("new.ts"),
       openAfterCreate: false,
     });
     expect(vscode.window.showTextDocument).not.toHaveBeenCalled();
@@ -265,7 +258,7 @@ describe.skipIf(process.platform === "win32")("handleCreateFile", () => {
   it("returns error when applyEdit fails", async () => {
     vi.mocked(vscode.workspace.applyEdit).mockResolvedValue(false);
     const result = (await handleCreateFile({
-      filePath: "/workspace/new.ts",
+      filePath: wsFile("new.ts"),
     })) as any;
     expect(result.success).toBe(false);
   });
@@ -273,14 +266,14 @@ describe.skipIf(process.platform === "win32")("handleCreateFile", () => {
 
 // ── handleDeleteFile ──────────────────────────────────────────
 
-describe.skipIf(process.platform === "win32")("handleDeleteFile", () => {
+describe("handleDeleteFile", () => {
   it("deletes a file with defaults", async () => {
     const result = (await handleDeleteFile({
-      filePath: "/workspace/f.ts",
+      filePath: wsFile("f.ts"),
     })) as any;
     expect(result.success).toBe(true);
     expect(vscode.workspace.fs.delete).toHaveBeenCalledWith(
-      expect.objectContaining({ fsPath: "/workspace/f.ts" }),
+      expect.objectContaining({ fsPath: wsFile("f.ts") }),
       { recursive: false, useTrash: true },
     );
   });
@@ -290,7 +283,7 @@ describe.skipIf(process.platform === "win32")("handleDeleteFile", () => {
       new Error("ENOENT"),
     );
     const result = (await handleDeleteFile({
-      filePath: "/workspace/f.ts",
+      filePath: wsFile("f.ts"),
     })) as any;
     expect(result.success).toBe(false);
     expect(result.error).toContain("ENOENT");
@@ -299,11 +292,11 @@ describe.skipIf(process.platform === "win32")("handleDeleteFile", () => {
 
 // ── handleRenameFile ──────────────────────────────────────────
 
-describe.skipIf(process.platform === "win32")("handleRenameFile", () => {
+describe("handleRenameFile", () => {
   it("renames a file", async () => {
     const result = (await handleRenameFile({
-      oldPath: "/workspace/a.ts",
-      newPath: "/workspace/b.ts",
+      oldPath: wsFile("a.ts"),
+      newPath: wsFile("b.ts"),
     })) as any;
     expect(result.success).toBe(true);
     expect(result.renamed).toBe(true);
@@ -313,18 +306,19 @@ describe.skipIf(process.platform === "win32")("handleRenameFile", () => {
   it("returns error when applyEdit fails", async () => {
     vi.mocked(vscode.workspace.applyEdit).mockResolvedValue(false);
     const result = (await handleRenameFile({
-      oldPath: "/workspace/a.ts",
-      newPath: "/workspace/b.ts",
+      oldPath: wsFile("a.ts"),
+      newPath: wsFile("b.ts"),
     })) as any;
     expect(result.success).toBe(false);
   });
 
   it("checks both paths against workspace", async () => {
-    vscode.workspace.workspaceFolders = [
-      { uri: { fsPath: "/workspace" } },
-    ] as any;
+    vscode.workspace.workspaceFolders = [{ uri: { fsPath: WORKSPACE } }] as any;
     await expect(
-      handleRenameFile({ oldPath: "/workspace/a.ts", newPath: "/other/b.ts" }),
+      handleRenameFile({
+        oldPath: wsFile("a.ts"),
+        newPath: otherFile("b.ts"),
+      }),
     ).rejects.toThrow("outside the workspace");
   });
 });
