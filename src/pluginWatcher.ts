@@ -1,5 +1,5 @@
-import fs from "node:fs";
 import type { Config } from "./config.js";
+import { watchDirectoryWithFallback } from "./fsWatchWithFallback.js";
 import type { Logger } from "./logger.js";
 import {
   getBuiltInToolNames,
@@ -12,7 +12,7 @@ import type { McpTransport } from "./transport.js";
 const DEBOUNCE_MS = 300;
 
 export class PluginWatcher {
-  private watchers = new Map<string, fs.FSWatcher>();
+  private watchers = new Map<string, () => void>(); // spec → stop function
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private loadedPlugins = new Map<string, LoadedPlugin>(); // keyed by spec
   private transports = new Set<McpTransport>();
@@ -28,20 +28,12 @@ export class PluginWatcher {
   start(plugins: LoadedPlugin[]): void {
     for (const plugin of plugins) {
       this.loadedPlugins.set(plugin.spec, plugin);
-      try {
-        const watcher = fs.watch(
-          plugin.pluginDir,
-          { recursive: false },
-          (_event, _filename) => {
-            this.scheduleReload(plugin.spec);
-          },
-        );
-        this.watchers.set(plugin.spec, watcher);
-      } catch (err) {
-        this.logger.warn(
-          `[plugin-watch] Could not watch "${plugin.pluginDir}": ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+      const stop = watchDirectoryWithFallback(
+        plugin.pluginDir,
+        () => this.scheduleReload(plugin.spec),
+        { logger: this.logger },
+      );
+      this.watchers.set(plugin.spec, stop);
     }
   }
 
@@ -61,9 +53,9 @@ export class PluginWatcher {
     this.stopped = true;
     for (const timer of this.debounceTimers.values()) clearTimeout(timer);
     this.debounceTimers.clear();
-    for (const watcher of this.watchers.values()) {
+    for (const stopWatcher of this.watchers.values()) {
       try {
-        watcher.close();
+        stopWatcher();
       } catch {
         /* ignore */
       }
