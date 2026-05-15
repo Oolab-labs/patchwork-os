@@ -52,17 +52,30 @@ function emptyAcc(state: AutomationState): Acc {
 /**
  * Returns true if `value` matches the condition pattern.
  * Negation via "!" prefix. Missing pattern → always true.
+ *
+ * On Windows, file paths arrive as `C:\Users\foo\src\bar.ts` while users
+ * write POSIX-style globs (`src/**\/*.ts`). minimatch is strict on `/` and
+ * NTFS is case-insensitive, so without normalisation onFileSave/onFileChanged
+ * hooks silently never fire on Windows. Normalise backslashes to forward
+ * slashes on both sides and pass `nocase` on win32.
  */
 export function matchesCondition(
   pattern: string | undefined,
   value: string,
 ): boolean {
   if (pattern === undefined || pattern === "") return true;
+  const isWin = process.platform === "win32";
+  const normValue = isWin ? value.replace(/\\/g, "/") : value;
+  const opts = isWin ? { dot: true, nocase: true } : { dot: true };
   try {
     if (pattern.startsWith("!")) {
-      return !minimatch(value, pattern.slice(1), { dot: true });
+      const inner = isWin
+        ? pattern.slice(1).replace(/\\/g, "/")
+        : pattern.slice(1);
+      return !minimatch(normValue, inner, opts);
     }
-    return minimatch(value, pattern, { dot: true });
+    const normPattern = isWin ? pattern.replace(/\\/g, "/") : pattern;
+    return minimatch(normValue, normPattern, opts);
   } catch {
     return false;
   }
