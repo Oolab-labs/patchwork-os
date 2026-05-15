@@ -90,15 +90,21 @@ function waitForLock(cfgDir, port, timeoutMs = 10_000) {
   return true;
 }
 
-// Spawn bridge for the given port and config dir. Returns {proc, token}.
+// Spawn bridge for the given port and config dir. Captures stderr so a
+// startup failure can be surfaced — `stdio: "ignore"` would swallow it
+// and leave the operator staring at "lock file not written after 10s".
 function startBridge(port, cfgDir, wsDir) {
   // Security: BRIDGE path already validated on startup
   const proc = spawn(BRIDGE, ["--port", String(port), "--workspace", wsDir], {
     env: { ...process.env, CLAUDE_CONFIG_DIR: cfgDir },
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
     // On Windows, npm global bins are .cmd wrappers that need shell:true
     // Safe because BRIDGE path is validated for injection chars on startup
     shell: process.platform === "win32",
+  });
+  proc.stderrBuf = "";
+  proc.stderr.on("data", (d) => {
+    proc.stderrBuf += d.toString();
   });
   return proc;
 }
@@ -110,6 +116,9 @@ bridgePid = bridgeProc.pid;
 
 if (!waitForLock(CLAUDE_CFG, PORT)) {
   console.error("ERROR: bridge lock file not written after 10s");
+  console.error(
+    `Bridge stderr (last 4 KB):\n${(bridgeProc.stderrBuf || "(empty)").slice(-4096)}`,
+  );
   process.exit(1);
 }
 // tiny extra buffer for WS listener to bind
