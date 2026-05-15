@@ -85,3 +85,8 @@ screenshots/
 # Ad-hoc commit helper scripts generated during multi-step changes.
 /commits.sh
 /commits-*.sh
+
+# IntelliJ plugin build / IDE output
+intellij-plugin/bin/
+intellij-plugin/build/
+intellij-plugin/.gradle/
