@@ -44,7 +44,7 @@ try {
       "--prefix",
       "smkTest",
     ],
-    { env: ENV },
+    { env: ENV, shell: process.platform === "win32" },
   );
 } catch (e) {
   console.error("gen-plugin-stub failed:", e.message);
@@ -66,6 +66,7 @@ try {
     {
       env: ENV,
       stdio: "ignore",
+      shell: process.platform === "win32",
     },
   );
   try {
@@ -145,6 +146,7 @@ export function register(ctx) {
     {
       env: ENV,
       stdio: ["ignore", "ignore", "pipe"],
+      shell: process.platform === "win32",
     },
   );
   let stderr = "";
@@ -200,6 +202,7 @@ export function register(ctx) {
     {
       env: ENV,
       stdio: "ignore",
+      shell: process.platform === "win32",
     },
   );
   try {

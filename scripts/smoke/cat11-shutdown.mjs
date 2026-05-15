@@ -43,6 +43,7 @@ const proc = spawn(BRIDGE, ["--port", String(PORT), "--workspace", workspace], {
   env: ENV,
   stdio: "ignore",
   detached: false,
+  shell: process.platform === "win32",
 });
 
 let exitCode = null;

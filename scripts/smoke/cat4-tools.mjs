@@ -51,6 +51,9 @@ function startBridge(port, workspace, extraArgs = []) {
       env: ENV,
       stdio: "ignore",
       detached: false,
+      // Windows: BRIDGE is a `.cmd` shim; spawn(shell:false) can't resolve
+      // it. Same guard run-all.mjs uses.
+      shell: process.platform === "win32",
     },
   );
 }
