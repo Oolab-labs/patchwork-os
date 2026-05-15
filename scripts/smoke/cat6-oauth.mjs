@@ -49,7 +49,12 @@ const proc = spawn(
     "--fixed-token",
     BRIDGE_TOKEN,
   ],
-  { env: ENV, stdio: "ignore", detached: false },
+  {
+    env: ENV,
+    stdio: "ignore",
+    detached: false,
+    shell: process.platform === "win32",
+  },
 );
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

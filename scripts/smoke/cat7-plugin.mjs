@@ -44,7 +44,7 @@ try {
       "--prefix",
       "smkTest",
     ],
-    { env: ENV },
+    { env: ENV, shell: process.platform === "win32" },
   );
 } catch (e) {
   console.error("gen-plugin-stub failed:", e.message);
@@ -66,6 +66,7 @@ try {
     {
       env: ENV,
       stdio: "ignore",
+      shell: process.platform === "win32",
     },
   );
   try {
@@ -145,6 +146,7 @@ export function register(ctx) {
     {
       env: ENV,
       stdio: ["ignore", "ignore", "pipe"],
+      shell: process.platform === "win32",
     },
   );
   let stderr = "";
@@ -200,10 +202,13 @@ export function register(ctx) {
     {
       env: ENV,
       stdio: "ignore",
+      shell: process.platform === "win32",
     },
   );
   try {
-    await waitForBridge(brokenPort, 5000, ENV.CLAUDE_CONFIG_DIR);
+    // 10s (not 5s) — matches 7.1 and gives the bridge headroom on Windows
+    // where shell:true wraps the .cmd shim and slows startup.
+    await waitForBridge(brokenPort, 10_000, ENV.CLAUDE_CONFIG_DIR);
     const token = readLockFrom(brokenPort, ENV.CLAUDE_CONFIG_DIR).authToken;
     const ws = await mcpHandshake(brokenPort, token);
     const tools = await listTools(ws);

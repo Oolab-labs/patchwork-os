@@ -47,7 +47,11 @@ fs.writeFileSync(POLICY_PATH, JSON.stringify(validPolicy, null, 2));
       "--driver",
       "subprocess", // required by --automation; actual claude binary not invoked until a task fires
     ],
-    { env: ENV, stdio: ["ignore", "ignore", "pipe"] },
+    {
+      env: ENV,
+      stdio: ["ignore", "ignore", "pipe"],
+      shell: process.platform === "win32",
+    },
   );
   proc.stderr.on("data", (d) => (stderrOut += d));
 
@@ -84,7 +88,11 @@ fs.writeFileSync(POLICY_PATH, JSON.stringify(validPolicy, null, 2));
           "--port",
           String(PORT),
         ],
-        { env: ENV, timeout: 3000 },
+        {
+          env: ENV,
+          timeout: 3000,
+          shell: process.platform === "win32",
+        },
       );
       notifyOk = true;
     } catch (e) {
@@ -121,7 +129,11 @@ fs.writeFileSync(POLICY_PATH, JSON.stringify(validPolicy, null, 2));
       "--driver",
       "subprocess",
     ],
-    { env: ENV, stdio: ["ignore", "ignore", "ignore"] },
+    {
+      env: ENV,
+      stdio: ["ignore", "ignore", "ignore"],
+      shell: process.platform === "win32",
+    },
   );
 
   await new Promise((r) =>
