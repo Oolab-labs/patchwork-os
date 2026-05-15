@@ -3469,6 +3469,9 @@ Steps performed:
     execFileSync("claude-ide-bridge", ["--version"], {
       stdio: "pipe",
       timeout: 5000,
+      // Windows: global npm bin is a `.cmd` shim that Node's execFileSync
+      // can't launch without a shell. See bridgeProcess.ts for context.
+      shell: process.platform === "win32",
     });
     shimOnPath = true;
   } catch {

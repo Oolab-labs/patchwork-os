@@ -144,6 +144,9 @@ export async function runInstall(argv: string[]): Promise<void> {
     try {
       execFileSync("npm", ["install", "-g", entry.npmPackage], {
         stdio: "inherit",
+        // Windows: `npm` is `npm.cmd` and Node's execFileSync can't launch
+        // a .cmd shim without a shell.
+        shell: process.platform === "win32",
       });
     } catch {
       process.stderr.write(
