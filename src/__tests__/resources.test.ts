@@ -116,7 +116,13 @@ describe("readResource", () => {
   });
 
   it("rejects URIs outside the workspace", () => {
-    const result = readResource(workspace, "file:///etc/passwd");
+    // Windows file URLs require a drive letter; bare /etc/passwd is invalid
+    // there and short-circuits to invalid_args via Node's fileURLToPath.
+    const outsideUri =
+      process.platform === "win32"
+        ? "file:///C:/etc/passwd"
+        : "file:///etc/passwd";
+    const result = readResource(workspace, outsideUri);
     expect("error" in result).toBe(true);
     if (!("error" in result)) return;
     expect(result.code).toBe("workspace_escape");

@@ -101,10 +101,13 @@ export function createFormatDocumentTool(
       }
 
       // Try extension first
+      let extensionError: string | null = null;
       if (extensionClient.isConnected()) {
         try {
-          const result = await extensionClient.formatDocument(resolved);
-          if (result !== null) {
+          const { value, error: extErr } =
+            await extensionClient.formatDocument(resolved);
+          extensionError = extErr;
+          if (value !== null) {
             // Read file content after formatting
             const contentAfter = fs.readFileSync(resolved, "utf-8");
             if (contentBefore === contentAfter) {
@@ -127,6 +130,9 @@ export function createFormatDocumentTool(
           // Timeout — fall through to CLI fallback
         }
       }
+      const extErrPrefix = extensionError
+        ? `Extension formatter failed (${extensionError}); `
+        : "";
 
       // CLI fallback
       const ext = path.extname(resolved).toLowerCase();
@@ -135,7 +141,7 @@ export function createFormatDocumentTool(
         return error({
           formatted: false,
           source: "cli",
-          error: `No formatter configured for extension "${ext}"`,
+          error: `${extErrPrefix}No formatter configured for extension "${ext}"`,
         });
       }
 
@@ -145,7 +151,7 @@ export function createFormatDocumentTool(
         return error({
           formatted: false,
           source: "cli",
-          error: `No available formatter found. Tried: ${names}`,
+          error: `${extErrPrefix}No available formatter found. Tried: ${names}`,
         });
       }
 
@@ -160,7 +166,7 @@ export function createFormatDocumentTool(
           formatted: false,
           source: "cli",
           formatterUsed: formatter.cmd,
-          error: result.stderr,
+          error: `${extErrPrefix}${result.stderr}`,
         });
       }
 

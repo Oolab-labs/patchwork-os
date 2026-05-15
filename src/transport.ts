@@ -1125,7 +1125,17 @@ export class McpTransport {
                     this.logger,
                   );
                 } finally {
-                  this.activeToolCalls--;
+                  // Generation guard: detach() resets activeToolCalls to 0 on
+                  // disconnect, so decrementing on the new generation would
+                  // skew the admission counter negative and silently raise the
+                  // effective MAX_CONCURRENT_TOOLS cap. Mirror the clamp used
+                  // by the non-dynamic path at line 1478.
+                  if (dynGen === this.generation) {
+                    this.activeToolCalls = Math.max(
+                      0,
+                      this.activeToolCalls - 1,
+                    );
+                  }
                 }
               });
               break;
@@ -1305,7 +1315,13 @@ export class McpTransport {
                     sessionId: this.sessionId,
                   });
                   if (decision === "rejected" || decision === "expired") {
-                    this.activeToolCalls--;
+                    // Clamp: detach() may have reset activeToolCalls to 0 if
+                    // the WS dropped mid-approval. See line 1478 for the
+                    // matching pattern on the resolved-tool path.
+                    this.activeToolCalls = Math.max(
+                      0,
+                      this.activeToolCalls - 1,
+                    );
                     this.inFlightToolNames.delete(msg.id);
                     this.inFlightControllers.delete(msg.id);
                     // Approval rejections/expiries are NOT tool failures — track

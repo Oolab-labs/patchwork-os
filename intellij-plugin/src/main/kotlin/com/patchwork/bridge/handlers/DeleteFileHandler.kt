@@ -28,14 +28,18 @@ class DeleteFileHandler : BridgeHandler {
         // useTrash default true — IJ's VirtualFile.delete moves to trash on supported platforms
         // We use VirtualFile.delete which respects platform trash on macOS/Windows via VFS.
 
-        val vf = LocalFileSystem.getInstance().findFileByPath(filePath)
-            ?: return JsonObject().apply {
-                addProperty("success", false)
-                addProperty("error", "Failed to delete: File not found: $filePath")
-            }
+        // VFS lookup + child enumeration require a read action.
+        val vf = ApplicationManager.getApplication().runReadAction<com.intellij.openapi.vfs.VirtualFile?> {
+            LocalFileSystem.getInstance().findFileByPath(filePath)
+        } ?: return JsonObject().apply {
+            addProperty("success", false)
+            addProperty("error", "Failed to delete: File not found: $filePath")
+        }
 
         if (vf.isDirectory && !recursive) {
-            val hasChildren = vf.children?.isNotEmpty() ?: false
+            val hasChildren = ApplicationManager.getApplication().runReadAction<Boolean> {
+                vf.children?.isNotEmpty() ?: false
+            }
             if (hasChildren) {
                 return JsonObject().apply {
                     addProperty("success", false)
@@ -45,8 +49,11 @@ class DeleteFileHandler : BridgeHandler {
         }
 
         return try {
-            ApplicationManager.getApplication().runWriteAction<Unit> {
-                vf.delete(this)
+            // runWriteAction asserts EDT; handlers run on a background thread.
+            ApplicationManager.getApplication().invokeAndWait {
+                ApplicationManager.getApplication().runWriteAction<Unit> {
+                    vf.delete(this)
+                }
             }
             JsonObject().apply {
                 addProperty("success", true)

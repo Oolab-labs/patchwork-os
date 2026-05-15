@@ -7,6 +7,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { mimeTypeFromPath } from "./tools/utils.js";
 
 const RESOURCES_PAGE_SIZE = 50;
@@ -115,7 +116,7 @@ function fileToResource(absPath: string, workspace: string): McpResource {
   const relPath = absPath.startsWith(workspace + path.sep)
     ? absPath.slice(workspace.length + 1)
     : absPath;
-  const uri = `file://${absPath}`;
+  const uri = pathToFileURL(absPath).href;
   return {
     uri,
     name: relPath,
@@ -207,14 +208,14 @@ export function readResource(
     return { error: "Only file:// URIs are supported", code: "invalid_args" };
   }
 
-  // Decode percent-encoding before resolving — paths with spaces are encoded
-  // as "file:///my%20dir/file.ts" and must be decoded or the workspace check fails.
+  // Use fileURLToPath so Windows-shaped URIs (`file:///C:/...`) and
+  // percent-encoded paths round-trip correctly on every platform.
   let rawPath: string;
   try {
-    rawPath = decodeURIComponent(uri.slice(7)); // strip "file://" then decode
+    rawPath = fileURLToPath(uri);
   } catch {
     return {
-      error: `URI "${uri}" contains invalid percent-encoding`,
+      error: `URI "${uri}" is not a valid file URL`,
       code: "invalid_args",
     };
   }

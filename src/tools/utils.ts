@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import type { AbsPath } from "../fp/brandedTypes.js";
 
@@ -342,7 +343,7 @@ export function requireInt(
 }
 
 export function toFileUri(absPath: string): string {
-  return new URL(`file://${absPath}`).href;
+  return pathToFileURL(absPath).href;
 }
 
 export function truncateOutput(

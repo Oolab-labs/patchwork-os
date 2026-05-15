@@ -14,7 +14,15 @@ function mockClient(
     isConnected: () => connected,
     previewCodeAction: vi.fn(async () => {
       if (throwTimeout) throw new ExtensionTimeoutError("timeout");
-      return previewResult;
+      // Production previewCodeAction returns an envelope; mock matches.
+      if (previewResult === null) {
+        return {
+          value: null,
+          error: "no result",
+          errorData: { error: "no result" },
+        };
+      }
+      return { value: previewResult, error: null, errorData: null };
     }),
   } as any;
 }

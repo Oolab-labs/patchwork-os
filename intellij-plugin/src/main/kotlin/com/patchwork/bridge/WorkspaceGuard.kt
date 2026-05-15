@@ -1,5 +1,6 @@
 package com.patchwork.bridge
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
 import java.nio.file.Files
@@ -16,7 +17,11 @@ object WorkspaceGuard {
      * Throws WorkspaceViolationException if outside.
      */
     fun assertInWorkspace(filePath: String, project: Project) {
-        val roots = ProjectRootManager.getInstance(project).contentRoots.map { java.io.File(it.path) }
+        // ProjectRootManager.contentRoots requires a read action. Handlers run on a
+        // background dispatcher thread, so wrap explicitly.
+        val roots = ApplicationManager.getApplication().runReadAction<List<java.io.File>> {
+            ProjectRootManager.getInstance(project).contentRoots.map { java.io.File(it.path) }
+        }
         if (!isInsideRoots(filePath, roots)) throw WorkspaceViolationException(filePath)
     }
 

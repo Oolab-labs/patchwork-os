@@ -59,7 +59,7 @@ const DIST_INDEX = path.join(BRIDGE_DIR, "dist", "index.js");
 const IS_WIN = process.platform === "win32";
 
 // ── Security helpers ──────────────────────────────────────────────────────────
-const SHELL_METACHARACTERS = /[;&|`$(){}\[\]<>"'\\\n\r]/;
+const SHELL_METACHARACTERS = /[;&|`$(){}[\]<>"'\\\n\r]/;
 
 /**
  * Validate that a command path is safe to execute.
@@ -284,7 +284,12 @@ function readLock(lockPath) {
 function bridgeBin() {
   if (fs.existsSync(DIST_INDEX)) return [process.execPath, [DIST_INDEX]];
   const srcIndex = path.join(BRIDGE_DIR, "src", "index.ts");
-  if (fs.existsSync(srcIndex)) return ["npx", ["tsx", srcIndex]];
+  if (fs.existsSync(srcIndex)) {
+    // On Windows the spawnProc helper uses shell:false, so we must point at
+    // the .cmd shim directly — bare "npx" would ENOENT.
+    const npx = IS_WIN ? "npx.cmd" : "npx";
+    return [npx, ["tsx", srcIndex]];
+  }
   console.error("Error: dist/index.js not found. Run 'npm run build' first.");
   process.exit(1);
 }

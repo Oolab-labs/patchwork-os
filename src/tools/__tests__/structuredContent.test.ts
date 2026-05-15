@@ -932,10 +932,14 @@ describe("structuredContent contract", () => {
       const mockClient = {
         isConnected: () => true,
         previewCodeAction: vi.fn().mockResolvedValue({
-          title: "Extract variable",
-          changes: [],
-          totalFiles: 0,
-          totalEdits: 0,
+          value: {
+            title: "Extract variable",
+            changes: [],
+            totalFiles: 0,
+            totalEdits: 0,
+          },
+          error: null,
+          errorData: null,
         }),
       } as never;
       const tool = createRefactorPreviewTool(WORKSPACE, mockClient);

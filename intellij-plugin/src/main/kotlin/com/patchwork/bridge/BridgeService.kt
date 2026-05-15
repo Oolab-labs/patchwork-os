@@ -3,6 +3,7 @@ package com.patchwork.bridge
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.intellij.ide.plugins.PluginManagerCore
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
@@ -22,7 +23,7 @@ import kotlin.math.roundToLong
 import kotlin.random.Random
 
 @Service(Service.Level.APP)
-class BridgeService {
+class BridgeService : Disposable {
 
     companion object {
         private val LOG = Logger.getInstance(BridgeService::class.java)
@@ -387,7 +388,7 @@ class BridgeService {
         }, delay, TimeUnit.MILLISECONDS)
     }
 
-    fun dispose() {
+    override fun dispose() {
         cancelHeartbeat()
         reconnectFuture?.cancel(false)
         generation.incrementAndGet()

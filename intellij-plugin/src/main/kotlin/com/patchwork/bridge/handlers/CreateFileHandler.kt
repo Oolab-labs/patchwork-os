@@ -38,15 +38,24 @@ class CreateFileHandler : BridgeHandler {
 
         if (isDirectory) {
             return try {
-                ApplicationManager.getApplication().runWriteAction<JsonObject> {
-                    file.mkdirs()
-                    LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
-                    JsonObject().apply {
-                        addProperty("success", true)
-                        addProperty("filePath", filePath)
-                        addProperty("isDirectory", true)
-                        addProperty("created", true)
+                var result: JsonObject? = null
+                // runWriteAction asserts EDT; handlers run on a background dispatcher
+                // thread, so marshal via invokeAndWait. Same pattern as EditTextHandler.
+                ApplicationManager.getApplication().invokeAndWait {
+                    ApplicationManager.getApplication().runWriteAction<Unit> {
+                        file.mkdirs()
+                        LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+                        result = JsonObject().apply {
+                            addProperty("success", true)
+                            addProperty("filePath", filePath)
+                            addProperty("isDirectory", true)
+                            addProperty("created", true)
+                        }
                     }
+                }
+                result ?: JsonObject().apply {
+                    addProperty("success", false)
+                    addProperty("error", "Failed to create directory")
                 }
             } catch (e: Exception) {
                 JsonObject().apply {
@@ -66,10 +75,13 @@ class CreateFileHandler : BridgeHandler {
 
         return try {
             var vf: com.intellij.openapi.vfs.VirtualFile? = null
-            ApplicationManager.getApplication().runWriteAction<Unit> {
-                file.parentFile?.mkdirs()
-                file.writeText(content, Charsets.UTF_8)
-                vf = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+            // runWriteAction asserts EDT; handlers run on a background thread.
+            ApplicationManager.getApplication().invokeAndWait {
+                ApplicationManager.getApplication().runWriteAction<Unit> {
+                    file.parentFile?.mkdirs()
+                    file.writeText(content, Charsets.UTF_8)
+                    vf = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+                }
             }
 
             val createdVf = vf ?: return JsonObject().apply {

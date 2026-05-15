@@ -11,6 +11,7 @@
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   symlinkSync,
@@ -51,8 +52,19 @@ function linkBin(pkgName, binaryName, linkName = binaryName) {
     if (existsSync(dest)) {
       unlinkSync(dest);
     }
-    symlinkSync(src, dest);
-    console.log(`  linked ${linkName} → ${path.relative(root, src)}`);
+    try {
+      symlinkSync(src, dest);
+      console.log(`  linked ${linkName} → ${path.relative(root, src)}`);
+    } catch (err) {
+      // Windows non-admin users can't create symlinks without Developer Mode.
+      // Fall back to a copy so the binary is still discoverable.
+      if (process.platform === "win32") {
+        copyFileSync(src, dest);
+        console.log(`  copied ${linkName} → ${path.relative(root, src)}`);
+      } else {
+        throw err;
+      }
+    }
   } catch {
     // Package not installed — silently skip
   }

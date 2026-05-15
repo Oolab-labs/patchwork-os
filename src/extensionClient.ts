@@ -890,6 +890,33 @@ export class ExtensionClient {
   }
 
   /**
+   * Like tryRequest, but preserves the extension error message instead of
+   * collapsing it to null. Use when the caller wants to surface the upstream
+   * error (e.g. report "format provider errored: X" instead of silently
+   * falling back to a CLI tool). Returns an envelope so the success-path
+   * value is still typed and the historical `value === null` check works
+   * unchanged.
+   */
+  private async tryRequestWithError<T>(
+    method: string,
+    params?: unknown,
+    timeout?: number,
+    signal?: AbortSignal,
+  ): Promise<{
+    value: T | null;
+    error: string | null;
+    errorData: Record<string, unknown> | null;
+  }> {
+    const raw = await this.requestOrNull(method, params, timeout, signal);
+    if (this.isErrorResponse(raw)) {
+      const obj = raw as Record<string, unknown>;
+      const msg = typeof obj.error === "string" ? obj.error : "extension error";
+      return { value: null, error: msg, errorData: obj };
+    }
+    return { value: raw as T | null, error: null, errorData: null };
+  }
+
+  /**
    * Shape-validated request — handles shape-wrap bugs where the extension
    * handler returns a different structural shape than the client expects
    * (e.g. `{ folders, count }` vs `WorkspaceFolder[]`).
@@ -1146,7 +1173,8 @@ export class ExtensionClient {
     );
   }
 
-  // handler returns { title, changes, ... } | { error } — tryRequest (error-obj on failure)
+  // handler returns { title, changes, ... } | { error, available? } — preserve error so
+  // callers can include the upstream message (and `available` list) in their failure reply
   async previewCodeAction(
     file: string,
     startLine: number,
@@ -1155,8 +1183,12 @@ export class ExtensionClient {
     endColumn: number,
     actionTitle: string,
     signal?: AbortSignal,
-  ): Promise<unknown> {
-    return this.tryRequest(
+  ): Promise<{
+    value: unknown;
+    error: string | null;
+    errorData: Record<string, unknown> | null;
+  }> {
+    return this.tryRequestWithError(
       "extension/previewCodeAction",
       { file, startLine, startColumn, endLine, endColumn, actionTitle },
       15_000,
@@ -1475,22 +1507,43 @@ export class ExtensionClient {
 
   // --- Code Actions (format, fix, organize) ---
 
-  async formatDocument(file: string): Promise<unknown> {
-    // Extension returns { error: "..." } when the format command fails.
-    // tryRequest unwraps to null so consumers' `!== null` check falls through
-    // to their CLI formatter fallback instead of reporting false success.
-    return this.tryRequest("extension/formatDocument", { file }, 15_000);
+  // Extension returns { error: "..." } on failure. Envelope preserves the
+  // error string so callers can surface it before falling back to a CLI tool
+  // (previously the message was silently dropped — see [extension-shape] audit).
+  async formatDocument(file: string): Promise<{
+    value: unknown;
+    error: string | null;
+    errorData: Record<string, unknown> | null;
+  }> {
+    return this.tryRequestWithError(
+      "extension/formatDocument",
+      { file },
+      15_000,
+    );
   }
 
-  async fixAllLintErrors(file: string): Promise<unknown> {
-    // Extension returns { error: "..." } on command failure. tryRequest
-    // unwraps to null so consumers fall through to their CLI fallback.
-    return this.tryRequest("extension/fixAllLintErrors", { file }, 15_000);
+  async fixAllLintErrors(file: string): Promise<{
+    value: unknown;
+    error: string | null;
+    errorData: Record<string, unknown> | null;
+  }> {
+    return this.tryRequestWithError(
+      "extension/fixAllLintErrors",
+      { file },
+      15_000,
+    );
   }
 
-  // handler returns { success: true, actionsApplied } | { error } — tryRequest (error-obj on failure)
-  async organizeImports(file: string): Promise<unknown> {
-    return this.tryRequest("extension/organizeImports", { file }, 15_000);
+  async organizeImports(file: string): Promise<{
+    value: unknown;
+    error: string | null;
+    errorData: Record<string, unknown> | null;
+  }> {
+    return this.tryRequestWithError(
+      "extension/organizeImports",
+      { file },
+      15_000,
+    );
   }
 
   // --- Terminal Control ---

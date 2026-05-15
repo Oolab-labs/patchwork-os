@@ -114,48 +114,52 @@ describe("shape-safety regressions (v2.25.18–v2.25.24 bug seeds)", () => {
 
   // v2.25.20 — formatDocument masked handler-reported errors as success
   // because proxy<T> cast the `{ error: "..." }` shape through unchecked.
-  // tryRequest must unwrap error-objects to null so callers fall through
-  // to their CLI formatter fallback.
+  // The fix now returns an envelope so callers can see the error message
+  // AND fall back. `value === null` preserves the historical fallback check.
   describe("formatDocument (v2.25.20)", () => {
-    it("{ error } response → null (caller falls back)", async () => {
+    it("{ error } response → value=null with error preserved", async () => {
       const ws = await connect();
       stubHandler(ws, "extension/formatDocument", {
         error: "No formatter configured",
       });
       const r = await client.formatDocument("/a.ts");
-      expect(r).toBeNull();
+      expect(r.value).toBeNull();
+      expect(r.error).toBe("No formatter configured");
       ws.close();
     });
 
-    it("valid success response passes through unchanged", async () => {
+    it("valid success response passes through as envelope.value", async () => {
       const ws = await connect();
       stubHandler(ws, "extension/formatDocument", { formatted: true });
       const r = await client.formatDocument("/a.ts");
-      expect(r).toEqual({ formatted: true });
+      expect(r.value).toEqual({ formatted: true });
+      expect(r.error).toBeNull();
       ws.close();
     });
   });
 
   // v2.25.20 — same shape-mismatch class as formatDocument.
   describe("fixAllLintErrors (v2.25.20)", () => {
-    it("{ error } response → null (caller falls back)", async () => {
+    it("{ error } response → value=null with error preserved", async () => {
       const ws = await connect();
       stubHandler(ws, "extension/fixAllLintErrors", {
         error: "command failed",
       });
       const r = await client.fixAllLintErrors("/a.ts");
-      expect(r).toBeNull();
+      expect(r.value).toBeNull();
+      expect(r.error).toBe("command failed");
       ws.close();
     });
 
-    it("{ success:false, error } also unwraps to null", async () => {
+    it("{ success:false, error } also yields value=null + error", async () => {
       const ws = await connect();
       stubHandler(ws, "extension/fixAllLintErrors", {
         success: false,
         error: "no ESLint config",
       });
       const r = await client.fixAllLintErrors("/a.ts");
-      expect(r).toBeNull();
+      expect(r.value).toBeNull();
+      expect(r.error).toBe("no ESLint config");
       ws.close();
     });
   });

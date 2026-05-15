@@ -30,11 +30,13 @@ class RenameFileHandler : BridgeHandler {
 
         val overwrite = params.get("overwrite")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
 
-        val vf = LocalFileSystem.getInstance().findFileByPath(oldPath)
-            ?: return JsonObject().apply {
-                addProperty("success", false)
-                addProperty("error", "Failed to rename file: Source not found: $oldPath")
-            }
+        // VFS lookup requires a read action.
+        val vf = ApplicationManager.getApplication().runReadAction<com.intellij.openapi.vfs.VirtualFile?> {
+            LocalFileSystem.getInstance().findFileByPath(oldPath)
+        } ?: return JsonObject().apply {
+            addProperty("success", false)
+            addProperty("error", "Failed to rename file: Source not found: $oldPath")
+        }
 
         val newFile = File(newPath)
         val newName = newFile.name
@@ -52,24 +54,27 @@ class RenameFileHandler : BridgeHandler {
         }
 
         return try {
-            ApplicationManager.getApplication().runWriteAction<Unit> {
-                val isSameDir = vf.parent?.path == newParentPath
+            // runWriteAction asserts EDT; handlers run on a background thread.
+            ApplicationManager.getApplication().invokeAndWait {
+                ApplicationManager.getApplication().runWriteAction<Unit> {
+                    val isSameDir = vf.parent?.path == newParentPath
 
-                if (isSameDir) {
-                    // Same directory — just rename
-                    vf.rename(this, newName)
-                } else {
-                    // Different directory — move: find/create parent, then move
-                    File(newParentPath).mkdirs()
-                    val newParentVf = LocalFileSystem.getInstance()
-                        .refreshAndFindFileByPath(newParentPath)
-                        ?: throw IllegalStateException("Cannot resolve destination directory: $newParentPath")
+                    if (isSameDir) {
+                        // Same directory — just rename
+                        vf.rename(this, newName)
+                    } else {
+                        // Different directory — move: find/create parent, then move
+                        File(newParentPath).mkdirs()
+                        val newParentVf = LocalFileSystem.getInstance()
+                            .refreshAndFindFileByPath(newParentPath)
+                            ?: throw IllegalStateException("Cannot resolve destination directory: $newParentPath")
 
-                    if (destExists && overwrite) {
-                        newParentVf.findChild(newName)?.delete(this)
+                        if (destExists && overwrite) {
+                            newParentVf.findChild(newName)?.delete(this)
+                        }
+                        vf.move(this, newParentVf)
+                        if (vf.name != newName) vf.rename(this, newName)
                     }
-                    vf.move(this, newParentVf)
-                    if (vf.name != newName) vf.rename(this, newName)
                 }
             }
 

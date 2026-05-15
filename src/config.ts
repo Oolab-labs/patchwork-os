@@ -614,7 +614,7 @@ export function parseConfig(argv: string[]): Config {
         const cmd = requireArg(args, ++i, "--allow-command");
         if (cmd.length > 256)
           throw new Error("--allow-command value too long (max 256 chars)");
-        if (INTERPRETER_COMMANDS.has(cmd)) {
+        if (INTERPRETER_COMMANDS.has(cmd.toLowerCase())) {
           throw new Error(
             `"${cmd}" is an interpreter and cannot be added via --allow-command (arbitrary code execution risk)`,
           );
@@ -888,7 +888,7 @@ Options:
   --lazy-tools              Strip inputSchema from tools/list responses. Clients call tools/schema before tools/call. Reduces token usage ~85% in tool-heavy workflows. Default: off.
                             Default is full mode (~140 tools: adds git, terminal, file ops, HTTP, GitHub).
   --full                    (default — flag retained for backward compatibility) Explicitly request full tool set.
-  --vps                     VPS/headless mode: expands allowlist with curl, systemctl, docker, tar, dig, openssl, etc.
+  --vps                     VPS/headless mode: expands allowlist with curl, systemctl, docker, tar, dig, openssl, etc. Note: tools like git (hooks), npm (run scripts), and docker-compose execute project-controlled code by design — do not point the bridge at untrusted workspaces.
   --db                      Database mode: expands allowlist with psql, pg_dump, mysql, sqlite3, redis-cli, mongosh, etc.
   --allow-private-http      Allow sendHttpRequest to reach localhost/private IPs (for VPS where bridge runs alongside services)
   --auto-tmux               Auto-wrap in tmux session if not already inside one

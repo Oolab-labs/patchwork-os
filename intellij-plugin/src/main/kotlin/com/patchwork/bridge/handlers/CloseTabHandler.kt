@@ -37,31 +37,32 @@ class CloseTabHandler : BridgeHandler {
         val fem = FileEditorManager.getInstance(project)
         val fdm = FileDocumentManager.getInstance()
 
-        // Find matching open file among all open editors
-        var matchedVf = fem.openFiles.firstOrNull { vf ->
-            val tabPath = try {
-                File(vf.path).canonicalPath
-            } catch (_: Exception) {
-                File(vf.path).absolutePath
+        // FileEditorManager + VFS access requires a read action.
+        data class Lookup(
+            val matchedVf: com.intellij.openapi.vfs.VirtualFile?,
+            val wasDirty: Boolean,
+        )
+        val lookup = ApplicationManager.getApplication().runReadAction<Lookup> {
+            var matched = fem.openFiles.firstOrNull { vf ->
+                val tabPath = try {
+                    File(vf.path).canonicalPath
+                } catch (_: Exception) {
+                    File(vf.path).absolutePath
+                }
+                tabPath == normalizedTarget
             }
-            tabPath == normalizedTarget
-        }
-
-        if (matchedVf == null) {
-            // Also check via LocalFileSystem in case not yet opened in editor
-            val vf = LocalFileSystem.getInstance().findFileByPath(file)
-            if (vf != null && fem.isFileOpen(vf)) matchedVf = vf
-        }
-
-        if (matchedVf == null) {
-            return JsonObject().apply {
-                addProperty("success", false)
-                addProperty("error", "Tab not found")
+            if (matched == null) {
+                val vf = LocalFileSystem.getInstance().findFileByPath(file)
+                if (vf != null && fem.isFileOpen(vf)) matched = vf
             }
+            val doc = matched?.let { fdm.getCachedDocument(it) }
+            Lookup(matched, doc != null && fdm.isDocumentUnsaved(doc))
         }
-
-        val document = fdm.getCachedDocument(matchedVf)
-        val wasDirty = document != null && fdm.isDocumentUnsaved(document)
+        val matchedVf = lookup.matchedVf ?: return JsonObject().apply {
+            addProperty("success", false)
+            addProperty("error", "Tab not found")
+        }
+        val wasDirty = lookup.wasDirty
 
         ApplicationManager.getApplication().invokeAndWait {
             fem.closeFile(matchedVf)

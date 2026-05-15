@@ -26,14 +26,22 @@ class SaveFileHandler : BridgeHandler {
 
         WorkspaceGuard.assertInWorkspace(file, project)
 
-        val vf = LocalFileSystem.getInstance().findFileByPath(file)
+        // VFS + document lookups require a read action.
+        val fdm = FileDocumentManager.getInstance()
+        data class Lookup(
+            val vf: com.intellij.openapi.vfs.VirtualFile?,
+            val document: com.intellij.openapi.editor.Document?,
+        )
+        val lookup = ApplicationManager.getApplication().runReadAction<Lookup> {
+            val v = LocalFileSystem.getInstance().findFileByPath(file)
+            Lookup(v, v?.let { fdm.getCachedDocument(it) })
+        }
+        val vf = lookup.vf
             ?: return JsonObject().apply {
                 addProperty("success", false)
                 addProperty("error", "Document not open")
             }
-
-        val fdm = FileDocumentManager.getInstance()
-        val document = fdm.getCachedDocument(vf)
+        val document = lookup.document
             ?: return JsonObject().apply {
                 addProperty("success", false)
                 addProperty("error", "Document not open")

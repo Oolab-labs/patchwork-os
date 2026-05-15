@@ -37,7 +37,7 @@ export interface AutomationState {
   readonly taskTimestamps: readonly number[];
   /**
    * Per-content-signature dedup timestamps (keyed: `dedup:${hookKey}:${sig}`).
-   * Bounded at 5_000 entries — same eviction as lastTrigger.
+   * Bounded at 5_000 entries via LRU eviction in `recordDedup`.
    */
   readonly deduplicationWindow: ReadonlyMap<string, number>;
   /**
@@ -115,8 +115,18 @@ export function recordTrigger(
   now: number,
 ): AutomationState {
   const MAX_TASK_TIMESTAMPS = 10_000;
+  const MAX_TRIGGER_KEYS = 5_000;
+
+  // LRU: delete-then-set so the key moves to the end of insertion order.
+  // When the map exceeds the cap, drop entries from the front (oldest).
   const newLastTrigger = new Map(state.lastTrigger);
+  newLastTrigger.delete(key);
   newLastTrigger.set(key, now);
+  while (newLastTrigger.size > MAX_TRIGGER_KEYS) {
+    const oldestKey = newLastTrigger.keys().next().value;
+    if (oldestKey === undefined) break;
+    newLastTrigger.delete(oldestKey);
+  }
 
   const newActiveTasks = new Map(state.activeTasks);
   newActiveTasks.set(key, taskId);
