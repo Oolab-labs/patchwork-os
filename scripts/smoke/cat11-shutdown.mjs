@@ -78,8 +78,20 @@ try {
     "11.2 lock file present before SIGTERM",
   );
 
-  // Send SIGTERM
-  proc.kill("SIGTERM");
+  const BASE = `http://127.0.0.1:${PORT}`;
+
+  // Trigger shutdown. POSIX: SIGTERM hits the signal handler. Windows:
+  // SIGTERM is TerminateProcess (no handlers fire), so POST /shutdown
+  // which calls the bridge's internal shutdown sequence directly.
+  if (process.platform === "win32") {
+    await httpPost(
+      `${BASE}/shutdown`,
+      {},
+      { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    ).catch(() => ({ status: 0 }));
+  } else {
+    proc.kill("SIGTERM");
+  }
 
   // Wait up to 5s for clean shutdown
   const deadline = Date.now() + 5_000;
@@ -88,7 +100,7 @@ try {
   }
 
   // 11.3 Exited within 5s
-  assert(exitCode !== null, "11.3 bridge exited within 5s of SIGTERM");
+  assert(exitCode !== null, "11.3 bridge exited within 5s of shutdown");
 
   // 11.4 Exit code is 143 or 0 (some bridges exit 0 on graceful SIGTERM)
   assert(
@@ -96,32 +108,23 @@ try {
     `11.4 exit code is 0 or 143 (got ${exitCode})`,
   );
 
-  // 11.5 / 11.6 — clean-shutdown invariants. On POSIX SIGTERM hits the
-  // bridge's signal handlers, which unlink the lock file + close the HTTP
-  // server. Windows `process.kill('SIGTERM')` is documented as
-  // TerminateProcess (no clean-shutdown handlers fire), so the lockfile
-  // cleanup + HTTP-server close paths aren't exercised by SIGTERM here.
-  // Skip these two on win32 until the harness uses a Windows-clean exit
-  // path (HTTP /shutdown endpoint, CTRL_BREAK_EVENT, etc).
-  if (process.platform !== "win32") {
-    // Give OS a brief moment to flush — lock removal happens before process exit
-    await sleep(300);
-    assert(
-      !lockExistsIn(PORT, ENV.CLAUDE_CONFIG_DIR),
-      "11.5 lock file removed after shutdown",
-    );
+  // 11.5 / 11.6 — clean-shutdown invariants. Both POSIX (SIGTERM handler)
+  // and Windows (HTTP /shutdown) now exercise the same cleanup path.
+  await sleep(300);
+  assert(
+    !lockExistsIn(PORT, ENV.CLAUDE_CONFIG_DIR),
+    "11.5 lock file removed after shutdown",
+  );
 
-    const BASE = `http://127.0.0.1:${PORT}`;
-    const r = await httpPost(
-      `${BASE}/mcp`,
-      { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
-      { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    ).catch(() => ({ status: 0 }));
-    assert(
-      r.status === 0 || r.status === 503 || r.status === 404,
-      `11.6 HTTP endpoint closed after shutdown (got ${r.status})`,
-    );
-  }
+  const r = await httpPost(
+    `${BASE}/mcp`,
+    { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
+    { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+  ).catch(() => ({ status: 0 }));
+  assert(
+    r.status === 0 || r.status === 503 || r.status === 404,
+    `11.6 HTTP endpoint closed after shutdown (got ${r.status})`,
+  );
 } finally {
   // Ensure bridge is dead even if test throws
   try {
