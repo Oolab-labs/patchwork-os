@@ -113,9 +113,13 @@ function collectWorkspaceFiles(workspace: string): string[] {
 }
 
 function fileToResource(absPath: string, workspace: string): McpResource {
-  const relPath = absPath.startsWith(workspace + path.sep)
-    ? absPath.slice(workspace.length + 1)
-    : absPath;
+  // Case-insensitive prefix match on Windows; preserve the original-case
+  // path for the relative slice so the displayed name matches the disk.
+  const matches =
+    process.platform === "win32"
+      ? absPath.toLowerCase().startsWith(workspace.toLowerCase() + path.sep)
+      : absPath.startsWith(workspace + path.sep);
+  const relPath = matches ? absPath.slice(workspace.length + 1) : absPath;
   const uri = pathToFileURL(absPath).href;
   return {
     uri,
@@ -222,11 +226,13 @@ export function readResource(
   const absPath = path.resolve(rawPath);
   const normalizedWorkspace = path.resolve(workspace);
 
-  // Workspace confinement
-  if (
-    absPath !== normalizedWorkspace &&
-    !absPath.startsWith(normalizedWorkspace + path.sep)
-  ) {
+  // Workspace confinement — case-insensitive on Windows (NTFS).
+  const cmpA = process.platform === "win32" ? absPath.toLowerCase() : absPath;
+  const cmpB =
+    process.platform === "win32"
+      ? normalizedWorkspace.toLowerCase()
+      : normalizedWorkspace;
+  if (cmpA !== cmpB && !cmpA.startsWith(cmpB + path.sep)) {
     return {
       error: `URI "${uri}" is outside the workspace`,
       code: "workspace_escape",
@@ -270,10 +276,11 @@ export function readResource(
   } catch {
     return { error: `Resource not found: ${uri}`, code: "file_not_found" };
   }
-  if (
-    realPath !== realWorkspace &&
-    !realPath.startsWith(realWorkspace + path.sep)
-  ) {
+  const realA =
+    process.platform === "win32" ? realPath.toLowerCase() : realPath;
+  const realB =
+    process.platform === "win32" ? realWorkspace.toLowerCase() : realWorkspace;
+  if (realA !== realB && !realA.startsWith(realB + path.sep)) {
     return {
       error: `URI "${uri}" is outside the workspace`,
       code: "workspace_escape",

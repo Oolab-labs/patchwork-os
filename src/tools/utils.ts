@@ -117,10 +117,16 @@ export function resolveFilePath(
     ? path.resolve(filePath)
     : path.resolve(workspace, filePath);
   const normalizedWorkspace = path.resolve(workspace);
-  if (
-    resolved !== normalizedWorkspace &&
-    !resolved.startsWith(normalizedWorkspace + path.sep)
-  ) {
+  // Windows: NTFS is case-insensitive; `C:\foo` and `c:\foo` reach the same
+  // inode. `path.resolve` does not normalize drive-letter case, so a strict
+  // `startsWith` rejects legitimate-but-mixed-case workspaces. Lowercase
+  // both sides before comparison on win32.
+  const cmpA = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  const cmpB =
+    process.platform === "win32"
+      ? normalizedWorkspace.toLowerCase()
+      : normalizedWorkspace;
+  if (cmpA !== cmpB && !cmpA.startsWith(cmpB + path.sep)) {
     const err = new Error(
       `Path "${filePath}" (resolved: "${resolved}") escapes workspace "${workspace}". All paths must be within the workspace. For files outside the workspace (e.g. ~/.claude/), use the native Read tool instead.`,
     ) as Error & { code: string };
@@ -416,6 +422,24 @@ const SAFE_BIN_BASENAMES = new Set([
   // allowlistChecked:true with a fixed argv shape.)
   "open",
   "xdg-open",
+  // npx is allowlisted because detectUnusedCode invokes `npx tsc` as a
+  // fallback when local tsc isn't on PATH. The argv shape is fixed (npx
+  // <tool> [args]) and the tool name is hardcoded by the caller; this
+  // is not a general "let users run any package" escape hatch.
+  "npx",
+  // Windows shim equivalents — Node's `path.basename` returns the .cmd/.bat
+  // suffix on win32 when the caller passes the full shim path.
+  "git.exe",
+  "gh.exe",
+  "rg.exe",
+  "npm.cmd",
+  "npx.cmd",
+  "yarn.cmd",
+  "pnpm.cmd",
+  "tsc.cmd",
+  "eslint.cmd",
+  "biome.cmd",
+  "prettier.cmd",
 ]);
 
 function assertSafeBinary(cmd: string): void {
