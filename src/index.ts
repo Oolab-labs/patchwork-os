@@ -3169,9 +3169,12 @@ Steps performed:
     }
     if (extensionArg2) {
       try {
+        // Windows: editor binaries (code/cursor/windsurf) are `.cmd` shims that
+        // Node's execFileSync can't launch without a shell. See bridgeProcess.ts.
         execFileSync(editor, ["--install-extension", extensionArg2], {
           stdio: "pipe",
           timeout: 30000,
+          shell: process.platform === "win32",
         });
         process.stderr.write(`  ✓ Extension installed via ${editor}\n\n`);
       } catch {
@@ -3711,9 +3714,11 @@ if (process.argv[2] === "orchestrator") {
 
   try {
     process.stderr.write(`Installing extension via ${editor}...\n`);
+    // Windows: editor binaries are `.cmd` shims; need shell for resolution.
     execFileSync(editor, ["--install-extension", extensionArg], {
       stdio: "inherit",
       timeout: 30000,
+      shell: process.platform === "win32",
     });
     process.stderr.write("Extension installed successfully.\n");
   } catch (err: unknown) {

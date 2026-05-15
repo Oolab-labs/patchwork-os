@@ -33,7 +33,9 @@ function defaultIsLive(pid: number): boolean {
 }
 
 function defaultLockDir(): string {
-  return path.join(os.homedir(), ".claude", "ide");
+  const configDir =
+    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  return path.join(configDir, "ide");
 }
 
 /**

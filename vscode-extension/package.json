@@ -2,7 +2,7 @@
   "name": "claude-ide-bridge-extension",
   "displayName": "Claude IDE Bridge",
   "description": "MCP bridge between Claude Code and your IDE. 170+ tools — diagnostics, LSP, debugger, terminal, git. Optional Patchwork OS layer adds recipes, oversight, and approval queue.",
-  "version": "1.4.12",
+  "version": "1.4.13",
   "extensionKind": [
     "workspace"
   ],
@@ -197,6 +197,8 @@
     "prebuild": "npm run sync-presets",
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
+    "vscode:prepublish": "npm run build",
+    "prepackage": "npm run build",
     "pretest": "npm run sync-presets",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -3,6 +3,7 @@
  * All allowlist/blocklist/path-traversal security checks live here.
  * No side effects, no fs.*, no process.* (except INTERPRETER_COMMANDS import).
  */
+import path from "node:path";
 import { INTERPRETER_COMMANDS } from "../config.js";
 import {
   optionalInt,
@@ -137,7 +138,14 @@ function validateCommandArgs(
         `Flag "${flag}" is blocked for command "${command}" — it can redirect command execution outside the workspace`,
       );
     }
-    if (!arg.startsWith("-") && (arg.startsWith("/") || arg.startsWith("~/"))) {
+    // Workspace containment check for any absolute or home-relative path.
+    // path.isAbsolute catches Windows drive-letter forms (`C:\foo`, `\\srv\sh`)
+    // that startsWith("/") would miss — without this the containment check
+    // was a no-op on Windows.
+    if (
+      !arg.startsWith("-") &&
+      (path.isAbsolute(arg) || arg.startsWith("~/"))
+    ) {
       try {
         resolveFilePath(arg, workspace);
       } catch {
