@@ -621,7 +621,12 @@ const filteredItems = items.filter((item) => {
             <Spinner />
             <span>Loading…</span>
           </div>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && !err ? (
+          // Suppress "Run a recipe to generate your first brief" when err
+          // is set — the cause of the empty list is connectivity / fetch
+          // failure, not an actual empty inbox. The alert-err above this
+          // block already explains the failure and offers Retry, so a
+          // second misleading CTA below just creates noise.
           <EmptyState
             icon={
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -644,7 +649,7 @@ const filteredItems = items.filter((item) => {
               </>
             }
           />
-        ) : (
+        ) : items.length === 0 && err ? null : (
           <div
             className={`inbox-twopane${selected ? " inbox-twopane--reader" : " inbox-twopane--list"}`}
             style={{ display: "flex", flex: 1, minHeight: 0, border: "1px solid var(--line-1)", borderRadius: "var(--r-l)", overflow: "hidden", background: "var(--surface)" }}
