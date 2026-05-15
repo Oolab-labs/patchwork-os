@@ -5,6 +5,7 @@ import { fmtDuration } from "@/components/time";
 import { SkeletonList } from "@/components/Skeleton";
 import { EmptyState, ErrorState, RelationStrip } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
+import { useToast } from "@/components/Toast";
 
 interface Task {
   taskId: string;
@@ -90,6 +91,7 @@ function TaskDetail({ task, onCancel, cancelling }: {
   onCancel: (id: string) => void;
   cancelling: Record<string, boolean>;
 }) {
+  const toast = useToast();
   const [copied, setCopied] = useState<"id" | "term" | "replay" | null>(null);
   function flash(kind: "id" | "term" | "replay") {
     setCopied(kind);
@@ -235,9 +237,15 @@ function TaskDetail({ task, onCancel, cancelling }: {
                 apiPath(`/api/bridge/tasks/${task.taskId}/replay`),
                 { method: "POST" },
               );
-              if (res.ok) flash("replay");
-            } catch {
-              /* swallow — surfaced via next poll */
+              if (!res.ok) {
+                const body = (await res.json().catch(() => ({}))) as { error?: string };
+                throw new Error(body.error ?? `Server returned ${res.status}`);
+              }
+              flash("replay");
+            } catch (e) {
+              toast.error(
+                `Couldn't replay — ${e instanceof Error ? e.message : String(e)}`,
+              );
             }
           }}
         >
@@ -278,7 +286,11 @@ function TaskDetail({ task, onCancel, cancelling }: {
 // ----------------------------------------------------------- page
 
 async function cancelTask(id: string): Promise<void> {
-  await fetch(apiPath(`/api/bridge/tasks/${id}/cancel`), { method: "POST" });
+  const res = await fetch(apiPath(`/api/bridge/tasks/${id}/cancel`), { method: "POST" });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Server returned ${res.status}`);
+  }
 }
 
 function fmtAvg(ms: number): string {
@@ -288,6 +300,7 @@ function fmtAvg(ms: number): string {
 }
 
 export default function TasksPage() {
+  const toast = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [err, setErr] = useState<string>();
@@ -413,6 +426,11 @@ export default function TasksPage() {
     setCancelling((p) => ({ ...p, [id]: true }));
     try {
       await cancelTask(id);
+      toast.success("Task cancelled");
+    } catch (e) {
+      toast.error(
+        `Couldn't cancel — ${e instanceof Error ? e.message : String(e)}`,
+      );
     } finally {
       setCancelling((p) => ({ ...p, [id]: false }));
     }
