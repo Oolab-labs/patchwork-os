@@ -437,7 +437,9 @@ function BatchActionBar({
     <div
       style={{
         position: "sticky",
-        bottom: "calc(var(--s-6) + env(safe-area-inset-bottom, 0px))",
+        // Lift above the mobile bottom-nav (--bottom-nav-h is 0 on desktop,
+        // 62px on phones); env() adds the iPhone safe-area inset.
+        bottom: "calc(var(--s-6) + var(--bottom-nav-h, 0px) + env(safe-area-inset-bottom, 0px))",
         zIndex: 10,
         display: "flex",
         gap: "var(--s-3)",

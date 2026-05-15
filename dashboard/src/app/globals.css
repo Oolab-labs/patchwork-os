@@ -2564,6 +2564,19 @@ button.topbar-search {
   text-decoration: none;
 }
 
+/*
+  Toast viewport positioning. Inline-style version used to hard-code
+  bottom: 16px which collided with the mobile bottom-nav (62px tall) on
+  phones — toasts rendered behind the nav and were invisible. The viewport
+  now lifts itself above the nav whenever --bottom-nav-h is set.
+*/
+.toast-viewport {
+  position: fixed;
+  bottom: calc(16px + var(--bottom-nav-h, 0px) + env(safe-area-inset-bottom, 0px));
+  right: 16px;
+  z-index: 1100;
+}
+
 /* Settings page layout — desktop has a sticky 200px in-page nav next to
    cards; on mobile (≤768px) the nav stacks above the cards instead of
    eating half the viewport width. */
@@ -3104,10 +3117,23 @@ button.topbar-search {
   text-transform: none;
 }
 
+/*
+  Mobile bottom-nav height is exposed as a CSS variable so other fixed /
+  sticky overlays (toast viewport, BatchActionBar, mobile reader pane) can
+  raise themselves above it instead of getting hidden behind. ~62px is the
+  measured height of the rendered nav (6px + 36px icon-row + 6px + safe-area).
+*/
+:root {
+  --bottom-nav-h: 0px;
+}
+
 .mobile-bottom-nav {
   display: none;
 }
 @media (max-width: 768px) {
+  :root {
+    --bottom-nav-h: 62px;
+  }
   .mobile-bottom-nav {
     display: grid;
     position: fixed;

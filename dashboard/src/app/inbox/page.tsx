@@ -567,8 +567,12 @@ const filteredItems = items.filter((item) => {
               style={{
                 display: "flex",
                 alignItems: "center",
+                justifyContent: "center",
                 gap: 5,
-                padding: "5px 12px",
+                // 32px min hit target meets WCAG 2.5.5 (24×24); 9px vertical
+                // padding around the 12px icon lands at exactly 32 + border.
+                padding: "9px 14px",
+                minHeight: 32,
                 borderRadius: "var(--r-full)",
                 border: "1px solid var(--line-2)",
                 background: "transparent",
@@ -671,7 +675,7 @@ const filteredItems = items.filter((item) => {
                       onClick={() => setSidebarOpen(false)}
                       title="Collapse sidebar"
                       aria-label="Collapse message sidebar"
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", padding: "3px 5px", borderRadius: "var(--r-s)", fontSize: "var(--fs-xs)", lineHeight: 1 }}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", padding: "8px 10px", minWidth: 32, minHeight: 32, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--r-s)", fontSize: "var(--fs-xs)", lineHeight: 1 }}
                     >
                       <span aria-hidden="true">◀</span>
                     </button>
