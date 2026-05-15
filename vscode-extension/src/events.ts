@@ -234,4 +234,40 @@ export function registerEvents(
       },
     ),
   );
+
+  // Start / restart bridge for current workspace. Declared in package.json
+  // and referenced by the walkthrough; previously unregistered.
+  context.subscriptions.push(
+    vscode.commands.registerCommand("claudeIdeBridge.startBridge", () => {
+      for (const bridge of getBridges()) bridge.forceReconnect();
+      vscode.window.showInformationMessage(
+        "Claude IDE Bridge: Starting bridge…",
+      );
+    }),
+  );
+
+  // Install / upgrade the bridge npm package via the configured installer.
+  // Walkthrough button binds to this; without registration the click throws
+  // "command not found".
+  context.subscriptions.push(
+    vscode.commands.registerCommand("claudeIdeBridge.installBridge", () => {
+      void vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        "oolab-labs.claude-ide-bridge-extension#claudeIdeBridge.getStarted",
+        false,
+      );
+      vscode.window.showInformationMessage(
+        "Claude IDE Bridge: install/upgrade runs automatically on activation. Use the Output panel for progress.",
+      );
+    }),
+  );
+
+  // Open analytics panel — referenced by the walkthrough.
+  context.subscriptions.push(
+    vscode.commands.registerCommand("claudeIdeBridge.openPanel", () => {
+      void vscode.commands.executeCommand(
+        "workbench.view.extension.claudeBridgeAnalytics",
+      );
+    }),
+  );
 }

@@ -1,4 +1,6 @@
 import * as http from "node:http";
+import * as os from "node:os";
+import * as path from "node:path";
 import * as vscode from "vscode";
 import WebSocket from "ws";
 import type { AnalyticsReport } from "./analyticsPanel"; // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -23,6 +25,29 @@ import { createLspReadinessTracker } from "./lspReadiness";
  */
 function secretKey(workspacePath: string): string {
   return `claude-ide-bridge:${workspacePath}`;
+}
+
+/**
+ * Expand `~` and `%VAR%` / `$VAR` references in a user-supplied path.
+ * VS Code's settings UI passes whatever the user typed; on Windows users
+ * commonly enter `~/.claude/ide` or `%USERPROFILE%\.claude\ide`, and on
+ * POSIX systems `$HOME/.claude/ide`. Without expansion, fs.readdir would
+ * create or look for a literal `~` directory in the workspace cwd.
+ */
+function expandUserPath(input: string): string {
+  if (!input) return input;
+  let out = input;
+  if (out.startsWith("~/") || out === "~") {
+    out = path.join(os.homedir(), out.slice(1) || "");
+  }
+  // %VAR% (Windows) and $VAR / ${VAR} (POSIX)
+  out = out.replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (_, name) =>
+    process.env[name] !== undefined ? process.env[name]! : `%${name}%`,
+  );
+  out = out.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (match, name) =>
+    process.env[name] !== undefined ? process.env[name]! : match,
+  );
+  return out;
 }
 
 /**
@@ -119,7 +144,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const config = vscode.workspace.getConfiguration("claudeIdeBridge");
   const logLevel = config.get<string>("logLevel", "info");
   const autoConnect = config.get<boolean>("autoConnect", true);
-  const lockFileDir = config.get<string>("lockFileDir", "");
+  const lockFileDir = expandUserPath(config.get<string>("lockFileDir", ""));
   const autoInstallBridge = config.get<boolean>("autoInstallBridge", true);
   const autoStartBridge = config.get<boolean>("autoStartBridge", true);
   const bridgePort = config.get<number>("port", 0);
