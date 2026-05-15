@@ -1787,6 +1787,17 @@ export class Bridge {
     // All process-level signal handlers are guarded by globalHandlersRegistered so
     // that repeated start() calls (e.g. in tests or --watch restarts) don't
     // accumulate process.once listeners and trigger MaxListenersExceededWarning.
+    // Wire server callbacks so /restart and /shutdown invoke the bridge's
+    // shutdown sequence directly. This is the only path that works on
+    // Windows, where `process.kill(pid, 'SIGTERM')` is TerminateProcess
+    // and registered handlers never fire.
+    this.server.restartKillFn = () => {
+      void shutdown("SIGTERM", 143);
+    };
+    this.server.shutdownFn = () => {
+      void shutdown("SIGTERM", 0);
+    };
+
     if (!globalHandlersRegistered) {
       globalHandlersRegistered = true;
       process.once("SIGINT", () => shutdown("SIGINT", 130));

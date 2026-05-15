@@ -515,6 +515,15 @@ export class Server extends EventEmitter<ServerEvents> {
   public restartKillFn: () => void = () => process.kill(process.pid, "SIGTERM");
 
   /**
+   * Called when /shutdown decides it is safe to exit. Defaults to
+   * `process.kill(process.pid, 'SIGTERM')`. Bridge overrides this to run its
+   * internal shutdown sequence directly — necessary on Windows where
+   * `process.kill(pid, 'SIGTERM')` is TerminateProcess and cleanup handlers
+   * never fire.
+   */
+  public shutdownFn: () => void = () => process.kill(process.pid, "SIGTERM");
+
+  /**
    * Attach an OAuth 2.0 Authorization Server.
    * When set, the bridge exposes:
    *   GET  /.well-known/oauth-authorization-server
@@ -2022,6 +2031,51 @@ export class Server extends EventEmitter<ServerEvents> {
         setTimeout(() => {
           this.logger.info("[/restart] Sending SIGTERM to self");
           killFn();
+        }, 100);
+        return;
+      }
+
+      // /shutdown — graceful exit endpoint. POST → triggers the bridge's
+      // internal shutdown sequence (lockfile unlink, HTTP close, telemetry
+      // flush). Same in-flight safety check as /restart; pass `?force=1` to
+      // skip it. Necessary on Windows where `process.kill(pid, 'SIGTERM')`
+      // is TerminateProcess and cleanup handlers never fire — the bridge
+      // wires `shutdownFn` to call the shutdown sequence directly.
+      if (parsedUrl.pathname === "/shutdown" && req.method === "POST") {
+        const force = parsedUrl.searchParams.get("force") === "1";
+        if (!force && this.restartCheckFn) {
+          const check = this.restartCheckFn();
+          if (check.inFlightCalls > 0) {
+            this.logger.warn(
+              `[/shutdown] Rejected — ${check.inFlightCalls} in-flight tool call${check.inFlightCalls === 1 ? "" : "s"}`,
+            );
+            res.writeHead(409, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: "shutdown_blocked",
+                reason: `${check.inFlightCalls} tool call${check.inFlightCalls === 1 ? "" : "s"} in progress`,
+                inFlightCalls: check.inFlightCalls,
+                busySessions: check.busySessions,
+              }),
+            );
+            return;
+          }
+        }
+
+        this.logger.info("[/shutdown] Initiating graceful shutdown");
+        res.writeHead(202, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: true,
+            message: "Shutdown initiated.",
+          }),
+        );
+
+        const shutdownFn = this.shutdownFn;
+        setTimeout(() => {
+          this.logger.info("[/shutdown] Calling bridge shutdown sequence");
+          shutdownFn();
         }, 100);
         return;
       }
