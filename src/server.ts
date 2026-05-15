@@ -1153,10 +1153,10 @@ export class Server extends EventEmitter<ServerEvents> {
           respond413(res, HOOKS_BODY_CAP);
           return;
         }
-        // HMAC-SHA256 verification for GitHub-style webhooks. The signature
-        // must be computed over the raw request bytes — readBodyWithCap
-        // utf-8-decodes the body, so we re-encode here. The byte sequence
-        // round-trips identically for any valid utf-8 input (which JSON is).
+        // HMAC-SHA256 verification for GitHub-style webhooks. Signature is
+        // computed over the raw on-the-wire bytes (read.bytes), not the
+        // utf-8-decoded string — non-UTF-8 or denormalized payloads must
+        // round-trip identically to validate.
         const sigHeader = req.headers["x-hub-signature-256"];
         if (typeof sigHeader === "string" && sigHeader.length > 0) {
           if (!this.webhookSecret) {
@@ -1164,11 +1164,10 @@ export class Server extends EventEmitter<ServerEvents> {
             res.end(JSON.stringify({ error: "webhook_secret_not_configured" }));
             return;
           }
-          const rawBody = Buffer.from(read.body, "utf-8");
           const expected =
             "sha256=" +
             createHmac("sha256", this.webhookSecret)
-              .update(rawBody)
+              .update(read.bytes)
               .digest("hex");
           const expectedBuf = Buffer.from(expected, "utf-8");
           const providedBuf = Buffer.from(sigHeader, "utf-8");

@@ -180,7 +180,9 @@ export const RECIPE_ROUTE_BODY_CAPS = {
 export function readBodyWithCap(
   req: IncomingMessage,
   max: number,
-): Promise<{ ok: true; body: string } | { ok: false; code: "too_large" }> {
+): Promise<
+  { ok: true; body: string; bytes: Buffer } | { ok: false; code: "too_large" }
+> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
     let total = 0;
@@ -212,7 +214,11 @@ export function readBodyWithCap(
 
     const onEnd = () => {
       if (aborted) return;
-      resolve({ ok: true, body: Buffer.concat(chunks).toString("utf-8") });
+      const bytes = Buffer.concat(chunks);
+      // `bytes` is the raw on-the-wire body; `body` is the utf-8 decode used
+      // by JSON parsers. HMAC consumers must use `bytes` to avoid the
+      // utf-8 round-trip changing the signed payload.
+      resolve({ ok: true, body: bytes.toString("utf-8"), bytes });
     };
 
     const onError = () => {
