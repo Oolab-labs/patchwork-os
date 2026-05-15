@@ -180,11 +180,8 @@ function ToastViewport({
       role="region"
       aria-label="Toast notifications"
       data-toast-viewport
+      className="toast-viewport"
       style={{
-        position: "fixed",
-        bottom: 16,
-        right: 16,
-        zIndex: 1100,
         display: "flex",
         flexDirection: "column",
         gap: 8,
@@ -265,8 +262,18 @@ function ToastViewport({
                 border: "none",
                 color: "var(--ink-2)",
                 cursor: "pointer",
-                fontSize: 16,
+                fontSize: 18,
                 lineHeight: 1,
+                // 32×32 hit area meets WCAG 2.5.5 (24×24 min) and gets close
+                // to Apple HIG's 44×44. Glyph stays small via font-size.
+                width: 32,
+                height: 32,
+                minWidth: 32,
+                minHeight: 32,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 6,
                 padding: 0,
                 marginLeft: 2,
               }}
