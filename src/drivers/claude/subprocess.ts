@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { treeKill } from "../../processTree.js";
 import { ensureCmdShim } from "../../winShim.js";
 import type {
   ProviderDriver,
@@ -186,6 +187,16 @@ export class SubprocessDriver implements ProviderDriver {
       // setsid() — prevents subprocess from opening /dev/tty for interactive prompts.
       detached: true,
     });
+    // Node's `signal` option calls `child.kill()` on abort, which only signals
+    // the immediate child. claude -p may itself spawn children (MCP shims,
+    // tools); without tree-kill those orphan when the task is cancelled.
+    // On POSIX this kills the process group (setsid above); on Windows it
+    // runs `taskkill /F /T /PID`. Idempotent with Node's auto-kill.
+    const onAbort = () => treeKill(child);
+    input.signal.addEventListener("abort", onAbort, { once: true });
+    child.once("close", () => {
+      input.signal.removeEventListener("abort", onAbort);
+    });
 
     let lineBuf = "";
     let accumulated = "";
@@ -257,7 +268,7 @@ export class SubprocessDriver implements ProviderDriver {
       ? setTimeout(() => {
           if (firstAssistantAt === undefined && !doneFromResult) {
             startupTimedOut = true;
-            child.kill();
+            treeKill(child);
           }
         }, input.startupTimeoutMs)
       : null;

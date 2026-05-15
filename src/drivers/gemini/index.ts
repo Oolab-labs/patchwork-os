@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { treeKill } from "../../processTree.js";
 import { ensureCmdShim } from "../../winShim.js";
 import { sanitizeEnv } from "../claude/envSanitizer.js";
 import { splitLines } from "../claude/streamParser.js";
@@ -256,6 +257,16 @@ export class GeminiSubprocessDriver implements ProviderDriver {
       // but keep detached=false so the subprocess dies cleanly with the bridge
       // rather than getting SIGPIPE when the pipe closes mid-run.
       child.unref();
+      // Tree-kill on abort. Node's signal-driven auto-kill only signals the
+      // immediate child; gemini may spawn tool subprocesses that orphan on
+      // cancellation. On Windows this runs `taskkill /F /T /PID`; on POSIX
+      // (non-detached) it's effectively a no-op since there's no process
+      // group, leaving Node's auto-kill to handle the child.
+      const onAbort = () => treeKill(child);
+      input.signal.addEventListener("abort", onAbort, { once: true });
+      child.once("close", () => {
+        input.signal.removeEventListener("abort", onAbort);
+      });
 
       let lineBuf = "";
       let accumulated = "";
@@ -321,7 +332,7 @@ export class GeminiSubprocessDriver implements ProviderDriver {
         ? setTimeout(() => {
             if (firstAssistantAt === undefined && !doneFromResult) {
               startupTimedOut = true;
-              child.kill();
+              treeKill(child);
             }
           }, input.startupTimeoutMs)
         : null;
