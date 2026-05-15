@@ -8,16 +8,10 @@
  *   - Per-feature opt-in with default-off safety
  */
 
-import {
-  existsSync,
-  type FSWatcher,
-  mkdirSync,
-  readFileSync,
-  watch,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
+import { watchDirectoryWithFallback } from "./fsWatchWithFallback.js";
 
 /** Flag definition */
 export interface FeatureFlag {
@@ -346,10 +340,8 @@ loadFlags();
 export function watchFlags(): () => void {
   const flagsPath = getFlagsPath();
   const flagsDir = join(flagsPath, "..");
-  const flagsFile = "flags.json";
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let watcher: FSWatcher | null = null;
   let stopped = false;
 
   const reload = (): void => {
@@ -366,24 +358,14 @@ export function watchFlags(): () => void {
     }, 100);
   };
 
-  try {
-    // Watch the directory rather than the file directly — flags.json
-    // may not exist yet when watch is established, and editors / atomic
-    // writes (rename-into-place) lose direct file watches.
-    watcher = watch(flagsDir, { recursive: false }, (_event, filename) => {
-      if (stopped) return;
-      // filename may be null on some platforms; reload on null to be safe.
-      if (!filename || filename === flagsFile) {
-        reload();
-      }
-    });
-  } catch {
-    // Directory doesn't exist yet — the user hasn't engaged any flags.
-    // No-op; first `persistFlags()` creates the dir and from then on
-    // the watcher won't fire. This is acceptable for an emergency-stop
-    // flag because the file will exist as soon as anyone toggles via
-    // /kill-switch (which calls setFlag(..., persist=true)).
-  }
+  // Watch the directory rather than the file directly — flags.json may not
+  // exist yet when watch is established, and editors / atomic writes
+  // (rename-into-place) lose direct file watches. The helper falls back to
+  // mtime polling when the dir is missing or fs.watch fails (Windows
+  // network drives, WSL bind mounts), and notices when the dir later appears.
+  const stopWatcher = watchDirectoryWithFallback(flagsDir, () => {
+    if (!stopped) reload();
+  });
 
   return (): void => {
     stopped = true;
@@ -391,13 +373,10 @@ export function watchFlags(): () => void {
       clearTimeout(debounceTimer);
       debounceTimer = null;
     }
-    if (watcher) {
-      try {
-        watcher.close();
-      } catch {
-        /* ignore */
-      }
-      watcher = null;
+    try {
+      stopWatcher();
+    } catch {
+      /* ignore */
     }
   };
 }
