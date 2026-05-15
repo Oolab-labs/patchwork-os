@@ -172,11 +172,10 @@ jobs:
     name: Smoke tests (live bridge)
     runs-on: ${{ matrix.os }}
     needs: ci
-    # Windows starts advisory (continue-on-error) — the smoke harness has
-    # never run on win32 before. Tighten to blocking once green for ~5
-    # consecutive runs, same pattern PRs #497–#501 used for the bridge
-    # test matrix. ubuntu remains the blocking gate.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    # windows-latest is blocking. Was advisory through PRs #527–#536 while
+    # the smoke harness was being ported (.cmd shims, CRLF batch files,
+    # tree-kill, HTTP /shutdown for clean exit). Five consecutive green
+    # runs across #533-#536; advisory mode no longer needed.
     strategy:
       fail-fast: false
       matrix:
@@ -286,10 +285,9 @@ jobs:
   extension:
     runs-on: ${{ matrix.os }}
     needs: ci
-    # Windows starts advisory — the extension build + test suite has never
-    # exercised win32 in CI. Tighten to blocking once green for ~5
-    # consecutive runs (same playbook the bridge matrix used in #497–#501).
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    # windows-latest is blocking. Was advisory through PRs #527–#536; with
+    # the five extension test suites un-skipped (#535) and four green PR
+    # runs in a row, advisory mode is no longer needed.
     strategy:
       fail-fast: false
       matrix:
