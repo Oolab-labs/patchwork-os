@@ -79,7 +79,13 @@ process.on("exit", cleanup);
 process.on("SIGINT", () => process.exit(1));
 process.on("SIGTERM", () => process.exit(1));
 
-function waitForLock(cfgDir, port, timeoutMs = 10_000) {
+// Windows GHA runners are noticeably slower at cold-starting node (signed-
+// binary scan, AV hooks). 10s causes recurring "lock file not written" flakes
+// on main. PR #538 doubled the bound in helpers.mjs for individual smoke
+// scripts; this harness was missed. Match the doubled budget here too.
+const DEFAULT_LOCK_TIMEOUT_MS = process.platform === "win32" ? 30_000 : 10_000;
+
+function waitForLock(cfgDir, port, timeoutMs = DEFAULT_LOCK_TIMEOUT_MS) {
   const lockPath = path.join(cfgDir, "ide", `${port}.lock`);
   const deadline = Date.now() + timeoutMs;
   while (!fs.existsSync(lockPath)) {
@@ -115,7 +121,9 @@ const bridgeProc = startBridge(PORT, CLAUDE_CFG, TMPWS);
 bridgePid = bridgeProc.pid;
 
 if (!waitForLock(CLAUDE_CFG, PORT)) {
-  console.error("ERROR: bridge lock file not written after 10s");
+  console.error(
+    `ERROR: bridge lock file not written after ${DEFAULT_LOCK_TIMEOUT_MS / 1000}s`,
+  );
   console.error(
     `Bridge stderr (last 4 KB):\n${(bridgeProc.stderrBuf || "(empty)").slice(-4096)}`,
   );
