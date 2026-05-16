@@ -526,7 +526,9 @@ export function createLspHandlers(
 
     if (!items || items.length === 0) return null;
 
-    const item = items[0];
+    // Non-null assertion: length>0 just checked, but TS can't narrow array indexing
+    // under noUncheckedIndexedAccess.
+    const item = items[0]!;
     const symbol = {
       name: item.name,
       kind: vscode.SymbolKind[item.kind],

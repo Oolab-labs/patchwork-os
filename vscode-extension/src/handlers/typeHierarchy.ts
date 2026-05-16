@@ -37,7 +37,9 @@ export async function handleGetTypeHierarchy(
     };
   }
 
-  const rootItem = items[0];
+  // Non-null assertion: length>0 just checked above; TS can't narrow array
+  // indexing under noUncheckedIndexedAccess.
+  const rootItem = items[0]!;
 
   function serializeItem(item: vscode.TypeHierarchyItem) {
     return {
