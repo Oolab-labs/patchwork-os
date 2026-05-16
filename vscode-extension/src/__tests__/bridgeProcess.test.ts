@@ -331,7 +331,11 @@ describe("BridgeProcess — stderr captured in failure message", () => {
 
   it("resets stale stderr between spawn attempts", async () => {
     const ws = "/home/user/project-stderr-reset";
-    const proc = makeProc(ws, 200);
+    // 1000ms (was 200ms): Windows CI runners can take >200ms between
+    // proc.spawn() and the setTimeout(30) callback firing, racing the
+    // lock-poll deadline before the stderr emit lands. 1s gives slack
+    // without meaningfully slowing the suite (test timeout is 5s).
+    const proc = makeProc(ws, 1_000);
     const failedMessages: string[] = [];
     proc.onStartupFailed = (msg) => failedMessages.push(msg);
 
