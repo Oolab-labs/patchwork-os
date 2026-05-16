@@ -95,7 +95,14 @@ export default async function RecipeDetailPage({ params }: PageProps) {
 
       <Description recipe={recipe} manifest={manifest} />
 
-      <InstallPanel install={recipe.install} name={recipe.name} />
+      <InstallPanel
+        install={recipe.install}
+        name={recipe.name}
+        riskLevel={recipe.risk_level}
+        connectors={recipe.connectors}
+        networkAccess={recipe.network_access}
+        fileAccess={recipe.file_access}
+      />
 
       <ConnectorHealthPanel connectors={recipe.connectors} marginTop={0} />
 
