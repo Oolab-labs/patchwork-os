@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { shortName } from "@/lib/registry";
 
 interface Props {
   /**
@@ -74,11 +75,17 @@ export default function BundleInstallPanel({
           : Array.isArray(data?.recipes)
             ? data.recipes
             : [];
-        const installedNames = new Set(
-          list.map((x: { name?: string }) => x.name).filter(Boolean),
+        const installedNames = new Set<string>(
+          list
+            .map((x: { name?: string }) => x.name)
+            .filter((n: string | undefined): n is string => Boolean(n)),
         );
+        // Bundle manifest entries may be scoped (`@scope/name`); the bridge
+        // writes recipes under their unscoped YAML `name:` field. Strip the
+        // scope before comparing so a bundle ships with consistent display
+        // names but still finds locally-installed recipes.
         const installedCount = recipes.filter((r) =>
-          installedNames.has(r),
+          installedNames.has(shortName(r)),
         ).length;
         setStatus({ online: true, installedCount });
       })

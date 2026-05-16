@@ -598,12 +598,14 @@ export default function MarketplacePage() {
     }
 
     // Optimistic update so the card flips to "Installed" immediately.
-    setInstalledNames((prev) => new Set([...prev, recipe.name]));
+    // installedNames is keyed by the unscoped name (what the bridge's
+    // /recipes endpoint returns) — strip the `@scope/` prefix so the
+    // Set lookup at the card-render sites matches.
+    setInstalledNames((prev) => new Set([...prev, shortName(recipe.name)]));
     toast.success("Recipe installed successfully");
-    // Authoritative refresh from the bridge — catches the name-
-    // divergence case where the dashboard tracks the marketplace name
-    // but the bridge writes the recipe under its own YAML `name` field.
-    // Without this, the green pill would lie until the next page load.
+    // Authoritative refresh from the bridge re-reads the unscoped names
+    // from disk — keep the Set in sync in case the actual YAML `name:`
+    // field differs from the slug the user clicked.
     void refreshInstalled();
 
     // Bridge-side connector preflight (#488) ships a `missingConnectors`
@@ -830,7 +832,7 @@ export default function MarketplacePage() {
                   <RecipeCard
                     key={featured.name}
                     recipe={featured}
-                    installed={installedNames.has(featured.name)}
+                    installed={installedNames.has(shortName(featured.name))}
                     bridgeOnline={bridgeOnline}
                     onInstall={handleInstall}
                   />
@@ -849,7 +851,7 @@ export default function MarketplacePage() {
                   <RecipeCard
                     key={recipe.name}
                     recipe={recipe}
-                    installed={installedNames.has(recipe.name)}
+                    installed={installedNames.has(shortName(recipe.name))}
                     bridgeOnline={bridgeOnline}
                     onInstall={handleInstall}
                   />
