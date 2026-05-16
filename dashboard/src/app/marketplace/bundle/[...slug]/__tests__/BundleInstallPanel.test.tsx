@@ -61,6 +61,27 @@ describe("BundleInstallPanel — status polling", () => {
     ).toBeInTheDocument();
   });
 
+  it("counts scoped manifest entries as installed when bridge returns unscoped names (regression)", async () => {
+    // Regression: bundle manifests may declare recipes as scoped names
+    // ("@patchworkos/morning-brief") but the bridge writes them under the
+    // unscoped YAML `name:` ("morning-brief"). Without shortName() the
+    // installed-count was always 0 for scoped bundles.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { recipes: [{ name: "a-recipe" }, { name: "b-recipe" }] }),
+    );
+    render(
+      <BundleInstallPanel
+        installSource={SOURCE}
+        recipes={["@patchworkos/a-recipe", "@patchworkos/b-recipe", "@patchworkos/c-recipe"]}
+      />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText(/2 of 3 recipes already installed/i),
+      ).toBeInTheDocument(),
+    );
+  });
+
   it("shows partial-installed copy when some recipes already exist", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, { recipes: [{ name: "a-recipe" }] }),

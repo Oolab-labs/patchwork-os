@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
-import { assertValidInstallSource } from "@/lib/registry";
+import { assertValidInstallSource, shortName } from "@/lib/registry";
 
 interface Props {
   install: string;
@@ -37,7 +37,11 @@ export default function InstallPanel({ install, name }: Props) {
         }
         const data = await r.json();
         const list = Array.isArray(data) ? data : Array.isArray(data?.recipes) ? data.recipes : [];
-        const installed = list.some((x: { name: string }) => x.name === name);
+        // Registry names are scoped (e.g. "@patchworkos/morning-brief") but
+        // the bridge writes recipes under their YAML `name:` field (unscoped,
+        // e.g. "morning-brief"). Compare against the short form.
+        const target = shortName(name);
+        const installed = list.some((x: { name: string }) => x.name === target);
         setStatus({ online: true, installed });
       })
       .catch(() => {
