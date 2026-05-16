@@ -172,12 +172,12 @@ function formatConnectorLabel(id: string): string {
 function RecipeCard({
   recipe,
   installed,
-  bridgeOnline,
+  bridgeStatus,
   onInstall,
 }: {
   recipe: RegistryRecipe;
   installed: boolean;
-  bridgeOnline: boolean;
+  bridgeStatus: BridgeStatus;
   onInstall: (recipe: RegistryRecipe) => Promise<void>;
 }) {
   const [loading, setLoading] = useState(false);
@@ -352,7 +352,7 @@ function RecipeCard({
             >
               &#10003; Installed
             </span>
-          ) : bridgeOnline ? (
+          ) : bridgeStatus === "online" ? (
             <button
               type="button"
               className="btn sm primary"
@@ -362,6 +362,15 @@ function RecipeCard({
             >
               {loading ? "Installing…" : "Install"}
             </button>
+          ) : bridgeStatus === "unauth" ? (
+            <Link
+              href="/login?next=/dashboard/marketplace"
+              className="btn sm"
+              style={{ textDecoration: "none" }}
+              aria-label={`Log in to install ${shortName(recipe.name)}`}
+            >
+              Log in
+            </Link>
           ) : (
             <a
               href="https://patchworkos.com/#install"
@@ -445,11 +454,18 @@ function BundleCard({ bundle }: { bundle: RegistryBundle }) {
 
 // ------------------------------------------------------------------ page
 
+type BridgeStatus = "online" | "offline" | "unauth";
+
 export default function MarketplacePage() {
   const [registry, setRegistry] = useState<RegistryRecipe[] | null>(null);
   const [bundles, setBundles] = useState<RegistryBundle[]>([]);
   const [installedNames, setInstalledNames] = useState<Set<string>>(new Set());
-  const [bridgeOnline, setBridgeOnline] = useState(false);
+  // Three-state instead of boolean — distinguishes 401 (logged-out
+  // dashboard, bridge IS reachable) from 503 (bridge truly down).
+  // Pre-fix users were told "bridge not connected — install Patchwork
+  // OS" when they were just logged out of the dashboard.
+  const [bridgeStatus, setBridgeStatus] =
+    useState<BridgeStatus>("offline");
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -457,16 +473,19 @@ export default function MarketplacePage() {
   const router = useRouter();
 
   // Re-probe bridge + refresh the installed-names Set. Extracted so the
-  // post-install handler can call it to (a) catch the name-divergence
-  // bug where the dashboard tracks marketplace name but the bridge keys
-  // on the recipe's own YAML `name` field — without a refresh the
-  // "Installed" pill can lie — and (b) flip the offline banner if the
-  // bridge died mid-session.
+  // post-install handler can call it after install (the bridge writes
+  // recipes under the YAML `name:` field, which may differ from the
+  // marketplace's scoped `@scope/name` — without a refresh the
+  // "Installed" pill can lag a render).
   const refreshInstalled = useCallback(async () => {
     try {
       const r = await fetch(apiPath("/api/bridge/recipes"));
       if (!r.ok) {
-        setBridgeOnline(false);
+        // 401 = dashboard's session-cookie middleware blocked the proxy
+        // (user logged out). The bridge itself may be fine. Everything
+        // else (404 from no-bridge-lock, 502/503 from upstream) means
+        // the bridge is genuinely unreachable.
+        setBridgeStatus(r.status === 401 ? "unauth" : "offline");
         return;
       }
       const data = await r.json();
@@ -475,10 +494,10 @@ export default function MarketplacePage() {
         : Array.isArray(data?.recipes)
           ? data.recipes
           : [];
-      setBridgeOnline(true);
+      setBridgeStatus("online");
       setInstalledNames(new Set(list.map((r: { name: string }) => r.name) as string[]));
     } catch {
-      setBridgeOnline(false);
+      setBridgeStatus("offline");
     }
   }, []);
 
@@ -589,9 +608,15 @@ export default function MarketplacePage() {
       // click renders "Get Patchwork" instead of another opaque retry,
       // and surface a friendlier message than the raw upstream body.
       if (res.status === 502 || res.status === 503 || res.status === 504) {
-        setBridgeOnline(false);
+        setBridgeStatus("offline");
         throw new Error(
           "Bridge isn't responding. Start it with `patchwork start` and try again.",
+        );
+      }
+      if (res.status === 401) {
+        setBridgeStatus("unauth");
+        throw new Error(
+          "Dashboard session expired. Log in and try again.",
         );
       }
       throw new Error(parsed.error ?? `Error ${res.status}`);
@@ -655,8 +680,11 @@ export default function MarketplacePage() {
 
   return (
     <section>
-      {/* offline banner */}
-      {!bridgeOnline && (
+      {/* status banner — distinct copy + CTA for "logged out" (bridge
+          may be fine) vs "no bridge" (Install Patchwork). Pre-fix both
+          collapsed into the "Install Patchwork" CTA, which told logged-
+          out users to reinstall a thing they already had. */}
+      {bridgeStatus !== "online" && (
         <div
           style={{
             marginBottom: "var(--s-6)",
@@ -672,26 +700,47 @@ export default function MarketplacePage() {
           }}
         >
           <span style={{ color: "var(--fg-2)" }}>
-            Browsing in preview mode — bridge not connected. Install Patchwork OS to install recipes directly.
+            {bridgeStatus === "unauth"
+              ? "Browsing as a guest — log in to install recipes directly."
+              : "Browsing in preview mode — bridge not connected. Install Patchwork OS to install recipes directly."}
           </span>
-          <a
-            href="https://patchworkos.com/#install"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              flexShrink: 0,
-              fontSize: "var(--fs-s)",
-              fontWeight: 600,
-              padding: "4px 14px",
-              borderRadius: "var(--r-full)",
-              background: "var(--accent-soft)",
-              color: "var(--accent-strong)",
-              border: "1px solid var(--purple)",
-              textDecoration: "none",
-            }}
-          >
-            Install →
-          </a>
+          {bridgeStatus === "unauth" ? (
+            <Link
+              href="/login?next=/dashboard/marketplace"
+              style={{
+                flexShrink: 0,
+                fontSize: "var(--fs-s)",
+                fontWeight: 600,
+                padding: "4px 14px",
+                borderRadius: "var(--r-full)",
+                background: "var(--accent-soft)",
+                color: "var(--accent-strong)",
+                border: "1px solid var(--purple)",
+                textDecoration: "none",
+              }}
+            >
+              Log in →
+            </Link>
+          ) : (
+            <a
+              href="https://patchworkos.com/#install"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                flexShrink: 0,
+                fontSize: "var(--fs-s)",
+                fontWeight: 600,
+                padding: "4px 14px",
+                borderRadius: "var(--r-full)",
+                background: "var(--accent-soft)",
+                color: "var(--accent-strong)",
+                border: "1px solid var(--purple)",
+                textDecoration: "none",
+              }}
+            >
+              Install →
+            </a>
+          )}
         </div>
       )}
 
@@ -833,7 +882,7 @@ export default function MarketplacePage() {
                     key={featured.name}
                     recipe={featured}
                     installed={installedNames.has(shortName(featured.name))}
-                    bridgeOnline={bridgeOnline}
+                    bridgeStatus={bridgeStatus}
                     onInstall={handleInstall}
                   />
                 </div>
@@ -852,7 +901,7 @@ export default function MarketplacePage() {
                     key={recipe.name}
                     recipe={recipe}
                     installed={installedNames.has(shortName(recipe.name))}
-                    bridgeOnline={bridgeOnline}
+                    bridgeStatus={bridgeStatus}
                     onInstall={handleInstall}
                   />
                 ))}
