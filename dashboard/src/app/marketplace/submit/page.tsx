@@ -50,6 +50,8 @@ interface LintResult {
   warnings: string[];
 }
 
+type Stage = "compose" | "submitted";
+
 interface DraftState {
   slugRaw: string;
   authorRaw: string;
@@ -64,6 +66,14 @@ interface DraftState {
   fileAccess: boolean;
   approvalBehavior: ApprovalBehavior;
   yaml: string;
+  /**
+   * Which flow stage the user was on when the draft was last saved.
+   * Persisted so that refreshing the page after Submit doesn't bounce
+   * the user back to compose view — they'd lose access to the "Open
+   * recipe.json on GitHub" button needed for the second commit, and a
+   * Submit-again would open a duplicate prefilled tab.
+   */
+  stage: Stage;
 }
 
 function readDraft(): DraftState | null {
@@ -101,6 +111,10 @@ function readDraft(): DraftState | null {
           ? parsed.approvalBehavior
           : "ask_on_novel",
       yaml: parsed.yaml,
+      // Older drafts (pre-PR550-followup) won't have `stage` — default to
+      // compose so a v1 draft restored under v2 lands the user on the
+      // form, not a stale submitted view.
+      stage: parsed.stage === "submitted" ? "submitted" : "compose",
     };
   } catch {
     return null;
@@ -115,8 +129,6 @@ function clearDraft(): void {
     /* storage unavailable / quota — non-fatal */
   }
 }
-
-type Stage = "compose" | "submitted";
 
 export default function MarketplaceSubmitPage() {
   const toast = useToast();
@@ -199,7 +211,7 @@ export default function MarketplaceSubmitPage() {
   }, []);
 
   // ---- submit / errors --------------------------------------------
-  const [stage, setStage] = useState<Stage>("compose");
+  const [stage, setStage] = useState<Stage>(draft?.stage ?? "compose");
   const [submitErrors, setSubmitErrors] = useState<
     Partial<Record<keyof SubmissionFormData | "yaml", string>>
   >({});
@@ -270,7 +282,12 @@ export default function MarketplaceSubmitPage() {
   // for users who land on the page and immediately leave).
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Always persist when stage === "submitted" so a refresh keeps the
+    // user on the post-submit view (the "Open recipe.json on GitHub"
+    // button lives there). Otherwise only persist when fields are dirty
+    // — avoids polluting storage for users who land + leave immediately.
     const isDirty =
+      stage === "submitted" ||
       slugRaw !== "" ||
       authorRaw !== "" ||
       description !== "" ||
@@ -294,6 +311,7 @@ export default function MarketplaceSubmitPage() {
         fileAccess,
         approvalBehavior,
         yaml,
+        stage,
       };
       window.sessionStorage.setItem(
         SUBMIT_DRAFT_STORAGE_KEY,
@@ -316,6 +334,7 @@ export default function MarketplaceSubmitPage() {
     fileAccess,
     approvalBehavior,
     yaml,
+    stage,
   ]);
 
   // ---- load starter from installed recipe --------------------------
@@ -490,28 +509,10 @@ export default function MarketplaceSubmitPage() {
     }
   }
 
-  function startOver() {
-    setStage("compose");
-    setSubmitErrors({});
-    setLintResult(null);
-    setLintError(null);
-    // The submission flow is done — drop the auto-save so the next visit
-    // doesn't surprise the user with their previous form contents.
-    clearDraft();
-  }
-
-  function applyPreset(presetId: string) {
-    const preset = RECIPE_PRESETS.find((p) => p.id === presetId);
-    if (!preset) return;
-    // Only swap the YAML; metadata fields the user already filled stay
-    // intact. Lint result becomes stale by virtue of forContent mismatch.
-    setYaml(preset.yaml);
-    toast.info(`Loaded the ${preset.label} preset.`);
-  }
-
-  function discardRestoredDraft() {
-    // Restore defaults across the board AND drop sessionStorage so the
-    // auto-save effect's next pass doesn't immediately rewrite it.
+  // Reset every form field + transient state to its initial value, then
+  // drop the persisted draft. Stage stays the caller's responsibility
+  // (Start Over goes to "compose"; nobody else uses this currently).
+  function resetToDefaults() {
     setSlugRaw("");
     setAuthorRaw("");
     setVersion("1.0.0");
@@ -529,6 +530,29 @@ export default function MarketplaceSubmitPage() {
     setLintError(null);
     setSubmitErrors({});
     clearDraft();
+  }
+
+  function startOver() {
+    // After submit, "Start over" should produce a fresh form. Pre-PR550-
+    // followup this only flipped stage + cleared transient errors and
+    // called clearDraft — but now that `stage` is in the auto-save
+    // effect's deps, the very next render would re-save the still-
+    // populated fields, defeating the clear. Wipe the fields too.
+    resetToDefaults();
+    setStage("compose");
+  }
+
+  function applyPreset(presetId: string) {
+    const preset = RECIPE_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    // Only swap the YAML; metadata fields the user already filled stay
+    // intact. Lint result becomes stale by virtue of forContent mismatch.
+    setYaml(preset.yaml);
+    toast.info(`Loaded the ${preset.label} preset.`);
+  }
+
+  function discardRestoredDraft() {
+    resetToDefaults();
     setShowRestoredBanner(false);
     toast.info("Draft discarded — starting fresh.");
   }
