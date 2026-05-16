@@ -68,7 +68,9 @@ export class BridgeInstaller {
         timeout: 10_000,
       });
       const match = stdout.trim().match(/(\d+\.\d+\.\d+[^\s]*)/);
-      return match ? match[1] : null;
+      // match[1] is the captured version string; coalesce to null to satisfy
+      // the function's `string | null` return type under noUncheckedIndexedAccess.
+      return match?.[1] ?? null;
     } catch {
       return null;
     }

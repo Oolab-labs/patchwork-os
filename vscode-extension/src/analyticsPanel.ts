@@ -672,7 +672,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async _handlePinNote(
-    _view: vscode.WebviewView,
+    view: vscode.WebviewView,
     refresh: () => Promise<void>,
   ): Promise<void> {
     try {

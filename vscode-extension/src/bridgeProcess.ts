@@ -129,8 +129,10 @@ export class BridgeProcess {
         timeout: 5_000,
       });
       // split on \r?\n so a trailing \r from Windows `where` output doesn't
-      // get appended to the binary path and cause ENOENT at spawn time
-      return stdout.trim().split(/\r?\n/)[0].trim();
+      // get appended to the binary path and cause ENOENT at spawn time.
+      // String#split is documented to always return at least one element, so
+      // `?? ""` is just to satisfy TS noUncheckedIndexedAccess.
+      return (stdout.trim().split(/\r?\n/)[0] ?? "").trim();
     } catch {
       // Fall back to a bare name that the OS can resolve at spawn time. On
       // Windows that means the `.cmd` shim — bare "claude-ide-bridge" would
