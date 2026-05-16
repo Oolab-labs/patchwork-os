@@ -24,7 +24,10 @@ export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
   const fullName = decodeURIComponent(slug.join("/"));
   const registry = await fetchRegistry();
-  const bundle = registry?.bundles?.find((b) => b.name === fullName);
+  if (!registry) {
+    return { title: "Registry unreachable — Marketplace · Patchwork OS" };
+  }
+  const bundle = registry.bundles?.find((b) => b.name === fullName);
   if (!bundle) return { title: "Not found — Marketplace · Patchwork OS" };
   return {
     title: `${shortName(bundle.name)} — Bundle · Marketplace · Patchwork OS`,
@@ -37,12 +40,30 @@ export default async function BundleDetailPage({ params }: PageProps) {
   const fullName = decodeURIComponent(slug.join("/"));
 
   const registry = await fetchRegistry();
-  const bundle = registry?.bundles?.find((b) => b.name === fullName);
+  // Same fix as the recipe detail page: don't conflate "registry
+  // unreachable" with "bundle missing". Pre-fix, every bundle URL 404'd
+  // whenever the CDN was down.
+  if (!registry) return <RegistryUnreachable fullName={fullName} />;
+  const bundle = registry.bundles?.find((b) => b.name === fullName);
   if (!bundle) notFound();
 
   const src = parseInstallSource(bundle.install);
   let manifest: BundleManifest | null = null;
-  if (src) manifest = await fetchBundleManifest(src);
+  let manifestErr = false;
+  if (src) {
+    try {
+      manifest = await fetchBundleManifest(src);
+      // fetchBundleManifest swallows network errors and returns null —
+      // treat null as a manifest-unavailable signal so the page renders
+      // a notice instead of an empty bundle.
+      manifestErr = manifest === null;
+    } catch {
+      manifest = null;
+      manifestErr = true;
+    }
+  } else {
+    manifestErr = true;
+  }
 
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "var(--s-6)" }}>
@@ -59,6 +80,8 @@ export default async function BundleDetailPage({ params }: PageProps) {
       <p style={{ fontSize: "var(--fs-base)", color: "var(--ink-1)", lineHeight: 1.6, maxWidth: 760 }}>
         {manifest?.description ?? bundle.description}
       </p>
+
+      {manifestErr && <ManifestUnavailableNotice bundle={bundle} />}
 
       <WhatIsIncluded bundle={bundle} manifest={manifest} />
 
@@ -258,6 +281,94 @@ function RequiredEnvCard({ vars }: { vars: string[] }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function RegistryUnreachable({ fullName }: { fullName: string }) {
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)" }}>
+      <Link
+        href="/marketplace"
+        className="btn sm ghost"
+        style={{ alignSelf: "flex-start", textDecoration: "none", fontSize: "var(--fs-s)" }}
+      >
+        ← Back to marketplace
+      </Link>
+      <div
+        className="glass-card"
+        style={{
+          padding: "var(--s-5)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--s-3)",
+          background: "var(--warn-soft)",
+          border: "1px solid var(--warn)",
+        }}
+        role="alert"
+      >
+        <h1 style={{ margin: 0, fontSize: "var(--fs-l)", color: "var(--ink-0)" }}>
+          Marketplace registry unreachable
+        </h1>
+        <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--ink-1)", lineHeight: 1.55 }}>
+          Couldn&apos;t load the bundle index from{" "}
+          <code style={{ fontSize: "var(--fs-xs)" }}>
+            github.com/patchworkos/recipes
+          </code>
+          . The bundle{" "}
+          <code style={{ fontSize: "var(--fs-xs)" }}>{fullName}</code> may or
+          may not exist — we can&apos;t tell without the registry.
+        </p>
+        <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--fg-2)", lineHeight: 1.55 }}>
+          Refresh in a minute, or install via CLI:
+        </p>
+        <code
+          style={{
+            background: "var(--recess)",
+            padding: "10px 12px",
+            borderRadius: "var(--r-2)",
+            fontSize: "var(--fs-s)",
+            fontFamily: "var(--font-mono, ui-monospace, monospace)",
+            overflowX: "auto",
+            color: "var(--ink-1)",
+          }}
+        >
+          patchwork recipe install {fullName}
+        </code>
+      </div>
+    </section>
+  );
+}
+
+function ManifestUnavailableNotice({ bundle }: { bundle: RegistryBundle }) {
+  return (
+    <div
+      className="glass-card"
+      style={{
+        padding: "var(--s-4) var(--s-5)",
+        background: "var(--warn-soft)",
+        border: "1px solid var(--warn)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--s-2)",
+      }}
+      role="status"
+    >
+      <strong style={{ fontSize: "var(--fs-s)", color: "var(--ink-0)" }}>
+        Bundle manifest unavailable
+      </strong>
+      <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--ink-1)", lineHeight: 1.55 }}>
+        We couldn&apos;t load{" "}
+        <code style={{ fontSize: "var(--fs-xs)" }}>{bundle.install}</code>/manifest.json
+        — the page below shows only what the registry knows. Specific recipe
+        list, plugin name, policy template, and required env may be missing.
+        Reload to retry, or install via CLI which fetches the manifest
+        directly:{" "}
+        <code style={{ fontSize: "var(--fs-xs)" }}>
+          patchwork recipe install {bundle.name}
+        </code>
+        .
+      </p>
     </div>
   );
 }
