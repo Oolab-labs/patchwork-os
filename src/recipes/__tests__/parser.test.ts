@@ -70,6 +70,155 @@ describe("parseRecipe", () => {
       expect(r.trigger.type).toBe(trigger.type);
     }
   });
+
+  // Regression: the marketplace install flow was broken because parser.ts
+  // only accepted the legacy boolean discriminator (`agent: true | false`)
+  // while the canonical schema, the runtime executor, every bundled
+  // template, and the entire patchworkos/recipes registry use the
+  // object form. Calling Install on the FEATURED recipe threw
+  // "step.agent must be true or false" because of parser.ts mismatch.
+  describe("modern object-form agent step (registry / yamlRunner shape)", () => {
+    it("accepts agent: { prompt, into } as object-form agent step", () => {
+      const r = parseRecipe({
+        ...VALID,
+        steps: [
+          {
+            id: "compose",
+            agent: { prompt: "draft a brief", into: "brief" },
+          },
+        ],
+      });
+      expect(r.steps[0]).toMatchObject({
+        id: "compose",
+        agent: true,
+        prompt: "draft a brief",
+        output: "brief", // `into` maps to internal `output`
+      });
+    });
+
+    it("accepts agent: { prompt, tools } and preserves tools", () => {
+      const r = parseRecipe({
+        ...VALID,
+        steps: [
+          {
+            id: "research",
+            agent: { prompt: "look it up", tools: ["search", "fetch"] },
+          },
+        ],
+      });
+      expect(r.steps[0]).toMatchObject({
+        id: "research",
+        agent: true,
+        prompt: "look it up",
+        tools: ["search", "fetch"],
+      });
+    });
+
+    it("rejects object-form agent without prompt", () => {
+      expect(() =>
+        parseRecipe({
+          ...VALID,
+          steps: [{ id: "x", agent: { into: "out" } }],
+        }),
+      ).toThrow(RecipeParseError);
+    });
+  });
+
+  describe("modern top-level tool step (no `agent` discriminator)", () => {
+    it("accepts tool: 'X' at the top level with params", () => {
+      const r = parseRecipe({
+        ...VALID,
+        steps: [
+          {
+            id: "send",
+            tool: "slack.post_message",
+            params: { channel: "#wins", text: "shipped" },
+            into: "post_id",
+          },
+        ],
+      });
+      expect(r.steps[0]).toMatchObject({
+        id: "send",
+        agent: false,
+        tool: "slack.post_message",
+        params: { channel: "#wins", text: "shipped" },
+        output: "post_id", // `into` maps to internal `output`
+      });
+    });
+
+    it("defaults params to empty object when omitted", () => {
+      const r = parseRecipe({
+        ...VALID,
+        steps: [{ id: "noop", tool: "ping" }],
+      });
+      expect(r.steps[0]).toMatchObject({
+        id: "noop",
+        agent: false,
+        tool: "ping",
+        params: {},
+      });
+    });
+  });
+
+  describe("compound step shapes pass through (parallel, nested recipe, chain, each)", () => {
+    it("accepts a parallel-group step and preserves substeps in JSON output", () => {
+      const r = parseRecipe({
+        ...VALID,
+        steps: [
+          {
+            id: "fetch_all",
+            parallel: [
+              { id: "a", tool: "gmail.fetch", params: {} },
+              { id: "b", tool: "linear.list", params: {} },
+            ],
+          },
+        ],
+      });
+      // JSON-stringify is the on-disk format — every field of the raw
+      // step survives, including `parallel` even though it's not in the
+      // internal Step type.
+      const serialized = JSON.parse(JSON.stringify(r));
+      expect(serialized.steps[0].id).toBe("fetch_all");
+      expect(serialized.steps[0].parallel).toHaveLength(2);
+      expect(serialized.steps[0].parallel[0].tool).toBe("gmail.fetch");
+    });
+
+    it("accepts a nested recipe step (recipe: <name>)", () => {
+      const r = parseRecipe({
+        ...VALID,
+        steps: [{ id: "subflow", recipe: "shared/triage" }],
+      });
+      const serialized = JSON.parse(JSON.stringify(r));
+      expect(serialized.steps[0].recipe).toBe("shared/triage");
+    });
+
+    it("accepts a chain step (chain: <name>)", () => {
+      const r = parseRecipe({
+        ...VALID,
+        steps: [{ id: "next", chain: "next-recipe" }],
+      });
+      const serialized = JSON.parse(JSON.stringify(r));
+      expect(serialized.steps[0].chain).toBe("next-recipe");
+    });
+  });
+
+  describe("legacy boolean discriminator still works", () => {
+    it("still accepts agent: true with flat prompt", () => {
+      const r = parseRecipe({
+        ...VALID,
+        steps: [{ id: "x", agent: true, prompt: "hi" }],
+      });
+      expect(r.steps[0]).toMatchObject({ id: "x", agent: true, prompt: "hi" });
+    });
+
+    it("still accepts agent: false with flat tool", () => {
+      const r = parseRecipe({
+        ...VALID,
+        steps: [{ id: "x", agent: false, tool: "t", params: {} }],
+      });
+      expect(r.steps[0]).toMatchObject({ id: "x", agent: false, tool: "t" });
+    });
+  });
 });
 
 describe("renderTemplate", () => {
