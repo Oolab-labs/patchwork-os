@@ -1230,6 +1230,11 @@ export default function MarketplaceSubmitPage() {
             display: "flex",
             gap: "var(--s-3)",
             alignItems: "center",
+            // flex-wrap so the URL-size readout drops below the buttons on
+            // narrow viewports instead of squeezing into them. Without
+            // this the readout text gets clipped or overlaps the Cancel
+            // link on phones.
+            flexWrap: "wrap",
             marginTop: "var(--s-6)",
             gridColumn: "1 / -1",
           }}
@@ -1244,9 +1249,16 @@ export default function MarketplaceSubmitPage() {
             style={{
               color: "var(--fg-3)",
               fontSize: "var(--fs-s)",
+              // `marginLeft: auto` pushes the readout to the right edge on
+              // wide rows AND keeps it left-aligned on its own row after
+              // wrap (the parent's `gap` already provides vertical spacing).
               marginLeft: "auto",
               textAlign: "right",
               lineHeight: 1.4,
+              // Block stays full-width on small viewports so the "URL ≈ X KB"
+              // line doesn't get hyphenated awkwardly. Cap so on desktop it
+              // doesn't grow past content.
+              minWidth: 0,
             }}
           >
             <div>

@@ -768,12 +768,23 @@ export default function MarketplacePage() {
             {`${registry?.length ?? FALLBACK_REGISTRY.recipes.length} recipes · sourced from github.com/patchworkos/recipes`}
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {/* flex-wrap so Search + Submit drop below the title on narrow
+            viewports instead of squeezing the heading; flex-shrink:0 on
+            the action chips so they don't compress past their text width. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            flexShrink: 0,
+          }}
+        >
           <button
             type="button"
             onClick={() => setSearchOpen((v) => !v)}
             className="btn sm ghost"
-            style={{ fontSize: "var(--fs-s)" }}
+            style={{ fontSize: "var(--fs-s)", flexShrink: 0 }}
             aria-label="Toggle search"
             aria-expanded={searchOpen}
           >
@@ -782,7 +793,11 @@ export default function MarketplacePage() {
           <Link
             href="/marketplace/submit"
             className="btn sm primary"
-            style={{ textDecoration: "none", fontSize: "var(--fs-s)" }}
+            style={{
+              textDecoration: "none",
+              fontSize: "var(--fs-s)",
+              flexShrink: 0,
+            }}
             title="Compose a recipe and open a PR against patchworkos/recipes via GitHub's web flow."
           >
             Submit a recipe
