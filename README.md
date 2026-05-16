@@ -371,6 +371,12 @@ Bridge, VS Code extension, smoke harness, and CI are all green on native Windows
 
 `patchwork halts --window overnight` prints a one-screen digest of recipe halts (categorised, 5 most recent reasons). Pair with `patchwork judgments` to review what Claude decided overnight before approving anything.
 
+### 🛒 Recipe marketplace — install + submit from the dashboard
+
+Browse the curated registry at [github.com/patchworkos/recipes](https://github.com/patchworkos/recipes) at **`/marketplace`** in the dashboard. One-click install if the bridge is running, with risk + connector preview before fetch.
+
+Contributing a recipe? **`/marketplace/submit`** is a full in-app submission flow: starter YAML presets (manual / scheduled / webhook), live `recipe.json` manifest preview, auto-save draft in `sessionStorage`, lint via the bridge before submit, and a "Submit to GitHub" button that opens a prefilled create-file PR on the registry repo. GitHub auto-forks for users without push access — no extra accounts needed.
+
 ---
 
 ## Architecture
