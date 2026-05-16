@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import type { AbsPath } from "../fp/brandedTypes.js";
+import { ensureCmdShim } from "../winShim.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -501,7 +502,12 @@ export async function execSafe(
     for (const k of Object.keys(minimalEnv)) {
       if (minimalEnv[k] === undefined) delete minimalEnv[k];
     }
-    const { stdout, stderr } = await execFileAsync(cmd, args, {
+    // On Windows, bare binary names like "npm" / "rg" need `.cmd` resolution
+    // because shell:false won't consult PATHEXT for non-.exe shims. ensureCmdShim
+    // is a no-op on non-Windows and on paths that already have an extension or
+    // contain a separator, so this is safe to apply unconditionally.
+    const spawnCmd = ensureCmdShim(cmd);
+    const { stdout, stderr } = await execFileAsync(spawnCmd, args, {
       cwd: opts.cwd,
       env: minimalEnv,
       timeout,
@@ -598,7 +604,9 @@ export async function execSafeStreaming(
   }
 
   return new Promise<ExecSafeResult>((resolve) => {
-    const proc = spawn(cmd, args, {
+    // ensureCmdShim handles Windows .cmd resolution; see note in execSafe above.
+    const spawnCmd = ensureCmdShim(cmd);
+    const proc = spawn(spawnCmd, args, {
       cwd: opts.cwd,
       env: minimalEnv,
       stdio: ["ignore", "pipe", "pipe"],

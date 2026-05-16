@@ -4,6 +4,7 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
+import { ensureCmdShim } from "../winShim.js";
 import {
   error,
   findLineNumber,
@@ -131,8 +132,10 @@ export function createOpenFileTool(
       }
 
       try {
+        // editorCommand is typically `code`/`cursor`/`windsurf` — `.cmd` shims
+        // on Windows that ENOENT under shell:false unless resolved here.
         const child = spawn(
-          editorCommand,
+          ensureCmdShim(editorCommand),
           ["--reuse-window", "--goto", gotoArg],
           {
             detached: true,

@@ -23,6 +23,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+import { ensureCmdShim } from "../winShim.js";
 
 export interface RunEntry {
   seq: number;
@@ -250,7 +251,9 @@ function approveItem(item: InboxItem, patchworkDir: string): string {
 
 function openInEditor(item: InboxItem): void {
   const editor = process.env.EDITOR ?? process.env.VISUAL ?? "vi";
-  spawnSync(editor, [item.fullPath], { stdio: "inherit" });
+  // EDITOR may be `code`/`cursor`/`windsurf` on Windows (`.cmd` shims).
+  // ensureCmdShim is a no-op for `vi` and any value with an extension.
+  spawnSync(ensureCmdShim(editor), [item.fullPath], { stdio: "inherit" });
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
