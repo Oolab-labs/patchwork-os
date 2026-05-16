@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve as resolvePath } from "node:path";
+import {
+  isAbsolute as isAbsolutePath,
+  join,
+  relative as relativePath,
+  resolve as resolvePath,
+} from "node:path";
 
 function getConfigDir(): string {
   return process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
@@ -636,16 +641,20 @@ export class ClaudeOrchestrator {
         if (this.tasks.has(t.id)) continue;
 
         const prompt: string = typeof t.prompt === "string" ? t.prompt : "";
-        // Only restore context files that are workspace-confined regular files
+        // Only restore context files that are workspace-confined regular files.
+        // The previous check used `abs.startsWith(\`${normalizedWorkspace}/\`)`
+        // — hardcoded POSIX separator silently dropped every contextFile on
+        // Windows where resolvePath returns backslash paths. Use path.relative
+        // so the check is OS-correct.
         const contextFiles: string[] = Array.isArray(t.contextFiles)
           ? t.contextFiles.filter((f: unknown) => {
               if (typeof f !== "string") return false;
               const abs = resolvePath(f);
-              if (
-                abs !== normalizedWorkspace &&
-                !abs.startsWith(`${normalizedWorkspace}/`)
-              )
-                return false;
+              const rel = relativePath(normalizedWorkspace, abs);
+              // rel === "" means abs IS the workspace root (acceptable).
+              // Any segment starting with ".." or an absolute drive-prefixed
+              // remainder means abs escaped the workspace.
+              if (rel.startsWith("..") || isAbsolutePath(rel)) return false;
               try {
                 return fs.lstatSync(abs).isFile();
               } catch {

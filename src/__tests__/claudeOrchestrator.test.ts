@@ -562,6 +562,98 @@ describe("ClaudeOrchestrator — persistence", () => {
     expect(task?.createdAt).toBe(originalCreatedAt);
   });
 
+  // ── contextFiles workspace-confine (Windows path-prefix regression) ──────
+
+  it("loadPersistedTasks — contextFiles inside the workspace are kept", async () => {
+    const id = "ffffffff-0000-0000-0000-000000000010";
+    const v1Payload = {
+      version: 1,
+      savedAt: Date.now(),
+      tasks: [
+        {
+          id,
+          sessionId: "",
+          prompt: "p",
+          contextFiles: ["/tmp/inside.txt", "/tmp/subdir/nested.md"],
+          status: "pending",
+          createdAt: Date.now(),
+          timeoutMs: 120_000,
+          tokenEstimate: 1,
+        },
+      ],
+    };
+    mockReadFile.mockResolvedValueOnce(JSON.stringify(v1Payload));
+
+    const orch = new ClaudeOrchestrator(makeSlowDriver(60_000), "/tmp", noop);
+    await orch.loadPersistedTasks(9999);
+
+    const task = orch.getTask(id);
+    expect(task?.contextFiles).toEqual([
+      "/tmp/inside.txt",
+      "/tmp/subdir/nested.md",
+    ]);
+  });
+
+  it("loadPersistedTasks — contextFiles outside the workspace are dropped", async () => {
+    const id = "ffffffff-0000-0000-0000-000000000011";
+    const v1Payload = {
+      version: 1,
+      savedAt: Date.now(),
+      tasks: [
+        {
+          id,
+          sessionId: "",
+          prompt: "p",
+          contextFiles: [
+            "/tmp/inside.txt",
+            "/etc/passwd", // escapes workspace
+            "../sibling.md", // resolves outside /tmp
+          ],
+          status: "pending",
+          createdAt: Date.now(),
+          timeoutMs: 120_000,
+          tokenEstimate: 1,
+        },
+      ],
+    };
+    mockReadFile.mockResolvedValueOnce(JSON.stringify(v1Payload));
+
+    const orch = new ClaudeOrchestrator(makeSlowDriver(60_000), "/tmp", noop);
+    await orch.loadPersistedTasks(9999);
+
+    const task = orch.getTask(id);
+    expect(task?.contextFiles).toEqual(["/tmp/inside.txt"]);
+  });
+
+  it("loadPersistedTasks — the workspace root itself is accepted (rel === '')", async () => {
+    const id = "ffffffff-0000-0000-0000-000000000012";
+    const v1Payload = {
+      version: 1,
+      savedAt: Date.now(),
+      tasks: [
+        {
+          id,
+          sessionId: "",
+          prompt: "p",
+          // Workspace root passes the relative('') check; whether it survives
+          // lstatSync(isFile()) depends on the mock — here lstatSync is stubbed
+          // to return isFile: true so we isolate the path-confine logic.
+          contextFiles: ["/tmp"],
+          status: "pending",
+          createdAt: Date.now(),
+          timeoutMs: 120_000,
+          tokenEstimate: 1,
+        },
+      ],
+    };
+    mockReadFile.mockResolvedValueOnce(JSON.stringify(v1Payload));
+
+    const orch = new ClaudeOrchestrator(makeSlowDriver(60_000), "/tmp", noop);
+    await orch.loadPersistedTasks(9999);
+
+    expect(orch.getTask(id)?.contextFiles).toEqual(["/tmp"]);
+  });
+
   // ── persistTasks ─────────────────────────────────────────────────────────
 
   it("persistTasks — uses v1 envelope and includes all task statuses", async () => {
