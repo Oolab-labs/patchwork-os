@@ -120,6 +120,86 @@ function parseStep(raw: unknown, path: string[]): Step {
     throw new RecipeParseError("step must be an object", path);
   const s = raw as Record<string, unknown>;
   const id = requireString(s, "id");
+
+  // Modern object form (the shape used by every bundled template, the
+  // canonical schemas/recipe.v1.json, validation.ts, and yamlRunner.ts):
+  //   agent: { prompt, into?, tools?, risk?, kind?, reviews?, … }
+  // Read prompt + tools + risk from the nested object and map `into` →
+  // the internal `output` field. Any extra agent fields (kind, reviews,
+  // model, driver, …) are preserved by yamlRunner via `step.agent` but
+  // aren't in the internal AgentStep type — the compile/install path
+  // doesn't need them, so dropping them here is fine.
+  if (s.agent && typeof s.agent === "object" && !Array.isArray(s.agent)) {
+    const agent = s.agent as Record<string, unknown>;
+    const prompt = requireString(agent, "prompt");
+    const into =
+      typeof s.into === "string"
+        ? s.into
+        : typeof agent.into === "string"
+          ? agent.into
+          : undefined;
+    return {
+      id,
+      agent: true,
+      prompt,
+      tools: Array.isArray(agent.tools) ? (agent.tools as string[]) : undefined,
+      risk: (agent.risk ?? s.risk) as Step["risk"],
+      output: typeof s.output === "string" ? s.output : into,
+    };
+  }
+
+  // Modern top-level form for tool steps (no `agent` discriminator):
+  //   tool: "gmail.fetch_unread"
+  //   params: { … }
+  //   into: "step_output"
+  if (s.agent === undefined && typeof s.tool === "string") {
+    return {
+      id,
+      agent: false,
+      tool: s.tool,
+      params:
+        typeof s.params === "object" && s.params !== null
+          ? (s.params as Record<string, unknown>)
+          : {},
+      risk: s.risk as Step["risk"],
+      output:
+        typeof s.output === "string"
+          ? s.output
+          : typeof s.into === "string"
+            ? s.into
+            : undefined,
+    };
+  }
+
+  // Compound step shapes — parallel groups, nested recipes, chains,
+  // each-loops. parser.ts predates these and the internal Step union
+  // doesn't model them, but yamlRunner / chainedRunner read them
+  // straight from the raw object. Pass them through with the extra
+  // fields preserved (JSON.stringify in installer.ts:88 keeps every
+  // field) so the install path doesn't reject the entire recipe.
+  // Compile is bypassed for cron/webhook/manual triggers (which is
+  // what every parallel-using recipe in the registry currently uses),
+  // so the dummy `agent: false` discriminator never reaches the
+  // compiler — it only satisfies TypeScript's union narrowing.
+  if (
+    Array.isArray(s.parallel) ||
+    typeof s.recipe === "string" ||
+    typeof s.chain === "string" ||
+    typeof s.each === "string"
+  ) {
+    return {
+      ...(s as Record<string, unknown>),
+      id,
+      agent: false,
+      tool: "__compound__",
+      params: {},
+      risk: s.risk as Step["risk"],
+    } as unknown as Step;
+  }
+
+  // Legacy boolean discriminator — kept for backward compat with any
+  // older recipes still in the wild that use `agent: true / false` as
+  // the agent/tool selector with flat `prompt` / `tool` siblings.
   if (s.agent === true) {
     const prompt = requireString(s, "prompt");
     return {
@@ -145,10 +225,10 @@ function parseStep(raw: unknown, path: string[]): Step {
       output: typeof s.output === "string" ? s.output : undefined,
     };
   }
-  throw new RecipeParseError("step.agent must be true or false", [
-    ...path,
-    "agent",
-  ]);
+  throw new RecipeParseError(
+    "step must declare `agent: { prompt }`, `tool: <name>`, or (legacy) `agent: true|false`",
+    [...path, "agent"],
+  );
 }
 
 /**
