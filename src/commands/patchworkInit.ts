@@ -17,6 +17,7 @@ import {
   saveConfig,
 } from "../patchworkConfig.js";
 import { registerPreToolUseHook } from "../preToolUseHook.js";
+import { ensureCmdShim } from "../winShim.js";
 
 interface InitOptions {
   force: boolean;
@@ -144,7 +145,9 @@ function findTemplatesDir(): string | null {
 
 function detectGeminiCli(): boolean {
   try {
-    const r = spawnSync("gemini", ["--version"], {
+    // gemini is `.cmd` on Windows when installed via npm — without ensureCmdShim
+    // this silently returns false on Win, so init never offers the Gemini driver.
+    const r = spawnSync(ensureCmdShim("gemini"), ["--version"], {
       stdio: "pipe",
       timeout: 3000,
     });

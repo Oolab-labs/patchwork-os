@@ -318,10 +318,14 @@ describe("spawnWorkspace handler", () => {
       extensionConnected: true,
     });
 
-    // Second spawn call should be code-server with bind-addr + workspace
+    // Second spawn call should be code-server with bind-addr + workspace.
+    // On Windows code-server is a `.cmd` shim — ensureCmdShim appends `.cmd`
+    // so spawn(shell:false) can resolve it. Other platforms get the bare name.
     expect(spawnCalls).toHaveLength(2);
     const csCall = spawnCalls[1]!;
-    expect(csCall.cmd).toBe("code-server");
+    const expectedCs =
+      process.platform === "win32" ? "code-server.cmd" : "code-server";
+    expect(csCall.cmd).toBe(expectedCs);
     expect(csCall.args).toContain("--bind-addr");
     expect(csCall.args).toContain("127.0.0.1:9090");
     expect(csCall.args).toContain("--auth");

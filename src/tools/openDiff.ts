@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { ensureCmdShim } from "../winShim.js";
 import {
   error,
   requireString,
@@ -131,10 +132,16 @@ export function createOpenDiffTool(
       }
 
       try {
-        const child = spawn(editorCommand, ["--diff", oldPath, tmpFile], {
-          detached: true,
-          stdio: "ignore",
-        });
+        // editorCommand is typically `code`/`cursor`/`windsurf` — `.cmd` shims
+        // on Windows that ENOENT under shell:false unless resolved here.
+        const child = spawn(
+          ensureCmdShim(editorCommand),
+          ["--diff", oldPath, tmpFile],
+          {
+            detached: true,
+            stdio: "ignore",
+          },
+        );
         child.on("error", () => {}); // Prevent unhandled error events
         child.unref();
         return successStructured({ success: true, oldPath, newPath: tmpFile });

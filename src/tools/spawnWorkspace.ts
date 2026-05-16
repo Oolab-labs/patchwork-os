@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import type { ToolResult } from "../fp/result.js";
 import { err, okS, toCallToolResult } from "../fp/result.js";
+import { ensureCmdShim } from "../winShim.js";
 
 export interface SpawnWorkspaceResult {
   pid: number;
@@ -271,8 +272,10 @@ async function spawnWorkspace(
       let codeServerPid: number | undefined;
       if (codeServerMode) {
         try {
+          // npm-installed code-server is a `.cmd` shim on Windows; wrap so
+          // shell:false spawn doesn't ENOENT.
           const csChild = spawnFn(
-            codeServerBin,
+            ensureCmdShim(codeServerBin),
             [
               "--bind-addr",
               `127.0.0.1:${codeServerPort}`,
