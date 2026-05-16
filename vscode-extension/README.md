@@ -1,10 +1,18 @@
 # Claude IDE Bridge
 
-> **MCP bridge between Claude Code and your IDE.** 170+ tools — diagnostics, LSP, debugger, terminal, git. Works in VS Code, Cursor, Windsurf, and Google Antigravity.
+> **MCP bridge between Claude Code and your IDE.** 177 tools — diagnostics, LSP, debugger, terminal, git. Works in VS Code, Cursor, Windsurf, and Google Antigravity.
 
 Give Claude Code real-time visibility into your editor. Claude sees your open files, diagnostics, terminal output, and editor state — and can act on all of it.
 
 Fix a bug from your phone. Let Claude run your tests and commit the result. Ask Claude what lint errors are in your workspace without copy-pasting anything. This extension makes all of that work.
+
+## Screenshots
+
+<!-- TODO: screenshots of analytics panel, walkthrough, status bar — Marketplace strongly privileges visuals. Tracked separately. -->
+
+## Walkthrough
+
+A guided walkthrough ships with the extension. It opens automatically on first install; re-open any time via **Command Palette → "Welcome: Open Walkthrough" → "Get Started with Claude IDE Bridge"**.
 
 ---
 
@@ -75,7 +83,7 @@ Once connected, Claude has full IDE context and can act on it without you descri
 - **Coverage tracing** — `getCodeCoverage` + lcov/json-summary parsing.
 - **Environment health** — `bridgeDoctor` verifies extension, git, linter, test runner, lock file, and GitHub CLI with actionable suggestions.
 
-The bridge starts in **full mode by default** (~170 tools). Pass `--slim` to restrict to the IDE-only surface (~50 tools). Tools that require the extension are automatically hidden when the extension is disconnected and reappear on reconnect.
+The bridge starts in **full mode by default** (177 tools). Pass `--slim` to restrict to the IDE-only surface (~60 tools). Tools that require the extension are automatically hidden when the extension is disconnected and reappear on reconnect.
 
 ---
 
@@ -94,6 +102,7 @@ The bridge starts in **full mode by default** (~170 tools). Pass `--slim` to res
 | `Claude IDE Bridge: Start Bridge` | Manually start the bridge for this workspace |
 | `Claude IDE Bridge: Install / Upgrade Bridge` | Install or upgrade the bridge via npm |
 | `Claude IDE Bridge: Refresh Analytics` | Refresh the analytics sidebar panel |
+| `Claude IDE Bridge: Open Panel` | Reveal the Claude Bridge analytics view |
 
 ## Analytics Panel
 
@@ -129,7 +138,7 @@ The extension contributes a **Claude Bridge** panel in the VS Code activity bar.
 
 ### Tool count seems low or Claude can't find IDE tools
 
-When the extension loses its connection to the bridge, tools requiring extension access (~50 tools: terminal, LSP, debug, editor state) are automatically hidden from Claude. Open the **Output** panel and select **Claude IDE Bridge** to check connection status. Run **Claude IDE Bridge: Reconnect** from the command palette, or reload the window.
+When the extension loses its connection to the bridge, tools requiring extension access (terminal, LSP, debug, editor state) are automatically hidden from Claude. Open the **Output** panel and select **Claude IDE Bridge** to check connection status. Run **Claude IDE Bridge: Reconnect** from the command palette, or reload the window.
 
 For a full environment health check, ask Claude to call `bridgeDoctor`. It verifies the extension connection, git, linters, test runner, lock file, node_modules, and GitHub CLI — and reports actionable suggestions for anything that's wrong.
 
@@ -227,10 +236,10 @@ A companion IntelliJ plugin (v1.0.0) is available on the JetBrains Marketplace. 
 
 | | |
 |---|---|
-| Extension version | 1.4.10 |
-| Bridge version | `0.2.0-alpha.35` |
+| Extension version | 1.4.16 |
+| Bridge version | `0.2.0-beta.3` |
 | npm package | `patchwork-os` (binaries: `claude-ide-bridge`, `patchwork`, `patchwork-os`) |
 | VS Code requirement | 1.93+ |
 | Compatible editors | VS Code, Cursor, Windsurf, Google Antigravity |
 | Node.js requirement | 20+ (for bridge auto-install) |
-| Test suite | 4114 bridge tests + 569 extension tests (all passing) |
+| Test suite | 1000+ tests across bridge + extension |
