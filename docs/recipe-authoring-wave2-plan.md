@@ -7,7 +7,7 @@
 **Wave 2 providers:** Confluence, Zendesk, Intercom, HubSpot, Datadog, Stripe (read-only)
 **Prioritization:** Fills customer gaps after Wave 1 (Jira/Notion/PagerDuty/Drive/Docs) — support surfaces (Zendesk/Intercom), knowledge surfaces (Confluence), CRM/revenue surfaces (HubSpot), ops (Datadog), and billing visibility (Stripe, but read-only until a separate financial-actions milestone hardens compliance and audit controls).
 
-Produced as companion to [`recipe-chaining-wave1-plan.md`](./recipe-chaining-wave1-plan.md). Tracks v0.2.0-alpha.33 state (2026-04-27).
+Produced as companion to [`recipe-chaining-wave1-plan.md`](./plans/recipe-chaining-wave1-plan.md). Tracks v0.2.0-alpha.33 state (2026-04-27).
 
 ---
 
@@ -99,7 +99,7 @@ Produced as companion to [`recipe-chaining-wave1-plan.md`](./recipe-chaining-wav
 #### What to build
 
 1. **Composable JSON Schema set** ✅ *Shipped alpha.22* — `GET /schemas/recipe.v1.json`, `GET /schemas/tools/<ns>.json` served from bridge. Composable via `$ref`. Per-namespace tool schemas from registry.
-   - **In flight:** SchemaStore PR submitted 2026-04-28 ([schemastore/json#5608](https://github.com/SchemaStore/schemastore/pull/5608)), awaiting LGTM. PR body at [docs/recipe-schemastore-pr.md](./recipe-schemastore-pr.md).
+   - **In flight:** SchemaStore PR submitted 2026-04-28 ([schemastore/json#5608](https://github.com/SchemaStore/schemastore/pull/5608)), awaiting LGTM. PR body at [docs/plans/recipe-schemastore-pr.md](./plans/recipe-schemastore-pr.md).
 
 2. **`yaml-language-server` metadata block** ✅ *Shipped* — `patchwork recipe new` writes `# yaml-language-server: $schema=https://patchwork.sh/schema/recipe.v1.json`. Local bridge URL also works in dev.
 
