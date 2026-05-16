@@ -716,17 +716,14 @@ export default function MarketplacePage() {
           >
             Search
           </button>
-          <a
-            href="https://github.com/patchworkos/recipes/blob/main/CONTRIBUTING.md"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn sm ghost"
+          <Link
+            href="/marketplace/submit"
+            className="btn sm primary"
             style={{ textDecoration: "none", fontSize: "var(--fs-s)" }}
-            aria-label="Propose a recipe by opening a pull request on GitHub"
-            title="Opens GitHub. Submissions are reviewed as PRs against patchworkos/recipes — there is no in-app submission flow."
+            title="Compose a recipe and open a PR against patchworkos/recipes via GitHub's web flow."
           >
-            Propose via GitHub PR ↗
-          </a>
+            Submit a recipe
+          </Link>
         </div>
       </div>
 
