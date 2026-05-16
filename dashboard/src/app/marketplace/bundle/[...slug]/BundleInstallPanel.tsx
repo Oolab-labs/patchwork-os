@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { type RiskLevel, shortName } from "@/lib/registry";
 import { InstallConfirmDialog } from "../../_components/InstallConfirmDialog";
+import { MissingConnectorsNotice } from "../../_components/MissingConnectorsNotice";
 
 interface Props {
   /**
@@ -48,6 +49,9 @@ interface BundleInstallResponse {
     plugin?: string;
     policy_template?: string;
   };
+  /** Connectors the bundle's recipes need but the user hasn't
+   * authorised yet — surfaced as an inline notice after install. */
+  missingConnectors?: string[];
   error?: string;
   code?: string;
 }
@@ -311,6 +315,10 @@ export default function BundleInstallPanel({
             </div>
           )}
         </div>
+      )}
+
+      {result?.missingConnectors && result.missingConnectors.length > 0 && (
+        <MissingConnectorsNotice connectors={result.missingConnectors} />
       )}
 
       {(plugin || policyTemplate) && (

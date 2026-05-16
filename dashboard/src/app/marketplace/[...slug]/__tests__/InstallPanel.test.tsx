@@ -136,6 +136,35 @@ describe("InstallPanel — install-confirm dialog", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 
+  it("surfaces a missing-connectors notice when the bridge install response includes one", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, { recipes: [] })) // status poll
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          ok: true,
+          missingConnectors: ["gmail", "slack", "google-calendar"],
+        }),
+      );
+    render(
+      <InstallPanel install={INSTALL} name={NAME} riskLevel="low" />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /^Install$/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Install$/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Connect these services/i);
+    expect(alert).toHaveTextContent(/Gmail/);
+    expect(alert).toHaveTextContent(/Slack/);
+    expect(alert).toHaveTextContent(/Google Calendar/);
+    expect(
+      screen.getByRole("link", { name: /Open connections/i }),
+    ).toHaveAttribute("href", "/connections");
+  });
+
   it("Cancel button in the dialog does not POST", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { recipes: [] }));
     render(

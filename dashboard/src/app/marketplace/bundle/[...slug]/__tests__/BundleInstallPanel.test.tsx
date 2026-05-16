@@ -253,6 +253,38 @@ describe("BundleInstallPanel — install action", () => {
       ).toHaveTextContent(/non-empty .recipes. array/i),
     );
   });
+
+  it("surfaces a missing-connectors notice when bundle install response includes one", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, { recipes: [] }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          ok: true,
+          kind: "bundle",
+          installed: [{ name: "a-recipe", action: "created" }],
+          failures: [],
+          missingConnectors: ["gmail", "linear"],
+        }),
+      );
+    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} name={NAME} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Install bundle/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Install bundle/i }));
+    // Confirm dialog opens; click the confirm button inside it.
+    const confirmBtns = screen.getAllByRole("button", { name: /Install bundle/i });
+    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Connect these services/i);
+    expect(alert).toHaveTextContent(/Gmail/);
+    expect(alert).toHaveTextContent(/Linear/);
+    expect(
+      screen.getByRole("link", { name: /Open connections/i }),
+    ).toHaveAttribute("href", "/connections");
+  });
 });
 
 describe("BundleInstallPanel — advisory rendering", () => {
