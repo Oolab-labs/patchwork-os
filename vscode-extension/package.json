@@ -205,6 +205,7 @@
     "prebuild": "npm run sync-presets",
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
+    "pretypecheck": "npm run sync-presets",
     "typecheck": "tsc -p tsconfig.prod.json --noEmit",
     "vscode:prepublish": "npm run build",
     "prepackage": "npm run build",
