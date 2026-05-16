@@ -1,10 +1,9 @@
 /**
- * Regression test: execSafe + execSafeStreaming must wrap their binary
- * argument with ensureCmdShim so npm-installed `.cmd` shims (npm, npx,
- * tsc, biome, rg, …) resolve under shell:false on Windows.
- *
- * Without the wrap, ~150 callers of these helpers silently ENOENT on
- * Windows even though the same commands work fine in a terminal.
+ * Regression test: execSafe + execSafeStreaming must wrap known npm `.cmd`
+ * shims (npm, npx, tsc, biome, …) so they resolve under shell:false on
+ * Windows. Equally important — they must NOT wrap system binaries like
+ * `git` (resolved as git.exe via PATHEXT) or shell tools like `echo`,
+ * because `spawn("git.cmd")` ENOENTs on Windows.
  *
  * vi.mock + isolate the spawn intercept in this file so other suites
  * keep their real child_process.
@@ -26,9 +25,6 @@ vi.mock("node:child_process", () => ({
     ) => void,
   ) => {
     execFileMock(cmd, args, opts);
-    // execFile's promisified form passes the callback when no options object
-    // is split out. Always invoke synchronously with a fake success so the
-    // promise resolves and we can read the spy.
     cb(null, { stdout: "", stderr: "" });
   },
   spawn: (cmd: string, args: readonly string[], opts: unknown) => {
@@ -52,22 +48,49 @@ function setPlatform(p: NodeJS.Platform) {
 // Import AFTER vi.mock so the mock applies to the helper's internal binding.
 const { execSafe, execSafeStreaming } = await import("../utils.js");
 
-describe("execSafe — .cmd-shim wrap on Windows", () => {
+describe("execSafe — Windows .cmd-shim wrap (known shims only)", () => {
   beforeAll(() => setPlatform("win32"));
   afterAll(() => {
     setPlatform(ORIG_PLATFORM);
     vi.resetAllMocks();
   });
 
-  it("wraps a bare binary name with .cmd before invoking execFile", async () => {
+  it("WRAPS known npm shims (npm → npm.cmd)", async () => {
     execFileMock.mockClear();
     await execSafe("npm", ["--version"], { allowlistChecked: true });
-    expect(execFileMock).toHaveBeenCalled();
     const [cmd] = execFileMock.mock.calls[0] as [string, string[], unknown];
     expect(cmd).toBe("npm.cmd");
   });
 
-  it("leaves an explicit .exe path alone", async () => {
+  it("WRAPS tsc → tsc.cmd (npm-installed dev tool)", async () => {
+    execFileMock.mockClear();
+    await execSafe("tsc", ["--version"], { allowlistChecked: true });
+    const [cmd] = execFileMock.mock.calls[0] as [string, string[], unknown];
+    expect(cmd).toBe("tsc.cmd");
+  });
+
+  it("LEAVES system binaries alone — git stays git, not git.cmd", async () => {
+    execFileMock.mockClear();
+    await execSafe("git", ["--version"], { allowlistChecked: true });
+    const [cmd] = execFileMock.mock.calls[0] as [string, string[], unknown];
+    expect(cmd).toBe("git");
+  });
+
+  it("LEAVES shell-builtin-ish binaries alone — echo stays echo", async () => {
+    execFileMock.mockClear();
+    await execSafe("echo", ["hello"], { allowlistChecked: true });
+    const [cmd] = execFileMock.mock.calls[0] as [string, string[], unknown];
+    expect(cmd).toBe("echo");
+  });
+
+  it("LEAVES rg alone — install source is ambiguous, omitted from known set", async () => {
+    execFileMock.mockClear();
+    await execSafe("rg", ["foo"], { allowlistChecked: true });
+    const [cmd] = execFileMock.mock.calls[0] as [string, string[], unknown];
+    expect(cmd).toBe("rg");
+  });
+
+  it("LEAVES an explicit .exe path alone", async () => {
     execFileMock.mockClear();
     await execSafe("C:/Tools/foo.exe", [], { allowlistChecked: true });
     const [cmd] = execFileMock.mock.calls[0] as [string, string[], unknown];
@@ -75,22 +98,31 @@ describe("execSafe — .cmd-shim wrap on Windows", () => {
   });
 });
 
-describe("execSafeStreaming — .cmd-shim wrap on Windows", () => {
+describe("execSafeStreaming — Windows .cmd-shim wrap (known shims only)", () => {
   beforeAll(() => setPlatform("win32"));
   afterAll(() => {
     setPlatform(ORIG_PLATFORM);
     vi.resetAllMocks();
   });
 
-  it("wraps a bare binary name with .cmd before invoking spawn", async () => {
+  it("WRAPS known shim — eslint → eslint.cmd", async () => {
     spawnMock.mockClear();
-    await execSafeStreaming("rg", ["foo"], {
+    await execSafeStreaming("eslint", ["src"], {
       allowlistChecked: true,
       onLine: () => {},
     });
-    expect(spawnMock).toHaveBeenCalled();
     const [cmd] = spawnMock.mock.calls[0] as [string, string[], unknown];
-    expect(cmd).toBe("rg.cmd");
+    expect(cmd).toBe("eslint.cmd");
+  });
+
+  it("LEAVES git alone", async () => {
+    spawnMock.mockClear();
+    await execSafeStreaming("git", ["log"], {
+      allowlistChecked: true,
+      onLine: () => {},
+    });
+    const [cmd] = spawnMock.mock.calls[0] as [string, string[], unknown];
+    expect(cmd).toBe("git");
   });
 });
 

@@ -29,3 +29,61 @@ export function ensureCmdShim(binary: string): string {
   if (binary.includes("\\") || binary.includes("/")) return binary;
   return `${binary}.cmd`;
 }
+
+/**
+ * Binaries that ship as `.cmd` shims on Windows when npm-installed (or via
+ * the standard VS Code / Cursor / Windsurf installers for the editor CLIs).
+ *
+ * Conservative by design — only names that are dependably `.cmd` on Windows
+ * across the common install paths. Anything ambiguous (`rg`, `fd`, `jq`,
+ * `python`, `node`) is omitted so we don't break `spawn("git")` style
+ * callers — Windows' PATHEXT auto-resolves `.exe` for those.
+ *
+ * Add to this set only after confirming the binary really is a `.cmd` shim
+ * in every realistic install path; a wrong inclusion turns working `.exe`
+ * spawns into ENOENT.
+ */
+const KNOWN_CMD_SHIMS: ReadonlySet<string> = new Set([
+  // Package managers — always `.cmd` from any install path
+  "npm",
+  "npx",
+  "yarn",
+  "pnpm",
+  // npm-installed dev tools — bin entries land as `.cmd` shims
+  "tsc",
+  "eslint",
+  "biome",
+  "prettier",
+  "ruff",
+  "black",
+  "ts-prune",
+  // Patchwork OS / Claude orchestration — npm-installed
+  "claude",
+  "claude-ide-bridge",
+  "gemini",
+  "code-server",
+  // VS Code-family editor CLIs — `.cmd` shims from the official installers
+  "code",
+  "code-insiders",
+  "cursor",
+  "windsurf",
+]);
+
+/**
+ * Conservative variant of `ensureCmdShim`: only appends `.cmd` when the
+ * binary is in {@link KNOWN_CMD_SHIMS}. Use this from generic helpers like
+ * `execSafe` that receive arbitrary binary names from many call sites —
+ * blindly wrapping every bare name would turn working `spawn("git")` into
+ * broken `spawn("git.cmd")`.
+ *
+ * Same boilerplate as `ensureCmdShim` (no-op on non-Win, leaves explicit
+ * paths and pre-extended names alone). Differs only in the final wrap
+ * decision.
+ */
+export function ensureCmdShimIfKnown(binary: string): string {
+  if (process.platform !== "win32") return binary;
+  if (path.win32.extname(binary)) return binary;
+  if (binary.includes("\\") || binary.includes("/")) return binary;
+  if (!KNOWN_CMD_SHIMS.has(binary)) return binary;
+  return `${binary}.cmd`;
+}
