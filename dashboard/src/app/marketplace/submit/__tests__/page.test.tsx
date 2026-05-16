@@ -352,6 +352,74 @@ describe("MarketplaceSubmitPage — sessionStorage draft", () => {
     ).toBe("Restored description.");
   });
 
+  it("restores 'submitted' stage from sessionStorage (regression — refresh after submit must stay on success view)", () => {
+    // Reproduces dogfood Bug #5: user clicked Submit (which transitioned
+    // to the success view with the "Open recipe.json on GitHub" button),
+    // then refreshed the page. Pre-fix the user landed back on compose
+    // view with the draft restored — losing access to the second-file
+    // button, and a Submit-again would open a duplicate prefilled tab.
+    sessionStorage.setItem(
+      "patchwork.marketplaceSubmit.draft.v1",
+      JSON.stringify({
+        slugRaw: "my-recipe",
+        authorRaw: "myhandle",
+        version: "1.0.0",
+        description: "test",
+        tagsInput: "test",
+        connectorsInput: "",
+        license: "MIT",
+        homepage: "",
+        riskLevel: "low",
+        networkAccess: false,
+        fileAccess: false,
+        approvalBehavior: "ask_on_novel",
+        yaml: "name: my-recipe\n",
+        stage: "submitted",
+      }),
+    );
+
+    render(<MarketplaceSubmitPage />);
+
+    expect(
+      screen.getByRole("heading", { name: /Recipe submission in progress/i }),
+    ).toBeInTheDocument();
+    // The second-step button must be reachable.
+    expect(
+      screen.getByRole("button", { name: /Open recipe\.json on GitHub/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("defaults stage to 'compose' when the persisted draft omits it (older drafts)", () => {
+    // Drafts saved before the stage field shipped won't have it.
+    // Don't accidentally land users on a never-submitted "submitted"
+    // view.
+    sessionStorage.setItem(
+      "patchwork.marketplaceSubmit.draft.v1",
+      JSON.stringify({
+        slugRaw: "from-v1",
+        authorRaw: "",
+        version: "1.0.0",
+        description: "",
+        tagsInput: "",
+        connectorsInput: "",
+        license: "MIT",
+        homepage: "",
+        riskLevel: "low",
+        networkAccess: false,
+        fileAccess: false,
+        approvalBehavior: "ask_on_novel",
+        yaml: "name: from-v1\n",
+        // intentionally no `stage`
+      }),
+    );
+
+    render(<MarketplaceSubmitPage />);
+
+    expect(
+      screen.getByRole("heading", { name: /^Submit a recipe$/i }),
+    ).toBeInTheDocument();
+  });
+
   it("falls back to defaults when sessionStorage contains malformed data", () => {
     sessionStorage.setItem(
       "patchwork.marketplaceSubmit.draft.v1",
