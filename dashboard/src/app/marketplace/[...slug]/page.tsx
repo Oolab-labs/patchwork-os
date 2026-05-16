@@ -27,8 +27,12 @@ export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
   const fullName = decodeURIComponent(slug.join("/"));
   const registry = await fetchRegistry();
-  const recipe = registry?.recipes.find((r) => r.name === fullName);
-
+  // Don't mislabel a registry-down page as 404 — separate title makes
+  // tab-history and SEO crawlers distinguish the two states.
+  if (!registry) {
+    return { title: "Registry unreachable — Marketplace · Patchwork OS" };
+  }
+  const recipe = registry.recipes.find((r) => r.name === fullName);
   if (!recipe) {
     return { title: "Not found — Marketplace · Patchwork OS" };
   }
@@ -56,7 +60,13 @@ export default async function RecipeDetailPage({ params }: PageProps) {
   const fullName = decodeURIComponent(slug.join("/"));
 
   const registry = await fetchRegistry();
-  const recipe = registry?.recipes.find((r) => r.name === fullName);
+  // Distinguish "registry unreachable" (CDN failure, transient network
+  // issue) from "recipe genuinely missing" — pre-fix both collapsed into
+  // notFound(), so every detail-page URL 404'd whenever the CDN was down.
+  // Now the unreachable case renders a recoverable error UI with a
+  // back-link instead of a hard 404 the user can't recover from.
+  if (!registry) return <RegistryUnreachable fullName={fullName} />;
+  const recipe = registry.recipes.find((r) => r.name === fullName);
   if (!recipe) notFound();
 
   const src = parseInstallSource(recipe.install);
@@ -360,6 +370,61 @@ function TrustMetadataCard({ recipe }: { recipe: RegistryRecipe }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function RegistryUnreachable({ fullName }: { fullName: string }) {
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)" }}>
+      <Link
+        href="/marketplace"
+        className="btn sm ghost"
+        style={{ alignSelf: "flex-start", textDecoration: "none", fontSize: "var(--fs-s)" }}
+      >
+        ← Back to marketplace
+      </Link>
+      <div
+        className="glass-card"
+        style={{
+          padding: "var(--s-5)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--s-3)",
+          background: "var(--warn-soft)",
+          border: "1px solid var(--warn)",
+        }}
+        role="alert"
+      >
+        <h1 style={{ margin: 0, fontSize: "var(--fs-l)", color: "var(--ink-0)" }}>
+          Marketplace registry unreachable
+        </h1>
+        <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--ink-1)", lineHeight: 1.55 }}>
+          Couldn&apos;t load the recipe index from{" "}
+          <code style={{ fontSize: "var(--fs-xs)" }}>
+            github.com/patchworkos/recipes
+          </code>
+          . The recipe{" "}
+          <code style={{ fontSize: "var(--fs-xs)" }}>{fullName}</code> may or
+          may not exist — we can&apos;t tell without the registry.
+        </p>
+        <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--fg-2)", lineHeight: 1.55 }}>
+          Refresh the page in a minute, or use the CLI directly:
+        </p>
+        <code
+          style={{
+            background: "var(--recess)",
+            padding: "10px 12px",
+            borderRadius: "var(--r-2)",
+            fontSize: "var(--fs-s)",
+            fontFamily: "var(--font-mono, ui-monospace, monospace)",
+            overflowX: "auto",
+            color: "var(--ink-1)",
+          }}
+        >
+          patchwork recipe install {fullName}
+        </code>
+      </div>
+    </section>
   );
 }
 
