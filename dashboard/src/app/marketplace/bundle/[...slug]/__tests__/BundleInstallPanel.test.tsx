@@ -44,12 +44,13 @@ afterEach(() => {
 
 const SOURCE = "github:patchworkos/recipes/bundles/morning";
 const RECIPES = ["a-recipe", "b-recipe", "c-recipe"];
+const NAME = "morning";
 
 describe("BundleInstallPanel — status polling", () => {
   it("shows 'Bridge connected' copy when none of the bundle's recipes are installed", async () => {
     // First (and only) call fetches /api/bridge/recipes; return empty.
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { recipes: [] }));
-    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} />);
+    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} name={NAME} />);
     await waitFor(() =>
       expect(
         screen.getByText(/Bridge connected — install all 3 recipes/i),
@@ -73,6 +74,7 @@ describe("BundleInstallPanel — status polling", () => {
       <BundleInstallPanel
         installSource={SOURCE}
         recipes={["@patchworkos/a-recipe", "@patchworkos/b-recipe", "@patchworkos/c-recipe"]}
+        name={NAME}
       />,
     );
     await waitFor(() =>
@@ -86,7 +88,7 @@ describe("BundleInstallPanel — status polling", () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, { recipes: [{ name: "a-recipe" }] }),
     );
-    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} />);
+    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} name={NAME} />);
     await waitFor(() =>
       expect(
         screen.getByText(/1 of 3 recipes already installed/i),
@@ -103,7 +105,7 @@ describe("BundleInstallPanel — status polling", () => {
         recipes: RECIPES.map((name) => ({ name })),
       }),
     );
-    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} />);
+    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} name={NAME} />);
     await waitFor(() =>
       expect(
         screen.getByText(/All 3 recipes installed locally/i),
@@ -116,13 +118,34 @@ describe("BundleInstallPanel — status polling", () => {
 
   it("falls back to 'No local bridge' copy when /api/bridge/recipes errors", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(503, {}));
-    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} />);
+    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} name={NAME} />);
     await waitFor(() =>
       expect(
         screen.getByText(/No local bridge detected/i),
       ).toBeInTheDocument(),
     );
     // No install button when bridge is offline — only the CLI copy box.
+    expect(
+      screen.queryByRole("button", { name: /Install bundle/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the 'logged out' copy + Log in CTA when /api/bridge/recipes returns 401", async () => {
+    // Three-state bridge status: 401 must NOT be conflated with 503/offline.
+    // Pre-fix the bundle panel said "No local bridge detected" when the
+    // dashboard was logged out, even though the bridge was reachable.
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, {}));
+    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} name={NAME} />);
+    await waitFor(() =>
+      expect(
+        screen.getByText(/dashboard is logged out/i),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("link", { name: /Log in/i }),
+    ).toBeInTheDocument();
+    // Install button is hidden in the unauth state — the Log-in CTA takes
+    // its slot.
     expect(
       screen.queryByRole("button", { name: /Install bundle/i }),
     ).not.toBeInTheDocument();
@@ -146,13 +169,16 @@ describe("BundleInstallPanel — install action", () => {
           failures: [],
         }),
       );
-    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} />);
+    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} name={NAME} />);
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: /Install bundle/i }),
       ).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByRole("button", { name: /Install bundle/i }));
+    // Confirm dialog opens; click the confirm button inside it.
+    const confirmBtns = screen.getAllByRole("button", { name: /Install bundle/i });
+    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
 
     await waitFor(() =>
       expect(screen.getByText(/Installed 3 recipes:/i)).toBeInTheDocument(),
@@ -181,13 +207,16 @@ describe("BundleInstallPanel — install action", () => {
           ],
         }),
       );
-    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} />);
+    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} name={NAME} />);
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: /Install bundle/i }),
       ).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByRole("button", { name: /Install bundle/i }));
+    // Confirm dialog opens; click the confirm button inside it.
+    const confirmBtns = screen.getAllByRole("button", { name: /Install bundle/i });
+    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
 
     await waitFor(() => expect(screen.getByText(/2 failed:/i)).toBeInTheDocument());
     expect(screen.getByText(/Installed 1 recipe:/i)).toBeInTheDocument();
@@ -207,13 +236,16 @@ describe("BundleInstallPanel — install action", () => {
           code: "bundle_manifest_invalid_recipes",
         }),
       );
-    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} />);
+    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} name={NAME} />);
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: /Install bundle/i }),
       ).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByRole("button", { name: /Install bundle/i }));
+    // Confirm dialog opens; click the confirm button inside it.
+    const confirmBtns = screen.getAllByRole("button", { name: /Install bundle/i });
+    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
 
     await waitFor(() =>
       expect(
@@ -230,6 +262,7 @@ describe("BundleInstallPanel — advisory rendering", () => {
       <BundleInstallPanel
         installSource={SOURCE}
         recipes={RECIPES}
+        name={NAME}
         plugin="@example/plugin"
       />,
     );
@@ -250,6 +283,7 @@ describe("BundleInstallPanel — advisory rendering", () => {
       <BundleInstallPanel
         installSource={SOURCE}
         recipes={RECIPES}
+        name={NAME}
         policyTemplate="policies/strict.json"
       />,
     );
@@ -266,7 +300,7 @@ describe("BundleInstallPanel — advisory rendering", () => {
 
   it("does not render the manual-followup section when no advisory is present", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { recipes: [] }));
-    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} />);
+    render(<BundleInstallPanel installSource={SOURCE} recipes={RECIPES} name={NAME} />);
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: /Install bundle/i }),

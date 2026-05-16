@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
-import { shortName } from "@/lib/registry";
+import { type RiskLevel, shortName } from "@/lib/registry";
+import { InstallConfirmDialog } from "../../_components/InstallConfirmDialog";
 
 interface Props {
   /**
@@ -19,13 +21,22 @@ interface Props {
   plugin?: string;
   /** Optional advisory surface for `manifest.policy_template`. */
   policyTemplate?: string;
+  // ── Confirm-dialog metadata (RegistryBundle.* via TrustMetadata) ──────
+  /** Display name for the confirm dialog heading. */
+  name: string;
+  /** Optional risk metadata for the confirm dialog. Bundles always
+   * trigger the confirm step (multi-recipe install + possible plugin),
+   * but the metadata enriches what the user sees. */
+  riskLevel?: RiskLevel;
+  connectors?: string[];
+  networkAccess?: boolean;
+  fileAccess?: boolean;
 }
 
-interface BridgeStatus {
-  online: boolean;
-  /** Count of bundle recipes already installed (matched by name). */
-  installedCount: number;
-}
+// Three-state instead of boolean: distinguishes 401 (logged-out
+// dashboard) from 503 (no bridge). Matches the fix PR #552 made on the
+// browse view; PR #549 extended it to the single-recipe detail panel.
+type BridgeStatus = "checking" | "online" | "offline" | "unauth";
 
 interface BundleInstallResponse {
   ok: boolean;
@@ -48,12 +59,19 @@ export default function BundleInstallPanel({
   recipes,
   plugin,
   policyTemplate,
+  name,
+  riskLevel,
+  connectors,
+  networkAccess,
+  fileAccess,
 }: Props) {
-  const [status, setStatus] = useState<BridgeStatus | null>(null);
+  const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>("checking");
+  const [installedCount, setInstalledCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<BundleInstallResponse | null>(null);
   const [copied, setCopied] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const cliCmd = `patchwork recipe install ${installSource}`;
 
@@ -66,7 +84,7 @@ export default function BundleInstallPanel({
       .then(async (r) => {
         if (cancelled) return;
         if (!r.ok) {
-          setStatus({ online: false, installedCount: 0 });
+          setBridgeStatus(r.status === 401 ? "unauth" : "offline");
           return;
         }
         const data = await r.json();
@@ -80,17 +98,17 @@ export default function BundleInstallPanel({
             .map((x: { name?: string }) => x.name)
             .filter((n: string | undefined): n is string => Boolean(n)),
         );
-        // Bundle manifest entries may be scoped (`@scope/name`); the bridge
-        // writes recipes under their unscoped YAML `name:` field. Strip the
-        // scope before comparing so a bundle ships with consistent display
-        // names but still finds locally-installed recipes.
-        const installedCount = recipes.filter((r) =>
+        // Bundle manifest entries may be scoped (`@scope/name`); the
+        // bridge writes recipes under their unscoped YAML `name:`. Strip
+        // the scope before comparing.
+        const count = recipes.filter((r) =>
           installedNames.has(shortName(r)),
         ).length;
-        setStatus({ online: true, installedCount });
+        setBridgeStatus("online");
+        setInstalledCount(count);
       })
       .catch(() => {
-        if (!cancelled) setStatus({ online: false, installedCount: 0 });
+        if (!cancelled) setBridgeStatus("offline");
       })
       .finally(() => clearTimeout(timer));
 
@@ -101,7 +119,7 @@ export default function BundleInstallPanel({
     };
   }, [recipes]);
 
-  async function handleInstall() {
+  async function runInstall() {
     setBusy(true);
     setErr(null);
     setResult(null);
@@ -112,13 +130,15 @@ export default function BundleInstallPanel({
         body: JSON.stringify({ source: installSource }),
       });
       const body = (await res.json()) as BundleInstallResponse;
-      // Bridge returns 200 on partial success (any installed) and 5xx on
-      // full failure — both shapes carry `installed[]` + `failures[]`,
-      // so render the result either way and surface a top-level error
-      // banner only if there's no structured payload.
       setResult(body);
       if (!res.ok && (!body.installed || body.installed.length === 0)) {
+        if (res.status === 401) setBridgeStatus("unauth");
+        else if (res.status >= 500) setBridgeStatus("offline");
         setErr(body.error ?? `Install failed (HTTP ${res.status})`);
+      } else if (body.installed && body.installed.length > 0) {
+        // Refresh the installed-count headline so the "X of Y already
+        // installed" line catches up with the just-completed install.
+        setInstalledCount((prev) => prev + body.installed!.length);
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -137,12 +157,25 @@ export default function BundleInstallPanel({
     }
   }
 
-  const allInstalled =
-    status?.installedCount === recipes.length && recipes.length > 0;
-  const partialInstalled =
-    status !== null &&
-    status.installedCount > 0 &&
-    status.installedCount < recipes.length;
+  const allInstalled = installedCount === recipes.length && recipes.length > 0;
+  const partialInstalled = installedCount > 0 && installedCount < recipes.length;
+
+  // Build the extra bullets for the confirm dialog. Bundles inherently
+  // span N recipes, so always surface that count; plugin / policy-template
+  // get their own line so users see them BEFORE confirming, not as a
+  // post-install advisory surprise.
+  const extraBullets: string[] = [];
+  extraBullets.push(
+    `Installs ${recipes.length} recipe${recipes.length === 1 ? "" : "s"}`,
+  );
+  if (plugin) {
+    extraBullets.push(
+      `Recommends installing companion plugin "${plugin}" via npm`,
+    );
+  }
+  if (policyTemplate) {
+    extraBullets.push(`Includes a policy template (${policyTemplate})`);
+  }
 
   return (
     <div
@@ -176,28 +209,42 @@ export default function BundleInstallPanel({
             </>
           ) : partialInstalled ? (
             <>
-              {status.installedCount} of {recipes.length} recipes already
-              installed. Install button will pull the missing{" "}
-              {recipes.length - status.installedCount}.
+              {installedCount} of {recipes.length} recipes already installed.
+              Install button will pull the missing{" "}
+              {recipes.length - installedCount}.
             </>
-          ) : status?.online ? (
+          ) : bridgeStatus === "online" ? (
             `Bridge connected — install all ${recipes.length} recipe${recipes.length === 1 ? "" : "s"} with one click.`
-          ) : status === null ? (
+          ) : bridgeStatus === "checking" ? (
             "Checking for local bridge…"
+          ) : bridgeStatus === "unauth" ? (
+            "Bridge reachable but the dashboard is logged out. Sign in to install in one click, or use the CLI below."
           ) : (
             "No local bridge detected. Install via CLI below."
           )}
         </div>
 
-        {!allInstalled && status?.online && (
+        {!allInstalled && bridgeStatus === "online" && (
           <button
             type="button"
             className="btn sm"
-            onClick={handleInstall}
+            // Bundles always go through the confirm step — pulling N
+            // recipes and possibly a plugin is too high-impact for
+            // one-tap install regardless of declared risk level.
+            onClick={() => setConfirmOpen(true)}
             disabled={busy}
           >
             {busy ? "Installing…" : "Install bundle"}
           </button>
+        )}
+        {!allInstalled && bridgeStatus === "unauth" && (
+          <Link
+            href="/login?next=/dashboard/marketplace"
+            className="btn sm"
+            style={{ textDecoration: "none", flexShrink: 0 }}
+          >
+            Log in
+          </Link>
         )}
       </div>
 
@@ -266,10 +313,6 @@ export default function BundleInstallPanel({
         </div>
       )}
 
-      {/* Plugin / policy template advisory — surface even before install
-          so users know what additional manual steps are required.
-          Mirrors the bridge response's `advisory.{plugin,policy_template}`
-          fields when those are declared in the bundle manifest. */}
       {(plugin || policyTemplate) && (
         <div
           style={{
@@ -317,6 +360,20 @@ export default function BundleInstallPanel({
           {err}
         </div>
       )}
+
+      <InstallConfirmDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => void runInstall()}
+        name={`${shortName(name)} bundle`}
+        source={installSource}
+        riskLevel={riskLevel}
+        connectors={connectors}
+        networkAccess={networkAccess}
+        fileAccess={fileAccess}
+        extraBullets={extraBullets}
+        confirmLabel="Install bundle"
+      />
     </div>
   );
 }

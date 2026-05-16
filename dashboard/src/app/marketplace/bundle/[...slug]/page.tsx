@@ -73,6 +73,11 @@ export default async function BundleDetailPage({ params }: PageProps) {
       <BundleInstallPanel
         installSource={bundle.install}
         recipes={manifest?.recipes ?? []}
+        name={bundle.name}
+        riskLevel={bundle.risk_level ?? manifest?.risk_level}
+        connectors={bundle.connectors}
+        networkAccess={bundle.network_access ?? manifest?.network_access}
+        fileAccess={bundle.file_access ?? manifest?.file_access}
         {...(manifest?.plugin && { plugin: manifest.plugin })}
         {...(manifest?.policy_template && {
           policyTemplate: manifest.policy_template,

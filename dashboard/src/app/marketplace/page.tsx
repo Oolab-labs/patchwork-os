@@ -2,9 +2,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Dialog } from "@/components/Dialog";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
 import { HintCard } from "@/components/patchwork";
+import { InstallConfirmDialog } from "./_components/InstallConfirmDialog";
 import { apiPath } from "@/lib/api";
 import {
   assertValidInstallSource,
@@ -401,106 +401,17 @@ function RecipeCard({
         </div>
       )}
 
-      <Dialog
+      <InstallConfirmDialog
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
-        ariaLabel={`Confirm install of ${shortName(recipe.name)}`}
-      >
-        <h2
-          style={{
-            margin: 0,
-            marginBottom: "var(--s-3)",
-            fontSize: "var(--fs-l)",
-            color: "var(--ink-0)",
-          }}
-        >
-          Install {shortName(recipe.name)}?
-        </h2>
-        <p
-          style={{
-            margin: 0,
-            marginBottom: "var(--s-4)",
-            fontSize: "var(--fs-s)",
-            color: "var(--fg-2)",
-            lineHeight: 1.5,
-          }}
-        >
-          The recipe YAML will be fetched from{" "}
-          <code
-            style={{
-              background: "var(--recess)",
-              padding: "1px 5px",
-              borderRadius: 4,
-              fontSize: "var(--fs-xs)",
-              wordBreak: "break-all",
-            }}
-          >
-            {recipe.install}
-          </code>{" "}
-          and stored locally.
-        </p>
-        <ul
-          style={{
-            margin: 0,
-            marginBottom: "var(--s-5)",
-            paddingLeft: "var(--s-4)",
-            fontSize: "var(--fs-s)",
-            color: "var(--ink-1)",
-            lineHeight: 1.7,
-          }}
-        >
-          {recipe.risk_level && (
-            <li>
-              <strong>Risk:</strong>{" "}
-              <span
-                style={{
-                  color:
-                    recipe.risk_level === "high"
-                      ? "var(--err)"
-                      : recipe.risk_level === "medium"
-                        ? "var(--warn)"
-                        : "var(--ok)",
-                }}
-              >
-                {recipe.risk_level}
-              </span>
-            </li>
-          )}
-          {recipe.connectors?.length ? (
-            <li>
-              <strong>Connectors:</strong> {recipe.connectors.join(", ")}
-            </li>
-          ) : null}
-          {recipe.network_access && <li>Network access</li>}
-          {recipe.file_access && <li>File access</li>}
-        </ul>
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--s-2)",
-            justifyContent: "flex-end",
-          }}
-        >
-          <button
-            type="button"
-            className="btn sm ghost"
-            onClick={() => setConfirmOpen(false)}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn sm primary"
-            onClick={() => {
-              setConfirmOpen(false);
-              void runInstall();
-            }}
-            autoFocus
-          >
-            Install
-          </button>
-        </div>
-      </Dialog>
+        onConfirm={() => void runInstall()}
+        name={shortName(recipe.name)}
+        source={recipe.install}
+        riskLevel={recipe.risk_level}
+        connectors={recipe.connectors}
+        networkAccess={recipe.network_access}
+        fileAccess={recipe.file_access}
+      />
     </div>
   );
 }
