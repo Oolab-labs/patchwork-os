@@ -126,7 +126,7 @@ Bridge-only docs: [documents/platform-docs.md](documents/platform-docs.md)
 
 ## 🪟 Windows Quick Start
 
-The bridge, VS Code extension, and full Patchwork OS orchestrator (`patchwork start`) all work natively on Windows — no WSL required. A PowerShell-native orchestrator is also available as `npm run start-all:win`.
+The bridge, VS Code extension, and full Patchwork OS orchestrator (`patchwork start`) all work natively on Windows — no WSL required. A PowerShell-native orchestrator is also available as `npm run start-all:win`. For architecture details, troubleshooting, and contribution patterns, see [docs/windows.md](docs/windows.md).
 
 ### Prerequisites
 

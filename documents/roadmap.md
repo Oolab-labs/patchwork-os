@@ -4,6 +4,22 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
+## Status (2026-05-16)
+
+Current: `0.2.0-beta.3` (bridge), `1.4.16` (extension). 177 tools registered. Recent waves:
+
+- **Native Windows support** — smoke harness + extension suites green on `windows-latest` CI; advisory→blocking flip in PR #537. Helpers: `winShim`, `processTree`, `fsWatchWithFallback`. ADRs 0010-0012.
+- **Write-tier kill-switch** — `patchwork kill-switch engage|release|status` + `panic` alias, multi-bridge HTTP fan-out, dashboard toggle, fs.watch convergence. Issue #422 design; ADR 0013.
+- **HTTP `/shutdown` endpoint** — clean exit on Windows where SIGTERM is `TerminateProcess`. ADR 0011.
+- **JetBrains plugin v1.0.0** — 49 handlers, on Marketplace.
+- **Mobile oversight PWA** — phone-path approvals, push relay.
+- **OAuth 2.0 personal-API mode** — `--issuer-url`, PKCE, CIMD, dynamic client registration.
+- **Cowork (computer-use handoff)** — see `docs/cowork.md`.
+
+Phase narrative below is historical context; check git log + ADRs for current shape.
+
+---
+
 ## Patchwork Phase 2 — shipped (as of 2026-04-18)
 
 **Oversight infrastructure** (merged to main in PRs #2–#9):
