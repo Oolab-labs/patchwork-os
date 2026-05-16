@@ -102,6 +102,27 @@ async function fillRequiredFields() {
   });
 }
 
+/**
+ * Submit guard requires that Validate has been clicked at least once
+ * before the GitHub tab is opened — either a fresh successful lint or a
+ * recorded bridge-unreachable lintError counts. Most submit-flow tests
+ * mock fetch as all-503, so clicking Validate produces the unreachable
+ * branch which is sufficient. Helper consolidates the dance.
+ */
+async function runValidateAndWait() {
+  fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
+  // Wait for the bridge-unreachable copy or the success badge to settle.
+  await waitFor(() =>
+    expect(
+      screen
+        .queryByText(/Lint passed/i)
+        // Bridge-unreachable text comes from the lint route.ts error path.
+        ?? screen.queryByText(/Bridge isn't responding/i)
+        ?? screen.queryByText(/Validation request failed/i),
+    ).not.toBeNull(),
+  );
+}
+
 // =====================================================================
 // Validation
 // =====================================================================
@@ -217,6 +238,7 @@ describe("MarketplaceSubmitPage — submit flow", () => {
   it("opens a GitHub create-file URL with the recipe.yaml prefilled", async () => {
     render(<MarketplaceSubmitPage />);
     await fillRequiredFields();
+    await runValidateAndWait();
 
     fireEvent.click(screen.getByRole("button", { name: /Open PR on GitHub/i }));
 
@@ -246,6 +268,7 @@ describe("MarketplaceSubmitPage — submit flow", () => {
   it("opens a second GitHub tab with recipe.json when manifest button is clicked", async () => {
     render(<MarketplaceSubmitPage />);
     await fillRequiredFields();
+    await runValidateAndWait();
     fireEvent.click(screen.getByRole("button", { name: /Open PR on GitHub/i }));
 
     // wait for transition
@@ -269,6 +292,7 @@ describe("MarketplaceSubmitPage — submit flow", () => {
   it("returns to compose view when Start over is clicked", async () => {
     render(<MarketplaceSubmitPage />);
     await fillRequiredFields();
+    await runValidateAndWait();
     fireEvent.click(screen.getByRole("button", { name: /Open PR on GitHub/i }));
     await screen.findByRole("heading", {
       name: /Recipe submission in progress/i,
@@ -450,6 +474,7 @@ describe("MarketplaceSubmitPage — sessionStorage draft", () => {
   it("clears the draft when Start over is clicked", async () => {
     render(<MarketplaceSubmitPage />);
     await fillRequiredFields();
+    await runValidateAndWait();
     fireEvent.click(screen.getByRole("button", { name: /Open PR on GitHub/i }));
     await screen.findByRole("heading", {
       name: /Recipe submission in progress/i,
@@ -500,6 +525,77 @@ describe("MarketplaceSubmitPage — preset picker", () => {
     ).map((o) => o.getAttribute("value"));
     // First entry is the empty placeholder.
     expect(optionValues).toEqual(["", "manual", "scheduled", "webhook"]);
+  });
+
+  it("prompts before overwriting YAML the user has customized", async () => {
+    render(<MarketplaceSubmitPage />);
+    // Customize the YAML so the guard fires.
+    fireEvent.change(screen.getByTestId("fake-yaml-editor"), {
+      target: { value: "name: hand-edited\n# user's work\n" },
+    });
+
+    fireEvent.change(
+      screen.getByLabelText(/Load a starter recipe preset/i),
+      { target: { value: "webhook" } },
+    );
+
+    // Dialog opens with the "Replace YAML?" prompt — the editor still
+    // holds the customized content.
+    expect(
+      await screen.findByRole("dialog", {
+        name: /Confirm overwrite of in-progress recipe YAML/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      (screen.getByTestId("fake-yaml-editor") as HTMLTextAreaElement).value,
+    ).toContain("hand-edited");
+
+    fireEvent.click(screen.getByRole("button", { name: /Keep my YAML/i }));
+    // After cancel, the editor still holds the user's work.
+    expect(
+      (screen.getByTestId("fake-yaml-editor") as HTMLTextAreaElement).value,
+    ).toContain("hand-edited");
+  });
+
+  it("swaps YAML without prompting when editor matches the starter recipe", async () => {
+    render(<MarketplaceSubmitPage />);
+    fireEvent.change(
+      screen.getByLabelText(/Load a starter recipe preset/i),
+      { target: { value: "webhook" } },
+    );
+    // No dialog — swap happens directly.
+    expect(
+      screen.queryByRole("dialog", {
+        name: /Confirm overwrite/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      (screen.getByTestId("fake-yaml-editor") as HTMLTextAreaElement).value,
+    ).toContain("type: webhook");
+  });
+});
+
+// =====================================================================
+// Validate-before-submit guard
+// =====================================================================
+
+describe("MarketplaceSubmitPage — Validate-before-submit guard", () => {
+  beforeEach(() => {
+    fetchMock.mockResolvedValue(jsonResponse(503, {}));
+  });
+
+  it("blocks submit and surfaces an inline error when Validate has not been clicked", async () => {
+    render(<MarketplaceSubmitPage />);
+    await fillRequiredFields();
+    // Skip the runValidateAndWait() helper — that's the user mistake the
+    // guard is meant to catch.
+    fireEvent.click(screen.getByRole("button", { name: /Open PR on GitHub/i }));
+
+    expect(
+      await screen.findByText(/Click Validate first/i),
+    ).toBeInTheDocument();
+    // GitHub tab was NOT opened.
+    expect(openMock).not.toHaveBeenCalled();
   });
 });
 

@@ -35,6 +35,7 @@ import {
   type SubmissionFormData,
 } from "@/lib/marketplaceSubmit";
 import { AutoGrowTextarea } from "@/components/AutoGrowTextarea";
+import { Dialog } from "@/components/Dialog";
 import type { ApprovalBehavior, RiskLevel } from "@/lib/registry";
 
 // CodeMirror touches `document` on mount — load it client-only.
@@ -215,6 +216,21 @@ export default function MarketplaceSubmitPage() {
   const [submitErrors, setSubmitErrors] = useState<
     Partial<Record<keyof SubmissionFormData | "yaml", string>>
   >({});
+
+  // ---- overwrite-confirm state ------------------------------------
+  // When the user picks a preset or "load installed recipe" while the
+  // YAML editor already holds non-trivial work, opening a confirm
+  // Dialog avoids silently nuking that work. Pre-fix both onChange
+  // handlers replaced the YAML directly. We only prompt when the
+  // current YAML differs from the starter — typing a slug or
+  // metadata doesn't trigger this, only actual YAML edits.
+  const [pendingOverwrite, setPendingOverwrite] = useState<{
+    label: string;
+    apply: () => void;
+  } | null>(null);
+  function yamlIsCustomized(): boolean {
+    return yaml.trim() !== STARTER_RECIPE_YAML.trim();
+  }
 
   // ---- derived data ------------------------------------------------
   const formData = useMemo<SubmissionFormData>(
@@ -459,8 +475,24 @@ export default function MarketplaceSubmitPage() {
       toast.error("Please fix the errors before submitting.");
       return;
     }
-    if (lintResult && lintResult.errors.length > 0) {
+    // Validate-before-submit guard. Pre-fix the submit handler accepted
+    // a null lintResult (user never clicked Validate) and forwarded the
+    // YAML straight to the GitHub create-file page — meaning a recipe
+    // with a syntax error could land in the PR with no warning. Now
+    // require either a fresh successful Validate OR a recorded bridge-
+    // unreachable lintError (the user opted into the soft-validate path
+    // explicitly by attempting Validate).
+    const lintIsFresh =
+      lintResult !== null && lintResult.forContent === yaml;
+    if (lintIsFresh && lintResult.errors.length > 0) {
       toast.error("Fix lint errors before submitting.");
+      return;
+    }
+    if (!lintIsFresh && lintError === null) {
+      errMap.yaml =
+        "Click Validate first — submit needs a fresh lint pass (or a recorded bridge-unreachable result).";
+      setSubmitErrors(errMap);
+      toast.error("Please Validate the YAML before submitting.");
       return;
     }
 
@@ -545,10 +577,20 @@ export default function MarketplaceSubmitPage() {
   function applyPreset(presetId: string) {
     const preset = RECIPE_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
-    // Only swap the YAML; metadata fields the user already filled stay
-    // intact. Lint result becomes stale by virtue of forContent mismatch.
-    setYaml(preset.yaml);
-    toast.info(`Loaded the ${preset.label} preset.`);
+    const doApply = () => {
+      // Only swap the YAML; metadata fields the user already filled stay
+      // intact. Lint result becomes stale by virtue of forContent mismatch.
+      setYaml(preset.yaml);
+      toast.info(`Loaded the ${preset.label} preset.`);
+    };
+    if (yamlIsCustomized()) {
+      setPendingOverwrite({
+        label: `the “${preset.label}” preset`,
+        apply: doApply,
+      });
+      return;
+    }
+    doApply();
   }
 
   function discardRestoredDraft() {
@@ -730,8 +772,17 @@ export default function MarketplaceSubmitPage() {
             <select
               defaultValue=""
               onChange={(e) => {
-                void loadFromInstalled(e.target.value);
+                const picked = e.target.value;
                 e.currentTarget.value = "";
+                if (!picked) return;
+                if (yamlIsCustomized()) {
+                  setPendingOverwrite({
+                    label: `“${picked}” (installed recipe)`,
+                    apply: () => void loadFromInstalled(picked),
+                  });
+                  return;
+                }
+                void loadFromInstalled(picked);
               }}
               style={{
                 background: "var(--bg-2)",
@@ -1232,6 +1283,65 @@ export default function MarketplaceSubmitPage() {
           }
         }
       `}</style>
+
+      <Dialog
+        open={pendingOverwrite !== null}
+        onClose={() => setPendingOverwrite(null)}
+        ariaLabel="Confirm overwrite of in-progress recipe YAML"
+      >
+        <h2
+          style={{
+            margin: 0,
+            marginBottom: "var(--s-3)",
+            fontSize: "var(--fs-l)",
+            color: "var(--ink-0)",
+          }}
+        >
+          Replace current YAML?
+        </h2>
+        <p
+          style={{
+            margin: 0,
+            marginBottom: "var(--s-5)",
+            fontSize: "var(--fs-s)",
+            color: "var(--fg-2)",
+            lineHeight: 1.5,
+          }}
+        >
+          You&apos;ve edited the recipe YAML. Loading {pendingOverwrite?.label}{" "}
+          will overwrite your work. Metadata fields (slug, author, tags…)
+          stay as-is.
+        </p>
+        <div
+          style={{
+            display: "flex",
+            gap: "var(--s-2)",
+            justifyContent: "flex-end",
+          }}
+        >
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => setPendingOverwrite(null)}
+          >
+            Keep my YAML
+          </button>
+          <button
+            type="button"
+            className="btn sm primary"
+            onClick={() => {
+              const apply = pendingOverwrite?.apply;
+              setPendingOverwrite(null);
+              apply?.();
+            }}
+            // biome-ignore lint/a11y/noAutofocus: dialog-scoped — Enter
+            // should perform the primary (destructive) action explicitly.
+            autoFocus
+          >
+            Replace YAML
+          </button>
+        </div>
+      </Dialog>
     </section>
   );
 }
