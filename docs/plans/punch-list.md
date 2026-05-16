@@ -2,9 +2,9 @@
 
 Source: holistic merge of [dashboard-fix-plan.md](./dashboard-fix-plan.md) (DB-),
 [visual-recipe-debugger.md](./visual-recipe-debugger.md) (VD-),
-[../dogfood-findings-2026-04-29.md](../dogfood-findings-2026-04-29.md) (DF-),
+[./dogfood-findings-2026-04-29.md](./dogfood-findings-2026-04-29.md) (DF-),
 [../recipe-authoring-wave2-plan.md](../recipe-authoring-wave2-plan.md) (W2-),
-[../recipe-schemastore-pr.md](../recipe-schemastore-pr.md) (SS-),
+[./recipe-schemastore-pr.md](./recipe-schemastore-pr.md) (SS-),
 [ai-recipe-builder.md](./ai-recipe-builder.md) (AI-),
 recent merged PRs (#37–#54), memory `project_immediate_actions.md` + `project_2026-04-28_merged_prs.md`.
 

@@ -1,7 +1,7 @@
 # Dashboard + Recipe Lifecycle Fix Plan (v2.1 — post-final-pass)
 
 **Status:** Plan, reviewed twice
-**Origin:** [docs/dogfood-findings-2026-04-29.md](../dogfood-findings-2026-04-29.md) — Playwright + CLI dogfood pass
+**Origin:** [docs/plans/dogfood-findings-2026-04-29.md](./dogfood-findings-2026-04-29.md) — Playwright + CLI dogfood pass
 **Reviewers:** ide-code-reviewer (technical) + general-purpose (structural) + final-pass executable-readiness check.
 
 > **v2.1 corrections from final pass — read before executing PR #2 / #4 / #5:**
