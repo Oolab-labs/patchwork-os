@@ -116,7 +116,7 @@ describe("MarketplaceSubmitPage — validation", () => {
   it("renders field-level errors when submitted empty", async () => {
     render(<MarketplaceSubmitPage />);
     fireEvent.click(
-      screen.getByRole("button", { name: /Submit to GitHub/i }),
+      screen.getByRole("button", { name: /Open PR on GitHub/i }),
     );
 
     expect(await screen.findByText(/Slug must start with/i)).toBeInTheDocument();
@@ -128,6 +128,18 @@ describe("MarketplaceSubmitPage — validation", () => {
     expect(openMock).not.toHaveBeenCalled();
   });
 
+  it("shows a normalization warning when the slug input contains unicode/uppercase", async () => {
+    render(<MarketplaceSubmitPage />);
+    fireEvent.change(screen.getByLabelText(/^Slug/i), {
+      target: { value: "Café Daily" },
+    });
+    expect(
+      await screen.findByText(
+        /Will be saved as ["“]caf-daily["”] — only lowercase letters, digits, and hyphens are allowed\./i,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("blocks submit when YAML name doesn't match the slug", async () => {
     render(<MarketplaceSubmitPage />);
     await fillRequiredFields();
@@ -135,7 +147,7 @@ describe("MarketplaceSubmitPage — validation", () => {
       target: { value: "name: completely-different-name\n" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Submit to GitHub/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Open PR on GitHub/i }));
 
     expect(
       await screen.findByText(
@@ -206,7 +218,7 @@ describe("MarketplaceSubmitPage — submit flow", () => {
     render(<MarketplaceSubmitPage />);
     await fillRequiredFields();
 
-    fireEvent.click(screen.getByRole("button", { name: /Submit to GitHub/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Open PR on GitHub/i }));
 
     await waitFor(() => expect(openMock).toHaveBeenCalledTimes(1));
     const [url, target, features] = openMock.mock.calls[0] as [
@@ -234,7 +246,7 @@ describe("MarketplaceSubmitPage — submit flow", () => {
   it("opens a second GitHub tab with recipe.json when manifest button is clicked", async () => {
     render(<MarketplaceSubmitPage />);
     await fillRequiredFields();
-    fireEvent.click(screen.getByRole("button", { name: /Submit to GitHub/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Open PR on GitHub/i }));
 
     // wait for transition
     await screen.findByRole("button", {
@@ -257,7 +269,7 @@ describe("MarketplaceSubmitPage — submit flow", () => {
   it("returns to compose view when Start over is clicked", async () => {
     render(<MarketplaceSubmitPage />);
     await fillRequiredFields();
-    fireEvent.click(screen.getByRole("button", { name: /Submit to GitHub/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Open PR on GitHub/i }));
     await screen.findByRole("heading", {
       name: /Recipe submission in progress/i,
     });
@@ -370,7 +382,7 @@ describe("MarketplaceSubmitPage — sessionStorage draft", () => {
   it("clears the draft when Start over is clicked", async () => {
     render(<MarketplaceSubmitPage />);
     await fillRequiredFields();
-    fireEvent.click(screen.getByRole("button", { name: /Submit to GitHub/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Open PR on GitHub/i }));
     await screen.findByRole("heading", {
       name: /Recipe submission in progress/i,
     });

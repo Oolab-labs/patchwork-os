@@ -590,7 +590,7 @@ export default function MarketplaceSubmitPage() {
       >
         <strong style={{ color: "var(--fg-1)" }}>How this works:</strong> fill
         the form below, validate the YAML, then click{" "}
-        <strong>Submit to GitHub</strong>. We open a prefilled "create new
+        <strong>Open PR on GitHub</strong>. We open a prefilled "create new
         file" page on the registry repo. GitHub will fork it for you if
         needed, then you click <em>Propose new file</em> to open a PR. You
         then add the manifest file the same way — full instructions appear on
@@ -753,9 +753,14 @@ export default function MarketplaceSubmitPage() {
               htmlFor="ms-slug"
               required
               hint={
-                formData.slug
-                  ? `Becomes ${recipeYamlPath(formData)} on GitHub.`
-                  : "Lowercase kebab-case (e.g. my-daily-report). Becomes the directory name in the registry."
+                // Three states: warn if the raw input normalised to something
+                // different (unicode/uppercase/whitespace stripped), preview the
+                // resulting path once it's clean, or show the initial how-to copy.
+                slugRaw && slugRaw.trim() !== formData.slug
+                  ? `Will be saved as “${formData.slug || "(empty)"}” — only lowercase letters, digits, and hyphens are allowed.`
+                  : formData.slug
+                    ? `Becomes ${recipeYamlPath(formData)} on GitHub.`
+                    : "Lowercase kebab-case (e.g. my-daily-report). Becomes the directory name in the registry."
               }
               error={submitErrors.slug}
             >
@@ -1155,7 +1160,7 @@ export default function MarketplaceSubmitPage() {
           }}
         >
           <button type="submit" className="btn primary">
-            Submit to GitHub →
+            Open PR on GitHub →
           </button>
           <Link href="/marketplace" className="btn ghost">
             Cancel
