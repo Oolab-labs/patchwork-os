@@ -1,4 +1,3 @@
-import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
 import { isDemoModeServer } from "@/lib/demoModeServer";
 import {
@@ -6,31 +5,74 @@ import {
   bodyTooLargeResponse,
   readBodyWithCap,
 } from "@/lib/readBodyWithCap";
+import { assertValidInstallSource } from "@/lib/registry";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function POST(req: NextRequest): Promise<Response> {
+function jsonError(
+  status: number,
+  error: string,
+  code?: string,
+): Response {
+  return new Response(JSON.stringify(code ? { error, code } : { error }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+export async function POST(req: Request): Promise<Response> {
   const sfs = req.headers.get("sec-fetch-site");
   if (sfs && sfs !== "same-origin" && sfs !== "none") {
-    return new Response(JSON.stringify({ error: "CSRF check failed" }), {
-      status: 403,
-      headers: { "content-type": "application/json" },
-    });
+    return jsonError(403, "CSRF check failed");
   }
 
   if (await isDemoModeServer()) {
-    return new Response(
-      JSON.stringify({
-        error:
-          "Install requires a running Patchwork bridge. Run `npm i -g patchwork-os && patchwork start` locally, then revisit this page.",
-      }),
-      { status: 501, headers: { "content-type": "application/json" } },
+    return jsonError(
+      501,
+      "Install requires a running Patchwork bridge. Run `npm i -g patchwork-os && patchwork start` locally, then revisit this page.",
     );
   }
 
   const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.install);
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.install);
+
+  // Server-side `source` validation — defense in depth. Browser-side
+  // assertValidInstallSource is easily bypassed by a direct POST, and the
+  // bridge's own validation is the only remaining gate without this. Reject
+  // anything that isn't `github:owner/repo[/path][@ref]` shape BEFORE we
+  // touch the bridge socket — keeps dashboard logs clean and removes one
+  // forward-step from any tampered-registry / curl-style attack path.
+  let parsed: { source: unknown } | null = null;
+  try {
+    parsed = JSON.parse(read.body) as { source: unknown };
+  } catch {
+    return jsonError(400, "Request body is not valid JSON", "bad_json");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return jsonError(
+      400,
+      "Request body must be an object with a `source` string",
+      "bad_body_shape",
+    );
+  }
+  if (typeof parsed.source !== "string") {
+    return jsonError(
+      400,
+      "Missing or non-string `source` field",
+      "bad_source_type",
+    );
+  }
+  try {
+    assertValidInstallSource(parsed.source);
+  } catch (e) {
+    return jsonError(
+      400,
+      e instanceof Error ? e.message : "Invalid install source",
+      "bad_source_shape",
+    );
+  }
+
   try {
     const res = await bridgeFetch("/recipes/install", {
       method: "POST",
@@ -43,9 +85,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       headers: { "content-type": "application/json" },
     });
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : "fetch failed" }),
-      { status: 502, headers: { "content-type": "application/json" } },
+    return jsonError(
+      502,
+      err instanceof Error ? err.message : "fetch failed",
     );
   }
 }
