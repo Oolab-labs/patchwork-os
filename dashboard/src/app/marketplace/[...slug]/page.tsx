@@ -16,7 +16,13 @@ import {
 } from "@/lib/registry";
 import InstallPanel from "./InstallPanel";
 
-export const revalidate = 300;
+// 60s ISR (was 300s). A 5-minute cache hides freshly merged recipes
+// from the dashboard for an awkwardly long window after the registry
+// PR lands — the audit flagged this as the longest-tail user-visible
+// staleness in the marketplace flow. 60s keeps the CDN benefit
+// (single fetch per minute per recipe slug) without the "merged 4
+// minutes ago but still 404" surprise.
+export const revalidate = 60;
 
 interface PageProps {
   // Next 15: dynamic route params are Promise-typed.

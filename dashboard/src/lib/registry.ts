@@ -4,6 +4,8 @@
  * Sources data from `https://raw.githubusercontent.com/patchworkos/recipes/main/`.
  */
 
+import { parse as parseYaml } from "yaml";
+
 export type RiskLevel = "low" | "medium" | "high";
 export type ApprovalBehavior = "always_ask" | "ask_on_novel" | "auto_approve";
 
@@ -232,8 +234,19 @@ export async function fetchRecipeYaml(
 }
 
 /**
- * Crude risk-level extractor — counts `risk: low|medium|high` occurrences in YAML.
- * Avoids a full YAML parser dependency for what's just a UI summary.
+ * Risk-level summary for the detail-page "Steps & risk" card.
+ *
+ * Walks `steps[].risk` via a real YAML parse, then counts low / medium /
+ * high values. Pre-fix used regex against `^\s*risk:` which over-counted
+ * any `risk:` substring inside multi-line block scalars (e.g.
+ * `prompt: |` followed by indented prose containing the word) and any
+ * nested object with a `risk:` key in a non-step position. False
+ * positives showed up in real recipes (morning-brief's narration
+ * prompt contains "risk: high").
+ *
+ * Parser is `yaml` (already in deps for the recipe-editor). Returns
+ * zeros on parse failure rather than throwing — the panel is a hint,
+ * not a gate.
  */
 export function summarizeRisk(yaml: string): {
   low: number;
@@ -241,11 +254,29 @@ export function summarizeRisk(yaml: string): {
   high: number;
   steps: number;
 } {
-  const low = (yaml.match(/^\s*risk:\s*low\b/gm) ?? []).length;
-  const medium = (yaml.match(/^\s*risk:\s*medium\b/gm) ?? []).length;
-  const high = (yaml.match(/^\s*risk:\s*high\b/gm) ?? []).length;
-  const steps = (yaml.match(/^\s*-\s*id:\s+\S/gm) ?? []).length;
-  return { low, medium, high, steps };
+  let doc: unknown;
+  try {
+    doc = parseYaml(yaml);
+  } catch {
+    return { low: 0, medium: 0, high: 0, steps: 0 };
+  }
+  const steps =
+    doc !== null &&
+    typeof doc === "object" &&
+    Array.isArray((doc as { steps?: unknown }).steps)
+      ? ((doc as { steps: unknown[] }).steps)
+      : [];
+  let low = 0;
+  let medium = 0;
+  let high = 0;
+  for (const step of steps) {
+    if (step === null || typeof step !== "object") continue;
+    const r = (step as { risk?: unknown }).risk;
+    if (r === "low") low++;
+    else if (r === "medium") medium++;
+    else if (r === "high") high++;
+  }
+  return { low, medium, high, steps: steps.length };
 }
 
 export async function fetchBundleManifest(
