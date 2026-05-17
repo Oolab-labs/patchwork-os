@@ -190,6 +190,13 @@ export default function RunsPage() {
   const reloadRef = useRef<() => void>(() => {});
 
   useEffect(() => {
+    // Audit 2026-05-17 (#600): one AbortController per effect run,
+    // aborted in cleanup. Without this, rapid filter changes could
+    // race-overwrite the latest result with stale responses from the
+    // previous filter set — user flips trigger to 'cron', sees old
+    // 'manual' results blink in. The interval handle is independent;
+    // the controller only cancels in-flight requests.
+    const controller = new AbortController();
     const load = async () => {
       try {
         const params = new URLSearchParams({ limit: String(limit) });
@@ -197,36 +204,48 @@ export default function RunsPage() {
         if (status !== "all") params.set("status", status);
         if (debouncedRecipeQuery) params.set("recipe", debouncedRecipeQuery);
         if (attemptFilter) params.set("manualRunId", attemptFilter);
-        const res = await fetch(apiPath(`/api/bridge/runs?${params}`));
+        const res = await fetch(apiPath(`/api/bridge/runs?${params}`), {
+          signal: controller.signal,
+        });
         if (!res.ok) throw new Error(`/runs ${res.status}`);
         const data = (await res.json()) as { runs?: Run[] };
         setRuns(data.runs ?? []);
         setErr(undefined);
       } catch (e) {
+        // AbortError on unmount / dep change is expected — don't surface.
+        if (e instanceof DOMException && e.name === "AbortError") return;
         setErr(e instanceof Error ? e.message : String(e));
       }
     };
     reloadRef.current = () => void load();
     load();
     const id = setInterval(load, 5000);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      controller.abort();
+    };
   }, [trigger, status, debouncedRecipeQuery, limit, attemptFilter]);
 
   // PR1c: poll halt-summary independently (cheaper payload, fixed cadence).
   // PR4: window selector feeds the same sinceMs into the summary so the
   // pills always reflect the same window as the displayed run list.
   useEffect(() => {
-    let cancelled = false;
+    // #600: replace the `cancelled` flag with an AbortController so we
+    // actually cancel the network request on unmount / window change,
+    // not just suppress the setState (which would still parse the JSON
+    // and burn the bridge response).
+    const controller = new AbortController();
     const load = async () => {
       try {
         const sinceMs = windowCutoffMs(window);
         const qs = sinceMs != null ? `?sinceMs=${sinceMs}` : "";
         const res = await fetch(
           apiPath(`/api/bridge/runs/halt-summary${qs}`),
+          { signal: controller.signal },
         );
         if (!res.ok) return;
         const data = (await res.json()) as HaltSummary;
-        if (!cancelled) setHaltSummary(data);
+        setHaltSummary(data);
       } catch {
         /* halt summary is best-effort; ignore */
       }
@@ -234,24 +253,26 @@ export default function RunsPage() {
     void load();
     const id = setInterval(load, 30_000);
     return () => {
-      cancelled = true;
       clearInterval(id);
+      controller.abort();
     };
   }, [window]);
 
   // PR3b sibling poller — judge-summary on the same cadence + window.
   useEffect(() => {
-    let cancelled = false;
+    // #600: same AbortController pattern as halt-summary above.
+    const controller = new AbortController();
     const load = async () => {
       try {
         const sinceMs = windowCutoffMs(window);
         const qs = sinceMs != null ? `?sinceMs=${sinceMs}` : "";
         const res = await fetch(
           apiPath(`/api/bridge/runs/judge-summary${qs}`),
+          { signal: controller.signal },
         );
         if (!res.ok) return;
         const data = (await res.json()) as JudgeSummary;
-        if (!cancelled) setJudgeSummary(data);
+        setJudgeSummary(data);
       } catch {
         /* judge summary is best-effort; ignore */
       }
@@ -259,8 +280,8 @@ export default function RunsPage() {
     void load();
     const id = setInterval(load, 30_000);
     return () => {
-      cancelled = true;
       clearInterval(id);
+      controller.abort();
     };
   }, [window]);
 

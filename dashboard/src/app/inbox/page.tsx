@@ -411,11 +411,18 @@ export default function InboxPage() {
   const detailRef = useRef<HTMLDivElement | null>(null);
   const selectedRef = useRef<InboxDetail | null>(null);
   selectedRef.current = selected;
+  // #600: track in-flight list fetch so we can abort on unmount /
+  // visibilitychange. Previously the response could land after the
+  // user navigated away → setItems() on a dead tree.
+  const listAbortRef = useRef<AbortController | null>(null);
 
   const fetchList = useCallback(async (manual = false) => {
+    listAbortRef.current?.abort();
+    const controller = new AbortController();
+    listAbortRef.current = controller;
     if (manual) setRefreshing(true);
     try {
-      const res = await fetch(apiPath("/api/inbox"));
+      const res = await fetch(apiPath("/api/inbox"), { signal: controller.signal });
       if (!res.ok) throw new Error(`/api/inbox ${res.status}`);
       const data = (await res.json()) as { items: InboxItem[] };
       const incoming = data.items ?? [];
@@ -436,15 +443,22 @@ export default function InboxPage() {
       if (cur) {
         const updated = incoming.find((i) => i.name === cur.name);
         if (updated && updated.modifiedAt !== cur.modifiedAt) {
-          const detailRes = await fetch(apiPath(`/api/inbox/${encodeURIComponent(cur.name)}`));
+          const detailRes = await fetch(
+            apiPath(`/api/inbox/${encodeURIComponent(cur.name)}`),
+            { signal: controller.signal },
+          );
           if (detailRes.ok) setSelected((await detailRes.json()) as InboxDetail);
         }
       }
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
-      if (manual) setRefreshing(false);
+      if (listAbortRef.current === controller) {
+        setLoading(false);
+        if (manual) setRefreshing(false);
+        listAbortRef.current = null;
+      }
     }
   }, [seenNames]);
 
@@ -463,6 +477,8 @@ export default function InboxPage() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       document.removeEventListener("visibilitychange", onVisible);
+      // #600: abort any in-flight list fetch on unmount.
+      listAbortRef.current?.abort();
     };
   }, [fetchList]);
 

@@ -178,6 +178,10 @@ export default function MarketplaceSubmitPage() {
   const [lintResult, setLintResult] = useState<LintResult | null>(null);
   const [lintError, setLintError] = useState<string | null>(null);
   const [linting, setLinting] = useState(false);
+  // #600: in-flight lint controller. Rapid clicks → stale response can
+  // overwrite a newer result. Aborting the previous request before
+  // firing a new one keeps the latest-click semantics intact.
+  const lintAbortRef = useRef<AbortController | null>(null);
 
   // ---- starter recipes (load from bridge if running) ---------------
   const [installedNames, setInstalledNames] = useState<string[]>([]);
@@ -401,6 +405,11 @@ export default function MarketplaceSubmitPage() {
 
   // ---- validation --------------------------------------------------
   async function runLint() {
+    // #600: cancel any in-flight lint before starting a new one so the
+    // latest click always wins.
+    lintAbortRef.current?.abort();
+    const controller = new AbortController();
+    lintAbortRef.current = controller;
     setLinting(true);
     setLintError(null);
     try {
@@ -408,6 +417,7 @@ export default function MarketplaceSubmitPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: yaml }),
+        signal: controller.signal,
       });
       if (!res.ok) {
         if (res.status === 502 || res.status === 503 || res.status === 504) {
@@ -442,9 +452,17 @@ export default function MarketplaceSubmitPage() {
         );
       }
     } catch (err) {
+      // Aborts from a newer click are expected — don't surface them.
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setLintError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLinting(false);
+      // Only clear the loading flag if THIS controller is still the
+      // current one — a newer click already kicked off and will manage
+      // its own setLinting(false).
+      if (lintAbortRef.current === controller) {
+        setLinting(false);
+        lintAbortRef.current = null;
+      }
     }
   }
 
