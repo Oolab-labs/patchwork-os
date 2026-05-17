@@ -19,6 +19,7 @@ import {
   computeStats,
   computeWindowedStats,
 } from "./fp/activityAnalytics.js";
+import { writeFileAtomic } from "./writeFileAtomic.js";
 
 function escapeLabelValue(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
@@ -183,7 +184,7 @@ export class ActivityLog {
         lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
         joined = lines.join("\n");
       }
-      await fs.promises.writeFile(this.persistPath, `${lines.join("\n")}\n`, {
+      await writeFileAtomic(this.persistPath, `${lines.join("\n")}\n`, {
         mode: 0o600,
       });
     } catch (err) {

@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
 /**
  * Register the Patchwork PreToolUse approval hook in Claude Code's
@@ -64,7 +65,10 @@ export function registerPreToolUseHook(
     });
     allHooks[HOOK_EVENT] = entries;
     ccSettings.hooks = allHooks;
-    writeFileSync(ccSettingsPath, `${JSON.stringify(ccSettings, null, 2)}\n`);
+    writeFileAtomicSync(
+      ccSettingsPath,
+      `${JSON.stringify(ccSettings, null, 2)}\n`,
+    );
     return { action: "added", path: ccSettingsPath, hookCommand };
   } catch (err) {
     return {

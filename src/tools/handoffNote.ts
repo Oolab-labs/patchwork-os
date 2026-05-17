@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { writeFileAtomicSync } from "../writeFileAtomic.js";
 import { error, successStructured } from "./utils.js";
 
 function getGlobalNotePath(configDir: string): string {
@@ -151,7 +152,7 @@ export async function writeNote(
     : getGlobalNotePath(dir);
 
   fs.mkdirSync(path.dirname(primaryPath), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(primaryPath, contentJson, { mode: 0o600 });
+  writeFileAtomicSync(primaryPath, contentJson, { mode: 0o600 });
 
   // Invalidate cache so next read reflects the new value immediately.
   invalidateCachedNote(primaryPath);

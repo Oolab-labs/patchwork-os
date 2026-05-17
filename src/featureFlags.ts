@@ -8,10 +8,11 @@
  *   - Per-feature opt-in with default-off safety
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 import { watchDirectoryWithFallback } from "./fsWatchWithFallback.js";
+import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
 /** Flag definition */
 export interface FeatureFlag {
@@ -277,7 +278,7 @@ function persistFlags(): void {
     }
   }
 
-  writeFileSync(path, JSON.stringify(toSave, null, 2));
+  writeFileAtomicSync(path, JSON.stringify(toSave, null, 2));
 }
 
 // ============================================================================

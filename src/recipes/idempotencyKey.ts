@@ -46,10 +46,10 @@ import {
   mkdirSync,
   readFileSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import type { Logger } from "../logger.js";
+import { writeFileAtomicSync } from "../writeFileAtomic.js";
 
 /**
  * Stable canonical-JSON serialiser. Recursively sorts object keys so two
@@ -364,12 +364,10 @@ export class WriteEffectLedger {
       if (lines.length > MAX_PERSIST_LINES) {
         lines = lines.slice(-MAX_PERSIST_LINES);
       }
-      writeFileSync(
+      writeFileAtomicSync(
         this.file,
         lines.length > 0 ? `${lines.join("\n")}\n` : "",
-        {
-          mode: 0o600,
-        },
+        { mode: 0o600 },
       );
     } catch (err) {
       this.disk.logger?.warn?.(

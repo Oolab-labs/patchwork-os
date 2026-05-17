@@ -13,15 +13,10 @@
  */
 
 import crypto from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { writeFileAtomicSync } from "../writeFileAtomic.js";
 import { escHtml } from "./htmlEscape.js";
 import {
   deleteSecretJsonSync,
@@ -142,7 +137,7 @@ export function isConnected(): boolean {
 function saveState(state: string): void {
   const statePath = getStatePath();
   mkdirSync(path.dirname(statePath), { recursive: true, mode: 0o700 });
-  writeFileSync(statePath, JSON.stringify({ state, ts: Date.now() }), {
+  writeFileAtomicSync(statePath, JSON.stringify({ state, ts: Date.now() }), {
     mode: 0o600,
   });
 }

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ModelChoice } from "./adapters/index.js";
@@ -7,6 +7,7 @@ import {
   getSecretJsonSync,
   storeSecretJsonSync,
 } from "./connectors/tokenStorage.js";
+import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
 export interface PatchworkConfig {
   model: ModelChoice;
@@ -183,7 +184,9 @@ export function loadConfig(path = defaultConfigPath()): PatchworkConfig {
       const stripped = { ...parsed };
       delete (stripped as Partial<PatchworkConfig>).apiKeys;
       try {
-        writeFileSync(path, JSON.stringify(stripped, null, 2), { mode: 0o600 });
+        writeFileAtomicSync(path, JSON.stringify(stripped, null, 2), {
+          mode: 0o600,
+        });
       } catch {
         // Read-only filesystem or permissions error — non-fatal; secure
         // store now holds a copy, plaintext stays on disk until next save.
@@ -211,7 +214,9 @@ export function saveConfig(
   // we won't round-trip it back to plaintext JSON.
   const stripped: PatchworkConfig = { ...config };
   delete stripped.apiKeys;
-  writeFileSync(path, JSON.stringify(stripped, null, 2), { mode: 0o600 });
+  writeFileAtomicSync(path, JSON.stringify(stripped, null, 2), {
+    mode: 0o600,
+  });
 }
 
 export function validateModelChoice(value: string): value is ModelChoice {
