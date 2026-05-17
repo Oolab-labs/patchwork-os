@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import type { ExtensionClient } from "../extensionClient.js";
+import { writeFileAtomicSync } from "../writeFileAtomic.js";
 import {
   error,
   extensionRequired,
@@ -154,7 +155,9 @@ export function createRefactorExtractFunctionTool(
           ...lines.slice(endLine),
         ];
 
-        fs.writeFileSync(absPath, newLines.join("\n"), "utf-8");
+        writeFileAtomicSync(absPath, newLines.join("\n"), {
+          encoding: "utf-8",
+        });
 
         return successStructured({
           refactored: true,

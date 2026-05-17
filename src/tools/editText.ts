@@ -4,6 +4,7 @@ import {
   ExtensionTimeoutError,
 } from "../extensionClient.js";
 import type { FileLock, LockContention } from "../fileLock.js";
+import { writeFileAtomic } from "../writeFileAtomic.js";
 import {
   error,
   optionalBool,
@@ -368,7 +369,7 @@ export function createEditTextTool(
             return error("File was deleted concurrently — cannot apply edits");
           }
 
-          await fs.promises.writeFile(filePath, newContent, {
+          await writeFileAtomic(filePath, newContent, {
             encoding: "utf-8",
             signal,
           });
