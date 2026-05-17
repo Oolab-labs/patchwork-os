@@ -151,6 +151,91 @@ describe("handleConfluenceConnect", () => {
     expect(result.status).toBe(400);
   });
 
+  describe("SSRF guard on instanceUrl (audit 2026-05-17)", () => {
+    it("rejects http://169.254.169.254 metadata service without hitting fetch", async () => {
+      const fetchMock = vi.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+      vi.resetModules();
+      const { handleConfluenceConnect } = await import("../confluence.js");
+      const result = await handleConfluenceConnect(
+        JSON.stringify({
+          token: "x",
+          email: "u@e.com",
+          instanceUrl: "http://169.254.169.254/admin",
+        }),
+      );
+      expect(result.status).toBe(400);
+      expect(JSON.parse(result.body).error).toMatch(/atlassian\.net/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects http://127.0.0.1", async () => {
+      const fetchMock = vi.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+      vi.resetModules();
+      const { handleConfluenceConnect } = await import("../confluence.js");
+      const result = await handleConfluenceConnect(
+        JSON.stringify({
+          token: "x",
+          email: "u@e.com",
+          instanceUrl: "http://127.0.0.1/wiki",
+        }),
+      );
+      expect(result.status).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects https on non-Atlassian host", async () => {
+      const fetchMock = vi.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+      vi.resetModules();
+      const { handleConfluenceConnect } = await import("../confluence.js");
+      const result = await handleConfluenceConnect(
+        JSON.stringify({
+          token: "x",
+          email: "u@e.com",
+          instanceUrl: "https://attacker.example.com",
+        }),
+      );
+      expect(result.status).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects subdomain-confusion (attacker.atlassian.net.evil.com)", async () => {
+      const fetchMock = vi.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+      vi.resetModules();
+      const { handleConfluenceConnect } = await import("../confluence.js");
+      const result = await handleConfluenceConnect(
+        JSON.stringify({
+          token: "x",
+          email: "u@e.com",
+          instanceUrl: "https://atlassian.net.evil.com",
+        }),
+      );
+      expect(result.status).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("accepts https://<workspace>.atlassian.net", async () => {
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      }) as unknown as typeof fetch;
+      vi.resetModules();
+      const { handleConfluenceConnect } = await import("../confluence.js");
+      const result = await handleConfluenceConnect(
+        JSON.stringify({
+          token: "x",
+          email: "u@e.com",
+          instanceUrl: "https://acme.atlassian.net",
+        }),
+      );
+      // NOT 400 — would be 200 (success) or 500 (token storage mock failure)
+      expect(result.status).not.toBe(400);
+    });
+  });
+
   it("returns 401 when Confluence rejects credentials", async () => {
     global.fetch = vi.fn().mockResolvedValueOnce({
       ok: false,

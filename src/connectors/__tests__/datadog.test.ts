@@ -151,6 +151,77 @@ describe("handleDatadogConnect", () => {
     expect(result.status).toBe(400);
   });
 
+  describe("SSRF guard on site (audit 2026-05-17)", () => {
+    it("rejects internal-IP-as-site without hitting fetch", async () => {
+      const fetchMock = vi.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+      vi.resetModules();
+      const { handleDatadogConnect } = await import("../datadog.js");
+      const result = await handleDatadogConnect(
+        JSON.stringify({ apiKey: "x", appKey: "y", site: "127.0.0.1:9091/x" }),
+      );
+      expect(result.status).toBe(400);
+      expect(JSON.parse(result.body).error).toMatch(/site must be one of/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects metadata-service-as-site", async () => {
+      const fetchMock = vi.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+      vi.resetModules();
+      const { handleDatadogConnect } = await import("../datadog.js");
+      const result = await handleDatadogConnect(
+        JSON.stringify({
+          apiKey: "x",
+          appKey: "y",
+          site: "169.254.169.254",
+        }),
+      );
+      expect(result.status).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects subdomain-of-datadoghq trick", async () => {
+      const fetchMock = vi.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+      vi.resetModules();
+      const { handleDatadogConnect } = await import("../datadog.js");
+      const result = await handleDatadogConnect(
+        JSON.stringify({
+          apiKey: "x",
+          appKey: "y",
+          site: "evil.com/datadoghq.com",
+        }),
+      );
+      expect(result.status).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("accepts all 6 canonical sites", async () => {
+      const sites = [
+        "datadoghq.com",
+        "us3.datadoghq.com",
+        "us5.datadoghq.com",
+        "datadoghq.eu",
+        "ap1.datadoghq.com",
+        "ddog-gov.com",
+      ];
+      for (const site of sites) {
+        global.fetch = vi.fn().mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+        }) as unknown as typeof fetch;
+        vi.resetModules();
+        const { handleDatadogConnect } = await import("../datadog.js");
+        const result = await handleDatadogConnect(
+          JSON.stringify({ apiKey: "x", appKey: "y", site }),
+        );
+        // 200 (success) or 500 (token storage mock), but NOT 400 from site guard
+        expect(result.status).not.toBe(400);
+      }
+    });
+  });
+
   it("returns 401 when Datadog rejects credentials", async () => {
     global.fetch = vi.fn().mockResolvedValueOnce({
       ok: false,

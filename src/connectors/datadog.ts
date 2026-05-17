@@ -23,6 +23,21 @@ import {
   storeSecretJsonSync,
 } from "./tokenStorage.js";
 
+/**
+ * Datadog's full public-site list. The `site` field is interpolated into
+ * `https://api.${site}/...` so any caller-supplied value flows into a
+ * fetch URL — enum-validate to prevent SSRF / credential redirection.
+ * Source: https://docs.datadoghq.com/getting_started/site/
+ */
+const DATADOG_ALLOWED_SITES: ReadonlySet<string> = new Set([
+  "datadoghq.com",
+  "us3.datadoghq.com",
+  "us5.datadoghq.com",
+  "datadoghq.eu",
+  "ap1.datadoghq.com",
+  "ddog-gov.com",
+]);
+
 export interface DatadogTokens {
   apiKey: string;
   appKey: string;
@@ -388,10 +403,26 @@ export async function handleDatadogConnect(
     }
     apiKey = parsed.apiKey;
     appKey = parsed.appKey;
-    site =
+    const submittedSite =
       typeof parsed.site === "string" && parsed.site
         ? parsed.site
         : "datadoghq.com";
+    // Defend against authenticated SSRF: site is interpolated into
+    // `https://api.${site}/api/v1/validate`. Inputs like `evil.com/x`,
+    // `127.0.0.1:9091/x?`, or `internal-svc..corp` would otherwise route
+    // Datadog credentials to attacker-chosen hosts. Datadog has a fixed
+    // public list of sites — enum-validate. Audit 2026-05-17.
+    if (!DATADOG_ALLOWED_SITES.has(submittedSite)) {
+      return {
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: false,
+          error: `site must be one of: ${[...DATADOG_ALLOWED_SITES].join(", ")}`,
+        }),
+      };
+    }
+    site = submittedSite;
   } catch {
     return {
       status: 400,
