@@ -149,13 +149,14 @@ export function isConnected(): boolean {
 }
 
 // ── State (CSRF) ─────────────────────────────────────────────────────────────
-// In-memory map keyed by hex random — short-lived (5 min). Mirrors gmail's
-// approach (Set + setTimeout) rather than slack's on-disk file because we
-// don't need cross-process resumption for an OAuth round-trip.
+// In-memory map keyed by hex random — short-lived (10 min). Standardised
+// across every OAuth connector (gmail / google* / asana / mcpOAuth all
+// use 10 min). Audit 2026-05-17. We don't need cross-process resumption
+// for an OAuth round-trip.
 
 import { createOAuthStateStore } from "./oauthStateStore.js";
 
-const STATE_TTL_MS = 5 * 60 * 1000;
+const STATE_TTL_MS = 10 * 60 * 1000;
 const pendingStates = createOAuthStateStore({ ttlMs: STATE_TTL_MS });
 
 function generateState(): string {
