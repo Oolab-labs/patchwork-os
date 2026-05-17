@@ -85,8 +85,16 @@ describe("DELETE /api/connections/[connector]", () => {
 });
 
 describe("POST /api/connections/[connector]/test", () => {
+  it("returns 403 when CSRF guard rejects cross-site", async () => {
+    const res = await postTest(reqWithHeaders({ "sec-fetch-site": "cross-site" }), {
+      params: Promise.resolve({ connector: "linear" }),
+    });
+    expect(res.status).toBe(403);
+    expect(bridgeFetchMock).not.toHaveBeenCalled();
+  });
+
   it("returns 404 for unknown connector", async () => {
-    const res = await postTest(reqWithHeaders(), {
+    const res = await postTest(reqWithHeaders({ "sec-fetch-site": "same-origin" }), {
       params: Promise.resolve({ connector: "nope" }),
     });
     expect(res.status).toBe(404);
@@ -95,7 +103,7 @@ describe("POST /api/connections/[connector]/test", () => {
 
   it("proxies to /connections/<id>/test with method=POST", async () => {
     bridgeFetchMock.mockResolvedValueOnce(jsonResponse({ healthy: true }));
-    const res = await postTest(reqWithHeaders(), {
+    const res = await postTest(reqWithHeaders({ "sec-fetch-site": "same-origin" }), {
       params: Promise.resolve({ connector: "linear" }),
     });
     expect(bridgeFetchMock).toHaveBeenCalledWith(
@@ -108,7 +116,7 @@ describe("POST /api/connections/[connector]/test", () => {
 
   it("502s on bridge throw and surfaces 'fetch failed' for non-Error rejection values", async () => {
     bridgeFetchMock.mockRejectedValueOnce("plain-string-not-an-error");
-    const res = await postTest(reqWithHeaders(), {
+    const res = await postTest(reqWithHeaders({ "sec-fetch-site": "same-origin" }), {
       params: Promise.resolve({ connector: "linear" }),
     });
     expect(res.status).toBe(502);
