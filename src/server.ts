@@ -1092,32 +1092,48 @@ export class Server extends EventEmitter<ServerEvents> {
         });
         res.flushHeaders();
 
-        const unsub =
+        // Idempotent teardown — every disconnect path (write error,
+        // ping error, req.close) funnels through here. Without this the
+        // counter could be decremented twice for a single subscriber
+        // (req.close fires AFTER write error in some Node versions) or
+        // not at all (write error never escalates to req.close on
+        // certain proxy intermediaries). Audit 2026-05-17 (#605
+        // BLOCKER): observed in production — subscribers hit cap of 20
+        // after enough page reloads, every new SSE returns 503 and
+        // kill-switch / activity ticker silently die.
+        let cleanedUp = false;
+        let pingHandle: ReturnType<typeof setInterval> | null = null;
+        let unsub: () => void = () => {};
+        const cleanup = () => {
+          if (cleanedUp) return;
+          cleanedUp = true;
+          this.sseSubscriberCount--;
+          if (pingHandle) clearInterval(pingHandle);
+          unsub();
+        };
+
+        unsub =
           this.streamFn?.((kind, entry) => {
             try {
               res.write(`data: ${JSON.stringify({ kind, ...entry })}\n\n`);
             } catch {
-              // Client disconnected — unsubscribe on next tick
-              unsub?.();
+              cleanup();
             }
           }) ?? (() => {});
 
         // Keep-alive comment ping every 15s so proxies don't close idle connections
-        const ping = setInterval(() => {
+        pingHandle = setInterval(() => {
           try {
             res.write(": ping\n\n");
           } catch {
-            clearInterval(ping);
-            unsub();
+            cleanup();
           }
         }, 15_000);
-        ping.unref();
+        pingHandle.unref();
 
-        req.on("close", () => {
-          this.sseSubscriberCount--;
-          clearInterval(ping);
-          unsub();
-        });
+        req.on("close", cleanup);
+        req.on("error", cleanup);
+        res.on("error", cleanup);
         return;
       }
       if (req.url === "/tasks" && req.method === "GET") {

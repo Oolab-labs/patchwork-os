@@ -1522,9 +1522,15 @@ export function tryHandleRecipeRoute(
                 continue;
               }
               const yamlText = Buffer.from(recipeBuf).toString("utf-8");
+              // #605: same race-fix as /recipes/install — embed pid +
+              // randomBytes so concurrent bundle installs of the same
+              // recipe inside one millisecond don't collide.
+              const { randomBytes: randomBytesFn } = await import(
+                "node:crypto"
+              );
               const tmpFile = path.join(
                 os.tmpdir(),
-                `patchwork-bundle-install-${Date.now()}-${r}.yaml`,
+                `patchwork-bundle-install-${process.pid}-${Date.now()}-${randomBytesFn(6).toString("hex")}-${r}.yaml`,
               );
               writeFileSync(tmpFile, yamlText, "utf-8");
               try {
@@ -1782,9 +1788,15 @@ export function tryHandleRecipeRoute(
           chunks.map((c) => Buffer.from(c)),
         ).toString("utf-8");
 
+        // #605: temp path must be unique per process+request. Previous
+        // form was `Date.now()-${recipeName}` — two concurrent installs
+        // of the same recipe inside one millisecond produced identical
+        // paths → writeFileSync interleaved bytes, and the first finally
+        // block unlinked the file the second still needed.
+        const { randomBytes } = await import("node:crypto");
         const tmpFile = path.join(
           os.tmpdir(),
-          `patchwork-install-${Date.now()}-${recipeName}.yaml`,
+          `patchwork-install-${process.pid}-${Date.now()}-${randomBytes(6).toString("hex")}-${recipeName}.yaml`,
         );
         const { writeFileSync, mkdirSync, unlinkSync } = await import(
           "node:fs"
