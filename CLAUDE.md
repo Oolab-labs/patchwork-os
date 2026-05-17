@@ -34,6 +34,7 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `recipe list` — Print installed recipes from the active bridge.
 - `recipe install <source>` — Install from `github:owner/repo[/path][@ref]`. Same shape the dashboard install panel posts.
 - `recipe uninstall <name>` — Remove a locally installed recipe.
+- `recipe enable <name>` / `recipe disable <name>` — Flip the per-recipe disabled marker so cron / file-watch triggers stop firing without uninstalling. Used by the dashboard's pause toggle.
 - `recipe run <name> [--local --dry-run --step <id> --attempt <n> --ledger-dir <path> --var k=v]` — Manual run with overrides; `--local` skips the bridge API.
 - `recipe lint <file.yaml>` — Lint a recipe YAML against the schema + best-practice rules.
 - `recipe preflight <file.yaml>` — Connector preflight: list authorisations the recipe needs.
@@ -46,6 +47,9 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `start [--port N] [--workspace <path>]` — Single-bridge start (no tmux). Pair with `--watch` for supervised mode.
 - `status` — One-line bridge status: lock file, port, uptime, session count.
 - `tools [--slim] [--json]` — List tools the bridge would register without starting it.
+- `tools list [--json]` — Same as bare `tools`, kept for symmetry with `search`.
+- `tools search <query> [--json]` — Filter the registered tools by name / description substring.
+- `install <companion>` — Install one of the bundled MCP-companion server registrations into Claude Desktop or Claude Code config. Use `--target cli|desktop` to choose, `--env KEY=VAL` to pass per-companion env vars. Companions: `memory`, `superpowers`, `devtools`, `database`, `slack`, `playwright`, `codebase-memory`. Each is a documented server config; the command writes it into `~/.claude.json` (CLI) or the Claude Desktop config (desktop) atomically.
 - `kill-switch engage|release|status [--reason <text>]` — Toggle the global write-disable gate (see ADR-0012).
 - `panic` — Shortcut for `kill-switch engage --reason "manual panic"`.
 - `judgments [--since <duration>] [--limit N] [--json]` — Recent approval decisions across all sessions.
@@ -87,6 +91,47 @@ Most users don't need to touch these — CLI flags cover the common cases. Liste
 | `PATCHWORK_FLAG_UI_SCHEMA_LINT` | Feature flag — strict UI-schema linting in the recipe editor. |
 | `LOCAL_MODEL` / `LOCAL_ENDPOINT` / `LOCAL_API_KEY` / `LOCAL_ENDPOINT_ALLOW_REMOTE` | Local-model driver config (Ollama / vLLM / OpenAI-compatible endpoint). |
 | `OTEL_SERVICE_NAME` | Override the OTel service name (default `claude-ide-bridge`). |
+
+##### Connector credential env vars
+
+Per-connector env override for OAuth client credentials (when self-hosting OAuth apps) or for PAT-style direct-token connectors. The dashboard `/connections` UI is the recommended setup path — these env vars are for headless / CI / scripted deployments. Setting `*_CLIENT_ID` + `*_CLIENT_SECRET` lets the bridge use your own GitHub/Slack/etc. OAuth app instead of the public one.
+
+| Var(s) | Connector | Type |
+|---|---|---|
+| `PATCHWORK_GITHUB_CLIENT_ID` / `PATCHWORK_GITHUB_CLIENT_SECRET` | GitHub | OAuth app override |
+| `PATCHWORK_SLACK_CLIENT_ID` / `PATCHWORK_SLACK_CLIENT_SECRET` | Slack | OAuth app override |
+| `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` | Gmail | OAuth app override |
+| `GOOGLE_CALENDAR_CLIENT_ID` / `GOOGLE_CALENDAR_CLIENT_SECRET` | Google Calendar | OAuth app override |
+| `GOOGLE_DRIVE_CLIENT_ID` / `GOOGLE_DRIVE_CLIENT_SECRET` | Google Drive | OAuth app override |
+| `ASANA_CLIENT_ID` / `ASANA_CLIENT_SECRET` | Asana | OAuth app override |
+| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | Discord | OAuth app override |
+| `GITLAB_CLIENT_ID` / `GITLAB_CLIENT_SECRET` / `GITLAB_BASE_URL` | GitLab | OAuth app override + self-hosted base URL |
+| `JIRA_API_TOKEN` / `JIRA_EMAIL` / `JIRA_INSTANCE_URL` | Jira | PAT-style token |
+| `CONFLUENCE_API_TOKEN` / `CONFLUENCE_EMAIL` / `CONFLUENCE_INSTANCE_URL` | Confluence | PAT-style token (HTTPS atlassian.net only) |
+| `LINEAR_API_KEY` | Linear (non-MCP fallback) | PAT-style token |
+| `NOTION_TOKEN` | Notion | PAT-style token |
+| `HUBSPOT_ACCESS_TOKEN` | HubSpot | PAT-style token |
+| `INTERCOM_ACCESS_TOKEN` | Intercom | PAT-style token |
+| `DATADOG_API_KEY` / `DATADOG_APP_KEY` / `DATADOG_SITE` | Datadog | PAT-style (`SITE` enum-allowlisted) |
+| `PAGERDUTY_TOKEN` / `PAGERDUTY_FROM_EMAIL` | PagerDuty | PAT-style token |
+| `ZENDESK_API_TOKEN` / `ZENDESK_EMAIL` / `ZENDESK_SUBDOMAIN` | Zendesk | PAT-style token |
+| `SENTRY_AUTH_TOKEN` | Sentry (non-MCP fallback) | PAT-style token |
+
+##### Dashboard env vars (Next.js side)
+
+The dashboard reads these from `dashboard/.env.local` / `.env` at startup. Most users don't change them — defaults pick a free port and assume a single-user local install.
+
+| Var | Effect |
+|---|---|
+| `DASHBOARD_PASSWORD` | Single-user password gate for the dashboard. Required for any non-local deployment. |
+| `DASHBOARD_SESSION_SECRET` | Cookie-signing secret (random hex ≥ 32 chars). |
+| `DASHBOARD_ALLOW_UNAUTHENTICATED` | `1` to bypass the password gate (local dev only). |
+| `DASHBOARD_AUTH_FAILURE_WINDOW_MS` / `DASHBOARD_AUTH_MAX_FAILURES` / `DASHBOARD_AUTH_LOCKOUT_MS` | Brute-force lockout tuning for the login form. |
+| `PATCHWORK_BRIDGE_TOKEN` | Bearer token the dashboard uses when forwarding to a remote bridge (paired with `PATCHWORK_BRIDGE_URL`). |
+| `NEXT_PUBLIC_BASE_PATH` | basePath for mounted-prefix deployments (`/dashboard` under nginx, etc.). |
+| `NEXT_PUBLIC_DEMO_MODE` | Read-only demo mode for the public marketing site. |
+| `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Web Push (PWA notifications). |
+| `PATCHWORK_PUSH_TOKEN` / `PATCHWORK_PUSH_URL` / `PATCHWORK_PUSH_BASE_URL` | Phone-path push relay credentials (used by the optional remote relay; see ADR-0006). |
 
 ## Bug Fix Protocol
 
