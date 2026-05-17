@@ -957,8 +957,10 @@ export default function ConnectionsPage() {
 
   async function handleTokenConnect() {
     if (!tokenModal) return;
-    setTokenConnecting(true);
-    setTokenErr(null);
+    // Audit 2026-05-17 (#600): validate BEFORE flipping the spinner.
+    // The previous order set tokenConnecting=true then early-returned
+    // on missing fields without resetting it — the Save button got
+    // stuck on "Connecting…" forever until the modal was reopened.
     const cfg = TOKEN_MODAL_CONNECTORS[tokenModal];
     const missing = (cfg.extraFields ?? [])
       .filter((f) => f.required && !tokenExtras[f.key]?.trim())
@@ -967,6 +969,8 @@ export default function ConnectionsPage() {
       setTokenErr(`Missing required field${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}`);
       return;
     }
+    setTokenConnecting(true);
+    setTokenErr(null);
     const payload: Record<string, string> = { [cfg.tokenKey]: tokenValue };
     for (const f of cfg.extraFields ?? []) {
       const v = tokenExtras[f.key]?.trim();

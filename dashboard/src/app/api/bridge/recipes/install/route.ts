@@ -84,9 +84,8 @@ export async function POST(req: Request): Promise<Response> {
       headers: { "content-type": "application/json" },
     });
   } catch (err) {
-    return jsonError(
-      502,
-      err instanceof Error ? err.message : "fetch failed",
-    );
+    // #600: don't leak err.message detail; see [name]/route.ts.
+    console.error("[recipes/install] bridge fetch failed:", err);
+    return jsonError(502, "Bridge unreachable");
   }
 }

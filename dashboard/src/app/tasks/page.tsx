@@ -92,8 +92,8 @@ function TaskDetail({ task, onCancel, cancelling }: {
   cancelling: Record<string, boolean>;
 }) {
   const toast = useToast();
-  const [copied, setCopied] = useState<"id" | "term" | "replay" | null>(null);
-  function flash(kind: "id" | "term" | "replay") {
+  const [copied, setCopied] = useState<"id" | "term" | null>(null);
+  function flash(kind: "id" | "term") {
     setCopied(kind);
     setTimeout(() => setCopied((c) => (c === kind ? null : c)), 1500);
   }
@@ -227,30 +227,11 @@ function TaskDetail({ task, onCancel, cancelling }: {
         >
           {copied === "term" ? "✓ Copied" : "> Open in terminal"}
         </button>
-        <button
-          type="button"
-          className="btn sm ghost"
-          style={{ fontSize: "var(--fs-s)" }}
-          onClick={async () => {
-            try {
-              const res = await fetch(
-                apiPath(`/api/bridge/tasks/${task.taskId}/replay`),
-                { method: "POST" },
-              );
-              if (!res.ok) {
-                const body = (await res.json().catch(() => ({}))) as { error?: string };
-                throw new Error(body.error ?? `Server returned ${res.status}`);
-              }
-              flash("replay");
-            } catch (e) {
-              toast.error(
-                `Couldn't replay — ${e instanceof Error ? e.message : String(e)}`,
-              );
-            }
-          }}
-        >
-          {copied === "replay" ? "✓ Queued" : "↻ Replay"}
-        </button>
+        {/* Replay button removed 2026-05-17 (#600 BLOCKER #2): targeted
+            POST /api/bridge/tasks/:id/replay which the bridge never
+            implemented (only POST /runs/:seq/replay exists, for recipe
+            runs). Every click 404'd with a confusing "Couldn't replay"
+            toast. Restore once the bridge ships a tasks replay route. */}
         <button
           type="button"
           className="btn sm ghost"

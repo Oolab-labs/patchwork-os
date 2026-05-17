@@ -467,8 +467,13 @@ export default function SettingsPage() {
     }
   }
 
-  async function saveApiKey(provider: ApiKeyProvider) {
-    const key = keyDrafts[provider];
+  async function saveApiKey(provider: ApiKeyProvider, explicitKey?: string) {
+    // Audit 2026-05-17 (#600): reading keyDrafts[provider] from closure
+    // is stale when the Clear button queues setKeyDrafts("") immediately
+    // before calling this — React batches state updates, so the OLD key
+    // gets re-saved instead of cleared. Accept an explicit value to
+    // bypass the closure for callers that already know the intended key.
+    const key = explicitKey !== undefined ? explicitKey : keyDrafts[provider];
     setKeySaving(provider);
     setKeyMsg(null);
     try {
@@ -1035,7 +1040,9 @@ export default function SettingsPage() {
                               onClick={() => {
                                 setKeyDrafts((d) => ({ ...d, [provider]: "" }));
                                 // Empty string deletes from secure store.
-                                void saveApiKey(provider);
+                                // Pass "" explicitly — saveApiKey would
+                                // otherwise read the stale closure key.
+                                void saveApiKey(provider, "");
                               }}
                               disabled={keySaving === provider}
                               title="Remove the stored key from the secure store"
