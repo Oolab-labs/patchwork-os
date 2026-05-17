@@ -242,7 +242,13 @@ describe("spawnWorkspace handler", () => {
     const parsed = parseText(result);
     expect(parsed.code).toBe("timeout");
     expect(parsed.error).toMatch(/extension did not connect/);
-    expect(killSpy).toHaveBeenCalledWith(pid, "SIGTERM");
+    // POSIX-only: `treeKillPid` calls `process.kill(-pid, sig)` (process
+    // group) and `process.kill(pid, sig)` (single child). On Windows it
+    // shells out to `taskkill /F /T /PID <pid>` and `process.kill`
+    // is never invoked. Covered by `src/__tests__/processTree.test.ts`.
+    if (process.platform !== "win32") {
+      expect(killSpy).toHaveBeenCalledWith(pid, "SIGTERM");
+    }
   });
 
   it("waitForExtension unset: returns without extensionConnected field (back-compat)", async () => {
@@ -365,7 +371,10 @@ describe("spawnWorkspace handler", () => {
     expect(parsed.code).toBe("code_server_missing");
     expect(parsed.error).toMatch(/code-server/);
     // Bridge must be cleaned up when code-server spawn fails.
-    expect(killSpy).toHaveBeenCalledWith(bridgePid, "SIGTERM");
+    // POSIX-only kill-spy check (see treeKillPid Windows note above).
+    if (process.platform !== "win32") {
+      expect(killSpy).toHaveBeenCalledWith(bridgePid, "SIGTERM");
+    }
   });
 
   it("codeServer: honors codeServerBin override", async () => {
