@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { withFileLockSync } from "./fileLockSync.js";
 import type { Logger } from "./logger.js";
 import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
@@ -190,7 +191,12 @@ export class CommitIssueLinkLog {
         const code = (err as NodeJS.ErrnoException).code;
         if (code !== "ENOENT") throw err;
       }
-      appendFileSync(this.file, `${JSON.stringify(link)}\n`, { mode: 0o600 });
+      // Per-file lock — ADR-0007 multi-bridge concurrency. See the
+      // matching block in src/decisionTraceLog.ts for the full
+      // rationale; same pattern.
+      withFileLockSync(this.file, () => {
+        appendFileSync(this.file, `${JSON.stringify(link)}\n`, { mode: 0o600 });
+      });
     } catch (err) {
       this.opts.logger?.warn?.(
         `[linklog] append failed: ${err instanceof Error ? err.message : String(err)}`,
