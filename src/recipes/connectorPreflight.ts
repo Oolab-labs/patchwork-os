@@ -65,12 +65,72 @@ function toolsOfStep(step: Step): string[] {
 }
 
 /**
+ * Compiled list of tool-name prefixes (without the trailing underscore)
+ * used by `promptMentionsConnector`. Built once at module load — the
+ * source map is small and stable, so caching this avoids regex churn
+ * inside the per-step loop.
+ */
+const PROMPT_PREFIX_PATTERNS: ReadonlyArray<{
+  prefix: string;
+  connector: string;
+}> = Object.entries(TOOL_PREFIX_TO_CONNECTOR).map(([prefix, connector]) => ({
+  // Strip trailing underscore — when the prompt mentions a tool name like
+  // `slack_post_message` the underscore is part of the literal we look
+  // for, but when an agent prompt is more conversational ("post to slack
+  // using slack.post_message"), we want to match the prefix without the
+  // separator too.
+  prefix: prefix.replace(/_$/, ""),
+  connector,
+}));
+
+/**
+ * Inspect an agent step's `prompt` for references to tool names from
+ * known connectors. Catches the common case where the LLM is told
+ * which tool to call inside the prompt body rather than via the
+ * `tools[]` allowlist — e.g.:
+ *
+ *   - id: notify
+ *     agent:
+ *       prompt: Use slack_post_message to send "{{summary}}" to #ops.
+ *
+ * That prompt previously fell through `toolsOfStep` entirely (no
+ * `tool`, empty `tools[]`) and the install panel told the user "no
+ * connectors needed" despite the recipe relying on Slack at runtime.
+ *
+ * Detection is deliberately lossy — we match `<prefix>_` followed by a
+ * word char (the literal tool-name shape `slack_post_message`) and we
+ * also match `<prefix>.` to catch prose like "use slack.fetch". False
+ * positives are tolerable: surfacing one extra "you may want to
+ * authorise X" hint is strictly better than the pre-fix silent miss.
+ *
+ * Audit 2026-05-17.
+ */
+function promptMentionsConnectors(prompt: string): string[] {
+  const found = new Set<string>();
+  // Only look at the prompt body — vars / outputs / context refs go
+  // through `{{...}}` interpolation which the runtime resolves later.
+  for (const { prefix, connector } of PROMPT_PREFIX_PATTERNS) {
+    // Anchor on a word boundary so `unrelated_slack_word` doesn't
+    // match (\\bslack[_.]\\w would also match `slack_alert`, which is
+    // the intended target).
+    const re = new RegExp(`\\b${escapeForRegex(prefix)}[_.]\\w`, "i");
+    if (re.test(prompt)) found.add(connector);
+  }
+  return [...found];
+}
+
+function escapeForRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
  * Walk a recipe's steps and return the connector ids it likely needs.
  * Stable order (sorted) so the response is deterministic.
  */
 export function detectRequiredConnectors(recipe: Recipe): string[] {
   const required = new Set<string>();
   for (const step of recipe.steps) {
+    // Explicit `tool` / `tools[]` fields (canonical detection path).
     for (const tool of toolsOfStep(step)) {
       for (const [prefix, connector] of Object.entries(
         TOOL_PREFIX_TO_CONNECTOR,
@@ -78,6 +138,15 @@ export function detectRequiredConnectors(recipe: Recipe): string[] {
         if (tool.startsWith(prefix)) {
           required.add(connector);
         }
+      }
+    }
+    // Prompt body scan for agent-mode steps — catches recipes that
+    // tell the LLM which tool to call inline (e.g. "Use slack_post_message
+    // to ...") without listing it in `tools[]`. See
+    // `promptMentionsConnectors` above for the rationale.
+    if (step.agent === true && typeof step.prompt === "string") {
+      for (const connector of promptMentionsConnectors(step.prompt)) {
+        required.add(connector);
       }
     }
   }

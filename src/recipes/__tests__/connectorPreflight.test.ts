@@ -110,6 +110,90 @@ describe("detectRequiredConnectors", () => {
       ).toEqual([connector]);
     }
   });
+
+  // ─── Prompt-body scan (audit 2026-05-17) ───────────────────────────────
+  // Agent steps that name a tool inside the `prompt` body without
+  // listing it in `tools[]` used to be invisible to the preflight.
+  // Now we scan the prompt for known tool prefixes too. Detection is
+  // lossy by design — false positives are tolerable, false negatives
+  // (silent miss → install panel claims "no connectors needed") are not.
+  describe("prompt-body scan", () => {
+    it("detects connector named via underscored tool in agent prompt", () => {
+      expect(
+        detectRequiredConnectors(
+          recipe([
+            {
+              id: "notify",
+              agent: true,
+              prompt: "Use slack_post_message to send the summary.",
+            },
+          ] as Recipe["steps"]),
+        ),
+      ).toEqual(["slack"]);
+    });
+
+    it("detects connector named via dotted prose in agent prompt", () => {
+      expect(
+        detectRequiredConnectors(
+          recipe([
+            {
+              id: "fetch",
+              agent: true,
+              prompt: "Pull recent issues with linear.search and triage them.",
+            },
+          ] as Recipe["steps"]),
+        ),
+      ).toEqual(["linear"]);
+    });
+
+    it("merges prompt-named connectors with tools[] entries", () => {
+      expect(
+        detectRequiredConnectors(
+          recipe([
+            {
+              id: "compose",
+              agent: true,
+              prompt: "Send the digest via gmail_send_message.",
+              tools: ["slack_post_message"],
+            },
+          ] as Recipe["steps"]),
+        ),
+      ).toEqual(["gmail", "slack"]);
+    });
+
+    it("ignores random words that happen to start with a prefix string", () => {
+      // "slacks" is NOT a tool; "calendaring" is NOT a tool. The
+      // detector should not flag either.
+      expect(
+        detectRequiredConnectors(
+          recipe([
+            {
+              id: "x",
+              agent: true,
+              prompt: "Update the slacks in calendaring documentation.",
+            },
+          ] as Recipe["steps"]),
+        ),
+      ).toEqual([]);
+    });
+
+    it("ignores prompt of agent:false tool steps (only `tool` field counts)", () => {
+      // Tool steps have a strict `tool` field — they don't get the
+      // permissive prompt scan.
+      expect(
+        detectRequiredConnectors(
+          recipe([
+            {
+              id: "x",
+              agent: false,
+              tool: "Read",
+              params: { _comment: "this would mention slack_post but doesn't" },
+            },
+          ] as Recipe["steps"]),
+        ),
+      ).toEqual([]);
+    });
+  });
 });
 
 describe("findMissingConnectors", () => {
