@@ -78,6 +78,21 @@ export function installRecipeFromFile(
 
   mkdir(opts.recipesDir);
   const destPath = path.join(opts.recipesDir, `${recipe.name}.json`);
+  // Belt-and-braces: parseRecipe already constrains `name` to the
+  // RECIPE_NAME_RE charset, but assert the resolved path stays inside
+  // recipesDir before writing. Defends against any future parser bypass
+  // and against callers reaching this function with a pre-parsed object
+  // that skipped parseRecipe.
+  const resolvedDir = path.resolve(opts.recipesDir);
+  const resolvedDest = path.resolve(destPath);
+  if (
+    resolvedDest !== resolvedDir &&
+    !resolvedDest.startsWith(resolvedDir + path.sep)
+  ) {
+    throw new Error(
+      `installRecipeFromFile: refusing to write outside recipesDir (dest=${resolvedDest} dir=${resolvedDir})`,
+    );
+  }
   let action: "created" | "replaced" = "created";
   try {
     readFile(destPath);
