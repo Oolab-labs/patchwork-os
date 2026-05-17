@@ -1009,6 +1009,13 @@ export default function ConnectionsPage() {
     }
     const popup = window.open(apiPath(`/api/connections/${id}/auth`), "_blank");
     if (!popup) {
+      // Audit 2026-05-17 (#600): blocked-popup state was silently
+      // returned to runReAuthAll but ignored by per-card Connect clicks,
+      // so single-card connects looked like the button did nothing.
+      // Surface here so every caller benefits.
+      toast.error(
+        `Browser blocked the ${id} popup. Allow popups for this site and try again.`,
+      );
       return Promise.resolve("blocked");
     }
     return new Promise((resolve) => {

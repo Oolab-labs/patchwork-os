@@ -273,13 +273,6 @@ function formatUptime(ms: number): string {
   return `${sec}s`;
 }
 
-function parseUptimeMs(text: string): number | null {
-  if (!text) return null;
-  const m = text.match(/^bridge_uptime_seconds\s+(\d+(?:\.\d+)?)/m);
-  if (m) return Math.round(Number.parseFloat(m[1]) * 1000);
-  return null;
-}
-
 // Telemetry-tile icons. Match the wireframe glyphs (≡ recipes, 🔒 approvals,
 // >_ tools, ☉ tokens) but rendered as 12×12 inline SVGs at --ink-3 so they
 // read as muted decoration next to the uppercase tile labels.
@@ -1176,6 +1169,3 @@ export default function HomePage() {
 
 // (kept for upstream typing imports / no-op reference)
 export type { BridgeHealth };
-
-// Suppress unused-import false positives for parsing helper retained intentionally.
-void parseUptimeMs;

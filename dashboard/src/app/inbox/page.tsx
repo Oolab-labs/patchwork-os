@@ -939,7 +939,25 @@ const filteredItems = items.filter((item) => {
                               );
                               if (!res.ok) {
                                 const text = await res.text().catch(() => res.statusText);
-                                toast.error(`Replay failed: ${text || res.status}`);
+                                // Audit 2026-05-17 (#600): the bridge
+                                // returns 400 with a 'vars' / 'required'
+                                // message when the recipe declares vars
+                                // that the empty body didn't supply.
+                                // Route the user to the Recipes page Run
+                                // button (which has the vars-input modal)
+                                // instead of a generic "Replay failed"
+                                // toast. Restoring full inline vars input
+                                // here is tracked separately.
+                                const looksLikeMissingVars =
+                                  res.status === 400 &&
+                                  /\bvars?\b|required/i.test(text);
+                                if (looksLikeMissingVars) {
+                                  toast.error(
+                                    `Recipe needs vars — open from /recipes to fill them in.`,
+                                  );
+                                } else {
+                                  toast.error(`Replay failed: ${text || res.status}`);
+                                }
                               } else {
                                 toast.success(`Replayed “${recipeNameForSelected}”`);
                               }
