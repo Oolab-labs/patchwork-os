@@ -124,6 +124,83 @@ describe("ApprovalQueue", () => {
   });
 });
 
+// ─── Cancellation — audit 2026-05-17 ────────────────────────────────────────
+describe("ApprovalQueue — cancellation", () => {
+  it("cancel(callId) resolves the originating promise with 'cancelled'", async () => {
+    const q = new ApprovalQueue();
+    const { callId, promise } = q.request({
+      toolName: "x",
+      params: {},
+      tier: "high",
+    });
+    expect(q.cancel(callId)).toBe(true);
+    await expect(promise).resolves.toBe("cancelled");
+  });
+
+  it("cancel removes the entry from the queue", () => {
+    const q = new ApprovalQueue();
+    const { callId } = q.request({
+      toolName: "x",
+      params: {},
+      tier: "high",
+    });
+    expect(q.size()).toBe(1);
+    q.cancel(callId);
+    expect(q.size()).toBe(0);
+  });
+
+  it("cancel(unknown) returns false (idempotent)", () => {
+    const q = new ApprovalQueue();
+    expect(q.cancel("not-a-real-id")).toBe(false);
+  });
+
+  it("AbortSignal on request() resolves the promise with 'cancelled'", async () => {
+    const q = new ApprovalQueue();
+    const ac = new AbortController();
+    const { promise } = q.request(
+      { toolName: "x", params: {}, tier: "high" },
+      { signal: ac.signal },
+    );
+    expect(q.size()).toBe(1);
+    ac.abort();
+    await expect(promise).resolves.toBe("cancelled");
+    expect(q.size()).toBe(0);
+  });
+
+  it("already-aborted signal at request() time still resolves with 'cancelled'", async () => {
+    const q = new ApprovalQueue();
+    const ac = new AbortController();
+    ac.abort();
+    const { promise } = q.request(
+      { toolName: "x", params: {}, tier: "high" },
+      { signal: ac.signal },
+    );
+    await expect(promise).resolves.toBe("cancelled");
+  });
+
+  it("dedup-joined caller's abort does NOT cancel the original caller", async () => {
+    const q = new ApprovalQueue();
+    const { callId, promise: originalPromise } = q.request({
+      toolName: "x",
+      params: { k: "v" },
+      tier: "high",
+    });
+    const ac = new AbortController();
+    const { promise: joinedPromise } = q.request(
+      { toolName: "x", params: { k: "v" }, tier: "high" },
+      { signal: ac.signal },
+    );
+    // Joined caller abandons.
+    ac.abort();
+    await expect(joinedPromise).resolves.toBe("cancelled");
+    // Original entry still alive.
+    expect(q.size()).toBe(1);
+    // Original caller's promise still pending until a decision arrives.
+    expect(q.approve(callId)).toBe(true);
+    await expect(originalPromise).resolves.toBe("approved");
+  });
+});
+
 describe("ApprovalQueue — approval tokens", () => {
   it("no token by default", () => {
     const q = new ApprovalQueue();

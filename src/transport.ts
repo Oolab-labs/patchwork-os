@@ -192,7 +192,9 @@ export class McpTransport {
         toolName: string;
         params: Record<string, unknown>;
         sessionId: string | null;
-      }) => Promise<"approved" | "rejected" | "expired" | "bypass">)
+      }) => Promise<
+        "approved" | "rejected" | "expired" | "cancelled" | "bypass"
+      >)
     | null = null;
 
   setApprovalGate(
@@ -200,7 +202,7 @@ export class McpTransport {
       toolName: string;
       params: Record<string, unknown>;
       sessionId: string | null;
-    }) => Promise<"approved" | "rejected" | "expired" | "bypass">,
+    }) => Promise<"approved" | "rejected" | "expired" | "cancelled" | "bypass">,
   ): void {
     this.approvalGate = fn;
   }
@@ -1314,7 +1316,11 @@ export class McpTransport {
                     params: toolArgs as Record<string, unknown>,
                     sessionId: this.sessionId,
                   });
-                  if (decision === "rejected" || decision === "expired") {
+                  if (
+                    decision === "rejected" ||
+                    decision === "expired" ||
+                    decision === "cancelled"
+                  ) {
                     // Clamp: detach() may have reset activeToolCalls to 0 if
                     // the WS dropped mid-approval. See line 1478 for the
                     // matching pattern on the resolved-tool path.
@@ -1343,7 +1349,9 @@ export class McpTransport {
                             text:
                               decision === "rejected"
                                 ? `Tool call "${params.name}" rejected by human reviewer via Patchwork dashboard.`
-                                : `Tool call "${params.name}" expired without human decision (no action taken).`,
+                                : decision === "cancelled"
+                                  ? `Tool call "${params.name}" cancelled before a human decision was made (originating client abandoned the request).`
+                                  : `Tool call "${params.name}" expired without human decision (no action taken).`,
                           },
                         ],
                         isError: true,
