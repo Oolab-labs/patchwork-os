@@ -6,6 +6,65 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-beta.4] — 2026-05-17
+
+Audit/hardening batch: 23 PRs (#572–#594) closing P0/P1 findings from a multi-agent codebase audit. No breaking changes; all upgrades drop-in.
+
+### Security
+
+- **Prototype-pollution scrub at untrusted `JSON.parse` boundaries** (#594) — `__proto__` / `constructor` / `prototype` keys stripped from parsed payloads at the remaining ingest sites (recipe install proxy, connector configs, agent prompt inputs).
+- **Recipe-name path traversal closed** (#575) — `RECIPE_NAME_RE` enforced on parse; the resolved write path is re-asserted to live under `recipesDir` before any I/O. Defends against `../../etc/cron.d/x` and Windows backslash variants.
+- **Input validation across three surfaces** (#577) — `patchwork init` no longer shell-interpolates user-supplied workspace paths; Confluence + Datadog connectors validate `instanceUrl` / `site` against SSRF (private IP/loopback/metadata-service rejected).
+- **`mcpOAuth` refresh + revoke now go through `BaseConnector` hardening** (#573) — token-endpoint URL re-validated per-call, 401 triggers a single refresh attempt then surfaces, no infinite-loop on revoked tokens.
+- **CSRF coverage extended** (#572) — telemetry-prefs and connector/test POSTs now require the `requireSameOrigin` guard the rest of the dashboard already used.
+- **Approval-cancellation cleanup** (#586) — abort-signal propagates through the decision pipeline; cancelled approvals get an explicit `"cancelled"` decision record so the audit trail doesn't show a phantom pending row.
+
+### Connector hardening
+
+- **Slack disconnect now calls upstream `auth.revoke`** instead of just dropping local tokens (#590); OAuth state widened to 32 bytes.
+- **OAuth state TTL unified to 10 min** across Asana / Discord / GitLab — previously each had a different lifetime, making "expired during consent" UX unpredictable (#593).
+- **Connector preflight scans agent prompts for tool mentions** (#589) — recipes that mention a connector tool inside an agent prompt now surface in the missing-connector preflight rather than silently failing mid-run.
+- **Push relay evicts 404/410-Gone subscriptions** (#588) so the store doesn't accumulate dead endpoints after device uninstalls.
+- **Cross-backend token-storage orphan cleanup** (#569) — switching `PATCHWORK_TOKEN_STORAGE_BACKEND` no longer leaves shadow copies in the previous backend.
+
+### Crash consistency / atomic writes
+
+- **New `writeFileAtomic` / `writeFileAtomicSync` helper** (#576) covering temp+rename with unique-per-process temp paths, mode propagation (POSIX), AbortSignal support, and orphan-tmp cleanup on rename failure.
+- **10 critical state files now use atomic write** (#578) — token files, scheduler state, decision/run logs at startup, etc.
+- **User-source-file edit tools** (`editText`, `searchAndReplace`, formatter writes) routed through `writeFileAtomic` (#576) so a crash mid-edit can't leave a half-written user file.
+- **Connector-requests file write atomic** (#570) — previously truncated on crash.
+- **Recipe install (`installRecipeFromFile`) atomic** (#585) — concurrent installs can no longer leave a torn JSON document that the scheduler skips.
+- **Decision/run logs atomic-rotate** (#567) — rotation now writes the trimmed file to a temp path then renames; checkpoint failures are logged instead of silent.
+
+### JSONL durability (closes ADR-0007)
+
+- **`flock` on `appendFileSync` for `decisionTraceLog` + `commitIssueLinkLog`** (#584) — two bridges sharing `$HOME` can no longer interleave bytes within a single JSONL row.
+- **Tail-on-read with cursor bumped inside the lock** (#592) — readers don't re-parse their own writes; `lastReadOffset` / `lastFileSize` advances inside the `withFileLockSync` block so the write→read sequence is consistent.
+
+### Marketplace / dashboard polish
+
+- **Detail pages distinguish "registry unreachable" from "recipe/bundle missing"** (#558) instead of one opaque error.
+- **Three-state bridge status + confirm dialog on detail-page install panels** (#556).
+- **Install-source validation runs server-side** on the `/recipes/install` proxy (#557) — no longer client-trust-only.
+- **"Logged out" vs "no bridge" now distinguishable** in the marketplace UI (#552).
+- **Submit flow: Validate required before submit + confirm overwrite of in-progress YAML** (#559); stage persists across reload (#551).
+- **Risk summary on detail pages uses a parser, not a regex** (#562); ISR window shortened so updates land sooner.
+- **Mobile-friendly action bars** on browse + submit (#561); installed-pill correctly strips scope when checking installation (#550).
+- **`missingConnectors[]` surfaced on detail install panels** (#560).
+
+### Other fixes
+
+- **`audit-intellij-parity` script scans all handler files** instead of just `index.ts` (#587) — previously under-counted IntelliJ handler parity.
+- **Recipe parser accepts object-form `agent`** plus top-level `tool` + compound steps (#549) — closes a class of "valid-looking recipe rejected" bugs.
+- **CSRF unified on `requireSameOrigin` helper** (#571) — single chokepoint, easier to audit.
+
+### Internal
+
+- 7 unused dashboard components deleted (#566); 3 stale "stub" comments referencing shipped work cleared (#565).
+- 60+ post-merge feature branches pruned.
+
+---
+
 ## [0.2.0-beta.3] — 2026-05-14
 
 ### Fixed
