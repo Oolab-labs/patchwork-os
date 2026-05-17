@@ -177,12 +177,13 @@ export function isConnected(): boolean {
 }
 
 // ── State (CSRF) ─────────────────────────────────────────────────────────────
-// In-memory map keyed by hex random — short-lived (5 min). Mirrors discord's
-// approach (Set + setTimeout).
+// In-memory map keyed by hex random — short-lived (10 min). Standardised
+// across every OAuth connector in the bridge (gmail / google* / slack /
+// mcpOAuth all use 10 min). Audit 2026-05-17.
 
 import { createOAuthStateStore } from "./oauthStateStore.js";
 
-const STATE_TTL_MS = 5 * 60 * 1000;
+const STATE_TTL_MS = 10 * 60 * 1000;
 const pendingStates = createOAuthStateStore({ ttlMs: STATE_TTL_MS });
 
 function generateState(): string {

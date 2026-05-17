@@ -192,7 +192,13 @@ export function isConnected(): boolean {
 // ── State (CSRF) ─────────────────────────────────────────────────────────────
 
 const pendingStates = new Set<string>();
-const STATE_TTL_MS = 5 * 60 * 1000;
+// 10-minute TTL — standardised across every OAuth connector in the
+// bridge (gmail / google* / asana / discord / mcpOAuth). Audit
+// 2026-05-17. The unbounded `Set<string>` shape here is pre-#119 and
+// is tracked separately as a follow-up migration to the shared
+// `createOAuthStateStore` (which adds a hard size cap on top of the
+// TTL); this change unifies only the TTL value.
+const STATE_TTL_MS = 10 * 60 * 1000;
 
 function generateState(): string {
   const state = crypto.randomBytes(32).toString("hex");
