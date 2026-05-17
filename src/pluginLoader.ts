@@ -18,6 +18,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Config } from "./config.js";
 import type { Logger } from "./logger.js";
+import { parseJsonSanitized } from "./sanitizeParsedJson.js";
 import { TOOL_CATEGORIES } from "./tools/index.js";
 
 /**
@@ -298,7 +299,15 @@ export async function loadOnePluginFull(
 
   let rawManifest: unknown;
   try {
-    rawManifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    // Scrub `__proto__` / `constructor` / `prototype` own-property keys
+    // before the manifest is validated and stashed in the plugin
+    // registry. Manifests are operator-trusted today (only loaded via
+    // explicit --plugin flag or the gen-plugin-stub flow), but the
+    // operator may install plugins from arbitrary npm and a hostile
+    // manifest could still inject prototype properties into the
+    // process via downstream Object.assign / spread. Defense-in-depth
+    // at the JSON.parse boundary. Audit 2026-05-17.
+    rawManifest = parseJsonSanitized(fs.readFileSync(manifestPath, "utf-8"));
   } catch (err) {
     logger.warn(
       `Plugin "${spec}" — failed to parse ${MANIFEST_FILE}: ${err instanceof Error ? err.message : String(err)}`,

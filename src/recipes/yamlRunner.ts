@@ -41,6 +41,14 @@ import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { loadConfig as loadPatchworkConfigSync } from "../patchworkConfig.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
 import type { RecipeRunLog } from "../runLog.js";
+/**
+ * Local alias for `sanitizeParsedJson` from `src/sanitizeParsedJson.ts`.
+ * Kept under the old name so the existing callsites in this file don't
+ * need to be renamed. The shared module is the canonical home for the
+ * prototype-pollution scrub — see PR #568 + audit 2026-05-17 + the
+ * comment in that file for full rationale.
+ */
+import { sanitizeParsedJson as sanitizeParsed } from "../sanitizeParsedJson.js";
 import { ensureCmdShim } from "../winShim.js";
 import {
   executeAgent as _executeAgent,
@@ -65,26 +73,6 @@ import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import type { ErrorPolicy } from "./schema.js";
 import { detectSilentFail } from "./stepObservation.js";
-
-/**
- * Recursively strip prototype-pollution keys from a JSON.parse result before
- * it lands in the recipe ctx. JSON.parse itself doesn't mutate Object.prototype
- * (V8 uses defineProperty), but a `__proto__` own-property survives and will
- * pollute via downstream `Object.assign` / deep-merge operations. Agent step
- * output is attacker-controllable (jailbroken model), so scrub at the parse
- * boundary. See feedback_record_string_prototype_walk.md.
- */
-const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-function sanitizeParsed(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sanitizeParsed);
-  if (value === null || typeof value !== "object") return value;
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(value)) {
-    if (DANGEROUS_KEYS.has(key)) continue;
-    out[key] = sanitizeParsed((value as Record<string, unknown>)[key]);
-  }
-  return out;
-}
 
 // Import tool registry and trigger tool self-registration
 import {

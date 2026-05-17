@@ -15,6 +15,7 @@ import {
 import type { InterpreterContext } from "./fp/interpreterContext.js";
 import { VsCodeBackend } from "./fp/interpreterContext.js";
 import { parsePolicy } from "./fp/policyParser.js";
+import { parseJsonSanitized } from "./sanitizeParsedJson.js";
 
 /** Maximum length (chars) of an automation policy prompt template (matches runClaudeTask cap) */
 const MAX_POLICY_PROMPT_CHARS = 32_768;
@@ -807,7 +808,15 @@ export function loadPolicy(filePath: string): AutomationPolicy {
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    // Strip `__proto__` / `constructor` / `prototype` own-property keys
+    // at the parse boundary. Automation policy is operator-supplied via
+    // `--automation-policy <file>`, so it's trusted in normal flows —
+    // but the file ships untrusted in shared-host setups (CI runners,
+    // multi-tenant relays) where any user with write access to the
+    // policy file could otherwise inject prototype properties that
+    // surface in downstream Object.assign / spread merges. Audit
+    // 2026-05-17.
+    parsed = parseJsonSanitized(raw);
   } catch (err) {
     throw new Error(
       `Failed to parse automation policy file "${filePath}": ${err instanceof Error ? err.message : String(err)}`,
