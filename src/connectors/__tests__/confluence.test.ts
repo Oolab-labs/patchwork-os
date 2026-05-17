@@ -152,6 +152,30 @@ describe("handleConfluenceConnect", () => {
   });
 
   describe("SSRF guard on instanceUrl (audit 2026-05-17)", () => {
+    // Isolated PATCHWORK_HOME so the positive case ("accepts
+    // atlassian.net") doesn't leak tokens onto the runner's real $HOME
+    // and break `handleConfluenceTest("returns 400 when not
+    // connected")`. CI repro: PR #577.
+    const ssrfTmpDir = join(
+      os.tmpdir(),
+      `patchwork-confluence-ssrf-${Date.now()}`,
+    );
+    const ssrfHome = join(ssrfTmpDir, ".patchwork");
+
+    beforeEach(() => {
+      mkdirSync(join(ssrfHome, "tokens"), { recursive: true });
+      process.env.PATCHWORK_HOME = ssrfHome;
+      process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    });
+
+    afterEach(() => {
+      delete process.env.PATCHWORK_HOME;
+      delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+      if (existsSync(ssrfTmpDir)) {
+        rmSync(ssrfTmpDir, { recursive: true, force: true });
+      }
+    });
+
     it("rejects http://169.254.169.254 metadata service without hitting fetch", async () => {
       const fetchMock = vi.fn();
       global.fetch = fetchMock as unknown as typeof fetch;

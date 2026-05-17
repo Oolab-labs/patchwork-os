@@ -152,6 +152,30 @@ describe("handleDatadogConnect", () => {
   });
 
   describe("SSRF guard on site (audit 2026-05-17)", () => {
+    // Isolated PATCHWORK_HOME so the success path of `accepts all 6`
+    // doesn't leak tokens onto the runner's real $HOME, which would
+    // make `handleDatadogTest("returns 400 when not connected")`
+    // observe stored tokens it doesn't expect. CI repro: PR #577.
+    const ssrfTmpDir = join(
+      os.tmpdir(),
+      `patchwork-datadog-ssrf-${Date.now()}`,
+    );
+    const ssrfHome = join(ssrfTmpDir, ".patchwork");
+
+    beforeEach(() => {
+      mkdirSync(join(ssrfHome, "tokens"), { recursive: true });
+      process.env.PATCHWORK_HOME = ssrfHome;
+      process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    });
+
+    afterEach(() => {
+      delete process.env.PATCHWORK_HOME;
+      delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+      if (existsSync(ssrfTmpDir)) {
+        rmSync(ssrfTmpDir, { recursive: true, force: true });
+      }
+    });
+
     it("rejects internal-IP-as-site without hitting fetch", async () => {
       const fetchMock = vi.fn();
       global.fetch = fetchMock as unknown as typeof fetch;
