@@ -127,4 +127,73 @@ steps:
     const src = writeRecipe("bad", { name: "x" }); // missing required fields
     expect(() => installRecipeFromFile(src, { recipesDir: dir })).toThrow();
   });
+
+  describe("path-traversal defence (audit 2026-05-17)", () => {
+    it("rejects recipe.name with .. segments at the parser boundary", () => {
+      const src = writeRecipe("attacker", {
+        ...SIMPLE,
+        name: "../../../etc/cron.d/pwn",
+      });
+      const recipesDir = path.join(dir, "recipes");
+      expect(() => installRecipeFromFile(src, { recipesDir })).toThrow(
+        /name must match/,
+      );
+    });
+
+    it("rejects recipe.name with forward-slash separator", () => {
+      const src = writeRecipe("attacker", { ...SIMPLE, name: "foo/bar" });
+      expect(() =>
+        installRecipeFromFile(src, { recipesDir: path.join(dir, "recipes") }),
+      ).toThrow(/name must match/);
+    });
+
+    it("rejects recipe.name with backslash separator (Windows)", () => {
+      const src = writeRecipe("attacker", {
+        ...SIMPLE,
+        name: "foo\\..\\..\\evil",
+      });
+      expect(() =>
+        installRecipeFromFile(src, { recipesDir: path.join(dir, "recipes") }),
+      ).toThrow(/name must match/);
+    });
+
+    it("rejects recipe.name with uppercase chars (kebab-case enforced)", () => {
+      const src = writeRecipe("attacker", { ...SIMPLE, name: "ABC" });
+      expect(() =>
+        installRecipeFromFile(src, { recipesDir: path.join(dir, "recipes") }),
+      ).toThrow(/name must match/);
+    });
+
+    it("rejects recipe.name with underscore (kebab-case enforced)", () => {
+      const src = writeRecipe("attacker", { ...SIMPLE, name: "with_under" });
+      expect(() =>
+        installRecipeFromFile(src, { recipesDir: path.join(dir, "recipes") }),
+      ).toThrow(/name must match/);
+    });
+
+    it("rejects recipe.name starting with hyphen", () => {
+      const src = writeRecipe("attacker", { ...SIMPLE, name: "-leading-dash" });
+      expect(() =>
+        installRecipeFromFile(src, { recipesDir: path.join(dir, "recipes") }),
+      ).toThrow(/name must match/);
+    });
+
+    it("rejects recipe.name longer than 64 chars", () => {
+      const src = writeRecipe("attacker", {
+        ...SIMPLE,
+        name: "a".repeat(65),
+      });
+      expect(() =>
+        installRecipeFromFile(src, { recipesDir: path.join(dir, "recipes") }),
+      ).toThrow(/name must match/);
+    });
+
+    it("accepts canonical kebab-case names", () => {
+      const src = writeRecipe("ok", { ...SIMPLE, name: "morning-brief" });
+      const result = installRecipeFromFile(src, {
+        recipesDir: path.join(dir, "recipes"),
+      });
+      expect(result.action).toBe("created");
+    });
+  });
 });

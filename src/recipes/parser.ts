@@ -1,3 +1,4 @@
+import { RECIPE_NAME_RE } from "./names.js";
 import type { Recipe, Step, Trigger } from "./schema.js";
 
 /**
@@ -23,6 +24,18 @@ export function parseRecipe(raw: unknown): Recipe {
   }
   const r = raw as Record<string, unknown>;
   const name = requireString(r, "name");
+  // Enforce the canonical recipe-name shape at the parse boundary. Without
+  // this, `installRecipeFromFile` would `path.join(recipesDir, ${name}.json)`
+  // with attacker-controlled `name` (registry recipe / bundle install path)
+  // and `../../../etc/cron.d/pwn` would escape the recipes dir. Audit 2026-05-17.
+  // `recipesHttp` already enforces this regex at its own boundaries; this
+  // closes the gap on the install path used by `recipes/install` + bundle install.
+  if (!RECIPE_NAME_RE.test(name)) {
+    throw new RecipeParseError(
+      `name must match ${RECIPE_NAME_RE} (kebab-case, 1-64 chars, alphanumeric or hyphen, starts with [a-z0-9])`,
+      ["name"],
+    );
+  }
   const version = requireString(r, "version");
   const trigger = parseTrigger(r.trigger);
   const stepsRaw = r.steps;
