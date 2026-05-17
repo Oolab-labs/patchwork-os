@@ -2,6 +2,7 @@ import {
   appendFileSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -223,9 +224,14 @@ export class DecisionTraceLog {
         lines = [];
         joined = "";
       }
-      writeFileSync(this.file, joined.length > 0 ? `${joined}\n` : "", {
+      // Atomic write: temp file + rename. A crash / ENOSPC mid-write
+      // would otherwise truncate the entire audit history at the source
+      // path. Matches the pattern used in sessionCheckpoint.write().
+      const tmp = `${this.file}.tmp`;
+      writeFileSync(tmp, joined.length > 0 ? `${joined}\n` : "", {
         mode: 0o600,
       });
+      renameSync(tmp, this.file);
     } catch (err) {
       this.opts.logger?.warn?.(
         `[dtrace-log] rotate failed: ${err instanceof Error ? err.message : String(err)}`,

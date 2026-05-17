@@ -745,4 +745,50 @@ describe("RecipeRunLog.record", () => {
     expect(text).not.toContain('"taskId":"huge"');
     expect(text).toContain('"taskId":"after-drop"');
   });
+
+  it("rotateDisk() leaves no orphaned `.tmp` file on success (atomic rename)", () => {
+    // Atomic-write contract: rotate must write to a sibling `.tmp` and
+    // renameSync it onto the target. Pre-fix, a direct writeFileSync to
+    // the target meant a crash / ENOSPC mid-write truncated the whole
+    // run log. Verify by observable side-effect (no .tmp left behind).
+    const file = path.join(tmp, "runs.jsonl");
+    const fs = require("node:fs") as typeof import("node:fs");
+    // Pre-seed > MAX_PERSIST_BYTES with realistic rows so the next
+    // append triggers rotate. Use 64KB filler rows ×50 = ~3.2MB.
+    const filler = JSON.stringify({
+      seq: 0,
+      taskId: "seed",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+      stepResults: [
+        {
+          id: "filler",
+          status: "ok",
+          durationMs: 1,
+          registrySnapshot: { junk: "x".repeat(64 * 1024) },
+        },
+      ],
+    });
+    fs.writeFileSync(file, `${Array(50).fill(filler).join("\n")}\n`);
+
+    const log = new RecipeRunLog({ dir: tmp });
+    log.appendDirect({
+      taskId: "after-rotate",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 5,
+      startedAt: 5,
+      doneAt: 6,
+      durationMs: 1,
+    });
+
+    expect(fs.statSync(file).size).toBeLessThan(1024 * 1024);
+    expect(fs.readFileSync(file, "utf8")).toContain('"taskId":"after-rotate"');
+    expect(fs.existsSync(`${file}.tmp`)).toBe(false);
+  });
 });
