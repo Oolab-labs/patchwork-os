@@ -1,6 +1,6 @@
 # Claude IDE Bridge — Platform Documentation
 
-180 tools · 36 MCP prompts · 20 automation hooks · 19 connectors (Slack, GitHub, Linear, Gmail, Google Calendar, Google Drive, Sentry, Notion, Confluence, Datadog, HubSpot, Intercom, Stripe, Zendesk, Jira, PagerDuty, Discord, Asana, GitLab — see [README](../README.md) for canonical list) — current version in [package.json](../package.json)
+177 tools · 36 MCP prompts · 20 automation hooks · 19 connectors (Slack, GitHub, Linear, Gmail, Google Calendar, Google Drive, Sentry, Notion, Confluence, Datadog, HubSpot, Intercom, Stripe, Zendesk, Jira, PagerDuty, Discord, Asana, GitLab — see [README](../README.md) for canonical list) — current version in [package.json](../package.json)
 
 > **Deployment model:** Remote deployment (VPS + reverse proxy, systemd service, `--bind 0.0.0.0 --issuer-url <https-url>`) is a first-class, production-ready pattern and is the recommended architecture for team or cloud access. Local mode (`127.0.0.1`, no `--issuer-url`) is for individual development.
 

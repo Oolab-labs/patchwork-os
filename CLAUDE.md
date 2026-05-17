@@ -4,7 +4,7 @@
 
 Comply with all docs in `/documents/`. Consult before changes:
 
-- **[documents/platform-docs.md](documents/platform-docs.md)** — Full feature reference (180 tools registered). Consult before adding/modifying features. Authoritative count: `node scripts/audit-lsp-tools.mjs` Stats line.
+- **[documents/platform-docs.md](documents/platform-docs.md)** — Full feature reference (177 tools registered). Consult before adding/modifying features. Authoritative count: `node scripts/audit-lsp-tools.mjs` Stats line.
 - **[documents/prompts-reference.md](documents/prompts-reference.md)** — All 36 MCP prompts reference.
 - **[documents/styleguide.md](documents/styleguide.md)** — Code conventions, UI patterns, output formats. Follow for all new tools, handlers, responses.
 - **[documents/roadmap.md](documents/roadmap.md)** — Development direction. Check before exploratory work.
