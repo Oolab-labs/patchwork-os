@@ -46,7 +46,24 @@ export interface PendingApproval {
   approvalToken?: string;
 }
 
-export type ApprovalDecision = "approved" | "rejected" | "expired";
+/**
+ * Approval-decision discriminant.
+ *
+ * - `approved` / `rejected` — explicit human decision via /approve, /reject,
+ *   or the phone-path approval token.
+ * - `expired` — TTL fired without any decision (5-min window by default).
+ * - `cancelled` — the originating client (recipe runner, agent task)
+ *   abandoned the request before any decision was reached. Distinguishing
+ *   this from `expired` matters for audit / phone UX: a `cancelled`
+ *   decision should NOT count as a real approval/denial in the decision
+ *   trace, and the phone-side notification can clear its prompt instead
+ *   of leaving a stale "tap to approve" card. Audit 2026-05-17.
+ */
+export type ApprovalDecision =
+  | "approved"
+  | "rejected"
+  | "expired"
+  | "cancelled";
 
 interface Entry extends PendingApproval {
   resolve: (d: ApprovalDecision) => void;
@@ -81,6 +98,43 @@ interface Entry extends PendingApproval {
  * order hash the same. Returns "[uncloneable]" if input contains circular
  * references — those won't dedup, but the queue still works.
  */
+/**
+ * Per-caller AbortSignal wiring for dedup-joined callers.
+ *
+ * When a fresh `request()` is deduped onto an existing entry, the
+ * caller's signal must NOT cancel the underlying queue entry — that
+ * would penalise the original caller (and any other dedup-joined
+ * callers) for one abandonment. Instead, fire just this caller's
+ * promise resolver with "cancelled", leaving the entry pending for
+ * everyone else.
+ *
+ * Implementation: stash a per-caller resolver, splice it out of the
+ * entry's `pendingPromises` list on abort.
+ */
+function wireAbortSignalForCaller(
+  signal: AbortSignal | undefined,
+  callerPromise: Promise<ApprovalDecision>,
+  entry: Entry,
+): void {
+  if (!signal) return;
+  // The resolver is the most-recently-pushed promise on the entry —
+  // we just pushed it above. Stash a reference for cancellation.
+  const resolver = entry.pendingPromises[entry.pendingPromises.length - 1];
+  if (!resolver) return;
+  const onAbort = () => {
+    const idx = entry.pendingPromises.indexOf(resolver);
+    if (idx >= 0) entry.pendingPromises.splice(idx, 1);
+    resolver("cancelled");
+  };
+  if (signal.aborted) {
+    Promise.resolve().then(onAbort);
+  } else {
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
+  // Silence "unused" — the promise reference is held for type clarity.
+  void callerPromise;
+}
+
 function canonicalJson(value: unknown): string {
   const seen = new WeakSet<object>();
   const stringify = (v: unknown): unknown => {
@@ -139,7 +193,7 @@ export class ApprovalQueue {
 
   request(
     input: Omit<PendingApproval, "callId" | "requestedAt">,
-    opts: { withToken?: boolean } = {},
+    opts: { withToken?: boolean; signal?: AbortSignal } = {},
   ): {
     callId: string;
     approvalToken?: string;
@@ -163,6 +217,12 @@ export class ApprovalQueue {
         const promise = new Promise<ApprovalDecision>((res) => {
           existing.pendingPromises.push(res);
         });
+        // Dedup-joined callers register their own AbortSignal so abandoning
+        // one caller's recipe doesn't cancel the others' parallel runs.
+        // Resolving with "cancelled" wakes only the abandoning caller's
+        // promise — the entry stays alive for the original caller.
+        // See `wireAbortSignalForCaller` for the semantic.
+        wireAbortSignalForCaller(opts.signal, promise, existing);
         return {
           callId: existing.callId,
           approvalToken: existing.approvalToken,
@@ -207,7 +267,41 @@ export class ApprovalQueue {
     });
     this.inflight.set(inflightKey, callId);
     this.notify();
+
+    // Wire the originating caller's AbortSignal — when fired, the
+    // whole entry transitions to "cancelled" (cleared from queue,
+    // promise + all dedup-joined promises resolve). Audit 2026-05-17:
+    // recipe cancellation used to leave the entry pending for the full
+    // TTL, with the phone-side card still live and tap-decisions
+    // recorded in the decision trace despite no tool execution.
+    if (opts.signal) {
+      const onAbort = () => {
+        this.cancel(callId);
+      };
+      if (opts.signal.aborted) {
+        // Already aborted before request returned — resolve synchronously.
+        // Use a microtask so the caller's `promise` is observable first.
+        Promise.resolve().then(onAbort);
+      } else {
+        opts.signal.addEventListener("abort", onAbort, { once: true });
+      }
+    }
+
     return { callId, approvalToken, promise };
+  }
+
+  /**
+   * Cancel a pending approval entry. Resolves the originating caller's
+   * promise + every dedup-joined caller's promise with `"cancelled"`.
+   * Removes the entry from the queue (frees the inflight slot) and
+   * records the outcome in `recentlyDecided` so the HTTP layer can
+   * surface "already_decided" if a stale phone-tap arrives later.
+   *
+   * Returns `true` when an entry was found and cancelled, `false` when
+   * the callId is unknown (idempotent — safe to call multiple times).
+   */
+  cancel(callId: string): boolean {
+    return this.resolveEntry(callId, "cancelled");
   }
 
   /**
