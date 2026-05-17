@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { bridgeFetch, findBridge, resolveBridgeUrl } from "@/lib/bridge";
+import { requireSameOrigin } from "@/lib/csrf";
 import { isDemoModeServer } from "@/lib/demoModeServer";
 import { mockBridgeResponse } from "@/lib/mockData";
 import {
@@ -119,13 +120,8 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
   }
 
   if (req.method !== "GET" && req.method !== "HEAD") {
-    const sfs = req.headers.get("sec-fetch-site");
-    if (sfs && sfs !== "same-origin" && sfs !== "none") {
-      return new Response(JSON.stringify({ error: "CSRF check failed" }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const guard = requireSameOrigin(req);
+    if (guard) return guard;
   }
 
   // In demo mode short-circuit to fixture data instead of hitting a bridge

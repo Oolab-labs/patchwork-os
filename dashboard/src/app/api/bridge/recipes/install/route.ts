@@ -1,4 +1,5 @@
 import { bridgeFetch } from "@/lib/bridge";
+import { requireSameOrigin } from "@/lib/csrf";
 import { isDemoModeServer } from "@/lib/demoModeServer";
 import {
   BRIDGE_BODY_CAPS,
@@ -22,10 +23,8 @@ function jsonError(
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const sfs = req.headers.get("sec-fetch-site");
-  if (sfs && sfs !== "same-origin" && sfs !== "none") {
-    return jsonError(403, "CSRF check failed");
-  }
+  const guard = requireSameOrigin(req);
+  if (guard) return guard;
 
   if (await isDemoModeServer()) {
     return jsonError(
