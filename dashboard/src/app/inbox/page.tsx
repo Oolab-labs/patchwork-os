@@ -405,7 +405,6 @@ export default function InboxPage() {
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [seenNames] = useState<Set<string>>(() => new Set());
-  const [replayingFor, setReplayingFor] = useState<string | null>(null);
   const toast = useToast();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detailRef = useRef<HTMLDivElement | null>(null);
@@ -928,49 +927,19 @@ const filteredItems = items.filter((item) => {
                           type="button"
                           className="btn sm primary"
                           style={{ background: "var(--orange)", border: "none", fontSize: "var(--fs-xs)" }}
-                          disabled={replayingFor === selected.name}
-                          onClick={async () => {
-                            const itemName = selected.name;
-                            setReplayingFor(itemName);
-                            try {
-                              const res = await fetch(
-                                apiPath(`/api/bridge/recipes/${encodeURIComponent(recipeNameForSelected)}/run`),
-                                { method: "POST" },
-                              );
-                              if (!res.ok) {
-                                const text = await res.text().catch(() => res.statusText);
-                                // Audit 2026-05-17 (#600): the bridge
-                                // returns 400 with a 'vars' / 'required'
-                                // message when the recipe declares vars
-                                // that the empty body didn't supply.
-                                // Route the user to the Recipes page Run
-                                // button (which has the vars-input modal)
-                                // instead of a generic "Replay failed"
-                                // toast. Restoring full inline vars input
-                                // here is tracked separately.
-                                const looksLikeMissingVars =
-                                  res.status === 400 &&
-                                  /\bvars?\b|required/i.test(text);
-                                if (looksLikeMissingVars) {
-                                  toast.error(
-                                    `Recipe needs vars — open from /recipes to fill them in.`,
-                                  );
-                                } else {
-                                  toast.error(`Replay failed: ${text || res.status}`);
-                                }
-                              } else {
-                                toast.success(`Replayed “${recipeNameForSelected}”`);
-                              }
-                            } catch (e) {
-                              toast.error(e instanceof Error ? e.message : String(e));
-                            } finally {
-                              setTimeout(() => {
-                                setReplayingFor((cur) => (cur === itemName ? null : cur));
-                              }, 2000);
-                            }
+                          // #600: route to /recipes?run=<name> so the user
+                          // lands on the recipe with its vars-input modal
+                          // already open. Previously this POSTed directly
+                          // and silently 400'd on any recipe with required
+                          // vars (which is most of them). Deep-link is
+                          // consumed by the recipes page useEffect on load.
+                          onClick={() => {
+                            router.push(
+                              `/recipes?run=${encodeURIComponent(recipeNameForSelected)}`,
+                            );
                           }}
                         >
-                          {replayingFor === selected.name ? "Running…" : "Replay recipe"}
+                          Replay recipe
                         </button>
                         <a
                           href={`/traces?q=${encodeURIComponent(recipeNameForSelected)}`}

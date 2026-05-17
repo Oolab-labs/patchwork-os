@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { apiPath } from "@/lib/api";
@@ -578,6 +579,13 @@ export default function RecipesPage() {
   const [modalRunning, setModalRunning] = useState(false);
   const [search, setSearch] = useState("");
   const toast = useToast();
+  // #600: deep-link support so /recipes?run=<name> auto-opens the
+  // RunModal once recipes are loaded. Used by the Inbox Replay
+  // button so users land on the recipe with its vars-input modal
+  // already open instead of getting a silent 400 for missing vars.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const deepLinkConsumedRef = useRef(false);
 
   const load = React.useCallback(async () => {
     try {
@@ -675,6 +683,28 @@ export default function RecipesPage() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [load]);
+
+  // #600: deep-link consumer. Fires once after recipes load if the URL
+  // has ?run=<name>. Looks up the recipe, opens the RunModal, then
+  // strips the param so a back-navigation doesn't re-open the modal.
+  // Silent no-op if the named recipe isn't installed — the user lands
+  // on /recipes and can see the empty state / search for it.
+  useEffect(() => {
+    if (deepLinkConsumedRef.current) return;
+    const wantRun = searchParams.get("run");
+    if (!wantRun) return;
+    if (!recipes) return; // wait for first load
+    const match = recipes.find((r) => r.name === wantRun);
+    if (match) {
+      setModal({ recipe: match });
+      setModalRunning(false);
+    } else {
+      toast.error(`Recipe '${wantRun}' is not installed.`);
+    }
+    deepLinkConsumedRef.current = true;
+    // Drop the param so refresh / back-nav doesn't re-trigger.
+    router.replace(window.location.pathname);
+  }, [recipes, searchParams, router, toast]);
 
   async function executeRun(name: string, vars?: Record<string, string>) {
     setRunning((p) => ({ ...p, [name]: "running…" }));
