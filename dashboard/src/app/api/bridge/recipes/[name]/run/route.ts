@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
+import { requireSameOrigin } from "@/lib/csrf";
 import { isDemoModeServer } from "@/lib/demoModeServer";
 import {
   BRIDGE_BODY_CAPS,
@@ -17,13 +18,8 @@ export async function POST(
   req: NextRequest,
   ctx: RouteContext,
 ): Promise<Response> {
-  const sfs = req.headers.get("sec-fetch-site");
-  if (sfs && sfs !== "same-origin" && sfs !== "none") {
-    return new Response(JSON.stringify({ error: "CSRF check failed" }), {
-      status: 403,
-      headers: { "content-type": "application/json" },
-    });
-  }
+  const guard = requireSameOrigin(req);
+  if (guard) return guard;
   const { name } = await ctx.params;
   if (await isDemoModeServer()) {
     return new Response(

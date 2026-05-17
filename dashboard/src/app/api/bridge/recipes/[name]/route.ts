@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
+import { requireSameOrigin } from "@/lib/csrf";
 import { isDemoModeServer } from "@/lib/demoModeServer";
 import {
   BRIDGE_BODY_CAPS,
@@ -51,13 +52,8 @@ async function forwardWithMethod(
   ctx: RouteContext,
   method: "PUT" | "PATCH",
 ): Promise<Response> {
-  const sfs = req.headers.get("sec-fetch-site");
-  if (sfs && sfs !== "same-origin" && sfs !== "none") {
-    return new Response(JSON.stringify({ error: "CSRF check failed" }), {
-      status: 403,
-      headers: { "content-type": "application/json" },
-    });
-  }
+  const guard = requireSameOrigin(req);
+  if (guard) return guard;
   if (await isDemoModeServer()) return demoOk();
   const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.content);
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.content);
@@ -100,13 +96,8 @@ export async function DELETE(
   req: NextRequest,
   ctx: RouteContext,
 ): Promise<Response> {
-  const sfs = req.headers.get("sec-fetch-site");
-  if (sfs && sfs !== "same-origin" && sfs !== "none") {
-    return new Response(JSON.stringify({ error: "CSRF check failed" }), {
-      status: 403,
-      headers: { "content-type": "application/json" },
-    });
-  }
+  const guard = requireSameOrigin(req);
+  if (guard) return guard;
   if (await isDemoModeServer()) return demoOk();
   try {
     const { name } = await ctx.params;
