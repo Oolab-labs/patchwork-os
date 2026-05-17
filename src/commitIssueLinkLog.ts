@@ -81,6 +81,14 @@ export class CommitIssueLinkLog {
   private readonly file: string;
   private readonly memoryCap: number;
   private readonly now: () => number;
+  /**
+   * Highest file size seen so far. ADR-0007 tail-on-read: every
+   * `query()` re-stats the file; if it grew, we re-parse and merge
+   * any rows with `seq > this.seq` (so a sibling bridge's appends
+   * become visible without holding a separate offset cursor). Matches
+   * the pattern already in `src/runLog.ts:syncFromDisk`.
+   */
+  private lastFileSize = 0;
 
   constructor(private readonly opts: LinkLogOptions) {
     this.file = path.join(opts.dir, "commit_issue_links.jsonl");
@@ -138,6 +146,9 @@ export class CommitIssueLinkLog {
   }
 
   query(q: LinkQuery = {}): CommitIssueLink[] {
+    // ADR-0007 tail-on-read: pick up any rows a sibling bridge appended
+    // since our last query / load. statSync-only when no growth.
+    this.syncFromDisk();
     let out = this.links;
     if (q.sha) {
       const needle = q.sha;
@@ -196,6 +207,17 @@ export class CommitIssueLinkLog {
       // rationale; same pattern.
       withFileLockSync(this.file, () => {
         appendFileSync(this.file, `${JSON.stringify(link)}\n`, { mode: 0o600 });
+        // Advance the tail-on-read cursor past our own write so the next
+        // query() doesn't re-read the row from disk (we already pushed it
+        // to this.links in `record`). The seq-gt guard in syncFromDisk
+        // would also defend, but bumping the size cursor lets that path
+        // short-circuit on `size <= lastFileSize` and skip a readFileSync.
+        try {
+          this.lastFileSize = statSync(this.file).size;
+        } catch {
+          /* ENOENT after a successful append is very unlikely; if it
+             happens the next syncFromDisk re-tries cleanly. */
+        }
       });
     } catch (err) {
       this.opts.logger?.warn?.(
@@ -233,6 +255,15 @@ export class CommitIssueLinkLog {
       writeFileAtomicSync(this.file, joined.length > 0 ? `${joined}\n` : "", {
         mode: 0o600,
       });
+      // Refresh the tail-on-read cursor to the post-rotation file size.
+      // Without this, the next syncFromDisk() would see `size <
+      // lastFileSize`, skip the read entirely, and miss every row a
+      // sibling bridge has appended since.
+      try {
+        this.lastFileSize = statSync(this.file).size;
+      } catch {
+        this.lastFileSize = 0;
+      }
     } catch (err) {
       this.opts.logger?.warn?.(
         `[linklog] rotate failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -240,10 +271,50 @@ export class CommitIssueLinkLog {
     }
   }
 
-  private loadExisting(): void {
+  /**
+   * Incrementally read any new lines appended to the file since last
+   * load. Matches the runLog `syncFromDisk` pattern: re-read whole
+   * file, but use the `seq > this.seq` guard so existing rows aren't
+   * re-pushed. Tail-on-read (ADR-0007) — sibling-bridge appends are
+   * picked up at the next `query()`.
+   */
+  private syncFromDisk(): void {
     try {
-      statSync(this.file);
+      const size = statSync(this.file).size;
+      if (size <= this.lastFileSize) return;
+      const raw = readFileSync(this.file, "utf-8");
+      for (const line of raw.split("\n")) {
+        if (!line) continue;
+        try {
+          const parsed = JSON.parse(line) as CommitIssueLink;
+          if (
+            typeof parsed.seq !== "number" ||
+            typeof parsed.sha !== "string" ||
+            typeof parsed.ref !== "string"
+          ) {
+            continue;
+          }
+          if (parsed.seq > this.seq) {
+            this.seq = parsed.seq;
+            this.links.push(parsed);
+            if (this.links.length > this.memoryCap) this.links.shift();
+          }
+        } catch {
+          /* skip malformed */
+        }
+      }
+      this.lastFileSize = size;
     } catch {
+      /* file may not exist yet */
+    }
+  }
+
+  private loadExisting(): void {
+    let size: number;
+    try {
+      size = statSync(this.file).size;
+    } catch {
+      this.lastFileSize = 0;
       return;
     }
     let raw: string;
@@ -272,6 +343,7 @@ export class CommitIssueLinkLog {
         // skip malformed line
       }
     }
+    this.lastFileSize = size;
     if (this.links.length > this.memoryCap) {
       this.links.splice(0, this.links.length - this.memoryCap);
     }

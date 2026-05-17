@@ -1,7 +1,10 @@
 import {
   appendFileSync,
+  closeSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  readSync,
   renameSync,
   statSync,
   writeFileSync,
@@ -92,6 +95,16 @@ export class DecisionTraceLog {
   private readonly file: string;
   private readonly memoryCap: number;
   private readonly now: () => number;
+  /**
+   * Byte offset into `file` up to which we've already loaded rows into
+   * `this.traces`. ADR-0007 tail-on-read: every `query()` re-stats the
+   * file and reads the delta `[lastReadOffset, size)`, so a sibling
+   * bridge's appends become visible to this process within one query
+   * — without holding the whole log in memory or paying read cost on
+   * every append. Single-process operation is unaffected (offset is
+   * always at EOF so the stat → no-grow path short-circuits).
+   */
+  private lastReadOffset = 0;
 
   constructor(private readonly opts: DecisionTraceLogOptions) {
     this.file = path.join(opts.dir, "decision_traces.jsonl");
@@ -151,6 +164,10 @@ export class DecisionTraceLog {
   }
 
   query(q: DecisionQuery = {}): DecisionTrace[] {
+    // ADR-0007 tail-on-read: pick up any rows a sibling bridge appended
+    // since our last query / load. Single-process operation pays only a
+    // `statSync` per query — read-delta is empty when `size === offset`.
+    this.tailDisk();
     let out = this.traces;
     if (q.ref) {
       const needle = q.ref;
@@ -199,6 +216,17 @@ export class DecisionTraceLog {
         appendFileSync(this.file, `${JSON.stringify(trace)}\n`, {
           mode: 0o600,
         });
+        // Advance the tail-on-read offset past our own write so the next
+        // query() doesn't re-read this row from disk and add a duplicate
+        // to this.traces (we already pushed it in `record` above).
+        // ADR-0007 tail-on-read.
+        try {
+          this.lastReadOffset = statSync(this.file).size;
+        } catch {
+          /* statSync ENOENT after a successful append would be very
+             strange; the next tailDisk() will fall into the
+             shrank-or-missing path and reload cleanly. */
+        }
       });
     } catch (err) {
       this.opts.logger?.warn?.(
@@ -252,9 +280,12 @@ export class DecisionTraceLog {
   }
 
   private loadExisting(): void {
+    let size: number;
     try {
-      statSync(this.file);
+      size = statSync(this.file).size;
     } catch {
+      // File doesn't exist yet — first call will create it.
+      this.lastReadOffset = 0;
       return;
     }
     let raw: string;
@@ -266,6 +297,71 @@ export class DecisionTraceLog {
       );
       return;
     }
+    this.consumeRawJsonl(raw);
+    this.lastReadOffset = size;
+    if (this.traces.length > this.memoryCap) {
+      this.traces.splice(0, this.traces.length - this.memoryCap);
+    }
+  }
+
+  /**
+   * Tail-on-read (ADR-0007). Read any rows appended to the file since
+   * `lastReadOffset` and merge them into the in-memory ring. Cheap when
+   * nothing changed (one `statSync`); on a fresh sibling write we read
+   * just the delta. Torn rows (mid-write race) JSON.parse-fail and are
+   * skipped — but the cross-process flock around appends (`#584`)
+   * eliminates that failure mode in practice.
+   */
+  private tailDisk(): void {
+    let size: number;
+    try {
+      size = statSync(this.file).size;
+    } catch {
+      // File doesn't exist (yet) — nothing to tail.
+      return;
+    }
+    if (size === this.lastReadOffset) return;
+    if (size < this.lastReadOffset) {
+      // File shrank — rotated or truncated by a sibling. Fall back to a
+      // full reload so we pick up the post-rotate state cleanly.
+      this.traces.length = 0;
+      this.lastReadOffset = 0;
+      this.loadExisting();
+      return;
+    }
+    // Read only the new bytes.
+    let buf: Buffer;
+    try {
+      const fd = openSync(this.file, "r");
+      try {
+        const len = size - this.lastReadOffset;
+        buf = Buffer.alloc(len);
+        readSync(fd, buf, 0, len, this.lastReadOffset);
+      } finally {
+        closeSync(fd);
+      }
+    } catch (err) {
+      this.opts.logger?.warn?.(
+        `[dtrace-log] tail read failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
+    this.consumeRawJsonl(buf.toString("utf-8"));
+    this.lastReadOffset = size;
+    if (this.traces.length > this.memoryCap) {
+      this.traces.splice(0, this.traces.length - this.memoryCap);
+    }
+  }
+
+  /**
+   * Parse a JSONL chunk and append each well-formed trace into the
+   * in-memory ring. Shared between `loadExisting` (initial load) and
+   * `tailDisk` (incremental merges). Skips malformed rows silently —
+   * the cross-process flock around appends (#584) makes those rare,
+   * and the alternative (throwing) would lose every later row in the
+   * chunk on one bad line.
+   */
+  private consumeRawJsonl(raw: string): void {
     for (const line of raw.split("\n")) {
       if (!line) continue;
       try {
@@ -283,9 +379,6 @@ export class DecisionTraceLog {
       } catch {
         // skip malformed row
       }
-    }
-    if (this.traces.length > this.memoryCap) {
-      this.traces.splice(0, this.traces.length - this.memoryCap);
     }
   }
 }

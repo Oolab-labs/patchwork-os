@@ -143,4 +143,42 @@ describe("CommitIssueLinkLog", () => {
     expect(log.query({ limit: 3 })).toHaveLength(3);
     expect(log.query({ limit: 0 })).toHaveLength(1); // clamped to min 1
   });
+
+  // ─── Tail-on-read (ADR-0007) ───────────────────────────────────────────
+  it("tail-on-read: query() picks up rows appended by a sibling bridge", () => {
+    const file = path.join(dir, "commit_issue_links.jsonl");
+    const fs = require("node:fs") as typeof import("node:fs");
+
+    const a = new CommitIssueLinkLog({ dir });
+    a.record({ ...base(), sha: "sha-self-1" });
+
+    // Simulate a sibling bridge appending directly. Higher seq so the
+    // dedup guard (`seq > this.seq`) accepts the row.
+    const externalRow = JSON.stringify({
+      seq: 999,
+      createdAt: 1,
+      sha: "sha-sibling",
+      ref: "#sibling",
+      linkType: "fixes",
+      resolved: true,
+      workspace: "/ws/sibling",
+      subject: "from sibling",
+    });
+    fs.appendFileSync(file, `${externalRow}\n`);
+
+    const shas = a.query({}).map((r) => r.sha);
+    expect(shas).toContain("sha-sibling");
+    expect(shas).toContain("sha-self-1");
+  });
+
+  it("tail-on-read: self-appends don't get re-loaded as duplicates", () => {
+    const log = new CommitIssueLinkLog({ dir });
+    log.record({ ...base(), sha: "sha-x" });
+    log.record({ ...base(), sha: "sha-y" });
+    const first = log.query({}).map((r) => r.sha);
+    const second = log.query({}).map((r) => r.sha);
+    expect(first).toEqual(second);
+    expect(first.filter((s) => s === "sha-x")).toHaveLength(1);
+    expect(first.filter((s) => s === "sha-y")).toHaveLength(1);
+  });
 });
