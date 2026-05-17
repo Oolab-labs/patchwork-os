@@ -169,7 +169,13 @@ export interface ValidationIssue {
  * shape we don't unwrap (rare in practice for recipes).
  */
 export function extractYamlName(yaml: string): string | null {
-  const match = /^name:\s*("([^"]+)"|'([^']+)'|([^\s#]+))\s*$/m.exec(yaml);
+  // Trailing YAML comments (`name: foo # primary`) are valid and common
+  // in production recipes. The previous regex required `\s*$` directly
+  // after the value, so any `# comment` caused a silent null return
+  // (downstream treated as "no name in YAML" — misleading error).
+  // Now allow optional `[\s]*#.*` after the value, before EOL.
+  const match =
+    /^name:\s*("([^"]+)"|'([^']+)'|([^\s#]+))\s*(?:#.*)?$/m.exec(yaml);
   if (!match) return null;
   return match[2] ?? match[3] ?? match[4] ?? null;
 }

@@ -194,6 +194,38 @@ describe("validateSubmission", () => {
   });
 });
 
+describe("extractYamlName — trailing-comment tolerance (audit 2026-05-17)", () => {
+  it("extracts name with trailing space-comment", () => {
+    expect(extractYamlName("name: morning-brief # primary")).toBe(
+      "morning-brief",
+    );
+  });
+
+  it("extracts name with trailing tab-comment", () => {
+    expect(extractYamlName("name: foo\t# tabbed")).toBe("foo");
+  });
+
+  it("extracts double-quoted name with trailing comment", () => {
+    expect(extractYamlName('name: "morning-brief" # primary')).toBe(
+      "morning-brief",
+    );
+  });
+
+  it("extracts single-quoted name with trailing comment", () => {
+    expect(extractYamlName("name: 'morning-brief' # primary")).toBe(
+      "morning-brief",
+    );
+  });
+
+  it("still extracts a plain name without comment", () => {
+    expect(extractYamlName("name: morning-brief")).toBe("morning-brief");
+  });
+
+  it("returns null when name field is absent", () => {
+    expect(extractYamlName("version: '1.0'")).toBeNull();
+  });
+});
+
 describe("STARTER_RECIPE_YAML", () => {
   it("declares the apiVersion the registry expects", () => {
     expect(STARTER_RECIPE_YAML).toContain("apiVersion: patchwork.sh/v1");

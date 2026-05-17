@@ -135,13 +135,23 @@ export default function BundleInstallPanel({
       });
       const body = (await res.json()) as BundleInstallResponse;
       setResult(body);
-      if (!res.ok && (!body.installed || body.installed.length === 0)) {
+      // Render the headline by partial-completion AND by HTTP status:
+      //   - !res.ok with no installed items → full failure (red banner).
+      //   - !res.ok with SOME installed items → partial (also surface
+      //     the bridge error message — pre-fix this branch silently fell
+      //     through to the green "Installed N" headline despite the 5xx).
+      //   - res.ok → success path; bump the counter.
+      const hasInstalled = !!body.installed && body.installed.length > 0;
+      if (!res.ok) {
         if (res.status === 401) setBridgeStatus("unauth");
         else if (res.status >= 500) setBridgeStatus("offline");
         setErr(body.error ?? `Install failed (HTTP ${res.status})`);
-      } else if (body.installed && body.installed.length > 0) {
-        // Refresh the installed-count headline so the "X of Y already
-        // installed" line catches up with the just-completed install.
+        // Still bump the count when partial — those recipes ARE
+        // installed even if the bundle as a whole errored.
+        if (hasInstalled) {
+          setInstalledCount((prev) => prev + body.installed!.length);
+        }
+      } else if (hasInstalled) {
         setInstalledCount((prev) => prev + body.installed!.length);
       }
     } catch (e) {
@@ -243,7 +253,7 @@ export default function BundleInstallPanel({
         )}
         {!allInstalled && bridgeStatus === "unauth" && (
           <Link
-            href="/login?next=/dashboard/marketplace"
+            href={`/login?next=/dashboard/marketplace/bundle/${name}`}
             className="btn sm"
             style={{ textDecoration: "none", flexShrink: 0 }}
           >
