@@ -324,8 +324,9 @@ describe("ClaudeOrchestrator — persistence", () => {
     // writeFileAtomic helper uses `fs.promises.writeFile` (via the
     // namespace import of node:fs), not the standalone node:fs/promises
     // module — so read the mock from the `node:fs` namespace's promises.
-    mockWriteFile = ((fsm.default as { promises: Record<string, MockInstance> })
-      .promises.writeFile ?? fsp.writeFile) as MockInstance;
+    mockWriteFile = ((
+      fsm.default as unknown as { promises: Record<string, MockInstance> }
+    ).promises.writeFile ?? fsp.writeFile) as MockInstance;
     mockReadFile = fsp.readFile as unknown as MockInstance;
     mockWriteFileSync = (fsm.default as unknown as Record<string, MockInstance>)
       .writeFileSync;
