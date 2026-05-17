@@ -214,6 +214,7 @@ interface PendingAuth {
 }
 
 const pending = new Map<string, PendingAuth>();
+const PENDING_MAX_ENTRIES = 1000;
 
 function gcPending(): void {
   const now = Date.now();
@@ -304,6 +305,11 @@ export async function startAuthorize(
 
   const verifier = config.skipPkce ? undefined : genVerifier();
   const state = base64url(crypto.randomBytes(24));
+  if (pending.size >= PENDING_MAX_ENTRIES) {
+    throw new Error(
+      `${config.vendor}: pending-auth store full (cap=${PENDING_MAX_ENTRIES}); retry later`,
+    );
+  }
   pending.set(state, {
     vendor: config.vendor,
     verifier,
@@ -485,6 +491,23 @@ async function doRefresh(
   const tokenEndpoint = config.tokenEndpoint;
   if (!refreshToken || !tokenEndpoint) return file;
 
+  // Refuse to send the refresh token to a non-HTTPS endpoint. A vendor
+  // config that derives tokenEndpoint from environment / discovery could
+  // otherwise be tricked into POSTing the secret to an attacker.
+  let endpointUrl: URL;
+  try {
+    endpointUrl = new URL(tokenEndpoint);
+  } catch {
+    throw new Error(
+      `${file.vendor}: token refresh failed (invalid token_endpoint). Re-authorize via GET /connections/${file.vendor}/authorize`,
+    );
+  }
+  if (endpointUrl.protocol !== "https:") {
+    throw new Error(
+      `${file.vendor}: token refresh refused — token_endpoint must be https`,
+    );
+  }
+
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: refreshToken,
@@ -501,22 +524,69 @@ async function doRefresh(
     body: body.toString(),
   });
   if (!res.ok) {
+    // Distinguish permanent (refresh token revoked) from transient failures.
+    // Permanent → drop the stored token so the next call surfaces a clean
+    // "not connected" error and the user is prompted to re-auth.
+    let errorBody: { error?: string } = {};
+    try {
+      errorBody = (await res.json()) as { error?: string };
+    } catch {
+      // non-JSON error body — fall through
+    }
+    const refreshTokenIsInvalid =
+      res.status === 401 ||
+      (res.status === 400 && errorBody.error === "invalid_grant");
+    if (refreshTokenIsInvalid) {
+      deleteTokenFile(file.vendor);
+    }
     throw new Error(
       `${file.vendor}: token refresh failed (${res.status}). Re-authorize via GET /connections/${file.vendor}/authorize`,
     );
   }
-  const json = (await res.json()) as {
-    access_token: string;
-    refresh_token?: string;
-    expires_in?: number;
+  let json: {
+    access_token?: unknown;
+    refresh_token?: unknown;
+    expires_in?: unknown;
   };
+  try {
+    json = (await res.json()) as typeof json;
+  } catch {
+    // Malformed success body — treat as transient
+    throw new Error(
+      `${file.vendor}: token refresh returned malformed JSON; keeping existing token`,
+    );
+  }
+  // Validate the success body before adopting. A 200 with `{}` or
+  // `{access_token: null}` would otherwise persist `Bearer undefined`.
+  if (typeof json.access_token !== "string" || json.access_token.length === 0) {
+    throw new Error(
+      `${file.vendor}: token refresh returned no access_token; keeping existing token`,
+    );
+  }
+  let expiresAt: number | undefined;
+  if (json.expires_in !== undefined) {
+    const ONE_YEAR_S = 60 * 60 * 24 * 365;
+    if (
+      typeof json.expires_in !== "number" ||
+      !Number.isFinite(json.expires_in) ||
+      json.expires_in <= 0 ||
+      json.expires_in > ONE_YEAR_S
+    ) {
+      throw new Error(
+        `${file.vendor}: token refresh returned invalid expires_in; keeping existing token`,
+      );
+    }
+    expiresAt = Date.now() + json.expires_in * 1000;
+  }
+  const newRefreshToken =
+    typeof json.refresh_token === "string" && json.refresh_token.length > 0
+      ? json.refresh_token
+      : file.refresh_token;
   const updated: McpTokenFile = {
     ...file,
     access_token: json.access_token,
-    refresh_token: json.refresh_token ?? file.refresh_token,
-    expires_at: json.expires_in
-      ? Date.now() + json.expires_in * 1000
-      : undefined,
+    refresh_token: newRefreshToken,
+    expires_at: expiresAt,
   };
   saveTokenFile(updated);
   return updated;
@@ -568,10 +638,19 @@ export async function revoke(vendor: VendorId): Promise<void> {
   const file = loadTokenFile(vendor);
   const config = vendorConfig(vendor);
   if (file && config.revocationEndpoint) {
+    // RFC 7009 §2.1: revoking a refresh_token also revokes the access_token
+    // it minted. Sending the access_token only leaves the refresh_token live
+    // at the IdP — anyone with an exfiltrated copy of the token file can
+    // mint fresh access tokens forever. Always prefer refresh_token; fall
+    // back to access_token only when no refresh exists.
+    const tokenToRevoke = file.refresh_token ?? file.access_token;
     const body = new URLSearchParams({
-      token: file.access_token,
+      token: tokenToRevoke,
       client_id: file.client_id,
     });
+    if (file.refresh_token) {
+      body.set("token_type_hint", "refresh_token");
+    }
     if (file.client_secret) body.set("client_secret", file.client_secret);
     await fetch(config.revocationEndpoint, {
       method: "POST",
