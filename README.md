@@ -11,7 +11,7 @@ You decide which model. You decide which actions need a human nod. You own the c
 
 **Five primitives, one runtime:**
 
-- **Tools** — 180 built-in (LSP, git, terminal, debugger, files) plus any plugin you write. Plugins hot-reload — Claude can author a tool mid-session and call it on the next turn. See [Live Toolsmithing](documents/live-toolsmithing.md).
+- **Tools** — 177 built-in (LSP, git, terminal, debugger, files) plus any plugin you write. Plugins hot-reload — Claude can author a tool mid-session and call it on the next turn. See [Live Toolsmithing](documents/live-toolsmithing.md).
 - **Recipes** — YAML automations triggered by cron, file save, git commit, test run, or webhook. Anything that can POST a JSON payload can fire a recipe.
 - **Delegation Policy** — three risk tiers, four-source precedence (managed → project-local → project → user). Auto-approve safe, require approval for risky, block dangerous.
 - **Trace memory** — every approval, every recipe run, every enrichment is durable JSONL. Past decisions are surfaced into future sessions automatically. Bundle and back up with [`patchwork traces export`](src/commands/tracesExport.ts).
@@ -27,7 +27,7 @@ The same codebase ships **two ways to use it.** Pick the layer you need.
 
 | | What you get | Install | Best for |
 |---|---|---|---|
-| **🔌 Claude IDE Bridge** | MCP bridge connecting Claude Code to your IDE. 180 tools — diagnostics, LSP, debugger, terminal, git, GitHub, file ops. | `npm i -g patchwork-os` then run `claude-ide-bridge` | Anyone who wants Claude Code to see and act on their editor state |
+| **🔌 Claude IDE Bridge** | MCP bridge connecting Claude Code to your IDE. 177 tools — diagnostics, LSP, debugger, terminal, git, GitHub, file ops. | `npm i -g patchwork-os` then run `claude-ide-bridge` | Anyone who wants Claude Code to see and act on their editor state |
 | **🤖 Patchwork OS** | Everything in the bridge **plus** YAML recipes, approval queue, oversight dashboard, mobile push approvals, multi-model providers, JetBrains companion. | Same package, run `patchwork init` | Power users running automation, agent workflows, or background tasks |
 
 Same codebase. Bridge is the foundation; Patchwork OS is the optional layer on top. **No vendor lock-in. Runs on your machine.**
@@ -76,7 +76,7 @@ claude-ide-bridge --workspace .
 CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide
 ```
 
-Type `/ide` in Claude Code to confirm the connection. That's it — Claude now sees your diagnostics, open files, and editor state, and can call 180 tools to act on them.
+Type `/ide` in Claude Code to confirm the connection. That's it — Claude now sees your diagnostics, open files, and editor state, and can call 177 tools to act on them.
 
 **What the bridge gives Claude:**
 
@@ -117,7 +117,7 @@ The bridge auto-responds to the GET probe Gemini sends before initializing, so i
 
 | Mode | Tools | When to use |
 |---|---|---|
-| Full _(default)_ | 180 | All git, GitHub, terminal, file ops, orchestration |
+| Full _(default)_ | 177 | All git, GitHub, terminal, file ops, orchestration |
 | Slim (`--slim`) | ~60 | LSP + debugger + editor state only |
 
 Bridge-only docs: [documents/platform-docs.md](documents/platform-docs.md)
@@ -175,7 +175,7 @@ Both start the bridge, wait for the lock file, launch `claude --ide` and `remote
 
 ```powershell
 # Node orchestrator options (--key value form)
-npm run start-all:node -- --full               # all 180 tools
+npm run start-all:node -- --full               # all 177 tools
 npm run start-all:node -- --no-dashboard       # skip dashboard
 npm run start-all:node -- --dashboard-port 3300
 npm run start-all:node -- --no-remote          # skip remote-control
@@ -385,7 +385,7 @@ Contributing a recipe? **`/marketplace/submit`** is a full in-app submission flo
 patchwork-os (npm package)
 │
 ├── claude-ide-bridge          ← run alone for bridge-only mode
-│   ├── MCP server             180 tools over WebSocket / HTTP / stdio
+│   ├── MCP server             177 tools over WebSocket / HTTP / stdio
 │   ├── VS Code extension      LSP, debugger, editor state, live diagnostics
 │   ├── Git / GitHub           gitCommit, gitPush, githubCreatePR, …
 │   ├── Terminal               runInTerminal, getTerminalOutput, …
@@ -413,7 +413,7 @@ Use whichever fits your mental model.
 
 ## Tool surface
 
-180 MCP tools across 15 categories. Highlights:
+177 MCP tools across 15 categories. Highlights:
 
 | Category | Tools |
 |---|---|
@@ -479,7 +479,7 @@ Systemd service and deploy scripts in [`deploy/`](deploy/). Full guide: [docs/re
 
 | Feature | Status |
 |---|---|
-| 180 MCP tools (LSP, git, tests, debugger, diagnostics) | **shipped** |
+| 177 MCP tools (LSP, git, tests, debugger, diagnostics) | **shipped** |
 | VS Code / Cursor / Windsurf / Antigravity extension | **shipped** |
 | JetBrains plugin (49 handlers) | **shipped** |
 | `patchwork init` — one-command setup | **shipped** |
@@ -536,7 +536,7 @@ Patchwork ships an **opt-in** anonymous usage summary. It is **disabled by defau
 
 | Doc | Contents |
 |---|---|
-| [documents/platform-docs.md](documents/platform-docs.md) | Full tool reference (180 tools), automation hooks, connectors |
+| [documents/platform-docs.md](documents/platform-docs.md) | Full tool reference (177 tools), automation hooks, connectors |
 | [documents/prompts-reference.md](documents/prompts-reference.md) | All 36 MCP prompts |
 | [documents/styleguide.md](documents/styleguide.md) | Code conventions, UI patterns |
 | [documents/roadmap.md](documents/roadmap.md) | Development direction |

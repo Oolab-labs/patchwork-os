@@ -21,11 +21,6 @@ import {
 import { createBridgeDoctorTool } from "./bridgeDoctor.js";
 import { createBridgeStatusTool, type DisconnectInfo } from "./bridgeStatus.js";
 import { createCancelClaudeTaskTool } from "./cancelClaudeTask.js";
-import {
-  createGetRoutineStatusTool,
-  createListRoutinesTool,
-  createRunRoutineTool,
-} from "./ccRoutines.js";
 import { createCheckDocumentDirtyTool } from "./checkDocumentDirty.js";
 import {
   createReadClipboardTool,
@@ -844,11 +839,6 @@ export function registerAllTools(
           ...(launchQuickTaskToolInstance ? [launchQuickTaskToolInstance] : []),
         ]
       : []),
-    // CC Routines — registered unconditionally; stub returns graceful error
-    // when the routines API is not yet available on the host account.
-    createListRoutinesTool(config.claudeBinary),
-    createRunRoutineTool(config.claudeBinary),
-    createGetRoutineStatusTool(config.claudeBinary),
   ];
 
   const activeTools = config.fullMode
