@@ -104,6 +104,16 @@ export class ApprovalQueue {
   private readonly entries = new Map<string, Entry>();
   /** inflightKey → callId, for dedup lookup on `request()`. */
   private readonly inflight = new Map<string, string>();
+  /**
+   * callId → its decision + timestamp, kept for RECENTLY_DECIDED_TTL_MS
+   * after resolveEntry runs. Lets a concurrent counter-decision (e.g.
+   * dashboard denies while phone approves in the same window) be told
+   * "already decided as X" rather than an indistinguishable 404.
+   */
+  private readonly recentlyDecided = new Map<
+    string,
+    { decision: ApprovalDecision; at: number }
+  >();
   private readonly ttlMs: number;
   private readonly listeners = new Set<() => void>();
 
@@ -296,6 +306,7 @@ export class ApprovalQueue {
     // but leaving them around leaks memory across shutdown cycles and is
     // the wrong invariant for `clear()`.
     this.inflight.clear();
+    this.recentlyDecided.clear();
   }
 
   private resolveEntry(callId: string, decision: ApprovalDecision): boolean {
@@ -304,13 +315,50 @@ export class ApprovalQueue {
     clearTimeout(entry.timer);
     this.entries.delete(callId);
     this.inflight.delete(entry.inflightKey);
+    // Record the decision in the short-lived `recentlyDecided` map so a
+    // concurrent counter-decision (dashboard denies while phone approves
+    // in the same window) can be told "already decided as X" instead of
+    // an indistinguishable 404 "unknown callId". Audit 2026-05-17.
+    this.recentlyDecided.set(callId, { decision, at: Date.now() });
+    this.pruneRecentlyDecided();
     entry.resolve(decision);
     // Wake up any duplicate callers who joined this entry via dedup.
     for (const r of entry.pendingPromises) r(decision);
     this.notify();
     return true;
   }
+
+  /**
+   * Lookup the decision for a `callId` that has already been resolved.
+   * Returns `null` when the callId was never seen, or when its decision
+   * is older than `RECENTLY_DECIDED_TTL_MS` (then it falls back to the
+   * historical "unknown callId" behaviour).
+   *
+   * Caller (`approvalHttp`) uses this to upgrade a 404 into a 409
+   * `already_decided` response so the losing UI can converge.
+   */
+  getRecentDecision(callId: string): ApprovalDecision | null {
+    this.pruneRecentlyDecided();
+    const entry = this.recentlyDecided.get(callId);
+    return entry ? entry.decision : null;
+  }
+
+  private pruneRecentlyDecided(): void {
+    const cutoff = Date.now() - RECENTLY_DECIDED_TTL_MS;
+    for (const [k, v] of this.recentlyDecided) {
+      if (v.at < cutoff) this.recentlyDecided.delete(k);
+    }
+  }
 }
+
+/**
+ * How long after resolve() the queue remembers a callId → decision
+ * mapping. Long enough that a concurrent counter-decision in the same
+ * second sees the right "already decided" response; short enough that
+ * the map can't grow unbounded under load (entries also get pruned at
+ * every read).
+ */
+const RECENTLY_DECIDED_TTL_MS = 60_000;
 
 /** Process-wide singleton — dashboard + bridge share one queue. */
 let singleton: ApprovalQueue | undefined;

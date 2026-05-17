@@ -83,6 +83,56 @@ describe("routeApprovalRequest", () => {
     expect(res.body).toMatchObject({ decision: "allow", reason: "approved" });
   });
 
+  it("POST /reject on already-approved callId → 409 with the prior decision (audit 2026-05-17)", async () => {
+    const queue = new ApprovalQueue();
+    const { callId } = queue.request({
+      toolName: "x",
+      params: {},
+      tier: "high",
+    });
+    expect(queue.approve(callId)).toBe(true);
+    const res = await routeApprovalRequest(
+      { method: "POST", path: `/reject/${callId}` },
+      { queue, workspace: "/tmp", ccLoader: emptyRules() },
+    );
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      error: "already_decided",
+      decision: "approved",
+      callId,
+    });
+  });
+
+  it("POST /approve on already-rejected callId → 409 with the prior decision", async () => {
+    const queue = new ApprovalQueue();
+    const { callId } = queue.request({
+      toolName: "x",
+      params: {},
+      tier: "high",
+    });
+    expect(queue.reject(callId)).toBe(true);
+    const res = await routeApprovalRequest(
+      { method: "POST", path: `/approve/${callId}` },
+      { queue, workspace: "/tmp", ccLoader: emptyRules() },
+    );
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      error: "already_decided",
+      decision: "rejected",
+      callId,
+    });
+  });
+
+  it("POST /approve on truly-unknown callId → 404 (not 409)", async () => {
+    const queue = new ApprovalQueue();
+    const res = await routeApprovalRequest(
+      { method: "POST", path: "/approve/never-seen" },
+      { queue, workspace: "/tmp", ccLoader: emptyRules() },
+    );
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: "unknown callId" });
+  });
+
   it("POST /approvals in dontAsk mode → auto-denies unmatched tools", async () => {
     const queue = new ApprovalQueue();
     const res = await routeApprovalRequest(
