@@ -14,7 +14,10 @@
  *   file.read     — read file into `into` variable (optional: true ok)
  *   git.log_since — run git log --oneline --since=<since> (injected for tests)
  *   git.stale_branches — list branches with no activity in N days
- *   diagnostics.get — stub: returns empty string (bridge not required)
+ *   diagnostics.get — returns the bridge's LSP diagnostics; in CLI runs
+ *                     (no bridge available) returns a JSON {ok:false,error}
+ *                     payload that the step-error detector flags so the
+ *                     recipe halts rather than silently succeeding.
  *
  * Supported trigger types (for `patchwork recipe run`):
  *   manual, cron — both run immediately via CLI
