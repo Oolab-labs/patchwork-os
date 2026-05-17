@@ -106,6 +106,22 @@ describe("render", () => {
     expect(render("{{ obj.constructor }}", { obj: json })).toBe("");
     expect(render("{{ obj.valueOf }}", { obj: json })).toBe("");
   });
+  it("strips __proto__/constructor/prototype from JSON-parsed intermediates", () => {
+    // Attacker-controlled JSON in a ctx string must not survive dotted-path
+    // resolution with these keys intact (downstream Object.assign / merge
+    // would pollute Object.prototype). sanitizeParsed should drop them at
+    // parse time.
+    const evil = JSON.stringify({
+      __proto__: { polluted: true },
+      constructor: { evil: 1 },
+      ok: "fine",
+    });
+    expect(render("{{ obj.ok }}", { obj: evil })).toBe("fine");
+    expect(render("{{ obj.__proto__ }}", { obj: evil })).toBe("");
+    expect(render("{{ obj.constructor }}", { obj: evil })).toBe("");
+    // Confirm no actual pollution slipped through.
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
 });
 
 // ── validateYamlRecipe ────────────────────────────────────────────────────────
@@ -431,6 +447,40 @@ describe("runYamlRecipe — silent-fail detection (P1)", () => {
     });
     expect(result.stepResults[0]?.status).toBe("error");
     expect(result.stepResults[0]?.error).toMatch(/agent step skipped/);
+  });
+
+  it("strips prototype-pollution keys from agent JSON output before stashing in ctx", async () => {
+    // A jailbroken agent could return `{"__proto__":{"polluted":true}}`; the
+    // parsed object lands in ctx and gets spread/merged downstream. Scrub
+    // the dangerous keys at the parse boundary.
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "produce",
+            model: "claude-haiku-4-5-20251001",
+            into: "result",
+          },
+        },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "out.txt"),
+          content: "ok={{result.ok}} proto={{result.__proto__}}",
+        },
+      ],
+    });
+    const written: Record<string, string> = {};
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () =>
+        '```json\n{"__proto__":{"polluted":true},"ok":"yes"}\n```',
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(Object.values(written)[0]).toBe("ok=yes proto=");
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
   it("does NOT flag legitimate output that contains 'unavailable' as prose", async () => {

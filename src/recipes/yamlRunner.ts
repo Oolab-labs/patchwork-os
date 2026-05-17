@@ -63,6 +63,26 @@ import { RunBudget } from "./runBudget.js";
 import type { ErrorPolicy } from "./schema.js";
 import { detectSilentFail } from "./stepObservation.js";
 
+/**
+ * Recursively strip prototype-pollution keys from a JSON.parse result before
+ * it lands in the recipe ctx. JSON.parse itself doesn't mutate Object.prototype
+ * (V8 uses defineProperty), but a `__proto__` own-property survives and will
+ * pollute via downstream `Object.assign` / deep-merge operations. Agent step
+ * output is attacker-controllable (jailbroken model), so scrub at the parse
+ * boundary. See feedback_record_string_prototype_walk.md.
+ */
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+function sanitizeParsed(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeParsed);
+  if (value === null || typeof value !== "object") return value;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(value)) {
+    if (DANGEROUS_KEYS.has(key)) continue;
+    out[key] = sanitizeParsed((value as Record<string, unknown>)[key]);
+  }
+  return out;
+}
+
 // Import tool registry and trigger tool self-registration
 import {
   applyToolOutputContext,
@@ -727,7 +747,9 @@ export async function runYamlRecipe(
               const jsonMatch = /```(?:json)?\s*([\s\S]*?)```/.exec(
                 stripped,
               ) ?? [null, stripped];
-              const parsed = JSON.parse((jsonMatch[1] ?? "").trim());
+              const parsed = sanitizeParsed(
+                JSON.parse((jsonMatch[1] ?? "").trim()),
+              ) as RunContext[string];
               ctx[intoKey] = parsed;
             } catch {
               ctx[intoKey] = stripped;
@@ -1094,7 +1116,7 @@ export function render(template: string, ctx: RunContext): string {
       if (val == null) return "";
       if (typeof val === "string") {
         try {
-          val = JSON.parse(val);
+          val = sanitizeParsed(JSON.parse(val));
         } catch {
           return "";
         }
