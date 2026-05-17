@@ -52,7 +52,7 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `install <companion>` — Install one of the bundled MCP-companion server registrations into Claude Desktop or Claude Code config. Use `--target cli|desktop` to choose, `--env KEY=VAL` to pass per-companion env vars. Companions: `memory`, `superpowers`, `devtools`, `database`, `slack`, `playwright`, `codebase-memory`. Each is a documented server config; the command writes it into `~/.claude.json` (CLI) or the Claude Desktop config (desktop) atomically.
 - `kill-switch engage|release|status [--reason <text>]` — Toggle the global write-disable gate (see ADR-0012).
 - `panic` — Shortcut for `kill-switch engage --reason "manual panic"`.
-- `judgments [--since <duration>] [--limit N] [--json]` — Recent approval decisions across all sessions.
+- `judgments [--window 1h|24h|overnight|7d|any] [--recipe <name>] [--json]` — Recent judge-step verdicts (from recipe steps with `agent.kind: judge`) across runs. Discovers the running bridge via lock file, queries `/runs/judge-summary`, prints per-verdict counts + 5 most-recent. Sibling of `halts`; same window/filter shape.
 - `suggest [--since-days N]` — Recipe co-occurrence + unused-tool suggestions from recent activity.
 - `traces export [--passphrase <p>] [--mode keyed|public] > file.jsonl` — Export decision traces; `--mode keyed` encrypts with the passphrase.
 - `traces import [--passphrase <p>] [--dry-run] < file.jsonl` — Restore traces from an export.

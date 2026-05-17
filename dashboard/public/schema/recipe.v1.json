@@ -215,6 +215,15 @@
                     "type": "string",
                     "description": "Model to use for the agent step"
                   },
+                  "kind": {
+                    "type": "string",
+                    "enum": ["agent", "judge"],
+                    "description": "Step kind. 'agent' (default) runs the prompt as a normal agent step. 'judge' runs a cold-eyes review of another step's output and attaches a structured verdict (approve / request_changes / unparseable). Augment-only: a 'request_changes' verdict adds signal but does not halt the run. Pair with 'reviews: <stepId>'."
+                  },
+                  "reviews": {
+                    "type": "string",
+                    "description": "Step id whose output the judge should review. Required when kind = 'judge'."
+                  },
                   "driver": {
                     "type": "string",
                     "enum": [
@@ -426,6 +435,15 @@
                             "model": {
                               "type": "string"
                             },
+                            "kind": {
+                              "type": "string",
+                              "enum": ["agent", "judge"],
+                              "description": "Step kind. 'agent' (default) runs the prompt as a normal agent step. 'judge' runs a cold-eyes review of another step's output. Pair with 'reviews: <stepId>'."
+                            },
+                            "reviews": {
+                              "type": "string",
+                              "description": "Step id whose output the judge should review. Required when kind = 'judge'."
+                            },
                             "driver": {
                               "type": "string",
                               "enum": [
@@ -609,6 +627,15 @@
           "description": "Path to write final output"
         }
       }
+    },
+    "allowWrites": {
+      "type": "array",
+      "description": "Acknowledge write-tool steps so preflight does not flag them. Each entry is a tool id (e.g. \"file.write\") or a namespace (e.g. \"slack\" to acknowledge every slack.* tool). Equivalent to passing --allow-write on the CLI; the recipe-level list and the CLI list are merged.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
     },
     "on_error": {
       "type": "object",

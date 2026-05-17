@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json
+apiVersion: patchwork.sh/v1
+version: 1.0.0
+name: judge-cold-eyes-review
+description: |
+  Demonstrates the judge step — a cold-eyes review of another step's output.
+  The judge attaches a structured verdict (approve / request_changes /
+  unparseable) to the run, but does NOT halt the run. Augment-only: the
+  verdict adds signal you can inspect via `patchwork judgments` or the
+  dashboard /runs widget; downstream steps still execute regardless.
+
+  Useful when the first agent's output goes somewhere visible (PR comment,
+  inbox draft, ticket update) and you want a second opinion on quality
+  before a human reads it — request_changes verdicts surface in the
+  judge-summary so you can spot recipes that consistently produce
+  borderline output without breaking them.
+
+trigger:
+  type: manual
+
+steps:
+  - id: draft_summary
+    agent:
+      prompt: |
+        Write a 3-bullet summary of yesterday's git activity in this repo.
+        Each bullet ≤ 14 words. No headings. No preamble.
+    risk: low
+
+  - id: judge_summary
+    awaits:
+      - draft_summary
+    agent:
+      kind: judge
+      reviews: draft_summary
+      prompt: |
+        Review the summary below for:
+        - factual accuracy against the actual git log
+        - bullet-count compliance (exactly 3)
+        - each bullet ≤ 14 words
+        - no headings or preamble
+
+        Return a verdict: approve | request_changes | unparseable
+        Include a one-line reason.
+    risk: low
