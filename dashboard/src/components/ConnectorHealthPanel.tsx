@@ -54,10 +54,11 @@ export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
   const [statusMap, setStatusMap] = useState<StatusMap | null>(null);
   const [fetchErr, setFetchErr] = useState<string>();
 
-  async function load() {
+  async function load(signal?: AbortSignal) {
     try {
       const res = await fetch(apiPath("/api/bridge/connectors/status"), {
         cache: "no-store",
+        ...(signal && { signal }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as {
@@ -89,14 +90,22 @@ export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
       setStatusMap(map);
       setFetchErr(undefined);
     } catch (e) {
+      // #605: don't surface AbortError as a UI failure.
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setFetchErr(e instanceof Error ? e.message : String(e));
     }
   }
 
   useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(), 30_000);
-    return () => clearInterval(id);
+    // #605: AbortController per effect; aborts in-flight fetch on
+    // unmount so setStatusMap doesn't fire on dead tree.
+    const controller = new AbortController();
+    void load(controller.signal);
+    const id = setInterval(() => void load(controller.signal), 30_000);
+    return () => {
+      clearInterval(id);
+      controller.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

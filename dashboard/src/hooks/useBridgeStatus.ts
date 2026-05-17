@@ -139,10 +139,14 @@ export function useBridgeStatus(): BridgeStatus {
   useEffect(() => {
     let alive = true;
     let timerId: ReturnType<typeof setTimeout> | null = null;
+    let failures = 0;
+    const controller = new AbortController();
 
     const poll = async () => {
       try {
-        const res = await fetch(apiPath("/api/bridge/kill-switch"));
+        const res = await fetch(apiPath("/api/bridge/kill-switch"), {
+          signal: controller.signal,
+        });
         if (res.ok) {
           const data = (await res.json()) as {
             engaged: boolean;
@@ -151,16 +155,34 @@ export function useBridgeStatus(): BridgeStatus {
           if (alive) {
             setStatus((prev) => ({ ...prev, killSwitch: data }));
           }
+          failures = 0;
+        } else {
+          failures++;
         }
-      } catch {
+      } catch (e) {
+        // AbortError on unmount is expected — don't bump the failure counter.
+        if (!(e instanceof DOMException && e.name === "AbortError")) {
+          failures++;
+        }
         // Bridge offline — leave killSwitch as-is
       }
-      if (alive) timerId = setTimeout(poll, KILL_SWITCH_POLL_MS);
+      // #605: exponential backoff on persistent failure. Previously
+      // fired every 10s regardless — 360 req/hour per open tab while
+      // the bridge is offline. Reuse the same backoff curve as the
+      // status poll above.
+      if (alive) {
+        const delay =
+          failures === 0
+            ? KILL_SWITCH_POLL_MS
+            : Math.min(KILL_SWITCH_POLL_MS * 2 ** failures, MAX_BACKOFF_MS);
+        timerId = setTimeout(poll, delay);
+      }
     };
 
     poll();
     return () => {
       alive = false;
+      controller.abort();
       if (timerId !== null) clearTimeout(timerId);
     };
   }, []);

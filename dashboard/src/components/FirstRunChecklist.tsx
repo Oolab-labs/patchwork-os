@@ -55,9 +55,13 @@ function emptyStatus(): Status {
   };
 }
 
-async function probeArray(path: string, key?: string): Promise<number> {
+async function probeArray(
+  path: string,
+  key?: string,
+  signal?: AbortSignal,
+): Promise<number> {
   try {
-    const res = await fetch(apiPath(path));
+    const res = await fetch(apiPath(path), { ...(signal && { signal }) });
     if (!res.ok) return 0;
     const data = (await res.json()) as unknown;
     const arr = key
@@ -94,7 +98,7 @@ export function FirstRunChecklist() {
     setDismissed(readDismissed());
   }, []);
 
-  const probe = useCallback(async () => {
+  const probe = useCallback(async (signal?: AbortSignal) => {
     // Probe all 5 endpoints in parallel — cheap reads, brand-new
     // workspace is the hot path. Endpoint shapes (verified against
     // the live bridge):
@@ -108,12 +112,13 @@ export function FirstRunChecklist() {
     // user has been through the flow at least once).
     const [conn, recipes, runs, pendingApprovals, approvalTraces] =
       await Promise.all([
-        probeArray("/api/bridge/connections", "connectors"),
-        probeArray("/api/bridge/recipes", "recipes"),
-        probeArray("/api/bridge/runs", "runs"),
-        probeArray("/api/bridge/approvals"),
-        probeArray("/api/bridge/traces?traceType=approval", "traces"),
+        probeArray("/api/bridge/connections", "connectors", signal),
+        probeArray("/api/bridge/recipes", "recipes", signal),
+        probeArray("/api/bridge/runs", "runs", signal),
+        probeArray("/api/bridge/approvals", undefined, signal),
+        probeArray("/api/bridge/traces?traceType=approval", "traces", signal),
       ]);
+    if (signal?.aborted) return;
     setStatus({
       connections: {
         done: conn > 0,
@@ -140,12 +145,22 @@ export function FirstRunChecklist() {
   }, []);
 
   useEffect(() => {
-    void probe();
+    // #605: own per-tick AbortController so unmount cancels in-flight
+    // probes (and the 5 parallel probeArray fetches inside).
+    const controller = new AbortController();
+    void probe(controller.signal);
     // Refresh every 30s — the checklist auto-completes as the user
     // works through it, so polling makes the green checkmarks appear
-    // without a reload.
-    const id = setInterval(probe, 30_000);
-    return () => clearInterval(id);
+    // without a reload. Each tick gets its own controller so per-tick
+    // abort doesn't kill all future ticks.
+    const id = setInterval(() => {
+      const tickCtrl = new AbortController();
+      void probe(tickCtrl.signal);
+    }, 30_000);
+    return () => {
+      clearInterval(id);
+      controller.abort();
+    };
   }, [probe]);
 
   if (dismissed) return null;
