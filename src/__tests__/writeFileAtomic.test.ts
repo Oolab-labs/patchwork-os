@@ -44,12 +44,20 @@ describe("writeFileAtomicSync", () => {
     expect(entries).toContain("clean.txt");
   });
 
-  it("respects mode option", () => {
-    const p = path.join(dir, "moded.txt");
-    writeFileAtomicSync(p, "x", { mode: 0o600 });
-    const mode = statSync(p).mode & 0o777;
-    expect(mode).toBe(0o600);
-  });
+  it.skipIf(process.platform === "win32")(
+    "respects mode option (POSIX-only)",
+    () => {
+      // Windows doesn't honor POSIX file modes — Node's chmod on win32
+      // only flips the read-only attribute, so the resulting mode is
+      // 0o666 regardless of what `mode: 0o600` is requested. The mode
+      // option still works correctly on POSIX (where it matters for
+      // the actual security goal: 0o600 token files / state files).
+      const p = path.join(dir, "moded.txt");
+      writeFileAtomicSync(p, "x", { mode: 0o600 });
+      const mode = statSync(p).mode & 0o777;
+      expect(mode).toBe(0o600);
+    },
+  );
 
   it("accepts Buffer data", () => {
     const p = path.join(dir, "buf.bin");
