@@ -49,6 +49,23 @@ let templatesCache: unknown = null;
 let templatesCacheTs = 0;
 
 /**
+ * #605: shape-validate the upstream templates payload before caching.
+ * The minimal contract used by the dashboard marketplace is `{recipes:
+ * Array}` (other fields are optional). Anything else (an error page
+ * JSON, a tampered file with a flipped key, a future GitHub schema
+ * change) is rejected so we don't serve garbage for 5 minutes to every
+ * dashboard client.
+ */
+function isWellFormedTemplatesPayload(raw: unknown): boolean {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    // Some legacy callers used a bare array; accept that too.
+    return Array.isArray(raw);
+  }
+  const r = raw as { recipes?: unknown };
+  return Array.isArray(r.recipes);
+}
+
+/**
  * Per-process token bucket guarding `/recipes/generate`. Every call to the
  * route enqueues a Claude subprocess via the orchestrator — without a cap a
  * scripted attacker holding a bridge token can DoS the queue or run up
@@ -740,9 +757,13 @@ export function tryHandleRecipeRoute(
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ plan }));
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        const isNotFound = msg.includes("not found") || msg.includes("ENOENT");
-        if (isNotFound) {
+        // #605: classify by error code, not message substring.
+        // Previously `msg.includes("not found")` would mis-map any
+        // deep error coincidentally containing that phrase (e.g. a
+        // connector returning "credential not found") to 404. Use the
+        // structured `code` on Node fs / our explicit error.code.
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code === "ENOENT" || code === "RECIPE_NOT_FOUND") {
           res.writeHead(404, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Run not found" }));
         } else {
@@ -822,11 +843,32 @@ export function tryHandleRecipeRoute(
       }
       try {
         const result = await deps.generateRecipeFn(prompt.trim());
-        const status = result.ok ? 200 : result.unavailable ? 503 : 422;
+        // #605: stop collapsing every failure to 422. The dashboard
+        // can't distinguish 'driver crashed' from 'user prompt refused'
+        // from 'generated YAML failed lint' when everything maps to one
+        // status. Use the result.errorKind discriminant when present;
+        // fall back to 422 for the unstructured case.
+        let status: number;
+        if (result.ok) {
+          status = 200;
+        } else if (result.unavailable) {
+          status = 503;
+        } else {
+          const kind = (result as { errorKind?: string }).errorKind;
+          if (kind === "driver_error" || kind === "timeout") {
+            status = 502; // upstream failure
+          } else if (kind === "refused" || kind === "rate_limited") {
+            status = 429;
+          } else if (kind === "lint_failed" || kind === "invalid_yaml") {
+            status = 422; // semantic generation failure
+          } else {
+            status = 422; // unknown — preserve legacy
+          }
+        }
         res.writeHead(status, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result));
       } catch (err) {
-        console.error(`[recipes/install] internal error:`, err);
+        console.error(`[recipes/generate] internal error:`, err);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -1046,11 +1088,11 @@ export function tryHandleRecipeRoute(
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ plan }));
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        const isNotFound = msg.includes("not found") || msg.includes("ENOENT");
-        if (isNotFound) {
+        // #605: classify by code, not substring (see /runs/:seq/plan).
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code === "ENOENT" || code === "RECIPE_NOT_FOUND") {
           res.writeHead(404, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Run not found" }));
+          res.end(JSON.stringify({ error: "Recipe not found" }));
         } else {
           respond500(res, err, "recipes plan");
         }
@@ -1221,7 +1263,14 @@ export function tryHandleRecipeRoute(
         force?: boolean;
       }>(req, RECIPE_ROUTE_BODY_CAPS.content);
       if (!parsedBody.ok) {
-        respondInvalidJson(res);
+        // #605: distinguish too_large (413) from invalid JSON (400) —
+        // sibling routes already do this; promote was the only handler
+        // collapsing both to 400.
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.content);
+        } else {
+          respondInvalidJson(res);
+        }
         return;
       }
       const { targetName, force } = parsedBody.value ?? {};
@@ -1291,13 +1340,30 @@ export function tryHandleRecipeRoute(
           if (!ghRes.ok) {
             throw new Error(`GitHub returned ${ghRes.status}`);
           }
-          templatesCache = (await ghRes.json()) as unknown;
+          // #605: validate content-type AND shape before caching.
+          // Previously we just `await ghRes.json()` and cached whatever
+          // came back for 5 minutes — any error page (HTML/text JSON),
+          // any MITM-tampered payload, or any future GitHub schema
+          // change would poison the cache for every dashboard client.
+          const ct = ghRes.headers.get("content-type") ?? "";
+          if (!ct.includes("application/json") && !ct.includes("text/plain")) {
+            throw new Error(`GitHub returned non-JSON content-type: ${ct}`);
+          }
+          const raw = (await ghRes.json()) as unknown;
+          if (!isWellFormedTemplatesPayload(raw)) {
+            throw new Error("GitHub payload failed shape validation");
+          }
+          templatesCache = raw;
           templatesCacheTs = now;
         }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(templatesCache));
       } catch (err) {
-        console.error(`[recipes/install] upstream error:`, err);
+        console.error(`[recipes/templates] upstream error:`, err);
+        // #605: negative cache — short window so an upstream 502 doesn't
+        // pile up requests; clients see a fast 502 instead of waiting
+        // for the next GH round-trip.
+        templatesCacheTs = Date.now() - 5 * 60 * 1000 + 30_000; // 30s before next try
         res.writeHead(502, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
