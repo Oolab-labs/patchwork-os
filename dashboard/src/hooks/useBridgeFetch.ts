@@ -83,6 +83,18 @@ export function useBridgeFetch<T>(
           return;
         }
 
+        // #605 BLOCKER: 401/403 used to fall through to the generic
+        // !res.ok branch and re-schedule indefinitely — persistent auth
+        // failure (cookie expired, password rotated) became a forever
+        // poll at the backoff cap. Treat as terminal like 404; the
+        // dashboard's session-required middleware redirects html navs
+        // to /login on its own, and refetch() can resume after re-auth.
+        if (res.status === 401 || res.status === 403) {
+          setError(res.status === 401 ? "Not signed in" : "Forbidden");
+          setLoading(false);
+          return;
+        }
+
         if (!res.ok) {
           setError(`Request failed: ${res.status}`);
           setLoading(false);
