@@ -25,6 +25,27 @@ import {
 // Confluence Cloud REST API v2
 const CONFLUENCE_API_V2 = "/wiki/api/v2";
 
+/**
+ * Accept only https Atlassian-cloud hostnames for the `instanceUrl` that the
+ * dashboard hands to `handleConfluenceConnect`. Without this, an
+ * authenticated caller could submit `http://169.254.169.254/...` or
+ * `http://127.0.0.1/admin` and the bridge would POST Basic auth credentials
+ * to it. On-prem deployments override via the CONFLUENCE_INSTANCE_URL env
+ * (which is operator-trusted, not caller-controlled).
+ */
+function isAllowedConfluenceUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "https:") return false;
+    return (
+      parsed.hostname === "atlassian.net" ||
+      parsed.hostname.endsWith(".atlassian.net")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export interface ConfluenceTokens {
   accessToken: string; // API token
   email: string; // Atlassian account email for Basic auth
@@ -402,6 +423,22 @@ export async function handleConfluenceConnect(
         body: JSON.stringify({
           ok: false,
           error: "instanceUrl is required (e.g. https://myteam.atlassian.net)",
+        }),
+      };
+    }
+    // Defend against authenticated SSRF: a caller-supplied `instanceUrl`
+    // like `http://169.254.169.254/...` or `http://127.0.0.1/admin` would
+    // otherwise be interpolated into `fetch()` with Basic auth attached.
+    // Require https + an Atlassian cloud hostname. On-prem deployments can
+    // override via CONFLUENCE_INSTANCE_URL env. Audit 2026-05-17.
+    if (!isAllowedConfluenceUrl(parsed.instanceUrl)) {
+      return {
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: false,
+          error:
+            "instanceUrl must be https and on atlassian.net (e.g. https://myteam.atlassian.net)",
         }),
       };
     }

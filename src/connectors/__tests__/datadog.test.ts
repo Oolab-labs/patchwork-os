@@ -151,6 +151,101 @@ describe("handleDatadogConnect", () => {
     expect(result.status).toBe(400);
   });
 
+  describe("SSRF guard on site (audit 2026-05-17)", () => {
+    // Isolated PATCHWORK_HOME so the success path of `accepts all 6`
+    // doesn't leak tokens onto the runner's real $HOME, which would
+    // make `handleDatadogTest("returns 400 when not connected")`
+    // observe stored tokens it doesn't expect. CI repro: PR #577.
+    const ssrfTmpDir = join(
+      os.tmpdir(),
+      `patchwork-datadog-ssrf-${Date.now()}`,
+    );
+    const ssrfHome = join(ssrfTmpDir, ".patchwork");
+
+    beforeEach(() => {
+      mkdirSync(join(ssrfHome, "tokens"), { recursive: true });
+      process.env.PATCHWORK_HOME = ssrfHome;
+      process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    });
+
+    afterEach(() => {
+      delete process.env.PATCHWORK_HOME;
+      delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+      if (existsSync(ssrfTmpDir)) {
+        rmSync(ssrfTmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it("rejects internal-IP-as-site without hitting fetch", async () => {
+      const fetchMock = vi.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+      vi.resetModules();
+      const { handleDatadogConnect } = await import("../datadog.js");
+      const result = await handleDatadogConnect(
+        JSON.stringify({ apiKey: "x", appKey: "y", site: "127.0.0.1:9091/x" }),
+      );
+      expect(result.status).toBe(400);
+      expect(JSON.parse(result.body).error).toMatch(/site must be one of/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects metadata-service-as-site", async () => {
+      const fetchMock = vi.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+      vi.resetModules();
+      const { handleDatadogConnect } = await import("../datadog.js");
+      const result = await handleDatadogConnect(
+        JSON.stringify({
+          apiKey: "x",
+          appKey: "y",
+          site: "169.254.169.254",
+        }),
+      );
+      expect(result.status).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects subdomain-of-datadoghq trick", async () => {
+      const fetchMock = vi.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+      vi.resetModules();
+      const { handleDatadogConnect } = await import("../datadog.js");
+      const result = await handleDatadogConnect(
+        JSON.stringify({
+          apiKey: "x",
+          appKey: "y",
+          site: "evil.com/datadoghq.com",
+        }),
+      );
+      expect(result.status).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("accepts all 6 canonical sites", async () => {
+      const sites = [
+        "datadoghq.com",
+        "us3.datadoghq.com",
+        "us5.datadoghq.com",
+        "datadoghq.eu",
+        "ap1.datadoghq.com",
+        "ddog-gov.com",
+      ];
+      for (const site of sites) {
+        global.fetch = vi.fn().mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+        }) as unknown as typeof fetch;
+        vi.resetModules();
+        const { handleDatadogConnect } = await import("../datadog.js");
+        const result = await handleDatadogConnect(
+          JSON.stringify({ apiKey: "x", appKey: "y", site }),
+        );
+        // 200 (success) or 500 (token storage mock), but NOT 400 from site guard
+        expect(result.status).not.toBe(400);
+      }
+    });
+  });
+
   it("returns 401 when Datadog rejects credentials", async () => {
     global.fetch = vi.fn().mockResolvedValueOnce({
       ok: false,
