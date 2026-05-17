@@ -58,9 +58,23 @@ describe("POST /api/connector-requests — CSRF guard", () => {
     expect(res.status).toBe(200);
   });
 
-  it("allows requests with no sec-fetch-site header (server-to-server)", async () => {
-    const res = await POST(makeReq({ name: "ok" }, {}));
+  it("allows requests with no sec-fetch-site header when Origin matches Host (legacy browser)", async () => {
+    // #605: requireSameOrigin now falls back to Origin/Host check
+    // when sec-fetch-site is absent. The test makeReq's Request URL is
+    // dashboard.local so Origin must match.
+    const res = await POST(
+      makeReq(
+        { name: "ok" },
+        { origin: "https://dashboard.local", host: "dashboard.local" },
+      ),
+    );
     expect(res.status).toBe(200);
+  });
+
+  it("rejects requests with no sec-fetch-site AND no Origin (curl with cookies)", async () => {
+    // #605: curl --cookie session=... with no headers used to bypass CSRF.
+    const res = await POST(makeReq({ name: "ok" }, {}));
+    expect(res.status).toBe(403);
   });
 });
 
