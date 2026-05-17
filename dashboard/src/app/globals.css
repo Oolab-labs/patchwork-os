@@ -2409,8 +2409,33 @@ button.topbar-search {
   letter-spacing: 0.04em;
 }
 @media (max-width: 900px) {
-  .quilt { grid-template-columns: 1fr; }
+  .quilt { grid-template-columns: 1fr; min-height: 0; }
   .weather { width: auto; border-left: 0; border-top: 1px solid var(--line-1); }
+  /* Aside collapses to full-width below the hero copy on mobile.
+     Without these overrides the 280px fixed width + border-left bled
+     past the card's right edge (the quilt-bg squares stayed visible
+     through the gap), and the mood gradient — which masks the bg
+     left-to-right — left the area under the aside un-masked. */
+  .quilt-aside-featured,
+  .quilt-aside-empty {
+    width: auto;
+    border-left: 0;
+    border-top: 1px solid var(--line-2);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink-0) 4%, transparent);
+    padding: 16px 20px;
+  }
+  .quilt-content { padding: 22px 20px 18px; }
+  /* Extend the masking gradient downward on mobile so the quilt-bg
+     squares don't show through the gap between hero copy and aside.
+     Above 900px the aside is to the right and the left→right gradient
+     handles it; on mobile the aside is below, so we mask vertically. */
+  .quilt-content::before {
+    background: linear-gradient(to bottom, var(--surface) 60%, color-mix(in srgb, var(--surface) 70%, transparent) 100%);
+  }
+  [data-theme="dark"] .quilt-content::before {
+    background: linear-gradient(to bottom, var(--surface) 60%, color-mix(in srgb, var(--surface) 75%, transparent) 100%);
+  }
+  .quilt-bg { opacity: 0.55; }
 }
 
 /* ---- Chip (2.0 small inline pills) ---- */
