@@ -6,6 +6,99 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-beta.5] — 2026-05-18
+
+Second-day audit batch: 14 PRs (#596–#609) closing **7 BLOCKERs** + **25+ MAJOR/MINOR** items surfaced by two rounds of structured dogfooding (issues #600 and #605). Security-relevant — recommended upgrade for every beta.4 user.
+
+Released same-day-as-discovery for the BLOCKERs.
+
+### Security (BLOCKER)
+
+- **`/api/push/{subscribe,unsubscribe}` were unauthenticated**. Routes were exempt from the middleware session gate on the (incorrect) assumption that the service worker couldn't carry the session cookie — SW fetches default to `credentials: "same-origin"` and DO send it. Any visitor (or attacker faking Origin) could spam the push store or silently unsubscribe real devices. Re-protected via handler-level `verifySession()` + trimmed middleware exempt list (#601).
+- **CSRF helper bypass via missing `sec-fetch-site`**. `requireSameOrigin` allowed any request with no `sec-fetch-site` header. `curl --cookie session=…` on the same machine bypassed CSRF entirely on every mutating route. Defense-in-depth fallback: when header is absent, require Origin to match Host. Requests with neither header are rejected (#606).
+- **Bridge SSE subscriber leak → 503 forever**. `/stream` decremented its counter only in `req.on("close")`, but close doesn't fire on every disconnect path. Once the count crept to MAX_SSE_SUBSCRIBERS=20 the bridge returned 503 to every new SSE — kill-switch live updates, activity ticker, future SSE consumers all silently died. **Reproduced on the live workspace bridge during the audit.** Fixed with idempotent `cleanup()` funnel called from every disconnect path (#606).
+- **`/recipes/install` temp-file race**. Two concurrent installs of the same recipe within one millisecond produced identical temp paths → interleaved bytes; the first finisher's `unlinkSync` deleted the file the second still needed. Same bug in the bundle path. Fixed with `process.pid + randomBytes(6)` (#606).
+- **`useBridgeFetch` infinite 401/403 storm**. Hook treated auth failures as generic non-OK and re-scheduled indefinitely. Persistent auth failure → forever-poll at the backoff cap. Now treats 401/403 as terminal like 404 (#606).
+- **`panic --help` engaged the kill switch**. Typing the cautious-thing-first command actually fired it. Now honors `--help` / `-h` before forwarding (#597).
+
+### Security (MAJOR)
+
+- **Recipe execution skipped the kill switch** (#607). `runRecipeFn` + `webhookFn` never consulted the gate — recipe execution is the largest write surface and was the kill switch's primary target per #422. Both entry points now check `isWriteKillSwitchActive()`.
+- **Recipe-var prompt injection** (#607). `runRecipeFn` JSON path interpolated `vars` k=v into the prompt without escaping. Validated only at the HTTP boundary; webhook + scheduler bypassed it. Now `validateRecipeVars` at the function boundary.
+- **Webhook recipe-name not validated** (#607). `findWebhookRecipe` trusted whatever `name` the on-disk recipe declared; legacy/tampered/hand-edited slashy names propagated into `triggerSource` and log keys. Now re-checks `RECIPE_NAME_RE`.
+- **Recipe routes leaked `err.message`** (#601, #607). Stack traces and file paths bubbled to clients. Fixed across dashboard recipe proxy routes, bridge `runReplayFn`, bridge `runRecipeFn`.
+- **Templates cache poisoning** (#608). `/templates` cached whatever GitHub returned for 5 min — any HTML error page or MITM payload would poison the cache. Now: content-type check + shape predicate + 30s negative cache.
+- **Login length-leak via short-circuit** (#601). Constant-time compare short-circuited on length equality BEFORE running. Now pads to fixed 256-byte buffer and ANDs length check AFTER.
+
+### UX BLOCKERs
+
+- **Tasks page `↻ Replay` button** removed (#601) — targeted bridge route that never shipped, every click 404'd.
+- **Sessions page `❚❚ Pause all` button** removed (#601) — same story.
+- **Settings "Clear API key" saved the OLD key** (#601). Stale closure read after `setKeyDrafts("")` — silent data-corruption class bug.
+- **Connections "Connecting…" spinner stuck forever** on validation fail (#601) — early-return without resetting state.
+- **Inbox Replay button silently 400'd** on any recipe with required vars (#602 stopgap toast; #603 actual flow). Now routes to `/recipes?run=<name>` to open the vars-input modal.
+
+### Reliability — race conditions / cleanup
+
+Sweep of AbortController + cleanup gaps across the polling/effect surface (#602, #609):
+
+- `runs/[seq]` `childSeqs` array dep → N+1 re-fetch every 5s (10-child run = 11 req/5s). Serialize for dep + AbortController.
+- `runs/page.tsx` rapid filter flips overwrote newer state with stale responses from previous filter set.
+- `marketplace/submit` `runLint` race — second-to-finish click won.
+- `inbox/page.tsx` `fetchList` state-after-unmount during navigation.
+- `settings/page.tsx` `EventSource` auto-reconnected forever on 404 — capped at 5 failures.
+- `useBridgeStatus` kill-switch poll fired every 10s regardless of failure (360 req/hour while bridge offline) — now exponential backoff.
+- `FirstRunChecklist`, `ConnectorHealthPanel`, `CommandPalette` — AbortControllers + per-tick cancellation.
+
+### Reliability — durability
+
+- **`pushStore` atomic write missing fsync** (#609). `temp + rename` without `fsync` could leave the destination zero-bytes despite the atomic-rename promise (ext4 `data=writeback`, APFS edge cases). Now `openSync + writeSync + fsyncSync + closeSync + rename`. Matches bridge `writeFileAtomicSync`.
+- **JSONL flock + tail-on-read** finalized for decision/link logs (followups to #584/#592 still applicable).
+
+### Mobile responsiveness
+
+- **Quilt hero aside overflow** at ≤900px (#596). Aside had hardcoded 340px width + border-left; collapsed to single column.
+- **Sessions / activity 340px rails** overflowed phones (#602). New `.two-pane-340` / `.two-pane-340-rev` utilities collapse at ≤768px.
+- **Traces 7-col grid** pushed page wider than viewport (#602). Switched to horizontal scroll inside the card.
+
+### Error envelopes
+
+- `/recipes/generate` collapsed every failure to 422 (driver crash vs prompt refusal vs lint fail indistinguishable). Now branches on `errorKind` discriminant (502/429/422) (#608).
+- `/recipes/:name/promote` missing 413 path for body-too-large (#608).
+- Substring-match error classification (`msg.includes("not found")`) replaced with structured `err.code` switch (#608).
+- Per-route recipe handlers (`lint`, `install`, `generate`, `[name]`, `[name]/run`) no longer return `err.message` to clients — log server-side, return generic message (#601).
+
+### CLI / discoverability
+
+- New **Safety** section in `patchwork --help` (kill-switch, panic) (#597).
+- `judgments` added to **Diagnose** section next to `halts` (#597).
+- `judgments` + `halts` walk past stale bridge locks instead of failing on the first 404 (#597).
+- Recipe judge step documented for authors (schema + CLAUDE.md + example recipe) (#599).
+- Inbox endpoint mismatch and approvals `approvalToken` flagged as false positives during audit (no fix needed).
+
+### Dashboard polish
+
+- Notion `ntn_` token prefix accepted (was rejecting valid current API keys) (#604).
+- Marketplace empty registry now falls through to GitHub (was showing "no recipes available" indefinitely on fresh installs) (#604).
+- Settings Time-of-day anomaly toggle no longer fails silently (#604).
+- Inbox Replay popup-blocked toast added on Connections single-card OAuth (#602).
+- `login-form` no longer hardcoded `/dashboard/api/login` — routes through `apiPath()` (#602).
+- Dead `parseUptimeMs` removed.
+
+### Extension republish
+
+Extension bumped to **1.4.17**. Unreleased changes since 1.4.16 include the pin-note ReferenceError fix (#546), stderr-reset timeout bump (#553), Windows audit fixes (#525), walkthrough pages (#533), prod typecheck CI gate (#546). Republished to VS Code Marketplace + OpenVSX.
+
+### Methodology
+
+Two structured dogfood sessions:
+- **Issue #600** — 4 parallel review agents over every dashboard `page.tsx` + every `route.ts`, plus Playwright walk. Surfaced 4 BLOCKERs + 15 MAJORs + many MINORs.
+- **Issue #605** — Round 2 covering bridge recipe flow + dashboard shared components/hooks + live Playwright. Surfaced 4 BLOCKERs + 7 MAJORs + 8 MINORs.
+
+Cumulative through these two batches: **7 BLOCKERs + 25+ issues** closed across 14 PRs.
+
+---
+
 ## [0.2.0-beta.4] — 2026-05-17
 
 Audit/hardening batch: 23 PRs (#572–#594) closing P0/P1 findings from a multi-agent codebase audit. No breaking changes; all upgrades drop-in.
