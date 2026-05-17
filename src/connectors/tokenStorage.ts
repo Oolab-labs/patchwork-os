@@ -57,6 +57,12 @@ export function storeSecretJsonSync(provider: string, value: unknown): void {
 
   if (resolveBackend() === "file") {
     setEncryptedFileSync(key, json);
+    // Cross-backend orphan guard: if a prior session wrote to the native
+    // keychain (auto-mode default), forcing PATCHWORK_TOKEN_STORAGE_BACKEND=file
+    // would leave that stale credential behind. A later session that unsets
+    // the env (back to auto) would resolve the stale keychain value first
+    // and skip the fresher file. Drop the keychain entry best-effort.
+    deleteKeychainItemSync(key);
     return;
   }
 
@@ -86,11 +92,10 @@ export function getSecretJsonSync<T>(provider: string): T | null {
 export function deleteSecretJsonSync(provider: string): void {
   const key = storageKey(provider);
 
-  if (resolveBackend() === "file") {
-    deleteEncryptedFileSync(key);
-    return;
-  }
-
+  // Always clear both backends. Even when the active backend is "file", a
+  // prior session may have stored the credential in the OS keychain; leaving
+  // it behind on delete is a credential-lifetime bug (revocation flow leaves
+  // a usable token in the keychain that auto-mode would surface later).
   deleteKeychainItemSync(key);
   deleteEncryptedFileSync(key);
 }
