@@ -357,7 +357,11 @@ export function handleSlackAuthorize(): ConnectorHandlerResult {
       }),
     };
   }
-  const state = crypto.randomBytes(16).toString("hex");
+  // 256-bit (32 random bytes) → 64 hex chars. Previously 16 bytes = 128 bits,
+  // which is fine for CSRF but every other connector (Asana, Discord, GitLab,
+  // Gmail, Google Calendar/Drive) uses 32 bytes via crypto.randomBytes(32) +
+  // base64url. Standardise on the higher entropy. Audit 2026-05-17.
+  const state = crypto.randomBytes(32).toString("hex");
   saveState(state);
   const params = new URLSearchParams({
     client_id: clientId(),
@@ -473,7 +477,53 @@ export async function handleSlackTest(): Promise<ConnectorHandlerResult> {
   }
 }
 
-export function handleSlackDisconnect(): ConnectorHandlerResult {
+/**
+ * Best-effort revoke of the bot token at Slack's `auth.revoke` endpoint
+ * before deleting the local copy. If revoke fails (network error,
+ * vendor returns invalid_auth, token already revoked) we proceed with
+ * the local delete — Slack's revoke is non-idempotent-but-safe: a
+ * second revoke on the same token returns `{ok: false, error:
+ * "token_revoked"}` which is the desired terminal state.
+ *
+ * Why upstream revoke matters (audit 2026-05-17): pre-fix, clicking
+ * "Disconnect" in the dashboard only deleted the token file locally.
+ * Anyone with an exfiltrated copy of `~/.patchwork/tokens/slack-...`
+ * could keep using the bot token until it was rotated or revoked at
+ * Slack's side — months or years later. Every other connector
+ * (Discord, Google*, mcpOAuth) already calls the vendor's revoke;
+ * Slack was the outlier (called out in discord.ts's comment).
+ */
+async function revokeUpstream(accessToken: string): Promise<void> {
+  // 3-second timeout — disconnect must not hang the dashboard request.
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 3_000);
+  try {
+    await fetch("https://slack.com/api/auth.revoke", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      signal: ac.signal,
+    });
+    // Discard the response body — Slack returns `{ok: true|false}` but
+    // we don't gate on it. Either way the next step is to delete the
+    // local token; logging the result risks emitting the bearer token
+    // into bridge logs.
+  } catch {
+    // Best-effort: network errors, timeout, fetch abort — fall through.
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function handleSlackDisconnect(): Promise<ConnectorHandlerResult> {
+  // Capture the token BEFORE deleting it locally — auth.revoke needs
+  // the bearer to identify the install to revoke.
+  const tokens = loadTokens();
+  if (tokens?.access_token) {
+    await revokeUpstream(tokens.access_token);
+  }
   deleteTokens();
   return {
     status: 200,

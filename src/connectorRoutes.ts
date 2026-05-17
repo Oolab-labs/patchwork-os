@@ -604,7 +604,7 @@ export function tryHandleConnectorRoute(
     void (async () => {
       try {
         const { handleSlackDisconnect } = await import("./connectors/slack.js");
-        const result = handleSlackDisconnect();
+        const result = await handleSlackDisconnect();
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
