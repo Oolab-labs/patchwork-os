@@ -77,4 +77,36 @@ describe("assertValidInstallSource — defence-in-depth at the call site", () =>
     expect(() => assertValidInstallSource(null as unknown as string)).toThrow();
     expect(() => assertValidInstallSource(42 as unknown as string)).toThrow();
   });
+
+  describe("path-traversal guard (audit 2026-05-17)", () => {
+    it("rejects `..` in the path segment", () => {
+      expect(() =>
+        assertValidInstallSource("github:owner/repo/recipes/../../foo@main"),
+      ).toThrow(/must not contain/);
+    });
+
+    it("rejects bare `..` path", () => {
+      expect(() =>
+        assertValidInstallSource("github:owner/repo/..@main"),
+      ).toThrow(/must not contain/);
+    });
+
+    it("rejects `.` segments", () => {
+      expect(() =>
+        assertValidInstallSource("github:owner/repo/./recipes@main"),
+      ).toThrow(/must not contain/);
+    });
+
+    it("rejects empty segments (double slash)", () => {
+      expect(() =>
+        assertValidInstallSource("github:owner/repo/recipes//foo@main"),
+      ).toThrow(/must not contain/);
+    });
+
+    it("accepts canonical multi-segment paths", () => {
+      expect(() =>
+        assertValidInstallSource("github:owner/repo/recipes/morning-brief@main"),
+      ).not.toThrow();
+    });
+  });
 });

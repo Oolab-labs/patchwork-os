@@ -172,6 +172,20 @@ export function assertValidInstallSource(install: string): ParsedInstallSource {
       "Invalid install source: must match `github:owner/repo[/path]@ref` (refusing to forward to bridge)",
     );
   }
+  // Reject path-traversal segments (audit 2026-05-17). The bridge's
+  // `parseGithubInstallSource` is strict-segment (charset `[a-z0-9_.-]`),
+  // so `..` would fail server-side anyway — but the dashboard's
+  // "defense-in-depth" promise should fail fast and visibly.
+  if (parsed.path.length > 0) {
+    const dangerousSegment = parsed.path
+      .split("/")
+      .some((seg) => seg === ".." || seg === "." || seg === "");
+    if (dangerousSegment) {
+      throw new Error(
+        "Invalid install source: path segments must not contain '.' or '..' (refusing to forward to bridge)",
+      );
+    }
+  }
   return parsed;
 }
 

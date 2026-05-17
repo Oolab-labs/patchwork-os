@@ -348,14 +348,14 @@ function RecipeCard({
             </button>
           ) : bridgeStatus === "unauth" ? (
             <Link
-              href="/login?next=/dashboard/marketplace"
+              href={`/login?next=/dashboard/marketplace/${shortName(recipe.name)}`}
               className="btn sm"
               style={{ textDecoration: "none" }}
               aria-label={`Log in to install ${shortName(recipe.name)}`}
             >
               Log in
             </Link>
-          ) : (
+          ) : bridgeStatus === "offline" ? (
             <a
               href="https://patchworkos.com/#install"
               target="_blank"
@@ -366,6 +366,18 @@ function RecipeCard({
             >
               Get Patchwork
             </a>
+          ) : (
+            // bridgeStatus === "checking" — render no action while the
+            // first probe is in flight; switching to a real CTA happens
+            // when refreshInstalled resolves.
+            <span
+              aria-hidden="true"
+              style={{
+                display: "inline-block",
+                width: 84,
+                height: 28,
+              }}
+            />
           )}
         </div>
       </div>
@@ -450,7 +462,10 @@ function BundleCard({ bundle }: { bundle: RegistryBundle }) {
 
 // ------------------------------------------------------------------ page
 
-type BridgeStatus = "online" | "offline" | "unauth";
+// "checking" is the initial state before the first probe completes —
+// hides the "Install Patchwork OS" banner during page-load instead of
+// flashing it on slow networks (~4s+ on 3G). Matches InstallPanel.tsx.
+type BridgeStatus = "checking" | "online" | "offline" | "unauth";
 
 export default function MarketplacePage() {
   const [registry, setRegistry] = useState<RegistryRecipe[] | null>(null);
@@ -461,7 +476,7 @@ export default function MarketplacePage() {
   // Pre-fix users were told "bridge not connected — install Patchwork
   // OS" when they were just logged out of the dashboard.
   const [bridgeStatus, setBridgeStatus] =
-    useState<BridgeStatus>("offline");
+    useState<BridgeStatus>("checking");
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -680,7 +695,7 @@ export default function MarketplacePage() {
           may be fine) vs "no bridge" (Install Patchwork). Pre-fix both
           collapsed into the "Install Patchwork" CTA, which told logged-
           out users to reinstall a thing they already had. */}
-      {bridgeStatus !== "online" && (
+      {bridgeStatus !== "online" && bridgeStatus !== "checking" && (
         <div
           style={{
             marginBottom: "var(--s-6)",

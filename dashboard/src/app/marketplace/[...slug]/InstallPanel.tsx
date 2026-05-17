@@ -34,7 +34,10 @@ interface Props {
 // fixed this on the browse view; this panel was missed in that wave.
 type BridgeStatus = "checking" | "online" | "offline" | "unauth";
 
-const POLL_TIMEOUT_MS = 1500;
+// Browse view uses 4s for the registry probe; the install panel was
+// using 1.5s which produced false-negative "No local bridge detected"
+// banners on slow loopback / cold-start. Align with browse.
+const POLL_TIMEOUT_MS = 4000;
 
 export default function InstallPanel({
   install,
@@ -197,7 +200,7 @@ export default function InstallPanel({
         )}
         {!isInstalled && bridgeStatus === "unauth" && (
           <Link
-            href="/login?next=/dashboard/marketplace"
+            href={`/login?next=/dashboard/marketplace/${name}`}
             className="btn sm"
             style={{ textDecoration: "none", flexShrink: 0 }}
           >
