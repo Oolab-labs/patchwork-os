@@ -2220,37 +2220,43 @@ if (process.argv[2] === "halts") {
         );
         process.exit(2);
       }
-      // Single-bridge default: query the first. Multi-bridge users will
-      // typically have one orchestrator anyway; expanding to fan-out is a
-      // follow-up if needed.
-      const lock = liveLocks[0];
-      if (!lock) {
-        process.stderr.write("No running bridge found.\n");
-        process.exit(2);
-      }
       const sinceMs = windowSinceMs(window);
       const params: string[] = [];
       if (sinceMs != null) params.push(`sinceMs=${sinceMs}`);
       if (recipeFilter)
         params.push(`recipe=${encodeURIComponent(recipeFilter)}`);
       const qs = params.length > 0 ? `?${params.join("&")}` : "";
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 10_000);
-      let res: Response;
-      try {
-        res = await fetch(
-          `http://127.0.0.1:${lock.port}/runs/halt-summary${qs}`,
-          {
-            headers: { Authorization: `Bearer ${lock.authToken}` },
-            signal: controller.signal,
-          },
-        );
-      } finally {
-        clearTimeout(timer);
+      // Walk live bridges in order; first responsive one wins. See the
+      // matching block in the `judgments` handler — findAllLiveBridges
+      // can include stale entries when a recycled PID still answers
+      // `kill(pid, 0)` but the lock points at a dead bridge.
+      let res: Response | null = null;
+      let lastStatus = 0;
+      for (const lock of liveLocks) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10_000);
+        try {
+          const candidate = await fetch(
+            `http://127.0.0.1:${lock.port}/runs/halt-summary${qs}`,
+            {
+              headers: { Authorization: `Bearer ${lock.authToken}` },
+              signal: controller.signal,
+            },
+          );
+          if (candidate.ok) {
+            res = candidate;
+            break;
+          }
+          lastStatus = candidate.status;
+        } catch {
+          /* unreachable lock — try next */
+        } finally {
+          clearTimeout(timer);
+        }
       }
-      if (!res.ok) {
+      if (!res) {
         process.stderr.write(
-          `Bridge returned ${res.status} for /runs/halt-summary\n`,
+          `No live bridge served /runs/halt-summary (last status: ${lastStatus || "unreachable"}).\n`,
         );
         process.exit(1);
       }
@@ -2382,34 +2388,45 @@ if (process.argv[2] === "judgments") {
         );
         process.exit(2);
       }
-      const lock = liveLocks[0];
-      if (!lock) {
-        process.stderr.write("No running bridge found.\n");
-        process.exit(2);
-      }
       const sinceMs = windowSinceMs(window);
       const params: string[] = [];
       if (sinceMs != null) params.push(`sinceMs=${sinceMs}`);
       if (recipeFilter)
         params.push(`recipe=${encodeURIComponent(recipeFilter)}`);
       const qs = params.length > 0 ? `?${params.join("&")}` : "";
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 10_000);
-      let res: Response;
-      try {
-        res = await fetch(
-          `http://127.0.0.1:${lock.port}/runs/judge-summary${qs}`,
-          {
-            headers: { Authorization: `Bearer ${lock.authToken}` },
-            signal: controller.signal,
-          },
-        );
-      } finally {
-        clearTimeout(timer);
+      // Walk live bridges in order; the first responsive one wins.
+      // findAllLiveBridges uses `kill(pid, 0)` for liveness, which
+      // returns true for any recycled PID — so liveLocks can contain
+      // stale entries from dead bridges. Previously we picked [0]
+      // unconditionally and surfaced a confusing 404; now we try each
+      // and only fall through to the error path when *all* fail.
+      let res: Response | null = null;
+      let lastStatus = 0;
+      for (const lock of liveLocks) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10_000);
+        try {
+          const candidate = await fetch(
+            `http://127.0.0.1:${lock.port}/runs/judge-summary${qs}`,
+            {
+              headers: { Authorization: `Bearer ${lock.authToken}` },
+              signal: controller.signal,
+            },
+          );
+          if (candidate.ok) {
+            res = candidate;
+            break;
+          }
+          lastStatus = candidate.status;
+        } catch {
+          /* unreachable lock — try next */
+        } finally {
+          clearTimeout(timer);
+        }
       }
-      if (!res.ok) {
+      if (!res) {
         process.stderr.write(
-          `Bridge returned ${res.status} for /runs/judge-summary\n`,
+          `No live bridge served /runs/judge-summary (last status: ${lastStatus || "unreachable"}).\n`,
         );
         process.exit(1);
       }
