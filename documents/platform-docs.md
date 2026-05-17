@@ -668,6 +668,15 @@ Recipes live in `~/.patchwork/recipes/` (JSON or YAML). Supported triggers:
 
 Install with `patchwork recipe install <path-to-recipe.yaml>`. Run history persists as JSONL at `~/.patchwork/runs.jsonl` via `RecipeRunLog` (append-only file + bounded in-memory ring); surfaced in the dashboard `/recipes` and `/runs` pages.
 
+### Recipe step kinds
+
+A `steps[]` entry is one of: `agent`, `tool`, or `recipe` (sub-call). Agent steps additionally support a `kind` field that swaps execution semantics.
+
+| `agent.kind` | When | Behavior |
+|---|---|---|
+| `agent` _(default)_ | Most steps | Run the prompt as a normal agent step; result goes into `into` / `agent_output`. |
+| `judge` | Quality gate on another step's output | Cold-eyes review of the step named in `reviews:`. Returns a structured verdict (`approve` / `request_changes` / `unparseable`). **Augment-only — the verdict never halts the run**; it adds signal you can inspect via `patchwork judgments` or the dashboard `/runs` judge widget. Useful for catching borderline output in recipes whose results go somewhere visible (PR comment, inbox draft, ticket update) without breaking the pipeline. See `examples/recipes/judge-cold-eyes-review.yaml`. |
+
 ### Webhook SSRF defenses
 
 `webhookUrl` (approval-queued notification) enforces:

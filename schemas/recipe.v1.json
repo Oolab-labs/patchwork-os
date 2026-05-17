@@ -215,6 +215,15 @@
                     "type": "string",
                     "description": "Model to use for the agent step"
                   },
+                  "kind": {
+                    "type": "string",
+                    "enum": ["agent", "judge"],
+                    "description": "Step kind. 'agent' (default) runs the prompt as a normal agent step. 'judge' runs a cold-eyes review of another step's output and attaches a structured verdict (approve / request_changes / unparseable). Augment-only: a 'request_changes' verdict adds signal but does not halt the run. Pair with 'reviews: <stepId>'."
+                  },
+                  "reviews": {
+                    "type": "string",
+                    "description": "Step id whose output the judge should review. Required when kind = 'judge'."
+                  },
                   "driver": {
                     "type": "string",
                     "enum": [
@@ -425,6 +434,15 @@
                             },
                             "model": {
                               "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": ["agent", "judge"],
+                              "description": "Step kind. 'agent' (default) runs the prompt as a normal agent step. 'judge' runs a cold-eyes review of another step's output. Pair with 'reviews: <stepId>'."
+                            },
+                            "reviews": {
+                              "type": "string",
+                              "description": "Step id whose output the judge should review. Required when kind = 'judge'."
                             },
                             "driver": {
                               "type": "string",
