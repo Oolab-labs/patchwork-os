@@ -1521,6 +1521,30 @@ button.topbar-search {
   }
 }
 
+/* /sessions + /activity two-pane layout (340 px rail + detail).
+   Audit 2026-05-17 (#600): both pages used inline grid-template-columns
+   with no media query, so the 340 px column overflowed phone viewports
+   and forced a horizontal scroll. Collapse to single column under 768 px,
+   matching .tasks-layout. */
+.two-pane-340 {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: var(--s-4);
+  align-items: start;
+}
+.two-pane-340-rev {
+  display: grid;
+  grid-template-columns: 1fr minmax(0, 340px);
+  gap: var(--s-4);
+  align-items: start;
+}
+@media (max-width: 768px) {
+  .two-pane-340,
+  .two-pane-340-rev {
+    grid-template-columns: 1fr;
+  }
+}
+
 
 /* ---- Decision rows ---- */
 

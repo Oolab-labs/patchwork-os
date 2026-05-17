@@ -240,12 +240,10 @@ export default function SessionsPage() {
         </div>
       ) : (
         <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: sessions.length > 0 ? "340px minmax(0,1fr)" : "1fr",
-            gap: "var(--s-4)",
-            alignItems: "start",
-          }}
+          // #600: .two-pane-340 collapses to single column at ≤768px so
+          // the 340 px rail doesn't overflow phone viewports.
+          className={sessions.length > 0 ? "two-pane-340" : undefined}
+          style={sessions.length > 0 ? undefined : { display: "block" }}
         >
           {/* left: session card list */}
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
