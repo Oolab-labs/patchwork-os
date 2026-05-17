@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ToolResult } from "../fp/result.js";
 import { err, okS, toCallToolResult } from "../fp/result.js";
+import { treeKillPid } from "../processTree.js";
 import { ensureCmdShim } from "../winShim.js";
 
 export interface SpawnWorkspaceResult {
@@ -302,7 +303,7 @@ async function spawnWorkspace(
         } catch (e) {
           // Clean up the bridge we just spawned before reporting.
           try {
-            process.kill(pid, "SIGTERM");
+            treeKillPid(pid, "SIGTERM");
           } catch {
             /* ignore */
           }
@@ -338,13 +339,13 @@ async function spawnWorkspace(
 
       // Lock appeared but extension never connected — kill child + timeout.
       try {
-        process.kill(pid, "SIGTERM");
+        treeKillPid(pid, "SIGTERM");
       } catch {
         // already exited
       }
       if (codeServerPid !== undefined) {
         try {
-          process.kill(codeServerPid, "SIGTERM");
+          treeKillPid(codeServerPid, "SIGTERM");
         } catch {
           // already exited
         }
@@ -363,7 +364,7 @@ async function spawnWorkspace(
 
   // Timed out — kill the child
   try {
-    process.kill(pid, "SIGTERM");
+    treeKillPid(pid, "SIGTERM");
   } catch {
     // ignore — already exited
   }

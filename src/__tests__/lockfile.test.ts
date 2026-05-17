@@ -196,4 +196,48 @@ describe("LockFileManager", () => {
     expect(fs.existsSync(freshPath)).toBe(true); // kept: 23h old
     expect(fs.existsSync(legacyPath)).toBe(true); // kept: no startedAt
   });
+
+  // ─── Foreign-PID EPERM (audit 2026-05-17) ──────────────────────────────────
+  // process.kill(foreignPid, 0) throws EPERM on Windows for live processes
+  // the bridge user lacks permission to signal (different user, higher
+  // integrity). Pre-fix code unconditionally unlinked on ANY kill failure
+  // → wrongly deleted a legitimate sibling's lock. Now: ESRCH unlinks,
+  // EPERM (and other errnos) preserve the lock.
+  it("cleanStale keeps foreign-PID lock when process.kill throws EPERM", () => {
+    const ideDir = path.join(tmpDir, "ide");
+    fs.mkdirSync(ideDir, { recursive: true, mode: 0o700 });
+
+    const foreignLockPath = path.join(ideDir, "33333.lock");
+    const foreignPid = 555555;
+    fs.writeFileSync(foreignLockPath, JSON.stringify({ pid: foreignPid }), {
+      mode: 0o600,
+    });
+
+    // Stub process.kill to throw EPERM for the foreign pid only.
+    const origKill = process.kill;
+    const killStub = ((pid: number, signal?: number | NodeJS.Signals) => {
+      if (pid === foreignPid) {
+        const err = new Error("kill EPERM") as NodeJS.ErrnoException;
+        err.code = "EPERM";
+        throw err;
+      }
+      return origKill(pid, signal);
+    }) as typeof process.kill;
+    // Assign via property descriptor since process.kill is read-only on
+    // some Node builds.
+    Object.defineProperty(process, "kill", {
+      value: killStub,
+      configurable: true,
+    });
+    try {
+      const mgr = new LockFileManager(logger);
+      mgr.cleanStale();
+      expect(fs.existsSync(foreignLockPath)).toBe(true);
+    } finally {
+      Object.defineProperty(process, "kill", {
+        value: origKill,
+        configurable: true,
+      });
+    }
+  });
 });

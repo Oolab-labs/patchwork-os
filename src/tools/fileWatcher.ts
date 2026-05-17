@@ -1,3 +1,4 @@
+import path from "node:path";
 import {
   type ExtensionClient,
   ExtensionTimeoutError,
@@ -52,8 +53,13 @@ export function createWatchFilesTool(extensionClient: ExtensionClient) {
       if (/[\x00-\x1f]/.test(id) || /[\x00-\x1f]/.test(pattern)) {
         return error("id and pattern must not contain control characters");
       }
-      // Reject patterns that could escape the workspace
+      // Reject patterns that could escape the workspace. Pre-fix only
+      // caught a leading `/` or `\\`, which missed Windows drive-letter
+      // absolutes like `C:\Windows\System32\*.dll`. Use `path.isAbsolute`
+      // (handles both POSIX and Windows shapes) plus the legacy `..` /
+      // backslash-prefix guard for explicit clarity. Audit 2026-05-17.
       if (
+        path.isAbsolute(pattern) ||
         pattern.startsWith("/") ||
         pattern.startsWith("\\") ||
         pattern.includes("..")

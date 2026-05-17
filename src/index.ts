@@ -60,6 +60,7 @@ import {
   PATCHWORK_PACKAGE_NAME,
   SYMLINK_INSTALL_FIX,
 } from "./installGuard.js";
+import { treeKill } from "./processTree.js";
 import { PACKAGE_VERSION, semverGt } from "./version.js";
 import { ensureCmdShim } from "./winShim.js";
 import { writeFileAtomicSync } from "./writeFileAtomic.js";
@@ -4153,7 +4154,12 @@ if (__subcommandWillRun) {
       for (const sig of ["SIGTERM", "SIGINT"] as const) {
         process.once(sig, () => {
           stopping = true;
-          child.kill(sig);
+          // Use treeKill so grandchildren (recipe runners, claude
+          // subprocesses, extension watchers) are reaped on Windows.
+          // Bare `child.kill(sig)` maps to TerminateProcess on win32
+          // and skips descendants → orphaned processes survive a
+          // supervisor SIGTERM. Audit 2026-05-17.
+          treeKill(child, sig);
         });
       }
 

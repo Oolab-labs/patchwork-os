@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import {
   error,
   optionalBool,
@@ -321,8 +322,12 @@ export function createPreviewEditTool(workspace: string) {
       const originalLines = originalContent.split("\n");
       const newLines = newContent.split("\n");
 
-      const relativePath = rawPath.startsWith("/")
-        ? rawPath.slice(workspace.length + 1)
+      // Use path.relative + isAbsolute so Windows absolute paths
+      // (`C:\...`) are handled. Pre-fix `startsWith("/")` only matched
+      // POSIX absolute paths; on Windows the slice produced corrupt
+      // output (separator mismatch). Audit 2026-05-17.
+      const relativePath = path.isAbsolute(rawPath)
+        ? path.relative(workspace, rawPath)
         : rawPath;
 
       const { diff, linesAdded, linesRemoved } = computeUnifiedDiff(
