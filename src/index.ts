@@ -251,8 +251,12 @@ if (
       `  recipe --help                             Full recipe subcommand index\n\n` +
       `Diagnose\n` +
       `  halts [--window 1h|24h|overnight|7d]      Morning summary of recent recipe halts\n` +
+      `  judgments [--window ...] [--recipe N]     Recent judge-step verdicts across runs\n` +
       `  traces export                             Bundle approval / recipe / decision traces\n` +
       `  print-token [--port N]                    Print the active bridge auth token\n\n` +
+      `Safety\n` +
+      `  kill-switch <engage|release|status>       Block / resume write-tier tools across bridges\n` +
+      `  panic [--reason "..."]                    Shorthand for kill-switch engage\n\n` +
       `Daemon (no subcommand)\n` +
       `  --workspace <dir>                         Start the bridge in foreground\n` +
       `  --watch                                   Auto-restart supervisor\n` +
@@ -2123,11 +2127,24 @@ if (process.argv[2] === "kill-switch") {
 // form is `kill-switch engage`; this alias matches it so shell history six
 // months later still makes sense. Does not accept sub-verbs — just runs engage.
 if (process.argv[2] === "panic") {
+  const extra = process.argv.slice(3); // e.g. --reason "..." --force-local
+  // Guard against `panic --help` engaging the kill switch — a real
+  // footgun if you tab-completed the verb to confirm syntax before
+  // committing to the action. `panic` is an alias, so we honor --help
+  // here ourselves rather than forwarding to kill-switch engage.
+  if (extra.includes("--help") || extra.includes("-h")) {
+    console.log(
+      'Usage: patchwork panic [--reason "..."] [--force-local]\n\n' +
+        "  Alias for `patchwork kill-switch engage` — blocks all write-tier\n" +
+        "  tool calls across every running bridge. Use --reason to leave a\n" +
+        "  note in the audit trail. Release with `patchwork kill-switch release`.\n",
+    );
+    process.exit(0);
+  }
   // Spawn self with kill-switch engage to reuse the full handler without
   // duplicating 200+ LOC. Passes through any flags (--reason, --force-local).
   import("node:child_process").then(({ spawnSync }) => {
     const self = process.argv[1] ?? process.execPath;
-    const extra = process.argv.slice(3); // e.g. --reason "..." --force-local
     const result = spawnSync(
       process.execPath,
       [self, "kill-switch", "engage", ...extra],
