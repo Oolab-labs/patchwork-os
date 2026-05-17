@@ -267,31 +267,47 @@ describe("ClaudeOrchestrator", () => {
 
 // ── Persistence tests ─────────────────────────────────────────────────────────
 
+// Atomic write helper (writeFileAtomic / writeFileAtomicSync) writes to a
+// temp path then renames. The persistence tests below mock writeFile* to
+// capture content without touching disk, so rename* must also be mocked
+// (otherwise the helper's rename step ENOENTs on the un-created temp).
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
     readFile: vi.fn(),
     writeFile: vi.fn().mockResolvedValue(undefined),
+    rename: vi.fn().mockResolvedValue(undefined),
+    unlink: vi.fn().mockResolvedValue(undefined),
+    chmod: vi.fn().mockResolvedValue(undefined),
   };
 });
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
+  const mockedPromises = {
+    ...(actual.promises ?? {}),
+    writeFile: vi.fn().mockResolvedValue(undefined),
+    rename: vi.fn().mockResolvedValue(undefined),
+    unlink: vi.fn().mockResolvedValue(undefined),
+    chmod: vi.fn().mockResolvedValue(undefined),
+  };
   return {
     ...actual,
     default: {
       ...actual,
       writeFileSync: vi.fn(),
+      renameSync: vi.fn(),
+      unlinkSync: vi.fn(),
       chmodSync: vi.fn(),
-      promises: {
-        ...(actual.promises ?? {}),
-        chmod: vi.fn().mockResolvedValue(undefined),
-      },
+      promises: mockedPromises,
       lstatSync: vi.fn().mockReturnValue({ isFile: () => true }),
     },
     writeFileSync: vi.fn(),
+    renameSync: vi.fn(),
+    unlinkSync: vi.fn(),
     chmodSync: vi.fn(),
+    promises: mockedPromises,
     lstatSync: vi.fn().mockReturnValue({ isFile: () => true }),
   };
 });
@@ -305,7 +321,12 @@ describe("ClaudeOrchestrator — persistence", () => {
     vi.clearAllMocks();
     const fsp = await import("node:fs/promises");
     const fsm = await import("node:fs");
-    mockWriteFile = fsp.writeFile as unknown as MockInstance;
+    // writeFileAtomic helper uses `fs.promises.writeFile` (via the
+    // namespace import of node:fs), not the standalone node:fs/promises
+    // module — so read the mock from the `node:fs` namespace's promises.
+    mockWriteFile = ((
+      fsm.default as unknown as { promises: Record<string, MockInstance> }
+    ).promises.writeFile ?? fsp.writeFile) as MockInstance;
     mockReadFile = fsp.readFile as unknown as MockInstance;
     mockWriteFileSync = (fsm.default as unknown as Record<string, MockInstance>)
       .writeFileSync;

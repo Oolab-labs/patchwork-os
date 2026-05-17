@@ -62,6 +62,7 @@ import {
 } from "./installGuard.js";
 import { PACKAGE_VERSION, semverGt } from "./version.js";
 import { ensureCmdShim } from "./winShim.js";
+import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
 const __dirnameTop = path.dirname(fileURLToPath(import.meta.url));
 
@@ -3345,7 +3346,12 @@ Steps performed:
         type: "stdio",
       };
       claudeJson.mcpServers = mcpServers;
-      writeFileSync(claudeJsonAbs, `${JSON.stringify(claudeJson, null, 2)}\n`);
+      // Atomic — `~/.claude.json` holds every MCP server registration on
+      // the machine. A crash mid-write would brick Claude Code globally.
+      writeFileAtomicSync(
+        claudeJsonAbs,
+        `${JSON.stringify(claudeJson, null, 2)}\n`,
+      );
       process.stderr.write(
         `  ✓ MCP shim — registered in ${claudeJsonAbs}\n     Note: bridge tools are wired via ~/.claude.json (global), not .mcp.json.\n     This is intentional — when VS Code/Windsurf/Cursor launches Claude Code it\n     injects --mcp-config which overrides any project .mcp.json. Only ~/.claude.json\n     is always loaded. You do not need to add anything to .mcp.json.\n\n`,
       );
@@ -3417,7 +3423,12 @@ Steps performed:
     }
     if (added.length > 0 || migrated.length > 0) {
       ccSettings.hooks = ccHooks;
-      writeFileSync(ccSettingsPath, `${JSON.stringify(ccSettings, null, 2)}\n`);
+      // Atomic — `~/.claude/settings.json` holds every CC hook entry; a
+      // crash mid-write loses the user's full hook configuration.
+      writeFileAtomicSync(
+        ccSettingsPath,
+        `${JSON.stringify(ccSettings, null, 2)}\n`,
+      );
       const addMsg =
         added.length > 0
           ? `  ✓ CC hooks — wired ${added.length} automation hook(s) in ${ccSettingsPath}\n     Added: ${added.join(", ")}\n`

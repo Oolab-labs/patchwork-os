@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import {
   isAbsolute as isAbsolutePath,
@@ -14,6 +14,7 @@ function getConfigDir(): string {
 }
 
 import type { IClaudeDriver } from "./drivers/types.js";
+import { writeFileAtomic, writeFileAtomicSync } from "./writeFileAtomic.js";
 
 export type TaskStatus =
   | "pending"
@@ -559,9 +560,13 @@ export class ClaudeOrchestrator {
       savedAt: Date.now(),
       tasks: this._buildTasksPayload(),
     };
-    await writeFile(filePath, JSON.stringify(payload, null, 2), "utf-8");
-    // Restrict to owner-only — prompts may contain sensitive code or secrets
-    await fs.promises.chmod(filePath, 0o600);
+    // Atomic write — temp+rename — so a crash mid-write can't truncate
+    // tasks file and lose the re-enqueue contract. mode 0o600 owner-only
+    // (prompts may contain sensitive code or secrets).
+    await writeFileAtomic(filePath, JSON.stringify(payload, null, 2), {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
   }
 
   /** Synchronous flush called during shutdown — captures tasks at their true
@@ -575,8 +580,13 @@ export class ClaudeOrchestrator {
         savedAt: Date.now(),
         tasks: this._buildTasksPayload(),
       };
-      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf-8");
-      fs.chmodSync(filePath, 0o600);
+      // SIGTERM mid-write was the worst-case for non-atomic write — a
+      // truncated tasks file means loadPersistedTasks silently swallows
+      // the parse error and all interrupted-run tasks are lost.
+      writeFileAtomicSync(filePath, JSON.stringify(payload, null, 2), {
+        encoding: "utf-8",
+        mode: 0o600,
+      });
     } catch {
       /* best-effort */
     }

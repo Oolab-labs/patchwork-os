@@ -1,12 +1,7 @@
-import {
-  appendFileSync,
-  mkdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type { Logger } from "./logger.js";
+import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
 /**
  * CommitIssueLinkLog — persistent audit trail of every commit→issue link
@@ -229,7 +224,7 @@ export class CommitIssueLinkLog {
         lines = [];
         joined = "";
       }
-      writeFileSync(this.file, joined.length > 0 ? `${joined}\n` : "", {
+      writeFileAtomicSync(this.file, joined.length > 0 ? `${joined}\n` : "", {
         mode: 0o600,
       });
     } catch (err) {

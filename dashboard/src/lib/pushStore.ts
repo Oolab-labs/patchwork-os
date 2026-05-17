@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -16,9 +17,20 @@ function load(): Map<string, PushSubscription> {
 }
 
 function persist(store: Map<string, PushSubscription>): void {
+  // Atomic write — temp + rename — so a crash mid-write can't truncate
+  // the subscription store (which would silently wipe every push
+  // subscription on next boot; load() catches parse errors and resets
+  // to an empty Map). Audit 2026-05-17.
+  const tmp = `${STORE_PATH}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
   try {
-    fs.writeFileSync(STORE_PATH, JSON.stringify([...store.entries()]), "utf8");
+    fs.writeFileSync(tmp, JSON.stringify([...store.entries()]), "utf8");
+    fs.renameSync(tmp, STORE_PATH);
   } catch (err) {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* already gone or never created */
+    }
     console.warn("[pushStore] Failed to persist subscriptions:", err);
   }
 }
