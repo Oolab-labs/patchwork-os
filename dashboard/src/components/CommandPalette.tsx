@@ -65,17 +65,21 @@ export function CommandPalette({
   // offline) so we don't need to gate on bridge status here.
   useEffect(() => {
     if (!open) return;
+    // #605: AbortController per open so closing the palette mid-fetch
+    // cancels both requests — late responses won't overwrite fresh
+    // state if the user reopens quickly with different bridge data.
+    const controller = new AbortController();
     // Refetch on every open. Approvals especially go stale fast — a user
     // approving via the queue then re-opening the palette should not see
     // already-decided calls. Recipes change rarely but it's cheap.
-    fetch(apiPath("/api/bridge/recipes"))
+    fetch(apiPath("/api/bridge/recipes"), { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         const list = (d?.recipes ?? d ?? []) as { name?: string }[];
         setRecipes(list.filter((r) => r.name).map((r) => ({ name: r.name as string })));
       })
       .catch(() => {});
-    fetch(apiPath("/api/bridge/approvals"))
+    fetch(apiPath("/api/bridge/approvals"), { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         const list = (d?.pending ?? d ?? []) as { callId?: string; toolName?: string }[];
@@ -87,6 +91,7 @@ export function CommandPalette({
         );
       })
       .catch(() => {});
+    return () => controller.abort();
   }, [open]);
 
   const commands = useMemo<Command[]>(() => {
