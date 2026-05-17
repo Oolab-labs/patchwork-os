@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
+import { ensureCmdShim } from "./winShim.js";
 
 export const PATCHWORK_PACKAGE_NAME = "patchwork-os";
 
@@ -28,8 +29,11 @@ export interface SymlinkInstallInfo {
  */
 export function detectWorkspaceSymlinkInstall(): SymlinkInstallInfo | null {
   try {
-    // Get the global node_modules root from npm.
-    const result = spawnSync("npm", ["root", "-g"], {
+    // Get the global node_modules root from npm. Wrap "npm" via the
+    // canonical shim helper so Windows resolves `npm.cmd` (without it,
+    // spawnSync ENOENTs on every win32 startup and the symlink check
+    // silently no-ops). Audit 2026-05-17.
+    const result = spawnSync(ensureCmdShim("npm"), ["root", "-g"], {
       encoding: "utf-8",
       timeout: 5000,
     });

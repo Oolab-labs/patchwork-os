@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ToolResult } from "../fp/result.js";
 import { err, okS, toCallToolResult } from "../fp/result.js";
 import { ensureCmdShim } from "../winShim.js";
@@ -198,9 +199,12 @@ async function spawnWorkspace(
       ? args.token
       : undefined;
 
-  // Locate the bridge entry point: dist/index.js (one dir above this file)
+  // Locate the bridge entry point: dist/index.js (one dir above this file).
+  // Use fileURLToPath instead of URL.pathname — on Windows the latter
+  // returns `/C:/...` (leading slash + drive letter) which path.resolve
+  // can't normalise. Audit 2026-05-17.
   const bridgeBin = path.resolve(
-    new URL(".", import.meta.url).pathname,
+    fileURLToPath(new URL(".", import.meta.url)),
     "..",
     "index.js",
   );
