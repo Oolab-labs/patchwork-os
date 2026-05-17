@@ -1105,6 +1105,7 @@ export class Bridge {
         (msg) => this.logger.info(msg),
         this.extensionClient,
         this.config.workspace,
+        this.config.automationAllowPrivateWebhooks,
       );
       this.logger.info(
         `[bridge] Automation enabled (policy: ${this.config.automationPolicyPath})`,

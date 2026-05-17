@@ -538,3 +538,19 @@ describe("saveBridgeConfigDriver", () => {
     });
   });
 });
+
+describe("parseConfig --automation-allow-private-webhooks", () => {
+  it("defaults to false when flag is absent", () => {
+    const config = cfg("--workspace", "/tmp");
+    expect(config.automationAllowPrivateWebhooks).toBe(false);
+  });
+
+  it("flips to true when flag is passed", () => {
+    const config = cfg(
+      "--workspace",
+      "/tmp",
+      "--automation-allow-private-webhooks",
+    );
+    expect(config.automationAllowPrivateWebhooks).toBe(true);
+  });
+});
