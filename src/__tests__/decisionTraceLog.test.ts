@@ -198,4 +198,46 @@ describe("DecisionTraceLog", () => {
     expect(fs.readFileSync(file, "utf8")).toContain('"ref":"#after-rotate"');
     expect(fs.existsSync(`${file}.tmp`)).toBe(false);
   });
+
+  // ─── Tail-on-read (ADR-0007) ───────────────────────────────────────────
+  it("tail-on-read: query() picks up rows appended by a sibling bridge", () => {
+    const file = path.join(dir, "decision_traces.jsonl");
+    const fs = require("node:fs") as typeof import("node:fs");
+
+    const a = new DecisionTraceLog({ dir });
+    a.record({ ...base(), ref: "#a-1" });
+    expect(a.query().map((t) => t.ref)).toEqual(["#a-1"]);
+
+    // Simulate sibling bridge appending directly to disk. Higher seq
+    // so the dedup guard (`seq > this.seq`) accepts the row.
+    const externalRow = JSON.stringify({
+      seq: 999,
+      createdAt: 2,
+      ref: "#sibling-write",
+      problem: "p",
+      solution: "s",
+      workspace: "/ws",
+    });
+    fs.appendFileSync(file, `${externalRow}\n`);
+
+    const refs = a.query().map((t) => t.ref);
+    expect(refs).toContain("#sibling-write");
+    expect(refs).toContain("#a-1");
+  });
+
+  it("tail-on-read: self-appends don't get re-loaded as duplicates", () => {
+    const a = new DecisionTraceLog({ dir });
+    a.record({ ...base(), ref: "#one" });
+    a.record({ ...base(), ref: "#two" });
+    // Two queries back-to-back with no intervening write must return
+    // identical results — the tail-read short-circuits when file size
+    // hasn't grown past `lastReadOffset`.
+    const first = a.query().map((t) => t.ref);
+    const second = a.query().map((t) => t.ref);
+    expect(first).toEqual(second);
+    expect(first).toContain("#one");
+    expect(first).toContain("#two");
+    expect(first.filter((r) => r === "#one")).toHaveLength(1);
+    expect(first.filter((r) => r === "#two")).toHaveLength(1);
+  });
 });
