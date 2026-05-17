@@ -196,4 +196,43 @@ steps:
       expect(result.action).toBe("created");
     });
   });
+
+  // ─── atomic write (audit 2026-05-17) ──────────────────────────────────────
+  // Default write path uses temp+rename. Two concurrent installs of the
+  // same recipe (cross-process) used to interleave bytes within the
+  // JSON payload (torn file → recipe invisible to the scheduler).
+  // Temp+rename guarantees the destination is either old content or
+  // new content, never partial.
+  describe("atomic write", () => {
+    it("leaves no .tmp.* sibling after a successful install", () => {
+      const src = writeRecipe("source", SIMPLE);
+      const recipesDir = path.join(dir, "recipes");
+      installRecipeFromFile(src, { recipesDir });
+      const { readdirSync } = require("node:fs") as typeof import("node:fs");
+      const entries = readdirSync(recipesDir);
+      expect(entries.filter((e: string) => e.includes(".tmp."))).toEqual([]);
+      expect(entries).toContain("sentry-autofix.json");
+    });
+
+    it("installed file is always valid JSON (no torn payload)", () => {
+      const src = writeRecipe("source", SIMPLE);
+      const recipesDir = path.join(dir, "recipes");
+      const result = installRecipeFromFile(src, { recipesDir });
+      // The file on disk parses to a recipe object — the temp+rename
+      // path can't observe a half-written JSON document.
+      const parsed = JSON.parse(readFileSync(result.installedPath, "utf-8"));
+      expect(parsed.name).toBe("sentry-autofix");
+    });
+
+    it("repeated installs converge to the latest payload (last writer wins)", () => {
+      const recipesDir = path.join(dir, "recipes");
+      const srcA = writeRecipe("source-a", { ...SIMPLE, version: "1.1" });
+      const srcB = writeRecipe("source-b", { ...SIMPLE, version: "2.0" });
+      installRecipeFromFile(srcA, { recipesDir });
+      const second = installRecipeFromFile(srcB, { recipesDir });
+      const parsed = JSON.parse(readFileSync(second.installedPath, "utf-8"));
+      expect(parsed.version).toBe("2.0");
+      expect(second.action).toBe("replaced");
+    });
+  });
 });
