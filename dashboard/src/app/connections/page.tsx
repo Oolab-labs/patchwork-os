@@ -928,8 +928,11 @@ export default function ConnectionsPage() {
   }
 
   async function handleNotionConnect() {
-    if (!notionToken.startsWith("secret_")) {
-      setNotionErr('Token must start with "secret_" — find it in Notion → Settings → Connections → Your integrations');
+    // Audit 2026-05-17 (#600): Notion issues both legacy `secret_` and
+    // newer `ntn_` token prefixes. Rejecting `ntn_` was a false-negative
+    // that locked out valid users with current API keys.
+    if (!notionToken.startsWith("secret_") && !notionToken.startsWith("ntn_")) {
+      setNotionErr('Token must start with "secret_" or "ntn_" — find it in Notion → Settings → Connections → Your integrations');
       return;
     }
     setNotionConnecting(true);
