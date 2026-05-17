@@ -20,7 +20,7 @@ A guided walkthrough ships with the extension. It opens automatically on first i
 
 | Mode | What you get | Who it's for |
 |---|---|---|
-| **Bridge only** _(default)_ | 170 MCP tools: LSP, diagnostics, debugger, terminal, git, GitHub, file ops | Anyone who wants Claude Code to see and act on their IDE |
+| **Bridge only** _(default)_ | 177 MCP tools: LSP, diagnostics, debugger, terminal, git, GitHub, file ops | Anyone who wants Claude Code to see and act on their IDE |
 | **Patchwork OS layer** _(opt-in)_ | All bridge tools + recipes, approval queue, oversight dashboard, mobile push approvals, multi-model | Power users running automation, agent workflows, or background tasks |
 
 The bridge runs without any flags. Add `--automation --driver subprocess` to enable the Patchwork OS layer when you want it.
