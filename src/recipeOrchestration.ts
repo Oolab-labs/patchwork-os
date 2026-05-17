@@ -341,16 +341,29 @@ export class RecipeOrchestration {
           ...(result.error !== undefined && { error: result.error }),
         };
       } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        };
+        // #605: don't leak err.message (file paths, stack details) to
+        // the HTTP caller — same fix shape as the dashboard recipe
+        // routes in #601. Server-side log retains the detail.
+        this.deps.logger?.warn?.(
+          `[runReplayFn] replay failed for seq=${seq}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return { ok: false, error: "replay_internal_error" };
       }
     };
 
     this.wireGenerateFn();
 
     server.webhookFn = async (hookPath: string, payload: unknown) => {
+      // #605: same kill-switch gate as runRecipeFn — webhook trigger
+      // is just another path into recipe execution.
+      try {
+        const { isWriteKillSwitchActive } = await import("./featureFlags.js");
+        if (isWriteKillSwitchActive()) {
+          return { ok: false, error: "kill_switch_blocked" };
+        }
+      } catch {
+        /* featureFlags module unavailable — fail open. */
+      }
       if (!this.deps.getOrchestrator()) {
         return {
           ok: false,
@@ -364,6 +377,16 @@ export class RecipeOrchestration {
       const match = findWebhookRecipe(recipesDir, hookPath);
       if (!match) {
         return { ok: false, error: "not_found" };
+      }
+      // #605: defense-in-depth — webhookFn previously trusted whatever
+      // name the on-disk recipe declared. A legacy/tampered recipe
+      // with a slashy or oversized name would propagate into
+      // triggerSource and log keys. The parser enforces RECIPE_NAME_RE
+      // at install time; re-check at the webhook boundary for any
+      // recipe that predates that check or was hand-edited later.
+      const { RECIPE_NAME_RE } = await import("./recipes/names.js");
+      if (!RECIPE_NAME_RE.test(match.name)) {
+        return { ok: false, error: "invalid_recipe_name" };
       }
       if (match.format === "yaml") {
         let payloadText: string | undefined;
@@ -418,6 +441,22 @@ export class RecipeOrchestration {
       name: string,
       vars?: Record<string, string>,
     ) => {
+      // #605: kill-switch gate. Recipe execution is the largest write
+      // surface the bridge exposes (Claude subprocess + tool calls);
+      // the kill switch was designed for exactly this case but the
+      // recipe entry point never consulted it.
+      try {
+        const { isWriteKillSwitchActive } = await import("./featureFlags.js");
+        if (isWriteKillSwitchActive()) {
+          return {
+            ok: false,
+            error: "kill_switch_blocked",
+          };
+        }
+      } catch {
+        /* featureFlags module unavailable — fail open, same as
+           every other site that imports it dynamically. */
+      }
       if (!this.deps.getOrchestrator()) {
         return {
           ok: false,
@@ -434,6 +473,18 @@ export class RecipeOrchestration {
       const loaded = loadRecipePrompt(recipesDir, name);
       if (loaded) {
         try {
+          // #605: validate vars BEFORE interpolating into the prompt.
+          // The HTTP boundary already calls validateRecipeVars, but
+          // runRecipeFn is also reachable from webhookFn/scheduler with
+          // unvalidated payloads. A var value containing newlines or
+          // backticks could bias the prompt (prompt-injection-by-var).
+          if (vars && Object.keys(vars).length > 0) {
+            const { validateRecipeVars } = await import("./recipeRoutes.js");
+            const varsErr = validateRecipeVars(vars);
+            if (varsErr) {
+              return { ok: false, error: `invalid_vars:${varsErr.field}` };
+            }
+          }
           let prompt = loaded.prompt;
           if (vars && Object.keys(vars).length > 0) {
             const varLines = Object.entries(vars)
@@ -447,10 +498,11 @@ export class RecipeOrchestration {
           });
           return { ok: true, taskId };
         } catch (err) {
-          return {
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          };
+          // #605: don't leak err.message (file paths, stack details).
+          this.deps.logger?.warn?.(
+            `[runRecipeFn] enqueue failed for '${name}': ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return { ok: false, error: "enqueue_failed" };
         }
       }
 
