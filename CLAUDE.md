@@ -29,6 +29,65 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `recipe new <name>` — Scaffold a recipe from a template (`minimal` | `daily` | `inbox`). Add `--interactive` (or `-i`) to drop into the connector-aware prompt tree instead: mode pick (Guided / Template / AI-suggest), then step-by-step build. Generated YAML includes the SchemaStore pragma and runs `validateRecipeDefinition` post-hoc as warnings. AI-suggest discovers the running bridge via `~/.claude/ide/*.lock` and POSTs the goal to `/recipes/generate`; raw response written to disk (no form normalization).
 - `--watch` — Auto-restart supervisor with exponential backoff (2s → 30s). Safe for production.
 
+#### Recipe verbs (beyond `recipe new`)
+
+- `recipe list` — Print installed recipes from the active bridge.
+- `recipe install <source>` — Install from `github:owner/repo[/path][@ref]`. Same shape the dashboard install panel posts.
+- `recipe uninstall <name>` — Remove a locally installed recipe.
+- `recipe run <name> [--local --dry-run --step <id> --attempt <n> --ledger-dir <path> --var k=v]` — Manual run with overrides; `--local` skips the bridge API.
+- `recipe lint <file.yaml>` — Lint a recipe YAML against the schema + best-practice rules.
+- `recipe preflight <file.yaml>` — Connector preflight: list authorisations the recipe needs.
+- `recipe fmt <file.yaml>` — Format a recipe YAML in place.
+- `recipe record <name>` — Record a successful run as a learned trace.
+- `recipe schema` — Print the active recipe JSON schema.
+
+#### Operational commands
+
+- `start [--port N] [--workspace <path>]` — Single-bridge start (no tmux). Pair with `--watch` for supervised mode.
+- `status` — One-line bridge status: lock file, port, uptime, session count.
+- `tools [--slim] [--json]` — List tools the bridge would register without starting it.
+- `kill-switch engage|release|status [--reason <text>]` — Toggle the global write-disable gate (see ADR-0012).
+- `panic` — Shortcut for `kill-switch engage --reason "manual panic"`.
+- `judgments [--since <duration>] [--limit N] [--json]` — Recent approval decisions across all sessions.
+- `suggest [--since-days N]` — Recipe co-occurrence + unused-tool suggestions from recent activity.
+- `traces export [--passphrase <p>] [--mode keyed|public] > file.jsonl` — Export decision traces; `--mode keyed` encrypts with the passphrase.
+- `traces import [--passphrase <p>] [--dry-run] < file.jsonl` — Restore traces from an export.
+- `token-efficiency benchmark [...]` — Measure token cost across slim/full tool sets.
+- `launchd install|uninstall|status` — Manage the macOS LaunchAgent for the bridge (auto-start at login).
+- `orchestrator [--port N] [--workspace <path>]` — Start a multi-bridge orchestrator (parent/child topology).
+- `notify <event> [...]` — Forward a Claude Code hook event to the bridge `/notify` endpoint (wired from `~/.claude/settings.json`).
+- `shim` — stdio MCP bridge for Claude Desktop. Auto-invoked by Desktop's `claude_desktop_config.json`; not normally run by hand.
+
+#### Environment variables
+
+Most users don't need to touch these — CLI flags cover the common cases. Listed here so deployments and supervisors have a complete reference.
+
+| Var | Effect |
+|---|---|
+| `CLAUDE_IDE_BRIDGE_TOKEN` | Override the auto-generated auth token in the lock file. Use with `--fixed-token` in deployments. |
+| `CLAUDE_IDE_BRIDGE_CONFIG` | Path to a JSON config file the bridge reads at startup (alternative to CLI flags). |
+| `CLAUDE_IDE_BRIDGE_GRACE_PERIOD` | ms (default 120000) — session-restore window after WebSocket disconnect. Equivalent to `--grace-period`. |
+| `CLAUDE_IDE_BRIDGE_EDITOR` | Editor identity reported on `extension/hello` (default auto-detect). |
+| `CLAUDE_IDE_BRIDGE_LINTERS` | Comma-separated linter binaries the bridge will probe for. |
+| `CLAUDE_IDE_BRIDGE_TIMEOUT` | ms (default 30000) — tool execution timeout. |
+| `CLAUDE_IDE_BRIDGE_MAX_RESULT_SIZE` | bytes — cap on tool result payload size before truncation. |
+| `CLAUDE_IDE_BRIDGE_ISSUER_URL` | Equivalent to `--issuer-url`; activates OAuth 2.0 mode. |
+| `CLAUDE_IDE_BRIDGE_CORS_ORIGINS` | Comma-separated CORS origins (alternative to repeated `--cors-origin`). |
+| `CLAUDE_IDE_BRIDGE_TRUST_PROXY` | Truthy → trust `X-Forwarded-For` (set when running behind nginx/Caddy). |
+| `CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS` | Comma-separated hostnames for `/recipes/install` source allowlist (default `github.com`). |
+| `CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL` | Path override for recipe-runner temp directory. |
+| `BRIDGE_WEBHOOK_SECRET` | Equivalent to `--webhook-secret`; HMAC-SHA256 auth on `POST /hooks/*`. |
+| `PATCHWORK_HOME` | Override `~/.patchwork` workspace root. |
+| `PATCHWORK_BRIDGE_URL` / `PATCHWORK_BRIDGE_PORT` | CLI subcommands use these to find the bridge instead of the lock file (useful in remote-bridge setups). |
+| `PATCHWORK_DASHBOARD_URL` | Default dashboard URL used by CLI "open" actions. |
+| `PATCHWORK_CLAUDE_BINARY` | Equivalent to `--claude-binary`; path to the `claude` CLI. |
+| `PATCHWORK_RECIPE_REPO_ALLOWLIST` | Comma-separated `owner/repo` allowlist for recipe install sources. |
+| `PATCHWORK_TOKEN_DIR` / `PATCHWORK_TOKEN_STORAGE_BACKEND` | Connector-token storage location + backend (`file` vs `keychain`). |
+| `PATCHWORK_FLAG_KILL_SWITCH_WRITES` | Feature flag — gate write tools on kill-switch state. |
+| `PATCHWORK_FLAG_UI_SCHEMA_LINT` | Feature flag — strict UI-schema linting in the recipe editor. |
+| `LOCAL_MODEL` / `LOCAL_ENDPOINT` / `LOCAL_API_KEY` / `LOCAL_ENDPOINT_ALLOW_REMOTE` | Local-model driver config (Ollama / vLLM / OpenAI-compatible endpoint). |
+| `OTEL_SERVICE_NAME` | Override the OTel service name (default `claude-ide-bridge`). |
+
 ## Bug Fix Protocol
 
 When bug reported, do NOT fix first. Instead:
