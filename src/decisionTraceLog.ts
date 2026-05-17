@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { withFileLockSync } from "./fileLockSync.js";
 import type { Logger } from "./logger.js";
 
 /**
@@ -187,7 +188,18 @@ export class DecisionTraceLog {
         const code = (err as NodeJS.ErrnoException).code;
         if (code !== "ENOENT") throw err;
       }
-      appendFileSync(this.file, `${JSON.stringify(trace)}\n`, { mode: 0o600 });
+      // Lock the file across the single appendFileSync call. ADR-0007:
+      // two bridges sharing $HOME can interleave bytes within a single
+      // JSONL row on apfs / ext4 (POSIX append-atomicity is not a
+      // contract for sub-page writes). The torn line then fails
+      // JSON.parse → row silently skipped on every reader. The lock
+      // bounds the critical section to <1ms in practice; contention at
+      // the bridge's write volume (≤ tens/min) is negligible.
+      withFileLockSync(this.file, () => {
+        appendFileSync(this.file, `${JSON.stringify(trace)}\n`, {
+          mode: 0o600,
+        });
+      });
     } catch (err) {
       this.opts.logger?.warn?.(
         `[dtrace-log] append failed: ${err instanceof Error ? err.message : String(err)}`,
