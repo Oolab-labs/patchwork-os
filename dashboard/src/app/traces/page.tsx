@@ -785,7 +785,13 @@ export default function TracesPage() {
           description="Traces appear as recipes run and approvals are processed."
         />
       ) : view === "flat" ? (
-        <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: "var(--s-5)" }}>
+        // #600: switch `overflow: hidden` → `overflow-x: auto` so the
+        // wide 7-col table can horizontally scroll INSIDE the card on
+        // phones instead of pushing the whole page wider than the
+        // viewport. Each row keeps its columnar layout (the alternative
+        // — stacking cells vertically per row — destroys the table
+        // affordance, which is the whole point of this view).
+        <div className="card" style={{ padding: 0, overflowX: "auto", overflowY: "hidden", marginBottom: "var(--s-5)" }}>
           {visible.map(t => {
             const rowKey = `${t.traceType}:${t.ts}:${t.key}`;
             const isOpen = expanded.has(rowKey);
@@ -934,7 +940,8 @@ export default function TracesPage() {
         </div>
       ) : (
         // Tree view
-        <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: "var(--s-5)" }}>
+        // #600: same overflow-x: auto pattern as the flat view above.
+        <div className="card" style={{ padding: 0, overflowX: "auto", overflowY: "hidden", marginBottom: "var(--s-5)" }}>
           {buildSpanGroups(visible).map((group) => {
             const { root, children } = group;
             const rootKey = `${root.traceType}:${root.ts}:${root.key}`;

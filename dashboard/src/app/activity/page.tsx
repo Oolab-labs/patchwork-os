@@ -340,12 +340,9 @@ export default function ActivityPage() {
 
       {/* Charts row: histogram + top tools */}
       <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr minmax(0, 340px)",
-          gap: "var(--s-4)",
-          marginBottom: "var(--s-4)",
-        }}
+        // #600: .two-pane-340-rev collapses to single column at ≤768px.
+        className="two-pane-340-rev"
+        style={{ marginBottom: "var(--s-4)" }}
       >
         <div className="card" style={{ padding: "14px 18px 10px" }}>
           <div

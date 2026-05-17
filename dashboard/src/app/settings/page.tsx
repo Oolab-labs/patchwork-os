@@ -340,7 +340,17 @@ export default function SettingsPage() {
   // When the bridge emits a state-change event the toggle updates in <1s
   // without waiting for the next 5-second poll cycle.
   useEffect(() => {
+    // #600: cap reconnect attempts. EventSource auto-reconnects forever
+    // if the endpoint 404s — burns bridge resources and pollutes the
+    // network panel with retries that will never succeed. After 5
+    // failures we give up; the 5s settings poll still picks up state
+    // changes (just at a slower cadence).
+    let failures = 0;
+    const MAX_FAILURES = 5;
     const es = new EventSource(apiPath("/api/bridge/stream"));
+    es.onopen = () => {
+      failures = 0;
+    };
     es.onmessage = (msg) => {
       try {
         const evt = JSON.parse(msg.data) as {
@@ -352,6 +362,12 @@ export default function SettingsPage() {
         }
       } catch {
         // ignore malformed events
+      }
+    };
+    es.onerror = () => {
+      failures += 1;
+      if (failures >= MAX_FAILURES) {
+        es.close();
       }
     };
     return () => es.close();
