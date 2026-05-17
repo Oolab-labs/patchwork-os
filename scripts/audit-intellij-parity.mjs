@@ -9,29 +9,35 @@
  * that calls this method will silently 404 on JetBrains hosts.
  *
  * Method discovery:
- *   VSCode side — `vscode-extension/src/handlers/index.ts` exports a
- *     `handlers: Record<string, …>` map; the keys are the wire methods.
- *   IntelliJ side — `intellij-plugin/src/main/kotlin/com/patchwork/bridge/BridgeService.kt`
- *     declares each method via `register("methodName", HandlerClass())`.
+ *   VSCode side — wire methods live as quoted `"extension/<name>"` literals
+ *     in any of the handler files under `vscode-extension/src/handlers/*.ts`.
+ *     Early versions of this script scanned only `index.ts`, which under-
+ *     reported the real handler count by ~40% (audit 2026-05-17): methods
+ *     registered via factory files like `lsp.ts`, `debug.ts`, `decorations.ts`
+ *     fell through and the script emitted false-positive "extra in IJ"
+ *     warnings for handlers that IJ correctly mirrored. Now we read every
+ *     .ts file in the handlers/ directory.
+ *   IntelliJ side — `intellij-plugin/.../bridge/BridgeService.kt` declares
+ *     each method via `register("methodName", HandlerClass())` (or a loop
+ *     over a stub-method list).
  *
- * Both are parsed with cheap regexes (no TS/Kotlin compiler). The discovery
- * regexes are anchored on the patterns already used in those files; if the
- * patterns change, this script needs to be updated alongside.
+ * Both sides are parsed with cheap regexes (no TS/Kotlin compiler). The
+ * discovery regexes are anchored on the patterns already used in those
+ * files; if the patterns change, this script needs to be updated alongside.
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
 
-const VSCODE_HANDLERS = join(
+const VSCODE_HANDLERS_DIR = join(
   repoRoot,
   "vscode-extension",
   "src",
   "handlers",
-  "index.ts",
 );
 const IJ_BRIDGE_SERVICE = join(
   repoRoot,
@@ -54,20 +60,43 @@ function readSrc(path) {
   }
 }
 
-function extractVsCodeMethods(src) {
+function listHandlerFiles(dir) {
+  try {
+    return readdirSync(dir)
+      .filter((f) => f.endsWith(".ts") && !f.endsWith(".d.ts"))
+      .map((f) => join(dir, f));
+  } catch (err) {
+    console.error(`audit-intellij-parity: cannot list ${dir}: ${err.message}`);
+    process.exit(2);
+  }
+}
+
+function extractVsCodeMethods() {
   // Wire methods are namespaced (`extension/getDiagnostics`), so they appear
-  // as quoted keys in handler maps. Scan for any `"extension/<name>":` shape
-  // anywhere in the file — that pattern is unambiguous and matches every
-  // current handler map (`baseHandlers`, factory return value, etc.).
+  // as quoted keys in handler maps. Scan every .ts file in handlers/ for the
+  // `"extension/<name>"` literal — the regex `"\s*:` anchor (key-of-object
+  // shape) is unambiguous and catches every shape we ship today:
+  //   - baseHandlers object map in index.ts
+  //   - lsp.ts / debug.ts / decorations.ts factory return values
+  //   - Module-level handler maps in fileWatcher.ts, terminal.ts, etc.
+  // Files that mention "extension/foo" in a comment or string-but-not-key
+  // are tolerated — false positives produce a slightly larger VSCode set,
+  // never a smaller one, which keeps the parity check conservative.
   const methods = new Set();
+  const files = listHandlerFiles(VSCODE_HANDLERS_DIR);
+  // Capture both `"extension/foo":` (object-literal key) and
+  // `"extension/foo": handlerFn` shapes uniformly via a trailing `:`.
   const re = /"(extension\/[a-zA-Z][a-zA-Z0-9_]*)"\s*:/g;
-  let m;
-  while ((m = re.exec(src)) !== null) {
-    methods.add(m[1]);
+  for (const file of files) {
+    const src = readSrc(file);
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      methods.add(m[1]);
+    }
   }
   if (methods.size === 0) {
     console.error(
-      "audit-intellij-parity: could not extract any wire methods from vscode-extension/src/handlers/index.ts — regex out of date?",
+      "audit-intellij-parity: could not extract any wire methods from vscode-extension/src/handlers/*.ts — regex out of date?",
     );
     process.exit(2);
   }
@@ -92,10 +121,9 @@ function extractIjMethods(src) {
   return methods;
 }
 
-const vscodeSrc = readSrc(VSCODE_HANDLERS);
 const ijSrc = readSrc(IJ_BRIDGE_SERVICE);
 
-const vscodeMethods = extractVsCodeMethods(vscodeSrc);
+const vscodeMethods = extractVsCodeMethods();
 const ijMethods = extractIjMethods(ijSrc);
 
 const missingInIj = [...vscodeMethods].filter((m) => !ijMethods.has(m)).sort();
