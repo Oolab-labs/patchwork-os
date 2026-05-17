@@ -97,9 +97,74 @@ describe("slack token storage", () => {
 
     const { handleSlackDisconnect } = await import("../slack.js");
 
-    const result = handleSlackDisconnect();
+    const result = await handleSlackDisconnect();
 
     expect(result.status).toBe(200);
     expect(existsSync(join(tokensDir, "slack-state.json"))).toBe(false);
+  });
+
+  // ─── auth.revoke upstream (audit 2026-05-17) ────────────────────────────
+  // Pre-fix, disconnect was local-only — a leaked token kept working.
+  // Now the bot token is revoked at Slack before the local delete.
+  it("posts to auth.revoke before deleting tokens, with the bearer", async () => {
+    // Plant a real token-file so loadTokens returns access_token.
+    const { storeSecretJsonSync } = await import("../tokenStorage.js");
+    storeSecretJsonSync("slack", {
+      access_token: "xoxb-test-token-abc",
+      bot_user_id: "U0",
+      team_id: "T0",
+    });
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    vi.resetModules();
+    const { handleSlackDisconnect } = await import("../slack.js");
+    const result = await handleSlackDisconnect();
+
+    expect(result.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [
+      string,
+      RequestInit & { headers: Record<string, string> },
+    ];
+    expect(url).toBe("https://slack.com/api/auth.revoke");
+    expect(init.method).toBe("POST");
+    expect(init.headers.Authorization).toBe("Bearer xoxb-test-token-abc");
+  });
+
+  it("still deletes local tokens when auth.revoke fails (best-effort)", async () => {
+    const { storeSecretJsonSync } = await import("../tokenStorage.js");
+    storeSecretJsonSync("slack", {
+      access_token: "xoxb-test-token-fail",
+      bot_user_id: "U0",
+      team_id: "T0",
+    });
+
+    const fetchMock = vi.fn().mockRejectedValueOnce(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    vi.resetModules();
+    const { handleSlackDisconnect, isConnected } = await import("../slack.js");
+    const result = await handleSlackDisconnect();
+
+    expect(result.status).toBe(200);
+    // Local delete must still happen — disconnect should never leave
+    // the user "stuck connected" because the vendor was unreachable.
+    expect(isConnected()).toBe(false);
+  });
+
+  it("skips auth.revoke when there is no stored token", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    vi.resetModules();
+    const { handleSlackDisconnect } = await import("../slack.js");
+    const result = await handleSlackDisconnect();
+
+    expect(result.status).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
