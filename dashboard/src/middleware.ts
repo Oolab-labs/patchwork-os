@@ -103,18 +103,24 @@ export const config = {
     //
     // PWA + SW machinery exemptions (these paths must be reachable
     // without a session so the PWA can install and the service worker
-    // can re-subscribe in the background):
+    // can register before login):
     //   - sw.js: registered by `navigator.serviceWorker.register` on
     //     page load; must be cacheable by the browser before login.
     //   - icons/: PWA icons referenced from manifest.json.
     //   - api/push/vapid-key: SW context fetches this on
-    //     pushsubscriptionchange; SW doesn't always carry the cookie.
-    //   - api/push/{subscribe,unsubscribe}: same SW context limitation;
-    //     they have their own same-origin CSRF guard.
+    //     pushsubscriptionchange. Read-only, public; safe to expose.
+    //
+    // api/push/{subscribe,unsubscribe} used to be exempt here too on
+    // the theory that the SW couldn't carry the session cookie. In
+    // practice SW fetches default to `credentials: "same-origin"` and
+    // DO send the cookie, so the exemption was wrong — it left two
+    // mutation endpoints unauthenticated. Removed 2026-05-17 (#600).
+    // Defense-in-depth: those handlers also re-check the session.
+    //
     // Root path (basePath bare) explicitly — the negative-lookahead
     // matcher below doesn't reliably catch `/` alone in Next.js, which
     // means the dashboard's overview page would otherwise be unprotected.
     "/",
-    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace|api/login|api/relay/push|sw\\.js|icons/|api/push/vapid-key|api/push/subscribe|api/push/unsubscribe).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace|api/login|api/relay/push|sw\\.js|icons/|api/push/vapid-key).*)",
   ],
 };

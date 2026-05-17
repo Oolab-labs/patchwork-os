@@ -40,8 +40,12 @@ export async function GET(
       headers: { "content-type": "application/json" },
     });
   } catch (err) {
+    // Audit 2026-05-17 (#600): don't leak err.message (file paths,
+    // ECONNREFUSED detail). Generic proxy was fixed in #120; these
+    // per-route handlers were missed.
+    console.error("[recipes/:name] bridge fetch failed:", err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : "fetch failed" }),
+      JSON.stringify({ error: "Bridge unreachable" }),
       { status: 502, headers: { "content-type": "application/json" } },
     );
   }
@@ -71,8 +75,12 @@ async function forwardWithMethod(
       headers: { "content-type": "application/json" },
     });
   } catch (err) {
+    // Audit 2026-05-17 (#600): don't leak err.message (file paths,
+    // ECONNREFUSED detail). Generic proxy was fixed in #120; these
+    // per-route handlers were missed.
+    console.error("[recipes/:name] bridge fetch failed:", err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : "fetch failed" }),
+      JSON.stringify({ error: "Bridge unreachable" }),
       { status: 502, headers: { "content-type": "application/json" } },
     );
   }
@@ -111,8 +119,12 @@ export async function DELETE(
       headers: { "content-type": "application/json" },
     });
   } catch (err) {
+    // Audit 2026-05-17 (#600): don't leak err.message (file paths,
+    // ECONNREFUSED detail). Generic proxy was fixed in #120; these
+    // per-route handlers were missed.
+    console.error("[recipes/:name] bridge fetch failed:", err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : "fetch failed" }),
+      JSON.stringify({ error: "Bridge unreachable" }),
       { status: 502, headers: { "content-type": "application/json" } },
     );
   }

@@ -127,29 +127,7 @@ export default function SessionsPage() {
   );
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [pausing, setPausing] = useState(false);
-
   const sessions = data ?? [];
-
-  async function handlePauseAll() {
-    if (sessions.length === 0 || pausing) return;
-    setPausing(true);
-    try {
-      const res = await fetch(apiPath("/api/bridge/sessions/pause-all"), { method: "POST" });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `Server returned ${res.status}`);
-      }
-      toast.success(`Paused ${sessions.length} session${sessions.length === 1 ? "" : "s"}`);
-      refetch();
-    } catch (e) {
-      toast.error(
-        `Couldn't pause sessions — ${e instanceof Error ? e.message : String(e)}`,
-      );
-    } finally {
-      setPausing(false);
-    }
-  }
 
   const liveCount = sessions.filter((s) => {
     const lastMs =
@@ -188,18 +166,10 @@ export default function SessionsPage() {
             ]}
           />
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button
-            type="button"
-            className="btn sm ghost"
-            disabled={sessions.length === 0 || pausing}
-            style={sessions.length === 0 ? { opacity: 0.4, cursor: "default" } : undefined}
-            onClick={() => void handlePauseAll()}
-          >
-            <span aria-hidden style={{ marginRight: 6 }}>❚❚</span>
-            {pausing ? "Pausing…" : "Pause all"}
-          </button>
-        </div>
+        {/* Pause-all button removed 2026-05-17 (#600 BLOCKER #3):
+            POST /api/bridge/sessions/pause-all has no bridge route — the
+            button always 404'd. Restore when the bridge ships a
+            sessions pause-all endpoint. */}
       </div>
 
       {error && sessions.length === 0 && (
