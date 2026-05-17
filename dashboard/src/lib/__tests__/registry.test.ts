@@ -105,26 +105,37 @@ steps:
     expect(got.steps).toBe(1);
   });
 
-  it("treats hyphenated suffixes as the base level (regex \\b is letter↔hyphen boundary)", () => {
-    // Documents existing behavior: `risk: medium-aggressive` matches the
-    // `risk: medium\b` regex because \b finds a word boundary at the
-    // letter→hyphen transition. If we want to forbid suffixes we'd need
-    // `[^\w-]` instead of `\b`. Pinned here so a future regex tightening
-    // is a deliberate, test-noticed change.
-    const yaml = "  risk: medium-aggressive\n  risk: medium\n";
-    expect(summarizeRisk(yaml).medium).toBe(2);
+  it("ignores unrecognised risk values (hyphenated suffix etc) under the parser-based impl", () => {
+    // The old regex used `\b` and counted `risk: medium-aggressive` as
+    // medium. The new parser-based impl uses strict equality and treats
+    // anything outside {low, medium, high} as not-a-risk-level — much
+    // better, since the registry's risk enum is exactly those three.
+    const yaml = `steps:
+  - id: a
+    risk: medium-aggressive
+  - id: b
+    risk: medium
+`;
+    expect(summarizeRisk(yaml).medium).toBe(1);
   });
 
-  it("counts only step rows that match `- id: <non-space>`", () => {
-    // Continuation-of-prior-list lines that don't start with `- id:` shouldn't count.
-    const yaml = `
-steps:
+  it("counts every map entry under `steps:` as a step (matches YAML semantics, not the legacy `- id:` heuristic)", () => {
+    // The pre-fix regex required `^- id:` rows. The parser sees every
+    // array entry under `steps:` as a step regardless of which keys it
+    // declares — closer to the recipe runtime's actual behaviour, where
+    // an id-less step is still a step (it just gets an auto-id).
+    const yaml = `steps:
   - id: real-step
     risk: low
-  - name: not-a-step
+  - name: also-a-step
     risk: high
 `;
-    expect(summarizeRisk(yaml).steps).toBe(1);
+    expect(summarizeRisk(yaml)).toEqual({
+      low: 1,
+      medium: 0,
+      high: 1,
+      steps: 2,
+    });
   });
 });
 

@@ -13,7 +13,9 @@ import {
 } from "@/lib/registry";
 import BundleInstallPanel from "./BundleInstallPanel";
 
-export const revalidate = 300;
+// 60s (was 300s) — match the recipe detail page; freshly merged
+// bundles shouldn't 404 for 5 min after the registry PR lands.
+export const revalidate = 60;
 
 interface PageProps {
   // Next 15: dynamic route params are Promise-typed.
