@@ -564,10 +564,18 @@ function statusPillClass(status: RunDetail["status"]): string {
 function CausalChainCard({ run }: { run: RunDetail }) {
   const [parent, setParent] = useState<RunSummary | null>(null);
   const [children, setChildren] = useState<RunSummary[]>([]);
+  // Serialize childSeqs for the dep array. Using the array reference
+  // directly re-fires this effect on every 5s polling tick (the parent
+  // returns a fresh RunDetail object → fresh childSeqs reference,
+  // even when contents are identical), which means full N+1 re-fetch
+  // every 5s while the page is open. Audit 2026-05-17 (#600). Serialize
+  // to a string so identity equality holds across stable contents.
+  const childSeqsKey = run.childSeqs?.join(",") ?? "";
 
   useEffect(() => {
+    const controller = new AbortController();
     if (run.parentSeq) {
-      fetch(apiPath(`/api/bridge/runs/${run.parentSeq}`))
+      fetch(apiPath(`/api/bridge/runs/${run.parentSeq}`), { signal: controller.signal })
         .then((r) => r.ok ? r.json() : null)
         .then((d: { run?: RunSummary } | null) => {
           if (d?.run) setParent(d.run);
@@ -577,7 +585,7 @@ function CausalChainCard({ run }: { run: RunDetail }) {
     if (run.childSeqs && run.childSeqs.length > 0) {
       Promise.all(
         run.childSeqs.map((seq) =>
-          fetch(apiPath(`/api/bridge/runs/${seq}`))
+          fetch(apiPath(`/api/bridge/runs/${seq}`), { signal: controller.signal })
             .then((r) => r.ok ? r.json() : null)
             .then((d: { run?: RunSummary } | null) => d?.run ?? null)
             .catch(() => null),
@@ -586,7 +594,12 @@ function CausalChainCard({ run }: { run: RunDetail }) {
         setChildren(results.filter((r): r is RunSummary => r !== null));
       });
     }
-  }, [run.parentSeq, run.childSeqs]);
+    return () => controller.abort();
+    // childSeqsKey is the serialized form of run.childSeqs — using the
+    // array directly would re-run every poll tick. eslint can't see
+    // the equivalence; this is intentional.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.parentSeq, childSeqsKey]);
 
   const hasParent = !!run.parentSeq;
   const hasChildren = (run.childSeqs ?? []).length > 0;

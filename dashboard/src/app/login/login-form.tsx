@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { apiPath } from "@/lib/api";
 
 /**
  * Single-password login form. Posts to /api/login, follows the JSON
@@ -17,7 +18,12 @@ export function LoginForm({ next }: { next: string }) {
     setBusy(true);
     setErr("");
     try {
-      const res = await fetch("/dashboard/api/login", {
+      // Audit 2026-05-17 (#600): use apiPath() so the form works when
+      // NEXT_PUBLIC_BASE_PATH is anything other than the literal
+      // "/dashboard" (root mount, custom prefix, etc.). The hardcoded
+      // path 404'd on non-default deploys and showed a generic "Error
+      // 404" to the user with no hint why.
+      const res = await fetch(apiPath("/api/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: pw, next }),
