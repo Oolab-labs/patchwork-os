@@ -38,6 +38,13 @@ export interface Config {
   antBinary: string;
   automationEnabled: boolean;
   automationPolicyPath: string | null;
+  /**
+   * When true, webhook hooks may target private / non-loopback addresses
+   * (RFC1918, link-local, etc.). Default false — loopback + public hosts
+   * only. Same shape the SSRF guard in `VsCodeBackend.postWebhook` checks.
+   * Set with `--automation-allow-private-webhooks`.
+   */
+  automationAllowPrivateWebhooks: boolean;
   toolRateLimit: number;
   /** Patchwork: gate tool dispatch on human approval via dashboard. "high" = only high-risk tools (default-safe); "all" = every tool; "off" = disabled. */
   approvalGate: "off" | "high" | "all";
@@ -260,6 +267,7 @@ interface ConfigFile {
   antBinary?: string;
   automationEnabled?: boolean;
   automationPolicyPath?: string;
+  automationAllowPrivateWebhooks?: boolean;
   plugins?: string[];
   pluginWatch?: boolean;
   fixedToken?: string;
@@ -293,6 +301,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "antBinary",
   "automationEnabled",
   "automationPolicyPath",
+  "automationAllowPrivateWebhooks",
   "plugins",
   "pluginWatch",
   "fixedToken",
@@ -530,6 +539,8 @@ export function parseConfig(argv: string[]): Config {
   let automationEnabled = fileConfig.automationEnabled ?? false;
   let automationPolicyPath: string | null =
     fileConfig.automationPolicyPath ?? null;
+  let automationAllowPrivateWebhooks =
+    fileConfig.automationAllowPrivateWebhooks ?? false;
   let approvalGate: "off" | "high" | "all" =
     (fileConfig as { approvalGate?: "off" | "high" | "all" }).approvalGate ??
     "off";
@@ -754,6 +765,9 @@ export function parseConfig(argv: string[]): Config {
           requireArg(args, ++i, "--automation-policy"),
         );
         break;
+      case "--automation-allow-private-webhooks":
+        automationAllowPrivateWebhooks = true;
+        break;
       case "--plugin": {
         const pluginPath = requireArg(args, ++i, "--plugin");
         if (pluginPath.length > 4096)
@@ -940,6 +954,9 @@ Automation:
   --claude-binary <path>    Path to claude binary (default: "claude")
   --automation              Enable event-driven automation hooks (requires --driver != none and --automation-policy)
   --automation-policy <path>  Path to JSON automation policy file
+  --automation-allow-private-webhooks
+                            Allow automation webhooks to target private/non-loopback hosts
+                            (RFC1918, link-local, etc.). Default: loopback + public hosts only.
 
 Plugins:
   --plugin <path-or-package>  Load a plugin (repeatable). Accepts a local path (./my-plugin) or
@@ -1125,6 +1142,7 @@ Environment Variables:
     antBinary,
     automationEnabled,
     automationPolicyPath,
+    automationAllowPrivateWebhooks,
     approvalGate,
     enableTimeOfDayAnomaly,
     managedSettingsPath,

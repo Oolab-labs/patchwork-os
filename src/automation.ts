@@ -63,8 +63,8 @@ export interface AutomationCondition {
  *
  * Security: by default, only loopback URLs (127.0.0.1, ::1, localhost) and
  * public hosts are allowed. Other RFC 1918 / link-local / ULA / CGNAT
- * addresses are blocked unless the bridge is started with the
- * `--automation-allow-private-webhooks` flag (TODO follow-up).
+ * addresses are blocked unless the bridge is started with
+ * `--automation-allow-private-webhooks`.
  */
 export interface AutomationWebhookConfig {
   /** Full http:// or https:// URL. Loopback OK by default; other private ranges blocked. */
@@ -1375,15 +1375,18 @@ export class AutomationHooks {
     private readonly log: (msg: string) => void,
     _extensionClient?: ExtensionClient,
     _workspace?: string,
+    allowPrivateWebhooks: boolean = false,
   ) {
     // Phase 4: always initialise interpreter (primary path)
     {
       const parseResult = parsePolicy(policy);
       if (parseResult.ok) {
         this._programAST = parseResult.value;
-        this._interpreterBackend = new VsCodeBackend(orchestrator, {
-          info: this.log.bind(this),
-        });
+        this._interpreterBackend = new VsCodeBackend(
+          orchestrator,
+          { info: this.log.bind(this) },
+          allowPrivateWebhooks,
+        );
       } else {
         this.log(
           `[automation] interpreter parse failed: ${parseResult.message}`,
