@@ -19,6 +19,18 @@ interface ConnectorRequest {
 }
 
 /**
+ * Per-process serialization chain for read-modify-write on
+ * connector-requests.json. Audit 2026-05-17: PR #570 made the write
+ * atomic, but two concurrent POSTs would still each readFileSync the
+ * same array, each push their entry, each renameSync — last writer
+ * wins, the other request silently lost. Promise-chain serializes
+ * POST handlers within a single Node process; multi-process serverless
+ * deployments would need a real flock (out of scope for this PR; the
+ * dashboard runs as a single Next.js process in normal deployments).
+ */
+let writeChain: Promise<void> = Promise.resolve();
+
+/**
  * Returns the list of connector requests the user has submitted via
  * this endpoint. Plumbing audit flagged the route as write-only —
  * users filled out the request form and the result vanished into
@@ -107,46 +119,69 @@ export async function POST(req: Request): Promise<Response> {
     requestedAt: new Date().toISOString(),
   };
 
-  try {
-    const dir = path.join(os.homedir(), ".patchwork");
-    const file = path.join(dir, "connector-requests.json");
+  // Serialize the read-modify-write through the per-process chain.
+  // Result is either a 500 NextResponse from an inner step (carried
+  // through as a thrown sentinel) or void for success.
+  type InnerError = { status: number; message: string };
+  const result = await new Promise<InnerError | null>((resolve) => {
+    writeChain = writeChain
+      .then(() => {
+        try {
+          const dir = path.join(os.homedir(), ".patchwork");
+          const file = path.join(dir, "connector-requests.json");
 
-    fs.mkdirSync(dir, { recursive: true });
+          fs.mkdirSync(dir, { recursive: true });
 
-    let existing: ConnectorRequest[] = [];
-    if (fs.existsSync(file)) {
-      const raw = fs.readFileSync(file, "utf8");
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        return NextResponse.json(
-          { ok: false, error: "connector-requests.json is malformed — fix or delete it and retry" },
-          { status: 500 },
-        );
-      }
-      if (!Array.isArray(parsed)) {
-        return NextResponse.json(
-          { ok: false, error: "connector-requests.json has unexpected format — expected an array" },
-          { status: 500 },
-        );
-      }
-      existing = parsed as ConnectorRequest[];
-    }
+          let existing: ConnectorRequest[] = [];
+          if (fs.existsSync(file)) {
+            const raw = fs.readFileSync(file, "utf8");
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(raw);
+            } catch {
+              resolve({
+                status: 500,
+                message:
+                  "connector-requests.json is malformed — fix or delete it and retry",
+              });
+              return;
+            }
+            if (!Array.isArray(parsed)) {
+              resolve({
+                status: 500,
+                message:
+                  "connector-requests.json has unexpected format — expected an array",
+              });
+              return;
+            }
+            existing = parsed as ConnectorRequest[];
+          }
 
-    existing.push(entry);
-    // Atomic write: temp file + rename. A crash / ENOSPC during direct
-    // writeFileSync would truncate connector-requests.json and wipe every
-    // prior request. Matches the rotate pattern in src/decisionTraceLog.ts
-    // and src/sessionCheckpoint.ts.
-    const tmp = `${file}.tmp.${process.pid}.${Date.now()}`;
-    fs.writeFileSync(tmp, JSON.stringify(existing, null, 2), "utf8");
-    fs.renameSync(tmp, file);
-  } catch (e) {
-    console.error("[connector-requests] write error", e);
+          existing.push(entry);
+          // Atomic write: temp file + rename. A crash / ENOSPC during direct
+          // writeFileSync would truncate connector-requests.json and wipe every
+          // prior request. The surrounding writeChain serializes
+          // read-modify-write so two concurrent POSTs can't both read the same
+          // array and lose one push to last-writer-wins.
+          const tmp = `${file}.tmp.${process.pid}.${Date.now()}`;
+          fs.writeFileSync(tmp, JSON.stringify(existing, null, 2), "utf8");
+          fs.renameSync(tmp, file);
+          resolve(null);
+        } catch (e) {
+          console.error("[connector-requests] write error", e);
+          resolve({ status: 500, message: "Failed to save request" });
+        }
+      })
+      .catch(() => {
+        // Defensive: shouldn't reach since inner try/catch resolves.
+        resolve({ status: 500, message: "Failed to save request" });
+      });
+  });
+
+  if (result) {
     return NextResponse.json(
-      { ok: false, error: "Failed to save request" },
-      { status: 500 },
+      { ok: false, error: result.message },
+      { status: result.status },
     );
   }
 

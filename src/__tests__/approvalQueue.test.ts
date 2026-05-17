@@ -95,6 +95,67 @@ describe("ApprovalQueue", () => {
     expect(q.reject("not-a-real-id")).toBe(false);
   });
 
+  // ─── concurrent approve+reject loser ── audit 2026-05-17 ────────────────
+  // First decision wins; second sees `getRecentDecision()` returning the
+  // already-recorded outcome so the HTTP layer can return 409 instead of
+  // an indistinguishable 404 "unknown callId".
+  it("getRecentDecision returns null before any decision", () => {
+    const q = new ApprovalQueue();
+    expect(q.getRecentDecision("never-seen")).toBe(null);
+  });
+
+  it("getRecentDecision returns the decision after approve", async () => {
+    const q = new ApprovalQueue();
+    const { callId, promise } = q.request({
+      toolName: "x",
+      params: {},
+      tier: "high",
+    });
+    expect(q.approve(callId)).toBe(true);
+    await expect(promise).resolves.toBe("approved");
+    expect(q.getRecentDecision(callId)).toBe("approved");
+  });
+
+  it("getRecentDecision returns the decision after reject", async () => {
+    const q = new ApprovalQueue();
+    const { callId, promise } = q.request({
+      toolName: "x",
+      params: {},
+      tier: "high",
+    });
+    expect(q.reject(callId)).toBe(true);
+    await expect(promise).resolves.toBe("rejected");
+    expect(q.getRecentDecision(callId)).toBe("rejected");
+  });
+
+  it("counter-decision returns the first decision via getRecentDecision (loser converges)", async () => {
+    const q = new ApprovalQueue();
+    const { callId, promise } = q.request({
+      toolName: "x",
+      params: {},
+      tier: "high",
+    });
+    expect(q.approve(callId)).toBe(true);
+    await expect(promise).resolves.toBe("approved");
+    // Second decision arrives — entry is gone, so the call returns
+    // false; the recent-decision lookup still gives the answer.
+    expect(q.reject(callId)).toBe(false);
+    expect(q.getRecentDecision(callId)).toBe("approved");
+  });
+
+  it("clear() drains recentlyDecided too", async () => {
+    const q = new ApprovalQueue();
+    const { callId } = q.request({
+      toolName: "x",
+      params: {},
+      tier: "high",
+    });
+    q.approve(callId);
+    expect(q.getRecentDecision(callId)).toBe("approved");
+    q.clear();
+    expect(q.getRecentDecision(callId)).toBe(null);
+  });
+
   it("TTL expires pending entries", async () => {
     vi.useFakeTimers();
     try {

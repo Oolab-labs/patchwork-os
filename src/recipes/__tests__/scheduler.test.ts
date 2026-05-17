@@ -210,6 +210,71 @@ describe("RecipeScheduler", () => {
     expect(ran).toEqual(["scheduled-yaml"]);
   });
 
+  // ─── inflight guard ─ audit 2026-05-17 ─────────────────────────────────────
+  // A cron tick that fires while a previous run of the same recipe is
+  // still in flight must skip — otherwise side effects (gh comments,
+  // im_send messages, slack posts) duplicate. WriteEffectLedger keys on
+  // manualRunId which is per-attempt, so it does NOT dedup across
+  // attempts; this guard is the per-process backstop.
+  it("skips a second fire while the first run is still in flight", async () => {
+    writeFileSync(
+      path.join(tmp, "long-running.yaml"),
+      [
+        "name: long-running",
+        "version: '1'",
+        "trigger:",
+        "  type: cron",
+        "  schedule: every-1m",
+        "steps:",
+        "  - id: step",
+        "    agent: true",
+        "    prompt: hi",
+        "",
+      ].join("\n"),
+    );
+    let releaseFirst!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let resolveFirstSettled!: () => void;
+    const firstSettledPromise = new Promise<void>((resolve) => {
+      resolveFirstSettled = resolve;
+    });
+    const calls: number[] = [];
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: () => "tid",
+      runYaml: async (_name) => {
+        calls.push(Date.now());
+        // First call blocks until releaseFirst() fires.
+        if (calls.length === 1) {
+          await firstStarted;
+          // Signal end-to-end completion for the first run.
+          resolveFirstSettled();
+        }
+      },
+    });
+    scheduler.start();
+    scheduler.fireForTest("long-running");
+    // Microtask yield so the first runYaml is in flight before we test
+    // the guard.
+    await Promise.resolve();
+    // Second fire while the first is in flight — must be skipped by the
+    // inflight guard.
+    scheduler.fireForTest("long-running");
+    expect(calls).toHaveLength(1);
+    // Release the first so its runYaml resolves and the inflight slot
+    // clears via the .finally handler.
+    releaseFirst();
+    await firstSettledPromise;
+    // Yield enough times for the .finally() to drain the inflight slot.
+    await new Promise((r) => setTimeout(r, 20));
+    // Now a fresh fire should fire — the inflight slot is clear.
+    scheduler.fireForTest("long-running");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toHaveLength(2);
+  });
+
   // ─── install-dir recipes (recipeInstall) + `.disabled` marker ────────────
   // PR #42 added the marker file but only `recipe enable/disable` checked it.
   // The scheduler now also honors it for recipes installed into subdirs.

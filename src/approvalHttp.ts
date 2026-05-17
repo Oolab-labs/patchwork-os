@@ -234,10 +234,20 @@ export async function routeApprovalRequest(
       }
     }
     const ok = deps.queue.approve(callId);
-    return {
-      status: ok ? 200 : 404,
-      body: ok ? { decision: "allow", callId } : { error: "unknown callId" },
-    };
+    if (ok) {
+      return { status: 200, body: { decision: "allow", callId } };
+    }
+    // Distinguish "callId never existed" from "callId was decided by a
+    // concurrent counter-action" so the losing UI converges instead of
+    // showing a generic 404. Audit 2026-05-17.
+    const prior = deps.queue.getRecentDecision(callId);
+    if (prior) {
+      return {
+        status: 409,
+        body: { error: "already_decided", decision: prior, callId },
+      };
+    }
+    return { status: 404, body: { error: "unknown callId" } };
   }
 
   const rejectMatch = /^\/reject\/([A-Za-z0-9-]+)$/.exec(path);
@@ -254,10 +264,17 @@ export async function routeApprovalRequest(
       }
     }
     const ok = deps.queue.reject(callId);
-    return {
-      status: ok ? 200 : 404,
-      body: ok ? { decision: "deny", callId } : { error: "unknown callId" },
-    };
+    if (ok) {
+      return { status: 200, body: { decision: "deny", callId } };
+    }
+    const prior = deps.queue.getRecentDecision(callId);
+    if (prior) {
+      return {
+        status: 409,
+        body: { error: "already_decided", decision: prior, callId },
+      };
+    }
+    return { status: 404, body: { error: "unknown callId" } };
   }
 
   return { status: 404, body: { error: "not found" } };

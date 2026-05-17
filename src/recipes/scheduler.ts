@@ -61,6 +61,23 @@ export class RecipeScheduler {
   private scheduled: ScheduledRecipe[] = [];
   private readonly setIntervalFn: typeof setInterval;
   private readonly clearIntervalFn: typeof clearInterval;
+  /**
+   * Per-recipe inflight guard. Holds names whose YAML run is currently
+   * in flight from this scheduler. Prevents a cron tick from firing
+   * recipe X while a previous tick (or a slow CLI `patchwork recipe
+   * run X` joining in the same window) is still running it.
+   *
+   * Why not rely on WriteEffectLedger dedup? The ledger keys on
+   * `(recipeName, manualRunId)` and `manualRunId` is per-attempt — two
+   * concurrent invocations from cron + CLI generate different ids and
+   * dedup-collide on neither side. The ledger only stops *same-attempt*
+   * replay; this guard stops cross-attempt double-fire.
+   *
+   * Manual CLI runs do NOT go through this Set — they take their own
+   * path. The guard is scheduler-scoped (one process), which is enough
+   * because that's the only place a cron tick can originate.
+   */
+  private readonly inflight = new Set<string>();
 
   constructor(private readonly opts: SchedulerOptions) {
     this.setIntervalFn = opts.setInterval ?? setInterval;
@@ -340,11 +357,28 @@ export class RecipeScheduler {
         );
         return;
       }
-      this.opts.runYaml(name).catch((err) => {
-        this.opts.logger?.warn?.(
-          `[scheduler] YAML recipe "${name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+      // Per-recipe inflight guard — skip if a previous tick is still
+      // running this recipe. Audit 2026-05-17: scheduler had no guard,
+      // so cron + manual CLI in the same window would double-fire
+      // (manualRunId is per-attempt → WriteEffectLedger doesn't dedup
+      // across attempts).
+      if (this.inflight.has(name)) {
+        this.opts.logger?.info?.(
+          `[scheduler] skipped "${name}" — previous run still in flight`,
         );
-      });
+        return;
+      }
+      this.inflight.add(name);
+      this.opts
+        .runYaml(name)
+        .catch((err) => {
+          this.opts.logger?.warn?.(
+            `[scheduler] YAML recipe "${name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        })
+        .finally(() => {
+          this.inflight.delete(name);
+        });
       this.opts.logger?.info?.(`[scheduler] fired YAML recipe "${name}"`);
       return;
     }
