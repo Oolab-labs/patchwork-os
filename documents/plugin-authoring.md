@@ -412,3 +412,47 @@ npm search keywords:claude-ide-bridge-plugin
 ```
 
 > **Note:** The earlier `claude-ide-bridge marketplace list/search/install` subcommand was removed (issue #279). For non-plugin community content (recipe bundles), use `patchwork recipe install github:<org>/<repo>`.
+
+## Bundled companion plugin (`claude-ide-bridge-plugin/`)
+
+The repo ships a reference plugin at `claude-ide-bridge-plugin/` that demonstrates the Claude Code **agent / skill / hook** surfaces in addition to MCP tools. These are separate from the MCP-tool surface this doc focuses on — they target the Claude Code session itself, not the bridge's tool registry — but a plugin can register any combination of the four.
+
+### Agents (`claude-ide-bridge-plugin/agents/*.md`)
+
+Markdown files Claude Code surfaces as named sub-agents in the user's session. The bundled plugin ships four, each tuned for a specific IDE-workflow lane:
+
+| File | Surface |
+|---|---|
+| `ide-architect.md` | High-level codebase exploration: call hierarchies, type relationships, dependency graphs. |
+| `ide-code-reviewer.md` | Code review with inline diagnostics, blast-radius reasoning, refactor-safety analysis. |
+| `ide-debugger.md` | Breakpoint setup, expression evaluation, debug-state inspection. |
+| `ide-test-runner.md` | Test discovery, failure triage, coverage analysis. |
+
+An agent file is a plain markdown prompt; Claude Code reads it lazily when the user invokes the agent by name.
+
+### Skills (`claude-ide-bridge-plugin/skills/*/`)
+
+Per-directory skills that bundle a `SKILL.md` + supporting assets. Claude Code makes these available to any session that loads the plugin. The bundled plugin ships twelve:
+
+| Skill | What it does |
+|---|---|
+| `ide-api-deprecation-tracker` | Surface `@deprecated` usages across the workspace. |
+| `ide-coverage` | Render an HTML coverage heatmap from lcov / JSON coverage data. |
+| `ide-dead-code-hunter` | Find unused exports, unreferenced functions. |
+| `ide-debug` | Guided XDebugger / debugpy session setup. |
+| `ide-deps` | Build a force-directed dependency graph for a symbol. |
+| `ide-diagnostics-board` | Workspace-wide diagnostics dashboard (HTML). |
+| `ide-explore` | LSP-driven codebase tour for unfamiliar repos. |
+| `ide-monitor` | Long-running diagnostics watcher, surfaces regressions. |
+| `ide-quality` | Lint / format / fix-all-issues sweep on changed files. |
+| `ide-refactor` | Safe-refactor protocol: analyze → preview → execute. |
+| `ide-review` | Composite PR review (diff + diagnostics + churn + risk). |
+| `ide-type-mismatch-fix` | Targeted fix for TS / type-error categories. |
+
+### Hooks (`claude-ide-bridge-plugin/hooks/hooks.json`)
+
+JSON map of Claude Code hook events → shell commands. The bundled plugin wires `PreToolUse` / `PostToolUse` to the bridge's automation hooks so that tool calls Claude Code makes from the agent surface flow through the same approval queue as recipe tool calls, and `decisionTraceLog` captures every Claude-side call alongside recipe-side calls.
+
+### Authoring your own
+
+The four surfaces are independent — a plugin that only wants to ship MCP tools (the focus of the rest of this doc) does **not** need to ship agents, skills, or hooks. Conversely, a plugin can ship one or more of these without registering any MCP tool. The `claude-ide-bridge-plugin/` directory in the repo is the canonical example combining all four.

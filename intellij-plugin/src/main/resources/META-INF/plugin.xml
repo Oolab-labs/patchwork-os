@@ -8,7 +8,7 @@
 
 <p><b>MCP bridge between Claude Code and your JetBrains IDE.</b> Gives Claude Code real-time
 visibility into your editor — open files, diagnostics, terminal output, debug state — and
-lets it act on all of it through 170+ MCP tools.</p>
+lets it act on all of it through 180 MCP tools.</p>
 
 <p>Fix a bug from your phone. Let Claude run your tests and commit the result. Ask Claude
 what lint errors are in your workspace without copy-pasting anything. This plugin makes all
@@ -19,7 +19,7 @@ and other JetBrains IDEs — wire-compatible with the
 <h3>Two ways to use it</h3>
 
 <ul>
-  <li><b>Bridge only (default).</b> 170 MCP tools — LSP, diagnostics, debugger, terminal, git, GitHub, file ops. For anyone who wants Claude Code to see and act on their IDE.</li>
+  <li><b>Bridge only (default).</b> 180 MCP tools — LSP, diagnostics, debugger, terminal, git, GitHub, file ops. For anyone who wants Claude Code to see and act on their IDE.</li>
   <li><b>Patchwork OS layer (opt-in).</b> All bridge tools plus YAML recipes, an approval queue, oversight dashboard, mobile push approvals, and multi-model orchestration. For automation, agent workflows, and background tasks.</li>
 </ul>
 
@@ -54,7 +54,7 @@ machine. No cloud accounts required.</p>
   <li><b>Environment health</b> — <code>bridgeDoctor</code> verifies plugin connection, git, linter, test runner, lock file, GitHub CLI.</li>
 </ul>
 
-<p>This plugin contributes 49 IDE-side handlers (core, LSP, debugger, terminal, code style).
+<p>This plugin contributes 67 IDE-side wire methods (50 real handler implementations + 17 documented stubs for forward compatibility with the VS Code surface — captureScreenshot, watchFiles, executeVSCodeCommand, etc., which the bridge tolerates as "not implemented in this IDE").
 The bridge ships an additional ~120 transport-level tools (git, GitHub, search, formatting,
 project info, Claude orchestration, etc.) that work the moment the bridge is running — even
 without the IDE plugin connected.</p>
