@@ -7,7 +7,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...original, execFileSync: execFileSyncMock };
 });
 
-const { treeKill } = await import("../processTree.js");
+const { treeKill, treeKillPid } = await import("../processTree.js");
 
 const ORIG_PLATFORM = process.platform;
 function setPlatform(p: NodeJS.Platform) {
@@ -112,6 +112,50 @@ describe("treeKill", () => {
 
     it("no-ops when child already signalled", () => {
       treeKill(fakeChild({ pid: 1234, signalCode: "SIGTERM" }));
+      expect(execFileSyncMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── treeKillPid — bare-pid overload (audit 2026-05-17) ──────────────────
+  describe("treeKillPid", () => {
+    afterEach(() => {
+      setPlatform(ORIG_PLATFORM);
+      execFileSyncMock.mockReset();
+    });
+
+    it("on win32 — invokes taskkill /F /T /PID <pid>", () => {
+      setPlatform("win32");
+      execFileSyncMock.mockImplementationOnce(() => Buffer.from(""));
+      treeKillPid(4242);
+      expect(execFileSyncMock).toHaveBeenCalledWith(
+        "taskkill",
+        ["/F", "/T", "/PID", "4242"],
+        expect.objectContaining({ stdio: "ignore", windowsHide: true }),
+      );
+    });
+
+    it("on win32 — swallows taskkill failure (process already exited)", () => {
+      setPlatform("win32");
+      execFileSyncMock.mockImplementationOnce(() => {
+        throw new Error("not found");
+      });
+      // Must not throw — best-effort semantics.
+      expect(() => treeKillPid(4242)).not.toThrow();
+    });
+
+    it("no-ops on invalid pid (0, NaN, negative)", () => {
+      setPlatform("win32");
+      treeKillPid(0);
+      treeKillPid(-1);
+      treeKillPid(Number.NaN);
+      expect(execFileSyncMock).not.toHaveBeenCalled();
+    });
+
+    it("on posix — does not call taskkill (process.kill is used)", () => {
+      setPlatform("darwin");
+      // process.kill(-pid) on an invalid pid throws; the helper swallows
+      // so the call must complete without error.
+      expect(() => treeKillPid(999_999_999)).not.toThrow();
       expect(execFileSyncMock).not.toHaveBeenCalled();
     });
   });

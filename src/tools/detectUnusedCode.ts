@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import type { ProbeResults } from "../probe.js";
 import {
   execSafe,
@@ -189,9 +189,10 @@ function parseTsPruneOutput(output: string, workspace: string): UnusedItem[] {
     const line = Number.parseInt(m[2] ?? "0", 10);
     const symbol = m[3]?.trim() ?? "";
     if (!filePath || !symbol) continue;
-    const rel = filePath.startsWith("/")
-      ? relative(workspace, filePath)
-      : filePath;
+    // Use path.isAbsolute so Windows absolute paths (`C:\...`) take the
+    // relative-to-workspace branch — pre-fix `startsWith("/")` only
+    // matched POSIX absolute paths. Audit 2026-05-17.
+    const rel = isAbsolute(filePath) ? relative(workspace, filePath) : filePath;
     items.push({ file: rel, line, symbol, kind: "export" });
   }
   return items;
@@ -212,9 +213,10 @@ function parseTscOutput(output: string, workspace: string): UnusedItem[] {
     // TS6133 has a quoted symbol (m[4]); TS6192/TS6196 may not (use m[5] as fallback)
     const symbol = (m[4] ?? m[5] ?? "").trim();
     if (!filePath || !symbol) continue;
-    const rel = filePath.startsWith("/")
-      ? relative(workspace, filePath)
-      : filePath;
+    // Use path.isAbsolute so Windows absolute paths (`C:\...`) take the
+    // relative-to-workspace branch — pre-fix `startsWith("/")` only
+    // matched POSIX absolute paths. Audit 2026-05-17.
+    const rel = isAbsolute(filePath) ? relative(workspace, filePath) : filePath;
     const kind: "export" | "local" | "parameter" =
       code === "TS6192" || code === "TS6196" ? "parameter" : "local";
     items.push({ file: rel, line, symbol, kind });

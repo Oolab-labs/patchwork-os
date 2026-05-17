@@ -495,6 +495,19 @@ export async function execSafe(
       RUSTUP_HOME: process.env.RUSTUP_HOME,
       GOPATH: process.env.GOPATH,
       GOROOT: process.env.GOROOT,
+      // Windows-essential env vars (audit 2026-05-17). Without these,
+      // git can't find ~/.gitconfig (uses %USERPROFILE%), gh can't find
+      // its config (uses %APPDATA%), executables can't be resolved
+      // without %PATHEXT%, and many `.exe` invocations fail without
+      // %SYSTEMROOT% for DLL search. No-op on POSIX (all undefined).
+      USERPROFILE: process.env.USERPROFILE,
+      APPDATA: process.env.APPDATA,
+      LOCALAPPDATA: process.env.LOCALAPPDATA,
+      USERNAME: process.env.USERNAME,
+      SYSTEMROOT: process.env.SYSTEMROOT,
+      PATHEXT: process.env.PATHEXT,
+      COMSPEC: process.env.COMSPEC,
+      WINDIR: process.env.WINDIR,
       // Allow caller to extend with additional vars
       ...opts.env,
     };
@@ -598,6 +611,15 @@ export async function execSafeStreaming(
     RUSTUP_HOME: process.env.RUSTUP_HOME,
     GOPATH: process.env.GOPATH,
     GOROOT: process.env.GOROOT,
+    // Windows-essential env (audit 2026-05-17 — see execSafe above)
+    USERPROFILE: process.env.USERPROFILE,
+    APPDATA: process.env.APPDATA,
+    LOCALAPPDATA: process.env.LOCALAPPDATA,
+    USERNAME: process.env.USERNAME,
+    SYSTEMROOT: process.env.SYSTEMROOT,
+    PATHEXT: process.env.PATHEXT,
+    COMSPEC: process.env.COMSPEC,
+    WINDIR: process.env.WINDIR,
     ...opts.env,
   };
   for (const k of Object.keys(minimalEnv)) {

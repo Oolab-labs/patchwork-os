@@ -182,11 +182,37 @@ export class LockFileManager {
               }
               // Different live PID → legitimate sibling bridge instance;
               // never delete based on age or nonce alone.
-            } catch {
-              this.logger.warn(
-                `Removing stale lock file: ${file} (PID ${content.pid} not running)`,
-              );
-              fs.unlinkSync(filePath);
+            } catch (killErr) {
+              // On Windows `process.kill(foreignPid, 0)` can throw EPERM
+              // for a LIVE process the bridge user lacks permission to
+              // signal (e.g. lock owned by a different OS user or by a
+              // higher-integrity process). Unconditionally unlinking on
+              // any kill failure would WRONGLY delete a legitimate
+              // foreign sibling's lock. Distinguish:
+              //   - ESRCH → process is gone, remove the lock
+              //   - EPERM on Windows → permission-only, do NOT delete
+              //   - EPERM on POSIX → could be either (kernel doesn't
+              //     distinguish for our pid). Conservative: do nothing
+              //     for foreign pids, only act on our own pid via the
+              //     nonce/age branch above. Audit 2026-05-17.
+              const code = (killErr as NodeJS.ErrnoException).code;
+              if (code === "ESRCH") {
+                this.logger.warn(
+                  `Removing stale lock file: ${file} (PID ${content.pid} not running)`,
+                );
+                fs.unlinkSync(filePath);
+              } else if (code === "EPERM") {
+                this.logger.warn(
+                  `Keeping lock file ${file} — PID ${content.pid} returned EPERM (permission denied; assuming legitimate foreign sibling)`,
+                );
+              } else {
+                // Other errno (rare). Preserve the lock — better to let
+                // a stale-but-foreign lock linger than to wrongly delete
+                // a live sibling's coordination file.
+                this.logger.warn(
+                  `Keeping lock file ${file} — process.kill(${content.pid}, 0) failed with ${code ?? "unknown"}: ${killErr instanceof Error ? killErr.message : String(killErr)}`,
+                );
+              }
             }
           }
         } catch (err) {
