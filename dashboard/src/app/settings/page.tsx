@@ -196,6 +196,7 @@ export default function SettingsPage() {
 
   const [todayAnomaly, setTodayAnomaly] = useState(false);
   const [todayAnomalySaving, setTodayAnomalySaving] = useState(false);
+  const [todayAnomalyErr, setTodayAnomalyErr] = useState<string | null>(null);
   const todayAnomalyInitialized = useRef(false);
 
   // CC permission rules (loaded from approval insights)
@@ -670,10 +671,18 @@ export default function SettingsPage() {
       });
       if (res.ok) {
         setTodayAnomaly(value);
+        setTodayAnomalyErr(null);
         flashSaved();
+      } else {
+        // Audit 2026-05-17 (#600): previously swallowed all failures
+        // silently, including non-OK responses. Toggle would visually
+        // flip but persist nothing — silent data-loss class. Now surface
+        // via the same error-message slot the kill-switch row uses.
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setTodayAnomalyErr(body.error ?? `Save failed (HTTP ${res.status})`);
       }
-    } catch {
-      /* swallow */
+    } catch (e) {
+      setTodayAnomalyErr(e instanceof Error ? e.message : String(e));
     } finally {
       setTodayAnomalySaving(false);
     }
@@ -1255,6 +1264,11 @@ export default function SettingsPage() {
                 <p style={{ ...helpStyle, marginLeft: 24 }}>
                   Surfaces a chip on approvals when a tool runs outside your usual hours.
                 </p>
+                {todayAnomalyErr && (
+                  <p style={{ ...helpStyle, marginLeft: 24, color: "var(--err)" }}>
+                    {todayAnomalyErr}
+                  </p>
+                )}
               </div>
 
               <div style={{ padding: "16px 0" }}>

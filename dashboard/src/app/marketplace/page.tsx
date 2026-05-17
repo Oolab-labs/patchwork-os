@@ -547,7 +547,13 @@ export default function MarketplacePage() {
         // bridge offline / timed out — try GitHub
       }
 
-      if (!recipes) {
+      // Audit 2026-05-17 (#600): bridge can return an empty registry
+      // (recipes: []) on a fresh install before any recipes are seeded.
+      // The original guard `if (!recipes)` short-circuited on truthy
+      // empty array → user saw "no recipes available" indefinitely
+      // even though GitHub has the seed set. Treat empty array as a
+      // miss too so the GitHub fallback runs.
+      if (!recipes || recipes.length === 0) {
         try {
           const res = await fetchWithTimeout(
             "https://raw.githubusercontent.com/patchworkos/recipes/main/index.json",
@@ -563,7 +569,7 @@ export default function MarketplacePage() {
         }
       }
 
-      if (recipes) {
+      if (recipes && recipes.length > 0) {
         setRegistry(recipes);
         setBundles(registryBundles);
       } else {
