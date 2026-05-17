@@ -5,10 +5,12 @@ import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 import {
   assertValidInstallSource,
+  formatConnectorLabel,
   type RiskLevel,
   shortName,
 } from "@/lib/registry";
 import { InstallConfirmDialog } from "../_components/InstallConfirmDialog";
+import { MissingConnectorsNotice } from "../_components/MissingConnectorsNotice";
 
 interface Props {
   install: string;
@@ -49,6 +51,13 @@ export default function InstallPanel({
   const [done, setDone] = useState(false);
   const [copied, setCopied] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Bridge ships `missingConnectors[]` on the install response when the
+  // recipe uses connectors that haven't been authorised yet (see
+  // connectorPreflight). Surfacing this on the detail panel matters more
+  // than on the browse view's transient toast — the detail page is
+  // where users land from a share link and where they'll come back to
+  // troubleshoot if the recipe never runs.
+  const [missingConnectors, setMissingConnectors] = useState<string[]>([]);
 
   const elevated =
     riskLevel === "medium" ||
@@ -98,6 +107,7 @@ export default function InstallPanel({
   async function runInstall() {
     setBusy(true);
     setErr(null);
+    setMissingConnectors([]);
     try {
       assertValidInstallSource(install);
       const res = await fetch(apiPath("/api/bridge/recipes/install"), {
@@ -105,20 +115,28 @@ export default function InstallPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source: install }),
       });
+      let parsed: { error?: string; missingConnectors?: unknown } = {};
+      try {
+        parsed = (await res.json()) as typeof parsed;
+      } catch {
+        // ignore parse failure — fall back to status-only error below
+      }
       if (!res.ok) {
-        let msg = `Error ${res.status}`;
-        try {
-          const body = (await res.json()) as { error?: string };
-          if (body.error) msg = body.error;
-        } catch {
-          // ignore parse failure
-        }
         // Reflect transport-level failure into the status so the user
         // sees Log-in / Get-Patchwork on the next click instead of a
         // stuck Install button.
         if (res.status === 401) setBridgeStatus("unauth");
         else if (res.status >= 500) setBridgeStatus("offline");
-        throw new Error(msg);
+        throw new Error(parsed.error ?? `Error ${res.status}`);
+      }
+      // Capture missingConnectors[] before flipping `done` so the inline
+      // notice has the list to render on the same paint.
+      if (Array.isArray(parsed.missingConnectors)) {
+        setMissingConnectors(
+          parsed.missingConnectors.filter(
+            (c): c is string => typeof c === "string",
+          ),
+        );
       }
       setDone(true);
     } catch (e) {
@@ -218,6 +236,10 @@ export default function InstallPanel({
         <div className="alert-err" role="alert" style={{ fontSize: "var(--fs-s)" }}>
           {err}
         </div>
+      )}
+
+      {missingConnectors.length > 0 && (
+        <MissingConnectorsNotice connectors={missingConnectors} />
       )}
 
       <InstallConfirmDialog

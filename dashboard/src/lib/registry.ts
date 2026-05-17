@@ -267,3 +267,25 @@ export async function fetchBundleManifest(
 export function shortName(name: string): string {
   return name.replace(/^@[^/]+\//, "");
 }
+
+/**
+ * Render a connector id (e.g. "google-calendar", "slack") as a
+ * user-facing label. Title-cases each hyphen segment; special-cases a
+ * couple of acronyms that look wrong with vanilla title-case.
+ *
+ * Shared between the browse-view RecipeCard's post-install
+ * missing-connectors toast and the detail-page InstallPanel /
+ * BundleInstallPanel inline notices. Keep terse — no marketing copy.
+ */
+export function formatConnectorLabel(id: string): string {
+  if (id === "github") return "GitHub";
+  if (id === "gitlab") return "GitLab";
+  if (id === "pagerduty") return "PagerDuty";
+  if (id === "hubspot") return "HubSpot";
+  return id
+    .split("-")
+    .map((part) =>
+      part.length === 0 ? "" : part[0].toUpperCase() + part.slice(1),
+    )
+    .join(" ");
+}

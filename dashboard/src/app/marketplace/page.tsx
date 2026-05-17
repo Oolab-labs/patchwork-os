@@ -9,6 +9,7 @@ import { apiPath } from "@/lib/api";
 import {
   assertValidInstallSource,
   type ApprovalBehavior,
+  formatConnectorLabel,
   type RegistryBundle,
   type RegistryData,
   type RegistryRecipe,
@@ -150,23 +151,6 @@ function connectorColor(id: string): string {
   return PROVIDER_COLORS[norm] ?? "#4a5568";
 }
 
-/**
- * Render a connector id (e.g. "google-calendar", "slack") as a
- * user-facing label. Title-cases each hyphen segment; special-cases a
- * couple of acronyms that look wrong with vanilla title-case.
- * Used by the post-install missingConnectors toast — keep terse, no
- * marketing copy.
- */
-function formatConnectorLabel(id: string): string {
-  if (id === "github") return "GitHub";
-  if (id === "gitlab") return "GitLab";
-  if (id === "pagerduty") return "PagerDuty";
-  if (id === "hubspot") return "HubSpot";
-  return id
-    .split("-")
-    .map((part) => (part.length === 0 ? "" : part[0].toUpperCase() + part.slice(1)))
-    .join(" ");
-}
 
 // ------------------------------------------------------------------ card
 
