@@ -1,5 +1,6 @@
-import { bridgeFetch } from "@/lib/bridge";
 import { NextResponse } from "next/server";
+import { bridgeFetch } from "@/lib/bridge";
+import { requireSameOrigin } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const guard = requireSameOrigin(request);
+  if (guard) return guard;
   try {
     const body = await request.json().catch(() => ({}));
     const res = await bridgeFetch("/telemetry-prefs", {
