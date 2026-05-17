@@ -25,6 +25,14 @@ export class SessionCheckpoint {
   private checkpointPath: string;
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
   private readonly workspace: string | undefined;
+  /**
+   * Surface checkpoint-write failures exactly once per instance. Silent
+   * fail defeats the whole restore feature (disk-full / permission flip
+   * → no checkpoint ever written → restore has no data on crash). One
+   * warn line is enough; spamming on every 30s interval would drown the
+   * log.
+   */
+  private writeFailureLogged = false;
 
   constructor(port: number, workspace?: string) {
     const configDir =
@@ -74,8 +82,18 @@ export class SessionCheckpoint {
       fs.renameSync(tmpPath, this.checkpointPath);
       // Ensure restrictive permissions even if the file pre-existed with a wider mode.
       fs.chmodSync(this.checkpointPath, 0o600);
-    } catch {
-      // Best-effort — never block bridge operation
+    } catch (err) {
+      // Best-effort — never block bridge operation. Log once per instance
+      // so the operator sees something on disk-full / EACCES instead of
+      // a silently-broken restore feature.
+      if (!this.writeFailureLogged) {
+        this.writeFailureLogged = true;
+        const msg = err instanceof Error ? err.message : String(err);
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[sessionCheckpoint] write failed (${msg}). Further failures from this instance will be silenced.`,
+        );
+      }
     }
   }
 

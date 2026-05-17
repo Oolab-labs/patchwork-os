@@ -2,6 +2,7 @@ import {
   appendFileSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -479,9 +480,14 @@ export class RecipeRunLog {
         lines = [];
         joined = "";
       }
-      writeFileSync(this.file, joined.length > 0 ? `${joined}\n` : "", {
+      // Atomic write: temp file + rename. Crash / ENOSPC mid-write
+      // would otherwise truncate the entire run-log file at the source
+      // path. Matches the pattern used in sessionCheckpoint.write().
+      const tmp = `${this.file}.tmp`;
+      writeFileSync(tmp, joined.length > 0 ? `${joined}\n` : "", {
         mode: 0o600,
       });
+      renameSync(tmp, this.file);
       // Refresh `lastFileSize` so the next syncFromDisk() doesn't see
       // `size <= lastFileSize` (stale pre-rotation value) and silently
       // skip freshly-appended rows.

@@ -167,4 +167,35 @@ describe("DecisionTraceLog", () => {
     expect(text).not.toContain('"ref":"#huge"');
     expect(text).toContain('"ref":"#after-drop"');
   });
+
+  it("rotateDisk() leaves no orphaned `.tmp` file on success (atomic rename)", () => {
+    // Atomic-write contract: rotate must write to a sibling `.tmp` and
+    // renameSync it onto the target. If it instead used writeFileSync
+    // directly to the target, a crash / ENOSPC mid-write would truncate
+    // the whole audit log. Post-rotate, no `.tmp` file should linger.
+    //
+    // (Can't vi.spyOn the fs.* named imports — the source binds the
+    // refs at module load. Verify by observable side-effect instead.)
+    const file = path.join(dir, "decision_traces.jsonl");
+    const fs = require("node:fs") as typeof import("node:fs");
+    // Pre-seed > MAX_PERSIST_BYTES so the next append triggers rotate.
+    const filler = JSON.stringify({
+      seq: 0,
+      createdAt: 1,
+      ref: "#seed",
+      problem: "p",
+      solution: "s",
+      workspace: "/ws",
+      tags: ["x".repeat(64 * 1024)],
+    });
+    fs.writeFileSync(file, `${Array(50).fill(filler).join("\n")}\n`);
+
+    const log = new DecisionTraceLog({ dir });
+    log.record({ ...base(), ref: "#after-rotate" });
+
+    // Target file rotated, new record present, NO orphan .tmp left.
+    expect(fs.statSync(file).size).toBeLessThan(1024 * 1024);
+    expect(fs.readFileSync(file, "utf8")).toContain('"ref":"#after-rotate"');
+    expect(fs.existsSync(`${file}.tmp`)).toBe(false);
+  });
 });
