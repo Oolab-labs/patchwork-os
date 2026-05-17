@@ -186,6 +186,19 @@ describe("POST /api/connector-requests — persistence", () => {
     expect((await res.json()).error).toMatch(/expected an array/);
   });
 
+  it("writes atomically — no .tmp orphan after a successful POST", async () => {
+    // Atomic-write contract: writes to a sibling .tmp then renames onto the
+    // target. A crash / ENOSPC mid-write must never truncate the audit file.
+    await POST(makeReq({ name: "AtomicTest" }));
+
+    const dir = path.dirname(storeFile);
+    const orphans = fs
+      .readdirSync(dir)
+      .filter((f) => f.startsWith("connector-requests.json.tmp"));
+    expect(orphans).toEqual([]);
+    expect(fs.existsSync(storeFile)).toBe(true);
+  });
+
   it("500s with 'Failed to save request' on write error (with console.error)", async () => {
     // Force fs.writeFileSync to throw.
     const writeSpy = vi.spyOn(fs, "writeFileSync").mockImplementation(() => {
