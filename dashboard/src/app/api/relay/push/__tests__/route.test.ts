@@ -19,11 +19,12 @@ vi.mock("web-push", () => ({
 
 vi.mock("@/lib/pushStore", () => ({
   getSubscriptions: vi.fn(() => []),
+  removeSubscription: vi.fn(),
 }));
 
 import webpush from "web-push";
 import { POST } from "@/app/api/relay/push/route";
-import { getSubscriptions } from "@/lib/pushStore";
+import { getSubscriptions, removeSubscription } from "@/lib/pushStore";
 
 const TOKEN = "relay-test-token-1234567890abcdef";
 
@@ -68,6 +69,7 @@ beforeEach(() => {
   process.env.VAPID_PRIVATE_KEY = "test-vapid-private";
   process.env.VAPID_SUBJECT = "mailto:test@example.com";
   vi.mocked(getSubscriptions).mockReturnValue([validSub]);
+  vi.mocked(removeSubscription).mockClear();
   vi.mocked(webpush.sendNotification).mockClear();
   vi.mocked(webpush.setVapidDetails).mockClear();
 });
@@ -173,8 +175,72 @@ describe("POST /api/relay/push — fan-out", () => {
     const r = await POST(req({ authorization: `Bearer ${TOKEN}` }, validBody));
     expect(r.status).toBe(200);
     expect(webpush.sendNotification).toHaveBeenCalledTimes(3);
-    const body = (await r.json()) as { ok: boolean; sent: number; total: number };
-    expect(body).toEqual({ ok: true, sent: 2, total: 3 });
+    const body = (await r.json()) as {
+      ok: boolean;
+      sent: number;
+      total: number;
+      evicted: number;
+    };
+    expect(body).toEqual({ ok: true, sent: 2, total: 3, evicted: 0 });
+    // Plain Error has no statusCode → not evicted.
+    expect(removeSubscription).not.toHaveBeenCalled();
+  });
+
+  // ─── 410 Gone eviction — audit 2026-05-17 ─────────────────────────────────
+  it("evicts subscriptions that 410-Gone from the push service", async () => {
+    const subs = [
+      validSub,
+      { endpoint: "https://e2.com/p", keys: { p256dh: "k1", auth: "k2" } },
+      { endpoint: "https://e3.com/p", keys: { p256dh: "k3", auth: "k4" } },
+    ];
+    vi.mocked(getSubscriptions).mockReturnValue(subs);
+    vi.mocked(webpush.sendNotification).mockImplementation(async (sub) => {
+      if (sub.endpoint === subs[1].endpoint) {
+        // web-push throws WebPushError with statusCode 410 for expired
+        // subscriptions. Reproduce shape without importing the class.
+        const err = new Error("Gone") as Error & { statusCode: number };
+        err.statusCode = 410;
+        throw err;
+      }
+      return { statusCode: 201, body: "", headers: {} };
+    });
+
+    const r = await POST(req({ authorization: `Bearer ${TOKEN}` }, validBody));
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as { evicted: number };
+    expect(body.evicted).toBe(1);
+    expect(removeSubscription).toHaveBeenCalledTimes(1);
+    expect(removeSubscription).toHaveBeenCalledWith(subs[1].endpoint);
+  });
+
+  it("evicts subscriptions that 404 from the push service", async () => {
+    vi.mocked(getSubscriptions).mockReturnValue([validSub]);
+    vi.mocked(webpush.sendNotification).mockImplementation(async () => {
+      const err = new Error("Not Found") as Error & { statusCode: number };
+      err.statusCode = 404;
+      throw err;
+    });
+    const r = await POST(req({ authorization: `Bearer ${TOKEN}` }, validBody));
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as { evicted: number };
+    expect(body.evicted).toBe(1);
+    expect(removeSubscription).toHaveBeenCalledWith(validSub.endpoint);
+  });
+
+  it("does NOT evict on transient 5xx failures", async () => {
+    vi.mocked(getSubscriptions).mockReturnValue([validSub]);
+    vi.mocked(webpush.sendNotification).mockImplementation(async () => {
+      const err = new Error("Service Unavailable") as Error & {
+        statusCode: number;
+      };
+      err.statusCode = 503;
+      throw err;
+    });
+    const r = await POST(req({ authorization: `Bearer ${TOKEN}` }, validBody));
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as { evicted: number };
+    expect(body.evicted).toBe(0);
+    expect(removeSubscription).not.toHaveBeenCalled();
   });
 
   it("forwarded payload includes computed approveUrl/rejectUrl from bridgeCallbackBase", async () => {

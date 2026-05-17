@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import webpush from "web-push";
-import { getSubscriptions } from "@/lib/pushStore";
+import { getSubscriptions, removeSubscription } from "@/lib/pushStore";
 import {
   DASHBOARD_API_BODY_CAPS,
   bodyTooLargeResponse,
@@ -157,5 +157,37 @@ export async function POST(req: Request) {
   );
   const sent = results.filter((r) => r.status === "fulfilled").length;
 
-  return NextResponse.json({ ok: true, sent, total: subs.length });
+  // Evict expired subscriptions. RFC 8030 mandates 404 / 410 when the
+  // push service has no record of the subscription (uninstalled SW,
+  // user disabled notifications, browser reset, device flashed). Pre-fix
+  // we kept re-fanning to those endpoints forever — each request
+  // carrying a live `approvalToken` to a service that no longer routes
+  // it. Audit 2026-05-17.
+  let evicted = 0;
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const sub = subs[i];
+    if (r.status !== "rejected" || !sub) continue;
+    const status = extractPushStatusCode(r.reason);
+    if (status === 404 || status === 410) {
+      removeSubscription(sub.endpoint);
+      evicted++;
+    }
+  }
+
+  return NextResponse.json({ ok: true, sent, total: subs.length, evicted });
+}
+
+/**
+ * Pluck the HTTP status code out of a web-push rejection. The library
+ * throws `WebPushError` instances with a `statusCode` field. Older
+ * versions of node-pushlib used `code`/`status`. Be defensive about
+ * shape so a future bump doesn't silently break the eviction path.
+ */
+function extractPushStatusCode(reason: unknown): number | undefined {
+  if (typeof reason !== "object" || reason === null) return undefined;
+  const r = reason as { statusCode?: unknown; status?: unknown };
+  if (typeof r.statusCode === "number") return r.statusCode;
+  if (typeof r.status === "number") return r.status;
+  return undefined;
 }
