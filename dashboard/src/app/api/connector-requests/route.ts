@@ -135,7 +135,13 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     existing.push(entry);
-    fs.writeFileSync(file, JSON.stringify(existing, null, 2), "utf8");
+    // Atomic write: temp file + rename. A crash / ENOSPC during direct
+    // writeFileSync would truncate connector-requests.json and wipe every
+    // prior request. Matches the rotate pattern in src/decisionTraceLog.ts
+    // and src/sessionCheckpoint.ts.
+    const tmp = `${file}.tmp.${process.pid}.${Date.now()}`;
+    fs.writeFileSync(tmp, JSON.stringify(existing, null, 2), "utf8");
+    fs.renameSync(tmp, file);
   } catch (e) {
     console.error("[connector-requests] write error", e);
     return NextResponse.json(
