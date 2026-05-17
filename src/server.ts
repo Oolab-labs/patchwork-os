@@ -1788,8 +1788,11 @@ export class Server extends EventEmitter<ServerEvents> {
       //
       // GET → status. 200 {engaged, locked, lockedReason?, lockedValue?}
       //
-      // Audit emit is stubbed with this.logger.info — full plumbing
-      // (decisionTraceLog into Server) lands in step 5 of the #422 series.
+      // Audit emit: state transitions log to this.logger.info (always)
+      // AND record via this.recordKillSwitchTraceFn (when wired by the
+      // bridge — see src/bridge.ts where it threads decisionTraceLog
+      // through to ~/.patchwork/decision_traces.jsonl). Tests / headless
+      // contexts that don't wire the callback still get the log line.
       if (parsedUrl.pathname === "/kill-switch") {
         if (req.method === "GET") {
           const engaged = isWriteKillSwitchActive();
@@ -1888,11 +1891,11 @@ export class Server extends EventEmitter<ServerEvents> {
               throw err;
             }
             // v2-I6: audit emit on every state transition; no-ops skip.
-            // When the bridge wires recordKillSwitchTraceFn (step 5),
-            // this writes to ~/.patchwork/decision_traces.jsonl. The
-            // logger.info line stays as a secondary signal in the
-            // bridge log; it's the only output when the trace fn is
-            // unset (tests, headless contexts).
+            // The bridge wires recordKillSwitchTraceFn to write a
+            // DecisionTrace entry to ~/.patchwork/decision_traces.jsonl
+            // (see src/bridge.ts). The logger.info line stays as a
+            // secondary signal in the bridge log and is the only output
+            // when the trace fn is unset (tests, headless contexts).
             this.logger.info(
               `[kill-switch] ${next ? "ENGAGED" : "RELEASED"}${
                 reason ? ` (reason: ${reason})` : ""
