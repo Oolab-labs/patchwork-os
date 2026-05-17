@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveCommandPath } from "../probe.js";
+import { writeFileAtomic } from "../writeFileAtomic.js";
 import {
   error,
   execSafe,
@@ -274,7 +275,7 @@ export function createSearchAndReplaceTool(workspace: string) {
 
         if (!dryRun) {
           try {
-            await fs.promises.writeFile(resolved, newContent, {
+            await writeFileAtomic(resolved, newContent, {
               encoding: "utf-8",
               signal: fileSignal,
             });

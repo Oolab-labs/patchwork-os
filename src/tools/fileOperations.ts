@@ -4,6 +4,7 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
+import { writeFileAtomic } from "../writeFileAtomic.js";
 import {
   error,
   makeRelative,
@@ -121,7 +122,7 @@ export function createCreateFileTool(
               throw err;
             }
           } else {
-            await fs.promises.writeFile(filePath, content, {
+            await writeFileAtomic(filePath, content, {
               encoding: "utf-8",
               signal,
             });

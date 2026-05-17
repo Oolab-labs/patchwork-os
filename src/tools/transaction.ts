@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { writeFileAtomic } from "../writeFileAtomic.js";
 import { applyLineRange, applySearchReplace } from "./previewEdit.js";
 import {
   error,
@@ -366,7 +367,9 @@ export function createTransactionTools(workspace: string) {
 
       for (const edit of tx.edits) {
         try {
-          await fs.promises.writeFile(edit.filePath, edit.newContent, "utf-8");
+          await writeFileAtomic(edit.filePath, edit.newContent, {
+            encoding: "utf-8",
+          });
           written.push(edit.filePath);
         } catch (e) {
           errors.push({

@@ -4,6 +4,7 @@ import {
   ExtensionTimeoutError,
 } from "../extensionClient.js";
 import type { FileLock, LockContention } from "../fileLock.js";
+import { writeFileAtomic } from "../writeFileAtomic.js";
 import {
   error,
   optionalBool,
@@ -144,7 +145,7 @@ export function createReplaceBlockTool(
         if (statAfter.mtimeMs !== originalMtimeMs) {
           return error("File was modified concurrently — retry the edit");
         }
-        await fs.writeFile(filePath, newText, "utf-8");
+        await writeFileAtomic(filePath, newText, { encoding: "utf-8" });
       } finally {
         release?.();
       }
