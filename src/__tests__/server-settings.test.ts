@@ -611,6 +611,73 @@ describe("POST /settings — push/ntfy persistence", () => {
     expect(parsed.error).not.toContain("Invalid request body");
   });
 
+  it("rejects file:// scheme on localEndpoint", async () => {
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ localEndpoint: "file:///etc/passwd" }),
+    );
+    expect(status).toBe(400);
+  });
+
+  it("rejects garbage / unparseable localEndpoint", async () => {
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ localEndpoint: "not a url" }),
+    );
+    expect(status).toBe(400);
+  });
+
+  it("rejects public-IP localEndpoint without LOCAL_ENDPOINT_ALLOW_REMOTE", async () => {
+    const prev = process.env.LOCAL_ENDPOINT_ALLOW_REMOTE;
+    delete process.env.LOCAL_ENDPOINT_ALLOW_REMOTE;
+    try {
+      const { status, body } = await makeRequest(
+        {
+          method: "POST",
+          path: "/settings",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ localEndpoint: "http://8.8.8.8/v1" }),
+      );
+      expect(status).toBe(400);
+      expect(body).toContain("loopback or private");
+    } finally {
+      if (prev !== undefined) process.env.LOCAL_ENDPOINT_ALLOW_REMOTE = prev;
+    }
+  });
+
+  it("accepts loopback localEndpoint", async () => {
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ localEndpoint: "http://localhost:11434/v1" }),
+    );
+    expect(status).toBe(200);
+  });
+
   it("persists pushServiceBaseUrl to patchwork config", async () => {
     const pw = await import("../patchworkConfig.js");
     const saveSpy = vi.mocked(pw.saveConfig);
