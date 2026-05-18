@@ -463,6 +463,85 @@ describe("POST /settings — validate-before-write", () => {
   });
 });
 
+describe("POST /settings — kill-switch gate", () => {
+  // Regression: engaging the kill-switch must block config mutations,
+  // not just tool dispatch. Otherwise a panicked operator who engages
+  // the switch can still have their driver / approvalGate / push URLs
+  // changed by anyone who reaches the bearer-gated /settings endpoint.
+  it("returns 423 when kill-switch engaged", async () => {
+    const flags = await import("../featureFlags.js");
+    const { setFlag, KILL_SWITCH_WRITES } = flags;
+    setFlag(KILL_SWITCH_WRITES, true);
+    try {
+      const { status, body } = await makeRequest(
+        {
+          method: "POST",
+          path: "/settings",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ approvalGate: "all" }),
+      );
+      expect(status).toBe(423);
+      const parsed = JSON.parse(body) as { error: string };
+      expect(parsed.error).toBe("kill_switch_blocked");
+    } finally {
+      setFlag(KILL_SWITCH_WRITES, false);
+    }
+  });
+
+  it("does not persist field when kill-switch engaged", async () => {
+    const flags = await import("../featureFlags.js");
+    const pw = await import("../patchworkConfig.js");
+    const { setFlag, KILL_SWITCH_WRITES } = flags;
+    const saveSpy = vi.mocked(pw.saveConfig);
+    saveSpy.mockClear();
+    setFlag(KILL_SWITCH_WRITES, true);
+    try {
+      await makeRequest(
+        {
+          method: "POST",
+          path: "/settings",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ driver: "gemini" }),
+      );
+      expect(saveSpy).not.toHaveBeenCalled();
+    } finally {
+      setFlag(KILL_SWITCH_WRITES, false);
+    }
+  });
+
+  it("returns 423 on /telemetry-prefs POST when kill-switch engaged", async () => {
+    const flags = await import("../featureFlags.js");
+    const { setFlag, KILL_SWITCH_WRITES } = flags;
+    setFlag(KILL_SWITCH_WRITES, true);
+    try {
+      const { status, body } = await makeRequest(
+        {
+          method: "POST",
+          path: "/telemetry-prefs",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ usageStats: true }),
+      );
+      expect(status).toBe(423);
+      const parsed = JSON.parse(body) as { error: string };
+      expect(parsed.error).toBe("kill_switch_blocked");
+    } finally {
+      setFlag(KILL_SWITCH_WRITES, false);
+    }
+  });
+});
+
 describe("POST /settings — push/ntfy persistence", () => {
   // Regression: push/ntfy fields used to live only on server.* and were
   // lost on every bridge restart. They should now flow into the patchwork

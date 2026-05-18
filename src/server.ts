@@ -1515,6 +1515,24 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
       if (parsedUrl.pathname === "/settings" && req.method === "POST") {
+        // Kill-switch gate: during an incident a settings mutation can
+        // defeat the panic posture (e.g. switching driver to one with a
+        // leaked API key, flipping approvalGate to "off"). The /settings
+        // card on the dashboard sits directly above the kill-switch
+        // toggle — users will reasonably read "writes blocked" as
+        // covering both. Refuse with 423 Locked; the /kill-switch
+        // endpoint itself is the only way out and is not gated.
+        if (isWriteKillSwitchActive()) {
+          res.writeHead(423, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "kill_switch_blocked",
+              reason:
+                "Settings writes are disabled while the write kill-switch is engaged. Release it via POST /kill-switch to mutate config.",
+            }),
+          );
+          return;
+        }
         // 16 KB — settings POSTs are short-string fields (URLs, API keys,
         // gate level). 16 KB is generous; an authenticated attacker can't
         // stream gigabytes here.
@@ -2088,6 +2106,20 @@ export class Server extends EventEmitter<ServerEvents> {
           return;
         }
         if (req.method === "POST") {
+          // Kill-switch gate — telemetry prefs are config writes too.
+          // GET stays open so operators can verify state during an
+          // incident.
+          if (isWriteKillSwitchActive()) {
+            res.writeHead(423, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: "kill_switch_blocked",
+                reason:
+                  "Telemetry pref writes are disabled while the write kill-switch is engaged.",
+              }),
+            );
+            return;
+          }
           const TP_BODY_CAP = 1 * 1024;
           const parsed = await readJsonBody<{
             crashReports?: unknown;
