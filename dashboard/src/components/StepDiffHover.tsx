@@ -155,7 +155,7 @@ function renderBody({
         <div className="step-diff-section">
           <div className="step-diff-heading">Registry changes</div>
           <div className="step-diff-empty">
-            Registry diff unavailable — this step's snapshot exceeded 8 KB and
+            Registry diff unavailable — this step&apos;s snapshot exceeded 8 KB and
             was truncated. Per-field captures above are still inspectable.
           </div>
         </div>

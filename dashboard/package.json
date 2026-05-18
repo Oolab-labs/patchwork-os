@@ -43,7 +43,7 @@
     "@types/web-push": "^3.6.4",
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "^15.5.18",
     "jsdom": "^29.1.0",
     "typescript": "^5.4.0",
     "vitest": "^4.1.5"

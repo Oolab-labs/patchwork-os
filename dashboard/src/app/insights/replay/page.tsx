@@ -77,7 +77,7 @@ export default function ReplayPage() {
           <h1 style={{ marginTop: 4 }}>Decision Replay</h1>
           <div className="page-head-sub">
             What would have happened if your current policy had been active in
-            the past? Each row re-evaluates a historical approval against today's
+            the past? Each row re-evaluates a historical approval against today&apos;s
             rules. Read-only — no tools are re-executed.
           </div>
         </div>
@@ -179,7 +179,7 @@ export default function ReplayPage() {
 
             {visible.length === 0 && !showUnchanged && (
               <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: "12px 0" }}>
-                No changed decisions in this window. Toggle "Show unchanged" to
+                No changed decisions in this window. Toggle &quot;Show unchanged&quot; to
                 see all rows.
               </p>
             )}

@@ -240,7 +240,7 @@ export default function SuggestionsPage() {
         <div className="empty-state">
           <h3>No suggestions right now</h3>
           <p>
-            Either the lookback window is too short, your activity log doesn't
+            Either the lookback window is too short, your activity log doesn&apos;t
             have enough variety yet, or every co-occurring pair is already in a
             recipe. Try widening the lookback above, or come back after a few
             more days of normal use.

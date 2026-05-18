@@ -1084,7 +1084,7 @@ export default function RunDetailPage() {
           Replay this run?
         </h3>
         <p style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)", margin: "0 0 12px" }}>
-          Re-runs the recipe with each step's tool / agent call replaced by its
+          Re-runs the recipe with each step&apos;s tool / agent call replaced by its
           captured output from this run. Templates, transforms, and
           <code className="mono"> when:</code> conditions re-evaluate against the
           new state — useful for verifying recipe edits without re-hitting

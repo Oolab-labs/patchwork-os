@@ -394,7 +394,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
         <a href="https://support.pagerduty.com/docs/api-access-keys" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
           PagerDuty → Integrations → API Access Keys
         </a>
-        . Read-only keys are sufficient for this PR's incident, service, and on-call queries.
+        . Read-only keys are sufficient for this PR&apos;s incident, service, and on-call queries.
       </>
     ),
     placeholder: "PagerDuty API key",
