@@ -118,6 +118,13 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: "monitor",
       },
       { href: "/transactions", label: "Transactions", icon: "diff" },
+      {
+        href: "/telemetry",
+        label: "Telemetry",
+        paletteLabel: "Insights — Telemetry (admin)",
+        paletteHint: "self-hosted collector",
+        icon: "trending",
+      },
     ],
   },
   {

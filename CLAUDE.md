@@ -130,6 +130,7 @@ The dashboard reads these from `dashboard/.env.local` / `.env` at startup. Most 
 | `DASHBOARD_SESSION_SECRET` | Cookie-signing secret (random hex ≥ 32 chars). |
 | `DASHBOARD_ALLOW_UNAUTHENTICATED` | `1` to bypass the password gate (local dev only). |
 | `DASHBOARD_AUTH_FAILURE_WINDOW_MS` / `DASHBOARD_AUTH_MAX_FAILURES` / `DASHBOARD_AUTH_LOCKOUT_MS` | Brute-force lockout tuning for the login form. |
+| `DASHBOARD_TELEMETRY_DIR` | Directory the `/telemetry` page reads JSONL files from. Default `/var/lib/analytics` — matches the self-hosted analytics receiver. Gated by the same single-user session auth as the rest of the dashboard, so effectively admin-only. |
 | `PATCHWORK_BRIDGE_TOKEN` | Bearer token the dashboard uses when forwarding to a remote bridge (paired with `PATCHWORK_BRIDGE_URL`). |
 | `NEXT_PUBLIC_BASE_PATH` | basePath for mounted-prefix deployments (`/dashboard` under nginx, etc.). |
 | `NEXT_PUBLIC_DEMO_MODE` | Read-only demo mode for the public marketing site. |
