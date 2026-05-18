@@ -1,4 +1,5 @@
 import { bridgeFetch } from "@/lib/bridge";
+import { forwardOrGeneric } from "@/lib/forwardOrGeneric";
 import { requireSameOrigin } from "@/lib/csrf";
 import {
   DASHBOARD_API_BODY_CAPS,
@@ -37,11 +38,7 @@ export async function POST(
       headers: { "content-type": "application/json" },
       body: read.body,
     });
-    const text = await res.text();
-    return new Response(text, {
-      status: res.status,
-      headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
-    });
+    return await forwardOrGeneric(res, `connections/${connector}/connect POST`);
   } catch (err) {
     // #600: don't leak err.message detail.
     console.error(`[connections/${connector}/connect POST] bridge fetch failed:`, err);

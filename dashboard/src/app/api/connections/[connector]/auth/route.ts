@@ -1,4 +1,5 @@
 import { bridgeFetch } from "@/lib/bridge";
+import { forwardOrGeneric } from "@/lib/forwardOrGeneric";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,11 +44,7 @@ export async function GET(
         status: 502, headers: { "content-type": "application/json" },
       });
     }
-    const body = await res.text();
-    return new Response(body, {
-      status: res.status,
-      headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
-    });
+    return await forwardOrGeneric(res, `connections/${connector}/auth GET`);
   } catch (err) {
     // #600: don't leak err.message detail.
     console.error(`[connections/${connector}/auth GET] bridge fetch failed:`, err);
