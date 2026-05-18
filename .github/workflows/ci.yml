@@ -275,6 +275,8 @@ jobs:
         run: npm ci
       - name: Type check
         run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
       - name: Token consistency (tokens.json ↔ globals.css)
         run: npm run tokens:check
       - name: Inline fontSize ratchet

@@ -514,7 +514,7 @@ export default function TasksPage() {
             description={
               <>
                 Run one with <code>runClaudeTask</code> or{" "}
-                <code>patchwork start-task "…"</code>.
+                <code>patchwork start-task &quot;…&quot;</code>.
               </>
             }
           />

@@ -1417,7 +1417,7 @@ export default function SettingsPage() {
                 )}
                 {pushStatus === "denied" && (
                   <p style={helpStyle}>
-                    Notification permission was denied. Re-enable it in the browser's site settings for this origin, then reload this page.
+                    Notification permission was denied. Re-enable it in the browser&apos;s site settings for this origin, then reload this page.
                   </p>
                 )}
                 {!vapidPublicKey && pushStatus !== "subscribed" && (
@@ -1536,8 +1536,8 @@ export default function SettingsPage() {
               <div style={{ padding: "16px 0" }}>
                 <div style={labelStyle}>Install as PWA</div>
                 <p style={helpStyle}>
-                  <strong>iOS Safari (16.4+):</strong> open this dashboard in Safari, tap the Share icon, then "Add to Home Screen". Push only works when launched from the home-screen icon.<br />
-                  <strong>Android Chrome:</strong> 3-dot menu → "Install app" (or "Add to Home screen").
+                  <strong>iOS Safari (16.4+):</strong> open this dashboard in Safari, tap the Share icon, then &quot;Add to Home Screen&quot;. Push only works when launched from the home-screen icon.<br />
+                  <strong>Android Chrome:</strong> 3-dot menu → &quot;Install app&quot; (or &quot;Add to Home screen&quot;).
                 </p>
                 <p style={{ ...helpStyle, marginTop: 8 }}>
                   Native FCM/APNS delivery via the patchwork push relay is configured separately on the bridge (env vars <code>PATCHWORK_PUSH_URL</code>, <code>PATCHWORK_PUSH_TOKEN</code>, <code>PATCHWORK_PUSH_BASE_URL</code>) and is not required for browser/PWA notifications.
