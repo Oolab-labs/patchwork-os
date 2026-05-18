@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "../config.js";
+import { makeConfig as buildConfig } from "./helpers/fixtures.js";
 
 const activationMetricsModule = await vi.hoisted(async () => ({
   recordRecipeRun: vi.fn(),
@@ -80,56 +81,20 @@ vi.mock("../recipesHttp.js", async (importOriginal) => {
 const { Bridge } = await import("../bridge.js");
 
 function makeConfig(workspace: string): Config {
-  return {
+  return buildConfig({
     workspace,
     workspaceFolders: [workspace],
     ideName: "Test",
-    editorCommand: null,
-    port: null,
-    bindAddress: "127.0.0.1",
-    verbose: false,
-    jsonl: false,
-    linters: [],
-    commandAllowlist: [],
-    commandTimeout: 30_000,
     maxResultSize: 512 * 1024,
-    vscodeCommandAllowlist: [],
-    configFilePath: null,
-    activeWorkspaceFolder: workspace,
     gracePeriodMs: 1_000,
-    autoTmux: false,
     driver: "subprocess",
-    claudeBinary: "claude",
-    antBinary: "ant",
-    automationEnabled: false,
-    automationPolicyPath: null,
     toolRateLimit: 10,
-    approvalGate: "off",
-    managedSettingsPath: null,
-    approvalWebhookUrl: null,
-    watch: false,
-    plugins: [],
-    pluginWatch: false,
-    vps: false,
-    db: false,
-    allowPrivateHttp: false,
     fixedToken: "bridge-fixed-token",
-    issuerUrl: null,
-    oauthTokenTtlMs: 86_400_000,
-    corsOrigins: [],
-    trustedProxies: [],
-    auditLogPath: null,
     fullMode: false,
-    maxSessions: 5,
     analyticsEnabled: false,
-    githubDefaultRepo: null,
     wsPingIntervalMs: 0,
     lspVerbosity: "minimal",
-    recipeMaxConcurrency: 4,
-    recipeMaxDepth: 3,
-    recipeDryRun: false,
-    lazyTools: false,
-  };
+  });
 }
 
 describe("Bridge activation metrics", () => {

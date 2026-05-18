@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { makeConfig as buildConfig } from "../../__tests__/helpers/fixtures.js";
 import { parseConfig } from "../../config.js";
 import { registerAllTools, SLIM_TOOL_NAMES } from "../index.js";
 
@@ -93,49 +94,15 @@ describe("registerAllTools tool set filtering", () => {
   }
 
   function baseConfig(overrides: Partial<{ fullMode: boolean }> = {}) {
-    return {
+    return buildConfig({
       workspace: "/tmp/test",
       workspaceFolders: ["/tmp/test"],
       ideName: "VS Code",
-      editorCommand: null,
-      port: null,
-      bindAddress: "127.0.0.1",
-      verbose: false,
-      jsonl: false,
-      linters: [],
-      commandAllowlist: [],
-      commandTimeout: 30_000,
       maxResultSize: 512,
-      vscodeCommandAllowlist: [],
       activeWorkspaceFolder: "/tmp/test",
-      gracePeriodMs: 30_000,
-      autoTmux: false,
-      driver: "none" as const,
-      claudeBinary: "claude",
-      automationEnabled: false,
-      automationPolicyPath: null,
-      toolRateLimit: 60,
-      watch: false,
-      plugins: [],
-      pluginWatch: false,
-      vps: false,
-      db: false,
-      allowPrivateHttp: false,
-      fixedToken: null,
-      issuerUrl: null,
-      corsOrigins: [],
-      trustedProxies: [],
-      auditLogPath: null,
       fullMode: false,
-      maxSessions: 5,
-      analyticsEnabled: null,
-      githubDefaultRepo: null,
-      antBinary: "ant",
-      oauthTokenTtlMs: 86_400_000,
-      wsPingIntervalMs: 10_000,
-      lspVerbosity: "normal" as const,
       ...overrides,
-    };
+    });
   }
 
   it("slim mode registers exactly the SLIM_TOOL_NAMES set (no more, no less)", () => {

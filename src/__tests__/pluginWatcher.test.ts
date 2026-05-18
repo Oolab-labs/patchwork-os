@@ -19,6 +19,7 @@ import type { Config } from "../config.js";
 import type { LoadedPlugin } from "../pluginLoader.js";
 import { PluginWatcher } from "../pluginWatcher.js";
 import type { McpTransport } from "../transport.js";
+import { makeConfig as buildConfig } from "./helpers/fixtures.js";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
@@ -35,33 +36,14 @@ import { loadOnePluginFull } from "../pluginLoader.js";
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function makeConfig(overrides: Partial<Config> = {}): Config {
-  return {
+  return buildConfig({
     workspace: process.cwd(),
     workspaceFolders: [process.cwd()],
     ideName: "Test",
-    editorCommand: null,
-    port: null,
-    bindAddress: "127.0.0.1",
-    verbose: false,
-    jsonl: false,
-    linters: [],
-    commandAllowlist: [],
-    commandTimeout: 30_000,
     maxResultSize: 512,
-    vscodeCommandAllowlist: [],
     activeWorkspaceFolder: process.cwd(),
-    gracePeriodMs: 30_000,
-    autoTmux: false,
-    driver: "none",
-    claudeBinary: "claude",
-    automationEnabled: false,
-    automationPolicyPath: null,
-    toolRateLimit: 60,
-    watch: false,
-    plugins: [],
-    pluginWatch: false,
     ...overrides,
-  };
+  });
 }
 
 interface LogCall {

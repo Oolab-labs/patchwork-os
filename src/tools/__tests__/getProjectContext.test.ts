@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeProbes } from "../../__tests__/helpers/fixtures.js";
 import type { ExtensionClient } from "../../extensionClient.js";
 import type { ProbeResults } from "../../probe.js";
 import { createGetProjectContextTool } from "../getProjectContext.js";
@@ -22,21 +23,7 @@ function makeClient(overrides: Partial<ExtensionClient> = {}): ExtensionClient {
   } as unknown as ExtensionClient;
 }
 
-const NO_PROBES: ProbeResults = {
-  universalCtags: false,
-  ripgrep: false,
-  git: false,
-  typescript: false,
-  node: false,
-  python: false,
-  go: false,
-  rust: false,
-  java: false,
-  ruby: false,
-  php: false,
-  csharp: false,
-  typescriptLanguageServer: false,
-};
+const NO_PROBES: ProbeResults = makeProbes();
 
 let tmpDir: string;
 let cacheDir: string;

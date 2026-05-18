@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { makeProbes as buildProbes } from "../../__tests__/helpers/fixtures.js";
 import type { ProbeResults } from "../../probe.js";
 import { createBridgeStatusTool } from "../bridgeStatus.js";
 
@@ -13,7 +14,7 @@ function makeClient(
 }
 
 function makeProbes(overrides: Partial<ProbeResults> = {}): ProbeResults {
-  return {
+  return buildProbes({
     rg: true,
     fd: true,
     git: true,
@@ -34,7 +35,7 @@ function makeProbes(overrides: Partial<ProbeResults> = {}): ProbeResults {
     pytest: true,
     codex: true,
     ...overrides,
-  };
+  });
 }
 
 function parse(r: { content: Array<{ type: string; text: string }> }) {

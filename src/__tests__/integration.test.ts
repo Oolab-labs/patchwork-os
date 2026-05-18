@@ -21,28 +21,20 @@ import { Logger } from "../logger.js";
 import { Server } from "../server.js";
 import { registerAllTools } from "../tools/index.js";
 import { McpTransport } from "../transport.js";
+import { makeConfig, makeProbes } from "./helpers/fixtures.js";
 import { send, waitFor } from "./wsHelpers.js";
 
 function makeMinimalConfig(workspace: string): Config {
-  return {
+  // Integration tests exercise transport and session behavior, not the slim
+  // filter. Use full mode so all tools are available.
+  return makeConfig({
     workspace,
     workspaceFolders: [workspace],
     ideName: "Test",
-    editorCommand: null,
-    port: null,
-    bindAddress: "127.0.0.1",
-    verbose: false,
-    jsonl: false,
-    linters: [],
-    commandAllowlist: [],
-    commandTimeout: 30_000,
     maxResultSize: 512 * 1024,
-    vscodeCommandAllowlist: [],
     activeWorkspaceFolder: workspace,
-    // Integration tests exercise transport and session behavior, not the slim filter.
-    // Use full mode so all tools (getWorkspaceFolders, readClipboard, terminals, etc.) are available.
     fullMode: true,
-  };
+  });
 }
 
 // ── Test scaffold ─────────────────────────────────────────────────────────────
@@ -84,22 +76,7 @@ async function setupBridge(registerTools = false): Promise<TestBridge> {
 
   if (registerTools) {
     const config = makeMinimalConfig(workspace);
-    const probes = {
-      git: true,
-      rg: false,
-      fd: false,
-      tsc: false,
-      eslint: false,
-      pyright: false,
-      ruff: false,
-      cargo: false,
-      go: false,
-      biome: false,
-      vitest: false,
-      jest: false,
-      pytest: false,
-      gh: false,
-    };
+    const probes = makeProbes({ git: true });
     registerAllTools(
       transport,
       config,
@@ -293,7 +270,7 @@ describe("Integration: pure tool call without extension", () => {
     expect(Array.isArray(result.content)).toBe(true);
     expect(result.content[0]?.type).toBe("text");
 
-    const parsed = JSON.parse(result.content[0]?.text);
+    const parsed = JSON.parse(result.content[0]?.text ?? "{}");
     expect(parsed.success).toBe(true);
     expect(Array.isArray(parsed.folders)).toBe(true);
   });

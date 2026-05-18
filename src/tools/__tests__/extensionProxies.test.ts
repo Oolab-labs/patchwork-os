@@ -12,6 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { makeConfig as buildConfig } from "../../__tests__/helpers/fixtures.js";
 import type { Config } from "../../config.js";
 import {
   createReadClipboardTool,
@@ -39,24 +40,14 @@ function mockDisconnectedExtensionClient(): any {
 }
 
 function makeMinimalConfig(overrides: Partial<Config> = {}): Config {
-  return {
+  return buildConfig({
     workspace: "/tmp",
     workspaceFolders: ["/tmp"],
     ideName: "Test",
-    editorCommand: null,
-    port: null,
-    bindAddress: "127.0.0.1",
-    verbose: false,
-    jsonl: false,
-    linters: [],
-    commandAllowlist: [],
-    commandTimeout: 30_000,
     maxResultSize: 512 * 1024,
-    vscodeCommandAllowlist: [],
     activeWorkspaceFolder: "/tmp",
-    gracePeriodMs: 30_000,
     ...overrides,
-  };
+  });
 }
 
 // ── getBufferContent ──────────────────────────────────────────────────────────
