@@ -386,3 +386,79 @@ describe("POST /settings — pushServiceBaseUrl HTTPS guard", () => {
     expect(server!.pushServiceBaseUrl).toBeUndefined();
   });
 });
+
+describe("POST /settings — validate-before-write", () => {
+  // Regression: previously the handler validated fields inline and persisted
+  // each as it went, so a valid driver + invalid trailing field (ntfyTopic,
+  // pushServiceBaseUrl, ntfyServer) returned 400 but had already written the
+  // new driver to bridge config and the new approvalGate to live state.
+  it("does not persist driver when a later field fails validation", async () => {
+    const bridgeCfgPath = path.join(tempDir!, "bridge.json");
+    writeFileSync(
+      bridgeCfgPath,
+      JSON.stringify({ driver: "subprocess" }, null, 2),
+    );
+    server!.bridgeConfigPath = bridgeCfgPath;
+
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ driver: "gemini", ntfyTopic: "bad topic with spaces" }),
+    );
+
+    expect(status).toBe(400);
+    const saved = JSON.parse(readFileSync(bridgeCfgPath, "utf-8")) as Record<
+      string,
+      unknown
+    >;
+    expect(saved.driver).toBe("subprocess");
+  });
+
+  it("does not mutate live approvalGate when a later field fails validation", async () => {
+    server!.approvalGate = "off";
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({
+        approvalGate: "all",
+        pushServiceBaseUrl: "http://insecure.example.com",
+      }),
+    );
+
+    expect(status).toBe(400);
+    expect(server!.approvalGate).toBe("off");
+  });
+
+  it("does not mutate enableTimeOfDayAnomaly when ntfyServer fails validation", async () => {
+    server!.enableTimeOfDayAnomaly = false;
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({
+        enableTimeOfDayAnomaly: true,
+        ntfyServer: "http://insecure.example.com",
+      }),
+    );
+
+    expect(status).toBe(400);
+    expect(server!.enableTimeOfDayAnomaly).toBe(false);
+  });
+});

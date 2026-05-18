@@ -1564,15 +1564,31 @@ export class Server extends EventEmitter<ServerEvents> {
             ) {
               return;
             }
+            // PHASE 1 — validate ALL fields up front. No disk writes, no
+            // secure-store writes, no live-state mutations until every input
+            // has passed. Prevents the "valid driver + invalid ntfyTopic"
+            // class of bug where a 400 still leaves a partial side-effect on
+            // disk.
+            const respond400 = (error: string) => {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error }));
+            };
+
+            // webhookUrl
             const hasWebhookUpdate = body.webhookUrl !== undefined;
-            const raw = hasWebhookUpdate
+            const webhookRaw = hasWebhookUpdate
               ? (body.webhookUrl?.trim() ?? "")
               : undefined;
-            if (raw !== undefined && raw !== "" && !/^https:\/\/.+/.test(raw)) {
-              res.writeHead(400, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ error: "webhookUrl must be HTTPS" }));
+            if (
+              webhookRaw !== undefined &&
+              webhookRaw !== "" &&
+              !/^https:\/\/.+/.test(webhookRaw)
+            ) {
+              respond400("webhookUrl must be HTTPS");
               return;
             }
+
+            // approvalGate
             const gateRaw = body.approvalGate;
             if (
               gateRaw !== undefined &&
@@ -1580,45 +1596,20 @@ export class Server extends EventEmitter<ServerEvents> {
               gateRaw !== "high" &&
               gateRaw !== "all"
             ) {
-              res.writeHead(400, { "Content-Type": "application/json" });
-              res.end(
-                JSON.stringify({
-                  error: 'approvalGate must be "off", "high", or "all"',
-                }),
-              );
+              respond400('approvalGate must be "off", "high", or "all"');
               return;
             }
-            const configPath = patchworkConfigPath();
-            const cfg = loadPatchworkConfig(configPath);
-            cfg.dashboard = {
-              port: cfg.dashboard?.port ?? 3200,
-              requireApproval: cfg.dashboard?.requireApproval ?? ["high"],
-              pushNotifications: cfg.dashboard?.pushNotifications ?? false,
-              webhookUrl: hasWebhookUpdate
-                ? raw || undefined
-                : cfg.dashboard?.webhookUrl,
-            };
-            if (gateRaw !== undefined) {
-              cfg.approvalGate = gateRaw as "off" | "high" | "all";
-              this.approvalGate = gateRaw as "off" | "high" | "all";
+
+            // enableTimeOfDayAnomaly
+            if (
+              body.enableTimeOfDayAnomaly !== undefined &&
+              typeof body.enableTimeOfDayAnomaly !== "boolean"
+            ) {
+              respond400("enableTimeOfDayAnomaly must be a boolean");
+              return;
             }
-            // h10 toggle: must be boolean if present. Persists to
-            // ~/.patchwork/config.json AND live-mutates the Server
-            // field so the next /approvals POST honors it without
-            // needing a bridge restart.
-            if (body.enableTimeOfDayAnomaly !== undefined) {
-              if (typeof body.enableTimeOfDayAnomaly !== "boolean") {
-                res.writeHead(400, { "Content-Type": "application/json" });
-                res.end(
-                  JSON.stringify({
-                    error: "enableTimeOfDayAnomaly must be a boolean",
-                  }),
-                );
-                return;
-              }
-              cfg.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
-              this.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
-            }
+
+            // driver
             const driverRaw = body.driver;
             if (driverRaw !== undefined) {
               const validDrivers = [
@@ -1632,23 +1623,160 @@ export class Server extends EventEmitter<ServerEvents> {
                 "none",
               ];
               if (!validDrivers.includes(driverRaw)) {
-                res.writeHead(400, { "Content-Type": "application/json" });
+                respond400(`driver must be one of: ${validDrivers.join(", ")}`);
+                return;
+              }
+            }
+
+            // model
+            if (body.model !== undefined) {
+              const validModels = [
+                "claude",
+                "openai",
+                "gemini",
+                "grok",
+                "local",
+              ];
+              if (!validModels.includes(body.model)) {
+                respond400(`model must be one of: ${validModels.join(", ")}`);
+                return;
+              }
+            }
+
+            // apiKey
+            if (body.apiKey) {
+              const { provider, key } = body.apiKey;
+              const validProviders = ["anthropic", "openai", "google", "xai"];
+              if (
+                !validProviders.includes(provider) ||
+                typeof key !== "string"
+              ) {
+                respond400("Invalid apiKey provider or key");
+                return;
+              }
+            }
+
+            // pushServiceUrl
+            const pushUrlTrimmed =
+              body.pushServiceUrl !== undefined
+                ? body.pushServiceUrl.trim()
+                : undefined;
+            if (
+              pushUrlTrimmed !== undefined &&
+              pushUrlTrimmed !== "" &&
+              !pushUrlTrimmed.startsWith("https://")
+            ) {
+              respond400("pushServiceUrl must be HTTPS");
+              return;
+            }
+
+            // pushServiceBaseUrl — bridge callback origin embedded in SW
+            // approveUrl/rejectUrl. http:// or attacker host = approval token
+            // exfiltration. Validate before persisting.
+            const pushBaseTrimmed =
+              body.pushServiceBaseUrl !== undefined
+                ? body.pushServiceBaseUrl.trim()
+                : undefined;
+            if (
+              pushBaseTrimmed !== undefined &&
+              pushBaseTrimmed !== "" &&
+              !pushBaseTrimmed.startsWith("https://")
+            ) {
+              respond400("pushServiceBaseUrl must be HTTPS");
+              return;
+            }
+
+            // ntfyTopic — bearer-token on public ntfy.sh; charset-restricted.
+            const ntfyTopicTrimmed =
+              body.ntfyTopic !== undefined ? body.ntfyTopic.trim() : undefined;
+            if (
+              ntfyTopicTrimmed !== undefined &&
+              ntfyTopicTrimmed !== "" &&
+              !/^[A-Za-z0-9_-]{1,64}$/.test(ntfyTopicTrimmed)
+            ) {
+              respond400("ntfyTopic must match [A-Za-z0-9_-]{1,64}");
+              return;
+            }
+
+            // ntfyServer — same threat model as pushServiceBaseUrl.
+            const ntfyServerTrimmed =
+              body.ntfyServer !== undefined
+                ? body.ntfyServer.trim()
+                : undefined;
+            if (
+              ntfyServerTrimmed !== undefined &&
+              ntfyServerTrimmed !== "" &&
+              !ntfyServerTrimmed.startsWith("https://")
+            ) {
+              respond400("ntfyServer must be HTTPS");
+              return;
+            }
+
+            // PHASE 2 — load config and apply all in-memory edits to `cfg`.
+            // Still no disk writes; if anything throws here the request
+            // returns 500 with no side effects.
+            const configPath = patchworkConfigPath();
+            const cfg = loadPatchworkConfig(configPath);
+            cfg.dashboard = {
+              port: cfg.dashboard?.port ?? 3200,
+              requireApproval: cfg.dashboard?.requireApproval ?? ["high"],
+              pushNotifications: cfg.dashboard?.pushNotifications ?? false,
+              webhookUrl: hasWebhookUpdate
+                ? webhookRaw || undefined
+                : cfg.dashboard?.webhookUrl,
+            };
+            if (gateRaw !== undefined) {
+              cfg.approvalGate = gateRaw as "off" | "high" | "all";
+            }
+            if (body.enableTimeOfDayAnomaly !== undefined) {
+              cfg.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
+            }
+            if (driverRaw !== undefined) {
+              cfg.driver = driverRaw as NonNullable<PatchworkConfig["driver"]>;
+            }
+            if (body.model !== undefined) {
+              cfg.model = body.model as PatchworkConfig["model"];
+              if (body.model === "local") {
+                if (body.localEndpoint !== undefined)
+                  cfg.localEndpoint = body.localEndpoint.trim() || undefined;
+                if (body.localModel !== undefined)
+                  cfg.localModel = body.localModel.trim() || undefined;
+              }
+            }
+
+            // PHASE 3 — disk + secure-store writes. Order: secure store →
+            // bridge driver config → patchwork config. Each rolls back what
+            // it can on later failure (left to PR #02; for now log + 500).
+            if (body.apiKey) {
+              try {
+                saveApiKeyToSecureStore(
+                  body.apiKey.provider as
+                    | "anthropic"
+                    | "openai"
+                    | "google"
+                    | "xai",
+                  body.apiKey.key,
+                );
+              } catch (writeErr) {
+                this.logger.error(
+                  `[/config/patchwork] saveApiKeyToSecureStore failed: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`,
+                );
+                res.writeHead(500, { "Content-Type": "application/json" });
                 res.end(
-                  JSON.stringify({
-                    error: `driver must be one of: ${validDrivers.join(", ")}`,
-                  }),
+                  JSON.stringify({ error: "Failed to write provider API key" }),
                 );
                 return;
               }
-              const driver = driverRaw as NonNullable<
-                PatchworkConfig["driver"]
-              >;
-              cfg.driver = driver;
+            }
+            if (driverRaw !== undefined) {
               try {
-                saveBridgeConfigDriver(driver, this.bridgeConfigPath);
+                saveBridgeConfigDriver(
+                  driverRaw as NonNullable<PatchworkConfig["driver"]>,
+                  this.bridgeConfigPath,
+                );
               } catch (writeErr) {
                 this.logger.error(
-                  `[/config/patchwork] saveBridgeConfigDriver failed: ${writeErr instanceof Error ? (writeErr.stack ?? writeErr.message) : String(writeErr)}`,
+                  `[/config/patchwork] saveBridgeConfigDriver failed: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`,
                 );
                 res.writeHead(500, { "Content-Type": "application/json" });
                 res.end(
@@ -1659,142 +1787,46 @@ export class Server extends EventEmitter<ServerEvents> {
                 return;
               }
             }
-            if (body.model !== undefined) {
-              const validModels = [
-                "claude",
-                "openai",
-                "gemini",
-                "grok",
-                "local",
-              ];
-              if (!validModels.includes(body.model)) {
-                res.writeHead(400, { "Content-Type": "application/json" });
-                res.end(
-                  JSON.stringify({
-                    error: `model must be one of: ${validModels.join(", ")}`,
-                  }),
-                );
-                return;
-              }
-              cfg.model = body.model as PatchworkConfig["model"];
-              if (body.model === "local") {
-                if (body.localEndpoint !== undefined)
-                  cfg.localEndpoint = body.localEndpoint.trim() || undefined;
-                if (body.localModel !== undefined)
-                  cfg.localModel = body.localModel.trim() || undefined;
-              }
-            }
-            if (body.apiKey) {
-              const { provider, key } = body.apiKey;
-              const validProviders = ["anthropic", "openai", "google", "xai"];
-              if (
-                !validProviders.includes(provider) ||
-                typeof key !== "string"
-              ) {
-                res.writeHead(400, { "Content-Type": "application/json" });
-                res.end(
-                  JSON.stringify({ error: "Invalid apiKey provider or key" }),
-                );
-                return;
-              }
-              // Provider keys go to the secure store (Keychain/DPAPI/Secret
-              // Service / AES-256-GCM file fallback) — never persisted to
-              // ~/.patchwork/config.json. Empty string clears.
-              try {
-                saveApiKeyToSecureStore(
-                  provider as "anthropic" | "openai" | "google" | "xai",
-                  key,
-                );
-              } catch (writeErr) {
-                this.logger.error(
-                  `[/config/patchwork] saveApiKeyToSecureStore failed: ${writeErr instanceof Error ? (writeErr.stack ?? writeErr.message) : String(writeErr)}`,
-                );
-                res.writeHead(500, { "Content-Type": "application/json" });
-                res.end(
-                  JSON.stringify({
-                    error: "Failed to write provider API key",
-                  }),
-                );
-                return;
-              }
-            }
             try {
               savePatchworkConfig(cfg, configPath);
             } catch (writeErr) {
               this.logger.error(
-                `[/config/patchwork] savePatchworkConfig failed: ${writeErr instanceof Error ? (writeErr.stack ?? writeErr.message) : String(writeErr)}`,
+                `[/config/patchwork] savePatchworkConfig failed: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`,
               );
               res.writeHead(500, { "Content-Type": "application/json" });
               res.end(
-                JSON.stringify({
-                  error: "Failed to write patchwork config",
-                }),
+                JSON.stringify({ error: "Failed to write patchwork config" }),
               );
               return;
             }
-            if (hasWebhookUpdate) {
-              this.approvalWebhookUrl = raw || undefined;
+
+            // PHASE 4 — live state. Only after every persistence step
+            // succeeded; ensures live state never diverges from disk.
+            if (gateRaw !== undefined) {
+              this.approvalGate = gateRaw as "off" | "high" | "all";
             }
-            if (body.pushServiceUrl !== undefined) {
-              const pushUrl = body.pushServiceUrl.trim();
-              if (pushUrl && !pushUrl.startsWith("https://")) {
-                res.writeHead(400, { "Content-Type": "application/json" });
-                res.end(
-                  JSON.stringify({ error: "pushServiceUrl must be HTTPS" }),
-                );
-                return;
-              }
-              this.pushServiceUrl = pushUrl || undefined;
+            if (body.enableTimeOfDayAnomaly !== undefined) {
+              this.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
+            }
+            if (hasWebhookUpdate) {
+              this.approvalWebhookUrl = webhookRaw || undefined;
+            }
+            if (pushUrlTrimmed !== undefined) {
+              this.pushServiceUrl = pushUrlTrimmed || undefined;
             }
             if (body.pushServiceToken !== undefined) {
               this.pushServiceToken = body.pushServiceToken.trim() || undefined;
             }
-            if (body.pushServiceBaseUrl !== undefined) {
-              const baseUrl = body.pushServiceBaseUrl.trim();
-              // pushServiceBaseUrl is the bridge callback origin embedded in
-              // the SW's approveUrl/rejectUrl. If it can be set to plain
-              // http:// or to a host the operator didn't intend, the SW will
-              // POST the one-shot approvalToken there — letting an attacker
-              // who sets this redirect every approval to attacker.tld and
-              // replay tokens to the real bridge for silent auto-approve.
-              if (baseUrl && !baseUrl.startsWith("https://")) {
-                res.writeHead(400, { "Content-Type": "application/json" });
-                res.end(
-                  JSON.stringify({ error: "pushServiceBaseUrl must be HTTPS" }),
-                );
-                return;
-              }
-              this.pushServiceBaseUrl = baseUrl || undefined;
+            if (pushBaseTrimmed !== undefined) {
+              this.pushServiceBaseUrl = pushBaseTrimmed || undefined;
             }
-            if (body.ntfyTopic !== undefined) {
-              const topic = body.ntfyTopic.trim();
-              // Topic acts as a bearer token on the public ntfy.sh server —
-              // anyone subscribed sees the approval payload + single-use
-              // approvalToken. Reject empty / whitespace / control chars to
-              // avoid silent misconfiguration.
-              if (topic && !/^[A-Za-z0-9_-]{1,64}$/.test(topic)) {
-                res.writeHead(400, { "Content-Type": "application/json" });
-                res.end(
-                  JSON.stringify({
-                    error: "ntfyTopic must match [A-Za-z0-9_-]{1,64}",
-                  }),
-                );
-                return;
-              }
-              this.ntfyTopic = topic || undefined;
+            if (ntfyTopicTrimmed !== undefined) {
+              this.ntfyTopic = ntfyTopicTrimmed || undefined;
             }
-            if (body.ntfyServer !== undefined) {
-              const server = body.ntfyServer.trim();
-              // Same reasoning as pushServiceBaseUrl — the bridge sends the
-              // single-use token to this URL. http:// would expose it on the
-              // wire; a malicious value would exfiltrate every approval.
-              if (server && !server.startsWith("https://")) {
-                res.writeHead(400, { "Content-Type": "application/json" });
-                res.end(JSON.stringify({ error: "ntfyServer must be HTTPS" }));
-                return;
-              }
-              this.ntfyServer = server || undefined;
+            if (ntfyServerTrimmed !== undefined) {
+              this.ntfyServer = ntfyServerTrimmed || undefined;
             }
+
             const restartRequired =
               driverRaw !== undefined ||
               body.apiKey !== undefined ||
