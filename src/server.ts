@@ -1865,11 +1865,17 @@ export class Server extends EventEmitter<ServerEvents> {
             res.end(JSON.stringify({ ok: true, restartRequired }));
           }
         } catch (err) {
+          // Any error reaching this outer catch is unexpected — all caller
+          // validation errors already returned their own 400 inline, and all
+          // expected disk-write errors return their own 500. So this is a
+          // server bug, not a client one. Returning 400 here misled clients
+          // into believing they had sent a bad body when in fact something
+          // crashed serverside.
           this.logger.error(
-            `[/config/patchwork] error: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+            `[/config/patchwork] unhandled error: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
           );
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Invalid request body" }));
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Internal server error" }));
         }
         return;
       }
