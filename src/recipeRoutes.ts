@@ -39,6 +39,7 @@ import {
   refillBucket,
   type TokenBucketState,
 } from "./fp/tokenBucket.js";
+import { respondIfUnknownBodyKeys } from "./httpBodyValidation.js";
 import { respond500 } from "./httpErrorResponse.js";
 import type { RecipeDraft } from "./recipesHttp.js";
 import { validateSafeUrl } from "./ssrfGuard.js";
@@ -498,6 +499,7 @@ export function tryHandleRecipeRoute(
       }
       try {
         const parsed = parsedBody.value ?? {};
+        if (respondIfUnknownBodyKeys(res, parsed, ["vars", "inputs"])) return;
         const varsRaw = parsed.vars ?? parsed.inputs;
         const varsErr = validateRecipeVars(varsRaw);
         if (varsErr) {
@@ -538,6 +540,7 @@ export function tryHandleRecipeRoute(
       const parsedBody = await readJsonBody<{
         name?: string;
         vars?: Record<string, string>;
+        inputs?: Record<string, string>;
       }>(req, RECIPE_ROUTE_BODY_CAPS.run);
       if (!parsedBody.ok) {
         if (parsedBody.code === "too_large") {
@@ -549,18 +552,20 @@ export function tryHandleRecipeRoute(
       }
       try {
         const parsed = parsedBody.value ?? {};
+        if (respondIfUnknownBodyKeys(res, parsed, ["name", "vars", "inputs"]))
+          return;
         const name = parsed.name;
-        const varsErr = validateRecipeVars(parsed.vars);
+        // #605 symmetry — accept `inputs` here like /recipes/:name/run does.
+        const varsRaw = parsed.vars ?? parsed.inputs;
+        const varsErr = validateRecipeVars(varsRaw);
         if (varsErr) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify(varsErr));
           return;
         }
         const vars =
-          parsed.vars &&
-          typeof parsed.vars === "object" &&
-          !Array.isArray(parsed.vars)
-            ? (parsed.vars as Record<string, string>)
+          varsRaw && typeof varsRaw === "object" && !Array.isArray(varsRaw)
+            ? (varsRaw as Record<string, string>)
             : undefined;
         if (typeof name !== "string" || !name) {
           res.writeHead(400, { "Content-Type": "application/json" });
@@ -946,6 +951,7 @@ export function tryHandleRecipeRoute(
         }
         return;
       }
+      if (respondIfUnknownBodyKeys(res, parsedBody.value, ["level"])) return;
       const level = (parsedBody.value as { level?: unknown } | undefined)
         ?.level;
       if (typeof level !== "string" || !level) {
@@ -1273,7 +1279,10 @@ export function tryHandleRecipeRoute(
         }
         return;
       }
-      const { targetName, force } = parsedBody.value ?? {};
+      const promoteBody = parsedBody.value ?? {};
+      if (respondIfUnknownBodyKeys(res, promoteBody, ["targetName", "force"]))
+        return;
+      const { targetName, force } = promoteBody;
       if (typeof targetName !== "string" || !targetName.trim()) {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "targetName required" }));

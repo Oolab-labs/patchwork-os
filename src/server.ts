@@ -26,6 +26,7 @@ import {
   KILL_SWITCH_WRITES,
   setFlag,
 } from "./featureFlags.js";
+import { respondIfUnknownBodyKeys } from "./httpBodyValidation.js";
 import { respond500 } from "./httpErrorResponse.js";
 import { tryHandleInboxRoute } from "./inboxRoutes.js";
 import type { Logger } from "./logger.js";
@@ -1544,6 +1545,25 @@ export class Server extends EventEmitter<ServerEvents> {
         try {
           {
             const body = parsed.value ?? {};
+            if (
+              respondIfUnknownBodyKeys(res, body, [
+                "webhookUrl",
+                "approvalGate",
+                "enableTimeOfDayAnomaly",
+                "driver",
+                "model",
+                "localEndpoint",
+                "localModel",
+                "apiKey",
+                "pushServiceUrl",
+                "pushServiceToken",
+                "pushServiceBaseUrl",
+                "ntfyTopic",
+                "ntfyServer",
+              ])
+            ) {
+              return;
+            }
             const hasWebhookUpdate = body.webhookUrl !== undefined;
             const raw = hasWebhookUpdate
               ? (body.webhookUrl?.trim() ?? "")
@@ -1845,6 +1865,9 @@ export class Server extends EventEmitter<ServerEvents> {
             return;
           }
           const body = parsed.value ?? {};
+          if (respondIfUnknownBodyKeys(res, body, ["engage", "reason"])) {
+            return;
+          }
           if (typeof body.engage !== "boolean") {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(
@@ -1972,6 +1995,15 @@ export class Server extends EventEmitter<ServerEvents> {
             return;
           }
           const body = parsed.value ?? {};
+          if (
+            respondIfUnknownBodyKeys(res, body, [
+              "crashReports",
+              "usageStats",
+              "localDiagnostics",
+            ])
+          ) {
+            return;
+          }
           const update: {
             crashReports?: boolean;
             usageStats?: boolean;
