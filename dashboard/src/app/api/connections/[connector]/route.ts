@@ -1,4 +1,5 @@
 import { bridgeFetch } from "@/lib/bridge";
+import { forwardOrGeneric } from "@/lib/forwardOrGeneric";
 import { requireSameOrigin } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
@@ -25,14 +26,12 @@ export async function DELETE(
     const res = await bridgeFetch(`/connections/${connector}`, {
       method: "DELETE",
     });
-    const text = await res.text();
-    return new Response(text, {
-      status: res.status,
-      headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
-    });
+    return await forwardOrGeneric(res, `connections/${connector} DELETE`);
   } catch (err) {
+    // #600: don't leak err.message detail.
+    console.error(`[connections/${connector} DELETE] bridge fetch failed:`, err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : "fetch failed" }),
+      JSON.stringify({ error: "Bridge unreachable" }),
       { status: 502, headers: { "content-type": "application/json" } },
     );
   }

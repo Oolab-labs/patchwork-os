@@ -647,7 +647,7 @@ export default function MarketplaceSubmitPage() {
             <code>
               github.com/{REGISTRY_OWNER}/{REGISTRY_REPO}
             </code>{" "}
-            via GitHub's web flow — auto-forks if you don't have push access.
+            via GitHub&apos;s web flow — auto-forks if you don&apos;t have push access.
             No backend, no extra accounts.
           </div>
         </div>
@@ -674,8 +674,8 @@ export default function MarketplaceSubmitPage() {
       >
         <strong style={{ color: "var(--fg-1)" }}>How this works:</strong> fill
         the form below, validate the YAML, then click{" "}
-        <strong>Open PR on GitHub</strong>. We open a prefilled "create new
-        file" page on the registry repo. GitHub will fork it for you if
+        <strong>Open PR on GitHub</strong>. We open a prefilled &quot;create new
+        file&quot; page on the registry repo. GitHub will fork it for you if
         needed, then you click <em>Propose new file</em> to open a PR. You
         then add the manifest file the same way — full instructions appear on
         the next screen.
@@ -1402,7 +1402,7 @@ function SubmittedView({
           <div className="editorial-sub">
             We opened GitHub in a new tab with{" "}
             <code>{recipeYamlPath(formData)}</code> prefilled. Two more steps
-            and you're done.
+            and you&apos;re done.
           </div>
         </div>
       </div>

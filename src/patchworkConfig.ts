@@ -9,6 +9,24 @@ import {
 } from "./connectors/tokenStorage.js";
 import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
+/**
+ * Single source of truth for AI driver modes. Both the runtime `Driver`
+ * type and `config.schema.json` derive from this list — the test in
+ * src/__tests__/configSchemaAlignment.test.ts asserts they stay aligned.
+ */
+export const DRIVERS = [
+  "subprocess",
+  "api",
+  "openai",
+  "grok",
+  "gemini",
+  "gemini-api",
+  "local",
+  "none",
+] as const;
+
+export type Driver = (typeof DRIVERS)[number];
+
 export interface PatchworkConfig {
   model: ModelChoice;
   defaultModel?: string;
@@ -42,15 +60,7 @@ export interface PatchworkConfig {
     disabled?: string[];
   };
   /** AI driver mode — persisted so dashboard changes survive restart. */
-  driver?:
-    | "subprocess"
-    | "api"
-    | "openai"
-    | "grok"
-    | "gemini"
-    | "gemini-api"
-    | "local"
-    | "none";
+  driver?: Driver;
   /** Notification channel config */
   notifications?: {
     slackChannel?: string;

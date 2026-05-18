@@ -23,6 +23,7 @@
     "localModel": { "type": "string" },
     "dashboard": {
       "type": "object",
+      "required": ["port", "requireApproval"],
       "properties": {
         "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "requireApproval": {
@@ -31,7 +32,8 @@
         },
         "pushNotifications": { "type": "boolean" },
         "webhookUrl": { "type": "string", "format": "uri" }
-      }
+      },
+      "additionalProperties": false
     },
     "recipesDir": { "type": "string" },
     "approvalGate": { "type": "string", "enum": ["off", "high", "all"] },
@@ -44,17 +46,28 @@
           "type": "array",
           "items": { "type": "string" }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "driver": {
       "type": "string",
-      "enum": ["subprocess", "api", "openai", "grok", "gemini", "none"]
+      "enum": [
+        "subprocess",
+        "api",
+        "openai",
+        "grok",
+        "gemini",
+        "gemini-api",
+        "local",
+        "none"
+      ]
     },
     "notifications": {
       "type": "object",
       "properties": {
         "slackChannel": { "type": "string" }
-      }
+      },
+      "additionalProperties": false
     },
     "claudeBinary": { "type": "string" }
   },

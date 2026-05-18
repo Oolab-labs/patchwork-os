@@ -10,9 +10,24 @@ function buildApp(fcm?: FcmAdapter, apns?: ApnsAdapter) {
   const registry = new InMemoryRegistry();
   const tokenStore = new EnvTokenStore("secret123:user1");
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: "16kb" }));
   app.use(bearerAuthMiddleware(tokenStore));
   app.use(buildRouter(registry, { fcm, apns, apnsTopic: "com.patchwork.app" }));
+  // Mirror prod JSON error middleware so the 413 leak test exercises the
+  // same envelope shape callers see in deployment.
+  app.use(
+    (
+      err: unknown,
+      _req: express.Request,
+      res: express.Response,
+      _next: express.NextFunction,
+    ) => {
+      const e = err as { statusCode?: unknown; type?: unknown };
+      const status = typeof e?.statusCode === "number" ? e.statusCode : 500;
+      const type = typeof e?.type === "string" ? e.type : "error";
+      res.status(status).json({ error: type });
+    },
+  );
   return { app, registry };
 }
 
@@ -71,6 +86,41 @@ describe("auth", () => {
       return v;
     });
     expect(json).not.toContain("super-secret-plain");
+  });
+});
+
+describe("body size limit", () => {
+  it("rejects payloads larger than 16kb with 413", async () => {
+    const { app } = buildApp();
+    // 20kb of padding inside a register payload — exceeds the 16kb cap.
+    const huge = "x".repeat(20 * 1024);
+    const res = await req(app, "post", "/devices/register", {
+      token: "fcm-1",
+      platform: "fcm",
+      padding: huge,
+    });
+    expect(res.status).toBe(413);
+  });
+
+  it("413 response is JSON and does not leak stack frames or paths", async () => {
+    const { app } = buildApp();
+    const huge = "x".repeat(20 * 1024);
+    const res = await req(app, "post", "/devices/register", {
+      token: "fcm-1",
+      platform: "fcm",
+      padding: huge,
+    });
+    expect(res.status).toBe(413);
+    // Express's default error handler emits an HTML page with a full stack
+    // trace and absolute filesystem paths (node_modules/raw-body/...). The
+    // JSON error middleware replaces that with a minimal envelope.
+    expect(res.headers["content-type"]).toMatch(/application\/json/);
+    expect(res.body).toEqual({ error: "entity.too.large" });
+    const raw = JSON.stringify(res.body) + (res.text ?? "");
+    expect(raw).not.toContain("node_modules");
+    expect(raw).not.toMatch(/\/Users\//);
+    expect(raw).not.toMatch(/\bat\s+\S+\s+\(/); // no "at fn (file:line)" stack frames
+    expect(raw).not.toContain("<html");
   });
 });
 
@@ -288,7 +338,7 @@ describe("POST /push", () => {
     const registry = new InMemoryRegistry();
     const tokenStore = new EnvTokenStore("secret123:user1");
     const app = express();
-    app.use(express.json());
+    app.use(express.json({ limit: "16kb" }));
     app.use(bearerAuthMiddleware(tokenStore));
     app.use(
       buildRouter(

@@ -14,6 +14,8 @@
  */
 
 import express from "express";
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
 import { bearerAuthMiddleware, EnvTokenStore } from "./auth.js";
 import { InMemoryRegistry, RedisRegistry } from "./deviceRegistry.js";
 import type { ApnsAdapter, FcmAdapter } from "./dispatcher.js";
@@ -130,7 +132,13 @@ async function main() {
 
   const tokenStore = new EnvTokenStore(authTokens);
   const app = express();
-  app.use(express.json());
+  // Behind a reverse proxy (Cloud Run, nginx, ELB) so X-Forwarded-For is
+  // honoured by express-rate-limit for correct per-IP buckets.
+  app.set("trust proxy", 1);
+  app.use(helmet());
+  // Push payloads are tiny (callId + approvalToken + a few flags); cap the
+  // body to 16kb to shed memory-amplification attacks early.
+  app.use(express.json({ limit: "16kb" }));
 
   // /health is mounted BEFORE the bearer middleware so uptime checkers
   // (Cloud Run, k8s liveness probes, ELB target groups) can hit it without
@@ -141,6 +149,19 @@ async function main() {
     res.json({ ok: true });
   });
 
+  // Global per-IP rate limit on authenticated endpoints. Sits AFTER the
+  // /health exception so uptime probes are never throttled. Defence-in-depth
+  // on top of the per-user registration limiter in routes.ts.
+  app.use(
+    rateLimit({
+      windowMs: 60_000,
+      limit: 60,
+      standardHeaders: true,
+      legacyHeaders: false,
+      skip: (req) => req.path === "/health",
+    }),
+  );
+
   app.use(bearerAuthMiddleware(tokenStore));
   app.use(buildRouter(registry, { fcm, apns, apnsTopic }));
 
@@ -150,9 +171,36 @@ async function main() {
     res.json({ ok: true, fcm: !!fcm, apns: !!apns });
   });
 
-  app.listen(port, () => {
+  // JSON error middleware — must follow all route registrations. Express's
+  // default error handler renders an HTML page containing the stack trace and
+  // absolute filesystem paths (e.g. node_modules/raw-body/index.js:163:17),
+  // which leaks deployment shape on otherwise-correct error responses (e.g.
+  // 413 from express.json's body cap). Force a minimal JSON envelope instead.
+  app.use(
+    (
+      err: unknown,
+      _req: express.Request,
+      res: express.Response,
+      _next: express.NextFunction,
+    ) => {
+      const e = err as { statusCode?: unknown; type?: unknown };
+      const status = typeof e?.statusCode === "number" ? e.statusCode : 500;
+      const type = typeof e?.type === "string" ? e.type : "error";
+      res.status(status).json({ error: type });
+    },
+  );
+
+  // Server-to-server API: no browser callers, so CORS is intentionally
+  // omitted (no Access-Control-Allow-Origin headers emitted). Helmet's
+  // Cross-Origin-Resource-Policy: same-origin default reinforces this.
+
+  const server = app.listen(port, () => {
     console.log(`Patchwork push relay listening on :${port}`);
   });
+  // Bound request/header timeouts so a slow-client connection can't pin a
+  // worker. headersTimeout must exceed requestTimeout per Node docs.
+  server.requestTimeout = 10_000;
+  server.headersTimeout = 11_000;
 }
 
 main().catch((err) => {

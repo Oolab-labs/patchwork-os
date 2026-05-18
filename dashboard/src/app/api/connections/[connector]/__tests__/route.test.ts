@@ -73,14 +73,14 @@ describe("DELETE /api/connections/[connector]", () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
-  it("returns 502 with the error message when the bridge call throws", async () => {
+  it("returns 502 with a generic error (issue #600 — no err.message leak)", async () => {
     bridgeFetchMock.mockRejectedValueOnce(new TypeError("ECONNREFUSED"));
     const res = await deleteConnection(
       reqWithHeaders({ "sec-fetch-site": "same-origin" }),
       { params: Promise.resolve({ connector: "gmail" }) },
     );
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: "ECONNREFUSED" });
+    expect(await res.json()).toEqual({ error: "Bridge unreachable" });
   });
 });
 
@@ -114,13 +114,13 @@ describe("POST /api/connections/[connector]/test", () => {
     expect(await res.json()).toEqual({ healthy: true });
   });
 
-  it("502s on bridge throw and surfaces 'fetch failed' for non-Error rejection values", async () => {
+  it("502s on bridge throw with a generic error (issue #600)", async () => {
     bridgeFetchMock.mockRejectedValueOnce("plain-string-not-an-error");
     const res = await postTest(reqWithHeaders({ "sec-fetch-site": "same-origin" }), {
       params: Promise.resolve({ connector: "linear" }),
     });
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: "fetch failed" });
+    expect(await res.json()).toEqual({ error: "Bridge unreachable" });
   });
 });
 
@@ -159,7 +159,10 @@ describe("GET /api/connections/[connector]/auth", () => {
     expect((await res.json()).error).toMatch(/Location/);
   });
 
-  it("passes a non-redirect response through with body + status + content-type", async () => {
+  it("strips non-2xx upstream body and returns generic shape (#600)", async () => {
+    // Hardened in PR for issue #600 — upstream bodies may contain
+    // internal detail (ECONNREFUSED tcp://..., paths, stack frames).
+    // Status code is preserved; body is the generic `{error: "Bridge returned <status>"}`.
     bridgeFetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ error: "client_id missing" }), {
         status: 500,
@@ -168,14 +171,14 @@ describe("GET /api/connections/[connector]/auth", () => {
     );
     const res = await getAuth(getReq(), { params: Promise.resolve({ connector: "gmail" }) });
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: "client_id missing" });
+    expect(await res.json()).toEqual({ error: "Bridge returned 500" });
   });
 
   it("502s on bridge throw", async () => {
     bridgeFetchMock.mockRejectedValueOnce(new Error("dns timeout"));
     const res = await getAuth(getReq(), { params: Promise.resolve({ connector: "gmail" }) });
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: "dns timeout" });
+    expect(await res.json()).toEqual({ error: "Bridge unreachable" });
   });
 });
 
@@ -230,12 +233,12 @@ describe("POST /api/connections/[connector]/connect (token-paste)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("502s on bridge throw with the error message", async () => {
+  it("502s on bridge throw with a generic error (issue #600)", async () => {
     bridgeFetchMock.mockRejectedValueOnce(new Error("upstream down"));
     const res = await postConnect(postWithBody(JSON.stringify({ token: "x" })), {
       params: Promise.resolve({ connector: "notion" }),
     });
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: "upstream down" });
+    expect(await res.json()).toEqual({ error: "Bridge unreachable" });
   });
 });

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeProbes as buildProbes } from "../../__tests__/helpers/fixtures.js";
 import { createFormatDocumentTool } from "../formatDocument.js";
 
 // Mock execSafe while keeping all other utils intact
@@ -40,18 +41,9 @@ function makeClient(connected: boolean, fmtImpl?: () => Promise<unknown>) {
 }
 
 function makeProbes(overrides: Record<string, boolean> = {}) {
-  return {
-    eslint: false,
-    biome: false,
-    prettier: false,
-    black: false,
-    ruff: false,
-    gofmt: false,
-    rustfmt: false,
-    cargo: false,
-    pipAudit: false,
-    ...overrides,
-  } as import("../../probe.js").ProbeResults;
+  return buildProbes(
+    overrides as Partial<import("../../probe.js").ProbeResults>,
+  );
 }
 
 function parse(result: any) {

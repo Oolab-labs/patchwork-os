@@ -22,6 +22,7 @@ import { Server } from "../server.js";
 import { StreamableHttpHandler } from "../streamableHttp.js";
 import { registerAllTools } from "../tools/index.js";
 import { McpTransport } from "../transport.js";
+import { makeConfig as buildConfig, makeProbes } from "./helpers/fixtures.js";
 import { send, waitFor } from "./wsHelpers.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -31,34 +32,20 @@ const openedClients: WebSocket[] = [];
 const servers: Server[] = [];
 
 function makeConfig(workspace: string): Config {
-  return {
+  return buildConfig({
     workspace,
     workspaceFolders: [workspace],
     ideName: "Test",
-    editorCommand: null,
-    port: null,
-    bindAddress: "127.0.0.1",
-    verbose: false,
-    jsonl: false,
-    linters: [],
-    commandAllowlist: [],
-    commandTimeout: 30_000,
     maxResultSize: 512 * 1024,
-    vscodeCommandAllowlist: [],
     activeWorkspaceFolder: workspace,
     gracePeriodMs: 30_000,
-    autoTmux: false,
-    driver: "none",
-    claudeBinary: "claude",
-    automationEnabled: false,
-    automationPolicyPath: null,
-    toolRateLimit: 60,
-  };
+  });
 }
 
 interface TestBridge {
   server: Server;
   transport: McpTransport;
+  extensionClient: ExtensionClient;
   port: number;
   authToken: string;
   workspace: string;
@@ -83,22 +70,7 @@ async function setupBridge(registerTools = false): Promise<TestBridge> {
 
   if (registerTools) {
     const config = makeConfig(workspace);
-    const probes = {
-      git: false,
-      rg: false,
-      fd: false,
-      tsc: false,
-      eslint: false,
-      pyright: false,
-      ruff: false,
-      cargo: false,
-      go: false,
-      biome: false,
-      vitest: false,
-      jest: false,
-      pytest: false,
-      gh: false,
-    };
+    const probes = makeProbes();
     registerAllTools(
       transport,
       config,
@@ -124,7 +96,15 @@ async function setupBridge(registerTools = false): Promise<TestBridge> {
     return ws;
   };
 
-  return { server, transport, port, authToken, workspace, connectClaude };
+  return {
+    server,
+    transport,
+    extensionClient,
+    port,
+    authToken,
+    workspace,
+    connectClaude,
+  };
 }
 
 function httpPost(
@@ -278,22 +258,7 @@ describe("Streamable HTTP — session lifecycle", () => {
     // Attach StreamableHttpHandler to the server
     const activityLog = new ActivityLog();
     const config = makeConfig(workspace);
-    const probes = {
-      git: false,
-      rg: false,
-      fd: false,
-      tsc: false,
-      eslint: false,
-      pyright: false,
-      ruff: false,
-      cargo: false,
-      go: false,
-      biome: false,
-      vitest: false,
-      jest: false,
-      pytest: false,
-      gh: false,
-    };
+    const probes = makeProbes();
     const httpHandler = new StreamableHttpHandler(
       config,
       probes,
@@ -339,22 +304,7 @@ describe("Streamable HTTP — session lifecycle", () => {
 
     const activityLog = new ActivityLog();
     const config = makeConfig(workspace);
-    const probes = {
-      git: false,
-      rg: false,
-      fd: false,
-      tsc: false,
-      eslint: false,
-      pyright: false,
-      ruff: false,
-      cargo: false,
-      go: false,
-      biome: false,
-      vitest: false,
-      jest: false,
-      pytest: false,
-      gh: false,
-    };
+    const probes = makeProbes();
     const httpHandler = new StreamableHttpHandler(
       config,
       probes,
