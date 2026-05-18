@@ -161,6 +161,10 @@ npm run package        # create .vsix
 
 Before staging, run `npx biome check --write <files>` on changed files. Fix before stage — don't wait for hook to fail.
 
+**Release channels:**
+- `latest` / `beta` — manual via `chore(release):` PRs, tagged `v*-beta*` → `publish-npm.yml`. Stable / human-curated.
+- `canary` — automatic on every green main merge via `publish-canary.yml`. Version shape `<base>.canary.<runNumber>` (e.g. `0.2.0-beta.5.canary.42`). `npm install -g patchwork-os@canary` always tracks main. Use for dogfooding freshly-merged changes without waiting for the next release PR. Never default-installed.
+
 ## LSP Workflows
 
 All LSP tools available in both slim and full mode (full is the default since v2.43.0).
