@@ -159,6 +159,8 @@ npm run package        # create .vsix
 
 **Extension versioning rule:** Windsurf caches `.vsix` files by version number and will silently reuse the old bundle if the version hasn't changed. **Always bump `vscode-extension/package.json` version before packaging** when the user will install the `.vsix` in Windsurf (or any VS Code fork). Patch bump (`1.4.2` → `1.4.3`) is sufficient. Never repackage without bumping — the user will install it and see no change.
 
+**Local global install rule (macOS):** Never run `npm install -g .` from a workspace under `~/Documents/`, `~/Desktop/`, or `~/Downloads/`. npm creates a symlink from `/opt/homebrew/lib/node_modules/<pkg>` into the workspace, and macOS TCC then silently blocks launchd-spawned processes from following that symlink (EPERM). The LaunchAgent will appear to install correctly but fail on first reload with `code: 'EPERM'`. Use `npm run install:global` (wraps `npm pack` + `npm install -g <tgz>`) instead — produces a real-copy install outside TCC's protected directory tree.
+
 Before staging, run `npx biome check --write <files>` on changed files. Fix before stage — don't wait for hook to fail.
 
 ## LSP Workflows
