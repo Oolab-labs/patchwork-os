@@ -527,6 +527,62 @@ describe("POST /settings — push/ntfy persistence", () => {
     expect(persisted.ntfyServer).toBe("https://ntfy.example.com");
   });
 
+  it("flags restartRequired when localEndpoint changes without model", async () => {
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ localEndpoint: "http://localhost:8080" }),
+    );
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toMatchObject({ restartRequired: true });
+  });
+
+  it("persists localEndpoint without requiring model in the same POST", async () => {
+    const pw = await import("../patchworkConfig.js");
+    const saveSpy = vi.mocked(pw.saveConfig);
+    saveSpy.mockClear();
+
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ localEndpoint: "http://localhost:9090" }),
+    );
+    expect(status).toBe(200);
+    const persisted = saveSpy.mock.calls[0]![0] as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(persisted.localEndpoint).toBe("http://localhost:9090");
+  });
+
+  it("does NOT flag restartRequired for pure push/ntfy edits (live-mutated)", async () => {
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ ntfyTopic: "patchwork-test" }),
+    );
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toMatchObject({ restartRequired: false });
+  });
+
   it("persists pushServiceBaseUrl to patchwork config", async () => {
     const pw = await import("../patchworkConfig.js");
     const saveSpy = vi.mocked(pw.saveConfig);
