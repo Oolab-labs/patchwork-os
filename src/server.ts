@@ -1743,6 +1743,23 @@ export class Server extends EventEmitter<ServerEvents> {
                   cfg.localModel = body.localModel.trim() || undefined;
               }
             }
+            // Push / ntfy fields used to be set only on `this.*` and were
+            // lost on bridge restart. Persist alongside the rest.
+            if (pushUrlTrimmed !== undefined) {
+              cfg.pushServiceUrl = pushUrlTrimmed || undefined;
+            }
+            if (body.pushServiceToken !== undefined) {
+              cfg.pushServiceToken = body.pushServiceToken.trim() || undefined;
+            }
+            if (pushBaseTrimmed !== undefined) {
+              cfg.pushServiceBaseUrl = pushBaseTrimmed || undefined;
+            }
+            if (ntfyTopicTrimmed !== undefined) {
+              cfg.ntfyTopic = ntfyTopicTrimmed || undefined;
+            }
+            if (ntfyServerTrimmed !== undefined) {
+              cfg.ntfyServer = ntfyServerTrimmed || undefined;
+            }
 
             // PHASE 3 — disk + secure-store writes. Order: secure store →
             // bridge driver config → patchwork config. Each rolls back what

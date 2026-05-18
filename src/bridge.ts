@@ -1438,6 +1438,15 @@ export class Bridge {
     // ~/.patchwork/config.json's enableTimeOfDayAnomaly field.
     this.server.enableTimeOfDayAnomaly =
       this.config.enableTimeOfDayAnomaly ?? false;
+    // Push / ntfy config — previously only set by /settings and lost on
+    // restart. Now restored from ~/.patchwork/config.json on boot so the
+    // mobile-oversight phone path survives a bridge bounce.
+    this.server.pushServiceUrl = this.config.pushServiceUrl ?? undefined;
+    this.server.pushServiceToken = this.config.pushServiceToken ?? undefined;
+    this.server.pushServiceBaseUrl =
+      this.config.pushServiceBaseUrl ?? undefined;
+    this.server.ntfyTopic = this.config.ntfyTopic ?? undefined;
+    this.server.ntfyServer = this.config.ntfyServer ?? undefined;
     this.server.readyFn = () => {
       // Count tools from the first active session (all sessions share the same tool set)
       const anySession = [...this.sessions.values()][0];

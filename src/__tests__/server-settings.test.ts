@@ -462,3 +462,93 @@ describe("POST /settings — validate-before-write", () => {
     expect(server!.enableTimeOfDayAnomaly).toBe(false);
   });
 });
+
+describe("POST /settings — push/ntfy persistence", () => {
+  // Regression: push/ntfy fields used to live only on server.* and were
+  // lost on every bridge restart. They should now flow into the patchwork
+  // config object passed to saveConfig (mocked) so a real install picks
+  // them up on the next boot via src/config.ts's IIFE.
+  it("persists pushServiceUrl + token to patchwork config", async () => {
+    const pw = await import("../patchworkConfig.js");
+    const saveSpy = vi.mocked(pw.saveConfig);
+    saveSpy.mockClear();
+
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({
+        pushServiceUrl: "https://relay.example.com",
+        pushServiceToken: "tok_abc",
+      }),
+    );
+
+    expect(status).toBe(200);
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    const persisted = saveSpy.mock.calls[0]![0] as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(persisted.pushServiceUrl).toBe("https://relay.example.com");
+    expect(persisted.pushServiceToken).toBe("tok_abc");
+  });
+
+  it("persists ntfy fields to patchwork config", async () => {
+    const pw = await import("../patchworkConfig.js");
+    const saveSpy = vi.mocked(pw.saveConfig);
+    saveSpy.mockClear();
+
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({
+        ntfyTopic: "patchwork-oolabs-abc123",
+        ntfyServer: "https://ntfy.example.com",
+      }),
+    );
+
+    expect(status).toBe(200);
+    const persisted = saveSpy.mock.calls[0]![0] as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(persisted.ntfyTopic).toBe("patchwork-oolabs-abc123");
+    expect(persisted.ntfyServer).toBe("https://ntfy.example.com");
+  });
+
+  it("persists pushServiceBaseUrl to patchwork config", async () => {
+    const pw = await import("../patchworkConfig.js");
+    const saveSpy = vi.mocked(pw.saveConfig);
+    saveSpy.mockClear();
+
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ pushServiceBaseUrl: "https://bridge.example.com" }),
+    );
+
+    expect(status).toBe(200);
+    const persisted = saveSpy.mock.calls[0]![0] as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(persisted.pushServiceBaseUrl).toBe("https://bridge.example.com");
+  });
+});

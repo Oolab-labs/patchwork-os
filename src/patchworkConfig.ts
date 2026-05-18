@@ -81,6 +81,24 @@ export interface PatchworkConfig {
    * pre-existing behavior.
    */
   claudeBinary?: string;
+  /**
+   * Mobile-oversight push relay (FCM/APNS gateway URL the bridge POSTs to)
+   * and its bearer token. Persisted so dashboard changes survive restart.
+   */
+  pushServiceUrl?: string;
+  pushServiceToken?: string;
+  /**
+   * Origin embedded in the service-worker's approveUrl/rejectUrl. The SW
+   * POSTs the one-shot approvalToken here, so a wrong/insecure value
+   * exfiltrates approvals — HTTPS is enforced at the /settings boundary.
+   */
+  pushServiceBaseUrl?: string;
+  /**
+   * Public-ntfy.sh push channel. Topic acts as a bearer; server defaults
+   * to https://ntfy.sh and can be overridden for self-hosted instances.
+   */
+  ntfyTopic?: string;
+  ntfyServer?: string;
 }
 
 const DEFAULTS: PatchworkConfig = {

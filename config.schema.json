@@ -69,7 +69,12 @@
       },
       "additionalProperties": false
     },
-    "claudeBinary": { "type": "string" }
+    "claudeBinary": { "type": "string" },
+    "pushServiceUrl": { "type": "string", "format": "uri" },
+    "pushServiceToken": { "type": "string" },
+    "pushServiceBaseUrl": { "type": "string", "format": "uri" },
+    "ntfyTopic": { "type": "string" },
+    "ntfyServer": { "type": "string", "format": "uri" }
   },
   "additionalProperties": false
 }
