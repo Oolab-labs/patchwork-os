@@ -159,7 +159,10 @@ describe("GET /api/connections/[connector]/auth", () => {
     expect((await res.json()).error).toMatch(/Location/);
   });
 
-  it("passes a non-redirect response through with body + status + content-type", async () => {
+  it("strips non-2xx upstream body and returns generic shape (#600)", async () => {
+    // Hardened in PR for issue #600 — upstream bodies may contain
+    // internal detail (ECONNREFUSED tcp://..., paths, stack frames).
+    // Status code is preserved; body is the generic `{error: "Bridge returned <status>"}`.
     bridgeFetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ error: "client_id missing" }), {
         status: 500,
@@ -168,7 +171,7 @@ describe("GET /api/connections/[connector]/auth", () => {
     );
     const res = await getAuth(getReq(), { params: Promise.resolve({ connector: "gmail" }) });
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: "client_id missing" });
+    expect(await res.json()).toEqual({ error: "Bridge returned 500" });
   });
 
   it("502s on bridge throw", async () => {
