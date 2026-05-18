@@ -51,6 +51,7 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `tools search <query> [--json]` — Filter the registered tools by name / description substring.
 - `install <companion>` — Install one of the bundled MCP-companion server registrations into Claude Desktop or Claude Code config. Use `--target cli|desktop` to choose, `--env KEY=VAL` to pass per-companion env vars. Companions: `memory`, `superpowers`, `devtools`, `database`, `slack`, `playwright`, `codebase-memory`. Each is a documented server config; the command writes it into `~/.claude.json` (CLI) or the Claude Desktop config (desktop) atomically.
 - `kill-switch engage|release|status [--reason <text>]` — Toggle the global write-disable gate (see ADR-0012).
+- `analytics show|configure|clear|test` — Manage the opt-in telemetry collector config (endpoint + shared secret) at `~/.claude/ide/analytics-config.json` (mode 0600). Replaces the brittle pattern of putting the secret in a launchd plist. `configure --endpoint URL --key KEY` writes both atomically; `test` sends a tiny synthetic payload and reports the HTTP status; `show` prints active values and resolution source (env / config / default). Env vars still win for headless/CI.
 - `panic` — Shortcut for `kill-switch engage --reason "manual panic"`.
 - `judgments [--window 1h|24h|overnight|7d|any] [--recipe <name>] [--json]` — Recent judge-step verdicts (from recipe steps with `agent.kind: judge`) across runs. Discovers the running bridge via lock file, queries `/runs/judge-summary`, prints per-verdict counts + 5 most-recent. Sibling of `halts`; same window/filter shape.
 - `suggest [--since-days N]` — Recipe co-occurrence + unused-tool suggestions from recent activity.
@@ -91,8 +92,8 @@ Most users don't need to touch these — CLI flags cover the common cases. Liste
 | `PATCHWORK_FLAG_UI_SCHEMA_LINT` | Feature flag — strict UI-schema linting in the recipe editor. |
 | `LOCAL_MODEL` / `LOCAL_ENDPOINT` / `LOCAL_API_KEY` / `LOCAL_ENDPOINT_ALLOW_REMOTE` | Local-model driver config (Ollama / vLLM / OpenAI-compatible endpoint). |
 | `OTEL_SERVICE_NAME` | Override the OTel service name (default `claude-ide-bridge`). |
-| `PATCHWORK_ANALYTICS_ENDPOINT` | Override the opt-in telemetry collector URL (default `https://analytics.claude-ide-bridge.dev/v1/usage`). Must be `http(s)://`; invalid values fall back to default. Read once at startup, never from network — preserves the redirect-attack property. For self-hosted collectors. |
-| `PATCHWORK_ANALYTICS_KEY` | Shared-secret sent as `X-Analytics-Key` header on telemetry POSTs. Only meaningful when paired with a self-hosted endpoint that checks it. |
+| `PATCHWORK_ANALYTICS_ENDPOINT` | Override the opt-in telemetry collector URL (default `https://analytics.claude-ide-bridge.dev/v1/usage`). Must be `http(s)://`; invalid values fall back to default. Per-call resolution; precedence: env > config file > default. For CI/headless. Prefer `patchwork analytics configure` for persistent setups — keeps the secret out of launchd plists. |
+| `PATCHWORK_ANALYTICS_KEY` | Shared-secret sent as `X-Analytics-Key` header on telemetry POSTs. Only meaningful when paired with a self-hosted endpoint that checks it. Same precedence as endpoint. |
 
 ##### Connector credential env vars
 
