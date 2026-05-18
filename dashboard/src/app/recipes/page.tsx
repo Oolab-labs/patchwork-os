@@ -343,6 +343,14 @@ function fallbackYaml(recipe: Recipe): string {
 function RecipeYamlPanel({ recipe }: { recipe: Recipe }) {
   const [yaml, setYaml] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Hold the latest recipe in a ref so the fetch effect can build the
+  // fallback YAML without re-firing every time the parent poll (5s) hands us
+  // a new Recipe object reference for the same recipe.name. Keying the
+  // effect on `recipe` directly caused setYaml(null) → "Loading…" → refetch →
+  // re-highlight on every poll, producing a visible flicker in the detail
+  // panel's <pre class="code-block"> (78 childList mutations / 7s observed).
+  const recipeRef = useRef(recipe);
+  recipeRef.current = recipe;
 
   useEffect(() => {
     let cancelled = false;
@@ -351,7 +359,7 @@ function RecipeYamlPanel({ recipe }: { recipe: Recipe }) {
     (async () => {
       try {
         const res = await fetch(
-          apiPath(`/api/bridge/recipes/${encodeURIComponent(recipe.name)}`),
+          apiPath(`/api/bridge/recipes/${encodeURIComponent(recipeRef.current.name)}`),
         );
         if (!res.ok) throw new Error(`fetch ${res.status}`);
         const data = (await res.json()) as RecipeContentResponse;
@@ -362,9 +370,9 @@ function RecipeYamlPanel({ recipe }: { recipe: Recipe }) {
           (typeof data.raw === "string" && data.raw) ||
           (typeof data.text === "string" && data.text) ||
           "";
-        setYaml(raw || fallbackYaml(recipe));
+        setYaml(raw || fallbackYaml(recipeRef.current));
       } catch {
-        if (!cancelled) setYaml(fallbackYaml(recipe));
+        if (!cancelled) setYaml(fallbackYaml(recipeRef.current));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -372,7 +380,7 @@ function RecipeYamlPanel({ recipe }: { recipe: Recipe }) {
     return () => {
       cancelled = true;
     };
-  }, [recipe]);
+  }, [recipe.name]);
 
   return (
     <CodeBlock
@@ -920,9 +928,15 @@ export default function RecipesPage() {
             <HintCard.Toggle id="recipes" />
           </div>
           <div className="editorial-sub">
-            {recipes
-              ? `~/.patchwork/recipes · ${installedCount} installed · ${enabledCount} enabled`
-              : "Loading…"}
+            {recipes ? (
+              <>
+                <code className="mono-path">~/.patchwork/recipes</code>
+                <span aria-hidden="true" style={{ margin: "0 8px", opacity: 0.4 }}>·</span>
+                {installedCount} installed
+              </>
+            ) : (
+              "Loading…"
+            )}
           </div>
           <RelationStrip
             items={[
@@ -952,15 +966,28 @@ export default function RecipesPage() {
         </div>
       </div>
 
-      <div style={{ marginBottom: "var(--s-4)" }}>
-        <input
-          type="search"
-          className="input"
-          placeholder="Search recipes…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ maxWidth: 320 }}
-        />
+      <div className="recipes-toolbar">
+        <div className="recipes-search">
+          <span aria-hidden="true" className="recipes-search-icon">⌕</span>
+          <input
+            type="search"
+            className="input"
+            placeholder="Search recipes by name or description…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search recipes"
+          />
+        </div>
+        {recipes && recipes.length > 0 && (
+          <div className="recipes-toolbar-meta">
+            <span>
+              <strong>{filteredRecipes.length}</strong>
+              {search.trim() ? ` of ${installedCount}` : ""} shown
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>{enabledCount} enabled</span>
+          </div>
+        )}
       </div>
 
       <HintCard id="recipes" />
@@ -1022,9 +1049,9 @@ export default function RecipesPage() {
                     </th>
                     <th scope="col" style={{ minWidth: 160 }}>RECIPE</th>
                     <th scope="col" style={{ width: 120 }}>TRIGGER</th>
-                    <th scope="col" style={{ width: 90, textAlign: "center" }}>LAST 14 RUNS</th>
-                    <th scope="col" style={{ width: 80 }}>AVG</th>
-                    <th scope="col" style={{ width: 100 }}>LAST</th>
+                    <th scope="col" style={{ width: 130, textAlign: "center" }}>RECENT</th>
+                    <th scope="col" style={{ width: 70, textAlign: "right" }}>AVG</th>
+                    <th scope="col" style={{ width: 90, textAlign: "right" }}>LAST</th>
                     <th scope="col" style={{ width: 110, textAlign: "right" }}>
                       <span className="sr-only">Actions</span>
                     </th>
@@ -1115,10 +1142,10 @@ export default function RecipesPage() {
                             height={20}
                           />
                         </td>
-                        <td className="mono muted" style={{ fontSize: "var(--fs-s)" }}>
+                        <td className="mono muted" style={{ fontSize: "var(--fs-s)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                           {formatDuration(avg)}
                         </td>
-                        <td className="muted" style={{ fontSize: "var(--fs-s)" }}>
+                        <td className="muted" style={{ fontSize: "var(--fs-s)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                           {last ? relTime(last.startedAt) : "—"}
                         </td>
                         <td
@@ -1216,7 +1243,9 @@ export default function RecipesPage() {
       )}
 
       {recipes && recipes.length > 0 && (
-        <ConnectorHealthPanel connectors={detectConnectors(recipes)} />
+        <div className="recipes-connectors-section">
+          <ConnectorHealthPanel connectors={detectConnectors(recipes)} />
+        </div>
       )}
     </section>
   );

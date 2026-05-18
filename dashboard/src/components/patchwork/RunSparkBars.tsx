@@ -93,8 +93,8 @@ export function RunSparkBars({
           width={barW}
           height={height}
           rx={2}
-          fill={run ? statusColor(run.status) : "var(--line-3, #e5e7eb)"}
-          opacity={run ? 1 : 0.5}
+          fill={run ? statusColor(run.status) : "var(--line-2, #e5e7eb)"}
+          opacity={run ? 1 : 0.22}
           style={{
             cursor: run ? "help" : "default",
             transition: "opacity 120ms ease, transform 120ms ease",
