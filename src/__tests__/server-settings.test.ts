@@ -463,6 +463,111 @@ describe("POST /settings — validate-before-write", () => {
   });
 });
 
+describe("POST /settings — audit-log emission", () => {
+  it("emits settings.change with fields list", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    server!.activityLog = log;
+    const events: Array<{
+      event: string;
+      metadata?: Record<string, unknown>;
+    }> = [];
+    log.subscribe((_kind, entry) => {
+      if ("event" in entry) {
+        events.push({
+          event: entry.event,
+          metadata: entry.metadata,
+        });
+      }
+    });
+
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ approvalGate: "all", enableTimeOfDayAnomaly: true }),
+    );
+    expect(status).toBe(200);
+    const change = events.find((e) => e.event === "settings.change");
+    expect(change).toBeDefined();
+    const fields = change!.metadata?.fields as string[];
+    expect(fields).toContain("approvalGate");
+    expect(fields).toContain("enableTimeOfDayAnomaly");
+  });
+
+  it("redacts apiKey, pushServiceToken, and ntfyTopic in the audit entry", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    server!.activityLog = log;
+    const events: Array<Record<string, unknown>> = [];
+    log.subscribe((_kind, entry) => {
+      if ("metadata" in entry && entry.metadata) {
+        events.push(entry.metadata as Record<string, unknown>);
+      }
+    });
+
+    await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({
+        apiKey: { provider: "openai", key: "sk-supersecret" },
+        pushServiceToken: "tok-supersecret",
+        ntfyTopic: "patchwork-secret-topic-abc",
+      }),
+    );
+
+    const last = events.at(-1)!;
+    const changes = last.changes as Record<string, unknown>;
+    expect(JSON.stringify(changes)).not.toContain("sk-supersecret");
+    expect(JSON.stringify(changes)).not.toContain("tok-supersecret");
+    expect(JSON.stringify(changes)).not.toContain("patchwork-secret-topic-abc");
+    expect((changes.apiKey as { key: string }).key).toBe("***");
+    expect(changes.pushServiceToken).toBe("***");
+    expect(changes.ntfyTopic).toBe("***");
+  });
+
+  it("does not emit when kill-switch blocks the write", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    server!.activityLog = log;
+    const events: string[] = [];
+    log.subscribe((_kind, entry) => {
+      if ("event" in entry) events.push(entry.event);
+    });
+
+    const flags = await import("../featureFlags.js");
+    const { setFlag, KILL_SWITCH_WRITES } = flags;
+    setFlag(KILL_SWITCH_WRITES, true);
+    try {
+      await makeRequest(
+        {
+          method: "POST",
+          path: "/settings",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({ driver: "gemini" }),
+      );
+      expect(events).not.toContain("settings.change");
+    } finally {
+      setFlag(KILL_SWITCH_WRITES, false);
+    }
+  });
+});
+
 describe("POST /settings — kill-switch gate", () => {
   // Regression: engaging the kill-switch must block config mutations,
   // not just tool dispatch. Otherwise a panicked operator who engages
