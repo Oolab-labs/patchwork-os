@@ -18,6 +18,7 @@ import {
 } from "./connectorRoutes.js";
 import { timingSafeStringEqual } from "./crypto.js";
 import { renderDashboardHtml } from "./dashboard.js";
+import { isLoopbackOrPrivateEndpoint } from "./drivers/local/index.js";
 import {
   EnvLockedFlagError,
   getEnvLockedValue,
@@ -1710,6 +1711,48 @@ export class Server extends EventEmitter<ServerEvents> {
             ) {
               respond400("ntfyServer must be HTTPS");
               return;
+            }
+
+            // localEndpoint — used by LocalApiDriver as the inference base
+            // URL. Must parse as http(s)://, be ≤2048 chars, and resolve to
+            // a loopback or private address. Otherwise prompts + context
+            // would stream to a public / metadata / file:// host. Same gate
+            // the driver enforces at construction, raised to the HTTP
+            // boundary so the bad value never reaches disk. Operator can
+            // opt out via LOCAL_ENDPOINT_ALLOW_REMOTE=1 for audited
+            // internal inference clusters.
+            const localEndpointTrimmed =
+              body.localEndpoint !== undefined
+                ? body.localEndpoint.trim()
+                : undefined;
+            if (
+              localEndpointTrimmed !== undefined &&
+              localEndpointTrimmed !== ""
+            ) {
+              if (localEndpointTrimmed.length > 2048) {
+                respond400("localEndpoint must be ≤2048 characters");
+                return;
+              }
+              let parsed: URL;
+              try {
+                parsed = new URL(localEndpointTrimmed);
+              } catch {
+                respond400("localEndpoint must be a valid http(s):// URL");
+                return;
+              }
+              if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+                respond400("localEndpoint must use http:// or https:// scheme");
+                return;
+              }
+              if (
+                process.env.LOCAL_ENDPOINT_ALLOW_REMOTE !== "1" &&
+                !isLoopbackOrPrivateEndpoint(localEndpointTrimmed)
+              ) {
+                respond400(
+                  "localEndpoint must be loopback or private (set LOCAL_ENDPOINT_ALLOW_REMOTE=1 to override)",
+                );
+                return;
+              }
             }
 
             // PHASE 2 — load config and apply all in-memory edits to `cfg`.
