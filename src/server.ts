@@ -1736,12 +1736,18 @@ export class Server extends EventEmitter<ServerEvents> {
             }
             if (body.model !== undefined) {
               cfg.model = body.model as PatchworkConfig["model"];
-              if (body.model === "local") {
-                if (body.localEndpoint !== undefined)
-                  cfg.localEndpoint = body.localEndpoint.trim() || undefined;
-                if (body.localModel !== undefined)
-                  cfg.localModel = body.localModel.trim() || undefined;
-              }
+            }
+            // localEndpoint / localModel persist regardless of whether
+            // `model` is sent. Previously they were silently dropped when
+            // the dashboard updated only the endpoint of an already-local
+            // install, which left the running driver pointed at the old
+            // host until the user happened to re-pick "Local LLM" in the
+            // UI.
+            if (body.localEndpoint !== undefined) {
+              cfg.localEndpoint = body.localEndpoint.trim() || undefined;
+            }
+            if (body.localModel !== undefined) {
+              cfg.localModel = body.localModel.trim() || undefined;
             }
             // Push / ntfy fields used to be set only on `this.*` and were
             // lost on bridge restart. Persist alongside the rest.
@@ -1844,10 +1850,17 @@ export class Server extends EventEmitter<ServerEvents> {
               this.ntfyServer = ntfyServerTrimmed || undefined;
             }
 
+            // restartRequired covers fields the bridge only reads at boot:
+            // driver/model/apiKey (env injection + driver factory), plus
+            // localEndpoint/localModel which LocalApiDriver reads at
+            // construction time. Push/ntfy fields are live-mutated on
+            // `this.*` in PHASE 4 below, so they do not require restart.
             const restartRequired =
               driverRaw !== undefined ||
               body.apiKey !== undefined ||
-              body.model !== undefined;
+              body.model !== undefined ||
+              body.localEndpoint !== undefined ||
+              body.localModel !== undefined;
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: true, restartRequired }));
           }
