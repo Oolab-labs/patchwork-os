@@ -44,8 +44,12 @@ describe("analyticsConfig", () => {
       key: "abc123",
     });
     const stat = fs.statSync(configPath());
-    // mode 0o600 — owner rw only
-    expect(stat.mode & 0o777).toBe(0o600);
+    // POSIX file modes don't apply on Windows (NTFS reports 0o666 for any
+    // writable file regardless of the mode passed to writeFileSync). Skip
+    // the perms assertion there; the 0o600 still takes effect on macOS/Linux.
+    if (process.platform !== "win32") {
+      expect(stat.mode & 0o777).toBe(0o600);
+    }
   });
 
   it("rejects an invalid endpoint URL", async () => {
