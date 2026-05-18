@@ -1,18 +1,37 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ORIGINAL_ENV = { ...process.env };
+
+let tmpRoot: string;
 
 function makeFetchSpy(status = 204) {
   return vi.fn<typeof fetch>(async () => new Response(null, { status }));
 }
 
-async function importFresh(env: Record<string, string | undefined>) {
+async function importFresh(
+  env: Record<string, string | undefined>,
+  configFile?: { endpoint?: string; key?: string },
+) {
   for (const k of ["PATCHWORK_ANALYTICS_ENDPOINT", "PATCHWORK_ANALYTICS_KEY"]) {
     delete process.env[k];
   }
+  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "asend-"));
+  process.env.CLAUDE_CONFIG_DIR = tmpRoot;
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
+  }
+  if (configFile) {
+    const dir = path.join(tmpRoot, "ide");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "analytics-config.json"),
+      JSON.stringify(configFile),
+      { mode: 0o600 },
+    );
   }
   vi.resetModules();
   vi.doMock("../analyticsPrefs.js", () => ({ recordAnalyticsSent: vi.fn() }));
@@ -28,6 +47,13 @@ describe("sendAnalytics endpoint resolution", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     process.env = { ...ORIGINAL_ENV };
+    if (tmpRoot) {
+      try {
+        fs.rmSync(tmpRoot, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+    }
   });
 
   it("defaults to the upstream endpoint when no override is set", async () => {
@@ -89,6 +115,60 @@ describe("sendAnalytics endpoint resolution", () => {
     expect(fetchSpy.mock.calls[0]?.[0]).toBe(
       "https://analytics.claude-ide-bridge.dev/v1/usage",
     );
+  });
+
+  it("reads endpoint and key from config file when env is unset", async () => {
+    const fetchSpy = makeFetchSpy();
+    vi.stubGlobal("fetch", fetchSpy);
+    const mod = await importFresh(
+      {},
+      { endpoint: "https://collector.example.com/u", key: "from-file" },
+    );
+    await mod.sendAnalytics({} as never);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("https://collector.example.com/u");
+    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(
+      (init?.headers as Record<string, string> | undefined)?.[
+        "X-Analytics-Key"
+      ],
+    ).toBe("from-file");
+  });
+
+  it("env overrides the config file (env > file > default)", async () => {
+    const fetchSpy = makeFetchSpy();
+    vi.stubGlobal("fetch", fetchSpy);
+    const mod = await importFresh(
+      {
+        PATCHWORK_ANALYTICS_ENDPOINT: "https://env.example.com/u",
+        PATCHWORK_ANALYTICS_KEY: "from-env",
+      },
+      { endpoint: "https://collector.example.com/u", key: "from-file" },
+    );
+    await mod.sendAnalytics({} as never);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("https://env.example.com/u");
+    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(
+      (init?.headers as Record<string, string> | undefined)?.[
+        "X-Analytics-Key"
+      ],
+    ).toBe("from-env");
+  });
+
+  it("env endpoint + file key compose when each is set separately", async () => {
+    const fetchSpy = makeFetchSpy();
+    vi.stubGlobal("fetch", fetchSpy);
+    const mod = await importFresh(
+      { PATCHWORK_ANALYTICS_ENDPOINT: "https://env.example.com/u" },
+      { key: "from-file" },
+    );
+    await mod.sendAnalytics({} as never);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("https://env.example.com/u");
+    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(
+      (init?.headers as Record<string, string> | undefined)?.[
+        "X-Analytics-Key"
+      ],
+    ).toBe("from-file");
   });
 
   it("swallows fetch errors silently", async () => {

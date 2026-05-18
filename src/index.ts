@@ -183,6 +183,7 @@ const KNOWN_SUBCOMMANDS = [
   "panic",
   "halts",
   "judgments",
+  "analytics",
 ] as const;
 
 const __invokedSubcommand = (() => {
@@ -2324,6 +2325,17 @@ if (process.argv[2] === "halts") {
       );
       process.exit(1);
     }
+  })();
+}
+
+// `patchwork analytics` — manage the self-hosted telemetry collector config.
+// Replaces the brittle "endpoint+secret in launchd plist" pattern with a
+// proper config file the bridge reads at startup.
+if (process.argv[2] === "analytics") {
+  (async () => {
+    const { runAnalyticsCommand } = await import("./commands/analytics.js");
+    const code = await runAnalyticsCommand(process.argv.slice(3));
+    process.exit(code);
   })();
 }
 
