@@ -20,6 +20,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { DRIVERS } from "../patchworkConfig.js";
 
 function extractInterfaceFields(source: string, name: string): Set<string> {
   // Find `export interface <name> {` and grab balanced-brace block.
@@ -84,6 +85,48 @@ describe("config.schema.json ↔ PatchworkConfig alignment", () => {
     expect(
       orphanInSchema,
       "fields in schema but no longer on PatchworkConfig",
+    ).toEqual([]);
+  });
+
+  it("driver enum in schema equals runtime DRIVERS union", () => {
+    const repoRoot = join(__dirname, "..", "..");
+    const schema = JSON.parse(
+      readFileSync(join(repoRoot, "config.schema.json"), "utf-8"),
+    ) as { properties: { driver: { enum: string[] } } };
+
+    const schemaDrivers = [...schema.properties.driver.enum].sort();
+    const runtimeDrivers = [...DRIVERS].sort();
+
+    expect(
+      schemaDrivers,
+      "config.schema.json driver enum must equal DRIVERS in patchworkConfig.ts",
+    ).toEqual(runtimeDrivers);
+  });
+
+  it("every nested object in the schema sets additionalProperties: false", () => {
+    const repoRoot = join(__dirname, "..", "..");
+    const schema = JSON.parse(
+      readFileSync(join(repoRoot, "config.schema.json"), "utf-8"),
+    ) as Record<string, unknown>;
+
+    const offenders: string[] = [];
+    const walk = (node: unknown, path: string): void => {
+      if (!node || typeof node !== "object") return;
+      const obj = node as Record<string, unknown>;
+      if (obj.type === "object" && obj.properties) {
+        if (obj.additionalProperties !== false) {
+          offenders.push(path || "<root>");
+        }
+      }
+      for (const [k, v] of Object.entries(obj)) {
+        walk(v, path ? `${path}.${k}` : k);
+      }
+    };
+    walk(schema, "");
+
+    expect(
+      offenders,
+      "every object schema must set additionalProperties: false",
     ).toEqual([]);
   });
 });
