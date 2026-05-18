@@ -583,6 +583,34 @@ describe("POST /settings — push/ntfy persistence", () => {
     expect(JSON.parse(body)).toMatchObject({ restartRequired: false });
   });
 
+  it("returns 500 (not 400) when an unexpected error escapes the handler", async () => {
+    // loadConfig is the first thing PHASE 2 calls. Make it throw to
+    // simulate any non-validation error — disk corruption, schema parse
+    // crash, etc. The outer catch should classify this as a server
+    // error, not "Invalid request body".
+    const pw = await import("../patchworkConfig.js");
+    const loadSpy = vi.mocked(pw.loadConfig);
+    loadSpy.mockImplementationOnce(() => {
+      throw new Error("boom — simulated disk corruption");
+    });
+
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ approvalGate: "all" }),
+    );
+
+    expect(status).toBe(500);
+    const parsed = JSON.parse(body) as { error: string };
+    expect(parsed.error).not.toContain("Invalid request body");
+  });
+
   it("persists pushServiceBaseUrl to patchwork config", async () => {
     const pw = await import("../patchworkConfig.js");
     const saveSpy = vi.mocked(pw.saveConfig);
