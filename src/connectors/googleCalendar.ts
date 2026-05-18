@@ -24,7 +24,7 @@ import {
 const SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"];
 const REDIRECT_URI = process.env.PATCHWORK_DASHBOARD_URL
   ? `${process.env.PATCHWORK_DASHBOARD_URL}/connections/google-calendar/callback`
-  : "http://localhost:3200/connections/google-calendar/callback";
+  : "http://localhost:3200/dashboard/connections/google-calendar/callback";
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 function getTokenPath() {
   const dir =
