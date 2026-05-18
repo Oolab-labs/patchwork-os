@@ -1,0 +1,91 @@
+name: Publish canary on merge to main
+
+# Fires after CI succeeds on a main push (i.e. a PR merge). Publishes a
+# `<version>.canary.<run_number>` build to npm under the `canary` dist-tag,
+# so `npm install -g patchwork-os@canary` always tracks main. Stable users
+# on `latest` / `beta` are untouched.
+#
+# Why: prior to this, the only way to dogfood a freshly-merged change was to
+# wait for the next manual `chore(release):` PR. Canary closes that gap
+# without lowering the bar for tagged releases (which still go through the
+# existing publish-npm.yml workflow).
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  publish-canary:
+    # Only proceed when the upstream CI run succeeded. workflow_run fires
+    # on every completion, including failures.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Pin to the exact commit CI validated, not whatever main is now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
+      - run: npm run build
+
+      # Compute canary version. Shape: <current>.canary.<runNumber>
+      # Example: 0.2.0-beta.5  →  0.2.0-beta.5.canary.42
+      # Always sorts above the base version and below the next base bump.
+      - name: Compute canary version
+        id: ver
+        run: |
+          BASE=$(node -p "require('./package.json').version")
+          CANARY="${BASE}.canary.${{ github.run_number }}"
+          echo "version=$CANARY" >> "$GITHUB_OUTPUT"
+          echo "Canary version: $CANARY"
+
+      # Idempotency: re-running the workflow (manual or workflow_run retry)
+      # would otherwise fail loudly with npm E403 — skip cleanly.
+      - name: Check if version already published
+        id: npm_check
+        run: |
+          if npm view "patchwork-os@${{ steps.ver.outputs.version }}" version > /dev/null 2>&1; then
+            echo "Already published — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write canary version into package.json
+        if: steps.npm_check.outputs.skip != 'true'
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json','utf-8'));
+            pkg.version = '${{ steps.ver.outputs.version }}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg,null,2)+'\n');
+          "
+
+      - name: Publish canary to npm
+        if: steps.npm_check.outputs.skip != 'true'
+        run: npm publish --access public --tag canary
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Canary publish" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Version: \`${{ steps.ver.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Skipped: \`${{ steps.npm_check.outputs.skip == 'true' }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Install: \`npm install -g patchwork-os@canary\`" >> "$GITHUB_STEP_SUMMARY"
