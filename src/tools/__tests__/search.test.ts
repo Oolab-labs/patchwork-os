@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeProbes } from "../../__tests__/helpers/fixtures.js";
 import type { ProbeResults } from "../../probe.js";
 import { createFindFilesTool } from "../findFiles.js";
 import { createGetFileTreeTool } from "../getFileTree.js";
@@ -11,26 +12,7 @@ function parse(result: { content: Array<{ type: string; text: string }> }) {
   return JSON.parse(result.content.at(0)?.text ?? "{}");
 }
 
-const allFalseProbes: ProbeResults = {
-  rg: false,
-  fd: false,
-  git: false,
-  gh: false,
-  tsc: false,
-  eslint: false,
-  pyright: false,
-  ruff: false,
-  cargo: false,
-  go: false,
-  biome: false,
-  prettier: false,
-  black: false,
-  gofmt: false,
-  rustfmt: false,
-  vitest: false,
-  jest: false,
-  pytest: false,
-};
+const allFalseProbes: ProbeResults = makeProbes();
 
 describe("search tools", () => {
   let tmpDir: string;

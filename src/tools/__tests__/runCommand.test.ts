@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeConfig } from "../../__tests__/helpers/fixtures.js";
 import type { Config } from "../../config.js";
 import { createRunCommandTool } from "../runCommand.js";
 
@@ -15,21 +16,15 @@ describe("runCommand", () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "runcmd-test-"));
-    config = {
+    config = makeConfig({
       workspace: tmpDir,
       workspaceFolders: [tmpDir],
       ideName: "Test",
-      editorCommand: null,
-      port: null,
-      verbose: false,
-      jsonl: false,
-      linters: [],
       commandAllowlist: ["echo", "ls", "sleep", "cat"],
       commandTimeout: 5000,
       maxResultSize: 512,
-      vscodeCommandAllowlist: [],
       activeWorkspaceFolder: tmpDir,
-    };
+    });
   });
 
   afterEach(() => {
@@ -392,7 +387,7 @@ describe("runCommand", () => {
           args: Record<string, unknown>,
           signal?: AbortSignal,
           progress?: typeof progressFn,
-        ) => Promise<typeof result>
+        ) => Promise<{ content: Array<{ type: string; text: string }> }>
       )({ command: "cat", args: [multilineFile] }, undefined, progressFn);
 
       const data = parse(result);
@@ -419,7 +414,7 @@ describe("runCommand", () => {
           args: Record<string, unknown>,
           signal?: AbortSignal,
           progress?: typeof progressFn,
-        ) => Promise<typeof result>
+        ) => Promise<{ content: Array<{ type: string; text: string }> }>
       )({ command: "echo", args: ["streaming-test"] }, undefined, progressFn);
 
       const data = parse(result);

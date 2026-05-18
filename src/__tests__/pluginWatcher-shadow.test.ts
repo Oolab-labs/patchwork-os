@@ -11,19 +11,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  type MockInstance,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "../config.js";
 import type { LoadedPlugin } from "../pluginLoader.js";
 import { PluginWatcher } from "../pluginWatcher.js";
 import type { McpTransport } from "../transport.js";
+import { makeConfig as buildConfig } from "./helpers/fixtures.js";
 
 vi.mock("../pluginLoader.js", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../pluginLoader.js")>();
@@ -36,33 +29,14 @@ vi.mock("../pluginLoader.js", async (importOriginal) => {
 import { loadOnePluginFull } from "../pluginLoader.js";
 
 function makeConfig(overrides: Partial<Config> = {}): Config {
-  return {
+  return buildConfig({
     workspace: process.cwd(),
     workspaceFolders: [process.cwd()],
     ideName: "Test",
-    editorCommand: null,
-    port: null,
-    bindAddress: "127.0.0.1",
-    verbose: false,
-    jsonl: false,
-    linters: [],
-    commandAllowlist: [],
-    commandTimeout: 30_000,
     maxResultSize: 512,
-    vscodeCommandAllowlist: [],
     activeWorkspaceFolder: process.cwd(),
-    gracePeriodMs: 30_000,
-    autoTmux: false,
-    driver: "none",
-    claudeBinary: "claude",
-    automationEnabled: false,
-    automationPolicyPath: null,
-    toolRateLimit: 60,
-    watch: false,
-    plugins: [],
-    pluginWatch: false,
     ...overrides,
-  };
+  });
 }
 
 function makeLogger() {
@@ -124,11 +98,9 @@ function makePlugin(
 
 describe("PluginWatcher hot-reload — built-in tool shadowing", () => {
   let tmpDir: string;
-  let _fsWatchSpy: MockInstance;
-
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "plugin-shadow-test-"));
-    _fsWatchSpy = vi.spyOn(fs, "watch").mockReturnValue({
+    vi.spyOn(fs, "watch").mockReturnValue({
       close: vi.fn(),
     } as unknown as fs.FSWatcher);
     vi.mocked(loadOnePluginFull).mockReset();
