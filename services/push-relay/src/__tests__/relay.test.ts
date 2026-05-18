@@ -10,7 +10,7 @@ function buildApp(fcm?: FcmAdapter, apns?: ApnsAdapter) {
   const registry = new InMemoryRegistry();
   const tokenStore = new EnvTokenStore("secret123:user1");
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: "16kb" }));
   app.use(bearerAuthMiddleware(tokenStore));
   app.use(buildRouter(registry, { fcm, apns, apnsTopic: "com.patchwork.app" }));
   return { app, registry };
@@ -71,6 +71,20 @@ describe("auth", () => {
       return v;
     });
     expect(json).not.toContain("super-secret-plain");
+  });
+});
+
+describe("body size limit", () => {
+  it("rejects payloads larger than 16kb with 413", async () => {
+    const { app } = buildApp();
+    // 20kb of padding inside a register payload — exceeds the 16kb cap.
+    const huge = "x".repeat(20 * 1024);
+    const res = await req(app, "post", "/devices/register", {
+      token: "fcm-1",
+      platform: "fcm",
+      padding: huge,
+    });
+    expect(res.status).toBe(413);
   });
 });
 
@@ -288,7 +302,7 @@ describe("POST /push", () => {
     const registry = new InMemoryRegistry();
     const tokenStore = new EnvTokenStore("secret123:user1");
     const app = express();
-    app.use(express.json());
+    app.use(express.json({ limit: "16kb" }));
     app.use(bearerAuthMiddleware(tokenStore));
     app.use(
       buildRouter(
