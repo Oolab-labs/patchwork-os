@@ -91,6 +91,8 @@ Most users don't need to touch these — CLI flags cover the common cases. Liste
 | `PATCHWORK_FLAG_UI_SCHEMA_LINT` | Feature flag — strict UI-schema linting in the recipe editor. |
 | `LOCAL_MODEL` / `LOCAL_ENDPOINT` / `LOCAL_API_KEY` / `LOCAL_ENDPOINT_ALLOW_REMOTE` | Local-model driver config (Ollama / vLLM / OpenAI-compatible endpoint). |
 | `OTEL_SERVICE_NAME` | Override the OTel service name (default `claude-ide-bridge`). |
+| `PATCHWORK_ANALYTICS_ENDPOINT` | Override the opt-in telemetry collector URL (default `https://analytics.claude-ide-bridge.dev/v1/usage`). Must be `http(s)://`; invalid values fall back to default. Read once at startup, never from network — preserves the redirect-attack property. For self-hosted collectors. |
+| `PATCHWORK_ANALYTICS_KEY` | Shared-secret sent as `X-Analytics-Key` header on telemetry POSTs. Only meaningful when paired with a self-hosted endpoint that checks it. |
 
 ##### Connector credential env vars
 
