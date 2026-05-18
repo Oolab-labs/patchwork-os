@@ -60,6 +60,16 @@ export interface Config {
   managedSettingsPath: string | null;
   /** Patchwork: outbound webhook URL for approval queue notifications (from dashboard.webhookUrl in patchwork config). */
   approvalWebhookUrl: string | null;
+  /**
+   * Patchwork mobile-oversight push relay (FCM/APNS gateway). Seeded from
+   * `~/.patchwork/config.json`; previously only set by POST /settings, so
+   * push config was lost on every restart.
+   */
+  pushServiceUrl: string | null;
+  pushServiceToken: string | null;
+  pushServiceBaseUrl: string | null;
+  ntfyTopic: string | null;
+  ntfyServer: string | null;
   watch: boolean;
   plugins: string[];
   pluginWatch: boolean;
@@ -550,6 +560,11 @@ export function parseConfig(argv: string[]): Config {
   let managedSettingsPath: string | null = null;
   // Read approvalWebhookUrl, approvalGate, driver, and apiKeys from patchwork config
   // (non-fatal; CLI flags and bridge config file take precedence over patchwork config)
+  let pushServiceUrl: string | null = null;
+  let pushServiceToken: string | null = null;
+  let pushServiceBaseUrl: string | null = null;
+  let ntfyTopic: string | null = null;
+  let ntfyServer: string | null = null;
   const approvalWebhookUrl: string | null = (() => {
     try {
       const pw = loadPatchworkConfig(patchworkConfigPath());
@@ -559,6 +574,11 @@ export function parseConfig(argv: string[]): Config {
       ) {
         approvalGate = pw.approvalGate;
       }
+      pushServiceUrl = pw.pushServiceUrl ?? null;
+      pushServiceToken = pw.pushServiceToken ?? null;
+      pushServiceBaseUrl = pw.pushServiceBaseUrl ?? null;
+      ntfyTopic = pw.ntfyTopic ?? null;
+      ntfyServer = pw.ntfyServer ?? null;
       // Seed driver from patchwork config if not already set by fileConfig or CLI
       if (pw.driver && driver === "none") {
         driver = pw.driver;
@@ -1147,6 +1167,11 @@ Environment Variables:
     enableTimeOfDayAnomaly,
     managedSettingsPath,
     approvalWebhookUrl,
+    pushServiceUrl,
+    pushServiceToken,
+    pushServiceBaseUrl,
+    ntfyTopic,
+    ntfyServer,
     toolRateLimit,
     watch,
     plugins,
