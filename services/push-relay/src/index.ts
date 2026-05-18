@@ -14,8 +14,8 @@
  */
 
 import express from "express";
-import rateLimit from "express-rate-limit";
 import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { bearerAuthMiddleware, EnvTokenStore } from "./auth.js";
 import { InMemoryRegistry, RedisRegistry } from "./deviceRegistry.js";
 import type { ApnsAdapter, FcmAdapter } from "./dispatcher.js";
@@ -170,25 +170,6 @@ async function main() {
   app.get("/status", (_req, res) => {
     res.json({ ok: true, fcm: !!fcm, apns: !!apns });
   });
-
-  // JSON error middleware — must follow all route registrations. Express's
-  // default error handler renders an HTML page containing the stack trace and
-  // absolute filesystem paths (e.g. node_modules/raw-body/index.js:163:17),
-  // which leaks deployment shape on otherwise-correct error responses (e.g.
-  // 413 from express.json's body cap). Force a minimal JSON envelope instead.
-  app.use(
-    (
-      err: unknown,
-      _req: express.Request,
-      res: express.Response,
-      _next: express.NextFunction,
-    ) => {
-      const e = err as { statusCode?: unknown; type?: unknown };
-      const status = typeof e?.statusCode === "number" ? e.statusCode : 500;
-      const type = typeof e?.type === "string" ? e.type : "error";
-      res.status(status).json({ error: type });
-    },
-  );
 
   // Server-to-server API: no browser callers, so CORS is intentionally
   // omitted (no Access-Control-Allow-Origin headers emitted). Helmet's
