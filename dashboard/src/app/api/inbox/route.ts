@@ -9,8 +9,10 @@ export async function GET() {
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (err) {
+    // #600: don't leak err.message detail.
+    console.error("[inbox GET] bridge fetch failed:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "fetch failed" },
+      { error: "Bridge unreachable" },
       { status: 502 },
     );
   }

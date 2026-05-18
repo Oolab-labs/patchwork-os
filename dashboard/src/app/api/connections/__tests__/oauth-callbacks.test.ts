@@ -86,11 +86,11 @@ describe.each(ROUTES)("$name OAuth callback", ({ bridgePath, handler }) => {
     expect(calledPath).not.toContain("bridge_secret");
   });
 
-  it("502s with the error message when bridgeFetch throws", async () => {
+  it("502s with a generic error when bridgeFetch throws (issue #600 — no err.message leak)", async () => {
     bridgeFetchMock.mockRejectedValueOnce(new Error("connection reset"));
     const res = await handler(reqWithQuery("code=x"));
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: "connection reset" });
+    expect(await res.json()).toEqual({ error: "Bridge unreachable" });
   });
 
   it("passes a 5xx response from the bridge through with body + status", async () => {

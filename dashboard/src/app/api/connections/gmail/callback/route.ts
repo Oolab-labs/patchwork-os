@@ -20,8 +20,10 @@ export async function GET(req: Request): Promise<Response> {
       headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
     });
   } catch (err) {
+    // #600: don't leak err.message detail.
+    console.error('[connections/gmail/callback GET] bridge fetch failed:', err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : "fetch failed" }),
+      JSON.stringify({ error: "Bridge unreachable" }),
       { status: 502, headers: { "content-type": "application/json" } },
     );
   }
