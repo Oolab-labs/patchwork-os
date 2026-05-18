@@ -1922,6 +1922,51 @@ export class Server extends EventEmitter<ServerEvents> {
               body.model !== undefined ||
               body.localEndpoint !== undefined ||
               body.localModel !== undefined;
+
+            // Audit-log emission — forensic record of every config mutation
+            // so an operator can answer "who changed what, when?" after an
+            // incident. Bearer-token auth doesn't carry an actor identity
+            // (no user JWT) so we attribute to "http" with the request IP.
+            // Secrets are redacted to the shape `"***"` — value presence
+            // is recorded, value content is never logged.
+            if (this.activityLog) {
+              const changes: Record<string, unknown> = {};
+              if (hasWebhookUpdate) changes.webhookUrl = webhookRaw || "";
+              if (gateRaw !== undefined) changes.approvalGate = gateRaw;
+              if (body.enableTimeOfDayAnomaly !== undefined)
+                changes.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
+              if (driverRaw !== undefined) changes.driver = driverRaw;
+              if (body.model !== undefined) changes.model = body.model;
+              if (body.localEndpoint !== undefined)
+                changes.localEndpoint = body.localEndpoint;
+              if (body.localModel !== undefined)
+                changes.localModel = body.localModel;
+              if (body.apiKey)
+                changes.apiKey = { provider: body.apiKey.provider, key: "***" };
+              if (pushUrlTrimmed !== undefined)
+                changes.pushServiceUrl = pushUrlTrimmed || "";
+              if (body.pushServiceToken !== undefined)
+                changes.pushServiceToken = body.pushServiceToken ? "***" : "";
+              if (pushBaseTrimmed !== undefined)
+                changes.pushServiceBaseUrl = pushBaseTrimmed || "";
+              if (ntfyTopicTrimmed !== undefined)
+                changes.ntfyTopic = ntfyTopicTrimmed ? "***" : "";
+              if (ntfyServerTrimmed !== undefined)
+                changes.ntfyServer = ntfyServerTrimmed || "";
+              const remoteAddr =
+                (req.headers["x-forwarded-for"] as string | undefined)
+                  ?.split(",")[0]
+                  ?.trim() ||
+                req.socket.remoteAddress ||
+                "unknown";
+              this.activityLog.recordEvent("settings.change", {
+                actor: "http",
+                ip: remoteAddr,
+                fields: Object.keys(changes),
+                changes,
+              });
+            }
+
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: true, restartRequired }));
           }
