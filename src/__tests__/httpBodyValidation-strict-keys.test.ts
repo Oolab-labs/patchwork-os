@@ -171,6 +171,30 @@ describe("strict body-key validation — HTTP endpoints", () => {
     expect(parsed.unknownKeys).toContain("enabledZ");
   });
 
+  it("POST /telemetry-prefs rejects non-boolean known key (string 'true')", async () => {
+    const res = await request(
+      { method: "POST", path: "/telemetry-prefs", headers: authHeaders() },
+      JSON.stringify({ crashReports: "true" }),
+    );
+    expect(res.status).toBe(400);
+    const parsed = JSON.parse(res.body) as {
+      error: string;
+      reason: string;
+    };
+    expect(parsed.error).toBe("invalid_request");
+    expect(parsed.reason).toContain("crashReports");
+  });
+
+  it("POST /telemetry-prefs rejects numeric value for known key", async () => {
+    const res = await request(
+      { method: "POST", path: "/telemetry-prefs", headers: authHeaders() },
+      JSON.stringify({ usageStats: 1 }),
+    );
+    expect(res.status).toBe(400);
+    const parsed = JSON.parse(res.body) as { reason: string };
+    expect(parsed.reason).toContain("usageStats");
+  });
+
   it("POST /kill-switch rejects unknown key `bogus`", async () => {
     const res = await request(
       { method: "POST", path: "/kill-switch", headers: authHeaders() },

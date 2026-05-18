@@ -2071,6 +2071,27 @@ export class Server extends EventEmitter<ServerEvents> {
             usageStats?: boolean;
             localDiagnostics?: boolean;
           } = {};
+          // Reject non-boolean values for known keys instead of silently
+          // dropping them. Previously `{"crashReports": "true"}` (string)
+          // got a 200 with no effect — caller never learned the toggle
+          // did nothing. Misrepresented consent is the worst-case
+          // outcome on the telemetry surface, so be strict here.
+          for (const key of [
+            "crashReports",
+            "usageStats",
+            "localDiagnostics",
+          ] as const) {
+            if (body[key] !== undefined && typeof body[key] !== "boolean") {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  error: "invalid_request",
+                  reason: `${key} must be a boolean`,
+                }),
+              );
+              return;
+            }
+          }
           if (typeof body.crashReports === "boolean") {
             update.crashReports = body.crashReports;
           }
