@@ -5,6 +5,8 @@
 
 ### Your personal AI runtime, local-first.
 
+> ⭐ If this saves you a config file or a debug session, drop a star — it's the only signal I get that it's helping.
+
 > Patchwork OS is a local-first personal AI runtime: pluggable model providers, hot-reloadable tools, YAML recipes, a delegation policy with approval queue, and a durable trace memory — all running on your machine, all under your policy.
 
 You decide which model. You decide which actions need a human nod. You own the credentials, the logs, and the deployment. Nothing phones home unless you [opt in to anonymous analytics](#telemetry).

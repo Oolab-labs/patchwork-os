@@ -1,0 +1,30 @@
+name: Daily clone-traffic snapshot
+
+# Runs scripts/analyze-clones.mjs daily and posts the result to the run's
+# Job Summary. Read-only: never writes to the repo. Used to test the
+# "are most clones bots?" hypothesis.
+
+on:
+  schedule:
+    - cron: '17 8 * * *'   # 08:17 UTC daily — off-peak, avoids the GH cron stampede
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Snapshot clone traffic
+        run: node scripts/analyze-clones.mjs
+        env:
+          # Needs push perms on the repo (that's what gates /traffic/).
+          # Use OOLAB_PAT (already used by other workflows) rather than
+          # GITHUB_TOKEN, which doesn't have traffic-API scope by default.
+          GH_TOKEN: ${{ secrets.OOLAB_PAT }}
+          GH_REPO: ${{ github.repository }}
