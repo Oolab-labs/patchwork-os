@@ -42,7 +42,7 @@ export interface NavSection {
  *
  * IA conventions:
  *   - "Today" = the morning-routine destinations.
- *   - "Decisions" = the trio Approvals/Suggestions/Knowledge.
+ *   - "Review" = the trio Approvals/Suggestions/Knowledge.
  *     "Knowledge" is the renamed /decisions page (which renders the
  *     ctxSaveTrace knowledge base, NOT approval history — the previous
  *     "History" label was actively wrong).
@@ -65,25 +65,33 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    title: "Decisions",
+    // Section was titled "Decisions" but contained an item also called
+    // "Knowledge" (the /decisions route — the past-decision archive).
+    // Sibling-naming clash made it unclear that all three are decision
+    // surfaces with different time horizons:
+    //   Approvals   — pending now
+    //   Suggestions — queued rule changes
+    //   Knowledge   — archived decision traces
+    // Rename section so the heading describes the cluster, not one sub-item.
+    title: "Review",
     routes: [
       {
         href: "/approvals",
         label: "Approvals",
-        paletteLabel: "Decisions — Approvals",
+        paletteLabel: "Review — Approvals",
         icon: "check",
         badge: "approvals",
       },
       {
         href: "/suggestions",
         label: "Suggestions",
-        paletteLabel: "Decisions — Suggestions",
+        paletteLabel: "Review — Suggestions",
         icon: "lightbulb",
       },
       {
         href: "/decisions",
         label: "Knowledge",
-        paletteLabel: "Decisions — Knowledge",
+        paletteLabel: "Review — Knowledge",
         icon: "bookmark",
       },
     ],
