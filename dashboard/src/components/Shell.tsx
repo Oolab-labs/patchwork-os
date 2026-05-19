@@ -15,6 +15,7 @@ import { KillSwitchBanner } from "./KillSwitchBanner";
 import { PWAInstallPrompt } from "./PWAInstallPrompt";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
+import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { LiveRunsProvider } from "@/hooks/LiveRunsContext";
 
 // ------------------------------------------------------------------ icons
@@ -538,6 +539,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="app-content">{children}</div>
       </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <KeyboardShortcuts />
       <PWAInstallPrompt />
     </div>
     </LiveRunsProvider>
