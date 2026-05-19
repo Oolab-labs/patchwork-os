@@ -73,11 +73,14 @@ describe("pushStore — add/remove/get", () => {
 
     expect(getSubscriptions()).toEqual([sub]);
     expect(fs.existsSync(storePath)).toBe(true);
+    // v2 on-disk shape: [endpoint, { sub, prefs }]
     const onDisk = JSON.parse(fs.readFileSync(storePath, "utf8")) as [
       string,
-      PushSubscription,
+      { sub: PushSubscription; prefs: { approvals: boolean; halts: boolean } },
     ][];
-    expect(onDisk).toEqual([[sub.endpoint, sub]]);
+    expect(onDisk).toEqual([
+      [sub.endpoint, { sub, prefs: { approvals: true, halts: true } }],
+    ]);
   });
 
   it("add is idempotent on repeated endpoint (replaces, no duplicate)", async () => {
@@ -109,9 +112,11 @@ describe("pushStore — add/remove/get", () => {
     expect(getSubscriptions()).toEqual([b]);
     const onDisk = JSON.parse(fs.readFileSync(storePath, "utf8")) as [
       string,
-      PushSubscription,
+      { sub: PushSubscription; prefs: { approvals: boolean; halts: boolean } },
     ][];
-    expect(onDisk).toEqual([[b.endpoint, b]]);
+    expect(onDisk).toEqual([
+      [b.endpoint, { sub: b, prefs: { approvals: true, halts: true } }],
+    ]);
   });
 
   it("remove on an unknown endpoint is a no-op", async () => {

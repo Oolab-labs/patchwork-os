@@ -123,6 +123,31 @@ self.addEventListener("push", (event) => {
     return;
   }
 
+  // Branch on payload kind. Approval pushes (no kind, legacy shape)
+  // and halt pushes (kind === "halt") render different notifications
+  // and have different click targets.
+  if (data.kind === "halt") {
+    const { recipeName, runSeq, status, haltReason, stepId, errorMessage } =
+      data;
+    const isError = status === "error";
+    const title = `${isError ? "⚠️ Run errored" : "Run halted"}: ${recipeName ?? "recipe"}`;
+    const body = haltReason || errorMessage || (isError ? "Run errored" : "Run halted");
+    // Coalesce repeat fires for the same run so flapping doesn't spam.
+    const tag = `halt-${runSeq ?? recipeName ?? "unknown"}`;
+    event.waitUntil(
+      self.registration.showNotification(title, {
+        body,
+        tag,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        requireInteraction: false,
+        data: { kind: "halt", runSeq, stepId },
+      }),
+    );
+    return;
+  }
+
+  // Default path: approval push.
   const {
     callId,
     toolName,
@@ -161,8 +186,31 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const { callId, approveUrl, rejectUrl, approvalToken, expiresAt } =
-    event.notification.data ?? {};
+  const notifData = event.notification.data ?? {};
+
+  // Halt notifications deep-link to the failing run/step. No inline
+  // actions — the user inspects the run in the dashboard.
+  if (notifData.kind === "halt") {
+    const { runSeq, stepId } = notifData;
+    if (!runSeq) return;
+    const targetUrl = stepId
+      ? `./runs/${runSeq}#step-${encodeURIComponent(stepId)}`
+      : `./runs/${runSeq}`;
+    event.waitUntil(
+      self.clients
+        .matchAll({ type: "window", includeUncontrolled: true })
+        .then((clients) => {
+          const existing = clients.find((c) => c.url.includes("/runs/"));
+          if (existing) {
+            return existing.focus().then((c) => c.navigate(targetUrl));
+          }
+          return self.clients.openWindow(targetUrl);
+        }),
+    );
+    return;
+  }
+
+  const { callId, approveUrl, rejectUrl, approvalToken, expiresAt } = notifData;
 
   // Stale notification: token-clearing path on the bridge runs single-use,
   // so a click after expiry would 401 anyway, but we short-circuit to avoid
