@@ -993,6 +993,8 @@ export interface RecipeSummary {
   trigger?: string;
   /** For webhook triggers, the configured path (e.g. "/github-pr"). */
   webhookPath?: string;
+  /** For cron/schedule triggers, the configured expression (e.g. "0 9 * * *"). */
+  schedule?: string;
   stepCount: number;
   path: string;
   installedAt: number;
@@ -1059,7 +1061,12 @@ export function listInstalledRecipes(
       const parsed = (isYaml ? parseYaml(raw) : JSON.parse(raw)) as {
         name?: string;
         description?: string;
-        trigger?: { type?: string; path?: string };
+        trigger?: {
+          type?: string;
+          path?: string;
+          schedule?: string;
+          cron?: string;
+        };
         steps?: unknown[];
         vars?: Array<{
           name: string;
@@ -1100,11 +1107,22 @@ export function listInstalledRecipes(
         typeof parsed.trigger?.path === "string"
           ? parsed.trigger.path
           : undefined;
+      // Cron/schedule expression for the trigger column. Surfaces `0 9 * * *`
+      // in the UI without forcing a YAML fetch. Either field shape is valid.
+      const schedule =
+        parsed.trigger?.type === "cron" || parsed.trigger?.type === "schedule"
+          ? typeof parsed.trigger?.schedule === "string"
+            ? parsed.trigger.schedule
+            : typeof parsed.trigger?.cron === "string"
+              ? parsed.trigger.cron
+              : undefined
+          : undefined;
       recipes.push({
         name: parsedName,
         description: parsed.description,
         trigger: parsed.trigger?.type,
         ...(webhookPath ? { webhookPath } : {}),
+        ...(schedule ? { schedule } : {}),
         stepCount: Array.isArray(parsed.steps) ? parsed.steps.length : 0,
         path: fullPath,
         installedAt: stat.mtimeMs,
@@ -1147,7 +1165,12 @@ export function listInstalledRecipes(
       const parsed = (isYaml ? parseYaml(raw) : JSON.parse(raw)) as {
         name?: string;
         description?: string;
-        trigger?: { type?: string; path?: string };
+        trigger?: {
+          type?: string;
+          path?: string;
+          schedule?: string;
+          cron?: string;
+        };
         steps?: unknown[];
         vars?: Array<{
           name: string;
@@ -1177,11 +1200,22 @@ export function listInstalledRecipes(
         typeof parsed.trigger?.path === "string"
           ? parsed.trigger.path
           : undefined;
+      // Cron/schedule expression for the trigger column. Surfaces `0 9 * * *`
+      // in the UI without forcing a YAML fetch. Either field shape is valid.
+      const schedule =
+        parsed.trigger?.type === "cron" || parsed.trigger?.type === "schedule"
+          ? typeof parsed.trigger?.schedule === "string"
+            ? parsed.trigger.schedule
+            : typeof parsed.trigger?.cron === "string"
+              ? parsed.trigger.cron
+              : undefined
+          : undefined;
       recipes.push({
         name: parsedName,
         description: parsed.description,
         trigger: parsed.trigger?.type,
         ...(webhookPath ? { webhookPath } : {}),
+        ...(schedule ? { schedule } : {}),
         stepCount: Array.isArray(parsed.steps) ? parsed.steps.length : 0,
         path: entrypointPath,
         installedAt: stat.mtimeMs,
