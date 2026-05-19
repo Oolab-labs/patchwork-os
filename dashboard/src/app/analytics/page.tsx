@@ -262,16 +262,16 @@ export default function AnalyticsPage() {
                 <tbody>
                   {topTools.map((t) => (
                     <tr key={t.tool} style={{ borderBottom: "1px solid var(--line-3)" }}>
-                      <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--ink-0)", whiteSpace: "nowrap" }}>{t.tool}</td>
+                      <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: "var(--ink-0)", whiteSpace: "nowrap" }}>{t.tool}</td>
                       <td style={{ padding: "7px 8px", width: "100%" }}>
                         <div style={{ background: "var(--line-3)", borderRadius: 2, height: 5, width: "100%" }}>
                           <div style={{ background: "var(--orange)", borderRadius: 2, height: 5, width: `${(t.calls / maxCalls) * 100}%` }} />
                         </div>
                       </td>
-                      <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11.5, whiteSpace: "nowrap" }}>{t.calls}</td>
-                      <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11.5, color: t.errors > 0 ? "var(--err)" : "var(--ink-3)", whiteSpace: "nowrap" }}>{t.errors} err</td>
-                      <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--ink-3)", whiteSpace: "nowrap" }} title="p50 latency">{fmtDuration(t.p50Ms)}</td>
-                      <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--ink-3)", whiteSpace: "nowrap" }} title="p95 latency">{fmtDuration(t.p95Ms)}</td>
+                      <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", whiteSpace: "nowrap" }}>{t.calls}</td>
+                      <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: t.errors > 0 ? "var(--err)" : "var(--ink-3)", whiteSpace: "nowrap" }}>{t.errors} err</td>
+                      <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: "var(--ink-3)", whiteSpace: "nowrap" }} title="p50 latency">{fmtDuration(t.p50Ms)}</td>
+                      <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: "var(--ink-3)", whiteSpace: "nowrap" }} title="p95 latency">{fmtDuration(t.p95Ms)}</td>
                     </tr>
                   ))}
                 </tbody>
