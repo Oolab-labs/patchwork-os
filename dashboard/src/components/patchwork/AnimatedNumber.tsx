@@ -21,6 +21,14 @@ export function AnimatedNumber({
   const flashTone = useRef<"up" | "down" | null>(null);
 
   useEffect(() => {
+    // Effect deps are [value, duration] — but a parent re-render that
+    // hands us an identical number still re-runs the effect when the
+    // component itself re-renders (not when deps change). Guard against
+    // that: if `value` already matches both the animation target and
+    // the displayed number, skip the rAF loop entirely.
+    if (fromRef.current === value && prevValueRef.current === value) {
+      return;
+    }
     if (prevValueRef.current !== value) {
       flashTone.current = value > prevValueRef.current ? "up" : "down";
       setFlashKey((k) => k + 1);
