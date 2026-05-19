@@ -394,7 +394,7 @@ export default function RunsPage() {
             Runs — <span className="accent">every patch your agents stitched.</span>
           </h1>
           <div className="editorial-sub">
-            {runs ? `${runs.length} runs` : "— runs"} · last 24h · avg {fmtDur(stats.avgMs)}
+            {runs ? `${runs.length} runs` : "— runs"} · {TIME_WINDOW_LABEL[window].toLowerCase()} · avg {fmtDur(stats.avgMs)}
           </div>
           <RelationStrip
             items={[
