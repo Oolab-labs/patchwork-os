@@ -12,6 +12,7 @@ import { getHaltsLookbackMs, subscribeHaltsSeen } from "@/lib/haltsSeen";
 import { NAV_SECTIONS } from "@/lib/navRoutes";
 import { ActivityTicker } from "./ActivityTicker";
 import { BridgeOfflineBanner } from "./BridgeOfflineBanner";
+import { KillSwitchBanner } from "./KillSwitchBanner";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
 
@@ -582,6 +583,12 @@ export function Shell({ children }: { children: ReactNode }) {
 
       <main id="main-content" className="app-main" tabIndex={-1}>
         <BridgeOfflineBanner status={status} />
+        {status.killSwitch?.engaged && (
+          <KillSwitchBanner
+            engaged={status.killSwitch.engaged}
+            locked={status.killSwitch.locked}
+          />
+        )}
         <div className="app-content">{children}</div>
       </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
