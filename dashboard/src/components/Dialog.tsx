@@ -145,6 +145,7 @@ export function Dialog({
   return createPortal(
     <div
       role="presentation"
+      className="pw-dialog-backdrop"
       onClick={(e) => {
         if (dismissOnBackdrop && e.target === e.currentTarget) onClose();
       }}
@@ -168,6 +169,7 @@ export function Dialog({
         tabIndex={-1}
         onKeyDown={handleKeyDown}
         id={fallbackId}
+        className="pw-dialog-panel"
         style={{
           background: "var(--surface)",
           color: "var(--ink-0)",

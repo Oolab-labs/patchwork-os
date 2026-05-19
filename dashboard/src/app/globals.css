@@ -3769,3 +3769,26 @@ button.topbar-search {
     left: -100%;
   }
 }
+
+/* ---- Dialog open animation (components/Dialog.tsx) ---------------
+ * Backdrop fades; panel pops with a small upward translate so users
+ * notice the modal mounting. Reduced-motion users get instant
+ * placement. */
+.pw-dialog-backdrop {
+  animation: pw-dialog-fade-in 140ms ease-out;
+}
+.pw-dialog-panel {
+  animation: pw-dialog-pop-in 180ms cubic-bezier(0.18, 0.7, 0.2, 1);
+}
+@keyframes pw-dialog-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes pw-dialog-pop-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pw-dialog-backdrop,
+  .pw-dialog-panel { animation: none; }
+}
