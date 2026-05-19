@@ -387,6 +387,43 @@ export default function RunsPage() {
     return Math.max(...windowedRuns.map((r) => r.durationMs), 1);
   }, [windowedRuns]);
 
+  // j/k row navigation through the run list — mirrors /recipes. Walks
+  // windowedRuns; j → next, k → prev, wraps. Skipped while typing or
+  // when no rows are visible. Sets `expanded` so the selected row also
+  // reveals its detail panel (same effect as clicking the row).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "j" && e.key !== "k") return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        const tag = t.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
+      }
+      const list = windowedRuns ?? [];
+      if (list.length === 0) return;
+      e.preventDefault();
+      const idx = expanded
+        ? list.findIndex((r) => `${r.taskId}-${r.seq}` === expanded)
+        : -1;
+      const delta = e.key === "j" ? 1 : -1;
+      const next =
+        idx === -1
+          ? e.key === "j"
+            ? 0
+            : list.length - 1
+          : (idx + delta + list.length) % list.length;
+      const nextKey = `${list[next].taskId}-${list[next].seq}`;
+      setExpanded(nextKey);
+      requestAnimationFrame(() => {
+        const row = document.querySelector(`[data-run-row="${CSS.escape(nextKey)}"]`);
+        row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+    };
+    globalThis.addEventListener("keydown", onKey);
+    return () => globalThis.removeEventListener("keydown", onKey);
+  }, [windowedRuns, expanded]);
+
   return (
     <section>
       <ActivityTabs />
@@ -763,6 +800,7 @@ export default function RunsPage() {
                 return (
                   <React.Fragment key={key}>
                     <tr
+                      data-run-row={key}
                       onClick={() => setExpanded(isExpanded ? null : key)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
