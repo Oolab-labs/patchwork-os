@@ -1887,7 +1887,22 @@ export class Server extends EventEmitter<ServerEvents> {
             // PHASE 4 — live state. Only after every persistence step
             // succeeded; ensures live state never diverges from disk.
             if (gateRaw !== undefined) {
+              const prevGate = this.approvalGate;
               this.approvalGate = gateRaw as "off" | "high" | "all";
+              // When the operator downgrades to "off", every pending
+              // queue entry becomes moot — the originating tool dispatch
+              // now bypasses, and a phone approver who hits "Approve"
+              // five seconds later would get a 404. Cancel them
+              // server-side so the dashboard /approvals list clears
+              // and any pending phone notification reflects reality.
+              if (gateRaw === "off" && prevGate !== "off") {
+                const cancelled = getApprovalQueue().cancelAll();
+                if (cancelled > 0) {
+                  this.logger.info(
+                    `[/settings] approvalGate → off; cancelled ${cancelled} pending entr${cancelled === 1 ? "y" : "ies"}`,
+                  );
+                }
+              }
             }
             if (body.enableTimeOfDayAnomaly !== undefined) {
               this.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;

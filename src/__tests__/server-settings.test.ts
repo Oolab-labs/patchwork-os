@@ -568,6 +568,57 @@ describe("POST /settings — audit-log emission", () => {
   });
 });
 
+describe("POST /settings — gate downgrade cancels pending approvals", () => {
+  it("cancels every pending entry when approvalGate transitions to off", async () => {
+    const { getApprovalQueue } = await import("../approvalQueue.js");
+    const q = getApprovalQueue();
+    q.cancelAll();
+    server!.approvalGate = "high";
+    const a = q.request({ toolName: "x", params: { i: 1 }, tier: "high" });
+    const b = q.request({ toolName: "y", params: { i: 2 }, tier: "high" });
+    expect(q.size()).toBe(2);
+
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ approvalGate: "off" }),
+    );
+    expect(status).toBe(200);
+    expect(q.size()).toBe(0);
+    await expect(a.promise).resolves.toBe("cancelled");
+    await expect(b.promise).resolves.toBe("cancelled");
+  });
+
+  it("does NOT cancel entries on a no-op off → off transition", async () => {
+    const { getApprovalQueue } = await import("../approvalQueue.js");
+    const q = getApprovalQueue();
+    q.cancelAll();
+    server!.approvalGate = "off";
+    const a = q.request({ toolName: "x", params: { i: 1 }, tier: "high" });
+    expect(q.size()).toBe(1);
+
+    await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ approvalGate: "off" }),
+    );
+    expect(q.size()).toBe(1);
+    q.cancel(a.callId);
+  });
+});
+
 describe("POST /settings — kill-switch gate", () => {
   // Regression: engaging the kill-switch must block config mutations,
   // not just tool dispatch. Otherwise a panicked operator who engages

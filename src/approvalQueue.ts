@@ -366,6 +366,23 @@ export class ApprovalQueue {
     return this.resolveEntry(callId, "rejected");
   }
 
+  /**
+   * Cancel every still-pending entry, resolving each with "cancelled".
+   * Used when the operator downgrades the approval gate to "off" so
+   * phone approvers don't see "Approve" buttons whose token is now
+   * meaningless (the originating tool dispatch already short-circuited
+   * to bypass on the new gate). Returns the number of entries that
+   * were cancelled.
+   */
+  cancelAll(): number {
+    const callIds = [...this.entries.keys()];
+    let n = 0;
+    for (const id of callIds) {
+      if (this.resolveEntry(id, "cancelled")) n++;
+    }
+    return n;
+  }
+
   list(): PendingApproval[] {
     return [...this.entries.values()].map((e) => ({
       callId: e.callId,
