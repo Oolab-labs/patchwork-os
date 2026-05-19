@@ -20,9 +20,9 @@ describe("navRoutes contract", () => {
     const titles = NAV_SECTIONS.map((s) => s.title);
     expect(titles).toEqual([
       "Today",
+      "Build",
       "Review",
       "Activity",
-      "Build",
       "Insights",
       "Setup",
     ]);

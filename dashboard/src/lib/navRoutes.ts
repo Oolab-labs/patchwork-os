@@ -42,12 +42,16 @@ export interface NavSection {
  *
  * IA conventions:
  *   - "Today" = the morning-routine destinations.
+ *   - "Build" = create/install. Promoted to position 2 (above Review)
+ *     so the primary action — building/running recipes — sits at the
+ *     top of the sidebar where it's discovered immediately, not buried
+ *     mid-list. Recipes are the product's load-bearing surface; the
+ *     IA should reflect that.
  *   - "Review" = the trio Approvals/Suggestions/Knowledge.
  *     "Knowledge" is the renamed /decisions page (which renders the
  *     ctxSaveTrace knowledge base, NOT approval history — the previous
  *     "History" label was actively wrong).
  *   - "Activity" = the firehose + sub-views.
- *   - "Build" = create/install.
  *   - "Insights" = aggregate views, including the previously-hidden
  *     "Approval Insights" page (was reachable only by typing the URL).
  *     `/transactions` used to live here, but it's a per-write audit log
@@ -62,6 +66,13 @@ export const NAV_SECTIONS: NavSection[] = [
     routes: [
       { href: "/",      label: "Overview", icon: "home" },
       { href: "/inbox", label: "Inbox",    icon: "inbox" },
+    ],
+  },
+  {
+    title: "Build",
+    routes: [
+      { href: "/recipes",     label: "Recipes",     icon: "book" },
+      { href: "/marketplace", label: "Marketplace", icon: "store" },
     ],
   },
   {
@@ -111,13 +122,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: "/sessions",     label: "Sessions",     paletteLabel: "Activity — Sessions",     icon: "person" },
       { href: "/traces",       label: "Traces",       paletteLabel: "Activity — Traces",       icon: "git" },
       { href: "/transactions", label: "Transactions", paletteLabel: "Activity — Transactions", icon: "diff" },
-    ],
-  },
-  {
-    title: "Build",
-    routes: [
-      { href: "/recipes",     label: "Recipes",     icon: "book" },
-      { href: "/marketplace", label: "Marketplace", icon: "store" },
     ],
   },
   {
