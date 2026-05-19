@@ -209,6 +209,26 @@ export default function ActivityPage() {
     return () => clearInterval(id);
   }, []);
 
+  // Flash the newest just-arrived event row with the existing
+  // .activity-row.is-fresh keyframes (globals.css:2061). Tracks the
+  // top-of-list event's identity; on change, marks it fresh for
+  // ~1.6s (matches the keyframe duration). Skipped during the
+  // initial history seed so we don't flash a hundred rows on mount.
+  const [freshKey, setFreshKey] = useState<string | null>(null);
+  const lastTopRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!seeded || events.length === 0) return;
+    const top = events[0];
+    const topKey = `${top.kind}-${top.id ?? ""}-${top.at ?? ""}`;
+    if (lastTopRef.current === topKey) return;
+    lastTopRef.current = topKey;
+    setFreshKey(topKey);
+    const id = setTimeout(() => {
+      setFreshKey((cur) => (cur === topKey ? null : cur));
+    }, 1700);
+    return () => clearTimeout(id);
+  }, [events, seeded]);
+
   const filtered = useMemo(() => {
     let out = events;
     if (tab === "tools") {
@@ -544,8 +564,19 @@ export default function ActivityPage() {
                         ? meta.summary
                         : "—";
 
+                const rowKey = `${e.kind}-${e.id ?? ""}-${e.at ?? ""}`;
+                const isFresh = freshKey === rowKey;
+                const isErr = e.kind === "tool" && e.status === "error";
                 return (
-                  <tr key={`${e.kind}-${e.id ?? i}-${i}`} style={{ cursor: "pointer" }}>
+                  <tr
+                    key={`${e.kind}-${e.id ?? i}-${i}`}
+                    className={
+                      isFresh
+                        ? `activity-row is-fresh${isErr ? " is-err" : ""}`
+                        : "activity-row"
+                    }
+                    style={{ cursor: "pointer" }}
+                  >
                     <td
                       className="muted"
                       title={e.at ? new Date(e.at).toISOString() : ""}
