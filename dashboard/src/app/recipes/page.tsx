@@ -8,6 +8,8 @@ import { apiPath } from "@/lib/api";
 import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
+import { useRecipeRunStream, type ActiveRunState } from "@/hooks/useRecipeRunStream";
+import { RecipeRunInline } from "./_components/RecipeRunInline";
 import {
   CodeBlock,
   ErrorState,
@@ -417,6 +419,7 @@ function RecipeDetailPanel({
   onDelete,
   running,
   isLive,
+  activeRun,
 }: {
   recipe: Recipe;
   recentRuns: RunRecord[];
@@ -426,6 +429,7 @@ function RecipeDetailPanel({
   onDelete: () => void;
   running: Record<string, string>;
   isLive: boolean;
+  activeRun: ActiveRunState | undefined;
 }) {
   return (
     <PatchCard
@@ -474,10 +478,16 @@ function RecipeDetailPanel({
         </button>
       </div>
 
-      {running[recipe.name] && (
+      {activeRun ? (
         <div style={{ marginBottom: 10 }}>
-          <StatusPill tone="warn">{running[recipe.name]}</StatusPill>
+          <RecipeRunInline state={activeRun} density="strip" />
         </div>
+      ) : (
+        running[recipe.name] && (
+          <div style={{ marginBottom: 10 }}>
+            <StatusPill tone="warn">{running[recipe.name]}</StatusPill>
+          </div>
+        )
       )}
 
       <div style={{ marginBottom: 14 }}>
@@ -587,6 +597,9 @@ export default function RecipesPage() {
   const [modalRunning, setModalRunning] = useState(false);
   const [search, setSearch] = useState("");
   const toast = useToast();
+  // Live SSE-driven run state, keyed by recipe name. Foundation for inline
+  // run observability — see PR #642 (bridge lifecycle emit) + RecipeRunInline.
+  const { active: activeRunsByName } = useRecipeRunStream();
   // #600: deep-link support so /recipes?run=<name> auto-opens the
   // RunModal once recipes are loaded. Used by the Inbox Replay
   // button so users land on the recipe with its vars-input modal
@@ -1104,6 +1117,12 @@ export default function RecipesPage() {
                               {r.name}
                             </Link>
                             {live && <LivePill tone="ok" />}
+                            {activeRunsByName.get(r.name) && (
+                              <RecipeRunInline
+                                state={activeRunsByName.get(r.name) as ActiveRunState}
+                                density="chip"
+                              />
+                            )}
                             {!enabled && <StatusPill tone="muted">off</StatusPill>}
                             {r.lint && r.lint.ok === false && (
                               <StatusPill
@@ -1237,6 +1256,7 @@ export default function RecipesPage() {
               onDelete={() => void handleDeleteRecipe(selectedRecipe)}
               running={running}
               isLive={isLive(selectedRecipe.name)}
+              activeRun={activeRunsByName.get(selectedRecipe.name)}
             />
           )}
         </div>
