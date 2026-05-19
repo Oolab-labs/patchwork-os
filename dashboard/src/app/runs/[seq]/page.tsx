@@ -445,12 +445,17 @@ function StepRow({
   return (
     <div
       ref={wrapperRef}
+      // Anchor for halt breadcrumb deep-links. When a run ends with
+      // a haltReason that names a stepId, links can land on
+      // /runs/:seq#step-<id> and scroll the failing row into view.
+      id={`step-${step.id}`}
       style={{
         position: "relative",
         borderBottom: "1px solid var(--border-subtle)",
         borderLeft: step.status === "running"
           ? "3px solid var(--blue)"
           : "3px solid transparent",
+        scrollMarginTop: 80,
         cursor: step.error ? "pointer" : "default",
       }}
       onClick={() => step.error && toggleOpen()}
