@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fmtDuration } from "@/components/time";
 import { apiPath } from "@/lib/api";
+import { subscribeStreamMessage } from "@/lib/streamLiveness";
 import { EmptyState, StatusPill } from "@/components/patchwork";
 import {
   getPushSubscriptionStatus,
@@ -445,65 +446,17 @@ export default function SettingsPage() {
   }, []);
 
   // v2-I8 (#422): SSE consumer for kind:"kill-switch" events from /stream.
-  // When the bridge emits a state-change event the toggle updates in <1s
-  // without waiting for the next 5-second poll cycle.
+  // Subscribes via the shared singleton (#700) — one socket per tab
+  // serves the kill-switch listener, /activity, the LiveRuns store,
+  // and the header liveness pip. Singleton owns reconnect/backoff.
   useEffect(() => {
-    // #600 + audit 2026-05-18: cap reconnect attempts AND fix the
-    // counter race. Native EventSource fires `onerror` on every
-    // reconnect blip (readyState=CONNECTING) *and* on terminal close
-    // (readyState=CLOSED). Bumping a counter on every fire used to
-    // close the stream inside seconds on flaky links because the
-    // browser tried to reconnect faster than `onopen` reset the
-    // counter. Now we only count when the browser has given up
-    // (readyState=CLOSED), and we schedule a manual reconnect with
-    // exponential backoff after that. The 5s settings poll provides
-    // a fallback while the stream is paused.
-    const MAX_FAILURES = 5;
-    const BACKOFF_MS = [5_000, 10_000, 30_000, 60_000, 60_000];
-    let failures = 0;
-    let es: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
-
-    const connect = () => {
-      if (cancelled) return;
-      es = new EventSource(apiPath("/api/bridge/stream"));
-      es.onopen = () => {
-        failures = 0;
-      };
-      es.onmessage = (msg) => {
-        try {
-          const evt = JSON.parse(msg.data) as {
-            kind?: string;
-            engaged?: boolean;
-          };
-          if (
-            evt.kind === "kill-switch" &&
-            typeof evt.engaged === "boolean"
-          ) {
-            setKsEngaged(evt.engaged);
-          }
-        } catch {
-          // ignore malformed events
-        }
-      };
-      es.onerror = () => {
-        // Transient (browser is auto-reconnecting): no-op, let it.
-        if (es?.readyState !== EventSource.CLOSED) return;
-        // Terminal close — counts as one failure.
-        failures += 1;
-        if (failures >= MAX_FAILURES) return;
-        const delay = BACKOFF_MS[Math.min(failures - 1, BACKOFF_MS.length - 1)];
-        reconnectTimer = setTimeout(connect, delay);
-      };
-    };
-    connect();
-
-    return () => {
-      cancelled = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      es?.close();
-    };
+    return subscribeStreamMessage((type, raw) => {
+      if (type !== "kill-switch") return;
+      const evt = raw as { engaged?: boolean } | null;
+      if (evt && typeof evt.engaged === "boolean") {
+        setKsEngaged(evt.engaged);
+      }
+    });
   }, []);
 
   // Load CC permission rules for the approval policy section
