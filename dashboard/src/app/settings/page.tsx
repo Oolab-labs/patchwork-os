@@ -577,9 +577,15 @@ export default function SettingsPage() {
     };
   }, []);
 
-  // Scroll-spy active section
+  // Scroll-spy active section — rAF-throttled. Previously
+  // `getBoundingClientRect()` ×6 fired on every scroll event,
+  // forcing synchronous layout each tick and showing visible jank on
+  // long pages. Coalesce to at most one measurement per animation
+  // frame; the visual result is identical.
   useEffect(() => {
-    const handler = () => {
+    let pending = false;
+    const measure = () => {
+      pending = false;
       const offsets = NAV.map((n) => {
         const el = document.getElementById(n.id);
         if (!el) return { id: n.id, top: Number.POSITIVE_INFINITY };
@@ -588,8 +594,13 @@ export default function SettingsPage() {
       offsets.sort((a, b) => a.top - b.top);
       if (offsets[0]) setActive(offsets[0].id);
     };
+    const handler = () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(measure);
+    };
     window.addEventListener("scroll", handler, { passive: true });
-    handler();
+    measure();
     return () => window.removeEventListener("scroll", handler);
   }, []);
 
