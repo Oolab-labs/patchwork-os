@@ -12,8 +12,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { POST } from "../route";
 
-vi.mock("@/lib/demoModeServer", () => ({ isDemoModeServer: () => false }));
-
 const bridgeFetchMock = vi.fn(
   async (_path: string, _init: { body: string; method: string }) =>
     new Response(JSON.stringify({ ok: true }), {

@@ -19,7 +19,6 @@ import { SESSION_COOKIE_NAME, verifySession } from "@/lib/session";
 
 const ALLOW_UNAUTHENTICATED =
   process.env.DASHBOARD_ALLOW_UNAUTHENTICATED === "1";
-const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 function unauthenticated(req: NextRequest): NextResponse {
   // For HTML navigations: redirect to /dashboard/login with the original
@@ -55,10 +54,6 @@ function unauthenticated(req: NextRequest): NextResponse {
 }
 
 export async function middleware(req: NextRequest) {
-  if (DEMO_MODE) {
-    return NextResponse.next();
-  }
-
   const expected = process.env.DASHBOARD_PASSWORD ?? "";
   const secret = process.env.DASHBOARD_SESSION_SECRET ?? "";
 

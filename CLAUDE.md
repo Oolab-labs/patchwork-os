@@ -132,7 +132,6 @@ The dashboard reads these from `dashboard/.env.local` / `.env` at startup. Most 
 | `DASHBOARD_AUTH_FAILURE_WINDOW_MS` / `DASHBOARD_AUTH_MAX_FAILURES` / `DASHBOARD_AUTH_LOCKOUT_MS` | Brute-force lockout tuning for the login form. |
 | `PATCHWORK_BRIDGE_TOKEN` | Bearer token the dashboard uses when forwarding to a remote bridge (paired with `PATCHWORK_BRIDGE_URL`). |
 | `NEXT_PUBLIC_BASE_PATH` | basePath for mounted-prefix deployments (`/dashboard` under nginx, etc.). |
-| `NEXT_PUBLIC_DEMO_MODE` | Read-only demo mode for the public marketing site. |
 | `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Web Push (PWA notifications). |
 | `PATCHWORK_PUSH_TOKEN` / `PATCHWORK_PUSH_URL` / `PATCHWORK_PUSH_BASE_URL` | Phone-path push relay credentials (used by the optional remote relay; see ADR-0006). |
 

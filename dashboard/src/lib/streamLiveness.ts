@@ -45,15 +45,6 @@ function setLive(next: boolean) {
 function ensureStream() {
   if (es) return;
   if (typeof window === "undefined") return;
-  // Skip in demo mode — there's no real bridge to stream from.
-  // Demo state is a localStorage-backed module (lib/demoMode.ts); we
-  // read the "pw-demo" key directly to avoid pulling demoMode in via
-  // dynamic import + the runtime cycle that creates with Shell.
-  try {
-    if (window.localStorage.getItem("pw-demo") === "true") return;
-  } catch {
-    // localStorage unavailable — assume not demo.
-  }
 
   try {
     es = new EventSource(apiPath("/api/bridge/stream"));

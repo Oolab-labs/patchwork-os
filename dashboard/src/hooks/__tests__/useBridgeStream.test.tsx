@@ -2,12 +2,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock isDemoMode so we control whether the hook short-circuits.
-let demoModeFlag = false;
-vi.mock("@/lib/demoMode", () => ({
-  isDemoMode: () => demoModeFlag,
-}));
-
 import { useBridgeStream } from "../useBridgeStream";
 
 // Minimal EventSource shim — exposes the same surface jsdom doesn't
@@ -34,7 +28,6 @@ class FakeEventSource {
 let originalEventSource: typeof EventSource | undefined;
 
 beforeEach(() => {
-  demoModeFlag = false;
   FakeEventSource.instances = [];
   originalEventSource = (globalThis as { EventSource?: typeof EventSource }).EventSource;
   vi.stubGlobal("EventSource", FakeEventSource);
@@ -240,14 +233,6 @@ describe("useBridgeStream — short-circuit guards", () => {
   it("does not construct an EventSource when enabled=false", () => {
     renderHook(() =>
       useBridgeStream("/api/bridge/stream", () => {}, { enabled: false }),
-    );
-    expect(FakeEventSource.instances).toHaveLength(0);
-  });
-
-  it("does not construct an EventSource when isDemoMode()=true", () => {
-    demoModeFlag = true;
-    renderHook(() =>
-      useBridgeStream("/api/bridge/stream", () => {}),
     );
     expect(FakeEventSource.instances).toHaveLength(0);
   });

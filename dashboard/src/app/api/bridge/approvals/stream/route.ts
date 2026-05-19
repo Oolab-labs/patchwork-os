@@ -1,50 +1,9 @@
 import { findBridge, resolveBridgeUrl } from "@/lib/bridge";
-import { isDemoModeServer } from "@/lib/demoModeServer";
-import { mockBridgeResponse } from "@/lib/mockData";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(req: Request): Promise<Response> {
-  if (await isDemoModeServer()) {
-    // In demo mode there's no live bridge — emit a snapshot built from
-    // mockBridgeResponse('/approvals') so the page shows seeded approvals
-    // instead of the empty all-clear state.
-    let snapshot = "[]";
-    try {
-      const mock = mockBridgeResponse("/approvals", "GET");
-      if (mock) snapshot = await mock.text();
-    } catch {
-      // fall back to empty
-    }
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(
-          new TextEncoder().encode(`event: snapshot\ndata: ${snapshot}\n\n`),
-        );
-        // heartbeat every 15s to keep the connection alive
-        const id = setInterval(() => {
-          try {
-            controller.enqueue(new TextEncoder().encode(": heartbeat\n\n"));
-          } catch {
-            clearInterval(id);
-          }
-        }, 15_000);
-        req.signal.addEventListener("abort", () => {
-          clearInterval(id);
-          try { controller.close(); } catch { /* already closed */ }
-        });
-      },
-    });
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
-  }
-
   const lock = findBridge();
   if (!lock) {
     return new Response(
