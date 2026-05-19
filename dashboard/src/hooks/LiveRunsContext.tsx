@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
-import { useBridgeStream } from "./useBridgeStream";
+import { useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { subscribeStreamLiveness, subscribeStreamMessage } from "@/lib/streamLiveness";
 import type { ActiveRunState } from "./useRecipeRunStream";
 
 /**
@@ -177,18 +177,20 @@ function isBrowser() {
 }
 
 export function LiveRunsProvider({ children }: { children: ReactNode }) {
-  // Stable callback ref so useBridgeStream doesn't churn.
-  const onEvent = useRef((type: string, raw: unknown) => {
-    store.applyEvent(type, raw);
-  }).current;
-  const { connected } = useBridgeStream("/api/bridge/stream", onEvent);
-
+  // Subscribe to the shared singleton SSE stream rather than opening
+  // a second EventSource. Both subscriptions are idempotent; the
+  // stream opens lazily on first subscriber and tears down when the
+  // last unsubscribes.
   useEffect(() => {
-    store.setConnected(connected);
-  }, [connected]);
-
-  useEffect(() => {
+    const unMsg = subscribeStreamMessage((type, data) => {
+      store.applyEvent(type, data);
+    });
+    const unLive = subscribeStreamLiveness((live) => {
+      store.setConnected(live);
+    });
     return () => {
+      unMsg();
+      unLive();
       store.clearGcTimers();
     };
   }, []);
