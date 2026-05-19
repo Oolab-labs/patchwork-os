@@ -219,7 +219,10 @@ function ApprovalCard({
   }
 
   const heading = invocationHeading(p.toolName, p.params);
-  const codeLines = commandPreview(p.toolName, p.params ?? {}).split("\n");
+  const diff = diffPreview(p.toolName, p.params ?? {});
+  const codeLines = diff
+    ? null
+    : commandPreview(p.toolName, p.params ?? {}).split("\n");
   const icon = toolIcon(p.toolName);
 
   const cardRef = useRef<HTMLElement | null>(null);
@@ -411,16 +414,69 @@ function ApprovalCard({
       )}
 
       <div style={{ marginTop: 12, marginLeft: 52 }}>
-        <CodeBlock>
-          {codeLines.map((line, i) => (
-            <div key={i} style={{ display: "flex" }}>
-              <span style={{ color: "var(--ink-3)", minWidth: 28, textAlign: "right", paddingRight: 12, userSelect: "none" }}>
-                {i + 1}
-              </span>
-              <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{line}</span>
+        {diff ? (
+          <CodeBlock>
+            <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)", marginBottom: 4 }}>
+              {diff.path}
             </div>
-          ))}
-        </CodeBlock>
+            {diff.lines.map((line, i) => {
+              const bg =
+                line.kind === "add"
+                  ? "rgba(34, 197, 94, 0.12)"
+                  : line.kind === "del"
+                    ? "rgba(239, 68, 68, 0.12)"
+                    : "transparent";
+              const color =
+                line.kind === "add"
+                  ? "var(--ok)"
+                  : line.kind === "del"
+                    ? "var(--err)"
+                    : "var(--ink-2)";
+              const prefix =
+                line.kind === "add" ? "+" : line.kind === "del" ? "-" : " ";
+              return (
+                <div key={i} style={{ display: "flex", background: bg }}>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      color,
+                      minWidth: 18,
+                      textAlign: "center",
+                      userSelect: "none",
+                    }}
+                  >
+                    {prefix}
+                  </span>
+                  <span
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-all",
+                      color,
+                    }}
+                  >
+                    {line.text}
+                  </span>
+                </div>
+              );
+            })}
+            {diff.truncated && (
+              <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)", marginTop: 4 }}>
+                … truncated. Expand &quot;Full params&quot; for the complete payload.
+              </div>
+            )}
+          </CodeBlock>
+        ) : (
+          <CodeBlock>
+            {codeLines?.map((line, i) => (
+              <div key={i} style={{ display: "flex" }}>
+                <span style={{ color: "var(--ink-3)", minWidth: 28, textAlign: "right", paddingRight: 12, userSelect: "none" }}>
+                  {i + 1}
+                </span>
+                <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{line}</span>
+              </div>
+            ))}
+          </CodeBlock>
+        )}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, marginLeft: 52, flexWrap: "wrap" }}>
@@ -1542,6 +1598,64 @@ function relTime(ts: number): string {
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
+type DiffLine = { kind: "ctx" | "add" | "del"; text: string };
+
+/**
+ * Build a readable preview for Edit / Write tool calls. Old: rendered
+ * `path\ncontent.slice(0,200)` which truncated mid-token and gave no
+ * visual cue for what was changing — auditors had to expand "Full
+ * params" and squint at JSON to see the diff.
+ *
+ * Edit: emit "-" lines for old_string, "+" lines for new_string. Not
+ *   a true LCS — that needs O(n·m) and a diff lib; for the typical
+ *   small Edit hunk a side-by-side old/new is plenty.
+ * Write: emit "+" lines for the full content (capped at 50 lines).
+ * MultiEdit: same as Edit per hunk.
+ *
+ * Returns null when the tool isn't an edit-shaped writer — callers
+ * fall back to commandPreview().
+ */
+function diffPreview(
+  toolName: string,
+  params: Record<string, unknown>,
+): { path: string; lines: DiffLine[]; truncated: boolean } | null {
+  const lc = toolName.toLowerCase();
+  const isEdit = lc === "edit" || lc === "multiedit";
+  const isWrite = lc === "write";
+  if (!isEdit && !isWrite) return null;
+  const path =
+    String(params.file_path ?? params.path ?? params.filePath ?? "") || "(no path)";
+  const MAX_LINES_PER_SIDE = 25;
+  const lines: DiffLine[] = [];
+
+  if (isWrite) {
+    const content = String(params.content ?? "");
+    const all = content.split("\n");
+    const shown = all.slice(0, MAX_LINES_PER_SIDE * 2);
+    for (const t of shown) lines.push({ kind: "add", text: t });
+    return { path, lines, truncated: all.length > shown.length };
+  }
+
+  // Edit / MultiEdit
+  const hunks =
+    Array.isArray(params.edits) && params.edits.length > 0
+      ? (params.edits as Array<Record<string, unknown>>)
+      : [{ old_string: params.old_string, new_string: params.new_string }];
+  let truncated = false;
+  for (const h of hunks) {
+    const oldLines = String(h.old_string ?? "").split("\n");
+    const newLines = String(h.new_string ?? "").split("\n");
+    const oldShown = oldLines.slice(0, MAX_LINES_PER_SIDE);
+    const newShown = newLines.slice(0, MAX_LINES_PER_SIDE);
+    if (oldShown.length < oldLines.length || newShown.length < newLines.length) {
+      truncated = true;
+    }
+    for (const t of oldShown) lines.push({ kind: "del", text: t });
+    for (const t of newShown) lines.push({ kind: "add", text: t });
+  }
+  return { path, lines, truncated };
 }
 
 function commandPreview(toolName: string, params: Record<string, unknown>): string {
