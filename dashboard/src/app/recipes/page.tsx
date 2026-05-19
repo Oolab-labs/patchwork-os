@@ -1058,6 +1058,46 @@ export default function RecipesPage() {
     return latest?.status === "running";
   }
 
+  // j/k row navigation through filteredRecipes. j → next, k → prev.
+  // Wraps at ends. Skipped while typing or when a modal is open so it
+  // doesn't fight inputs or override modal-local shortcuts.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "j" && e.key !== "k") return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (modal) return;
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        const tag = t.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
+      }
+      if (filteredRecipes.length === 0) return;
+      e.preventDefault();
+      const idx = selectedName
+        ? filteredRecipes.findIndex((r) => r.name === selectedName)
+        : -1;
+      const delta = e.key === "j" ? 1 : -1;
+      const next =
+        idx === -1
+          ? e.key === "j"
+            ? 0
+            : filteredRecipes.length - 1
+          : (idx + delta + filteredRecipes.length) % filteredRecipes.length;
+      const nextName = filteredRecipes[next].name;
+      setSelectedName(nextName);
+      // Scroll the newly-selected row into view (centered) so j/k feels
+      // like a cursor walk rather than a silent state change off-screen.
+      requestAnimationFrame(() => {
+        const row = document.querySelector(
+          `[data-recipe-row="${CSS.escape(nextName)}"]`,
+        );
+        row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filteredRecipes, selectedName, modal]);
+
   return (
     <section>
       <RunModal
@@ -1258,6 +1298,7 @@ export default function RecipesPage() {
                       <tr
                         key={r.path ?? r.id ?? `${r.name}:${i}`}
                         className={`recipe-row${sel ? " is-selected" : ""}${enabled ? "" : " is-off"}`}
+                        data-recipe-row={r.name}
                         onClick={() =>
                           setSelectedName((prev) => (prev === r.name ? null : r.name))
                         }
