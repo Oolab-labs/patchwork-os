@@ -843,13 +843,33 @@ export default function SettingsPage() {
         ok?: boolean;
         sent?: number;
         total?: number;
+        invalid?: number;
         error?: string;
       };
       if (res.ok) {
-        setPushMsg({
-          ok: true,
-          text: `Sent ${body.sent ?? 0} of ${body.total ?? 0} subscribers.`,
-        });
+        const sent = body.sent ?? 0;
+        const total = body.total ?? 0;
+        const invalid = body.invalid ?? 0;
+        // All subs returned 404/410 → most likely VAPID key rotated
+        // since the existing subs were created. Surface explicitly so
+        // the user knows what to do (re-subscribe everyone) instead of
+        // staring at "Sent 0 of N" forever.
+        if (invalid > 0 && invalid === total && sent === 0) {
+          setPushMsg({
+            ok: false,
+            text: `Sent 0 of ${total} — every subscription returned 410/404. Likely VAPID key changed since subscribing; have devices re-subscribe.`,
+          });
+        } else if (invalid > 0) {
+          setPushMsg({
+            ok: true,
+            text: `Sent ${sent} of ${total} subscribers (${invalid} stale, pruning recommended).`,
+          });
+        } else {
+          setPushMsg({
+            ok: true,
+            text: `Sent ${sent} of ${total} subscribers.`,
+          });
+        }
       } else {
         setPushMsg({
           ok: false,
