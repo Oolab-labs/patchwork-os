@@ -6,6 +6,7 @@ import { apiPath } from "@/lib/api";
 import { EmptyState, HintCard } from "@/components/patchwork";
 import { InboxDeliveryCard } from "@/components/InboxDeliveryCard";
 import { useToast } from "@/components/Toast";
+import { useSearchHotkey } from "@/hooks/useSearchHotkey";
 
 function isFilterCategory(v: string | null): v is FilterCategory {
   return v === "All" || v === "Morning Briefs" || v === "Recipe Outputs" || v === "Agent Reports";
@@ -388,6 +389,7 @@ export default function InboxPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [err, setErr] = useState<string | undefined>();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const searchInputRef = useSearchHotkey();
   const router = useRouter();
   const searchParams = useSearchParams();
   const filterFromUrl = searchParams?.get("filter");
@@ -724,12 +726,13 @@ const filteredItems = items.filter((item) => {
                   {/* Search */}
                   <div style={{ padding: "10px 12px 8px" }}>
                     <input
+                      ref={searchInputRef}
                       type="search"
                       className="input"
-                      placeholder="Search…"
+                      placeholder="Search… ( / )"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      aria-label="Search inbox"
+                      aria-label="Search inbox (shortcut: /)"
                       style={{ width: "100%", fontSize: "var(--fs-s)" }}
                     />
                   </div>

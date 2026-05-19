@@ -6,6 +6,7 @@ import { SkeletonList } from "@/components/Skeleton";
 import { EmptyState, ErrorState, RelationStrip } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useToast } from "@/components/Toast";
+import { useSearchHotkey } from "@/hooks/useSearchHotkey";
 
 interface Task {
   taskId: string;
@@ -290,6 +291,7 @@ export default function TasksPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "live" | "done" | "error">("all");
+  const searchInputRef = useSearchHotkey();
 
   const refetchRef = useRef<() => void>(() => {});
 
@@ -472,13 +474,14 @@ export default function TasksPage() {
           }}
         >
           <input
+            ref={searchInputRef}
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search id, session, driver, output…"
+            placeholder="Search id, session, driver, output… ( / )"
             className="input"
             style={{ flex: "1 1 280px", maxWidth: 360, fontSize: "var(--fs-m)" }}
-            aria-label="Filter tasks"
+            aria-label="Filter tasks (shortcut: /)"
           />
           <div style={{ display: "flex", gap: 4 }} role="group" aria-label="Status filter">
             {([
