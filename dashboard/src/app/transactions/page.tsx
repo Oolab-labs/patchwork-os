@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { SkeletonList } from "@/components/Skeleton";
-import { ErrorState, HintCard, RelationStrip } from "@/components/patchwork";
+import { EmptyState, ErrorState, HintCard, RelationStrip } from "@/components/patchwork";
 
 interface TransactionEdit {
   filePath: string;
@@ -230,14 +230,16 @@ export default function TransactionsPage() {
       )}
 
       {!loading && transactions.length === 0 && (
-        <div className="empty-state">
-          <h3>No active transactions</h3>
-          <p>
-            When an agent calls <code>beginTransaction</code> + <code>stageEdit</code>,
-            the staged edits appear here. Until <code>commitTransaction</code> fires,
-            nothing has touched disk.
-          </p>
-        </div>
+        <EmptyState
+          title="No active transactions"
+          description={
+            <>
+              When an agent calls <code>beginTransaction</code> +{" "}
+              <code>stageEdit</code>, the staged edits appear here. Until{" "}
+              <code>commitTransaction</code> fires, nothing has touched disk.
+            </>
+          }
+        />
       )}
 
       {transactions.map((tx) => {

@@ -500,6 +500,21 @@ button { font-family: inherit; }
   line-height: 1;
 }
 
+/* "Live now" variant — blue tone + soft pulse to signal motion
+   (active recipe runs). Distinct from .nav-badge (orange, static
+   counter for pending/queued things). */
+.nav-badge.is-live {
+  background: var(--blue);
+  animation: nav-badge-live-pulse 1.8s ease-in-out infinite;
+}
+@keyframes nav-badge-live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--blue) 45%, transparent); }
+  50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-badge.is-live { animation: none; }
+}
+
 
 /* ---- Header / Topbar ---- */
 

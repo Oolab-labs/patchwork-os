@@ -134,19 +134,34 @@ export function RecipeRunInline({
 					/>
 				</div>
 			)}
-			{(state.haltReason || state.lastError) && state.status !== "running" && (
+			{(state.haltReason || state.lastError) && (
+				// Mid-run step errors used to be hidden until the run ended —
+				// the gate `status !== "running"` swallowed any in-flight
+				// failure breadcrumb. Surface them inline with a softer
+				// "step failed, continuing" tone; post-run halts keep the
+				// stronger err background.
 				<div
 					className="mono"
 					style={{
 						fontSize: "var(--fs-2xs)",
-						color: "var(--ink-3)",
-						background: "var(--bg-2)",
+						color: state.status === "running" ? "var(--warn)" : "var(--ink-3)",
+						background:
+							state.status === "running"
+								? "color-mix(in srgb, var(--warn) 10%, transparent)"
+								: "var(--bg-2)",
 						padding: "4px 6px",
 						borderRadius: 4,
 						wordBreak: "break-word",
 					}}
 				>
-					{state.haltReason ?? state.lastError}
+					{state.status === "running" && state.lastError ? (
+						<>
+							<span style={{ fontWeight: 600 }}>Step failed — </span>
+							{state.lastError}
+						</>
+					) : (
+						state.haltReason ?? state.lastError
+					)}
 				</div>
 			)}
 		</div>
