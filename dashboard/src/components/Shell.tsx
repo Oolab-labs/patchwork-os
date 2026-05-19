@@ -15,7 +15,7 @@ import { KillSwitchBanner } from "./KillSwitchBanner";
 import { PWAInstallPrompt } from "./PWAInstallPrompt";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
-import { LiveRunsProvider } from "@/hooks/LiveRunsContext";
+import { LiveRunsProvider, useActiveRunCount } from "@/hooks/LiveRunsContext";
 
 // ------------------------------------------------------------------ icons
 
@@ -81,7 +81,7 @@ type NavItem = {
   href: string;
   label: string;
   icon: string;
-  badge?: "approvals" | "halts";
+  badge?: "approvals" | "halts" | "runs";
 };
 
 const SECTIONS: { title: string; items: NavItem[] }[] = NAV_SECTIONS.map((s) => ({
@@ -307,6 +307,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const status = useBridgeStatus();
   const approvalCount = useApprovalCount();
   const haltCount = useHaltCount();
+  const runCount = useActiveRunCount();
   const { active, toggle } = useTheme();
   const identity = useIdentity(status);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -358,11 +359,15 @@ export function Shell({ children }: { children: ReactNode }) {
                 ? approvalCount
                 : item.badge === "halts"
                   ? haltCount
-                  : 0;
+                  : item.badge === "runs"
+                    ? runCount
+                    : 0;
             const badgeLabel =
               item.badge === "approvals"
                 ? `${badgeCount} pending`
-                : `${badgeCount} new halt${badgeCount === 1 ? "" : "s"} since last visit`;
+                : item.badge === "runs"
+                  ? `${badgeCount} run${badgeCount === 1 ? "" : "s"} live now`
+                  : `${badgeCount} new halt${badgeCount === 1 ? "" : "s"} since last visit`;
             const showBadge = !!item.badge && badgeCount > 0;
             return (
               <Link
@@ -376,7 +381,10 @@ export function Shell({ children }: { children: ReactNode }) {
                 </span>
                 <span>{item.label}</span>
                 {showBadge && (
-                  <span className="nav-badge" aria-label={badgeLabel}>
+                  <span
+                    className={`nav-badge${item.badge === "runs" ? " is-live" : ""}`}
+                    aria-label={badgeLabel}
+                  >
                     {badgeCount > 99 ? "99+" : badgeCount}
                   </span>
                 )}
@@ -385,7 +393,7 @@ export function Shell({ children }: { children: ReactNode }) {
           })}
         </div>
       )),
-    [pathname, approvalCount, haltCount],
+    [pathname, approvalCount, haltCount, runCount],
   );
 
   return (
