@@ -143,12 +143,17 @@ describe("POST /api/relay/halt", () => {
   it("evicts subscriptions that respond 404 / 410", async () => {
     const dead410 = { ...validSub, endpoint: "https://dead.example/410" };
     vi.mocked(getSubscriptionsFor).mockReturnValueOnce([validSub, dead410]);
-    vi.mocked(webpush.sendNotification).mockImplementation(async (sub) => {
-      if ((sub as { endpoint: string }).endpoint.endsWith("/410")) {
+    // Cast to the web-push impl signature loosely — the real lib returns
+    // a SendResult shape, but we only care about success vs the
+    // 404/410-shaped thrown error eviction path.
+    vi.mocked(webpush.sendNotification).mockImplementation((async (
+      sub: { endpoint: string },
+    ) => {
+      if (sub.endpoint.endsWith("/410")) {
         throw { statusCode: 410 };
       }
-      return { statusCode: 201 } as unknown as undefined;
-    });
+      return { statusCode: 201 };
+    }) as unknown as typeof webpush.sendNotification);
     const r = await POST(req({ authorization: `Bearer ${TOKEN}` }, validBody));
     const body = (await r.json()) as { sent: number; evicted: number };
     expect(body.sent).toBe(1);
