@@ -592,7 +592,14 @@ export default function RecipesPage() {
   const [err, setErr] = useState<string>();
   const [unsupported, setUnsupported] = useState(false);
   const [running, setRunning] = useState<Record<string, string>>({});
-  const [selectedName, setSelectedName] = useState<string | null>(null);
+  // Initial selection read from ?selected=<name> on first render, then
+  // kept in sync via replaceState so refresh / share-link works without
+  // bloating history.
+  const [selectedName, setSelectedName] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const sp = new URLSearchParams(window.location.search);
+    return sp.get("selected");
+  });
   const [modal, setModal] = useState<RunModalState | null>(null);
   const [modalRunning, setModalRunning] = useState(false);
   const [search, setSearch] = useState("");
@@ -608,6 +615,23 @@ export default function RecipesPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const deepLinkConsumedRef = useRef(false);
+
+  // Mirror selectedName → URL `?selected=<name>` via replaceState so the
+  // detail-panel selection survives refresh and is shareable. Uses
+  // replaceState (not router.push) to avoid history spam on every click.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const current = url.searchParams.get("selected");
+    if (selectedName) {
+      if (current === selectedName) return;
+      url.searchParams.set("selected", selectedName);
+    } else {
+      if (current === null) return;
+      url.searchParams.delete("selected");
+    }
+    window.history.replaceState(null, "", url.toString());
+  }, [selectedName]);
 
   const load = React.useCallback(async () => {
     try {
