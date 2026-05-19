@@ -285,6 +285,7 @@ export default function InsightsPage() {
             <h2>Tool history</h2>
             <span className="pill muted">{tools.length}</span>
           </div>
+          <div style={{ overflowX: "auto" }}>
           <table
             style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-m)" }}
           >
@@ -484,6 +485,7 @@ export default function InsightsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
