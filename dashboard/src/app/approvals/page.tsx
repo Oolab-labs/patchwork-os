@@ -632,6 +632,7 @@ function ApprovalsContent() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
+  const toast = useToast();
   const riskFromUrl = searchParams.get("risk");
   const [riskFilter, setRiskFilterState] = useState<RiskFilter>(
     riskFromUrl === "low" || riskFromUrl === "medium" || riskFromUrl === "high"
@@ -1121,9 +1122,22 @@ function ApprovalsContent() {
           onClick={() => {
             const approvalsUrl = `${API}/approvals${sessionFilter ? `?session=${sessionFilter}` : ""}`;
             fetch(approvalsUrl)
-              .then((r) => r.ok ? r.json() : null)
-              .then((d) => { if (d) setPending(d as Pending[]); })
-              .catch(() => {});
+              .then(async (r) => {
+                if (!r.ok) {
+                  const detail = await r.text().catch(() => r.statusText);
+                  throw new Error(detail || `${r.status}`);
+                }
+                return r.json();
+              })
+              .then((d) => {
+                if (d) setPending(d as Pending[]);
+                toast.info("Inbox synced");
+              })
+              .catch((e: unknown) => {
+                toast.error(
+                  `Sync failed: ${e instanceof Error ? e.message : String(e)}`,
+                );
+              });
           }}
         >
           Sync inbox
