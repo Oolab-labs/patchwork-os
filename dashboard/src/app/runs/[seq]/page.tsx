@@ -374,14 +374,27 @@ function StepRow({
   totalDurationMs,
   allSteps,
   recipeName,
+  openOverride,
+  onLocalToggle,
 }: {
   step: StepResult;
   index: number;
   totalDurationMs: number;
   allSteps: StepResult[];
   recipeName: string;
+  /** When non-null, overrides the row's local open state (parent
+   *  "Expand all" / "Collapse all" support). User-initiated row toggles
+   *  call onLocalToggle to clear the override + manage local state. */
+  openOverride?: boolean | null;
+  onLocalToggle?: (next: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openLocal, setOpen] = useState(false);
+  const open = openOverride !== null && openOverride !== undefined ? openOverride : openLocal;
+  const toggleOpen = () => {
+    const next = !open;
+    setOpen(next);
+    onLocalToggle?.(next);
+  };
   const [hover, setHover] = useState(false);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -437,7 +450,7 @@ function StepRow({
         borderBottom: "1px solid var(--border-subtle)",
         cursor: step.error ? "pointer" : "default",
       }}
-      onClick={() => step.error && setOpen((v) => !v)}
+      onClick={() => step.error && toggleOpen()}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
     >
@@ -915,6 +928,10 @@ export default function RunDetailPage() {
   const [run, setRun] = useState<RunDetail | null>(null);
   const [runErr, setRunErr] = useState<string>();
   const [tab, setTab] = useState<Tab>("steps");
+  // Bulk expand/collapse all step rows. null = each row uses its local
+  // state; true/false overrides until the user clicks any individual
+  // row toggle (which clears the override).
+  const [stepsAllOpen, setStepsAllOpen] = useState<boolean | null>(null);
   const [plan, setPlan] = useState<DryRunPlan | null>(null);
   const [planErr, setPlanErr] = useState<string>();
   const [planLoading, setPlanLoading] = useState(false);
@@ -1335,9 +1352,51 @@ export default function RunDetailPage() {
                     <span style={{ fontSize: "var(--fs-m)", fontWeight: 600 }}>
                       Steps ({run.stepResults.length})
                     </span>
-                    <span className="mono muted" style={{ fontSize: "var(--fs-xs)" }}>
-                      total {fmtDur(run.durationMs)}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setStepsAllOpen((s) => (s === true ? null : true))
+                        }
+                        aria-pressed={stepsAllOpen === true}
+                        title="Expand every step row"
+                        style={{
+                          background: "transparent",
+                          border: "1px solid var(--line-2)",
+                          borderRadius: 4,
+                          fontSize: "var(--fs-2xs)",
+                          padding: "3px 8px",
+                          minHeight: 24,
+                          cursor: "pointer",
+                          color: stepsAllOpen === true ? "var(--accent)" : "var(--ink-3)",
+                        }}
+                      >
+                        {stepsAllOpen === true ? "✓ Expanded" : "Expand all"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setStepsAllOpen((s) => (s === false ? null : false))
+                        }
+                        aria-pressed={stepsAllOpen === false}
+                        title="Collapse every step row"
+                        style={{
+                          background: "transparent",
+                          border: "1px solid var(--line-2)",
+                          borderRadius: 4,
+                          fontSize: "var(--fs-2xs)",
+                          padding: "3px 8px",
+                          minHeight: 24,
+                          cursor: "pointer",
+                          color: stepsAllOpen === false ? "var(--accent)" : "var(--ink-3)",
+                        }}
+                      >
+                        Collapse all
+                      </button>
+                      <span className="mono muted" style={{ fontSize: "var(--fs-xs)" }}>
+                        total {fmtDur(run.durationMs)}
+                      </span>
+                    </div>
                   </div>
                   {run.stepResults.map((step, i) => (
                     <StepRow
@@ -1347,6 +1406,8 @@ export default function RunDetailPage() {
                       totalDurationMs={run.durationMs}
                       allSteps={run.stepResults ?? []}
                       recipeName={run.recipeName}
+                      openOverride={stepsAllOpen}
+                      onLocalToggle={() => setStepsAllOpen(null)}
                     />
                   ))}
                 </div>
