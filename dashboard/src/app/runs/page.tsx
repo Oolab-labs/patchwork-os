@@ -773,7 +773,13 @@ export default function RunsPage() {
                       tabIndex={0}
                       role="button"
                       aria-expanded={isExpanded}
-                      style={{ cursor: "pointer" }}
+                      style={{
+                        cursor: "pointer",
+                        boxShadow:
+                          r.status === "running"
+                            ? "inset 3px 0 0 var(--blue)"
+                            : undefined,
+                      }}
                     >
                       <td className="mono muted">
                         {fmtWhen(
