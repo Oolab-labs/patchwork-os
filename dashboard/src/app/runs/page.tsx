@@ -8,6 +8,7 @@ import { LivePill } from "@/components/patchwork/LivePill";
 import { ErrorState, RelationStrip } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useDebounced } from "@/hooks/useDebounced";
+import { useBridgeStream } from "@/hooks/useBridgeStream";
 
 interface AssertionFailure {
   assertion: string;
@@ -270,6 +271,29 @@ export default function RunsPage() {
     };
   }, [trigger, status, debouncedRecipeQuery, limit, attemptFilter]);
 
+  // Live SSE: subscribe to recipe lifecycle events (PR #642) so the list
+  // updates immediately when a run starts/ends, instead of waiting up to
+  // 5 s for the next poll tick. Debounced 500 ms so a burst of step events
+  // from a chained recipe only triggers one reload.
+  const reloadDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onLifecycle = (type: string, raw: unknown) => {
+    if (type !== "lifecycle") return;
+    const ev = (raw as { event?: string } | undefined)?.event;
+    if (ev !== "recipe_started" && ev !== "recipe_done") return;
+    if (reloadDebounceRef.current) clearTimeout(reloadDebounceRef.current);
+    reloadDebounceRef.current = setTimeout(() => reloadRef.current(), 500);
+  };
+  const { connected: streamConnected } = useBridgeStream(
+    "/api/bridge/stream",
+    onLifecycle,
+  );
+  useEffect(
+    () => () => {
+      if (reloadDebounceRef.current) clearTimeout(reloadDebounceRef.current);
+    },
+    [],
+  );
+
   // PR1c: poll halt-summary independently (cheaper payload, fixed cadence).
   // PR4: window selector feeds the same sinceMs into the summary so the
   // pills always reflect the same window as the displayed run list.
@@ -381,7 +405,10 @@ export default function RunsPage() {
             ]}
           />
         </div>
-        <LivePill label="5s" />
+        <LivePill
+          tone={streamConnected ? "ok" : "muted"}
+          label={streamConnected ? "live" : "5s"}
+        />
       </div>
 
       {haltSummary && haltSummary.total > 0 && (
