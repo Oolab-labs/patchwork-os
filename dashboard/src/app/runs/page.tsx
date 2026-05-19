@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LivePill } from "@/components/patchwork/LivePill";
-import { AnimatedNumber, ErrorState, RelationStrip } from "@/components/patchwork";
+import { AnimatedNumber, EmptyState, ErrorState, RelationStrip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useDebounced } from "@/hooks/useDebounced";
@@ -748,66 +748,68 @@ export default function RunsPage() {
       {windowedRuns === null && !err ? (
         <SkeletonList rows={6} columns={6} />
       ) : !windowedRuns || windowedRuns.length === 0 ? (
-        <div className="empty-state">
-          <h3>
-            {(trigger !== "all" ||
-              status !== "all" ||
-              debouncedRecipeQuery ||
-              attemptFilter)
-              ? "No runs match current filters"
-              : window === "any"
-                ? "No runs yet"
-                : "No runs in this window"}
-          </h3>
-          <p>
-            {(trigger !== "all" ||
-              status !== "all" ||
-              debouncedRecipeQuery ||
-              attemptFilter) ? (
-              <>
-                Active:{" "}
-                {[
-                  trigger !== "all" && `trigger=${trigger}`,
-                  status !== "all" && `status=${status}`,
-                  debouncedRecipeQuery && `recipe=${debouncedRecipeQuery}`,
-                  attemptFilter && `attempt=${attemptFilter}`,
-                  window !== "any" && `window=${TIME_WINDOW_LABEL[window].toLowerCase()}`,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </>
-            ) : window === "any" ? (
-              <>
-                Recipe executions (cron, webhook, or{" "}
-                <code>patchwork recipe run</code>) will appear here once they
-                complete.
-              </>
-            ) : (
-              <>
-                No runs in “{TIME_WINDOW_LABEL[window]}”. Try widening the
-                window.
-              </>
-            )}
-          </p>
-          {(trigger !== "all" ||
+        (() => {
+          const filtered =
+            trigger !== "all" ||
             status !== "all" ||
-            debouncedRecipeQuery ||
-            attemptFilter) && (
-            <button
-              type="button"
-              className="btn sm ghost"
-              style={{ marginTop: "var(--s-3)" }}
-              onClick={() => {
-                setTrigger("all");
-                setStatus("all");
-                setRecipeQuery("");
-                setAttemptFilter("");
-              }}
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
+            !!debouncedRecipeQuery ||
+            !!attemptFilter;
+          return (
+            <EmptyState
+              title={
+                filtered
+                  ? "No runs match current filters"
+                  : window === "any"
+                    ? "No runs yet"
+                    : "No runs in this window"
+              }
+              description={
+                filtered ? (
+                  <>
+                    Active:{" "}
+                    {[
+                      trigger !== "all" && `trigger=${trigger}`,
+                      status !== "all" && `status=${status}`,
+                      debouncedRecipeQuery && `recipe=${debouncedRecipeQuery}`,
+                      attemptFilter && `attempt=${attemptFilter}`,
+                      window !== "any" &&
+                        `window=${TIME_WINDOW_LABEL[window].toLowerCase()}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </>
+                ) : window === "any" ? (
+                  <>
+                    Recipe executions (cron, webhook, or{" "}
+                    <code>patchwork recipe run</code>) will appear here once
+                    they complete.
+                  </>
+                ) : (
+                  <>
+                    No runs in “{TIME_WINDOW_LABEL[window]}”. Try widening
+                    the window.
+                  </>
+                )
+              }
+              action={
+                filtered ? (
+                  <button
+                    type="button"
+                    className="btn sm ghost"
+                    onClick={() => {
+                      setTrigger("all");
+                      setStatus("all");
+                      setRecipeQuery("");
+                      setAttemptFilter("");
+                    }}
+                  >
+                    Clear filters
+                  </button>
+                ) : undefined
+              }
+            />
+          );
+        })()
       ) : (
         <div className="table-wrap">
           <table className="table">

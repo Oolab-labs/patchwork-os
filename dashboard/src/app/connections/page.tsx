@@ -4,7 +4,8 @@ import { apiPath } from "@/lib/api";
 import AddConnectionModal from "./AddConnectionModal";
 import { YourConnectorRequests } from "./YourConnectorRequests";
 import { Dialog } from "@/components/Dialog";
-import { HintCard } from "@/components/patchwork";
+import { EmptyState, HintCard } from "@/components/patchwork";
+import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import type { ConnectorStatus } from "./types";
 
@@ -1245,14 +1246,17 @@ export default function ConnectionsPage() {
       {err && <div className="alert-err" role="alert">{err}</div>}
 
       {bridgeOffline ? (
-        <div className="empty-state" role="status">
-          <h3>Bridge offline</h3>
-          <p>The bridge is not running. Start it with <code>patchwork start-all</code> then reload this page.</p>
-        </div>
+        <EmptyState
+          title="Bridge offline"
+          description={
+            <>
+              The bridge is not running. Start it with{" "}
+              <code>patchwork start-all</code> then reload this page.
+            </>
+          }
+        />
       ) : loading ? (
-        <div className="empty-state" role="status" aria-busy="true">
-          <p>Loading…</p>
-        </div>
+        <SkeletonList rows={3} columns={2} />
       ) : (
         <>
           {/* Recently used strip */}

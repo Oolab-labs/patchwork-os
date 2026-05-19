@@ -13,6 +13,7 @@ import type { ActiveRunState } from "@/hooks/useRecipeRunStream";
 import { RecipeRunInline } from "./_components/RecipeRunInline";
 import {
   CodeBlock,
+  EmptyState,
   ErrorState,
   HintCard,
   highlightYaml,
@@ -1251,23 +1252,32 @@ export default function RecipesPage() {
       {recipes === null && !err ? (
         <SkeletonList rows={4} columns={3} />
       ) : recipes === null && err ? null : recipes === null || recipes.length === 0 ? (
-        <div className="empty-state">
-          <h3>No recipes installed</h3>
-          <p>Browse the marketplace or author your own.</p>
-          <div style={{ display: "flex", gap: "var(--s-2)", marginTop: "var(--s-3)" }}>
-            <Link href="/marketplace" className="btn primary" style={{ textDecoration: "none" }}>
-              Browse marketplace
-            </Link>
-            <Link href="/recipes/new" className="btn ghost" style={{ textDecoration: "none" }}>
-              New recipe
-            </Link>
-          </div>
-          {unsupported && (
-            <p style={{ marginTop: 12, fontSize: "var(--fs-s)" }}>
-              Recipe listing endpoint not available on this bridge version.
-            </p>
-          )}
-        </div>
+        <EmptyState
+          title="No recipes installed"
+          description={
+            unsupported
+              ? "Recipe listing endpoint not available on this bridge version."
+              : "Browse the marketplace or author your own."
+          }
+          action={
+            <>
+              <Link
+                href="/marketplace"
+                className="btn primary"
+                style={{ textDecoration: "none" }}
+              >
+                Browse marketplace
+              </Link>
+              <Link
+                href="/recipes/new"
+                className="btn ghost"
+                style={{ textDecoration: "none" }}
+              >
+                New recipe
+              </Link>
+            </>
+          }
+        />
       ) : (
         <div
           className={`recipes-grid${selectedRecipe ? " has-detail" : ""}`}
