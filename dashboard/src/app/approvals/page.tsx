@@ -1466,9 +1466,37 @@ function ruleClass(kind: "deny" | "ask" | "allow"): string {
   return kind === "deny" ? "err" : kind === "ask" ? "warn" : "ok";
 }
 
+/**
+ * Keys matched here (case-insensitive, substring) have their values
+ * redacted to "***" when serialised for display. Audit caught that
+ * tool params (e.g. `runHttpRequest` with an Authorization header,
+ * connector configs) were rendered verbatim — anyone shoulder-surfing
+ * an approval card could read out a live bearer token.
+ *
+ * Conservative: a key has to look secret-shaped. Adding noise (e.g. an
+ * api `key` field that's just a category id) is far less bad than
+ * leaking a real secret.
+ */
+const REDACT_KEY_PATTERN = /(token|secret|password|api[_-]?key|auth(orization)?|bearer|cookie|session[_-]?id|private[_-]?key)/i;
+
+function redactValue(v: unknown): unknown {
+  if (v === null || v === undefined) return v;
+  if (typeof v !== "object") return v;
+  if (Array.isArray(v)) return v.map(redactValue);
+  const out: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (REDACT_KEY_PATTERN.test(k) && typeof val === "string" && val.length > 0) {
+      out[k] = "***";
+    } else {
+      out[k] = redactValue(val);
+    }
+  }
+  return out;
+}
+
 function safeStringify(v: unknown): string {
   try {
-    return JSON.stringify(v, null, 2);
+    return JSON.stringify(redactValue(v), null, 2);
   } catch {
     return String(v);
   }
