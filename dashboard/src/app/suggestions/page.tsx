@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
-import { ErrorState, HintCard } from "@/components/patchwork";
+import { EmptyState, ErrorState, HintCard } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 
 const SINCE_DAYS_OPTIONS = [1, 7, 30, 90] as const;
@@ -238,15 +238,17 @@ export default function SuggestionsPage() {
       )}
 
       {!loading && !error && suggestions.length === 0 && (
-        <div className="empty-state">
-          <h3>No suggestions right now</h3>
-          <p>
-            Either the lookback window is too short, your activity log doesn&apos;t
-            have enough variety yet, or every co-occurring pair is already in a
-            recipe. Try widening the lookback above, or come back after a few
-            more days of normal use.
-          </p>
-        </div>
+        <EmptyState
+          title="No suggestions right now"
+          description={
+            <>
+              Either the lookback window is too short, your activity log doesn&apos;t
+              have enough variety yet, or every co-occurring pair is already in a
+              recipe. Try widening the lookback above, or come back after a few
+              more days of normal use.
+            </>
+          }
+        />
       )}
 
       {byKind.co_occurring_pair.length > 0 && (
