@@ -1363,7 +1363,12 @@ button.topbar-search {
   width: 60%;
   height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  /* Animates transform (GPU composite) instead of `left` (paint-per-frame)
+   * — was the dominant repaint cost on /runs with up to 100 progress
+   * bars concurrent (perf audit 2026-05-19). */
+  transform: translateX(0);
   animation: shimmer 2s ease infinite;
+  will-change: transform;
 }
 
 /* ---- Approval cards ---- */
@@ -1613,8 +1618,11 @@ button.topbar-search {
 }
 
 @keyframes shimmer {
-  0% { left: -100%; }
-  100% { left: 140%; }
+  /* Element is width:60% of parent; original keyframe walked `left`
+   * from -100% to 140% of parent (240% of parent shift) — equivalent
+   * transform delta is 240% / 60% = 400% of the element's own width. */
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(400%); }
 }
 
 /* ---- Skeleton loading states (Skeleton.tsx) -----------------------
@@ -1625,17 +1633,28 @@ button.topbar-search {
 .skeleton {
   position: relative;
   display: block;
-  background:
-    linear-gradient(
-      90deg,
-      var(--bg-1) 0%,
-      var(--recess) 50%,
-      var(--bg-1) 100%
-    );
-  background-size: 200% 100%;
+  background: var(--recess);
   border-radius: var(--r-1);
   overflow: hidden;
+}
+/* Translate-based shimmer (GPU composite) instead of the prior
+ * background-position animation (paint-per-frame on every skeleton).
+ * Skeleton lists routinely mount 20+ instances at once — keeping the
+ * shimmer off the paint phase preserves main-thread budget for the
+ * data that's loading. */
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--ink-0) 6%, transparent) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
   animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  will-change: transform;
 }
 .skeleton-text {
   height: 0.85em;
@@ -1645,11 +1664,10 @@ button.topbar-search {
 .skeleton-text.sm { height: 0.7em; }
 .skeleton-text.lg { height: 1.15em; }
 @keyframes skeleton-shimmer {
-  from { background-position: 200% 0; }
-  to   { background-position: -200% 0; }
+  to { transform: translateX(100%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .skeleton { animation: none; }
+  .skeleton::after { animation: none; }
 }
 
 
