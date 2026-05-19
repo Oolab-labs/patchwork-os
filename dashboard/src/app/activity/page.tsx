@@ -203,9 +203,12 @@ export default function ActivityPage() {
     return () => es.close();
   }, []);
 
-  // tick for relative timestamps
+  // Tick for relative timestamps. Was 1Hz which forced 200-event
+  // table + histogram + HBarList to re-render every second. Bumped
+  // to 5s — "just now → 5s ago" still feels live without burning
+  // CPU on a stale-staring tab (perf audit 2026-05-19).
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    const id = setInterval(() => setTick((t) => t + 1), 5000);
     return () => clearInterval(id);
   }, []);
 
