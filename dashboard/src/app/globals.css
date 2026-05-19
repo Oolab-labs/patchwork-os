@@ -1443,6 +1443,12 @@ button.topbar-search {
   color: var(--ink-0);
   word-break: break-all;
   white-space: pre-wrap;
+  /* Long URLs / commands could exceed the card height on mobile and
+     push the Approve/Reject buttons below the fold. Cap at ~6 lines
+     with a scrollbar; full text remains accessible via expand or
+     scroll. Reviewers can always click "Full params" for the raw view. */
+  max-height: 9.5em;
+  overflow-y: auto;
 }
 .approval-params-wrap { margin: 12px 0; }
 .approval-params-toggle {
