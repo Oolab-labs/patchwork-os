@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { MOBILE_PRIMARY_HREFS, findRoute, moreRoutes } from "@/lib/navRoutes";
+import { useHaltCount } from "./Shell";
 
 interface BottomNavItem {
   href: string;
@@ -68,6 +69,10 @@ export function MobileBottomNav() {
   });
 
   const moreActive = MORE_LINKS.some((l) => pathname.startsWith(l.href));
+  // Surface halt count on the More button — the /activity route lives
+  // under More on mobile, so without this the badge is invisible
+  // exactly when oncall needs it.
+  const haltCount = useHaltCount();
 
   return (
     <>
@@ -106,6 +111,8 @@ export function MobileBottomNav() {
           onClick={() => setSheetOpen((v) => !v)}
           aria-expanded={sheetOpen}
           aria-controls="mobile-more-sheet"
+          aria-label={haltCount > 0 ? `More (${haltCount} halt${haltCount === 1 ? "" : "s"})` : "More"}
+          style={{ position: "relative" }}
         >
           <svg
             width="20"
@@ -121,6 +128,30 @@ export function MobileBottomNav() {
             <path d={MORE_ICON} />
           </svg>
           <span>More</span>
+          {haltCount > 0 && (
+            <span
+              aria-hidden="true"
+              title={`${haltCount} recent halt${haltCount === 1 ? "" : "s"}`}
+              style={{
+                position: "absolute",
+                top: 4,
+                right: "calc(50% - 16px)",
+                minWidth: 16,
+                height: 16,
+                padding: "0 4px",
+                borderRadius: 8,
+                background: "var(--err)",
+                color: "#fff",
+                fontSize: "var(--fs-2xs)",
+                fontWeight: 700,
+                lineHeight: "16px",
+                textAlign: "center",
+                pointerEvents: "none",
+              }}
+            >
+              {haltCount > 9 ? "9+" : haltCount}
+            </span>
+          )}
         </button>
       </nav>
 

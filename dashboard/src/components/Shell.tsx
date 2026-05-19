@@ -180,7 +180,7 @@ function useApprovalCount(): number {
  * Re-fetches immediately on `markHaltsSeen()` so the badge clears on
  * visit instead of waiting for the next 60s tick.
  */
-function useHaltCount(): number {
+export function useHaltCount(): number {
   const [count, setCount] = useState(0);
   useEffect(() => {
     let alive = true;
