@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
 import { apiPath } from "@/lib/api";
 import { CodeBlock, EmptyState, HintCard, KeyChip, RelationStrip } from "@/components/patchwork";
@@ -137,7 +137,7 @@ interface ApprovalCardProps {
   externalInFlight?: "approve" | "reject" | null;
 }
 
-function ApprovalCard({
+const ApprovalCard = memo(function ApprovalCard({
   p,
   rules,
   isExpanded,
@@ -549,7 +549,7 @@ function ApprovalCard({
 
     </article>
   );
-}
+});
 
 // --- BatchActionBar ---
 
@@ -806,41 +806,40 @@ function ApprovalsContent() {
     fadeTimersRef.current.add(timer);
   }
 
-  async function decide(
-    callId: string,
-    decision: "approve" | "reject",
-    reason?: string,
-  ) {
-    const init: RequestInit = { method: "POST" };
-    if (reason && reason.trim().length > 0) {
-      init.headers = { "Content-Type": "application/json" };
-      init.body = JSON.stringify({ reason: reason.trim().slice(0, 500) });
-    }
-    const res = await fetch(`${API}/${decision}/${callId}`, init);
-    if (!res.ok) {
-      const text = await res.text().catch(() => res.statusText);
-      throw new Error(`${decision} failed: ${text || res.status}`);
-    }
-    removeWithFade(callId);
-  }
+  const decide = useCallback(
+    async (callId: string, decision: "approve" | "reject", reason?: string) => {
+      const init: RequestInit = { method: "POST" };
+      if (reason && reason.trim().length > 0) {
+        init.headers = { "Content-Type": "application/json" };
+        init.body = JSON.stringify({ reason: reason.trim().slice(0, 500) });
+      }
+      const res = await fetch(`${API}/${decision}/${callId}`, init);
+      if (!res.ok) {
+        const text = await res.text().catch(() => res.statusText);
+        throw new Error(`${decision} failed: ${text || res.status}`);
+      }
+      removeWithFade(callId);
+    },
+    [],
+  );
 
-  function toggleExpand(callId: string) {
+  const toggleExpand = useCallback((callId: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(callId)) next.delete(callId);
       else next.add(callId);
       return next;
     });
-  }
+  }, []);
 
-  function toggleSelect(callId: string) {
+  const toggleSelect = useCallback((callId: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(callId)) next.delete(callId);
       else next.add(callId);
       return next;
     });
-  }
+  }, []);
 
   const filtered = pending.filter(
     (p) => riskFilter === "all" || p.tier === riskFilter,
