@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
 import { isDemoMode, onDemoModeChange, setDemoMode } from "@/lib/demoMode";
@@ -357,6 +357,51 @@ export function Shell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const navMarkup = useMemo(
+    () =>
+      SECTIONS.map((section) => (
+        <div key={section.title}>
+          <div className="app-nav-section-label">{section.title}</div>
+          {section.items.map((item) => {
+            const isActive =
+              item.href === "/"
+                ? pathname === "/"
+                : pathname?.startsWith(item.href);
+            const badgeCount =
+              item.badge === "approvals"
+                ? approvalCount
+                : item.badge === "halts"
+                  ? haltCount
+                  : 0;
+            const badgeLabel =
+              item.badge === "approvals"
+                ? `${badgeCount} pending`
+                : `${badgeCount} new halt${badgeCount === 1 ? "" : "s"} since last visit`;
+            const showBadge = !!item.badge && badgeCount > 0;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`app-nav-link${isActive ? " is-active" : ""}`}
+                aria-current={isActive ? "page" : undefined}
+              >
+                <span className="app-nav-link-icon" aria-hidden="true">
+                  <NavIcon path={PATHS[item.icon]} />
+                </span>
+                <span>{item.label}</span>
+                {showBadge && (
+                  <span className="nav-badge" aria-label={badgeLabel}>
+                    {badgeCount > 99 ? "99+" : badgeCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+      )),
+    [pathname, approvalCount, haltCount],
+  );
+
   return (
     <LiveRunsProvider>
     <div className={`app-shell${mobileOpen ? " mobile-open" : ""}`}>
@@ -538,47 +583,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </Link>
 
         <nav className="app-nav" aria-label="Main navigation">
-          {SECTIONS.map((section) => (
-            <div key={section.title}>
-              <div className="app-nav-section-label">{section.title}</div>
-              {section.items.map((item) => {
-                const isActive =
-                  item.href === "/"
-                    ? pathname === "/"
-                    : pathname?.startsWith(item.href);
-                const badgeCount =
-                  item.badge === "approvals"
-                    ? approvalCount
-                    : item.badge === "halts"
-                      ? haltCount
-                      : 0;
-                const badgeLabel =
-                  item.badge === "approvals"
-                    ? `${badgeCount} pending`
-                    : `${badgeCount} new halt${badgeCount === 1 ? "" : "s"} since last visit`;
-                const showBadge = !!item.badge && badgeCount > 0;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`app-nav-link${isActive ? " is-active" : ""}`}
-                    aria-current={isActive ? "page" : undefined}
-                  >
-                    <span className="app-nav-link-icon" aria-hidden="true">
-                      <NavIcon path={PATHS[item.icon]} />
-                    </span>
-                    <span>{item.label}</span>
-                    {showBadge && (
-                      <span className="nav-badge" aria-label={badgeLabel}>
-                        {badgeCount > 99 ? "99+" : badgeCount}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
-
+          {navMarkup}
         </nav>
 
         <BridgeStatusBlock status={status} />
