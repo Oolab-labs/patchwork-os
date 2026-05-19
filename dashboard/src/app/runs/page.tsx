@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LivePill } from "@/components/patchwork/LivePill";
-import { ErrorState, RelationStrip } from "@/components/patchwork";
+import { AnimatedNumber, ErrorState, RelationStrip } from "@/components/patchwork";
+import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useDebounced } from "@/hooks/useDebounced";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
@@ -470,10 +471,7 @@ export default function RunsPage() {
             ]}
           />
         </div>
-        <LivePill
-          tone={streamConnected ? "ok" : "muted"}
-          label={streamConnected ? "live" : "5s"}
-        />
+        <LivePill connection={streamConnected ? "live" : "reconnecting"} />
       </div>
 
       {haltSummary && haltSummary.total > 0 && (
@@ -496,7 +494,7 @@ export default function RunsPage() {
           }
         >
           <span className="mono muted" style={{ fontSize: "var(--fs-xs)" }}>
-            halts (7d): {haltSummary.total}
+            halts ({TIME_WINDOW_LABEL[window].toLowerCase()}): {haltSummary.total}
           </span>
           {(
             Object.entries(haltSummary.byCategory) as Array<
@@ -694,7 +692,7 @@ export default function RunsPage() {
           aria-label={`Filter: all runs (${stats.total})`}
         >
           <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 8 }}>All runs</div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>{stats.total}</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}><AnimatedNumber value={stats.total} /></div>
           <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 4 }}>Last 24h</div>
         </button>
         <button
@@ -712,7 +710,7 @@ export default function RunsPage() {
           aria-label={`Filter: successful runs (${stats.ok})`}
         >
           <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ok)", marginBottom: 8 }}>✓ Successful</div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>{stats.ok}</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}><AnimatedNumber value={stats.ok} /></div>
           <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 4 }}>{stats.total > 0 ? Math.round(stats.ok / stats.total * 100) + "%" : "—"} success rate</div>
         </button>
         <button
@@ -730,7 +728,7 @@ export default function RunsPage() {
           aria-label={`Filter: errored runs (${stats.err})`}
         >
           <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--err)", marginBottom: 8 }}>⚠ Errored</div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: stats.err > 0 ? "var(--err)" : "var(--ink-0)", lineHeight: 1 }}>{stats.err}</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: stats.err > 0 ? "var(--err)" : "var(--ink-0)", lineHeight: 1 }}><AnimatedNumber value={stats.err} /></div>
           <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 4 }}>{stats.total > 0 ? Math.round(stats.err / stats.total * 100) + "%" : "—"} error rate</div>
         </button>
       </div>
@@ -748,9 +746,7 @@ export default function RunsPage() {
       )}
 
       {windowedRuns === null && !err ? (
-        <div className="empty-state">
-          <p>Loading…</p>
-        </div>
+        <SkeletonList rows={6} columns={6} />
       ) : !windowedRuns || windowedRuns.length === 0 ? (
         <div className="empty-state">
           <h3>
