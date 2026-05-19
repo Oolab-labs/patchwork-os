@@ -64,8 +64,17 @@ export function RecipeRunInline({
 	}
 
 	const p = pct(state);
+	// "Strip" density gets a one-shot completion sweep + opacity fade over
+	// the last 5s of the 30s store-GC window — makes the lifecycle legible
+	// instead of cards vanishing abruptly. Classes are no-ops while the
+	// run is "running"; flip on when status hits a terminal state.
+	const isTerminal = state.status !== "running";
+	const containerClass = isTerminal
+		? "recipe-run-inline is-terminal"
+		: "recipe-run-inline";
 	return (
 		<div
+			className={containerClass}
 			style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}
 			role="status"
 			aria-live="polite"
@@ -108,6 +117,7 @@ export function RecipeRunInline({
 			</div>
 			{state.totalSteps > 0 && (
 				<div
+					className="recipe-run-inline-bar"
 					aria-label={`Progress ${p}%`}
 					style={{
 						height: 4,
@@ -115,6 +125,7 @@ export function RecipeRunInline({
 						background: "var(--bg-2)",
 						borderRadius: 2,
 						overflow: "hidden",
+						position: "relative",
 					}}
 				>
 					<div

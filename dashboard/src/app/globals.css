@@ -3773,3 +3773,50 @@ button.topbar-search {
   .pw-dialog-backdrop,
   .pw-dialog-panel { animation: none; }
 }
+
+/* ---- RecipeRunInline lifecycle motion ----
+   Two cues for terminal-state recipe runs:
+   1. Completion sweep: a brief accent flash across the progress bar
+      when status flips terminal (ok / halted / error). Makes "the bar
+      stopped — did anything happen?" legible.
+   2. GC fade: opacity transitions from 1 → 0.5 over the last 5s of
+      the 30s store hold so the card visibly winds down before unmount,
+      instead of vanishing without warning. Delay matches the store's
+      FINAL_HOLD_MS = 30_000 (LiveRunsContext.tsx). */
+.recipe-run-inline.is-terminal {
+  transition: opacity 5s ease;
+  transition-delay: 25s;
+  opacity: 0.5;
+}
+.recipe-run-inline.is-terminal .recipe-run-inline-bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 50%, transparent) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: recipe-run-completion-sweep 0.7s ease-out 1;
+  pointer-events: none;
+}
+@keyframes recipe-run-completion-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .recipe-run-inline.is-terminal {
+    transition: none;
+    /* keep the final-fade endpoint so the visual end-state still says
+       "this is winding down" — just without the easing. */
+    opacity: 0.7;
+  }
+  .recipe-run-inline.is-terminal .recipe-run-inline-bar::after {
+    animation: none;
+  }
+}
