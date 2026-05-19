@@ -16,6 +16,7 @@ import { KillSwitchBanner } from "./KillSwitchBanner";
 import { PWAInstallPrompt } from "./PWAInstallPrompt";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
+import { LiveRunsProvider } from "@/hooks/LiveRunsContext";
 
 // ------------------------------------------------------------------ icons
 
@@ -357,6 +358,7 @@ export function Shell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
+    <LiveRunsProvider>
     <div className={`app-shell${mobileOpen ? " mobile-open" : ""}`}>
       <CardGlow />
       <button
@@ -595,6 +597,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <PWAInstallPrompt />
     </div>
+    </LiveRunsProvider>
   );
 }
 
