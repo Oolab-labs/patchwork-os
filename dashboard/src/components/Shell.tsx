@@ -15,6 +15,7 @@ import { KillSwitchBanner } from "./KillSwitchBanner";
 import { PWAInstallPrompt } from "./PWAInstallPrompt";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
+import { HaltToastWatcher } from "./HaltToastWatcher";
 import { LiveRunsProvider } from "@/hooks/LiveRunsContext";
 
 // ------------------------------------------------------------------ icons
@@ -390,6 +391,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <LiveRunsProvider>
+    <HaltToastWatcher />
     <div className={`app-shell${mobileOpen ? " mobile-open" : ""}`}>
       <CardGlow />
       <button
