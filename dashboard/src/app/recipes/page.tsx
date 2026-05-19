@@ -121,6 +121,7 @@ interface Recipe {
   source?: string;
   trigger?: string;
   webhookPath?: string;
+  schedule?: string;
   stepCount?: number;
   path?: string;
   enabled?: boolean;
@@ -1324,9 +1325,41 @@ export default function RecipesPage() {
                           )}
                         </td>
                         <td>
-                          <StatusPill tone={triggerTone(r.trigger)}>
-                            {r.trigger ?? "manual"}
-                          </StatusPill>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            <StatusPill tone={triggerTone(r.trigger)}>
+                              {r.trigger ?? "manual"}
+                            </StatusPill>
+                            {r.schedule && (
+                              <span
+                                className="mono muted"
+                                title={`Cron expression: ${r.schedule}`}
+                                style={{
+                                  fontSize: "var(--fs-2xs)",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  maxWidth: 140,
+                                }}
+                              >
+                                {r.schedule}
+                              </span>
+                            )}
+                            {r.trigger === "webhook" && r.webhookPath && (
+                              <span
+                                className="mono muted"
+                                title={`Webhook path: ${r.webhookPath}`}
+                                style={{
+                                  fontSize: "var(--fs-2xs)",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  maxWidth: 140,
+                                }}
+                              >
+                                {r.webhookPath}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td style={{ textAlign: "center" }}>
                           <RunSparkBars
