@@ -475,8 +475,19 @@ export default function ActivityPage() {
         )
       ) : filtered.length === 0 ? (
         <EmptyState
-          title="No events in this view"
-          description="Try a different tab."
+          title="No events match this filter"
+          description={
+            tab === "all"
+              ? "No bridge activity yet — tool calls, approvals, and recipe steps will stream in here as they happen."
+              : "Try the All tab to see everything, or trigger the type of event you're filtering for."
+          }
+          action={
+            tab !== "all" ? (
+              <button type="button" className="btn sm" onClick={() => setTab("all")}>
+                Show all events
+              </button>
+            ) : undefined
+          }
         />
       ) : (
         <div className="table-wrap">

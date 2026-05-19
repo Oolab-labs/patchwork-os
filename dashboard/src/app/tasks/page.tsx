@@ -513,9 +513,15 @@ export default function TasksPage() {
             title="No tasks yet"
             description={
               <>
-                Run one with <code>runClaudeTask</code> or{" "}
-                <code>patchwork start-task &quot;…&quot;</code>.
+                Tasks are background Claude runs spawned by recipes or by the{" "}
+                <code>runClaudeTask</code> tool. Start one from a recipe, or run{" "}
+                <code>patchwork start-task &quot;…&quot;</code> in your terminal.
               </>
+            }
+            action={
+              <a href="/recipes" className="btn sm">
+                Browse recipes
+              </a>
             }
           />
         ) : (
