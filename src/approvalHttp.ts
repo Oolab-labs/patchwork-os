@@ -263,8 +263,22 @@ export async function routeApprovalRequest(
         };
       }
     }
+    // Optional rejection reason — surfaced on the audit decision event so
+    // operators have provenance for high-tier denials. Capped at 500 chars
+    // and trimmed; non-strings or empties drop to undefined.
+    let reason: string | undefined;
+    const raw = (req.body as Record<string, unknown> | undefined)?.reason;
+    if (typeof raw === "string") {
+      const trimmed = raw.trim().slice(0, 500);
+      if (trimmed.length > 0) reason = trimmed;
+    }
     const ok = deps.queue.reject(callId);
     if (ok) {
+      deps.onDecision?.("approval_decision", {
+        callId,
+        decision: "deny",
+        ...(reason !== undefined && { reason }),
+      });
       return { status: 200, body: { decision: "deny", callId } };
     }
     const prior = deps.queue.getRecentDecision(callId);

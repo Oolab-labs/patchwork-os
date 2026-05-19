@@ -121,7 +121,11 @@ interface ApprovalCardProps {
   rules: CcRules | null;
   isExpanded: boolean;
   onToggleExpand: (callId: string) => void;
-  onDecide: (callId: string, decision: "approve" | "reject") => Promise<void>;
+  onDecide: (
+    callId: string,
+    decision: "approve" | "reject",
+    reason?: string,
+  ) => Promise<void>;
   isSelected: boolean;
   onToggleSelect: (callId: string) => void;
   fadingOut: boolean;
@@ -189,10 +193,22 @@ function ApprovalCard({
       );
       if (!proceed) return;
     }
+    // Collect a rejection reason for high-tier denials so the audit log
+    // has provenance for "why was this blocked?" investigations. Empty
+    // string cancels (matches window.prompt's null-on-cancel semantics).
+    let reason: string | undefined;
+    if (decision === "reject" && p.tier === "high") {
+      const entered = window.prompt(
+        `Why are you rejecting ${p.toolName}? (logged for audit; max 500 chars)`,
+        "",
+      );
+      if (entered === null) return; // user hit cancel
+      reason = entered.trim() || undefined;
+    }
     if (decision === "approve") setApproving(true);
     else setRejecting(true);
     try {
-      await onDecide(p.callId, decision);
+      await onDecide(p.callId, decision, reason);
     } catch (e) {
       toast.error(
         `${decision === "approve" ? "Approve" : "Reject"} failed: ${e instanceof Error ? e.message : String(e)}`,
@@ -719,8 +735,17 @@ function ApprovalsContent() {
     fadeTimersRef.current.add(timer);
   }
 
-  async function decide(callId: string, decision: "approve" | "reject") {
-    const res = await fetch(`${API}/${decision}/${callId}`, { method: "POST" });
+  async function decide(
+    callId: string,
+    decision: "approve" | "reject",
+    reason?: string,
+  ) {
+    const init: RequestInit = { method: "POST" };
+    if (reason && reason.trim().length > 0) {
+      init.headers = { "Content-Type": "application/json" };
+      init.body = JSON.stringify({ reason: reason.trim().slice(0, 500) });
+    }
+    const res = await fetch(`${API}/${decision}/${callId}`, init);
     if (!res.ok) {
       const text = await res.text().catch(() => res.statusText);
       throw new Error(`${decision} failed: ${text || res.status}`);
@@ -855,9 +880,18 @@ function ApprovalsContent() {
           );
           if (!proceed) return;
         }
+        let kbdReason: string | undefined;
+        if (choice === "reject" && target.tier === "high") {
+          const entered = window.prompt(
+            `Why are you rejecting ${target.toolName}? (logged for audit; max 500 chars)`,
+            "",
+          );
+          if (entered === null) return;
+          kbdReason = entered.trim() || undefined;
+        }
         inFlightRef.current.add(target.callId);
         setKbdInFlight((prev) => ({ ...prev, [target.callId]: choice }));
-        decide(target.callId, choice)
+        decide(target.callId, choice, kbdReason)
           .then(() => setAnnouncement(`${verb} ${target.toolName}`))
           .catch((err: unknown) =>
             setAnnouncement(
