@@ -798,10 +798,19 @@ function ApprovalsContent() {
 
   async function batchDecide(decision: "approve" | "reject") {
     const ids = selectedInView.map((p) => p.callId);
-    if (ids.length >= 3) {
+    // Confirm gate is tier-weighted: any high-risk selection demands a
+    // confirm even for a batch of 1; non-high batches keep the historical
+    // ≥3 threshold so the prompt doesn't become noise for tidy reviews.
+    const highCount = selectedInView.filter((p) => p.tier === "high").length;
+    const needsConfirm = highCount > 0 || ids.length >= 3;
+    if (needsConfirm) {
       const verb = decision === "approve" ? "Approve" : "Reject";
+      const highNote =
+        highCount > 0
+          ? ` (${highCount} high-risk)`
+          : "";
       const proceed = window.confirm(
-        `${verb} ${ids.length} approvals at once? This action can't be undone.`,
+        `${verb} ${ids.length} approval${ids.length === 1 ? "" : "s"}${highNote}? This action can't be undone.`,
       );
       if (!proceed) return;
     }
