@@ -58,6 +58,8 @@ export const DASHBOARD_API_BODY_CAPS = {
   push: 16 * 1024,
   /** /api/relay/push — bridge → dashboard relay (callId/toolName/tier/approvalToken/bridgeCallbackBase + optional summary, riskSignals). 8 KB is generous. */
   relayPush: 8 * 1024,
+  /** /api/relay/halt — bridge → dashboard halt-event relay (recipeName/runSeq/status/haltReason/stepId). 4 KB caps long stack traces in haltReason. */
+  relayHalt: 4 * 1024,
   /** /api/connections/[connector]/connect — OAuth start: redirect target + provider state. */
   connectionsConnect: 32 * 1024,
 } as const;

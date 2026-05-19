@@ -6,17 +6,66 @@ import type { PushSubscription } from "web-push";
 
 const STORE_PATH = path.join(os.homedir(), ".claude", "patchwork-push-subscriptions.json");
 
-function load(): Map<string, PushSubscription> {
+/**
+ * Per-subscription preferences. Both default `true` so existing
+ * subscriptions keep firing every event class until the user opts out
+ * (e.g. via a future Settings toggle). Adding new event classes here
+ * needs the same default to preserve back-compat.
+ */
+export interface PushPrefs {
+  approvals: boolean;
+  halts: boolean;
+}
+
+const DEFAULT_PREFS: PushPrefs = { approvals: true, halts: true };
+
+export interface PushEntry {
+  sub: PushSubscription;
+  prefs: PushPrefs;
+}
+
+/**
+ * Backwards-compatible loader. The on-disk format is one of two shapes
+ * depending on what wrote it:
+ *
+ *   - legacy: `[endpoint, PushSubscription][]`
+ *   - v2:     `[endpoint, { sub, prefs }][]`
+ *
+ * Detect per-entry (not file-level) so a partial in-place migration on
+ * a tab that came back online doesn't blank the rest of the store.
+ */
+function load(): Map<string, PushEntry> {
   try {
     const raw = fs.readFileSync(STORE_PATH, "utf8");
-    const entries = JSON.parse(raw) as [string, PushSubscription][];
-    return new Map(entries);
+    const entries = JSON.parse(raw) as [string, unknown][];
+    const out = new Map<string, PushEntry>();
+    for (const [endpoint, value] of entries) {
+      if (
+        value &&
+        typeof value === "object" &&
+        "sub" in (value as object) &&
+        "prefs" in (value as object)
+      ) {
+        const v = value as { sub: PushSubscription; prefs: Partial<PushPrefs> };
+        out.set(endpoint, {
+          sub: v.sub,
+          prefs: { ...DEFAULT_PREFS, ...v.prefs },
+        });
+      } else {
+        // legacy shape: the raw subscription
+        out.set(endpoint, {
+          sub: value as PushSubscription,
+          prefs: { ...DEFAULT_PREFS },
+        });
+      }
+    }
+    return out;
   } catch {
     return new Map();
   }
 }
 
-function persist(store: Map<string, PushSubscription>): void {
+function persist(store: Map<string, PushEntry>): void {
   // Atomic write — temp + rename — so a crash mid-write can't truncate
   // the subscription store (which would silently wipe every push
   // subscription on next boot; load() catches parse errors and resets
@@ -54,7 +103,14 @@ function persist(store: Map<string, PushSubscription>): void {
 const store = load();
 
 export function addSubscription(sub: PushSubscription): void {
-  store.set(sub.endpoint, sub);
+  const existing = store.get(sub.endpoint);
+  store.set(sub.endpoint, {
+    sub,
+    // Preserve prefs on resubscribe (pushsubscriptionchange path) so a
+    // user who opted out of halts stays opted out across browser
+    // restarts. New endpoints inherit DEFAULT_PREFS.
+    prefs: existing?.prefs ?? { ...DEFAULT_PREFS },
+  });
   persist(store);
 }
 
@@ -63,6 +119,30 @@ export function removeSubscription(endpoint: string): void {
   persist(store);
 }
 
+/** All subscriptions, regardless of preference. Callers filter. */
 export function getSubscriptions(): PushSubscription[] {
-  return [...store.values()];
+  return [...store.values()].map((e) => e.sub);
+}
+
+/**
+ * Subscriptions opted in to a specific event class. Use this from the
+ * relay routes so a user who toggled off halt notifications doesn't
+ * keep getting them.
+ */
+export function getSubscriptionsFor(kind: keyof PushPrefs): PushSubscription[] {
+  return [...store.values()].filter((e) => e.prefs[kind]).map((e) => e.sub);
+}
+
+/** Read a subscription's prefs (defaults if unknown). */
+export function getPrefs(endpoint: string): PushPrefs {
+  return store.get(endpoint)?.prefs ?? { ...DEFAULT_PREFS };
+}
+
+/** Update prefs for an existing subscription. No-op for unknown endpoints. */
+export function setPrefs(endpoint: string, prefs: Partial<PushPrefs>): boolean {
+  const entry = store.get(endpoint);
+  if (!entry) return false;
+  store.set(endpoint, { sub: entry.sub, prefs: { ...entry.prefs, ...prefs } });
+  persist(store);
+  return true;
 }
