@@ -8,7 +8,6 @@ import { SkeletonStatCard } from "@/components/Skeleton";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useBridgeStatus } from "@/hooks/useBridgeStatus";
-import { KillSwitchBanner } from "@/components/KillSwitchBanner";
 import { isNoiseEvent } from "@/lib/activityNoise";
 import { isHaltStatus } from "@/lib/runStatus";
 import {
@@ -929,12 +928,7 @@ export default function HomePage() {
 
   return (
     <section>
-      {bridgeStatus.killSwitch?.engaged && (
-        <KillSwitchBanner
-          engaged={bridgeStatus.killSwitch.engaged}
-          locked={bridgeStatus.killSwitch.locked}
-        />
-      )}
+      {/* Kill-switch banner rendered globally by Shell — was duplicated here. */}
       {/*
         First-run checklist: orchestrates the 4-step happy path for
         brand-new workspaces (connect → install recipe → run → approve).
