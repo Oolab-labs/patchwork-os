@@ -172,13 +172,26 @@ export default function SettingsPage() {
   const [workspacePath, setWorkspacePath] = useState("");
   const [inboxDir, setInboxDir] = useState("");
   const [httpPort, setHttpPort] = useState("3101");
+  // Retained only for the 404 transient/initial distinction in the
+  // /status tick. All field hydration is now poll-driven (see refs
+  // below for fields where we still must guard against clobbering
+  // user input).
   const bridgeInitialized = useRef(false);
+  // Tracks whether the user has typed into the local-LLM endpoint or
+  // model inputs since the last successful save. Polls skip the
+  // setLocalEndpoint / setLocalModel updates while dirty so they
+  // don't clobber an in-progress edit.
+  const localDirtyRef = useRef(false);
+  // Mirrors of gateValue + gatePending so the /status tick can decide
+  // whether the user's draft is still in sync with the server (auto-
+  // adopt new value) or diverged (leave draft alone).
+  const gateValueRef = useRef<"off" | "high" | "all">("off");
+  const gatePendingRef = useRef<"off" | "high" | "all">("off");
 
   // AI drivers
   const [primaryDriver, setPrimaryDriver] = useState<string>("claude");
   const [driverSaving, setDriverSaving] = useState<string | null>(null);
   const [driverMsg, setDriverMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const driverInitialized = useRef(false);
   const [restartPending, setRestartPending] = useState(false);
   const [restartBusy, setRestartBusy] = useState(false);
   const [restartMsg, setRestartMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -203,19 +216,16 @@ export default function SettingsPage() {
   const [localModel, setLocalModel] = useState("");
   const [localSaving, setLocalSaving] = useState(false);
   const [localMsg, setLocalMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const localInitialized = useRef(false);
 
   // Approval policy
   const [gateValue, setGateValue] = useState<"off" | "high" | "all">("off");
   const [gatePending, setGatePending] = useState<"off" | "high" | "all">("off");
   const [gateSaving, setGateSaving] = useState(false);
   const [gateSaveMsg, setGateSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const gateInitialized = useRef(false);
 
   const [todayAnomaly, setTodayAnomaly] = useState(false);
   const [todayAnomalySaving, setTodayAnomalySaving] = useState(false);
   const [todayAnomalyErr, setTodayAnomalyErr] = useState<string | null>(null);
-  const todayAnomalyInitialized = useRef(false);
 
   // CC permission rules (loaded from approval insights)
   const [permRules, setPermRules] = useState<{ allow: string[]; ask: string[]; deny: string[] } | null>(null);
@@ -299,34 +309,50 @@ export default function SettingsPage() {
         setSettings(data);
         setErr(undefined);
 
-        if (!bridgeInitialized.current) {
-          setWorkspacePath(data.patchwork?.workspace ?? "");
-          setInboxDir(data.patchwork?.inboxDir ?? "~/.patchwork/inbox");
-          setHttpPort(String(data.patchwork?.httpPort ?? data.patchwork?.port ?? 3101));
-          bridgeInitialized.current = true;
-        }
-        if (!gateInitialized.current) {
-          const g = data.patchwork?.approvalGate;
-          const gv: "off" | "high" | "all" = g === "high" || g === "all" ? g : "off";
-          setGateValue(gv);
+        // Previously every form field was one-shot-latched against the
+        // first /status response, so out-of-band changes (CLI edit,
+        // second dashboard tab, kill-switch flip) were invisible until
+        // a full page reload. Always sync read-only and selection
+        // fields. For text inputs (localEndpoint/localModel) and the
+        // pending-gate draft, only sync when the user has NOT touched
+        // the field (`localDirty` / `gatePending === gateValue`) so we
+        // don't clobber an in-progress edit.
+        setWorkspacePath(data.patchwork?.workspace ?? "");
+        setInboxDir(data.patchwork?.inboxDir ?? "~/.patchwork/inbox");
+        setHttpPort(
+          String(
+            data.patchwork?.httpPort ?? data.patchwork?.port ?? 3101,
+          ),
+        );
+
+        const g = data.patchwork?.approvalGate;
+        const gv: "off" | "high" | "all" =
+          g === "high" || g === "all" ? g : "off";
+        const prevGateValue = gateValueRef.current;
+        gateValueRef.current = gv;
+        setGateValue(gv);
+        // If the user's draft equals the previous server value (i.e.
+        // they haven't picked a different option since last sync), keep
+        // it in lock-step with the new server value. Otherwise leave
+        // their draft alone — they're mid-edit.
+        if (gatePendingRef.current === prevGateValue) {
           setGatePending(gv);
-          gateInitialized.current = true;
         }
-        if (!todayAnomalyInitialized.current) {
-          setTodayAnomaly(Boolean(data.patchwork?.enableTimeOfDayAnomaly));
-          todayAnomalyInitialized.current = true;
-        }
-        if (!localInitialized.current) {
+
+        setTodayAnomaly(Boolean(data.patchwork?.enableTimeOfDayAnomaly));
+
+        if (!localDirtyRef.current) {
           setLocalEndpoint(data.patchwork?.localEndpoint ?? "");
           setLocalModel(data.patchwork?.localModel ?? "");
-          localInitialized.current = true;
         }
-        if (!driverInitialized.current) {
-          const d = data.patchwork?.driver ?? "subprocess";
-          const match = DRIVER_ROWS.find((r) => r.driverValue === d);
-          setPrimaryDriver(match?.id ?? "claude");
-          driverInitialized.current = true;
-        }
+
+        const d = data.patchwork?.driver ?? "subprocess";
+        const match = DRIVER_ROWS.find((r) => r.driverValue === d);
+        setPrimaryDriver(match?.id ?? "claude");
+        // Mark first-load done so a subsequent 404 is treated as
+        // transient (don't blow away the form), not "feature missing"
+        // (collapse to empty-state).
+        bridgeInitialized.current = true;
 
         // Kill-switch state poll — parallel to /status, same cadence.
         // 404 means the endpoint isn't deployed yet (pre-#422 bridge);
@@ -574,6 +600,9 @@ export default function SettingsPage() {
           ? "Saved. Restart Claude Code (quit and re-open, then /ide) to activate."
           : "Saved.";
         setLocalMsg({ ok: true, text });
+        // Clear dirty so future polls re-sync the field — picks up
+        // any out-of-band edits made after this save.
+        localDirtyRef.current = false;
         flashSaved();
       } else {
         setLocalMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
@@ -1138,7 +1167,10 @@ export default function SettingsPage() {
                               type="text"
                               placeholder="http://localhost:11434/v1 (Ollama default)"
                               value={localEndpoint}
-                              onChange={(e) => setLocalEndpoint(e.target.value)}
+                              onChange={(e) => {
+                                localDirtyRef.current = true;
+                                setLocalEndpoint(e.target.value);
+                              }}
                               style={{ ...inputStyle, flex: 1, minWidth: 280 }}
                               aria-label="Local LLM endpoint URL"
                             />
@@ -1149,7 +1181,10 @@ export default function SettingsPage() {
                               type="text"
                               placeholder="llama3.2 (or any model your runtime serves)"
                               value={localModel}
-                              onChange={(e) => setLocalModel(e.target.value)}
+                              onChange={(e) => {
+                                localDirtyRef.current = true;
+                                setLocalModel(e.target.value);
+                              }}
                               style={{ ...inputStyle, flex: 1, minWidth: 280 }}
                               aria-label="Local LLM default model"
                             />
@@ -1252,7 +1287,11 @@ export default function SettingsPage() {
                     disabled={gateSaving}
                     onChange={(e) => {
                       setGateSaveMsg(null);
-                      setGatePending(e.target.value as "off" | "high" | "all");
+                      {
+                        const v = e.target.value as "off" | "high" | "all";
+                        gatePendingRef.current = v;
+                        setGatePending(v);
+                      }
                     }}
                     style={{ ...inputStyle, width: "auto", fontFamily: "inherit", cursor: "pointer" }}
                   >
