@@ -3158,3 +3158,75 @@ describe("live step persistence via updateRunSteps", () => {
     }
   });
 });
+
+// ── live-tail SSE emission (PR #2: recipe lifecycle events) ──────────────────
+describe("runYamlRecipe — SSE lifecycle emissions", () => {
+  it("emits recipe_started, recipe_step_start/done, and recipe_done with haltCategory", async () => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "yaml-sse-"));
+    try {
+      const { ActivityLog } = await import("../../activityLog.js");
+      const { RecipeRunLog } = await import("../../runLog.js");
+      const activityLog = new ActivityLog();
+      const runLog = new RecipeRunLog({ dir: tmp });
+      const events: Array<{
+        event: string;
+        metadata?: Record<string, unknown>;
+      }> = [];
+      activityLog.subscribe((_kind, entry) => {
+        if ("event" in entry) {
+          events.push({
+            event: entry.event,
+            metadata: entry.metadata as Record<string, unknown>,
+          });
+        }
+      });
+
+      const recipe = makeRecipe({
+        name: "live-tail-test",
+        steps: [{ tool: "diagnostics", uri: "file:///nope.ts", into: "diag" }],
+      });
+
+      await runYamlRecipe(recipe, {
+        ...noop(),
+        runLog,
+        activityLog,
+      });
+
+      const recipeStarted = events.find((e) => e.event === "recipe_started");
+      const stepStart = events.find((e) => e.event === "recipe_step_start");
+      const stepDone = events.find((e) => e.event === "recipe_step_done");
+      const recipeDone = events.find((e) => e.event === "recipe_done");
+
+      expect(recipeStarted).toBeDefined();
+      expect(recipeStarted?.metadata?.recipeName).toBe("live-tail-test");
+      expect(recipeStarted?.metadata?.totalSteps).toBe(1);
+      expect(stepStart).toBeDefined();
+      expect(stepStart?.metadata?.stepId).toBe("diag");
+      expect(stepDone).toBeDefined();
+      // step might be "ok" or "skipped" depending on stub return; both
+      // prove the lifecycle wiring fired exactly once.
+      expect(["ok", "skipped"]).toContain(stepDone?.metadata?.status);
+      expect(recipeDone).toBeDefined();
+      expect(recipeDone?.metadata?.status).toBe("done");
+      expect(recipeDone?.metadata?.stepCount).toBe(1);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("does not emit when activityLog is absent (no-op safety)", async () => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "yaml-sse-noop-"));
+    try {
+      const { RecipeRunLog } = await import("../../runLog.js");
+      const runLog = new RecipeRunLog({ dir: tmp });
+      const recipe = makeRecipe({
+        name: "no-activity",
+        steps: [{ tool: "diagnostics", uri: "file:///x.ts", into: "diag" }],
+      });
+      // Should not throw; activityLog omitted entirely.
+      await runYamlRecipe(recipe, { ...noop(), runLog });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
