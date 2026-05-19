@@ -142,7 +142,7 @@ export function MobileBottomNav() {
                 borderRadius: 8,
                 background: "var(--err)",
                 color: "#fff",
-                fontSize: 10,
+                fontSize: "var(--fs-2xs)",
                 fontWeight: 700,
                 lineHeight: "16px",
                 textAlign: "center",
