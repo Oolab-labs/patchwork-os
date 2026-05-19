@@ -344,10 +344,20 @@ export default function TasksPage() {
     };
   }, []);
 
+  // Tick only when there's at least one running/pending task — relative
+  // timestamps for terminal tasks ("3m ago") move at human scale, so we
+  // don't need a 1Hz re-render of all 485 rows. Without this guard the
+  // entire table re-rendered every second purely to refresh the live
+  // duration counter on running rows (perf audit 2026-05-19).
+  const hasLiveTask = useMemo(
+    () => tasks.some((t) => t.status === "running" || t.status === "pending"),
+    [tasks],
+  );
   useEffect(() => {
+    if (!hasLiveTask) return;
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [hasLiveTask]);
 
   // live-computed subtitle stats
   const { avgMs, driverLabel } = useMemo(() => {
