@@ -161,16 +161,22 @@ function ApprovalCard({
   const hasParams = p.params && Object.keys(p.params).length > 0;
   const match = matchRule(p.toolName, rules);
 
-  // Tick once per second so we can flip to "expired" UI when `expires`
-  // passes without depending on the parent re-rendering. Only runs while
-  // not yet expired — once `now >= expires` the interval clears itself.
-  const [now, setNow] = useState(() => Date.now());
-  const expired = now >= expires;
+  // Flip to "expired" UI exactly once when `expires` passes. Previously
+  // ticked Date.now() at 1Hz per card, which forced every visible card
+  // to re-render every second even though the countdown UI is owned by
+  // a leaf <CountdownTimer> that ticks itself. Now a single setTimeout
+  // schedules the boolean flip and unmounts. Perf audit 2026-05-19.
+  const [expired, setExpired] = useState(() => Date.now() >= expires);
   useEffect(() => {
     if (expired) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [expired]);
+    const remaining = expires - Date.now();
+    if (remaining <= 0) {
+      setExpired(true);
+      return;
+    }
+    const id = setTimeout(() => setExpired(true), remaining);
+    return () => clearTimeout(id);
+  }, [expires, expired]);
 
   // Merge external (keyboard-path) in-flight state with the card's own.
   // The button visuals respect either source so users see a spinner
