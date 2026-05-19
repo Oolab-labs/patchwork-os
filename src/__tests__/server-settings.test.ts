@@ -617,6 +617,70 @@ describe("POST /settings — pushServiceToken charset cap", () => {
   });
 });
 
+describe("/telemetry-prefs — endpoint visibility + right-to-erasure", () => {
+  it("GET returns the resolved endpoint + source", async () => {
+    const prevEnv = process.env.PATCHWORK_ANALYTICS_ENDPOINT;
+    delete process.env.PATCHWORK_ANALYTICS_ENDPOINT;
+    try {
+      const { status, body } = await makeRequest(
+        {
+          method: "GET",
+          path: "/telemetry-prefs",
+          headers: { Authorization: `Bearer ${TOKEN}` },
+        },
+        "",
+      );
+      expect(status).toBe(200);
+      const parsed = JSON.parse(body) as {
+        endpoint?: string;
+        endpointSource?: string;
+      };
+      expect(parsed.endpoint).toBeTruthy();
+      expect(["env", "config", "default"]).toContain(parsed.endpointSource);
+    } finally {
+      if (prevEnv !== undefined)
+        process.env.PATCHWORK_ANALYTICS_ENDPOINT = prevEnv;
+    }
+  });
+
+  it("GET reports endpointSource='env' when PATCHWORK_ANALYTICS_ENDPOINT is set", async () => {
+    const prev = process.env.PATCHWORK_ANALYTICS_ENDPOINT;
+    process.env.PATCHWORK_ANALYTICS_ENDPOINT = "https://example.com/v1/usage";
+    try {
+      const { body } = await makeRequest(
+        {
+          method: "GET",
+          path: "/telemetry-prefs",
+          headers: { Authorization: `Bearer ${TOKEN}` },
+        },
+        "",
+      );
+      const parsed = JSON.parse(body) as {
+        endpoint?: string;
+        endpointSource?: string;
+      };
+      expect(parsed.endpointSource).toBe("env");
+      expect(parsed.endpoint).toBe("https://example.com/v1/usage");
+    } finally {
+      if (prev === undefined) delete process.env.PATCHWORK_ANALYTICS_ENDPOINT;
+      else process.env.PATCHWORK_ANALYTICS_ENDPOINT = prev;
+    }
+  });
+
+  it("DELETE returns 200 ok:true (idempotent on missing files)", async () => {
+    const { status, body } = await makeRequest(
+      {
+        method: "DELETE",
+        path: "/telemetry-prefs",
+        headers: { Authorization: `Bearer ${TOKEN}` },
+      },
+      "",
+    );
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toMatchObject({ ok: true });
+  });
+});
+
 describe("POST /settings — kill-switch gate", () => {
   // Regression: engaging the kill-switch must block config mutations,
   // not just tool dispatch. Otherwise a panicked operator who engages

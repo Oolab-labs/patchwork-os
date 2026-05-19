@@ -35,6 +35,32 @@ export async function GET() {
   }
 }
 
+export async function DELETE(request: Request) {
+  const guard = requireSameOrigin(request);
+  if (guard) return guard;
+  try {
+    const res = await bridgeFetch("/telemetry-prefs", { method: "DELETE" });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      console.error(
+        `[bridge/telemetry-prefs DELETE] bridge returned ${res.status}:`,
+        text,
+      );
+      return NextResponse.json(
+        { error: `Bridge returned ${res.status}` },
+        { status: res.status },
+      );
+    }
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error(
+      "[bridge/telemetry-prefs DELETE] bridge fetch failed:",
+      err,
+    );
+    return NextResponse.json({ error: "Bridge unreachable" }, { status: 502 });
+  }
+}
+
 export async function POST(request: Request) {
   const guard = requireSameOrigin(request);
   if (guard) return guard;

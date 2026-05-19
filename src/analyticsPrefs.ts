@@ -35,6 +35,14 @@ function saltPath(): string {
   return path.join(claudeDir, "ide", "analytics-salt");
 }
 
+/** Public paths for the /telemetry-prefs DELETE handler. */
+export function getAnalyticsPrefsPath(): string {
+  return prefsPath();
+}
+export function getAnalyticsSaltPath(): string {
+  return saltPath();
+}
+
 /**
  * Read and migrate the on-disk prefs to the v2 shape.
  * Old files with only `enabled` map to:
