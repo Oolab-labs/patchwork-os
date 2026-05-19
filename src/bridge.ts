@@ -60,6 +60,7 @@ import { buildRecentTracesDigest } from "./tools/recentTracesDigest.js";
 import { resolveFilePath } from "./tools/utils.js";
 import { McpTransport } from "./transport.js";
 import { PACKAGE_VERSION } from "./version.js";
+import { wireHaltPushDispatch } from "./wireHaltPushDispatch.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 let globalHandlersRegistered = false;
@@ -1447,6 +1448,21 @@ export class Bridge {
       this.config.pushServiceBaseUrl ?? undefined;
     this.server.ntfyTopic = this.config.ntfyTopic ?? undefined;
     this.server.ntfyServer = this.config.ntfyServer ?? undefined;
+
+    // Wire recipe-halt → Web Push dispatch. The listener reads
+    // pushServiceUrl/Token via getter each fire, so config edits
+    // through /settings take effect without a restart. Push request
+    // is fire-and-forget; runner is never blocked on a relay outage.
+    wireHaltPushDispatch({
+      activityLog: this.activityLog,
+      getPushConfig: () => {
+        const url = this.server.pushServiceUrl;
+        const token = this.server.pushServiceToken;
+        if (!url || !token) return null;
+        return { url, token };
+      },
+      logger: this.logger,
+    });
     this.server.readyFn = () => {
       // Count tools from the first active session (all sessions share the same tool set)
       const anySession = [...this.sessions.values()][0];
