@@ -126,6 +126,11 @@ interface ApprovalCardProps {
   onToggleSelect: (callId: string) => void;
   fadingOut: boolean;
   isKeyboardFocused?: boolean;
+  // Set by the keyboard-shortcut path so the card can show in-flight
+  // visual feedback even when the decision was made via E/X (bypassing
+  // local approving/rejecting state). Audit gap: mashing E used to give
+  // no visual signal that the call was in progress.
+  externalInFlight?: "approve" | "reject" | null;
 }
 
 function ApprovalCard({
@@ -138,6 +143,7 @@ function ApprovalCard({
   onToggleSelect,
   fadingOut,
   isKeyboardFocused = false,
+  externalInFlight = null,
 }: ApprovalCardProps) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -151,7 +157,38 @@ function ApprovalCard({
   const hasParams = p.params && Object.keys(p.params).length > 0;
   const match = matchRule(p.toolName, rules);
 
+  // Tick once per second so we can flip to "expired" UI when `expires`
+  // passes without depending on the parent re-rendering. Only runs while
+  // not yet expired — once `now >= expires` the interval clears itself.
+  const [now, setNow] = useState(() => Date.now());
+  const expired = now >= expires;
+  useEffect(() => {
+    if (expired) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [expired]);
+
+  // Merge external (keyboard-path) in-flight state with the card's own.
+  // The button visuals respect either source so users see a spinner
+  // regardless of which path drove the decision.
+  const isApproving = approving || externalInFlight === "approve";
+  const isRejecting = rejecting || externalInFlight === "reject";
+
   async function handleDecide(decision: "approve" | "reject") {
+    if (expired) {
+      toast.error("This approval has expired — the agent has moved on.");
+      return;
+    }
+    // Confirm before approving a single high-tier tool call. Bulk approve
+    // already confirms at ≥3 (batchDecide); the matching gate for single
+    // approves was missing — a stray click on a high-tier Bash `rm -rf`
+    // approved instantly.
+    if (decision === "approve" && p.tier === "high") {
+      const proceed = window.confirm(
+        `Approve high-risk ${p.toolName}? This cannot be undone.`,
+      );
+      if (!proceed) return;
+    }
     if (decision === "approve") setApproving(true);
     else setRejecting(true);
     try {
@@ -232,7 +269,17 @@ function ApprovalCard({
           </span>
         )}
         <span style={{ flexShrink: 0 }}>
-          <CountdownTimer expiresAt={expires} />
+          {expired ? (
+            <span
+              className="pill err"
+              title="The agent's request window has passed — approving now will likely 404."
+              style={{ fontSize: "var(--fs-xs)" }}
+            >
+              Expired
+            </span>
+          ) : (
+            <CountdownTimer expiresAt={expires} />
+          )}
         </span>
       </div>
 
@@ -366,11 +413,12 @@ function ApprovalCard({
           className="btn primary"
           style={{ background: "var(--green)", borderColor: "var(--green)", color: "var(--on-accent)", display: "inline-flex", alignItems: "center", gap: 6 }}
           onClick={() => handleDecide("approve")}
-          disabled={approving || rejecting}
+          disabled={isApproving || isRejecting || expired}
+          title={expired ? "Expired — the agent has moved on" : undefined}
           aria-label={`Approve ${p.toolName}`}
         >
-          {approving ? <Spinner /> : <span aria-hidden="true">✓</span>}
-          {approving ? " Approving…" : " Approve"}
+          {isApproving ? <Spinner /> : <span aria-hidden="true">✓</span>}
+          {isApproving ? " Approving…" : " Approve"}
           <KeyChip>E</KeyChip>
         </button>
         <button
@@ -378,11 +426,12 @@ function ApprovalCard({
           className="btn danger"
           style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
           onClick={() => handleDecide("reject")}
-          disabled={approving || rejecting}
+          disabled={isApproving || isRejecting || expired}
+          title={expired ? "Expired — the agent has moved on" : undefined}
           aria-label={`Reject ${p.toolName}`}
         >
-          {rejecting ? <Spinner /> : <span aria-hidden="true">✗</span>}
-          {rejecting ? " Rejecting…" : " Reject"}
+          {isRejecting ? <Spinner /> : <span aria-hidden="true">✗</span>}
+          {isRejecting ? " Rejecting…" : " Reject"}
           <KeyChip>X</KeyChip>
         </button>
         <button
@@ -525,6 +574,10 @@ function ApprovalsContent() {
   const [focusIndex, setFocusIndex] = useState(0);
   const [announcement, setAnnouncement] = useState("");
   const inFlightRef = useRef<Set<string>>(new Set());
+  // State-backed mirror of in-flight decisions made via the keyboard
+  // path (E/X). The ref alone doesn't trigger re-renders, so cards
+  // gave no visual feedback when a keystroke was already in motion.
+  const [kbdInFlight, setKbdInFlight] = useState<Record<string, "approve" | "reject">>({});
   const { patterns, clearPatterns } = useApprovalPatterns();
 
   useEffect(() => {
@@ -794,7 +847,16 @@ function ApprovalsContent() {
         e.preventDefault();
         const choice = key === "e" ? "approve" : "reject";
         const verb = key === "e" ? "Approved" : "Rejected";
+        // Confirm high-tier approves on keyboard path too — matches the
+        // mouse path guard added to handleDecide.
+        if (choice === "approve" && target.tier === "high") {
+          const proceed = window.confirm(
+            `Approve high-risk ${target.toolName}? This cannot be undone.`,
+          );
+          if (!proceed) return;
+        }
         inFlightRef.current.add(target.callId);
+        setKbdInFlight((prev) => ({ ...prev, [target.callId]: choice }));
         decide(target.callId, choice)
           .then(() => setAnnouncement(`${verb} ${target.toolName}`))
           .catch((err: unknown) =>
@@ -802,7 +864,15 @@ function ApprovalsContent() {
               `${choice} failed: ${err instanceof Error ? err.message : String(err)}`,
             ),
           )
-          .finally(() => inFlightRef.current.delete(target.callId));
+          .finally(() => {
+            inFlightRef.current.delete(target.callId);
+            setKbdInFlight((prev) => {
+              if (!(target.callId in prev)) return prev;
+              const next = { ...prev };
+              delete next[target.callId];
+              return next;
+            });
+          });
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1225,6 +1295,7 @@ function ApprovalsContent() {
                 onToggleSelect={toggleSelect}
                 fadingOut={fadingOut.has(p.callId)}
                 isKeyboardFocused={idx === focusIndex}
+                externalInFlight={kbdInFlight[p.callId] ?? null}
               />
             ))}
           </div>
