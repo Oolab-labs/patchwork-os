@@ -50,6 +50,10 @@ export interface NavSection {
  *   - "Build" = create/install.
  *   - "Insights" = aggregate views, including the previously-hidden
  *     "Approval Insights" page (was reachable only by typing the URL).
+ *     `/transactions` used to live here, but it's a per-write audit log
+ *     (one row per disk-touching action), not an aggregate. Moved to
+ *     Activity next to Traces where the other timestamped per-event
+ *     logs live.
  *   - "Setup" = configuration.
  */
 export const NAV_SECTIONS: NavSection[] = [
@@ -94,10 +98,11 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: "activity",
         badge: "halts",
       },
-      { href: "/runs",     label: "Runs",     paletteLabel: "Activity — Runs",     icon: "play" },
-      { href: "/tasks",    label: "Tasks",    paletteLabel: "Activity — Tasks",    icon: "tasks" },
-      { href: "/sessions", label: "Sessions", paletteLabel: "Activity — Sessions", icon: "person" },
-      { href: "/traces",   label: "Traces",   paletteLabel: "Activity — Traces",   icon: "git" },
+      { href: "/runs",         label: "Runs",         paletteLabel: "Activity — Runs",         icon: "play" },
+      { href: "/tasks",        label: "Tasks",        paletteLabel: "Activity — Tasks",        icon: "tasks" },
+      { href: "/sessions",     label: "Sessions",     paletteLabel: "Activity — Sessions",     icon: "person" },
+      { href: "/traces",       label: "Traces",       paletteLabel: "Activity — Traces",       icon: "git" },
+      { href: "/transactions", label: "Transactions", paletteLabel: "Activity — Transactions", icon: "diff" },
     ],
   },
   {
@@ -117,7 +122,6 @@ export const NAV_SECTIONS: NavSection[] = [
         paletteLabel: "Insights — Approval patterns",
         icon: "monitor",
       },
-      { href: "/transactions", label: "Transactions", icon: "diff" },
     ],
   },
   {
