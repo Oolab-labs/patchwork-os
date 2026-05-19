@@ -291,6 +291,15 @@ export default function TasksPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "live" | "done" | "error">("all");
+  // Cap rendered rows. /tasks is an audit log that can hit 500+ entries;
+  // rendering the full list re-reconciles a lot of DOM on every poll
+  // tick. 100 rows ≈ a phone-screenful × a few; "Show more" reveals the
+  // rest in 200-row chunks. Filter/search resets the window.
+  const ROW_PAGE = 100;
+  const [visibleCount, setVisibleCount] = useState(ROW_PAGE);
+  useEffect(() => {
+    setVisibleCount(ROW_PAGE);
+  }, [search, statusFilter]);
   const searchInputRef = useSearchHotkey();
 
   const refetchRef = useRef<() => void>(() => {});
@@ -414,19 +423,28 @@ export default function TasksPage() {
         const tag = t.tagName;
         if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
       }
-      if (filteredTasks.length === 0) return;
+      // Scope j/k to the rendered window so we never select a hidden
+      // row. If a press lands on the last visible row, reveal more.
+      const visible = filteredTasks.slice(0, visibleCount);
+      if (visible.length === 0) return;
       e.preventDefault();
       const idx = selectedTaskId
-        ? filteredTasks.findIndex((task) => task.taskId === selectedTaskId)
+        ? visible.findIndex((task) => task.taskId === selectedTaskId)
         : -1;
       const delta = e.key === "j" ? 1 : -1;
+      const wantsMore =
+        e.key === "j" && idx === visible.length - 1 && filteredTasks.length > visibleCount;
+      if (wantsMore) {
+        setVisibleCount((n) => n + ROW_PAGE * 2);
+        return;
+      }
       const next =
         idx === -1
           ? e.key === "j"
             ? 0
-            : filteredTasks.length - 1
-          : (idx + delta + filteredTasks.length) % filteredTasks.length;
-      const nextId = filteredTasks[next].taskId;
+            : visible.length - 1
+          : (idx + delta + visible.length) % visible.length;
+      const nextId = visible[next].taskId;
       setSelectedTaskId(nextId);
       requestAnimationFrame(() => {
         const row = document.querySelector(`[data-task-row="${CSS.escape(nextId)}"]`);
@@ -604,7 +622,7 @@ export default function TasksPage() {
                 No tasks match this filter.
               </div>
             )}
-            {filteredTasks.map((t) => {
+            {filteredTasks.slice(0, visibleCount).map((t) => {
               const dur =
                 t.startedAt && t.doneAt
                   ? fmtDuration(t.doneAt - t.startedAt)
@@ -723,6 +741,19 @@ export default function TasksPage() {
                 </button>
               );
             })}
+            {filteredTasks.length > visibleCount && (
+              <button
+                type="button"
+                className="btn sm ghost"
+                onClick={() => setVisibleCount((n) => n + ROW_PAGE * 2)}
+                style={{ marginTop: 8, alignSelf: "center", fontSize: "var(--fs-s)" }}
+              >
+                Show {Math.min(ROW_PAGE * 2, filteredTasks.length - visibleCount)} more
+                <span style={{ marginLeft: 6, color: "var(--ink-3)" }}>
+                  ({filteredTasks.length - visibleCount} hidden)
+                </span>
+              </button>
+            )}
           </div>
           </div>
 

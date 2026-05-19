@@ -9,7 +9,7 @@
  * Adding a page? Add it here and only here.
  */
 
-export type NavBadge = "approvals" | "halts";
+export type NavBadge = "approvals" | "halts" | "runs";
 
 export interface NavRoute {
   /** Path under the dashboard basePath (no `/dashboard` prefix). */
@@ -117,7 +117,7 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: "activity",
         badge: "halts",
       },
-      { href: "/runs",         label: "Runs",         paletteLabel: "Activity — Runs",         icon: "play" },
+      { href: "/runs",         label: "Runs",         paletteLabel: "Activity — Runs",         icon: "play", badge: "runs" },
       { href: "/tasks",        label: "Tasks",        paletteLabel: "Activity — Tasks",        icon: "tasks" },
       { href: "/sessions",     label: "Sessions",     paletteLabel: "Activity — Sessions",     icon: "person" },
       { href: "/traces",       label: "Traces",       paletteLabel: "Activity — Traces",       icon: "git" },
