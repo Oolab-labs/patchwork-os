@@ -716,9 +716,34 @@ export default function RunsPage() {
         </div>
       ) : !windowedRuns || windowedRuns.length === 0 ? (
         <div className="empty-state">
-          <h3>{window === "any" ? "No runs yet" : "No runs in this window"}</h3>
+          <h3>
+            {(trigger !== "all" ||
+              status !== "all" ||
+              debouncedRecipeQuery ||
+              attemptFilter)
+              ? "No runs match current filters"
+              : window === "any"
+                ? "No runs yet"
+                : "No runs in this window"}
+          </h3>
           <p>
-            {window === "any" ? (
+            {(trigger !== "all" ||
+              status !== "all" ||
+              debouncedRecipeQuery ||
+              attemptFilter) ? (
+              <>
+                Active:{" "}
+                {[
+                  trigger !== "all" && `trigger=${trigger}`,
+                  status !== "all" && `status=${status}`,
+                  debouncedRecipeQuery && `recipe=${debouncedRecipeQuery}`,
+                  attemptFilter && `attempt=${attemptFilter}`,
+                  window !== "any" && `window=${TIME_WINDOW_LABEL[window].toLowerCase()}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </>
+            ) : window === "any" ? (
               <>
                 Recipe executions (cron, webhook, or{" "}
                 <code>patchwork recipe run</code>) will appear here once they
@@ -731,6 +756,24 @@ export default function RunsPage() {
               </>
             )}
           </p>
+          {(trigger !== "all" ||
+            status !== "all" ||
+            debouncedRecipeQuery ||
+            attemptFilter) && (
+            <button
+              type="button"
+              className="btn sm ghost"
+              style={{ marginTop: "var(--s-3)" }}
+              onClick={() => {
+                setTrigger("all");
+                setStatus("all");
+                setRecipeQuery("");
+                setAttemptFilter("");
+              }}
+            >
+              Clear filters
+            </button>
+          )}
         </div>
       ) : (
         <div className="table-wrap">
