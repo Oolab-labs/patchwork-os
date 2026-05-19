@@ -1013,23 +1013,51 @@ export default function SettingsPage() {
                             </div>
                           )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setPrimary(row.id)}
-                          disabled={isPrimary || driverSaving === row.id}
-                          style={{
-                            background: "transparent",
-                            color: "var(--fg-1)",
-                            border: "1px solid var(--border-default)",
-                            borderRadius: "var(--r-2)",
-                            padding: "5px 10px",
-                            fontSize: "var(--fs-s)",
-                            cursor: isPrimary ? "default" : "pointer",
-                            opacity: isPrimary ? 0.5 : 1,
-                          }}
-                        >
-                          {driverSaving === row.id ? "Saving…" : "Set primary"}
-                        </button>
+                        {(() => {
+                          // Block "Set primary" for API-key-backed drivers
+                          // until a key is configured (either already stored
+                          // in the secure store OR present as a draft in the
+                          // input below). Without this guard the user can
+                          // happily flip driver to e.g. OpenAI with no key,
+                          // and the first recipe run later fails with a
+                          // confusing "API key not configured" — far away
+                          // from the action that caused it.
+                          const needsKey = !!provider;
+                          const draftKey = provider
+                            ? keyDrafts[provider]?.trim()
+                            : "";
+                          const hasKey = keyPresent || !!draftKey;
+                          const missingKey = needsKey && !hasKey;
+                          const disabled =
+                            isPrimary ||
+                            driverSaving === row.id ||
+                            missingKey;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setPrimary(row.id)}
+                              disabled={disabled}
+                              title={
+                                missingKey
+                                  ? `Add ${provider} API key first.`
+                                  : undefined
+                              }
+                              aria-label={`Set ${row.name} as primary driver`}
+                              style={{
+                                background: "transparent",
+                                color: "var(--fg-1)",
+                                border: "1px solid var(--border-default)",
+                                borderRadius: "var(--r-2)",
+                                padding: "5px 10px",
+                                fontSize: "var(--fs-s)",
+                                cursor: disabled ? "default" : "pointer",
+                                opacity: disabled ? 0.5 : 1,
+                              }}
+                            >
+                              {driverSaving === row.id ? "Saving…" : "Set primary"}
+                            </button>
+                          );
+                        })()}
                       </div>
                       {provider && (
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
