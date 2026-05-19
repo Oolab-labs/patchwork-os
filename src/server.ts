@@ -1689,6 +1689,26 @@ export class Server extends EventEmitter<ServerEvents> {
               return;
             }
 
+            // pushServiceToken — bearer for the push relay. Charset cap to
+            // printable ASCII (no newlines / control chars) so it can't
+            // header-inject when later interpolated into an outgoing
+            // `Authorization` header. 512 chars is an order of magnitude
+            // above any realistic relay token.
+            const pushTokenTrimmed =
+              body.pushServiceToken !== undefined
+                ? body.pushServiceToken.trim()
+                : undefined;
+            if (
+              pushTokenTrimmed !== undefined &&
+              pushTokenTrimmed !== "" &&
+              !/^[\x21-\x7E]{1,512}$/.test(pushTokenTrimmed)
+            ) {
+              respond400(
+                "pushServiceToken must be 1-512 printable ASCII characters",
+              );
+              return;
+            }
+
             // pushServiceBaseUrl — bridge callback origin embedded in SW
             // approveUrl/rejectUrl. http:// or attacker host = approval token
             // exfiltration. Validate before persisting.
@@ -1815,8 +1835,8 @@ export class Server extends EventEmitter<ServerEvents> {
             if (pushUrlTrimmed !== undefined) {
               cfg.pushServiceUrl = pushUrlTrimmed || undefined;
             }
-            if (body.pushServiceToken !== undefined) {
-              cfg.pushServiceToken = body.pushServiceToken.trim() || undefined;
+            if (pushTokenTrimmed !== undefined) {
+              cfg.pushServiceToken = pushTokenTrimmed || undefined;
             }
             if (pushBaseTrimmed !== undefined) {
               cfg.pushServiceBaseUrl = pushBaseTrimmed || undefined;
@@ -1842,8 +1862,21 @@ export class Server extends EventEmitter<ServerEvents> {
                   body.apiKey.key,
                 );
               } catch (writeErr) {
+                // Some Keychain / Secret-Service backends echo the
+                // payload into the error message on certain failure
+                // modes. Cap the logged message at 200 chars AND
+                // strip anything that looks like the leading hex/
+                // base64 of the just-attempted key so a misbehaving
+                // backend can't leak it into bridge logs.
+                const raw =
+                  writeErr instanceof Error
+                    ? writeErr.message
+                    : String(writeErr);
+                const safe = raw
+                  .replaceAll(body.apiKey.key, "[redacted]")
+                  .slice(0, 200);
                 this.logger.error(
-                  `[/config/patchwork] saveApiKeyToSecureStore failed: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`,
+                  `[/config/patchwork] saveApiKeyToSecureStore failed: ${safe}`,
                 );
                 res.writeHead(500, { "Content-Type": "application/json" });
                 res.end(
@@ -1913,8 +1946,8 @@ export class Server extends EventEmitter<ServerEvents> {
             if (pushUrlTrimmed !== undefined) {
               this.pushServiceUrl = pushUrlTrimmed || undefined;
             }
-            if (body.pushServiceToken !== undefined) {
-              this.pushServiceToken = body.pushServiceToken.trim() || undefined;
+            if (pushTokenTrimmed !== undefined) {
+              this.pushServiceToken = pushTokenTrimmed || undefined;
             }
             if (pushBaseTrimmed !== undefined) {
               this.pushServiceBaseUrl = pushBaseTrimmed || undefined;
@@ -1960,8 +1993,8 @@ export class Server extends EventEmitter<ServerEvents> {
                 changes.apiKey = { provider: body.apiKey.provider, key: "***" };
               if (pushUrlTrimmed !== undefined)
                 changes.pushServiceUrl = pushUrlTrimmed || "";
-              if (body.pushServiceToken !== undefined)
-                changes.pushServiceToken = body.pushServiceToken ? "***" : "";
+              if (pushTokenTrimmed !== undefined)
+                changes.pushServiceToken = pushTokenTrimmed ? "***" : "";
               if (pushBaseTrimmed !== undefined)
                 changes.pushServiceBaseUrl = pushBaseTrimmed || "";
               if (ntfyTopicTrimmed !== undefined)

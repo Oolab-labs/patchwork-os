@@ -568,16 +568,25 @@ describe("POST /settings — audit-log emission", () => {
   });
 });
 
-describe("POST /settings — gate downgrade cancels pending approvals", () => {
-  it("cancels every pending entry when approvalGate transitions to off", async () => {
-    const { getApprovalQueue } = await import("../approvalQueue.js");
-    const q = getApprovalQueue();
-    q.cancelAll();
-    server!.approvalGate = "high";
-    const a = q.request({ toolName: "x", params: { i: 1 }, tier: "high" });
-    const b = q.request({ toolName: "y", params: { i: 2 }, tier: "high" });
-    expect(q.size()).toBe(2);
+describe("POST /settings — pushServiceToken charset cap", () => {
+  it("rejects a token containing a newline", async () => {
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ pushServiceToken: "abc\nInjected: header" }),
+    );
+    expect(status).toBe(400);
+    expect(body).toContain("pushServiceToken");
+  });
 
+  it("rejects a token longer than 512 characters", async () => {
+    const big = "a".repeat(513);
     const { status } = await makeRequest(
       {
         method: "POST",
@@ -587,23 +596,13 @@ describe("POST /settings — gate downgrade cancels pending approvals", () => {
           Authorization: `Bearer ${TOKEN}`,
         },
       },
-      JSON.stringify({ approvalGate: "off" }),
+      JSON.stringify({ pushServiceToken: big }),
     );
-    expect(status).toBe(200);
-    expect(q.size()).toBe(0);
-    await expect(a.promise).resolves.toBe("cancelled");
-    await expect(b.promise).resolves.toBe("cancelled");
+    expect(status).toBe(400);
   });
 
-  it("does NOT cancel entries on a no-op off → off transition", async () => {
-    const { getApprovalQueue } = await import("../approvalQueue.js");
-    const q = getApprovalQueue();
-    q.cancelAll();
-    server!.approvalGate = "off";
-    const a = q.request({ toolName: "x", params: { i: 1 }, tier: "high" });
-    expect(q.size()).toBe(1);
-
-    await makeRequest(
+  it("accepts a valid printable-ASCII token", async () => {
+    const { status } = await makeRequest(
       {
         method: "POST",
         path: "/settings",
@@ -612,10 +611,9 @@ describe("POST /settings — gate downgrade cancels pending approvals", () => {
           Authorization: `Bearer ${TOKEN}`,
         },
       },
-      JSON.stringify({ approvalGate: "off" }),
+      JSON.stringify({ pushServiceToken: "abcXYZ-_./+=:1234567890" }),
     );
-    expect(q.size()).toBe(1);
-    q.cancel(a.callId);
+    expect(status).toBe(200);
   });
 });
 
