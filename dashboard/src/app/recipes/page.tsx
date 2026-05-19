@@ -597,7 +597,27 @@ export default function RecipesPage() {
   const [modalRunning, setModalRunning] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "paused">("all");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const toast = useToast();
+
+  // "/" hotkey focuses the search input (GitHub-style). Ignored while
+  // typing in another input/textarea/contenteditable so it doesn't
+  // hijack normal keystrokes.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        const tag = t.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
+      }
+      e.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   // Live SSE-driven run state, keyed by recipe name. Foundation for inline
   // run observability — see PR #642 (bridge lifecycle emit) + RecipeRunInline.
   const { active: activeRunsByName } = useRecipeRunStream();
@@ -987,12 +1007,13 @@ export default function RecipesPage() {
         <div className="recipes-search">
           <span aria-hidden="true" className="recipes-search-icon">⌕</span>
           <input
+            ref={searchInputRef}
             type="search"
             className="input"
-            placeholder="Search recipes by name or description…"
+            placeholder="Search recipes by name or description… ( / )"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            aria-label="Search recipes"
+            aria-label="Search recipes (shortcut: /)"
           />
         </div>
         {recipes && recipes.length > 0 && (
