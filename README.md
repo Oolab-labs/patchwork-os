@@ -1,6 +1,6 @@
 # Patchwork OS
 
-[![npm version](https://img.shields.io/npm/v/patchwork-os.svg)](https://www.npmjs.com/package/patchwork-os)
+[![npm beta](https://img.shields.io/npm/v/patchwork-os/beta.svg?label=npm%20%40beta)](https://www.npmjs.com/package/patchwork-os)
 [![license](https://img.shields.io/npm/l/patchwork-os.svg)](LICENSE)
 
 ### Your personal AI runtime, local-first.
