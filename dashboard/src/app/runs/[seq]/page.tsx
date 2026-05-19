@@ -1427,7 +1427,26 @@ export default function RunDetailPage() {
               {run.manualRunId && (
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>ATTEMPT</div>
-                  <CopyableMono value={run.manualRunId} ariaLabel="Copy attempt id" />
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <CopyableMono value={run.manualRunId} ariaLabel="Copy attempt id" />
+                    <Link
+                      href={`/runs?attempt=${encodeURIComponent(run.manualRunId)}`}
+                      title="Show all runs sharing this attempt id"
+                      style={{
+                        fontSize: "var(--fs-2xs)",
+                        color: "var(--ink-3)",
+                        textDecoration: "none",
+                        border: "1px solid var(--line-2)",
+                        borderRadius: 4,
+                        padding: "2px 6px",
+                        minHeight: 24,
+                        display: "inline-flex",
+                        alignItems: "center",
+                      }}
+                    >
+                      see all →
+                    </Link>
+                  </div>
                 </div>
               )}
             </div>
