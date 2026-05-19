@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
 import { ACTIVITY_NOISE_EVENTS } from "@/lib/activityNoise";
+import { subscribeStreamLiveness, subscribeStreamMessage } from "@/lib/streamLiveness";
 import { markHaltsSeen } from "@/lib/haltsSeen";
 import {
   EmptyState,
@@ -120,7 +121,6 @@ export default function ActivityPage() {
     router.replace(qs ? `?${qs}` : "?", { scroll: false });
   };
   const [, setTick] = useState(0);
-  const esRef = useRef<EventSource | null>(null);
   // Pause/resume — events that arrive while paused are buffered so the
   // user doesn't lose context while inspecting a row. Counter drives the
   // resume button label so the user knows what's accumulating.
@@ -154,52 +154,54 @@ export default function ActivityPage() {
     };
   }, []);
 
+  // Subscribe to the shared singleton SSE stream — one socket per tab
+  // serves /activity, the LiveRuns store, and the header liveness pip.
+  // Tri-state: streamLiveness reports a boolean; if it stays false for
+  // OFFLINE_AFTER_MS the page downgrades "reconnecting" → "offline".
   useEffect(() => {
-    // Browser EventSource auto-retries forever on error. We give up on
-    // showing "reconnecting" and downgrade to "offline" after this many
-    // consecutive errors without a successful open in between.
-    const MAX_SSE_FAILURES = 5;
-    let consecutiveErrors = 0;
-    const es = new EventSource(apiPath("/api/bridge/stream"));
-    esRef.current = es;
-    es.onopen = () => {
-      consecutiveErrors = 0;
-      setConnection("live");
-      setErr(undefined);
-    };
-    es.onerror = () => {
-      consecutiveErrors += 1;
-      if (consecutiveErrors >= MAX_SSE_FAILURES) {
-        setConnection("offline");
+    const OFFLINE_AFTER_MS = 30_000;
+    let offlineTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const unMsg = subscribeStreamMessage((_type, raw) => {
+      const entry = withAt(raw as ActivityEvent);
+      if (pausedRef.current) {
+        pendingBufRef.current = [entry, ...pendingBufRef.current].slice(0, MAX_EVENTS);
+        setPendingCount(pendingBufRef.current.length);
+        return;
+      }
+      setEvents((prev) => {
+        if (
+          entry.id !== undefined &&
+          prev.some((p) => p.id === entry.id && p.kind === entry.kind)
+        ) {
+          return prev;
+        }
+        return [entry, ...prev].slice(0, MAX_EVENTS);
+      });
+    });
+
+    const unLive = subscribeStreamLiveness((live) => {
+      if (offlineTimer) {
+        clearTimeout(offlineTimer);
+        offlineTimer = null;
+      }
+      if (live) {
+        setConnection("live");
+        setErr(undefined);
       } else {
         setConnection("reconnecting");
+        setErr("Disconnected — reconnecting…");
+        offlineTimer = setTimeout(() => {
+          setConnection("offline");
+        }, OFFLINE_AFTER_MS);
       }
-      setErr("Disconnected — reconnecting…");
+    });
+
+    return () => {
+      unMsg();
+      unLive();
+      if (offlineTimer) clearTimeout(offlineTimer);
     };
-    es.onmessage = (msg) => {
-      try {
-        const entry = withAt(JSON.parse(msg.data) as ActivityEvent);
-        if (pausedRef.current) {
-          pendingBufRef.current = [entry, ...pendingBufRef.current].slice(0, MAX_EVENTS);
-          setPendingCount(pendingBufRef.current.length);
-          return;
-        }
-        setEvents((prev) => {
-          // Dedup by (id, kind) so the first live event doesn't duplicate
-          // the most recent history row.
-          if (
-            entry.id !== undefined &&
-            prev.some((p) => p.id === entry.id && p.kind === entry.kind)
-          ) {
-            return prev;
-          }
-          return [entry, ...prev].slice(0, MAX_EVENTS);
-        });
-      } catch {
-        // ignore
-      }
-    };
-    return () => es.close();
   }, []);
 
   // Tick for relative timestamps. Was 1Hz which forced 200-event
