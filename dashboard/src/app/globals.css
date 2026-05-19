@@ -706,6 +706,71 @@ button.topbar-search {
   margin-left: auto;
 }
 
+/* ---- Global live-runs strip ----
+   Always-on "something is running" surface. Sits between the app
+   header and the page content. Auto-hides when no runs are alive
+   (`return null` in the component). Compact chip row; mobile
+   horizontally scrolls instead of wrapping so it doesn't push the
+   page down on a phone. */
+.global-live-runs-strip {
+  display: flex;
+  gap: 8px;
+  padding: 6px var(--s-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--blue) 4%, var(--bg-1));
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  align-items: center;
+}
+.global-live-runs-strip-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--bg-0);
+  border: 1px solid var(--line-3);
+  text-decoration: none;
+  color: var(--ink-1);
+  flex-shrink: 0;
+  min-height: 28px;
+}
+.global-live-runs-strip-row:hover {
+  border-color: var(--line-2);
+}
+.global-live-runs-strip-name {
+  font-weight: 600;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.global-live-runs-strip-bar {
+  display: inline-block;
+  width: 60px;
+  height: 4px;
+  background: var(--bg-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.global-live-runs-strip-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+.global-live-runs-strip-overflow {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  text-decoration: none;
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+.global-live-runs-strip-overflow:hover {
+  color: var(--ink-1);
+}
+
 .app-content {
   position: relative;
   z-index: 1;
