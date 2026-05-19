@@ -1014,19 +1014,33 @@ export default function RecipesPage() {
     }
   }
 
-  const filteredRecipes = (recipes ?? []).filter((r) => {
-    if (statusFilter === "enabled" && r.enabled === false) return false;
-    if (statusFilter === "paused" && r.enabled !== false) return false;
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
-      r.name.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q)
-    );
-  });
+  // Memoize derived lists so they don't rebuild on every render — this
+  // page re-renders on every SSE step event via LiveRunsContext, and
+  // each rebuild was rebroadcasting a fresh array identity downstream,
+  // breaking React.memo on row components. Perf audit 2026-05-19.
+  const filteredRecipes = useMemo(() => {
+    return (recipes ?? []).filter((r) => {
+      if (statusFilter === "enabled" && r.enabled === false) return false;
+      if (statusFilter === "paused" && r.enabled !== false) return false;
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return (
+        r.name.toLowerCase().includes(q) ||
+        (r.description ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [recipes, statusFilter, search]);
 
-  const enabledCount = (recipes ?? []).filter((r) => r.enabled !== false).length;
-  const pausedCount = (recipes ?? []).filter((r) => r.enabled === false).length;
-  const installedCount = recipes?.length ?? 0;
+  const { enabledCount, pausedCount, installedCount } = useMemo(() => {
+    const list = recipes ?? [];
+    let on = 0;
+    let off = 0;
+    for (const r of list) {
+      if (r.enabled === false) off++;
+      else on++;
+    }
+    return { enabledCount: on, pausedCount: off, installedCount: list.length };
+  }, [recipes]);
 
   const selectedRecipe = useMemo(
     () => filteredRecipes.find((r) => r.name === selectedName) ?? null,
