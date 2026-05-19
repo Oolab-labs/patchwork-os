@@ -222,7 +222,10 @@ export default function SettingsPage() {
   // Telemetry — persisted via GET/POST /api/bridge/telemetry-prefs
   const [telCrash, setTelCrash] = useState(false);
   const [telUsage, setTelUsage] = useState(false);
-  const [telDiag, setTelDiag] = useState(true);
+  // Default false — the card subtitle says "Everything off by default".
+  // `true` here flashed the toggle ON before the GET resolved,
+  // misrepresenting the consent posture. Server is source of truth.
+  const [telDiag, setTelDiag] = useState(false);
   const telInitialized = useRef(false);
   const [telLastSentAt, setTelLastSentAt] = useState<string | null>(null);
 
