@@ -368,11 +368,12 @@ export default function RunsPage() {
 
   const stats = useMemo(() => {
     const list = windowedRuns ?? [];
-    const s = { ok: 0, err: 0, other: 0, totalMs: 0 };
+    const s = { ok: 0, err: 0, running: 0, other: 0, totalMs: 0 };
     for (const r of list) {
       if (r.assertionFailures && r.assertionFailures.length > 0) s.err++;
       else if (r.status === "done") s.ok++;
       else if (r.status === "error") s.err++;
+      else if (r.status === "running") s.running++;
       else s.other++;
       s.totalMs += r.durationMs;
     }
@@ -395,6 +396,27 @@ export default function RunsPage() {
           </h1>
           <div className="editorial-sub">
             {runs ? `${runs.length} runs` : "— runs"} · last 24h · avg {fmtDur(stats.avgMs)}
+            {stats.running > 0 && (
+              <>
+                {" · "}
+                <button
+                  type="button"
+                  onClick={() => setStatus("running")}
+                  title="Filter to in-flight runs"
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "var(--accent)",
+                    cursor: "pointer",
+                    font: "inherit",
+                    padding: 0,
+                    textDecoration: "underline",
+                  }}
+                >
+                  {stats.running} running
+                </button>
+              </>
+            )}
           </div>
           <RelationStrip
             items={[
@@ -626,6 +648,7 @@ export default function RunsPage() {
             background: "transparent",
           }}
           aria-pressed={status === "all"}
+          aria-label={`Filter: all runs (${stats.total})`}
         >
           <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 8 }}>All runs</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>{stats.total}</div>
@@ -643,6 +666,7 @@ export default function RunsPage() {
             background: "transparent",
           }}
           aria-pressed={status === "done"}
+          aria-label={`Filter: successful runs (${stats.ok})`}
         >
           <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ok)", marginBottom: 8 }}>✓ Successful</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>{stats.ok}</div>
@@ -660,6 +684,7 @@ export default function RunsPage() {
             background: "transparent",
           }}
           aria-pressed={status === "error"}
+          aria-label={`Filter: errored runs (${stats.err})`}
         >
           <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--err)", marginBottom: 8 }}>⚠ Errored</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: stats.err > 0 ? "var(--err)" : "var(--ink-0)", lineHeight: 1 }}>{stats.err}</div>
