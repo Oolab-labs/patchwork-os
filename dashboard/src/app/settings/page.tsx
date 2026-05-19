@@ -385,37 +385,62 @@ export default function SettingsPage() {
   // When the bridge emits a state-change event the toggle updates in <1s
   // without waiting for the next 5-second poll cycle.
   useEffect(() => {
-    // #600: cap reconnect attempts. EventSource auto-reconnects forever
-    // if the endpoint 404s — burns bridge resources and pollutes the
-    // network panel with retries that will never succeed. After 5
-    // failures we give up; the 5s settings poll still picks up state
-    // changes (just at a slower cadence).
-    let failures = 0;
+    // #600 + audit 2026-05-18: cap reconnect attempts AND fix the
+    // counter race. Native EventSource fires `onerror` on every
+    // reconnect blip (readyState=CONNECTING) *and* on terminal close
+    // (readyState=CLOSED). Bumping a counter on every fire used to
+    // close the stream inside seconds on flaky links because the
+    // browser tried to reconnect faster than `onopen` reset the
+    // counter. Now we only count when the browser has given up
+    // (readyState=CLOSED), and we schedule a manual reconnect with
+    // exponential backoff after that. The 5s settings poll provides
+    // a fallback while the stream is paused.
     const MAX_FAILURES = 5;
-    const es = new EventSource(apiPath("/api/bridge/stream"));
-    es.onopen = () => {
-      failures = 0;
-    };
-    es.onmessage = (msg) => {
-      try {
-        const evt = JSON.parse(msg.data) as {
-          kind?: string;
-          engaged?: boolean;
-        };
-        if (evt.kind === "kill-switch" && typeof evt.engaged === "boolean") {
-          setKsEngaged(evt.engaged);
+    const BACKOFF_MS = [5_000, 10_000, 30_000, 60_000, 60_000];
+    let failures = 0;
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const connect = () => {
+      if (cancelled) return;
+      es = new EventSource(apiPath("/api/bridge/stream"));
+      es.onopen = () => {
+        failures = 0;
+      };
+      es.onmessage = (msg) => {
+        try {
+          const evt = JSON.parse(msg.data) as {
+            kind?: string;
+            engaged?: boolean;
+          };
+          if (
+            evt.kind === "kill-switch" &&
+            typeof evt.engaged === "boolean"
+          ) {
+            setKsEngaged(evt.engaged);
+          }
+        } catch {
+          // ignore malformed events
         }
-      } catch {
-        // ignore malformed events
-      }
+      };
+      es.onerror = () => {
+        // Transient (browser is auto-reconnecting): no-op, let it.
+        if (es?.readyState !== EventSource.CLOSED) return;
+        // Terminal close — counts as one failure.
+        failures += 1;
+        if (failures >= MAX_FAILURES) return;
+        const delay = BACKOFF_MS[Math.min(failures - 1, BACKOFF_MS.length - 1)];
+        reconnectTimer = setTimeout(connect, delay);
+      };
     };
-    es.onerror = () => {
-      failures += 1;
-      if (failures >= MAX_FAILURES) {
-        es.close();
-      }
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      es?.close();
     };
-    return () => es.close();
   }, []);
 
   // Load CC permission rules for the approval policy section
