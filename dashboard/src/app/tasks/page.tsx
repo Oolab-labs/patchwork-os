@@ -391,6 +391,42 @@ export default function TasksPage() {
     });
   }, [tasks, search, statusFilter]);
 
+  // j/k row navigation through filteredTasks — mirror /recipes, /runs.
+  // j → next, k → prev, wraps. Skipped while typing in an input or
+  // when no rows are visible. Sets `selectedTaskId` so the detail
+  // panel reveals (same as clicking the row).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "j" && e.key !== "k") return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        const tag = t.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
+      }
+      if (filteredTasks.length === 0) return;
+      e.preventDefault();
+      const idx = selectedTaskId
+        ? filteredTasks.findIndex((task) => task.taskId === selectedTaskId)
+        : -1;
+      const delta = e.key === "j" ? 1 : -1;
+      const next =
+        idx === -1
+          ? e.key === "j"
+            ? 0
+            : filteredTasks.length - 1
+          : (idx + delta + filteredTasks.length) % filteredTasks.length;
+      const nextId = filteredTasks[next].taskId;
+      setSelectedTaskId(nextId);
+      requestAnimationFrame(() => {
+        const row = document.querySelector(`[data-task-row="${CSS.escape(nextId)}"]`);
+        row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filteredTasks, selectedTaskId]);
+
   const statusCounts = useMemo(() => {
     const c = { all: tasks.length, live: 0, done: 0, error: 0 };
     for (const t of tasks) {
@@ -585,6 +621,7 @@ export default function TasksPage() {
                 <button
                   key={t.taskId}
                   type="button"
+                  data-task-row={t.taskId}
                   onClick={() => setSelectedTaskId(t.taskId)}
                   aria-pressed={isSelected}
                   aria-label={`Task ${t.taskId.slice(0, 8)}, ${t.status}${t.driver ? ` (${t.driver})` : ""}`}
