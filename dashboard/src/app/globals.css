@@ -3036,6 +3036,33 @@ button.topbar-search {
   }
 }
 
+/* Mobile-only sticky Run bar — gives a guaranteed-visible 44pt
+   primary action while the desktop inline Run button stays cramped
+   in a horizontally-scrolling table on phones. */
+.recipes-mobile-run-bar {
+  display: none;
+}
+@media (max-width: 768px) {
+  .recipes-mobile-run-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--bottom-nav-h, 62px) + env(safe-area-inset-bottom, 0px));
+    z-index: 27;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--surface);
+    border-top: 1px solid var(--line-2);
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+  }
+  /* Pad bottom of recipes content so the bar never overlaps the last row. */
+  .recipes-grid {
+    padding-bottom: 70px;
+  }
+}
+
 /* ---- Mobile bottom nav --------------------------------------------- */
 .cmdk-backdrop {
   position: fixed;
