@@ -108,6 +108,134 @@ function fmtTs(ms: number): string {
   return new Date(ms).toISOString().replace("T", " ").slice(0, 19);
 }
 
+// ------------------------------------------------------------------ shared bits
+
+/** Inline mono value with a Copy button. 28pt min-height tap target. */
+function CopyableMono({ value, ariaLabel }: { value: string; ariaLabel?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    void navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: "100%" }}>
+      <span
+        className="mono"
+        style={{ fontSize: "var(--fs-s)", overflow: "hidden", textOverflow: "ellipsis" }}
+        title={value}
+      >
+        {value}
+      </span>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={ariaLabel ?? `Copy ${value}`}
+        title={copied ? "Copied!" : "Copy to clipboard"}
+        style={{
+          background: "transparent",
+          border: "1px solid var(--line-2)",
+          borderRadius: 4,
+          cursor: "pointer",
+          fontSize: "var(--fs-2xs)",
+          padding: "2px 6px",
+          minHeight: 24,
+          color: copied ? "var(--ok)" : "var(--ink-3)",
+          flexShrink: 0,
+        }}
+      >
+        {copied ? "✓" : "Copy"}
+      </button>
+    </span>
+  );
+}
+
+/**
+ * <pre> with truncation + show-more toggle. Long error/output blocks
+ * (thousands of lines) used to blow out the run-detail card and force a
+ * full-page scroll. Truncates at MAX_LINES by default; user can expand
+ * inline or copy the full text in one click.
+ */
+function TruncatablePre({
+  text,
+  maxLines = 12,
+  color,
+  className,
+}: {
+  text: string;
+  maxLines?: number;
+  color?: string;
+  className?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const lines = text.split("\n");
+  const truncated = lines.length > maxLines && !expanded;
+  const shown = truncated ? lines.slice(0, maxLines).join("\n") : text;
+  const copy = () => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <div>
+      <pre
+        className={className}
+        style={{
+          margin: 0,
+          fontSize: "var(--fs-s)",
+          color: color ?? "inherit",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}
+      >
+        {shown}
+        {truncated && <span style={{ color: "var(--ink-3)" }}>{`\n… (${lines.length - maxLines} more lines)`}</span>}
+      </pre>
+      <div style={{ marginTop: 6, display: "flex", gap: 8 }}>
+        {lines.length > maxLines && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            style={{
+              background: "transparent",
+              border: "1px solid var(--line-2)",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontSize: "var(--fs-2xs)",
+              padding: "3px 8px",
+              minHeight: 24,
+              color: "var(--ink-3)",
+            }}
+          >
+            {expanded ? "Show less" : `Show all ${lines.length} lines`}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={copy}
+          aria-label="Copy text"
+          title={copied ? "Copied!" : "Copy full text"}
+          style={{
+            background: "transparent",
+            border: "1px solid var(--line-2)",
+            borderRadius: 4,
+            cursor: "pointer",
+            fontSize: "var(--fs-2xs)",
+            padding: "3px 8px",
+            minHeight: 24,
+            color: copied ? "var(--ok)" : "var(--ink-3)",
+          }}
+        >
+          {copied ? "Copied ✓" : "Copy"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ assertion failures panel
 
 function AssertionFailuresPanel({ failures }: { failures: AssertionFailure[] }) {
@@ -400,9 +528,7 @@ function StepRow({
       </div>
       {open && step.error && (
         <div style={{ padding: "8px 16px 12px 56px", background: "var(--bg-0)" }}>
-          <pre style={{ margin: 0, fontSize: "var(--fs-xs)", color: "var(--err)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-            {step.error}
-          </pre>
+          <TruncatablePre text={step.error} color="var(--err)" maxLines={8} />
           {recipeName && (
             <div
               style={{
@@ -1278,9 +1404,9 @@ export default function RunDetailPage() {
                 gap: 12,
               }}
             >
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>TASK ID</div>
-                <span className="mono" style={{ fontSize: "var(--fs-s)" }}>{run.taskId}</span>
+                <CopyableMono value={run.taskId} ariaLabel="Copy task id" />
               </div>
               <div>
                 <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>STARTED</div>
@@ -1299,32 +1425,22 @@ export default function RunDetailPage() {
                 </div>
               )}
               {run.manualRunId && (
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>ATTEMPT</div>
-                  <span
-                    className="mono"
-                    style={{ fontSize: "var(--fs-s)" }}
-                    title="Stable id across resumed retries of the same logical attempt (PR5c)"
-                  >
-                    {run.manualRunId}
-                  </span>
+                  <CopyableMono value={run.manualRunId} ariaLabel="Copy attempt id" />
                 </div>
               )}
             </div>
             {run.errorMessage && (
               <div style={{ marginTop: 12 }}>
                 <div style={{ fontSize: "var(--fs-2xs)", color: "var(--err)", marginBottom: 4 }}>ERROR</div>
-                <pre style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--err)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                  {run.errorMessage}
-                </pre>
+                <TruncatablePre text={run.errorMessage} color="var(--err)" />
               </div>
             )}
             {run.outputTail && (
               <div style={{ marginTop: 12 }}>
                 <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 4 }}>OUTPUT TAIL</div>
-                <pre className="task-output" style={{ borderTop: "none", padding: 0 }}>
-                  {run.outputTail}
-                </pre>
+                <TruncatablePre text={run.outputTail} className="task-output" maxLines={20} />
               </div>
             )}
           </div>
