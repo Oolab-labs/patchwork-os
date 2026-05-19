@@ -256,8 +256,13 @@ export default function ActivityPage() {
     let tools = 0;
     let errors = 0;
     let approvals = 0;
+    let recipeStarts = 0;
+    let recipeEnds = 0;
+    let allCount = 0;
     const toolCounts: Record<string, number> = {};
     for (const e of events) {
+      const kind = e.kind ?? "";
+      const ev = e.event ?? "";
       if (e.kind === "tool") {
         tools++;
         if (e.status === "error") errors++;
@@ -265,12 +270,15 @@ export default function ActivityPage() {
       } else if (e.kind === "lifecycle" && e.event === "approval_decision") {
         approvals++;
       }
+      if (RECIPE_START_EVENTS.has(kind) || RECIPE_START_EVENTS.has(ev)) recipeStarts++;
+      if (RECIPE_END_EVENTS.has(kind) || RECIPE_END_EVENTS.has(ev)) recipeEnds++;
+      if (!(e.kind === "lifecycle" && ACTIVITY_NOISE_EVENTS.has(e.event ?? ""))) allCount++;
     }
     const topTools = Object.entries(toolCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
       .map(([label, value]) => ({ label, value }));
-    return { tools, errors, approvals, topTools };
+    return { tools, errors, approvals, topTools, recipeStarts, recipeEnds, allCount };
   }, [events]);
 
   return (
@@ -423,16 +431,10 @@ export default function ActivityPage() {
             t === "tools"
               ? stats.tools
               : t === "recipe_start"
-                ? events.filter(
-                    (e) => RECIPE_START_EVENTS.has(e.kind ?? "") || RECIPE_START_EVENTS.has(e.event ?? ""),
-                  ).length
+                ? stats.recipeStarts
                 : t === "recipe_end"
-                  ? events.filter(
-                      (e) => RECIPE_END_EVENTS.has(e.kind ?? "") || RECIPE_END_EVENTS.has(e.event ?? ""),
-                    ).length
-                  : events.filter(
-                      (e) => !(e.kind === "lifecycle" && ACTIVITY_NOISE_EVENTS.has(e.event ?? "")),
-                    ).length;
+                  ? stats.recipeEnds
+                  : stats.allCount;
           return (
             <button
               key={t}
