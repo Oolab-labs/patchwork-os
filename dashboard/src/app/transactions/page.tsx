@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { SkeletonList } from "@/components/Skeleton";
 import { ErrorState, HintCard, RelationStrip } from "@/components/patchwork";
 
 interface TransactionEdit {
@@ -215,7 +216,7 @@ export default function TransactionsPage() {
       <HintCard id="transactions" />
 
       {loading && transactions.length === 0 && (
-        <p style={{ color: "var(--fg-2)" }}>Loading…</p>
+        <SkeletonList rows={6} columns={5} />
       )}
       {error && transactions.length === 0 && (
         <ErrorState

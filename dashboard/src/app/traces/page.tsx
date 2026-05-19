@@ -7,6 +7,7 @@ import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 import { EmptyState, ErrorState, HintCard, LivePill, RelationStrip } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
+import { SkeletonList } from "@/components/Skeleton";
 
 type TraceType = "approval" | "enrichment" | "recipe_run" | "decision";
 
@@ -756,7 +757,7 @@ export default function TracesPage() {
       </div>
 
       {loading && traces.length === 0 && (
-        <p style={{ color: "var(--fg-2)" }}>Loading…</p>
+        <SkeletonList rows={6} columns={4} />
       )}
 
       {error && traces.length === 0 && (

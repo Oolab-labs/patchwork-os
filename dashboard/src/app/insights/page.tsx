@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { apiPath } from "@/lib/api";
 import { EmptyState, ErrorState } from "@/components/patchwork";
+import { SkeletonList } from "@/components/Skeleton";
 
 interface ToolInsight {
   toolName: string;
@@ -257,7 +258,7 @@ export default function InsightsPage() {
       </div>
 
       {loading && tools.length === 0 && (
-        <p style={{ color: "var(--fg-2)" }}>Loading…</p>
+        <SkeletonList rows={6} columns={5} />
       )}
       {error && tools.length === 0 && (
         <ErrorState

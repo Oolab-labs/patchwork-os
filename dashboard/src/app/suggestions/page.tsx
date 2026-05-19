@@ -6,6 +6,7 @@ import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
 import { ErrorState, HintCard } from "@/components/patchwork";
+import { SkeletonList } from "@/components/Skeleton";
 
 const SINCE_DAYS_OPTIONS = [1, 7, 30, 90] as const;
 type SinceDays = (typeof SINCE_DAYS_OPTIONS)[number];
@@ -222,7 +223,7 @@ export default function SuggestionsPage() {
       <HintCard id="suggestions" />
 
       {loading && suggestions.length === 0 && (
-        <p style={{ color: "var(--fg-2)" }}>Loading…</p>
+        <SkeletonList rows={5} columns={3} />
       )}
       {error && suggestions.length === 0 && (
         <ErrorState
