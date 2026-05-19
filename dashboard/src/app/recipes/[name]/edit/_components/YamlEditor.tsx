@@ -90,11 +90,18 @@ export default function YamlEditor({
   onChange,
   onSave,
   minHeight = 400,
+  highlightLine,
 }: {
   value: string;
   onChange: (value: string) => void;
   onSave?: () => void;
   minHeight?: number;
+  /**
+   * 1-based line number to scroll into view + briefly highlight.
+   * Used by the failed-run → YAML deep-link to land the user on the
+   * exact step that broke.
+   */
+  highlightLine?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -143,6 +150,22 @@ export default function YamlEditor({
       });
     }
   }, [value]);
+
+  // Scroll-to-line for the failed-run → YAML deep-link. Re-fires whenever
+  // `highlightLine` or `value` changes — covers both the "land here on
+  // initial load" and "user clicked a different step's deep link" cases.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !highlightLine) return;
+    const doc = view.state.doc;
+    if (highlightLine < 1 || highlightLine > doc.lines) return;
+    const line = doc.line(highlightLine);
+    view.dispatch({
+      selection: { anchor: line.from, head: line.from },
+      effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+    });
+    view.focus();
+  }, [highlightLine, value]);
 
   return (
     <div

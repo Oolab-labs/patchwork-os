@@ -245,11 +245,13 @@ function StepRow({
   index,
   totalDurationMs,
   allSteps,
+  recipeName,
 }: {
   step: StepResult;
   index: number;
   totalDurationMs: number;
   allSteps: StepResult[];
+  recipeName: string;
 }) {
   const [open, setOpen] = useState(false);
   const [hover, setHover] = useState(false);
@@ -401,6 +403,41 @@ function StepRow({
           <pre style={{ margin: 0, fontSize: "var(--fs-xs)", color: "var(--err)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
             {step.error}
           </pre>
+          {recipeName && (
+            <div
+              style={{
+                marginTop: 8,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 12,
+                alignItems: "center",
+                fontSize: "var(--fs-xs)",
+              }}
+            >
+              <Link
+                href={`/recipes/${encodeURIComponent(recipeName)}/edit#step-${encodeURIComponent(step.id)}`}
+                style={{
+                  color: "var(--accent)",
+                  textDecoration: "none",
+                  fontWeight: 600,
+                  // ≥44pt touch target on mobile — explicit padding lets
+                  // touch devices hit it without sub-pixel aiming.
+                  padding: "8px 4px",
+                  minHeight: 32,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+                onClick={(e) => e.stopPropagation()}
+                aria-label={`Open step ${step.id} in recipe YAML`}
+              >
+                → open in recipe YAML
+              </Link>
+              <span className="mono muted" style={{ fontSize: "var(--fs-2xs)" }}>
+                step id: {step.id}
+              </span>
+            </div>
+          )}
         </div>
       )}
       {showPanel && (
@@ -1183,6 +1220,7 @@ export default function RunDetailPage() {
                       index={i}
                       totalDurationMs={run.durationMs}
                       allSteps={run.stepResults ?? []}
+                      recipeName={run.recipeName}
                     />
                   ))}
                 </div>

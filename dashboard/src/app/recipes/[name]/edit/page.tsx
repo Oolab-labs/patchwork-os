@@ -43,6 +43,53 @@ export default function RecipeEditPage({
   const toast = useToast();
   const lintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lintReqIdRef = useRef(0);
+  // Step-anchor scroll target, derived from `window.location.hash` of the
+  // form `#step-<id>`. Populated AFTER content loads so the line search
+  // operates on real YAML. Stays set after navigation so the editor still
+  // highlights even if the user types — the highlight only fires on
+  // mount + when the value re-syncs, not on every keystroke.
+  const [highlightStepId, setHighlightStepId] = useState<string | null>(null);
+  const [highlightLine, setHighlightLine] = useState<number | undefined>(
+    undefined,
+  );
+  // Mobile-fallback excerpt: when the viewport is too narrow for the
+  // CodeMirror editor to be ergonomic, render a small read-only YAML
+  // excerpt around the step so the user can still see what failed.
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobileViewport(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  // Read the hash once on mount; ignore subsequent in-app changes (no
+  // hashchange listener — the editor view is the source of truth after
+  // the initial land).
+  useEffect(() => {
+    const m = window.location.hash.match(/^#step-(.+)$/);
+    if (m?.[1]) setHighlightStepId(decodeURIComponent(m[1]));
+  }, []);
+  // Once content loads + hash parsed, find the step's line by scanning
+  // for `id: <stepId>` or `tool: <stepId>` (recipes use either style).
+  // Match is best-effort; misses are silent.
+  useEffect(() => {
+    if (!highlightStepId || !content) {
+      setHighlightLine(undefined);
+      return;
+    }
+    const lines = content.split("\n");
+    const escaped = highlightStepId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const idRe = new RegExp(`^\\s*-?\\s*id:\\s*["']?${escaped}["']?\\s*$`);
+    const toolRe = new RegExp(`^\\s*-?\\s*tool:\\s*["']?${escaped}["']?\\s*$`);
+    let found = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (idRe.test(lines[i]!) || toolRe.test(lines[i]!)) {
+        found = i + 1;
+        break;
+      }
+    }
+    setHighlightLine(found > 0 ? found : undefined);
+  }, [highlightStepId, content]);
 
   useEffect(() => {
     let cancelled = false;
@@ -485,6 +532,70 @@ export default function RecipeEditPage({
 
       {/* Editor card */}
       <div className="glass-card" style={{ padding: "var(--s-4)" }}>
+        {/* Deep-link banner: surfaces when the user arrived from a
+            failed-run "→ open in recipe YAML" link, regardless of
+            whether the step was found. Distinguishes the three states:
+            (a) step located + highlighted in editor; (b) step not
+            found in current YAML (recipe may have been edited since
+            the run); (c) mobile viewport where the editor is awkward. */}
+        {highlightStepId && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              marginBottom: "var(--s-3)",
+              padding: "10px 12px",
+              borderRadius: "var(--r-2)",
+              border: "1px solid var(--line-2)",
+              background: "var(--bg-3)",
+              fontSize: "var(--fs-s)",
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>
+              {highlightLine
+                ? `Step \`${highlightStepId}\` highlighted at line ${highlightLine}.`
+                : `Step \`${highlightStepId}\` not found in current YAML.`}
+            </span>
+            {isMobileViewport && (
+              <span style={{ color: "var(--ink-2)" }}>
+                YAML editor is best on a desktop browser — rotate to
+                landscape or open this URL on a laptop.
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setHighlightStepId(null);
+                setHighlightLine(undefined);
+                // Strip the hash so the user doesn't keep landing here on reload.
+                if (window.location.hash) {
+                  history.replaceState(
+                    null,
+                    "",
+                    window.location.pathname + window.location.search,
+                  );
+                }
+              }}
+              style={{
+                marginLeft: "auto",
+                background: "transparent",
+                border: "1px solid var(--border-default)",
+                borderRadius: "var(--r-2)",
+                padding: "6px 10px",
+                fontSize: "var(--fs-xs)",
+                cursor: "pointer",
+                minHeight: 32,
+              }}
+              aria-label="Dismiss step highlight"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
         {loading ? (
           <div className="empty-state">
             <p>Loading…</p>
@@ -498,6 +609,7 @@ export default function RecipeEditPage({
             }}
             onSave={() => void handleSave()}
             minHeight={400}
+            highlightLine={highlightLine}
           />
         )}
         <div
