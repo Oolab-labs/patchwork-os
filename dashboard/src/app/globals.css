@@ -1652,6 +1652,41 @@ button.topbar-search {
   100% { left: 140%; }
 }
 
+/* ---- Skeleton loading states (Skeleton.tsx) -----------------------
+ * `.skeleton` / `.skeleton-text` classes had no matching CSS — every
+ * page-level loading state (~12 surfaces) was rendering invisible
+ * `<span>` boxes. The shimmer gradient gives users a visible "data
+ * is coming" affordance while waiting on the bridge. */
+.skeleton {
+  position: relative;
+  display: block;
+  background:
+    linear-gradient(
+      90deg,
+      var(--bg-1) 0%,
+      var(--recess) 50%,
+      var(--bg-1) 100%
+    );
+  background-size: 200% 100%;
+  border-radius: var(--r-1);
+  overflow: hidden;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+.skeleton-text {
+  height: 0.85em;
+  margin: 4px 0;
+  border-radius: 4px;
+}
+.skeleton-text.sm { height: 0.7em; }
+.skeleton-text.lg { height: 1.15em; }
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}
+
 
 /* ---- Marketplace / template card ---- */
 .marketplace-grid {
