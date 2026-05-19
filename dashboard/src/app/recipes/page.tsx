@@ -634,6 +634,24 @@ export default function RecipesPage() {
   // already open instead of getting a silent 400 for missing vars.
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  // Escape closes the detail panel (when no modal is open — modal owns
+  // its own Escape handling via Dialog). Skipped while typing in an
+  // input so it doesn't fight the browser's clear-search behavior.
+  useEffect(() => {
+    if (!selectedName) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || modal) return;
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        const tag = t.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
+      }
+      setSelectedName(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedName, modal]);
   const deepLinkConsumedRef = useRef(false);
 
   // Mirror selectedName → URL `?selected=<name>` via replaceState so the
