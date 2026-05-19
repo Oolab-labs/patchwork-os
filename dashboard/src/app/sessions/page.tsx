@@ -3,7 +3,7 @@ import { Fragment, useState } from "react";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { apiPath } from "@/lib/api";
-import { ErrorState, RelationStrip } from "@/components/patchwork";
+import { EmptyState, ErrorState, RelationStrip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useToast } from "@/components/Toast";
@@ -189,25 +189,28 @@ export default function SessionsPage() {
       )}
 
       {!loading && sessions.length === 0 && !error ? (
-        <div className="empty">
-          <h3 style={{ color: "var(--ink-1)", marginBottom: 8 }}>No active sessions</h3>
-          <p style={{ color: "var(--ink-2)", fontSize: "var(--fs-m)", maxWidth: 420, margin: "0 auto 12px" }}>
-            No Claude Code agents are currently connected to the bridge.
-          </p>
-          <p style={{ color: "var(--ink-3)", fontSize: "var(--fs-m)", maxWidth: 420, margin: "0 auto 16px" }}>
-            Connect a Claude Code session to the bridge to see live activity here.{" "}
-            <a href="https://docs.anthropic.com/claude-code" target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>
-              Learn more →
-            </a>
-          </p>
-          <button
-            type="button"
-            className="btn sm ghost"
-            onClick={refetch}
-          >
-            Refresh
-          </button>
-        </div>
+        <EmptyState
+          title="No active sessions"
+          description={
+            <>
+              No Claude Code agents are currently connected to the bridge. Connect
+              one to see live activity here.{" "}
+              <a
+                href="https://docs.anthropic.com/claude-code"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: "var(--accent)" }}
+              >
+                Learn more →
+              </a>
+            </>
+          }
+          action={
+            <button type="button" className="btn sm ghost" onClick={refetch}>
+              Refresh
+            </button>
+          }
+        />
       ) : (
         <div
           // #600: .two-pane-340 collapses to single column at ≤768px so
