@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/analytics", label: "Overview", description: "Tool usage & error rates" },
   { href: "/insights", label: "Insights", description: "Approval heuristics & trust patterns" },
-  { href: "/metrics", label: "Metrics", description: "Prometheus counters & gauges" },
 ];
 
 export function AnalyticsTabs() {
