@@ -654,6 +654,7 @@ export default function RunsPage() {
             background: "transparent",
           }}
           aria-pressed={status === "all"}
+          aria-label={`Filter: all runs (${stats.total})`}
         >
           <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 8 }}>All runs</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>{stats.total}</div>
@@ -671,6 +672,7 @@ export default function RunsPage() {
             background: "transparent",
           }}
           aria-pressed={status === "done"}
+          aria-label={`Filter: successful runs (${stats.ok})`}
         >
           <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ok)", marginBottom: 8 }}>✓ Successful</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>{stats.ok}</div>
@@ -688,6 +690,7 @@ export default function RunsPage() {
             background: "transparent",
           }}
           aria-pressed={status === "error"}
+          aria-label={`Filter: errored runs (${stats.err})`}
         >
           <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--err)", marginBottom: 8 }}>⚠ Errored</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: stats.err > 0 ? "var(--err)" : "var(--ink-0)", lineHeight: 1 }}>{stats.err}</div>
