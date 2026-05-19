@@ -164,9 +164,34 @@ function windowCutoffMs(w: TimeWindow): number | null {
 export default function RunsPage() {
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [err, setErr] = useState<string>();
-  const [trigger, setTrigger] = useState<TriggerFilter>("all");
-  const [status, setStatus] = useState<StatusFilter>("all");
-  const [window, setWindow] = useState<TimeWindow>("any");
+  // Filter state hydrated from URL on first render so refresh / share-link
+  // preserves the active view. Mirrors back via history.replaceState in a
+  // single effect below to avoid spamming history.
+  const _initSp = typeof globalThis !== "undefined"
+    ? new URLSearchParams(globalThis.location?.search ?? "")
+    : new URLSearchParams();
+  const _initTrigger = _initSp.get("trigger") ?? "all";
+  const _initStatus = _initSp.get("status") ?? (_initSp.get("halt") === "1" ? "error" : "all");
+  const _initWindow = _initSp.get("window") ?? "any";
+  const [trigger, setTrigger] = useState<TriggerFilter>(
+    (["all", "cron", "webhook", "recipe", "manual", "git_hook"] as const).includes(
+      _initTrigger as TriggerFilter,
+    )
+      ? (_initTrigger as TriggerFilter)
+      : "all",
+  );
+  const [status, setStatus] = useState<StatusFilter>(
+    (["all", "running", "done", "error", "cancelled", "interrupted"] as const).includes(
+      _initStatus as StatusFilter,
+    )
+      ? (_initStatus as StatusFilter)
+      : "all",
+  );
+  const [window, setWindow] = useState<TimeWindow>(
+    (["any", "1h", "24h", "overnight", "7d"] as const).includes(_initWindow as TimeWindow)
+      ? (_initWindow as TimeWindow)
+      : "any",
+  );
   const [haltSummary, setHaltSummary] = useState<HaltSummary | null>(null);
   const [judgeSummary, setJudgeSummary] = useState<JudgeSummary | null>(null);
   const [recipeQuery, setRecipeQuery] = useState("");
@@ -186,6 +211,25 @@ export default function RunsPage() {
   }, [searchParams]);
   const [limit, setLimit] = useState(RUNS_PAGE_SIZE);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // Mirror filter state → URL so refresh / share-link survives. Uses
+  // replaceState (not router.push) so flipping filters doesn't bloat
+  // the back-button history.
+  useEffect(() => {
+    if (typeof globalThis === "undefined" || !globalThis.location) return;
+    const url = new URL(globalThis.location.href);
+    const setOrDel = (k: string, v: string, def: string) => {
+      if (v === def) url.searchParams.delete(k);
+      else url.searchParams.set(k, v);
+    };
+    setOrDel("trigger", trigger, "all");
+    setOrDel("status", status, "all");
+    setOrDel("window", window, "any");
+    // ?halt=1 is a one-shot inbound deep-link — once we've hydrated it
+    // into `status`, drop it so refresh doesn't fight the new state.
+    if (url.searchParams.has("halt")) url.searchParams.delete("halt");
+    globalThis.history.replaceState(null, "", url.toString());
+  }, [trigger, status, window]);
 
   const reloadRef = useRef<() => void>(() => {});
 
@@ -369,22 +413,27 @@ export default function RunsPage() {
           )
             .sort((a, b) => b[1] - a[1])
             .map(([cat, count]) => (
-              <span
+              <button
                 key={cat}
+                type="button"
                 className="pill"
+                onClick={() => setStatus("error")}
+                aria-label={`Filter to errored runs (${HALT_CATEGORY_LABEL[cat]} · ${count})`}
+                title="Click to filter list to errored runs"
                 style={{
                   fontSize: "var(--fs-2xs)",
                   background: cat === "unknown" ? "var(--bg-1)" : undefined,
                   color: cat === "unknown" ? "var(--fg-2)" : "var(--err)",
-                  // light-mode visibility: var(--bg-1) on a pill can blend
-                  // into the panel, so add a subtle border on the muted variant.
                   ...(cat === "unknown" && {
                     border: "1px solid var(--border-subtle)",
                   }),
+                  cursor: "pointer",
+                  font: "inherit",
+                  minHeight: 24,
                 }}
               >
                 {HALT_CATEGORY_LABEL[cat]} · {count}
-              </span>
+              </button>
             ))}
         </div>
       )}
@@ -537,7 +586,7 @@ export default function RunsPage() {
       </div>
 
       {/* stat cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "var(--s-4)", marginBottom: "var(--s-5)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "var(--s-4)", marginBottom: "var(--s-5)" }}>
         <button
           type="button"
           className="card"
