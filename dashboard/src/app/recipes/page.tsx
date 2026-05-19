@@ -584,6 +584,74 @@ function RecipeDetailPanel({
   );
 }
 
+/**
+ * Sticky run bar shown on mobile (≤ 768px) when a recipe is selected.
+ * The inline row Run button is hidden in a horizontally-scrolling 7-column
+ * table on phones; this bar gives a guaranteed-visible 44pt-tall primary
+ * action without forcing the detail panel into a full-screen sheet.
+ *
+ * Sits above the MobileBottomNav (z 27 vs nav's 28) so the nav stays on
+ * top of taps that miss the bar. CSS class `.recipes-mobile-run-bar` is
+ * display:none on desktop via @media.
+ */
+function MobileRunBar({
+  recipe,
+  onRun,
+  onClose,
+  disabled,
+}: {
+  recipe: Recipe;
+  onRun: () => void;
+  onClose: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="recipes-mobile-run-bar" role="region" aria-label="Selected recipe quick actions">
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Deselect recipe"
+        style={{
+          background: "transparent",
+          border: "1px solid var(--line-2)",
+          borderRadius: 6,
+          minWidth: 36,
+          minHeight: 36,
+          cursor: "pointer",
+          color: "var(--ink-3)",
+        }}
+      >
+        ×
+      </button>
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          fontFamily: "var(--font-mono)",
+          fontWeight: 600,
+          fontSize: "var(--fs-s)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+        title={recipe.name}
+      >
+        {recipe.name}
+      </div>
+      <button
+        type="button"
+        className="btn primary"
+        onClick={onRun}
+        disabled={disabled}
+        style={{ minHeight: 44, paddingInline: 16, fontWeight: 600 }}
+        aria-label={`Run ${recipe.name}`}
+      >
+        ▶ Run{recipe.vars && recipe.vars.length > 0 ? "…" : ""}
+      </button>
+    </div>
+  );
+}
+
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [runMap, setRunMap] = useState<Map<string, RunRecord>>(new Map());
@@ -1367,6 +1435,14 @@ export default function RecipesPage() {
             />
           )}
         </div>
+      )}
+      {selectedRecipe && (
+        <MobileRunBar
+          recipe={selectedRecipe}
+          onRun={() => handleRunClick(selectedRecipe)}
+          onClose={() => setSelectedName(null)}
+          disabled={selectedRecipe.enabled === false}
+        />
       )}
 
       {recipes && recipes.length > 0 && (
