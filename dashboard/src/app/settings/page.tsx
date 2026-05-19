@@ -144,6 +144,24 @@ const helpStyle = {
 };
 
 export default function SettingsPage() {
+  // Single AbortController per mount. Every user-initiated fetch passes
+  // its signal; the cleanup effect calls .abort() on unmount, which
+  // causes in-flight fetches to reject with `AbortError`. The catch
+  // blocks recognise the error and short-circuit — no setState fires
+  // after unmount, no "memory leak in unmounted component" warnings,
+  // no out-of-order responses can corrupt state if the user navigates
+  // away mid-save. Polling intervals (5s /status, SSE /stream) already
+  // have their own cleanup so this only covers user-initiated POSTs.
+  const abortRef = useRef<AbortController | null>(null);
+  if (abortRef.current === null) abortRef.current = new AbortController();
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+  const isAbortError = (e: unknown): boolean =>
+    e instanceof DOMException && e.name === "AbortError";
+
   const [settings, setSettings] = useState<StatusResponse | null>(null);
   const [err, setErr] = useState<string>();
   const [unsupported, setUnsupported] = useState(false);
@@ -477,6 +495,7 @@ export default function SettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [field]: value }),
+        signal: abortRef.current?.signal,
       });
       flashSaved();
     } catch {
@@ -498,6 +517,7 @@ export default function SettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ apiKey: { provider, key } }),
+        signal: abortRef.current?.signal,
       });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (res.ok) {
@@ -506,7 +526,9 @@ export default function SettingsPage() {
         flashSaved();
         // Refresh /status so the "key set" badge reflects the change immediately.
         try {
-          const refreshed = await (await fetch(apiPath("/api/bridge/status"))).json();
+          const refreshed = await (await fetch(apiPath("/api/bridge/status"), {
+            signal: abortRef.current?.signal,
+          })).json();
           setSettings(refreshed);
         } catch {
           /* badge will update on next poll tick */
@@ -515,6 +537,7 @@ export default function SettingsPage() {
         setKeyMsg({ provider, ok: false, text: body.error ?? `Error ${res.status}` });
       }
     } catch (e) {
+      if (isAbortError(e)) return;
       setKeyMsg({ provider, ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
       setKeySaving(null);
@@ -539,6 +562,7 @@ export default function SettingsPage() {
           localEndpoint: localEndpoint.trim(),
           localModel: localModel.trim(),
         }),
+        signal: abortRef.current?.signal,
       });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -555,6 +579,7 @@ export default function SettingsPage() {
         setLocalMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
       }
     } catch (e) {
+      if (isAbortError(e)) return;
       setLocalMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
       setLocalSaving(false);
@@ -571,6 +596,7 @@ export default function SettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ driver: row.driverValue }),
+        signal: abortRef.current?.signal,
       });
       // Always read body — both success and error responses carry useful info
       // (e.g. `restartRequired` flag on success, `error` text on failure).
@@ -592,6 +618,7 @@ export default function SettingsPage() {
         setDriverMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
       }
     } catch (e) {
+      if (isAbortError(e)) return;
       setDriverMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
       setDriverSaving(null);
@@ -604,6 +631,7 @@ export default function SettingsPage() {
     try {
       const res = await fetch(apiPath("/api/bridge/restart"), {
         method: "POST",
+        signal: abortRef.current?.signal,
       });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -631,6 +659,7 @@ export default function SettingsPage() {
         setRestartMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
       }
     } catch (e) {
+      if (isAbortError(e)) return;
       setRestartMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
       setRestartBusy(false);
@@ -645,6 +674,7 @@ export default function SettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approvalGate: value }),
+        signal: abortRef.current?.signal,
       });
       if (res.ok) {
         setGateValue(value);
@@ -655,6 +685,7 @@ export default function SettingsPage() {
         setGateSaveMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
       }
     } catch (e) {
+      if (isAbortError(e)) return;
       setGateSaveMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
       setGateSaving(false);
@@ -668,6 +699,7 @@ export default function SettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enableTimeOfDayAnomaly: value }),
+        signal: abortRef.current?.signal,
       });
       if (res.ok) {
         setTodayAnomaly(value);
@@ -682,6 +714,7 @@ export default function SettingsPage() {
         setTodayAnomalyErr(body.error ?? `Save failed (HTTP ${res.status})`);
       }
     } catch (e) {
+      if (isAbortError(e)) return;
       setTodayAnomalyErr(e instanceof Error ? e.message : String(e));
     } finally {
       setTodayAnomalySaving(false);
@@ -708,6 +741,7 @@ export default function SettingsPage() {
       });
       flashSaved();
     } catch (e) {
+      if (isAbortError(e)) return;
       const msg = e instanceof Error ? e.message : String(e);
       // Re-read browser status so the badge reflects what actually happened
       // (e.g. permission denied vs subscribe stalled). The error message
@@ -733,6 +767,7 @@ export default function SettingsPage() {
       setPushMsg({ ok: true, text: "Unsubscribed." });
       flashSaved();
     } catch (e) {
+      if (isAbortError(e)) return;
       setPushMsg({
         ok: false,
         text: e instanceof Error ? e.message : String(e),
@@ -746,7 +781,10 @@ export default function SettingsPage() {
     setPushBusy(true);
     setPushMsg(null);
     try {
-      const res = await fetch(apiPath("/api/push/test"), { method: "POST" });
+      const res = await fetch(apiPath("/api/push/test"), {
+        method: "POST",
+        signal: abortRef.current?.signal,
+      });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         sent?: number;
@@ -765,6 +803,7 @@ export default function SettingsPage() {
         });
       }
     } catch (e) {
+      if (isAbortError(e)) return;
       setPushMsg({
         ok: false,
         text: e instanceof Error ? e.message : String(e),
