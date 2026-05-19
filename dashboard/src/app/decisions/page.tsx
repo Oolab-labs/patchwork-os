@@ -7,7 +7,7 @@ import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
-import { ErrorState, Glossary, HintCard, LivePill } from "@/components/patchwork";
+import { EmptyState, ErrorState, Glossary, HintCard, LivePill } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 
 interface DecisionTrace {
@@ -293,33 +293,34 @@ function DecisionsContent() {
       )}
 
       {!loading && traces.length === 0 && !error ? (
-        <div className="empty-state">
-          <h3>
-            {!tag && !keyQuery && !textQuery
+        <EmptyState
+          title={
+            !tag && !keyQuery && !textQuery
               ? "No decisions yet"
-              : "No matching decisions"}
-          </h3>
-          <p>
-            {!tag && !keyQuery && !textQuery
+              : "No matching decisions"
+          }
+          description={
+            !tag && !keyQuery && !textQuery
               ? "When an agent resolves a task it can save a short problem/solution note here. New decisions also show up in the next session's start-of-task digest, so the next agent starts with the context."
-              : `No decisions${tag ? ` tagged "${tag}"` : ""}${keyQuery ? ` with ref matching "${keyQuery}"` : ""}${textQuery ? ` containing "${textQuery}"` : ""}.`}
-          </p>
-          {(tag || keyQuery || textQuery) && (
-            <button
-              type="button"
-              onClick={() => {
-                setTag("");
-                setKeyQuery("");
-                setTextQuery("");
-                setSince("30d");
-              }}
-              className="pill muted"
-              style={{ cursor: "pointer", marginTop: "var(--s-3)" }}
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
+              : `No decisions${tag ? ` tagged "${tag}"` : ""}${keyQuery ? ` with ref matching "${keyQuery}"` : ""}${textQuery ? ` containing "${textQuery}"` : ""}.`
+          }
+          action={
+            (tag || keyQuery || textQuery) ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setTag("");
+                  setKeyQuery("");
+                  setTextQuery("");
+                  setSince("30d");
+                }}
+                className="btn sm ghost"
+              >
+                Clear filters
+              </button>
+            ) : undefined
+          }
+        />
       ) : (
         <div
           style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)" }}
