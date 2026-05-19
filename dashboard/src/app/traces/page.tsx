@@ -781,8 +781,13 @@ export default function TracesPage() {
 
       {visible.length === 0 && !loading ? (
         <EmptyState
-          title="No traces"
-          description="Traces appear as recipes run and approvals are processed."
+          title="No traces yet"
+          description="Decision traces (approvals, enrichment, recipe runs) accumulate here as the bridge operates. Run a recipe or process an approval to start the log."
+          action={
+            <a href="/recipes" className="btn sm">
+              Browse recipes
+            </a>
+          }
         />
       ) : view === "flat" ? (
         // #600: switch `overflow: hidden` → `overflow-x: auto` so the
