@@ -13,6 +13,7 @@ import { NAV_SECTIONS } from "@/lib/navRoutes";
 import { ActivityTicker } from "./ActivityTicker";
 import { BridgeOfflineBanner } from "./BridgeOfflineBanner";
 import { KillSwitchBanner } from "./KillSwitchBanner";
+import { PWAInstallPrompt } from "./PWAInstallPrompt";
 import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
 
@@ -592,6 +593,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="app-content">{children}</div>
       </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <PWAInstallPrompt />
     </div>
   );
 }
