@@ -13,7 +13,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { POST } from "../route";
 
-vi.mock("@/lib/demoModeServer", () => ({ isDemoModeServer: () => false }));
 vi.mock("@/lib/bridge", () => ({
   bridgeFetch: vi.fn(async () =>
     new Response(JSON.stringify({ ok: true }), {

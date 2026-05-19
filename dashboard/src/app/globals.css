@@ -2559,87 +2559,6 @@ button.topbar-search {
 .toggle.on::after { transform: translateX(14px); }
 
 
-/* ---- Editorial demo banner (2.0 style) ----
-   Not sticky: it would overlap the sticky `.app-header` (both pinned at
-   top:0, same scroll container) and obscure the menu/theme toggle. The
-   "Demo" pill in the header keeps the indicator persistent on scroll. */
-.demo-banner {
-  position: relative;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 20px;
-  font-size: 12px;
-  color: var(--ink-1);
-  background: linear-gradient(90deg, var(--orange-soft) 0%, color-mix(in srgb, var(--orange-soft) 40%, transparent) 100%);
-  border-bottom: 1px solid var(--orange-tint);
-}
-.demo-banner::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--orange);
-}
-.demo-banner-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--orange);
-  animation: pulse-live 1.6s ease-in-out infinite;
-  flex-shrink: 0;
-}
-.demo-banner-text { flex: 1; min-width: 0; }
-.demo-banner-text strong {
-  color: var(--orange);
-  font-weight: 700;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-right: 6px;
-}
-.demo-banner-cta {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: var(--r-full);
-  background: var(--orange);
-  color: #fff;
-  text-decoration: none;
-  transition: background 150ms ease;
-}
-.demo-banner-cta:hover {
-  background: var(--orange-hover);
-  color: #fff;
-  text-decoration: none;
-}
-.demo-banner-dismiss {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  line-height: 1;
-  background: transparent;
-  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-  border-radius: var(--r-full);
-  color: inherit;
-  cursor: pointer;
-  opacity: 0.7;
-  transition: opacity 120ms ease, background 120ms ease;
-}
-.demo-banner-dismiss:hover {
-  opacity: 1;
-  background: color-mix(in srgb, currentColor 8%, transparent);
-}
-
 /*
   Toast viewport positioning. Inline-style version used to hard-code
   bottom: 16px which collided with the mobile bottom-nav (62px tall) on
@@ -2779,7 +2698,6 @@ button.topbar-search {
      bare class selectors lose without the ancestor. */
   .app-header .topbar-local,
   .app-header .topbar-search,
-  .app-header .demo-toggle,
   .app-header .bridge-status-pill,
   .app-header .identity-pill,
   .app-header .topbar-avatar {

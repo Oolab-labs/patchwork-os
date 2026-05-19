@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
 import { ACTIVITY_NOISE_EVENTS } from "@/lib/activityNoise";
-import { isDemoMode } from "@/lib/demoMode";
 import { markHaltsSeen } from "@/lib/haltsSeen";
 import {
   EmptyState,
@@ -175,7 +174,7 @@ export default function ActivityPage() {
       } else {
         setConnection("reconnecting");
       }
-      if (!isDemoMode()) setErr("Disconnected — reconnecting…");
+      setErr("Disconnected — reconnecting…");
     };
     es.onmessage = (msg) => {
       try {

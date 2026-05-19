@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { Albert_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Shell } from "@/components/Shell";
-import { DemoBanner } from "@/components/DemoBanner";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { ToastProvider } from "@/components/Toast";
 
@@ -116,7 +115,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </a>
         <ToastProvider>
           <div data-app-root>
-            <DemoBanner />
             <Shell>{children}</Shell>
             <MobileBottomNav />
           </div>

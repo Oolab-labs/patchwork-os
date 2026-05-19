@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
-import { isDemoMode, onDemoModeChange, setDemoMode } from "@/lib/demoMode";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { subscribeStreamLiveness } from "@/lib/streamLiveness";
 import { getHaltsLookbackMs, subscribeHaltsSeen } from "@/lib/haltsSeen";
@@ -258,18 +257,6 @@ function useIdentity(status: BridgeStatus): { user: string; host: string; port: 
   return { user, host: `${user}@${wsName}`, port };
 }
 
-// ------------------------------------------------------------------ demo mode
-
-function useDemo() {
-  const [demo, setDemo] = useState(false);
-  useEffect(() => {
-    setDemo(isDemoMode());
-    return onDemoModeChange(setDemo);
-  }, []);
-  const toggle = () => setDemoMode(!demo);
-  return { demo, toggle };
-}
-
 // ------------------------------------------------------------------ theme
 
 type ThemePref = "dark" | "paper";
@@ -320,7 +307,6 @@ export function Shell({ children }: { children: ReactNode }) {
   const approvalCount = useApprovalCount();
   const haltCount = useHaltCount();
   const { active, toggle } = useTheme();
-  const { demo, toggle: toggleDemo } = useDemo();
   const identity = useIdentity(status);
   const [mobileOpen, setMobileOpen] = useState(false);
   // Demo: replace with real notification count when available
@@ -416,54 +402,6 @@ export function Shell({ children }: { children: ReactNode }) {
         <ActivityTicker />
         <div className="app-header-actions">
           <IdentityPill ok={status.ok} host={identity.host} port={identity.port} />
-          {/*
-            Hide the demo toggle when the bridge is live AND demo is off.
-            Audit verified: the chip was previously visible unconditionally,
-            which made users (with a working bridge) wonder why a "Demo"
-            label was sitting in their topbar. Keep the chip visible when:
-              - bridge offline (offers demo as fallback experience)
-              - demo already enabled (so the user has a clear way to disable)
-          */}
-          {(!status.ok || demo) && (
-          <button
-            type="button"
-            onClick={toggleDemo}
-            title={demo ? "Disable demo mode" : "Enable demo mode (sample data)"}
-            aria-label="Toggle demo mode"
-            aria-pressed={demo}
-            style={{
-              // Min-height 32 px to satisfy WCAG 2.5.5 target size (was ~22 px).
-              // Keep the pill aesthetic — increased vertical padding + explicit
-              // min-height; horizontal stays narrow so it doesn't hog the bar.
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              minHeight: 32,
-              fontSize: "var(--fs-2xs)",
-              fontWeight: 600,
-              padding: "0 12px",
-              borderRadius: 999,
-              border: `1px solid ${demo ? "var(--orange)" : "var(--line-2)"}`,
-              background: demo ? "color-mix(in srgb, var(--orange) 12%, transparent)" : "transparent",
-              color: demo ? "var(--orange)" : "var(--ink-2)",
-              cursor: "pointer",
-              transition: "background 150ms, border-color 150ms, color 150ms",
-            }}
-          >
-            <span
-              aria-hidden="true"
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: demo ? "var(--orange)" : "var(--dot-muted)",
-                display: "inline-block",
-                flexShrink: 0,
-              }}
-            />
-            Demo
-          </button>
-          )}
           <button
             className="theme-toggle"
             onClick={toggle}

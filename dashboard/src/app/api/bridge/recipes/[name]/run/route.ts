@@ -1,7 +1,6 @@
 import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
 import { requireSameOrigin } from "@/lib/csrf";
-import { isDemoModeServer } from "@/lib/demoModeServer";
 import {
   BRIDGE_BODY_CAPS,
   bodyTooLargeResponse,
@@ -21,17 +20,6 @@ export async function POST(
   const guard = requireSameOrigin(req);
   if (guard) return guard;
   const { name } = await ctx.params;
-  if (await isDemoModeServer()) {
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        demo: true,
-        taskId: `demo-${Date.now()}`,
-        message: `Demo mode — recipe '${name}' run skipped (no live bridge)`,
-      }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
-  }
   const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.run);
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.run);
   try {

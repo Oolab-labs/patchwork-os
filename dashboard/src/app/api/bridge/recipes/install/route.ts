@@ -1,6 +1,5 @@
 import { bridgeFetch } from "@/lib/bridge";
 import { requireSameOrigin } from "@/lib/csrf";
-import { isDemoModeServer } from "@/lib/demoModeServer";
 import {
   BRIDGE_BODY_CAPS,
   bodyTooLargeResponse,
@@ -25,13 +24,6 @@ function jsonError(
 export async function POST(req: Request): Promise<Response> {
   const guard = requireSameOrigin(req);
   if (guard) return guard;
-
-  if (await isDemoModeServer()) {
-    return jsonError(
-      501,
-      "Install requires a running Patchwork bridge. Run `npm i -g patchwork-os && patchwork start` locally, then revisit this page.",
-    );
-  }
 
   const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.install);
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.install);

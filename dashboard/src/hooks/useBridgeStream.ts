@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
-import { isDemoMode } from "@/lib/demoMode";
 
 const RECONNECT_DELAY_MS = 3_000;
 
@@ -19,7 +18,6 @@ export function useBridgeStream(
 
 	useEffect(() => {
 		if (!enabled) return;
-		if (isDemoMode()) return;
 
 		let es: EventSource | null = null;
 		let reconnectTimer: ReturnType<typeof setTimeout> | null = null;

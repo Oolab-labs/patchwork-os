@@ -1,7 +1,6 @@
 import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
 import { requireSameOrigin } from "@/lib/csrf";
-import { isDemoModeServer } from "@/lib/demoModeServer";
 import {
   BRIDGE_BODY_CAPS,
   bodyTooLargeResponse,
@@ -14,23 +13,11 @@ export const runtime = "nodejs";
 // Next 15: dynamic route params arrive as a Promise.
 type RouteContext = { params: Promise<{ name: string }> };
 
-const demoOk = () =>
-  new Response(JSON.stringify({ ok: true, demo: true }), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  });
-
 export async function GET(
   _req: NextRequest,
   ctx: RouteContext,
 ): Promise<Response> {
   const { name } = await ctx.params;
-  if (await isDemoModeServer()) {
-    return new Response(
-      JSON.stringify({ name, demo: true, content: "" }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
-  }
   try {
     const encodedName = encodeURIComponent(name);
     const res = await bridgeFetch(`/recipes/${encodedName}`);
@@ -58,7 +45,6 @@ async function forwardWithMethod(
 ): Promise<Response> {
   const guard = requireSameOrigin(req);
   if (guard) return guard;
-  if (await isDemoModeServer()) return demoOk();
   const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.content);
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.content);
   try {
@@ -106,7 +92,6 @@ export async function DELETE(
 ): Promise<Response> {
   const guard = requireSameOrigin(req);
   if (guard) return guard;
-  if (await isDemoModeServer()) return demoOk();
   try {
     const { name } = await ctx.params;
     const encodedName = encodeURIComponent(name);
