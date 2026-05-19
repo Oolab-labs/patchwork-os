@@ -783,41 +783,6 @@ button.topbar-search {
 [data-theme="dark"] .stat-card:hover::before,
 [data-theme="dark"] .glass-card:hover::before { opacity: 0.3; }
 
-/* Border beam animation on cards */
-.card.beam {
-  overflow: hidden;
-}
-.card.beam::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: conic-gradient(
-    from var(--beam-angle, 0deg) at 50% 50%,
-    transparent 0deg,
-    var(--orange) 60deg,
-    transparent 120deg
-  );
-  opacity: 0;
-  transition: opacity 400ms ease;
-  pointer-events: none;
-}
-.card.beam:hover::before {
-  opacity: 0.12;
-  animation: borderBeam 3s linear infinite;
-}
-[data-theme="dark"] .card.beam:hover::before {
-  opacity: 0.2;
-}
-@keyframes borderBeam {
-  to { --beam-angle: 360deg; }
-}
-@property --beam-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
-
 .glass-card {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);

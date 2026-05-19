@@ -596,7 +596,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
 
   return (
     <div
-      className="card beam"
+      className="card"
       style={{
         background: isDegraded ? "var(--warn-soft)" : undefined,
         borderColor: borderColor,
