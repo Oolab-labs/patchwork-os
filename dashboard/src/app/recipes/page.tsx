@@ -8,7 +8,8 @@ import { apiPath } from "@/lib/api";
 import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
-import { useRecipeRunStream, type ActiveRunState } from "@/hooks/useRecipeRunStream";
+import { useActiveRuns } from "@/hooks/LiveRunsContext";
+import type { ActiveRunState } from "@/hooks/useRecipeRunStream";
 import { RecipeRunInline } from "./_components/RecipeRunInline";
 import {
   CodeBlock,
@@ -696,7 +697,7 @@ export default function RecipesPage() {
   }, []);
   // Live SSE-driven run state, keyed by recipe name. Foundation for inline
   // run observability — see PR #642 (bridge lifecycle emit) + RecipeRunInline.
-  const { active: activeRunsByName } = useRecipeRunStream();
+  const activeRunsByName = useActiveRuns();
   // #600: deep-link support so /recipes?run=<name> auto-opens the
   // RunModal once recipes are loaded. Used by the Inbox Replay
   // button so users land on the recipe with its vars-input modal
