@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { BackLink, EmptyState } from "@/components/patchwork";
+import { SkeletonList } from "@/components/Skeleton";
 
 type ReplayDecision = "allow" | "deny" | "ask" | "none";
 type ChangeKind = "now_allowed" | "now_denied" | "now_asked";
@@ -122,7 +123,7 @@ export default function ReplayPage() {
       </div>
 
       {loading && rows.length === 0 && (
-        <p style={{ color: "var(--fg-2)" }}>Loading…</p>
+        <SkeletonList rows={6} columns={4} />
       )}
       {error && <div className="alert-err">Unreachable: {error}</div>}
 

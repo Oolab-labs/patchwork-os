@@ -4,6 +4,7 @@ import { StatCard } from "@/components/StatCard";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { AreaChart, ErrorState } from "@/components/patchwork";
 import type { AreaChartSeries } from "@/components/patchwork";
+import { SkeletonList } from "@/components/Skeleton";
 import { isHaltStatus } from "@/lib/runStatus";
 
 interface ToolStat {
@@ -246,12 +247,7 @@ export default function AnalyticsPage() {
           </div>
 
           {loading ? (
-            <div
-              className="card"
-              style={{ color: "var(--fg-3)", fontSize: "var(--fs-m)" }}
-            >
-              Loading…
-            </div>
+            <SkeletonList rows={5} columns={3} />
           ) : topTools.length === 0 ? (
             <div className="empty-state">
               <h3>No tool call data yet</h3>

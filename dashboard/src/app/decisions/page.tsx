@@ -8,6 +8,7 @@ import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
 import { ErrorState, Glossary, HintCard, LivePill } from "@/components/patchwork";
+import { SkeletonList } from "@/components/Skeleton";
 
 interface DecisionTrace {
   traceType: "decision";
@@ -272,7 +273,7 @@ function DecisionsContent() {
       )}
 
       {loading && traces.length === 0 && (
-        <p style={{ color: "var(--fg-2)" }}>Loading…</p>
+        <SkeletonList rows={5} columns={4} />
       )}
 
       {error && traces.length === 0 && (
