@@ -12,7 +12,10 @@ import {
   buildDependencyGraph,
   executeWithDependencies,
 } from "./dependencyGraph.js";
-import { deriveHaltReasonFromError } from "./haltCategory.js";
+import {
+  categoriseHaltReason,
+  deriveHaltReasonFromError,
+} from "./haltCategory.js";
 import type {
   NestedRecipeConfig,
   NestedRecipeContext,
@@ -750,6 +753,23 @@ export async function runChainedRecipe(
   const broadcastSeq = runSeq;
   const broadcastName = recipe.name;
   const stepStartTimes = new Map<string, number>();
+  const broadcastRunStartedAt = Date.now();
+
+  // Emit recipe_started immediately. Dashboard RecipeRunInline watches
+  // this event to flip a row from "queued" to "running" before the
+  // first step lands.
+  if (broadcastActivity && broadcastSeq !== undefined) {
+    try {
+      broadcastActivity.recordEvent("recipe_started", {
+        runSeq: broadcastSeq,
+        recipeName: broadcastName,
+        totalSteps: recipe.steps?.length ?? 0,
+        ts: broadcastRunStartedAt,
+      });
+    } catch {
+      /* live-tail must not break a recipe run */
+    }
+  }
 
   const wrappedOnStepStart =
     broadcastActivity && broadcastSeq !== undefined
@@ -777,15 +797,30 @@ export async function runChainedRecipe(
           const ts = Date.now();
           const startedAt = stepStartTimes.get(stepId);
           try {
+            const stepDef = stepMap.get(stepId);
+            const haltReason =
+              error?.message !== undefined
+                ? deriveHaltReasonFromError({
+                    stepId,
+                    toolName: stepDef?.tool,
+                    isAgent: !!stepDef?.agent,
+                    status: "error",
+                    error: error.message,
+                  })
+                : undefined;
             broadcastActivity.recordEvent("recipe_step_done", {
               runSeq: broadcastSeq,
               recipeName: broadcastName,
               stepId,
-              tool: stepMap.get(stepId)?.tool,
+              tool: stepDef?.tool,
               status: error ? "error" : "ok",
               ...(error?.message !== undefined && { error: error.message }),
               ...(startedAt !== undefined && {
                 durationMs: ts - startedAt,
+              }),
+              ...(haltReason !== undefined && {
+                haltReason,
+                haltCategory: categoriseHaltReason(haltReason),
               }),
               ts,
             });
@@ -1006,6 +1041,23 @@ export async function runChainedRecipe(
             errorMessage: result.errorMessage,
           }),
         });
+        if (broadcastActivity && broadcastSeq !== undefined) {
+          try {
+            broadcastActivity.recordEvent("recipe_done", {
+              runSeq: broadcastSeq,
+              recipeName: broadcastName,
+              status: result.success ? "done" : "error",
+              durationMs: doneAt - runStartedAt,
+              stepCount: stepResultsList.length,
+              ...(result.errorMessage !== undefined && {
+                errorMessage: result.errorMessage,
+              }),
+              ts: doneAt,
+            });
+          } catch {
+            /* live-tail must not break a recipe run */
+          }
+        }
       } else if (options.runLogDir) {
         const { RecipeRunLog } = await import("../runLog.js");
         const log = new RecipeRunLog({ dir: options.runLogDir });

@@ -55,6 +55,7 @@ import {
   type AgentExecutorDeps,
   type AgentResult,
 } from "./agentExecutor.js";
+import { categoriseHaltReason } from "./haltCategory.js";
 import {
   assertValidManualRunId,
   deriveScopeKey,
@@ -305,6 +306,16 @@ export interface RunnerDeps {
    */
   runLog?: RecipeRunLog;
   /**
+   * Live-tail broadcaster for recipe + step lifecycle events. When
+   * supplied, the runner emits `recipe_started`, `recipe_step_start`,
+   * `recipe_step_done`, and `recipe_done` lifecycle events to the
+   * activity log, which the bridge proxies to dashboard SSE
+   * subscribers via /stream. Previously only `chainedRunner` emitted
+   * step events; flat YAML recipes (the common case) ran silent.
+   * Pass `bridge.activityLog`.
+   */
+  activityLog?: import("../activityLog.js").ActivityLog;
+  /**
    * Optional Anthropic API caller for agent steps. Defaults to fetch-based
    * impl. May return either a raw string (legacy / tests) or `AgentResult`
    * carrying usage tokens (bridge wrappers, real adapters). The runner
@@ -400,6 +411,7 @@ export type StepDeps = Required<
     | "runLog"
     | "ledgerDir"
     | "manualRunId"
+    | "activityLog"
   >
 > & {
   workdir: string;
@@ -595,6 +607,36 @@ export async function runYamlRecipe(
   let stepsRun = 0;
   let runError: string | undefined;
 
+  // Live-tail SSE broadcaster. Wrapped in a try/catch on every call so a
+  // misbehaving listener can never break the run (mirrors chainedRunner).
+  // No-ops when `activityLog` isn't wired (CLI runs, tests, mocks).
+  const broadcast = deps.activityLog;
+  const emit = (
+    event:
+      | "recipe_started"
+      | "recipe_step_start"
+      | "recipe_step_done"
+      | "recipe_done",
+    metadata: Record<string, unknown>,
+  ): void => {
+    if (!broadcast || runSeq === undefined || stepDeps.testMode) return;
+    try {
+      broadcast.recordEvent(event, metadata);
+    } catch {
+      /* live-tail must not break a recipe run */
+    }
+  };
+  // Emit recipe_started as soon as we have a runSeq. The dashboard
+  // RecipeRunInline component watches for this event to flip a row
+  // from "queued" to "running" without waiting for the first step.
+  emit("recipe_started", {
+    runSeq,
+    recipeName: recipe.name,
+    trigger: yamlTriggerKind,
+    totalSteps: recipe.steps.length,
+    ts: recipeStartedAt,
+  });
+
   // Push live step results into the run-log ring so the dashboard's
   // `/runs/[seq]` page surfaces verdicts + haltReasons mid-flight,
   // instead of waiting for the whole recipe to finish via
@@ -609,8 +651,21 @@ export async function runYamlRecipe(
       /* live-tail is best-effort; never break a recipe run for it */
     }
   };
+  // Track per-step start timestamps so done events carry durationMs
+  // without a second roundtrip.
+  const stepStartTs = new Map<string, number>();
 
   for (const step of recipe.steps) {
+    const stepIdForEmit = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
+    const stepTs = Date.now();
+    stepStartTs.set(stepIdForEmit, stepTs);
+    emit("recipe_step_start", {
+      runSeq,
+      recipeName: recipe.name,
+      stepId: stepIdForEmit,
+      tool: step.agent ? "agent" : step.tool,
+      ts: stepTs,
+    });
     // Evaluate `when` guard before running anything. Mirrors
     // chainedRunner.ts:248-266 — render the template, then truthy-check the
     // result (empty string, "0", "false", "null", "undefined" are falsy).
@@ -635,6 +690,15 @@ export async function runYamlRecipe(
         });
         stepsRun++;
         persistLiveStepResults();
+        emit("recipe_step_done", {
+          runSeq,
+          recipeName: recipe.name,
+          stepId: skipId,
+          tool: step.agent ? "agent" : step.tool,
+          status: "skipped",
+          durationMs: 0,
+          ts: Date.now(),
+        });
         continue;
       }
     }
@@ -923,6 +987,30 @@ export async function runYamlRecipe(
       }
     }
     persistLiveStepResults();
+    // Emit recipe_step_done for live-tail SSE. Look up the matching
+    // entry in stepResults (the loop pushed at most one with this id);
+    // payload mirrors chainedRunner's done event plus haltCategory.
+    const justPushed = stepResults
+      .slice()
+      .reverse()
+      .find((r) => r.id === stepIdForEmit);
+    if (justPushed) {
+      const haltReason = justPushed.haltReason;
+      emit("recipe_step_done", {
+        runSeq,
+        recipeName: recipe.name,
+        stepId: justPushed.id,
+        tool: justPushed.tool,
+        status: justPushed.status,
+        durationMs: justPushed.durationMs,
+        ...(justPushed.error !== undefined && { error: justPushed.error }),
+        ...(haltReason !== undefined && {
+          haltReason,
+          haltCategory: categoriseHaltReason(haltReason),
+        }),
+        ts: Date.now(),
+      });
+    }
   }
 
   // Evaluate expect block before persisting so failures are stored in the run log
@@ -964,6 +1052,18 @@ export async function runYamlRecipe(
           outputTail,
           ...(runError !== undefined && { errorMessage: runError }),
           ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
+        });
+        emit("recipe_done", {
+          runSeq,
+          recipeName: recipe.name,
+          status: runError ? "error" : "done",
+          durationMs: doneAt - recipeStartedAt,
+          stepCount: finalStepResults.length,
+          ...(runError !== undefined && { errorMessage: runError }),
+          ...(assertionFailures.length > 0 && {
+            assertionFailureCount: assertionFailures.length,
+          }),
+          ts: doneAt,
         });
       } else {
         const { RecipeRunLog } = await import("../runLog.js");
@@ -1854,15 +1954,16 @@ export async function dispatchRecipe(
     }
     return runChainedRecipe(chainedRecipe, options, deps.chainedDeps);
   }
-  // For non-chained recipes, lift `runLog` from chainedOptions onto the
-  // RunnerDeps so runYamlRecipe gets the bridge's singleton too.
-  return runYamlRecipe(
-    recipe,
-    deps.chainedOptions?.runLog
-      ? { ...deps, runLog: deps.chainedOptions.runLog }
-      : deps,
-    seedContext,
-  );
+  // For non-chained recipes, lift `runLog` AND `activityLog` from
+  // chainedOptions onto the RunnerDeps so runYamlRecipe gets the
+  // bridge's singletons too. The activityLog is what powers
+  // recipe_started / recipe_step_start / recipe_step_done /
+  // recipe_done SSE emission to dashboard subscribers.
+  const lifted: RunnerDeps = { ...deps };
+  if (deps.chainedOptions?.runLog) lifted.runLog = deps.chainedOptions.runLog;
+  if (deps.chainedOptions?.activityLog)
+    lifted.activityLog = deps.chainedOptions.activityLog;
+  return runYamlRecipe(recipe, lifted, seedContext);
 }
 
 /** List all YAML recipes in a directory. Returns names. */
