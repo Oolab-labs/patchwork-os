@@ -479,11 +479,17 @@ function ApprovalCard({
         )}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, marginLeft: 52, flexWrap: "wrap" }}>
+      {/* Decision cluster kept on its own row so Approve and Reject stay
+          together at all viewport widths. Audit caught that the previous
+          single flex-wrap row could split the destructive button onto
+          a different line from "Edit & approve", increasing fat-finger
+          risk on phones. Secondary actions (copy commands) live below in
+          a separate flex group. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12, marginLeft: 52, flexWrap: "wrap" }}>
         <button
           type="button"
           className="btn primary"
-          style={{ background: "var(--green)", borderColor: "var(--green)", color: "var(--on-accent)", display: "inline-flex", alignItems: "center", gap: 6 }}
+          style={{ background: "var(--green)", borderColor: "var(--green)", color: "var(--on-accent)", display: "inline-flex", alignItems: "center", gap: 6, minHeight: 44 }}
           onClick={() => handleDecide("approve")}
           disabled={isApproving || isRejecting || expired}
           title={expired ? "Expired — the agent has moved on" : undefined}
@@ -496,7 +502,7 @@ function ApprovalCard({
         <button
           type="button"
           className="btn danger"
-          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, minHeight: 44 }}
           onClick={() => handleDecide("reject")}
           disabled={isApproving || isRejecting || expired}
           title={expired ? "Expired — the agent has moved on" : undefined}
@@ -506,6 +512,8 @@ function ApprovalCard({
           {isRejecting ? " Rejecting…" : " Reject"}
           <KeyChip>X</KeyChip>
         </button>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, marginLeft: 52, flexWrap: "wrap" }}>
         <button
           type="button"
           className="btn sm ghost"
