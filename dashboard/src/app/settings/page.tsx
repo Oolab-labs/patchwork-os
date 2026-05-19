@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { fmtDuration } from "@/components/time";
 import { apiPath } from "@/lib/api";
 import { subscribeStreamMessage } from "@/lib/streamLiveness";
@@ -988,29 +988,7 @@ export default function SettingsPage() {
             }}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
-              {NAV.map(({ id, label }) => {
-                const isActive = active === id;
-                return (
-                  <a
-                    key={id}
-                    href={`#${id}`}
-                    onClick={() => setActive(id)}
-                    style={{
-                      fontSize: "var(--fs-m)",
-                      fontWeight: isActive ? 600 : 500,
-                      color: isActive ? "var(--ink-0)" : "var(--ink-2)",
-                      background: isActive ? "var(--bg-2)" : "transparent",
-                      textDecoration: "none",
-                      padding: "6px 10px",
-                      borderRadius: "var(--r-s)",
-                      borderLeft: isActive ? "2px solid var(--accent)" : "2px solid transparent",
-                      transition: "background 0.12s, color 0.12s",
-                    }}
-                  >
-                    {label}
-                  </a>
-                );
-              })}
+              <SettingsNavList active={active} onSelect={setActive} />
             </div>
             <ConfigFileCard path={configPath} />
           </nav>
@@ -1857,6 +1835,51 @@ export default function SettingsPage() {
     </section>
   );
 }
+
+/**
+ * Side nav for /settings. Extracted + React.memo'd because the parent
+ * SettingsPage component is 2000+ lines with 60+ useState hooks — every
+ * keystroke in any input re-renders the whole tree. Memoizing the nav
+ * (which depends only on \`active\`) keeps it stable across unrelated
+ * state changes.
+ */
+const SettingsNavList = memo(function SettingsNavList({
+  active,
+  onSelect,
+}: {
+  active: SectionId;
+  onSelect: (id: SectionId) => void;
+}) {
+  return (
+    <>
+      {NAV.map(({ id, label }) => {
+        const isActive = active === id;
+        return (
+          <a
+            key={id}
+            href={`#${id}`}
+            onClick={() => onSelect(id)}
+            style={{
+              fontSize: "var(--fs-m)",
+              fontWeight: isActive ? 600 : 500,
+              color: isActive ? "var(--ink-0)" : "var(--ink-2)",
+              background: isActive ? "var(--bg-2)" : "transparent",
+              textDecoration: "none",
+              padding: "6px 10px",
+              borderRadius: "var(--r-s)",
+              borderLeft: isActive
+                ? "2px solid var(--accent)"
+                : "2px solid transparent",
+              transition: "background 0.12s, color 0.12s",
+            }}
+          >
+            {label}
+          </a>
+        );
+      })}
+    </>
+  );
+});
 
 function ToggleRow({
   id,
