@@ -448,6 +448,9 @@ function StepRow({
       style={{
         position: "relative",
         borderBottom: "1px solid var(--border-subtle)",
+        borderLeft: step.status === "running"
+          ? "3px solid var(--blue)"
+          : "3px solid transparent",
         cursor: step.error ? "pointer" : "default",
       }}
       onClick={() => step.error && toggleOpen()}
