@@ -17,6 +17,7 @@ import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
 import { GlobalLiveRunsStrip } from "./GlobalLiveRunsStrip";
 import { HaltToastWatcher } from "./HaltToastWatcher";
+import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { LiveRunsProvider, useActiveRunCount } from "@/hooks/LiveRunsContext";
 
 // ------------------------------------------------------------------ icons
@@ -550,6 +551,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="app-content">{children}</div>
       </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <KeyboardShortcuts />
       <PWAInstallPrompt />
     </div>
     </LiveRunsProvider>
