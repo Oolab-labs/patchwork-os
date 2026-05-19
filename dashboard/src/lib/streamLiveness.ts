@@ -25,6 +25,7 @@ import { apiPath } from "@/lib/api";
  */
 
 const listeners = new Set<(live: boolean) => void>();
+const messageListeners = new Set<(type: string, data: unknown) => void>();
 let es: EventSource | null = null;
 let isLive = false;
 let lastHeartbeatAt = 0;
@@ -57,9 +58,28 @@ function ensureStream() {
     setLive(true);
   };
 
-  es.onmessage = () => {
+  es.onmessage = (msg) => {
     lastHeartbeatAt = Date.now();
     if (!isLive) setLive(true);
+    if (messageListeners.size === 0) return;
+    // Parse + dispatch to message subscribers. Wrapped in try so a
+    // malformed payload doesn't break the heartbeat path above.
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(msg.data);
+    } catch {
+      return;
+    }
+    const obj = parsed as { kind?: string; type?: string } | null;
+    const type =
+      (obj && typeof obj === "object" && (obj.kind ?? obj.type)) || "message";
+    for (const cb of messageListeners) {
+      try {
+        cb(type, parsed);
+      } catch {
+        // isolate one bad subscriber from the rest
+      }
+    }
   };
 
   es.onerror = () => {
@@ -75,6 +95,33 @@ function teardownStream() {
   es.close();
   es = null;
   isLive = false;
+}
+
+function streamHasSubscribers(): boolean {
+  return listeners.size > 0 || messageListeners.size > 0;
+}
+
+/**
+ * Subscribe to parsed SSE messages from the shared stream. Returns
+ * unsubscribe. The callback receives `(type, data)` where `type` is
+ * pulled from `data.kind` (preferred) or `data.type`, falling back
+ * to `"message"`. Malformed JSON payloads are dropped silently.
+ *
+ * Consumers that previously opened their own EventSource on
+ * `/api/bridge/stream` should subscribe here instead — same stream,
+ * one socket per tab.
+ */
+export function subscribeStreamMessage(
+  cb: (type: string, data: unknown) => void,
+): () => void {
+  messageListeners.add(cb);
+  ensureStream();
+  return () => {
+    messageListeners.delete(cb);
+    if (!streamHasSubscribers()) {
+      teardownStream();
+    }
+  };
 }
 
 /**
@@ -101,7 +148,7 @@ export function subscribeStreamLiveness(
   return () => {
     listeners.delete(cb);
     clearInterval(sweepId);
-    if (listeners.size === 0) {
+    if (!streamHasSubscribers()) {
       teardownStream();
     }
   };
