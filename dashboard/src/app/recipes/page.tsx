@@ -1287,6 +1287,39 @@ export default function RecipesPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  {filteredRecipes.length === 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ padding: "var(--s-5) var(--s-4)", textAlign: "center" }}>
+                        <div className="muted" style={{ fontSize: "var(--fs-m)", marginBottom: "var(--s-2)" }}>
+                          {search.trim()
+                            ? `No recipes match "${search.trim()}"`
+                            : statusFilter === "paused"
+                              ? "No paused recipes"
+                              : "No enabled recipes"}
+                        </div>
+                        <div style={{ display: "flex", gap: "var(--s-2)", justifyContent: "center", flexWrap: "wrap" }}>
+                          {search.trim() && (
+                            <button
+                              type="button"
+                              className="btn sm ghost"
+                              onClick={() => setSearch("")}
+                            >
+                              Clear search
+                            </button>
+                          )}
+                          {statusFilter !== "all" && (
+                            <button
+                              type="button"
+                              className="btn sm ghost"
+                              onClick={() => setStatusFilter("all")}
+                            >
+                              Show all
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {filteredRecipes.map((r, i) => {
                     const live = isLive(r.name);
                     const last = runMap.get(r.name);
