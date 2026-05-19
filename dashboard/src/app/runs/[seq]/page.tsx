@@ -1085,13 +1085,25 @@ export default function RunDetailPage() {
       .then(async (res) => {
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(body.error ?? `${res.status}`);
+          // Capture status alongside the message so the UI can branch on
+          // it without grepping the message text. Bridge returns 404 for
+          // missing recipe/run (#605 typed code) — UI just needs the
+          // status, not a brittle substring match.
+          const err = new Error(body.error ?? `${res.status}`) as Error & {
+            status?: number;
+          };
+          err.status = res.status;
+          throw err;
         }
         const data = (await res.json()) as { plan?: DryRunPlan };
         if (!data.plan) throw new Error("empty response");
         setPlan(data.plan);
       })
-      .catch((e) => setPlanErr(e instanceof Error ? e.message : String(e)))
+      .catch((e: unknown) => {
+        const status = (e as { status?: number } | null)?.status;
+        const msg = e instanceof Error ? e.message : String(e);
+        setPlanErr(status === 404 ? "__not_found__" : msg);
+      })
       .finally(() => setPlanLoading(false));
   }, [tab, plan, planErr, seq]);
 
@@ -1386,7 +1398,7 @@ export default function RunDetailPage() {
               )}
               {planErr && (
                 <div className="alert-err" style={{ margin: 16 }}>
-                  {planErr.includes("not_found") || planErr.includes("ENOENT")
+                  {planErr === "__not_found__"
                     ? `Recipe file not found on disk for "${run.recipeName}" — plan generation requires the recipe YAML to be present.`
                     : `Plan error: ${planErr}`}
                 </div>
