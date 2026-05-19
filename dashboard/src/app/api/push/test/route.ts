@@ -35,5 +35,20 @@ export async function POST(req: Request) {
   );
 
   const sent = results.filter((r) => r.status === "fulfilled").length;
-  return NextResponse.json({ ok: true, sent, total: subs.length });
+  // 404 / 410 = subscription is gone (browser unsubscribed, VAPID
+  // rotated, push service evicted). Count separately so the UI can
+  // distinguish a legitimate "nobody subscribed" failure from "all
+  // subs are stale" — when invalid === total, the most likely cause
+  // is a VAPID-key change since the existing subs were created.
+  const invalid = results.filter((r) => {
+    if (r.status !== "rejected") return false;
+    const err = r.reason as { statusCode?: number } | null;
+    return err?.statusCode === 404 || err?.statusCode === 410;
+  }).length;
+  return NextResponse.json({
+    ok: true,
+    sent,
+    total: subs.length,
+    invalid,
+  });
 }
