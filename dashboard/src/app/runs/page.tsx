@@ -368,12 +368,14 @@ export default function RunsPage() {
 
   const stats = useMemo(() => {
     const list = windowedRuns ?? [];
-    const s = { ok: 0, err: 0, other: 0, totalMs: 0 };
+    const s = { ok: 0, err: 0, running: 0, cancelled: 0, interrupted: 0, totalMs: 0 };
     for (const r of list) {
       if (r.assertionFailures && r.assertionFailures.length > 0) s.err++;
       else if (r.status === "done") s.ok++;
       else if (r.status === "error") s.err++;
-      else s.other++;
+      else if (r.status === "running") s.running++;
+      else if (r.status === "cancelled") s.cancelled++;
+      else if (r.status === "interrupted") s.interrupted++;
       s.totalMs += r.durationMs;
     }
     const avgMs = list.length ? Math.round(s.totalMs / list.length) : 0;
@@ -395,6 +397,32 @@ export default function RunsPage() {
           </h1>
           <div className="editorial-sub">
             {runs ? `${runs.length} runs` : "— runs"} · {TIME_WINDOW_LABEL[window].toLowerCase()} · avg {fmtDur(stats.avgMs)}
+            {/* Statuses without dedicated stat cards (running / cancelled /
+                interrupted) surface here as inline filter links so they're
+                still reachable from the UI. Hidden when zero. */}
+            {(["running", "cancelled", "interrupted"] as const).map((k) =>
+              stats[k] > 0 ? (
+                <span key={k}>
+                  {" · "}
+                  <button
+                    type="button"
+                    onClick={() => setStatus(k)}
+                    title={`Filter to ${k} runs`}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--accent)",
+                      cursor: "pointer",
+                      font: "inherit",
+                      padding: 0,
+                      textDecoration: "underline",
+                    }}
+                  >
+                    {stats[k]} {k}
+                  </button>
+                </span>
+              ) : null,
+            )}
           </div>
           <RelationStrip
             items={[
