@@ -253,17 +253,37 @@ export default function SettingsPage() {
   const [telDiag, setTelDiag] = useState(true);
   const telInitialized = useRef(false);
   const [telLastSentAt, setTelLastSentAt] = useState<string | null>(null);
+  const [telEndpoint, setTelEndpoint] = useState<string | null>(null);
+  const [telEndpointSource, setTelEndpointSource] = useState<string | null>(
+    null,
+  );
+  const [telResetBusy, setTelResetBusy] = useState(false);
+  const [telResetMsg, setTelResetMsg] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
 
-  // Fetch analytics prefs (including lastSentAt) from bridge
+  // Fetch analytics prefs (including lastSentAt + endpoint info) from bridge
   useEffect(() => {
     let alive = true;
     const fetch_ = async () => {
       try {
         const res = await fetch(apiPath("/api/bridge/telemetry-prefs"));
         if (res.ok) {
-          const data = (await res.json()) as { lastSentAt?: string };
-          if (alive && typeof data.lastSentAt === "string") {
+          const data = (await res.json()) as {
+            lastSentAt?: string;
+            endpoint?: string;
+            endpointSource?: string;
+          };
+          if (!alive) return;
+          if (typeof data.lastSentAt === "string") {
             setTelLastSentAt(data.lastSentAt);
+          }
+          if (typeof data.endpoint === "string") {
+            setTelEndpoint(data.endpoint);
+          }
+          if (typeof data.endpointSource === "string") {
+            setTelEndpointSource(data.endpointSource);
           }
         }
       } catch {
@@ -275,6 +295,46 @@ export default function SettingsPage() {
       alive = false;
     };
   }, []);
+
+  async function resetTelemetryData() {
+    if (
+      !confirm(
+        "Delete all local telemetry data?\n\nThis clears your saved preferences, the analytics endpoint config, and the install-identifying salt. Equivalent to a fresh install for telemetry purposes.",
+      )
+    ) {
+      return;
+    }
+    setTelResetBusy(true);
+    setTelResetMsg(null);
+    try {
+      const res = await fetch(apiPath("/api/bridge/telemetry-prefs"), {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        setTelResetMsg({
+          ok: false,
+          text: body.error ?? `Error ${res.status}`,
+        });
+      } else {
+        // Local state reset — server salt is gone, prefs reset to false.
+        setTelCrash(false);
+        setTelUsage(false);
+        setTelDiag(false);
+        setTelLastSentAt(null);
+        setTelResetMsg({ ok: true, text: "Local telemetry data cleared." });
+      }
+    } catch (e) {
+      setTelResetMsg({
+        ok: false,
+        text: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setTelResetBusy(false);
+    }
+  }
 
   // Kill-switch state — fetched from /api/bridge/kill-switch (proxy to
   // bridge `GET /kill-switch`). Polls in tandem with /status below.
@@ -1756,6 +1816,72 @@ export default function SettingsPage() {
                     })}
                   </div>
                 )}
+                {telEndpoint && (
+                  <div
+                    style={{
+                      fontSize: "var(--fs-s)",
+                      color: "var(--ink-2)",
+                      paddingTop: 4,
+                    }}
+                    aria-label="Telemetry destination"
+                  >
+                    Sending to{" "}
+                    <span className="mono">{telEndpoint}</span>
+                    {telEndpointSource && (
+                      <span style={{ color: "var(--ink-3)" }}>
+                        {" "}
+                        (source: {telEndpointSource})
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    paddingTop: 8,
+                    borderTop: "1px solid var(--border-default)",
+                    marginTop: 4,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => void resetTelemetryData()}
+                    disabled={telResetBusy}
+                    aria-label="Delete local telemetry data"
+                    style={{
+                      background: "transparent",
+                      color: "var(--fg-2)",
+                      border: "1px solid var(--border-default)",
+                      borderRadius: "var(--r-2)",
+                      padding: "5px 10px",
+                      fontSize: "var(--fs-s)",
+                      cursor: telResetBusy ? "default" : "pointer",
+                      opacity: telResetBusy ? 0.5 : 1,
+                    }}
+                  >
+                    {telResetBusy
+                      ? "Clearing…"
+                      : "Delete local telemetry data"}
+                  </button>
+                  <span
+                    style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)" }}
+                  >
+                    Clears prefs, endpoint config, and the install salt.
+                  </span>
+                  {telResetMsg && (
+                    <span
+                      style={{
+                        fontSize: "var(--fs-s)",
+                        color: telResetMsg.ok ? "var(--ok)" : "var(--err)",
+                      }}
+                    >
+                      {telResetMsg.text}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>

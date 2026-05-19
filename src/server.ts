@@ -1,10 +1,14 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { unlinkSync } from "node:fs";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { ActivityListener } from "./activityTypes.js";
+import { clearAnalyticsConfig, getAnalyticsConfig } from "./analyticsConfig.js";
 import {
   getAnalyticsPrefsAll,
+  getAnalyticsPrefsPath,
+  getAnalyticsSaltPath,
   getTelemetryPrefs,
   setTelemetryPrefs,
 } from "./analyticsPrefs.js";
@@ -2184,8 +2188,10 @@ export class Server extends EventEmitter<ServerEvents> {
       }
 
       // /telemetry-prefs — read/write per-flag telemetry preferences.
-      // GET  → {crashReports, usageStats, localDiagnostics}
-      // POST {crashReports?, usageStats?, localDiagnostics?} → same shape (partial update)
+      // GET    → {crashReports, usageStats, localDiagnostics, endpoint, endpointSource}
+      // POST   {crashReports?, usageStats?, localDiagnostics?} → same shape (partial update)
+      // DELETE → clears prefs file + analytics-config + install salt
+      //          (right-to-erasure affordance).
       if (parsedUrl.pathname === "/telemetry-prefs") {
         if (req.method === "GET") {
           const prefs = getTelemetryPrefs();
@@ -2194,8 +2200,58 @@ export class Server extends EventEmitter<ServerEvents> {
           if (all?.lastSentAt !== undefined) {
             response.lastSentAt = all.lastSentAt;
           }
+          // Destination visibility — consent baseline. Caller can see
+          // where their data would go and whether the destination came
+          // from env (CI/headless) or the on-disk config file.
+          const envEndpoint = process.env.PATCHWORK_ANALYTICS_ENDPOINT;
+          const cfgEndpoint = getAnalyticsConfig().endpoint;
+          const defaultEndpoint =
+            "https://analytics.claude-ide-bridge.dev/v1/usage";
+          if (envEndpoint) {
+            response.endpoint = envEndpoint;
+            response.endpointSource = "env";
+          } else if (cfgEndpoint) {
+            response.endpoint = cfgEndpoint;
+            response.endpointSource = "config";
+          } else {
+            response.endpoint = defaultEndpoint;
+            response.endpointSource = "default";
+          }
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(response));
+          return;
+        }
+        if (req.method === "DELETE") {
+          // Right-to-erasure: drop prefs, analytics-config (endpoint /
+          // shared secret), and the install salt. Next outbound send
+          // (if any) will mint a fresh salt and treat this as a new
+          // install. Kill-switch is honored here too — incident-mode
+          // operators may still want to scrub local state, so allow
+          // it; flip if the threat model changes.
+          try {
+            unlinkSync(getAnalyticsPrefsPath());
+          } catch {
+            /* missing is fine */
+          }
+          try {
+            unlinkSync(getAnalyticsSaltPath());
+          } catch {
+            /* missing is fine */
+          }
+          clearAnalyticsConfig();
+          if (this.activityLog) {
+            this.activityLog.recordEvent("telemetry.reset", {
+              actor: "http",
+              ip:
+                (req.headers["x-forwarded-for"] as string | undefined)
+                  ?.split(",")[0]
+                  ?.trim() ||
+                req.socket.remoteAddress ||
+                "unknown",
+            });
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
           return;
         }
         if (req.method === "POST") {
