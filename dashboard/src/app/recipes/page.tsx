@@ -596,6 +596,7 @@ export default function RecipesPage() {
   const [modal, setModal] = useState<RunModalState | null>(null);
   const [modalRunning, setModalRunning] = useState(false);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "paused">("all");
   const toast = useToast();
   // Live SSE-driven run state, keyed by recipe name. Foundation for inline
   // run observability — see PR #642 (bridge lifecycle emit) + RecipeRunInline.
@@ -882,6 +883,8 @@ export default function RecipesPage() {
   }
 
   const filteredRecipes = (recipes ?? []).filter((r) => {
+    if (statusFilter === "enabled" && r.enabled === false) return false;
+    if (statusFilter === "paused" && r.enabled !== false) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
@@ -890,6 +893,7 @@ export default function RecipesPage() {
   });
 
   const enabledCount = (recipes ?? []).filter((r) => r.enabled !== false).length;
+  const pausedCount = (recipes ?? []).filter((r) => r.enabled === false).length;
   const installedCount = recipes?.length ?? 0;
 
   const selectedRecipe = useMemo(
@@ -995,10 +999,50 @@ export default function RecipesPage() {
           <div className="recipes-toolbar-meta">
             <span>
               <strong>{filteredRecipes.length}</strong>
-              {search.trim() ? ` of ${installedCount}` : ""} shown
+              {search.trim() || statusFilter !== "all" ? ` of ${installedCount}` : ""} shown
             </span>
             <span aria-hidden="true">·</span>
-            <span>{enabledCount} enabled</span>
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === "enabled" ? "all" : "enabled")}
+              aria-pressed={statusFilter === "enabled"}
+              title={statusFilter === "enabled" ? "Showing enabled only — click to clear" : "Show only enabled"}
+              style={{
+                background: statusFilter === "enabled" ? "var(--green-soft)" : "transparent",
+                border: "none",
+                color: statusFilter === "enabled" ? "var(--ok)" : "inherit",
+                cursor: "pointer",
+                padding: "2px 8px",
+                borderRadius: 999,
+                font: "inherit",
+                minHeight: 24,
+              }}
+            >
+              {enabledCount} enabled
+            </button>
+            {pausedCount > 0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(statusFilter === "paused" ? "all" : "paused")}
+                  aria-pressed={statusFilter === "paused"}
+                  title={statusFilter === "paused" ? "Showing paused only — click to clear" : "Show only paused"}
+                  style={{
+                    background: statusFilter === "paused" ? "var(--warn-soft, var(--bg-2))" : "transparent",
+                    border: "none",
+                    color: statusFilter === "paused" ? "var(--warn)" : "var(--ink-3)",
+                    cursor: "pointer",
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    font: "inherit",
+                    minHeight: 24,
+                  }}
+                >
+                  {pausedCount} paused
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
