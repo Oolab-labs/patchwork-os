@@ -210,6 +210,12 @@ export function useActiveRuns(): Map<string, ActiveRunState> {
 /**
  * Per-recipe selector — only fires when THIS recipe's slice changes.
  * `name` may be undefined for callers behind conditional data.
+ *
+ * NOTE: not consumed yet. Kept as the intended public API for the
+ * per-key-selector design — a row component should call
+ * `useRecipeRun(r.name)` so it re-renders only when its own recipe's
+ * run state changes, instead of subscribing to the whole Map via
+ * `useActiveRuns()`. Wire this up when /recipes rows are componentised.
  */
 export function useRecipeRun(name: string | undefined): ActiveRunState | undefined {
   const subscribe =
@@ -227,7 +233,14 @@ export function useActiveRunCount(): number {
   );
 }
 
-/** Bridge-stream connection state (boolean). */
+/**
+ * Bridge-stream connection state (boolean).
+ *
+ * NOTE: not consumed yet. The shared liveness signal is currently
+ * surfaced via the sidebar's own `subscribeStreamLiveness` path;
+ * this selector exists so a future live-runs UI can show a
+ * "stream offline" affordance without wiring its own subscription.
+ */
 export function useLiveRunsConnected(): boolean {
   return useSyncExternalStore(
     isBrowser() ? store.subscribeConnected : subscribeEmpty,
