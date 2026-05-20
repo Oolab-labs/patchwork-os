@@ -22,6 +22,10 @@ export type HaltCategory =
   | "kill_switch"
   /** Recipe's `tokensMax` budget breached (PR2b). */
   | "budget_exceeded"
+  /** Per-step `expect` assertion failed (slice 2). */
+  | "expect_failed"
+  /** Per-step wall-clock `timeout_ms` exceeded (sandbox-alternative slice). */
+  | "step_timeout"
   /** Whole-recipe failure (e.g. circular dependencies) — has no step row. */
   | "run_level"
   | "unknown";
@@ -39,6 +43,10 @@ export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (/kill[- _]?switch/i.test(reason)) return "kill_switch";
   if (/budget[_ ]?exceeded|exceeded its token budget/i.test(reason))
     return "budget_exceeded";
+  if (/^expect_failed/i.test(reason)) return "expect_failed";
+  // Must precede the `^Tool ... threw` matcher: timeouts surface wrapped
+  // inside the tool-threw envelope (`Tool "x" in step "y" threw: step_timeout: ...`).
+  if (/step_timeout/i.test(reason)) return "step_timeout";
   if (/^Agent step .* threw/i.test(reason)) return "agent_threw";
   if (/^Tool .* threw/i.test(reason)) return "tool_threw";
   if (/^Tool .* reported an error/i.test(reason)) return "tool_error";
