@@ -28,3 +28,10 @@ export { RunSparkBars } from "./RunSparkBars";
 export { SuccessRing, type SuccessRingProps } from "./SuccessRing";
 export * from "./entity";
 export { EntityTimeline, type EntityTimelineProps, type TimelineEvent } from "./EntityTimeline";
+export {
+  RelatedPanel,
+  type RelatedItem,
+  type RelatedGroup,
+  type RelatedPanelProps,
+  type RelatedItemKind,
+} from "./RelatedPanel";
