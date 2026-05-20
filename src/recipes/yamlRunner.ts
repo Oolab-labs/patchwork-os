@@ -1917,7 +1917,7 @@ export function resolveClaudeBinary(): string {
   return ensureCmdShim("claude");
 }
 
-function defaultClaudeCodeFn(
+export function defaultClaudeCodeFn(
   prompt: string,
   _opts?: { mcpAccess?: boolean },
 ): Promise<string> {
