@@ -265,7 +265,7 @@ Full reference: [documents/plugin-authoring.md](documents/plugin-authoring.md)
 For remote deployments where claude.ai custom connectors need authenticated access.
 
 - **Activation**: `--issuer-url <public-https-url>` activates OAuth 2.0. `--cors-origin <origin>` (repeatable) sets `Access-Control-Allow-Origin` on all responses.
-- **Endpoints**: `/.well-known/oauth-authorization-server` (RFC 8414), `/.well-known/oauth-protected-resource` (RFC 9396), `/oauth/register` (RFC 7591 dynamic client registration), `/oauth/authorize` (approval page), `/oauth/token`, `/oauth/revoke` (RFC 7009).
+- **Endpoints**: `/.well-known/oauth-authorization-server` (RFC 8414), `/.well-known/oauth-protected-resource` (RFC 9728), `/oauth/register` (RFC 7591 dynamic client registration), `/oauth/authorize` (approval page), `/oauth/token`, `/oauth/revoke` (RFC 7009).
 - **Design**: PKCE S256 mandatory. Auth codes single-use, 5-min TTL. Access tokens opaque base64url, 24-hour TTL. No refresh tokens — clients connecting TO the bridge re-authorize on expiry. Note: connector tokens (bridge connecting OUT to external services) DO use refresh tokens and auto-refresh on 401 via `baseConnector.refreshToken()`.
 - **CIMD**: if `client_id` is an `https://` URL, bridge fetches the Client ID Metadata Document (RFC draft) to discover `redirect_uris`; 5-min cache, 8 KB max, SSRF-guarded.
 - **Bridge token**: resource owner credential. Entered in `/oauth/authorize` approval page. All string comparisons timing-safe.

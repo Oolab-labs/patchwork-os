@@ -916,7 +916,7 @@ Once `--issuer-url` is set the bridge activates its full OAuth 2.0 server:
 | Endpoint | RFC | Purpose |
 |---|---|---|
 | `/.well-known/oauth-authorization-server` | RFC 8414 | Metadata discovery |
-| `/.well-known/oauth-protected-resource` | RFC 9396 | Resource server metadata |
+| `/.well-known/oauth-protected-resource` | RFC 9728 | Resource server metadata |
 | `/oauth/register` | RFC 7591 | Dynamic client registration |
 | `/oauth/authorize` | RFC 6749 | Authorization code grant (PKCE S256 mandatory) |
 | `/oauth/token` | RFC 6749 | Token exchange |

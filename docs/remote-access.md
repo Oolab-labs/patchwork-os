@@ -143,7 +143,7 @@ claude-ide-bridge \
 | Endpoint | Purpose |
 |---|---|
 | `/.well-known/oauth-authorization-server` | RFC 8414 server metadata discovery |
-| `/.well-known/oauth-protected-resource` | RFC 9396 protected resource metadata |
+| `/.well-known/oauth-protected-resource` | RFC 9728 protected resource metadata |
 | `/oauth/register` | Dynamic client registration (RFC 7591) |
 | `/oauth/authorize` | Authorization approval page — enter bridge token here |
 | `/oauth/token` | Token exchange |
