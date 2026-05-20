@@ -49,6 +49,12 @@ describe("stripRecipeScope", () => {
   it("passes a bare name through unchanged", () => {
     expect(stripRecipeScope("sprint-review-prep")).toBe("sprint-review-prep");
   });
+  it("yields an empty string for a trailing-slash name (caller's RECIPE_NAME_RE then rejects it)", () => {
+    // `"foo/"` → final segment is `""`. stripRecipeScope returns it as-is;
+    // the empty string is not a valid recipe name, so the downstream
+    // RECIPE_NAME_RE check is the gate that rejects it.
+    expect(stripRecipeScope("foo/")).toBe("");
+  });
 });
 
 describe("scoped recipe name install", () => {

@@ -41,7 +41,7 @@ export type GithubInstallParseResult =
     };
 
 const DEFAULT_ALLOWLIST: ReadonlyArray<string> = ["patchworkos/recipes"];
-const SEGMENT_RE = /^[a-z0-9_.-]{1,100}$/;
+export const SEGMENT_RE = /^[a-z0-9_.-]{1,100}$/;
 
 /**
  * Read the runtime allowlist. Combines the always-on default with
@@ -199,6 +199,14 @@ export function buildGithubApiUrl(parsed: ParsedGithubInstallSource): string {
  *   - `{ ok: false, kind: "network_error", error }` — both hosts threw
  *     a network-level error (DNS / connect / abort). Caller surfaces
  *     the existing 502 `fetch_network_error` shape.
+ *
+ * Intentional edge case: when raw returns 404 but the api fallback
+ * *network-errors* (rather than also returning 404), the result is
+ * classified `not_found`, not `network_error`. This is a deliberate
+ * conservative call — a raw 404 is a strong signal the file is absent,
+ * and reporting "not found" is more actionable than a generic network
+ * error. Do not "fix" this to prefer network_error without weighing
+ * that tradeoff (see the matching test case).
  *
  * `signal` (caller's AbortController) and timeout behaviour are
  * preserved — the same signal is passed to both fetch attempts.

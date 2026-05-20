@@ -1443,9 +1443,8 @@ export function tryHandleRecipeRoute(
             })()
           : null;
         if (bundleParse?.ok && bundleParse.parsed.kind === "bundle") {
-          const { buildGithubRawUrl, fetchGithubInstallFile } = await import(
-            "./recipes/githubInstallSource.js"
-          );
+          const { buildGithubRawUrl, fetchGithubInstallFile, SEGMENT_RE } =
+            await import("./recipes/githubInstallSource.js");
           const bundleName = bundleParse.parsed.name;
           const bundleOwner = bundleParse.parsed.owner;
           const bundleRepo = bundleParse.parsed.repo;
@@ -1570,6 +1569,19 @@ export function tryHandleRecipeRoute(
           mkdirSync(recipesDir, { recursive: true });
 
           for (const r of manifest.recipes as string[]) {
+            // The recipe name comes from the bundle manifest's JSON body
+            // (GitHub-hosted, but still external input). Validate it
+            // before it reaches URL construction in fetchGithubInstallFile
+            // — the `github:` source path gets this check via
+            // parseGithubInstallSource, but the bundle loop builds the
+            // struct directly and would otherwise bypass it.
+            if (typeof r !== "string" || !SEGMENT_RE.test(r.toLowerCase())) {
+              failures.push({
+                name: String(r),
+                error: "invalid recipe name in bundle manifest",
+              });
+              continue;
+            }
             // Bundle's manifest is allowed to declare recipes that
             // live in the same repo as the bundle. Fetch with the
             // parsed owner/repo via the raw-first / api.github.com

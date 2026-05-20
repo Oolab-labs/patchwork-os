@@ -202,8 +202,13 @@ export function rawUrlFor(src: ParsedInstallSource, file: string): string {
  */
 export function contentsApiUrlFor(src: ParsedInstallSource, file: string): string {
   const filePath = [src.path, file].filter(Boolean).join("/");
+  // Encode every interpolated segment so the URL builder is self-safe — even
+  // though parseInstallSource already constrains owner/repo, a stray `/` or
+  // `?` in any field must not be able to escape its path component.
+  const owner = encodeURIComponent(src.owner);
+  const repo = encodeURIComponent(src.repo);
   const ref = encodeURIComponent(src.ref);
-  return `https://api.github.com/repos/${src.owner}/${src.repo}/contents/${filePath}?ref=${ref}`;
+  return `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${ref}`;
 }
 
 export function githubBlobUrlFor(src: ParsedInstallSource, file: string): string {
