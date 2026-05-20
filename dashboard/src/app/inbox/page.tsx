@@ -4,9 +4,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { apiPath } from "@/lib/api";
-import { EmptyState, HintCard } from "@/components/patchwork";
+import { EmptyState, ErrorState, HintCard } from "@/components/patchwork";
+import { SkeletonList } from "@/components/Skeleton";
 import { InboxDeliveryCard } from "@/components/InboxDeliveryCard";
 import { useToast } from "@/components/Toast";
+import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useSearchHotkey } from "@/hooks/useSearchHotkey";
 
 function isFilterCategory(v: string | null): v is FilterCategory {
@@ -384,12 +386,14 @@ function categoryForItem(name: string): Exclude<FilterCategory, "All"> {
 // ------------------------------------------------------------------ page
 
 export default function InboxPage() {
-  const [items, setItems] = useState<InboxItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<InboxDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [err, setErr] = useState<string | undefined>();
+  const [detailErr, setDetailErr] = useState<string | undefined>();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Pause polling while the tab is hidden — `useBridgeFetch` polls on a
+  // fixed interval, so we gate `enabled` on document visibility to keep
+  // the prior visibilitychange-aware behavior.
+  const [tabVisible, setTabVisible] = useState(true);
   const searchInputRef = useSearchHotkey();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -406,83 +410,65 @@ export default function InboxPage() {
     router.replace(qs ? `?${qs}` : "?", { scroll: false });
   };
   const [search, setSearch] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
   const [seenNames] = useState<Set<string>>(() => new Set());
   const toast = useToast();
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detailRef = useRef<HTMLDivElement | null>(null);
   const selectedRef = useRef<InboxDetail | null>(null);
   selectedRef.current = selected;
-  // #600: track in-flight list fetch so we can abort on unmount /
-  // visibilitychange. Previously the response could land after the
-  // user navigated away → setItems() on a dead tree.
-  const listAbortRef = useRef<AbortController | null>(null);
+  // Tracks whether seenNames has been seeded from the first successful
+  // list response — keeps the "new" badge logic identical to the prior
+  // `prev.length === 0` first-load check.
+  const seededRef = useRef(false);
 
-  const fetchList = useCallback(async (manual = false) => {
-    listAbortRef.current?.abort();
-    const controller = new AbortController();
-    listAbortRef.current = controller;
-    if (manual) setRefreshing(true);
-    try {
-      const res = await fetch(apiPath("/api/inbox"), { signal: controller.signal });
-      if (!res.ok) throw new Error(`/api/inbox ${res.status}`);
-      const data = (await res.json()) as { items: InboxItem[] };
-      const incoming = data.items ?? [];
-      setItems((prev) => {
-        if (prev.length === 0) {
-          // First load — seed seenNames so existing items don't show "new" badge
-          for (const item of incoming) {
-            seenNames.add(item.name);
-          }
-        }
-        // Items added after first load will not be in seenNames → show "new" badge
-        // Badge clears only when user clicks item (selectItem)
-        return incoming;
-      });
-      setErr(undefined);
-      // Auto-refresh detail if modified upstream
-      const cur = selectedRef.current;
-      if (cur) {
-        const updated = incoming.find((i) => i.name === cur.name);
-        if (updated && updated.modifiedAt !== cur.modifiedAt) {
-          const detailRes = await fetch(
-            apiPath(`/api/inbox/${encodeURIComponent(cur.name)}`),
-            { signal: controller.signal },
-          );
-          if (detailRes.ok) setSelected((await detailRes.json()) as InboxDetail);
-        }
-      }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      if (listAbortRef.current === controller) {
-        setLoading(false);
-        if (manual) setRefreshing(false);
-        listAbortRef.current = null;
-      }
-    }
-  }, [seenNames]);
+  // List data, polling, retry/backoff and abort-on-unmount are all
+  // handled by the shared hook. Polling pauses while the tab is hidden.
+  const {
+    data: listData,
+    error: listError,
+    loading,
+    refetch,
+  } = useBridgeFetch<{ items: InboxItem[] }>("/api/inbox", {
+    intervalMs: 30_000,
+    enabled: tabVisible,
+  });
+  const items = listData?.items ?? [];
 
   useEffect(() => {
-    fetchList();
-    pollRef.current = setInterval(() => fetchList(), 30_000);
-    const onVisible = () => {
-      if (document.hidden) {
-        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-      } else if (!pollRef.current) {
-        void fetchList();
-        pollRef.current = setInterval(() => fetchList(), 30_000);
-      }
-    };
+    const onVisible = () => setTabVisible(!document.hidden);
     document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
+  // Seed seenNames on the first successful load so existing items don't
+  // show the "new" badge. Items that arrive on later polls stay unseen.
+  useEffect(() => {
+    if (!seededRef.current && listData) {
+      for (const item of listData.items ?? []) seenNames.add(item.name);
+      seededRef.current = true;
+    }
+  }, [listData, seenNames]);
+
+  // Auto-refresh the open message when the list reports it changed
+  // upstream — preserves the prior behavior where a poll that detected a
+  // newer modifiedAt re-fetched the detail body.
+  useEffect(() => {
+    const cur = selectedRef.current;
+    if (!cur || !listData) return;
+    const updated = listData.items?.find((i) => i.name === cur.name);
+    if (!updated || updated.modifiedAt === cur.modifiedAt) return;
+    let alive = true;
+    void fetch(apiPath(`/api/inbox/${encodeURIComponent(cur.name)}`))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((detail) => {
+        if (alive && detail) setSelected(detail as InboxDetail);
+      })
+      .catch(() => {
+        /* transient — next poll retries */
+      });
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      document.removeEventListener("visibilitychange", onVisible);
-      // #600: abort any in-flight list fetch on unmount.
-      listAbortRef.current?.abort();
+      alive = false;
     };
-  }, [fetchList]);
+  }, [listData]);
 
   // Auto-select first item after initial load if nothing is selected
   useEffect(() => {
@@ -514,6 +500,7 @@ const filteredItems = items.filter((item) => {
     }
     seenNames.add(name);
     setDetailLoading(true);
+    setDetailErr(undefined);
     try {
       const res = await fetch(apiPath(`/api/inbox/${encodeURIComponent(name)}`));
       if (!res.ok) throw new Error(`/api/inbox/${name} ${res.status}`);
@@ -525,7 +512,7 @@ const filteredItems = items.filter((item) => {
         detailRef.current?.focus({ preventScroll: false });
       });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setDetailErr(e instanceof Error ? e.message : String(e));
     } finally {
       setDetailLoading(false);
     }
@@ -579,8 +566,8 @@ const filteredItems = items.filter((item) => {
             </span>
             <button
               type="button"
-              onClick={() => fetchList(true)}
-              disabled={refreshing}
+              onClick={() => refetch()}
+              disabled={loading}
               title="Refresh"
               style={{
                 display: "flex",
@@ -597,12 +584,12 @@ const filteredItems = items.filter((item) => {
                 color: "var(--ink-2)",
                 fontSize: "var(--fs-s)",
                 fontWeight: 600,
-                cursor: refreshing ? "default" : "pointer",
-                opacity: refreshing ? 0.6 : 1,
+                cursor: loading ? "default" : "pointer",
+                opacity: loading ? 0.6 : 1,
                 transition: "opacity 150ms",
               }}
             >
-              {refreshing ? (
+              {loading ? (
                 <Spinner size={12} />
               ) : (
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -625,30 +612,26 @@ const filteredItems = items.filter((item) => {
         */}
         <InboxDeliveryCard />
 
-        {err && (
-          <div className="alert-err" role="alert" style={{ marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-            <span>{err}</span>
-            <button
-              type="button"
-              onClick={() => fetchList(true)}
-              style={{ fontSize: "var(--fs-xs)", fontWeight: 600, color: "inherit", background: "none", border: "1px solid currentColor", borderRadius: "var(--r-full)", padding: "2px 10px", cursor: "pointer", opacity: 0.8, flexShrink: 0 }}
-            >
-              Retry
-            </button>
+        {/* Stale-data refresh error: list still has items, but the last
+            poll failed. Inline banner only — the populated list stays
+            visible below. The empty-on-error case is handled by the
+            ErrorState in the block further down. */}
+        {listError && items.length > 0 && (
+          <div className="alert-err" role="alert" style={{ marginBottom: 12 }}>
+            Refresh failed — {listError}
           </div>
         )}
 
-        {loading ? (
-          <div className="empty-state" role="status" aria-busy="true" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Spinner />
-            <span>Loading…</span>
-          </div>
-        ) : items.length === 0 && !err ? (
-          // Suppress "Run a recipe to generate your first brief" when err
-          // is set — the cause of the empty list is connectivity / fetch
-          // failure, not an actual empty inbox. The alert-err above this
-          // block already explains the failure and offers Retry, so a
-          // second misleading CTA below just creates noise.
+        {loading && items.length === 0 ? (
+          <SkeletonList rows={5} columns={2} />
+        ) : listError && items.length === 0 ? (
+          <ErrorState
+            title="Couldn't load inbox"
+            description="The bridge isn't responding. The inbox will reload on its next tick."
+            error={listError}
+            onRetry={refetch}
+          />
+        ) : items.length === 0 ? (
           <EmptyState
             icon={
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -671,7 +654,7 @@ const filteredItems = items.filter((item) => {
               </>
             }
           />
-        ) : items.length === 0 && err ? null : (
+        ) : (
           <div
             className={`inbox-twopane${selected ? " inbox-twopane--reader" : " inbox-twopane--list"}`}
             style={{ display: "flex", flex: 1, minHeight: 0, border: "1px solid var(--line-1)", borderRadius: "var(--r-l)", overflow: "hidden", background: "var(--surface)" }}
@@ -849,6 +832,14 @@ const filteredItems = items.filter((item) => {
                   <Spinner />
                   <span style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)" }}>Loading message…</span>
                 </div>
+              ) : detailErr ? (
+                <div style={{ padding: "40px" }}>
+                  <ErrorState
+                    title="Couldn't open this message"
+                    description="The bridge couldn't return this message body. Try selecting it again."
+                    error={detailErr}
+                  />
+                </div>
               ) : selected ? (
                 <div className="inbox-reader-body" style={{ padding: "28px 40px 48px", maxWidth: 700 }}>
                   {/* Mobile-only Gmail-style top app bar: back arrow + title.
@@ -977,7 +968,7 @@ const filteredItems = items.filter((item) => {
                                 return;
                               }
                               toast.success(`Archived “${selected.name}”`);
-                              fetchList(true);
+                              refetch();
                               setSelected(null);
                             } catch (e) {
                               toast.error(
@@ -1008,7 +999,7 @@ const filteredItems = items.filter((item) => {
                                 return;
                               }
                               toast.success(`Deleted “${selected.name}”`);
-                              fetchList(true);
+                              refetch();
                               setSelected(null);
                             } catch (e) {
                               toast.error(
