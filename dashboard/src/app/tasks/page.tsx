@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { apiPath } from "@/lib/api";
 import { fmtDuration } from "@/components/time";
 import { SkeletonList } from "@/components/Skeleton";
@@ -591,9 +592,9 @@ export default function TasksPage() {
               </>
             }
             action={
-              <a href="/recipes" className="btn sm">
+              <Link href="/recipes" className="btn sm">
                 Browse recipes
-              </a>
+              </Link>
             }
           />
         ) : (

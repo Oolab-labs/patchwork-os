@@ -1,6 +1,7 @@
 "use client";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { relTime } from "@/components/time";
 import { apiPath } from "@/lib/api";
 import { canonicalRecipeKey } from "@/lib/entityKey";
@@ -875,9 +876,9 @@ export default function TracesPage() {
           title="No traces yet"
           description="Decision traces (approvals, enrichment, recipe runs) accumulate here as the bridge operates. Run a recipe or process an approval to start the log."
           action={
-            <a href="/recipes" className="btn sm">
+            <Link href="/recipes" className="btn sm">
               Browse recipes
-            </a>
+            </Link>
           }
         />
       ) : view === "flat" ? (
