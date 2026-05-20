@@ -25,18 +25,32 @@ export function StatusPill({
   children,
   className,
   title,
+  srLabel,
 }: {
   tone?: StatusTone;
   dot?: boolean;
-  children: ReactNode;
+  children?: ReactNode;
   className?: string;
   title?: string;
+  /**
+   * Screen-reader-only label. Use when the pill is icon-only (no visible
+   * text `children`) so status is never conveyed by the coloured `.dot`
+   * alone — WCAG 1.4.1 (use of colour).
+   */
+  srLabel?: string;
 }) {
   const cls = `chip ${TONE_CLASS[tone]}${className ? ` ${className}` : ""}`;
+  // The coloured `.dot` is decorative (`aria-hidden`). A pill must always
+  // carry a text label: either visible `children` or an `sr-only`
+  // fallback. Without one, an icon-only pill would communicate status
+  // purely through colour.
+  const hasVisibleText =
+    children !== undefined && children !== null && children !== false;
   return (
     <span className={cls} title={title}>
       {dot && <span className="dot" aria-hidden="true" />}
-      {children}
+      {hasVisibleText ? children : null}
+      {!hasVisibleText && srLabel && <span className="sr-only">{srLabel}</span>}
     </span>
   );
 }

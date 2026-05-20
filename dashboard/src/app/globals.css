@@ -2899,6 +2899,25 @@ button.topbar-search {
   .app-main {
     grid-column: 1 / 2;
   }
+  /* Tap targets: the mobile nav drawer renders `.app-nav-link` at ~35px
+     tall (7px padding + 21px content). Lift to the 44px WCAG 2.5.5 /
+     iOS HIG minimum so drawer links are comfortably tappable. */
+  .app-nav-link {
+    min-height: 44px;
+  }
+}
+
+/* Touch devices: the topbar icon buttons (`.theme-toggle` ~32px,
+   `.mobile-menu-btn` / `.topbar-bell` ~36px) are below the 44px minimum
+   tap target. Coarse-pointer / no-hover input is the reliable signal for
+   a touchscreen, independent of viewport width, so size up here. */
+@media (hover: none) and (pointer: coarse) {
+  .theme-toggle,
+  .mobile-menu-btn,
+  .app-header .topbar-icon-btn.topbar-bell {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 /* ---- Identity pill (top bar) ---- */

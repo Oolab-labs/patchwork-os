@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { flatRoutes } from "@/lib/navRoutes";
 
@@ -237,6 +237,17 @@ export function CommandPalette({
     else grouped.push({ group: cmd.group, items: [{ cmd, idx }] });
   });
 
+  // Stable ids for the combobox/listbox ARIA wiring. `aria-activedescendant`
+  // on the input points at the currently-highlighted option so screen
+  // readers track keyboard navigation without moving DOM focus off the
+  // input.
+  const listId = "cmdk-listbox";
+  const rowId = (idx: number) => `cmdk-row-${idx}`;
+  const activeRowId =
+    filtered.length > 0 && activeIdx < filtered.length
+      ? rowId(activeIdx)
+      : undefined;
+
   return (
     <div
       className="cmdk-backdrop"
@@ -262,34 +273,51 @@ export function CommandPalette({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Jump to anything…"
             aria-label="Command palette query"
+            role="combobox"
+            aria-expanded={filtered.length > 0}
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={activeRowId}
           />
           <span className="kbd">esc</span>
         </div>
-        <ul className="cmdk-list" ref={listRef} role="listbox">
+        <ul className="cmdk-list" ref={listRef} id={listId} role="listbox" aria-label="Results">
           {filtered.length === 0 && (
             <li className="cmdk-empty">No matches</li>
           )}
           {grouped.map((g) => (
-            <Fragment key={g.group}>
-              <li className="cmdk-group" aria-hidden="true">{g.group}</li>
-              {g.items.map(({ cmd, idx }) => (
-                <li
-                  key={cmd.id}
-                  data-idx={idx}
-                  role="option"
-                  aria-selected={idx === activeIdx}
-                  className={`cmdk-row${idx === activeIdx ? " is-active" : ""}`}
-                  onMouseEnter={() => setActiveIdx(idx)}
-                  onClick={() => {
-                    cmd.perform();
-                    onClose();
-                  }}
-                >
-                  <span className="cmdk-row-label">{cmd.label}</span>
-                  {cmd.hint && <span className="cmdk-row-hint">{cmd.hint}</span>}
-                </li>
-              ))}
-            </Fragment>
+            // Each group is a `role="group"` with an `aria-label` so the
+            // group name (Navigate / Recipes / …) is exposed as context
+            // for its options. The previous `<li aria-hidden>` header was
+            // both an invalid child of `role="listbox"` and silently
+            // dropped the grouping for assistive tech.
+            <li key={g.group} role="presentation">
+              <div role="group" aria-label={g.group}>
+                <div className="cmdk-group" aria-hidden="true">
+                  {g.group}
+                </div>
+                <ul role="presentation" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                  {g.items.map(({ cmd, idx }) => (
+                    <li
+                      key={cmd.id}
+                      id={rowId(idx)}
+                      data-idx={idx}
+                      role="option"
+                      aria-selected={idx === activeIdx}
+                      className={`cmdk-row${idx === activeIdx ? " is-active" : ""}`}
+                      onMouseEnter={() => setActiveIdx(idx)}
+                      onClick={() => {
+                        cmd.perform();
+                        onClose();
+                      }}
+                    >
+                      <span className="cmdk-row-label">{cmd.label}</span>
+                      {cmd.hint && <span className="cmdk-row-hint">{cmd.hint}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </li>
           ))}
         </ul>
       </div>
