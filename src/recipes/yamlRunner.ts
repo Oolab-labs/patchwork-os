@@ -289,11 +289,11 @@ export function evaluateExpect(
  * Lazy AJV for `step.expect.schema`. Initialised on first use so recipes
  * without schema assertions don't pay the import/compile cost.
  */
-let _stepExpectAjv: import("ajv").Ajv | undefined;
-async function getStepExpectAjv(): Promise<import("ajv").Ajv> {
+let _stepExpectAjv: import("../ajv2020.js").Ajv2020 | undefined;
+async function getStepExpectAjv(): Promise<import("../ajv2020.js").Ajv2020> {
   if (!_stepExpectAjv) {
-    const { Ajv } = await import("ajv");
-    _stepExpectAjv = new Ajv({ strict: false, allErrors: true });
+    const { createAjv2020 } = await import("../ajv2020.js");
+    _stepExpectAjv = createAjv2020({ strict: false, allErrors: true });
   }
   return _stepExpectAjv;
 }
