@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
-import { HintCard } from "@/components/patchwork";
+import { EmptyState, HintCard } from "@/components/patchwork";
 import { InstallConfirmDialog } from "./_components/InstallConfirmDialog";
 import { apiPath } from "@/lib/api";
 import {
@@ -852,10 +852,10 @@ export default function MarketplacePage() {
           ))}
         </div>
       ) : totalVisible === 0 ? (
-        <div className="empty-state">
-          <h3>No results found</h3>
-          <p>Try a different search term or category.</p>
-        </div>
+        <EmptyState
+          title="No results found"
+          description="Try a different search term or category."
+        />
       ) : (
         <>
           {bundles.length > 0 && (
