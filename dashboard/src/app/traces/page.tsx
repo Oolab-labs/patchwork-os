@@ -1,7 +1,9 @@
 "use client";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { relTime } from "@/components/time";
 import { apiPath } from "@/lib/api";
+import { canonicalRecipeKey } from "@/lib/entityKey";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
@@ -569,14 +571,70 @@ function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
   );
 }
 
+function isSinceFilter(v: string | null): v is SinceFilter {
+  return v === "1h" || v === "24h" || v === "7d" || v === "30d" || v === "all";
+}
+
 export default function TracesPage() {
+  const searchParams = useSearchParams();
   const [statusFilter, setStatusFilter] = useState<"all" | "done" | "errors">("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  // Inbound deep-links: /traces?recipe=<name> (from /runs, /recipes, etc.)
+  // and /traces?q=<free-text> previously landed on an unfiltered page —
+  // the destination ignored the param entirely. Seed the search box from
+  // either, preferring ?recipe= (canonicalised via canonicalRecipeKey so
+  // a "foo:agent" axis variant resolves to the bare recipe). Also honor
+  // ?since= when it's a known bucket key.
+  const initialRecipe = useMemo(() => {
+    const r = searchParams?.get("recipe");
+    return r ? canonicalRecipeKey(r) : "";
+  }, [searchParams]);
+  const initialQ = searchParams?.get("q") ?? "";
+  const initialSince = searchParams?.get("since");
+  const [searchQuery, setSearchQuery] = useState<string>(initialRecipe || initialQ);
+  const [recipeFilter, setRecipeFilter] = useState<string>(initialRecipe);
   const debouncedSearch = useDebounced(searchQuery, 250);
-  const [since, setSince] = useState<SinceFilter>("24h");
+  const [since, setSince] = useState<SinceFilter>(
+    isSinceFilter(initialSince) ? initialSince : "24h",
+  );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"flat" | "tree">("tree");
   const [ksOnly, setKsOnly] = useState(false);
+
+  // Re-seed on URL change (e.g. user clicks another ?recipe= chip without
+  // a full page nav). Keep this minimal — only re-apply when the inbound
+  // param differs from current state, so user typing isn't trampled.
+  useEffect(() => {
+    const r = searchParams?.get("recipe");
+    const canon = r ? canonicalRecipeKey(r) : "";
+    if (canon && canon !== recipeFilter) {
+      setRecipeFilter(canon);
+      setSearchQuery(canon);
+    } else if (!r && recipeFilter) {
+      // ?recipe= was cleared from the URL externally — drop the filter.
+      setRecipeFilter("");
+    }
+    const q = searchParams?.get("q");
+    if (q && q !== searchQuery && !canon) {
+      setSearchQuery(q);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const clearRecipeFilter = useCallback(() => {
+    setRecipeFilter("");
+    setSearchQuery("");
+    if (typeof globalThis !== "undefined" && globalThis.location) {
+      const url = new URL(globalThis.location.href);
+      let dirty = false;
+      for (const k of ["recipe", "q"]) {
+        if (url.searchParams.has(k)) {
+          url.searchParams.delete(k);
+          dirty = true;
+        }
+      }
+      if (dirty) globalThis.history.replaceState(null, "", url.toString());
+    }
+  }, []);
 
   const qs = useMemo(() => {
     const params = new URLSearchParams();
@@ -680,6 +738,38 @@ export default function TracesPage() {
       </div>
 
       <HintCard id="traces" />
+
+      {recipeFilter && (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            marginBottom: "var(--s-3)",
+            padding: "6px 10px",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: 6,
+            background: "var(--bg-0)",
+            fontSize: "var(--fs-s)",
+          }}
+        >
+          <span style={{ color: "var(--ink-2)" }}>Filtered by recipe:</span>
+          <span
+            className="mono"
+            style={{ color: "var(--ink-0)", fontWeight: 600 }}
+          >
+            {recipeFilter}
+          </span>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={clearRecipeFilter}
+            style={{ marginLeft: "auto" }}
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
       {/* filter bar */}
       <div

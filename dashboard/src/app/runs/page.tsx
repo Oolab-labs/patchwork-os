@@ -216,8 +216,14 @@ export default function RunsPage() {
   // share a manualRunId. Cleared via the same "clear filters" pill.
   const searchParams = useSearchParams();
   const [attemptFilter, setAttemptFilter] = useState<string>("");
+  // /sessions/[id] links to /runs?session=<id>; previously that param
+  // was silently ignored. Seed a client-side filter from it (the bridge
+  // /runs endpoint doesn't know about session yet, so we pass it through
+  // and filter defensively on any session-shaped field on the run).
+  const [sessionFilter, setSessionFilter] = useState<string>("");
   useEffect(() => {
     setAttemptFilter(searchParams?.get("attempt") ?? "");
+    setSessionFilter(searchParams?.get("session") ?? "");
     // RelationStrip on /runs and the dashboard hero link to ?recipe= and
     // ?halt=1 — seed the recipe filter and (for halt=1) flip status to
     // "error" so the page actually reflects the deep-link intent.
@@ -264,6 +270,11 @@ export default function RunsPage() {
         if (status !== "all") params.set("status", status);
         if (debouncedRecipeQuery) params.set("recipe", debouncedRecipeQuery);
         if (attemptFilter) params.set("manualRunId", attemptFilter);
+        // Forward `session` to the bridge — if/when /runs grows a
+        // session-axis filter the dashboard already speaks the contract.
+        // Today the bridge silently ignores unknown params, and we
+        // narrow client-side below.
+        if (sessionFilter) params.set("session", sessionFilter);
         const res = await fetch(apiPath(`/api/bridge/runs?${params}`), {
           signal: controller.signal,
         });
@@ -284,7 +295,7 @@ export default function RunsPage() {
       clearInterval(id);
       controller.abort();
     };
-  }, [trigger, status, debouncedRecipeQuery, limit, attemptFilter]);
+  }, [trigger, status, debouncedRecipeQuery, limit, attemptFilter, sessionFilter]);
 
   // Live SSE: subscribe to recipe lifecycle events (PR #642) so the list
   // updates immediately when a run starts/ends, instead of waiting up to
@@ -369,12 +380,29 @@ export default function RunsPage() {
   }, [window]);
 
   const windowedRuns = useMemo(() => {
-    const cutoffMs = windowCutoffMs(window);
-    if (cutoffMs == null) return runs;
     if (runs == null) return null;
-    const threshold = Date.now() - cutoffMs;
-    return runs.filter((r) => r.createdAt >= threshold);
-  }, [runs, window]);
+    const cutoffMs = windowCutoffMs(window);
+    const threshold = cutoffMs == null ? null : Date.now() - cutoffMs;
+    // Defensive client-side session match: the bridge run record may
+    // carry the session id under one of a few field names depending on
+    // version. Check all of them — typed as Run but read loosely.
+    const matchesSession = (r: Run): boolean => {
+      if (!sessionFilter) return true;
+      const rec = r as unknown as Record<string, unknown>;
+      const candidates = [
+        rec.sessionId,
+        rec.session,
+        rec.claudeSessionId,
+      ];
+      return candidates.some(
+        (v) => typeof v === "string" && v === sessionFilter,
+      );
+    };
+    return runs.filter(
+      (r) =>
+        (threshold == null || r.createdAt >= threshold) && matchesSession(r),
+    );
+  }, [runs, window, sessionFilter]);
 
   // Reset page size when filters change so we don't accidentally hold a giant fetch.
   useEffect(() => {
@@ -657,10 +685,20 @@ export default function RunsPage() {
             attempt:{attemptFilter}
           </span>
         )}
+        {sessionFilter && (
+          <span
+            className="pill mono"
+            style={{ fontSize: "var(--fs-xs)" }}
+            title={`Filtering to runs in session ${sessionFilter}`}
+          >
+            session:{sessionFilter.slice(0, 8)}
+          </span>
+        )}
         {(recipeQuery ||
           trigger !== "all" ||
           window !== "any" ||
-          attemptFilter) && (
+          attemptFilter ||
+          sessionFilter) && (
           <button
             type="button"
             className="btn sm ghost"
@@ -669,6 +707,7 @@ export default function RunsPage() {
               setTrigger("all");
               setWindow("any");
               setAttemptFilter("");
+              setSessionFilter("");
               // Strip the ?attempt= from the URL so the filter doesn't
               // re-apply on next render via the useSearchParams effect.
               // `window` is shadowed by a state variable in this file —
@@ -679,7 +718,7 @@ export default function RunsPage() {
               if (g.window) {
                 const url = new URL(g.window.location.href);
                 let dirty = false;
-                for (const k of ["attempt", "recipe", "halt"]) {
+                for (const k of ["attempt", "recipe", "halt", "session"]) {
                   if (url.searchParams.has(k)) {
                     url.searchParams.delete(k);
                     dirty = true;
@@ -772,7 +811,8 @@ export default function RunsPage() {
             trigger !== "all" ||
             status !== "all" ||
             !!debouncedRecipeQuery ||
-            !!attemptFilter;
+            !!attemptFilter ||
+            !!sessionFilter;
           return (
             <EmptyState
               title={
@@ -791,6 +831,7 @@ export default function RunsPage() {
                       status !== "all" && `status=${status}`,
                       debouncedRecipeQuery && `recipe=${debouncedRecipeQuery}`,
                       attemptFilter && `attempt=${attemptFilter}`,
+                      sessionFilter && `session=${sessionFilter}`,
                       window !== "any" &&
                         `window=${TIME_WINDOW_LABEL[window].toLowerCase()}`,
                     ]
@@ -820,6 +861,7 @@ export default function RunsPage() {
                       setStatus("all");
                       setRecipeQuery("");
                       setAttemptFilter("");
+                      setSessionFilter("");
                     }}
                   >
                     Clear filters
