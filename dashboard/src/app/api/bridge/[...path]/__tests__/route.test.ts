@@ -142,6 +142,97 @@ describe("catch-all bridge proxy — SSE /stream non-OK passthrough", () => {
   });
 });
 
+describe("catch-all bridge proxy — SSE /stream aborts upstream on disconnect", () => {
+  const ctx = { params: Promise.resolve({ path: ["stream"] }) };
+
+  function makeStreamReqWithSignal(): {
+    req: NextRequest;
+    abortClient: () => void;
+  } {
+    const clientAbort = new AbortController();
+    const req = new Request("https://dashboard.local/api/bridge/stream", {
+      method: "GET",
+      headers: { "sec-fetch-site": "same-origin" },
+    });
+    Object.defineProperty(req, "nextUrl", {
+      value: { search: "" },
+      configurable: true,
+    });
+    // NextRequest exposes `.signal` that aborts when the client disconnects.
+    Object.defineProperty(req, "signal", {
+      value: clientAbort.signal,
+      configurable: true,
+    });
+    return {
+      req: req as unknown as NextRequest,
+      abortClient: () => clientAbort.abort(),
+    };
+  }
+
+  it("aborts the upstream bridge fetch when the response stream is cancelled", async () => {
+    mockFindBridge.mockReturnValueOnce({ authToken: "t", port: 9999 });
+    let upstreamSignal: AbortSignal | undefined;
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(async (_url, init) => {
+        upstreamSignal = (init as RequestInit | undefined)?.signal ?? undefined;
+        // A body that never completes — mimics a held-open SSE connection.
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start() {
+              /* never enqueue, never close */
+            },
+          }),
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        );
+      });
+    try {
+      const { req } = makeStreamReqWithSignal();
+      const res = await GET(req, ctx);
+      expect(res.status).toBe(200);
+      // The upstream fetch must have been given an abort signal.
+      expect(upstreamSignal).toBeInstanceOf(AbortSignal);
+      expect(upstreamSignal?.aborted).toBe(false);
+      // Simulate the browser closing its EventSource: Next.js cancels the
+      // response stream. This must abort the upstream fetch so the bridge
+      // sees the socket close and decrements its subscriber count.
+      await res.body?.cancel();
+      expect(upstreamSignal?.aborted).toBe(true);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("aborts the upstream bridge fetch when the incoming request is aborted", async () => {
+    mockFindBridge.mockReturnValueOnce({ authToken: "t", port: 9999 });
+    let upstreamSignal: AbortSignal | undefined;
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementationOnce(async (_url, init) => {
+        upstreamSignal = (init as RequestInit | undefined)?.signal ?? undefined;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start() {
+              /* never enqueue, never close */
+            },
+          }),
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        );
+      });
+    try {
+      const { req, abortClient } = makeStreamReqWithSignal();
+      const res = await GET(req, ctx);
+      expect(res.status).toBe(200);
+      expect(upstreamSignal?.aborted).toBe(false);
+      // Client disconnects (tab close / navigation) → req.signal aborts.
+      abortClient();
+      expect(upstreamSignal?.aborted).toBe(true);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});
+
 describe("catch-all bridge proxy — error body does not leak internals", () => {
   const ctx = { params: Promise.resolve({ path: ["some", "path"] }) };
 

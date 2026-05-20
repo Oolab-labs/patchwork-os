@@ -31,10 +31,29 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
         { status: 503 },
       );
     }
+    // Abort the upstream bridge fetch when the browser disconnects.
+    // Without this, closing an EventSource (tab close, page reload,
+    // navigation) cancels the downstream response but leaves the upstream
+    // fetch reader looping forever. The bridge keeps the subscriber
+    // registered, its 15s keep-alive ping keeps succeeding into the
+    // orphaned proxy socket, and its cleanup() never runs — every reload
+    // leaks one subscriber until the bridge's 20-cap saturates and
+    // /stream returns 503 forever (kill-switch + activity ticker die).
+    const upstreamAbort = new AbortController();
+    const abortUpstream = () => {
+      if (!upstreamAbort.signal.aborted) upstreamAbort.abort();
+    };
+    // Propagate client disconnect: req.signal aborts when the browser
+    // goes away. If it's already aborted, abort the upstream immediately.
+    if (req.signal) {
+      if (req.signal.aborted) abortUpstream();
+      else req.signal.addEventListener("abort", abortUpstream, { once: true });
+    }
     let upstream: Response;
     try {
       upstream = await fetch(resolveBridgeUrl(lock, target), {
         headers: { Authorization: `Bearer ${lock.authToken}` },
+        signal: upstreamAbort.signal,
       });
     } catch (err) {
       console.error("[dashboard /api/bridge] upstream fetch failed:", err);
@@ -66,6 +85,7 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
     // immediately. Without this, the browser's EventSource.onopen never fires
     // until the first real event arrives (the bridge holds /stream idle).
     const encoder = new TextEncoder();
+    let upstreamReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     const out = new ReadableStream({
       async start(controller) {
         controller.enqueue(encoder.encode(": connected\n\n"));
@@ -74,6 +94,7 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
           controller.close();
           return;
         }
+        upstreamReader = reader;
         try {
           while (true) {
             const { done, value } = await reader.read();
@@ -85,6 +106,14 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
         } finally {
           controller.close();
         }
+      },
+      // Fires when the downstream consumer goes away (Next.js cancels the
+      // response when the browser closes the connection). Abort the
+      // upstream fetch and cancel its reader so the bridge sees the socket
+      // close and runs cleanup() — decrementing sseSubscriberCount.
+      cancel() {
+        abortUpstream();
+        upstreamReader?.cancel().catch(() => {});
       },
     });
     return new Response(out, {

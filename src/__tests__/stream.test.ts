@@ -120,6 +120,44 @@ describe("GET /stream SSE endpoint", () => {
     expect(body).toContain('"kind":"lifecycle"');
   });
 
+  it("decrements subscriber count back to 0 after client disconnect", async () => {
+    expect(server.sseSubscribers_count).toBe(0);
+    const { status, close } = await sseGet(port, TEST_TOKEN);
+    expect(status).toBe(200);
+    // Wait for the connection to fully register.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(server.sseSubscribers_count).toBe(1);
+
+    // Simulate the browser closing its EventSource.
+    close();
+    // Give the server's req.close handler time to run cleanup().
+    await new Promise((r) => setTimeout(r, 50));
+    expect(server.sseSubscribers_count).toBe(0);
+  });
+
+  it("evicts the oldest subscriber when a new one arrives at the cap", async () => {
+    // Open MAX_SSE_SUBSCRIBERS (20) connections to saturate the cap.
+    const conns: Array<{ status: number; close: () => void }> = [];
+    for (let i = 0; i < 20; i++) {
+      conns.push(await sseGet(port, TEST_TOKEN));
+    }
+    await new Promise((r) => setTimeout(r, 30));
+    expect(server.sseSubscribers_count).toBe(20);
+
+    // A 21st request must NOT 503 — the oldest subscriber is evicted and
+    // the new one takes its slot. Pre-fix this returned 503 forever.
+    const extra = await sseGet(port, TEST_TOKEN);
+    expect(extra.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 30));
+    // Still capped at 20 (one evicted, one added).
+    expect(server.sseSubscribers_count).toBe(20);
+
+    for (const c of conns) c.close();
+    extra.close();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(server.sseSubscribers_count).toBe(0);
+  });
+
   it("multiple subscribers receive independent event streams", async () => {
     const { chunks: chunks1, close: close1 } = await sseGet(port, TEST_TOKEN);
     const { chunks: chunks2, close: close2 } = await sseGet(port, TEST_TOKEN);
