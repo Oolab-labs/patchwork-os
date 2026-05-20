@@ -773,11 +773,25 @@ export default function HomePage() {
     (r) => Date.now() - r.startedAt < dayMs && isHaltStatus(r.status),
   ).length;
   const runs24h = runs.filter((r) => Date.now() - r.startedAt < dayMs);
-  const okCount24h = runs24h.filter((r) => r.status === "done" || r.status === "success").length;
   const errCount24h = runs24h.filter((r) => isHaltStatus(r.status)).length;
+  // A run can finish `done` yet have had a step fail (the runner
+  // continues past non-fatal step errors). Splitting these out keeps
+  // the Overview honest — flat "100% ok" was hiding step failures
+  // that /runs separately counted, so the two views contradicted.
+  const succeeded24h = runs24h.filter(
+    (r) => r.status === "done" || r.status === "success",
+  );
+  const withErrCount24h = succeeded24h.filter((r) => r.hadStepErrors).length;
+  const okCount24h = succeeded24h.length - withErrCount24h;
   const runsFootLabel = runsCount24h === 0
     ? "no runs yet"
-    : `${okCount24h} ok · ${errCount24h} err`;
+    : [
+        `${okCount24h} ok`,
+        withErrCount24h > 0 ? `${withErrCount24h} with step errors` : null,
+        errCount24h > 0 ? `${errCount24h} err` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
   const haltsFootLabel = (() => {
     if (haltCount24h === 0) return "clean";
     const lastHalt = runs24h.find((r) => isHaltStatus(r.status));
