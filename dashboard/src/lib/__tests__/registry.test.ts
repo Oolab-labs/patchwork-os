@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  contentsApiUrlFor,
+  fetchBundleManifest,
+  fetchGithubFile,
+  fetchManifest,
+  fetchRecipeYaml,
+  fetchRegistry,
   githubBlobUrlFor,
+  type ParsedInstallSource,
   rawUrlFor,
   shortName,
   summarizeRisk,
@@ -136,6 +143,262 @@ steps:
       high: 1,
       steps: 2,
     });
+  });
+});
+
+describe("contentsApiUrlFor", () => {
+  it("builds an api.github.com Contents URL with path/file and ref query", () => {
+    expect(
+      contentsApiUrlFor(
+        { owner: "patchworkos", repo: "recipes", path: "examples/hello", ref: "v1" },
+        "recipe.yaml",
+      ),
+    ).toBe(
+      "https://api.github.com/repos/patchworkos/recipes/contents/examples/hello/recipe.yaml?ref=v1",
+    );
+  });
+
+  it("omits the path segment when empty (root install)", () => {
+    expect(
+      contentsApiUrlFor(
+        { owner: "patchworkos", repo: "recipes", path: "", ref: "main" },
+        "index.json",
+      ),
+    ).toBe(
+      "https://api.github.com/repos/patchworkos/recipes/contents/index.json?ref=main",
+    );
+  });
+});
+
+describe("fetchGithubFile + fallback", () => {
+  const SRC: ParsedInstallSource = {
+    owner: "patchworkos",
+    repo: "recipes",
+    path: "examples/hello",
+    ref: "main",
+  };
+  const RAW = rawUrlFor(SRC, "recipe.yaml");
+  const API = contentsApiUrlFor(SRC, "recipe.yaml");
+
+  const okText = (body: string) =>
+    ({ ok: true, text: async () => body, json: async () => JSON.parse(body) }) as Response;
+  const notOk = () => ({ ok: false, text: async () => "", json: async () => ({}) }) as Response;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("uses the raw URL directly when raw succeeds (no API call)", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === RAW) return okText("name: from-raw");
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const text = await fetchGithubFile(SRC, "recipe.yaml");
+    expect(text).toBe("name: from-raw");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(RAW, expect.anything());
+  });
+
+  it("falls back to the Contents API when raw throws a network error", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === RAW) throw new Error("ENOTFOUND raw.githubusercontent.com");
+      if (url === API) return okText("name: from-api");
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const text = await fetchGithubFile(SRC, "recipe.yaml");
+    expect(text).toBe("name: from-api");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(2, API, expect.anything());
+  });
+
+  it("falls back to the Contents API when raw returns a non-ok response", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === RAW) return notOk();
+      if (url === API) return okText("name: from-api");
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const text = await fetchGithubFile(SRC, "recipe.yaml");
+    expect(text).toBe("name: from-api");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends the Accept: application/vnd.github.raw header on the API fallback", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === RAW) return notOk();
+      if (url === API) {
+        expect((init?.headers as Record<string, string>)?.Accept).toBe(
+          "application/vnd.github.raw",
+        );
+        return okText("ok");
+      }
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await fetchGithubFile(SRC, "recipe.yaml")).toBe("ok");
+  });
+
+  it("returns null when both raw and the API fail", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("network blocked");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await fetchGithubFile(SRC, "recipe.yaml")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("forwards an AbortSignal to both attempts", async () => {
+    const ac = new AbortController();
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(init?.signal).toBe(ac.signal);
+      throw new Error("blocked");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchGithubFile(SRC, "recipe.yaml", { signal: ac.signal });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("fetch* functions use the fallback", () => {
+  const SRC: ParsedInstallSource = {
+    owner: "patchworkos",
+    repo: "recipes",
+    path: "examples/hello",
+    ref: "main",
+  };
+  const INDEX_SRC: ParsedInstallSource = {
+    owner: "patchworkos",
+    repo: "recipes",
+    path: "",
+    ref: "main",
+  };
+
+  const okText = (body: string) => ({ ok: true, text: async () => body }) as Response;
+  const notOk = () => ({ ok: false, text: async () => "" }) as Response;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("fetchRegistry: raw blocked → API fallback returns parsed RegistryData", async () => {
+    const rawUrl = rawUrlFor(INDEX_SRC, "index.json");
+    const apiUrl = contentsApiUrlFor(INDEX_SRC, "index.json");
+    const payload = JSON.stringify({
+      version: "1",
+      updated_at: "2026-05-20",
+      recipes: [],
+    });
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === rawUrl) throw new Error("raw blocked");
+      if (url === apiUrl) return okText(payload);
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const data = await fetchRegistry();
+    expect(data?.version).toBe("1");
+    expect(data?.recipes).toEqual([]);
+  });
+
+  it("fetchRegistry: both endpoints fail → null", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("blocked");
+      }),
+    );
+    expect(await fetchRegistry()).toBeNull();
+  });
+
+  it("fetchRegistry: raw returns invalid JSON → null", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => okText("not json")),
+    );
+    expect(await fetchRegistry()).toBeNull();
+  });
+
+  it("fetchManifest: raw non-ok → API fallback returns parsed manifest", async () => {
+    const rawUrl = rawUrlFor(SRC, "recipe.json");
+    const apiUrl = contentsApiUrlFor(SRC, "recipe.json");
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === rawUrl) return notOk();
+      if (url === apiUrl)
+        return okText(JSON.stringify({ name: "hello", version: "1.0.0" }));
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const manifest = await fetchManifest(SRC);
+    expect(manifest?.name).toBe("hello");
+  });
+
+  it("fetchRecipeYaml: raw blocked → API fallback returns yaml text", async () => {
+    const rawUrl = rawUrlFor(SRC, "main.yaml");
+    const apiUrl = contentsApiUrlFor(SRC, "main.yaml");
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === rawUrl) throw new Error("raw blocked");
+      if (url === apiUrl) return okText("steps: []");
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await fetchRecipeYaml(SRC, "main.yaml")).toBe("steps: []");
+  });
+
+  it("fetchRecipeYaml: both fail → null", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("blocked");
+      }),
+    );
+    expect(await fetchRecipeYaml(SRC, "main.yaml")).toBeNull();
+  });
+
+  it("fetchBundleManifest: raw non-ok → API fallback returns parsed bundle", async () => {
+    const rawUrl = rawUrlFor(SRC, "patchwork-bundle.json");
+    const apiUrl = contentsApiUrlFor(SRC, "patchwork-bundle.json");
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === rawUrl) return notOk();
+      if (url === apiUrl)
+        return okText(
+          JSON.stringify({
+            name: "@patchworkos/demo",
+            version: "1.0.0",
+            description: "d",
+            tags: [],
+            connectors: [],
+            recipes: [],
+          }),
+        );
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const bundle = await fetchBundleManifest(SRC);
+    expect(bundle?.name).toBe("@patchworkos/demo");
+  });
+
+  it("fetchBundleManifest: both fail → null", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => notOk()),
+    );
+    expect(await fetchBundleManifest(SRC)).toBeNull();
   });
 });
 

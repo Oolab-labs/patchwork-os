@@ -1443,9 +1443,8 @@ export function tryHandleRecipeRoute(
             })()
           : null;
         if (bundleParse?.ok && bundleParse.parsed.kind === "bundle") {
-          const { buildGithubRawUrl } = await import(
-            "./recipes/githubInstallSource.js"
-          );
+          const { buildGithubRawUrl, fetchGithubInstallFile, SEGMENT_RE } =
+            await import("./recipes/githubInstallSource.js");
           const bundleName = bundleParse.parsed.name;
           const bundleOwner = bundleParse.parsed.owner;
           const bundleRepo = bundleParse.parsed.repo;
@@ -1453,42 +1452,43 @@ export function tryHandleRecipeRoute(
 
           const ctl = new AbortController();
           const timeout = setTimeout(() => ctl.abort(), 30_000);
-          let manifestRes: Response;
-          try {
-            manifestRes = await fetch(manifestUrl, {
-              signal: ctl.signal,
-              redirect: "follow",
-            });
-          } catch (err) {
-            clearTimeout(timeout);
-            console.error(
-              `[recipes/install] bundle manifest fetch failed:`,
-              err,
-            );
-            res.writeHead(502, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                ok: false,
-                error: "Bundle manifest fetch failed",
-                code: "bundle_fetch_network_error",
-              }),
-            );
-            return;
-          }
+          // Raw-first / api.github.com-fallback: raw.githubusercontent.com
+          // is blocked on many corporate / proxied networks.
+          const manifestFetched = await fetchGithubInstallFile(
+            bundleParse.parsed,
+            { signal: ctl.signal },
+          );
           clearTimeout(timeout);
-          if (!manifestRes.ok) {
-            const outStatus = manifestRes.status === 404 ? 404 : 502;
+          if (!manifestFetched.ok) {
+            if (manifestFetched.kind === "network_error") {
+              console.error(
+                `[recipes/install] bundle manifest fetch failed (raw + api):`,
+                manifestFetched.error,
+              );
+              res.writeHead(502, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: "Bundle manifest fetch failed",
+                  code: "bundle_fetch_network_error",
+                }),
+              );
+              return;
+            }
+            const failRes = manifestFetched.response;
+            const outStatus = failRes.status === 404 ? 404 : 502;
             res.writeHead(outStatus, { "Content-Type": "application/json" });
             res.end(
               JSON.stringify({
                 ok: false,
-                error: `Bundle manifest at ${manifestUrl} returned ${manifestRes.status}`,
+                error: `Bundle manifest at ${manifestUrl} returned ${failRes.status}`,
                 code: "bundle_fetch_upstream_error",
-                upstreamStatus: manifestRes.status,
+                upstreamStatus: failRes.status,
               }),
             );
             return;
           }
+          const manifestRes = manifestFetched.response;
           // 64 KB hard cap on manifest body — real `patchwork-bundle.json`
           // is single-digit KB; anything past 64 KB is hostile or malformed.
           const manifestBuf = await manifestRes.arrayBuffer();
@@ -1569,25 +1569,47 @@ export function tryHandleRecipeRoute(
           mkdirSync(recipesDir, { recursive: true });
 
           for (const r of manifest.recipes as string[]) {
+            // The recipe name comes from the bundle manifest's JSON body
+            // (GitHub-hosted, but still external input). Validate it
+            // before it reaches URL construction in fetchGithubInstallFile
+            // — the `github:` source path gets this check via
+            // parseGithubInstallSource, but the bundle loop builds the
+            // struct directly and would otherwise bypass it.
+            if (typeof r !== "string" || !SEGMENT_RE.test(r.toLowerCase())) {
+              failures.push({
+                name: String(r),
+                error: "invalid recipe name in bundle manifest",
+              });
+              continue;
+            }
             // Bundle's manifest is allowed to declare recipes that
-            // live in the same repo as the bundle. Build the URL with
-            // the parsed owner/repo, not the hard-coded original.
-            const recipeUrl = `https://raw.githubusercontent.com/${bundleOwner}/${bundleRepo}/main/recipes/${r}/${r}.yaml`;
+            // live in the same repo as the bundle. Fetch with the
+            // parsed owner/repo via the raw-first / api.github.com
+            // fallback (raw host blocked on many proxied networks).
             const recipeCtl = new AbortController();
             const recipeTimeout = setTimeout(() => recipeCtl.abort(), 30_000);
             try {
-              const recipeRes = await fetch(recipeUrl, {
-                signal: recipeCtl.signal,
-                redirect: "follow",
-              });
+              const recipeFetched = await fetchGithubInstallFile(
+                {
+                  kind: "recipe",
+                  owner: bundleOwner,
+                  repo: bundleRepo,
+                  name: r,
+                },
+                { signal: recipeCtl.signal },
+              );
               clearTimeout(recipeTimeout);
-              if (!recipeRes.ok) {
+              if (!recipeFetched.ok) {
+                if (recipeFetched.kind === "network_error") {
+                  throw recipeFetched.error;
+                }
                 failures.push({
                   name: r,
-                  error: `Upstream returned ${recipeRes.status}`,
+                  error: `Upstream returned ${recipeFetched.response.status}`,
                 });
                 continue;
               }
+              const recipeRes = recipeFetched.response;
               const recipeBuf = await recipeRes.arrayBuffer();
               if (recipeBuf.byteLength > 1024 * 1024) {
                 failures.push({
@@ -1664,6 +1686,14 @@ export function tryHandleRecipeRoute(
 
         let fetchUrl: string;
         let recipeName: string;
+        // When the source is a `github:` shorthand we keep the parsed
+        // form around so the fetch leg below can use the raw-first /
+        // api.github.com-fallback strategy (raw is blocked on many
+        // corporate / proxied networks). Non-github `https://` sources
+        // fetch the URL directly, unchanged.
+        let githubParsed:
+          | import("./recipes/githubInstallSource.js").ParsedGithubInstallSource
+          | null = null;
         if (source.startsWith("github:")) {
           // Parse the new generalised shape (any allowlisted org/repo)
           // instead of only `github:patchworkos/recipes/recipes/<name>`.
@@ -1702,6 +1732,7 @@ export function tryHandleRecipeRoute(
             return;
           }
           recipeName = parsed.parsed.name;
+          githubParsed = parsed.parsed;
           fetchUrl = buildGithubRawUrl(parsed.parsed);
         } else if (source.startsWith("https://")) {
           // Non-github source: must clear the env-var allowlist AND the SSRF
@@ -1784,45 +1815,96 @@ export function tryHandleRecipeRoute(
         const fetchCtl = new AbortController();
         const fetchTimeout = setTimeout(() => fetchCtl.abort(), 30_000);
         let yamlRes: Response;
-        try {
-          yamlRes = await fetch(fetchUrl, {
+        if (githubParsed) {
+          // github: source — try raw.githubusercontent.com first, then
+          // fall back to api.github.com/contents (raw host is blocked on
+          // many corporate / proxied networks). The fallback collapses
+          // back into the SAME error contract as the direct path below.
+          const { fetchGithubInstallFile } = await import(
+            "./recipes/githubInstallSource.js"
+          );
+          const fetched = await fetchGithubInstallFile(githubParsed, {
             signal: fetchCtl.signal,
-            redirect: "follow",
           });
-        } catch (err) {
           clearTimeout(fetchTimeout);
-          console.error(`[recipes/install] fetch failed:`, err);
-          // Network-level error → 502 (upstream unreachable), not 500.
-          res.writeHead(502, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              ok: false,
-              error: "Fetch failed",
-              code: "fetch_network_error",
-            }),
-          );
-          return;
-        }
-        clearTimeout(fetchTimeout);
+          if (!fetched.ok) {
+            if (fetched.kind === "network_error") {
+              console.error(
+                `[recipes/install] fetch failed (raw + api):`,
+                fetched.error,
+              );
+              // Network-level error → 502 (upstream unreachable), not 500.
+              res.writeHead(502, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: "Fetch failed",
+                  code: "fetch_network_error",
+                }),
+              );
+              return;
+            }
+            // not_found / upstream_error — translate the HTTP status the
+            // same way the direct path does.
+            const failRes = fetched.response;
+            let outStatus = 502;
+            if (failRes.status === 404) outStatus = 404;
+            else if (failRes.status === 403) outStatus = 403;
+            else if (failRes.status >= 400 && failRes.status < 500)
+              outStatus = 400;
+            res.writeHead(outStatus, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: `Upstream returned ${failRes.status} ${failRes.statusText}`,
+                code: "fetch_upstream_error",
+                upstreamStatus: failRes.status,
+              }),
+            );
+            return;
+          }
+          yamlRes = fetched.response;
+        } else {
+          try {
+            yamlRes = await fetch(fetchUrl, {
+              signal: fetchCtl.signal,
+              redirect: "follow",
+            });
+          } catch (err) {
+            clearTimeout(fetchTimeout);
+            console.error(`[recipes/install] fetch failed:`, err);
+            // Network-level error → 502 (upstream unreachable), not 500.
+            res.writeHead(502, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: "Fetch failed",
+                code: "fetch_network_error",
+              }),
+            );
+            return;
+          }
+          clearTimeout(fetchTimeout);
 
-        if (!yamlRes.ok) {
-          // Translate upstream HTTP into proper status — 404→404, 403→403,
-          // 5xx→502 (don't leak the upstream 500 as our 500). R2 H-routes Bug 2.
-          let outStatus = 502;
-          if (yamlRes.status === 404) outStatus = 404;
-          else if (yamlRes.status === 403) outStatus = 403;
-          else if (yamlRes.status >= 400 && yamlRes.status < 500)
-            outStatus = 400;
-          res.writeHead(outStatus, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              ok: false,
-              error: `Upstream returned ${yamlRes.status} ${yamlRes.statusText}`,
-              code: "fetch_upstream_error",
-              upstreamStatus: yamlRes.status,
-            }),
-          );
-          return;
+          if (!yamlRes.ok) {
+            // Translate upstream HTTP into proper status — 404→404, 403→403,
+            // 5xx→502 (don't leak the upstream 500 as our 500). R2 H-routes Bug 2.
+            let outStatus = 502;
+            if (yamlRes.status === 404) outStatus = 404;
+            else if (yamlRes.status === 403) outStatus = 403;
+            else if (yamlRes.status >= 400 && yamlRes.status < 500)
+              outStatus = 400;
+            res.writeHead(outStatus, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: `Upstream returned ${yamlRes.status} ${yamlRes.statusText}`,
+                code: "fetch_upstream_error",
+                upstreamStatus: yamlRes.status,
+              }),
+            );
+            return;
+          }
         }
 
         // Streamed read with 1 MB cap (mirrors `httpClient` pattern).

@@ -41,7 +41,7 @@ export type GithubInstallParseResult =
     };
 
 const DEFAULT_ALLOWLIST: ReadonlyArray<string> = ["patchworkos/recipes"];
-const SEGMENT_RE = /^[a-z0-9_.-]{1,100}$/;
+export const SEGMENT_RE = /^[a-z0-9_.-]{1,100}$/;
 
 /**
  * Read the runtime allowlist. Combines the always-on default with
@@ -143,13 +143,144 @@ export function parseGithubInstallSource(
 }
 
 /**
+ * The repo-relative path of the file for a parsed install source.
+ * `recipes/<name>/<name>.yaml` or `bundles/<name>/patchwork-bundle.json`.
+ */
+function repoRelativePath(parsed: ParsedGithubInstallSource): string {
+  if (parsed.kind === "recipe") {
+    return `recipes/${parsed.name}/${parsed.name}.yaml`;
+  }
+  return `bundles/${parsed.name}/patchwork-bundle.json`;
+}
+
+/**
  * Build the raw.githubusercontent URL for a parsed install source.
  * Always pulls `main` branch HEAD — version pinning is on the
  * deferred audit backlog.
  */
 export function buildGithubRawUrl(parsed: ParsedGithubInstallSource): string {
-  if (parsed.kind === "recipe") {
-    return `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/main/recipes/${parsed.name}/${parsed.name}.yaml`;
+  return `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/main/${repoRelativePath(parsed)}`;
+}
+
+/**
+ * Build the `api.github.com` Contents-API URL for a parsed install
+ * source. Used as a FALLBACK when `raw.githubusercontent.com` is
+ * unreachable — many corporate / proxied networks block the raw host
+ * even when `api.github.com` is allowed. Combined with the
+ * `Accept: application/vnd.github.raw` request header (see
+ * `fetchGithubInstallFile`), this endpoint returns the raw file bytes
+ * directly — no base64 decode needed. Public repos work unauthenticated.
+ */
+export function buildGithubApiUrl(parsed: ParsedGithubInstallSource): string {
+  return `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${repoRelativePath(parsed)}?ref=main`;
+}
+
+/**
+ * Fetch a recipe / bundle file for a parsed `github:` install source
+ * with a raw-host-first, API-fallback strategy.
+ *
+ *   1. Try `raw.githubusercontent.com` (fast path, no rate limit).
+ *   2. If that throws a network error OR returns a non-ok response,
+ *      fall back to `api.github.com/repos/.../contents/...` with the
+ *      `Accept: application/vnd.github.raw` header (returns raw bytes).
+ *
+ * Return contract — designed so the caller's existing error mapping
+ * (502 / `fetch_network_error`, 404 not-found, upstream-error) is
+ * unchanged:
+ *
+ *   - `{ ok: true, response }` — a usable ok `Response`, from whichever
+ *     host succeeded. Caller reads the body as before.
+ *   - `{ ok: false, kind: "not_found", response }` — BOTH hosts agree
+ *     the file does not exist (raw 404 AND api 404). Caller surfaces
+ *     this as a genuine not-found (404), not a network error.
+ *   - `{ ok: false, kind: "upstream_error", response }` — a non-ok,
+ *     non-404 HTTP response (e.g. 5xx / 403 rate-limit). Caller maps
+ *     the upstream status as today.
+ *   - `{ ok: false, kind: "network_error", error }` — both hosts threw
+ *     a network-level error (DNS / connect / abort). Caller surfaces
+ *     the existing 502 `fetch_network_error` shape.
+ *
+ * Intentional edge case: when raw returns 404 but the api fallback
+ * *network-errors* (rather than also returning 404), the result is
+ * classified `not_found`, not `network_error`. This is a deliberate
+ * conservative call — a raw 404 is a strong signal the file is absent,
+ * and reporting "not found" is more actionable than a generic network
+ * error. Do not "fix" this to prefer network_error without weighing
+ * that tradeoff (see the matching test case).
+ *
+ * `signal` (caller's AbortController) and timeout behaviour are
+ * preserved — the same signal is passed to both fetch attempts.
+ */
+export type GithubInstallFetchResult =
+  | { ok: true; response: Response }
+  | { ok: false; kind: "not_found"; response: Response }
+  | { ok: false; kind: "upstream_error"; response: Response }
+  | { ok: false; kind: "network_error"; error: unknown };
+
+export async function fetchGithubInstallFile(
+  parsed: ParsedGithubInstallSource,
+  init: { signal?: AbortSignal } = {},
+): Promise<GithubInstallFetchResult> {
+  const rawUrl = buildGithubRawUrl(parsed);
+  let rawResponse: Response | null = null;
+  let rawNetworkError: unknown = null;
+  try {
+    rawResponse = await fetch(rawUrl, {
+      signal: init.signal,
+      redirect: "follow",
+    });
+  } catch (err) {
+    rawNetworkError = err;
   }
-  return `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/main/bundles/${parsed.name}/patchwork-bundle.json`;
+
+  // Fast path: raw host returned a usable response.
+  if (rawResponse?.ok) {
+    return { ok: true, response: rawResponse };
+  }
+
+  // Raw host either threw OR returned non-ok → try the API fallback.
+  const apiUrl = buildGithubApiUrl(parsed);
+  let apiResponse: Response | null = null;
+  let apiNetworkError: unknown = null;
+  try {
+    apiResponse = await fetch(apiUrl, {
+      signal: init.signal,
+      redirect: "follow",
+      headers: { Accept: "application/vnd.github.raw" },
+    });
+  } catch (err) {
+    apiNetworkError = err;
+  }
+
+  if (apiResponse?.ok) {
+    return { ok: true, response: apiResponse };
+  }
+
+  // Neither host yielded an ok body. Decide which failure to surface.
+  //
+  // A non-404 HTTP failure (5xx / 403 rate-limit) is the most
+  // actionable signal — prefer it over a 404 from the other host, so a
+  // transient upstream problem isn't misreported as "recipe missing".
+  // The API response is the more authoritative of the two here (raw is
+  // a CDN; the API gives proper status codes), so check it first.
+  if (apiResponse && apiResponse.status !== 404) {
+    return { ok: false, kind: "upstream_error", response: apiResponse };
+  }
+  if (rawResponse && rawResponse.status !== 404) {
+    return { ok: false, kind: "upstream_error", response: rawResponse };
+  }
+  // Whatever is left is a genuine 404 from one or both hosts → keep
+  // the not-found distinction so the caller surfaces a 404, not a 502.
+  if (apiResponse && apiResponse.status === 404) {
+    return { ok: false, kind: "not_found", response: apiResponse };
+  }
+  if (rawResponse && rawResponse.status === 404) {
+    return { ok: false, kind: "not_found", response: rawResponse };
+  }
+  // Both hosts threw network errors.
+  return {
+    ok: false,
+    kind: "network_error",
+    error: apiNetworkError ?? rawNetworkError,
+  };
 }

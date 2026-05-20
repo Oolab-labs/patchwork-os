@@ -134,9 +134,6 @@ export interface ParsedInstallSource {
   ref: string;
 }
 
-const REGISTRY_INDEX_URL =
-  "https://raw.githubusercontent.com/patchworkos/recipes/main/index.json";
-
 const RAW_BASE = "https://raw.githubusercontent.com";
 
 /** Parse an install string like `github:owner/repo/sub/dir@ref`. */
@@ -194,6 +191,26 @@ export function rawUrlFor(src: ParsedInstallSource, file: string): string {
   return `${RAW_BASE}/${parts.join("/")}`;
 }
 
+/**
+ * GitHub Contents-API URL for the same file `rawUrlFor` resolves.
+ *
+ * `raw.githubusercontent.com` is blocked on many corporate / proxied /
+ * sandboxed networks even when `github.com` + `api.github.com` are
+ * reachable. The Contents API is the fallback path. With the
+ * `Accept: application/vnd.github.raw` request header the API returns the
+ * raw file bytes directly — no base64 decode needed.
+ */
+export function contentsApiUrlFor(src: ParsedInstallSource, file: string): string {
+  const filePath = [src.path, file].filter(Boolean).join("/");
+  // Encode every interpolated segment so the URL builder is self-safe — even
+  // though parseInstallSource already constrains owner/repo, a stray `/` or
+  // `?` in any field must not be able to escape its path component.
+  const owner = encodeURIComponent(src.owner);
+  const repo = encodeURIComponent(src.repo);
+  const ref = encodeURIComponent(src.ref);
+  return `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${ref}`;
+}
+
 export function githubBlobUrlFor(src: ParsedInstallSource, file: string): string {
   const parts = [src.path, file].filter(Boolean).join("/");
   return `https://github.com/${src.owner}/${src.repo}/blob/${src.ref}/${parts}`;
@@ -202,15 +219,77 @@ export function githubBlobUrlFor(src: ParsedInstallSource, file: string): string
 interface FetchOpts {
   /** Cache TTL in seconds for ISR. Default 300. */
   revalidate?: number;
+  /** Optional abort signal, forwarded to every underlying fetch. */
+  signal?: AbortSignal;
+}
+
+/** The registry index lives at `patchworkos/recipes/index.json@main`. */
+const REGISTRY_INDEX_SRC: ParsedInstallSource = {
+  owner: "patchworkos",
+  repo: "recipes",
+  path: "",
+  ref: "main",
+};
+
+/**
+ * Fetch a single text file from a GitHub repo, with a network-resilience
+ * fallback.
+ *
+ * Strategy:
+ *   1. Try `raw.githubusercontent.com` first — fast, CDN-backed, and
+ *      friendly to unauthenticated reads.
+ *   2. If that throws (network error / blocked host) OR returns a non-ok
+ *      response, fall back to the `api.github.com` Contents API with the
+ *      `Accept: application/vnd.github.raw` header so the raw bytes come
+ *      back directly (no base64 decode).
+ *
+ * `raw.githubusercontent.com` is blocked on many corporate / proxied /
+ * sandboxed networks even when `github.com` + `api.github.com` are
+ * reachable, which previously broke marketplace browse + install 100%.
+ *
+ * Returns the file text, or `null` if BOTH endpoints fail. No auth token
+ * is attached — both endpoints work unauthenticated for public repos.
+ * The Contents API has a 60 req/hr unauthenticated rate limit; that is
+ * acceptable for this read path (it is only hit when raw is unreachable).
+ */
+export async function fetchGithubFile(
+  src: ParsedInstallSource,
+  file: string,
+  opts: FetchOpts = {},
+): Promise<string | null> {
+  const revalidate = opts.revalidate ?? 300;
+  const init = {
+    next: { revalidate },
+    signal: opts.signal,
+  } as RequestInit;
+
+  // 1. raw.githubusercontent.com (preferred)
+  try {
+    const res = await fetch(rawUrlFor(src, file), init);
+    if (res.ok) return await res.text();
+  } catch {
+    // fall through to the API fallback
+  }
+
+  // 2. api.github.com Contents API (fallback for raw-blocked networks)
+  try {
+    const res = await fetch(contentsApiUrlFor(src, file), {
+      ...init,
+      headers: { Accept: "application/vnd.github.raw" },
+    } as RequestInit);
+    if (res.ok) return await res.text();
+  } catch {
+    // both endpoints failed
+  }
+
+  return null;
 }
 
 export async function fetchRegistry(opts: FetchOpts = {}): Promise<RegistryData | null> {
+  const text = await fetchGithubFile(REGISTRY_INDEX_SRC, "index.json", opts);
+  if (text === null) return null;
   try {
-    const res = await fetch(REGISTRY_INDEX_URL, {
-      next: { revalidate: opts.revalidate ?? 300 },
-    } as RequestInit);
-    if (!res.ok) return null;
-    return (await res.json()) as RegistryData;
+    return JSON.parse(text) as RegistryData;
   } catch {
     return null;
   }
@@ -220,12 +299,10 @@ export async function fetchManifest(
   src: ParsedInstallSource,
   opts: FetchOpts = {},
 ): Promise<RecipeManifest | null> {
+  const text = await fetchGithubFile(src, "recipe.json", opts);
+  if (text === null) return null;
   try {
-    const res = await fetch(rawUrlFor(src, "recipe.json"), {
-      next: { revalidate: opts.revalidate ?? 300 },
-    } as RequestInit);
-    if (!res.ok) return null;
-    return (await res.json()) as RecipeManifest;
+    return JSON.parse(text) as RecipeManifest;
   } catch {
     return null;
   }
@@ -236,15 +313,7 @@ export async function fetchRecipeYaml(
   mainFile: string,
   opts: FetchOpts = {},
 ): Promise<string | null> {
-  try {
-    const res = await fetch(rawUrlFor(src, mainFile), {
-      next: { revalidate: opts.revalidate ?? 300 },
-    } as RequestInit);
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
-  }
+  return fetchGithubFile(src, mainFile, opts);
 }
 
 /**
@@ -297,12 +366,10 @@ export async function fetchBundleManifest(
   src: ParsedInstallSource,
   opts: FetchOpts = {},
 ): Promise<BundleManifest | null> {
+  const text = await fetchGithubFile(src, "patchwork-bundle.json", opts);
+  if (text === null) return null;
   try {
-    const res = await fetch(rawUrlFor(src, "patchwork-bundle.json"), {
-      next: { revalidate: opts.revalidate ?? 300 },
-    } as RequestInit);
-    if (!res.ok) return null;
-    return (await res.json()) as BundleManifest;
+    return JSON.parse(text) as BundleManifest;
   } catch {
     return null;
   }

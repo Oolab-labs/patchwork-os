@@ -24,6 +24,31 @@
 export const RECIPE_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /**
+ * Strip a registry scope from a recipe name.
+ *
+ * Marketplace registry recipes carry a *scoped* name in their
+ * `recipe.json` (`@patchworkos/sprint-review-prep`) but the bridge
+ * stores recipes on disk under the bare, unscoped kebab slug. The
+ * recipe YAML `name:` should be the bare slug, but registry data
+ * historically shipped the scoped form there too — which fails the
+ * `RECIPE_NAME_RE` kebab check at install time.
+ *
+ * This normalizes either shape to the last `/`-delimited segment:
+ *   - `@patchworkos/sprint-review-prep` → `sprint-review-prep`
+ *   - `patchworkos/sprint-review-prep`  → `sprint-review-prep`
+ *   - `sprint-review-prep`              → `sprint-review-prep` (unchanged)
+ *
+ * Only the `@scope/` prefix is forgiven — the resulting slug is still
+ * validated by `RECIPE_NAME_RE` downstream, so a genuinely-invalid
+ * name (`@bad/UPPER`, `../escape`, empty) still fails.
+ */
+export function stripRecipeScope(name: string): string {
+  if (typeof name !== "string" || !name.includes("/")) return name;
+  const segments = name.split("/");
+  return segments[segments.length - 1] ?? name;
+}
+
+/**
  * Canonical variable-name regex (for `trigger.vars[].name` and
  * `trigger.inputs[].name`). Mirrors the runtime template-reference
  * regex root group in `validation.ts:extractTemplateDottedPaths`,
