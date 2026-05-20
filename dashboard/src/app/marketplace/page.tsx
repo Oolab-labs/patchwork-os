@@ -587,6 +587,16 @@ export default function MarketplacePage() {
     }
 
     load().catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));
+
+    // Refresh the installed set every 30s so recipes installed via CLI or
+    // another tab show the "Installed" badge without a manual reload.
+    const pollId = setInterval(() => {
+      void refreshInstalled();
+    }, 30_000);
+
+    return () => clearInterval(pollId);
+  // refreshInstalled is stable (useCallback with no deps)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleInstall(recipe: RegistryRecipe) {

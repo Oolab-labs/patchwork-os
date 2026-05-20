@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { SkeletonList } from "@/components/Skeleton";
+import { useToast } from "@/components/Toast";
 import { EmptyState, ErrorState, HintCard, RelationStrip } from "@/components/patchwork";
 
 interface TransactionEdit {
@@ -97,12 +98,13 @@ function formatBytes(n: number): string {
 }
 
 export default function TransactionsPage() {
-  const { data, error, loading } = useBridgeFetch<TransactionsResponse>(
+  const { data, error, loading, refetch } = useBridgeFetch<TransactionsResponse>(
     "/api/bridge/transactions",
     { intervalMs: 3000 },
   );
   const [busy, setBusy] = useState<Record<string, "rolling-back" | string>>({});
   const transactions = data?.transactions ?? [];
+  const toast = useToast();
 
   async function rollback(id: string) {
     setBusy((p) => ({ ...p, [id]: "rolling-back" }));
@@ -111,15 +113,19 @@ export default function TransactionsPage() {
         method: "POST",
       });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      setBusy((p) => ({
-        ...p,
-        [id]: res.ok && body.ok !== false ? "discarded" : `error: ${body.error ?? res.status}`,
-      }));
+      if (res.ok && body.ok !== false) {
+        setBusy((p) => ({ ...p, [id]: "discarded" }));
+        toast.success("Transaction discarded");
+        refetch();
+      } else {
+        const errMsg = body.error ?? String(res.status);
+        setBusy((p) => ({ ...p, [id]: `error: ${errMsg}` }));
+        toast.error(`Discard failed: ${errMsg}`);
+      }
     } catch (e) {
-      setBusy((p) => ({
-        ...p,
-        [id]: `error: ${e instanceof Error ? e.message : String(e)}`,
-      }));
+      const msg = e instanceof Error ? e.message : String(e);
+      setBusy((p) => ({ ...p, [id]: `error: ${msg}` }));
+      toast.error(`Discard failed: ${msg}`);
     }
   }
 
