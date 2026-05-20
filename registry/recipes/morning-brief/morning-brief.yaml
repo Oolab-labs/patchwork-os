@@ -1,4 +1,4 @@
-name: "@patchworkos/morning-brief"
+name: morning-brief
 version: "1.0.0"
 description: >
   Daily 6am digest. Fetch Gmail unread, Linear assigned issues, Slack DMs,

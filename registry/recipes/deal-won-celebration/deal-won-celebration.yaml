@@ -1,4 +1,4 @@
-name: "@patchworkos/deal-won-celebration"
+name: deal-won-celebration
 version: "1.0.0"
 description: >
   Deal closed-won pipeline. Fetch deal details from HubSpot, post a

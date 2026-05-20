@@ -129,19 +129,30 @@ steps:
   });
 
   describe("path-traversal defence (audit 2026-05-17)", () => {
-    it("rejects recipe.name with .. segments at the parser boundary", () => {
+    it("neutralizes recipe.name with .. segments — only the final segment is kept", () => {
+      // Registry-scope normalization (`stripRecipeScope`) reduces a
+      // `/`-delimited name to its last segment BEFORE validation. A
+      // traversal payload like `../../../etc/cron.d/pwn` collapses to
+      // the bare slug `pwn` — the `..` segments are discarded, so no
+      // path can escape recipesDir. The file lands at `pwn.json`.
       const src = writeRecipe("attacker", {
         ...SIMPLE,
         name: "../../../etc/cron.d/pwn",
       });
       const recipesDir = path.join(dir, "recipes");
-      expect(() => installRecipeFromFile(src, { recipesDir })).toThrow(
-        /name must match/,
-      );
+      const result = installRecipeFromFile(src, { recipesDir });
+      expect(result.installedPath).toBe(path.join(recipesDir, "pwn.json"));
     });
 
-    it("rejects recipe.name with forward-slash separator", () => {
+    it("normalizes recipe.name with a forward-slash separator to the final segment", () => {
       const src = writeRecipe("attacker", { ...SIMPLE, name: "foo/bar" });
+      const recipesDir = path.join(dir, "recipes");
+      const result = installRecipeFromFile(src, { recipesDir });
+      expect(result.installedPath).toBe(path.join(recipesDir, "bar.json"));
+    });
+
+    it("rejects a slash-separated name whose final segment is not kebab-case", () => {
+      const src = writeRecipe("attacker", { ...SIMPLE, name: "foo/Bar" });
       expect(() =>
         installRecipeFromFile(src, { recipesDir: path.join(dir, "recipes") }),
       ).toThrow(/name must match/);

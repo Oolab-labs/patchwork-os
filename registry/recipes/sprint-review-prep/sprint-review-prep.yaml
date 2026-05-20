@@ -1,4 +1,4 @@
-name: "@patchworkos/sprint-review-prep"
+name: sprint-review-prep
 version: "1.0.0"
 description: >
   Sprint review prep pipeline. Fetch completed Linear issues for the current

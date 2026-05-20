@@ -1,4 +1,4 @@
-name: "@patchworkos/incident-war-room"
+name: incident-war-room
 version: "1.0.0"
 description: >
   Ops incident response pipeline. Summarize the alert, open a Linear issue,

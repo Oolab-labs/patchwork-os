@@ -1,4 +1,4 @@
-import { RECIPE_NAME_RE } from "./names.js";
+import { RECIPE_NAME_RE, stripRecipeScope } from "./names.js";
 import type { Recipe, Step, Trigger } from "./schema.js";
 
 /**
@@ -23,7 +23,12 @@ export function parseRecipe(raw: unknown): Recipe {
     throw new RecipeParseError("recipe must be an object");
   }
   const r = raw as Record<string, unknown>;
-  const name = requireString(r, "name");
+  // Marketplace registry recipes may carry a scoped name
+  // (`@patchworkos/sprint-review-prep`). Normalize to the bare kebab
+  // slug BEFORE the RECIPE_NAME_RE check, so the scoped form installs
+  // and is stored on disk under the unscoped slug — a re-load of the
+  // persisted recipe (already bare) then passes unchanged.
+  const name = stripRecipeScope(requireString(r, "name"));
   // Enforce the canonical recipe-name shape at the parse boundary. Without
   // this, `installRecipeFromFile` would `path.join(recipesDir, ${name}.json)`
   // with attacker-controlled `name` (registry recipe / bundle install path)

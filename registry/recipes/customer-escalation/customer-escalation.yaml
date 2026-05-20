@@ -1,4 +1,4 @@
-name: "@patchworkos/customer-escalation"
+name: customer-escalation
 version: "1.0.0"
 description: >
   Customer escalation pipeline. Fetch a Zendesk ticket, create a linked
