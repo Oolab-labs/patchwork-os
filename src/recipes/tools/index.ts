@@ -9,6 +9,7 @@ import "./file.js";
 import "./git.js";
 import "./diagnostics.js";
 import "./http.js";
+import "./fanOut.js";
 
 // Connector-based tools
 import "./asana.js";

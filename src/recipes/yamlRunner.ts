@@ -151,7 +151,48 @@ export interface YamlStep {
    * legitimately returns one of those shapes as a successful result.
    */
   silentFailDetection?: boolean;
+  /**
+   * Per-step assertion block (agentic-workflow slice 2). Evaluated against
+   * the step's output value AFTER `transform` is applied and BEFORE `into`
+   * commits to ctx — so a failed expect halts the run with the offending
+   * value still visible in the step result, but never propagates a bad
+   * value downstream. `on_fail: judge` is intentionally NOT supported in
+   * v1 — synthesizing a judge to gate a step would violate the
+   * augment-only invariant in judgeVerdict.ts.
+   */
+  expect?: StepExpect;
+  /**
+   * Per-step wall-clock timeout in milliseconds. When set, the step's
+   * `executeStep` call is wrapped in `Promise.race` against a timer; if
+   * the timer wins the step halts with category `step_timeout`. Note:
+   * the underlying tool is NOT aborted — it continues running to
+   * completion in the background. This is a halt signal, not a process
+   * kill; pair with `optional: true` / `on_error.fallback` for fail-open
+   * behavior. Agent steps are not currently subject to this timeout.
+   */
+  timeout_ms?: number;
   [key: string]: unknown;
+}
+
+/**
+ * Per-step assertion block. Exactly one of `schema|equals|matches|contains`
+ * should be set in v1; multiple set are AND-composed (all must pass).
+ */
+export interface StepExpect {
+  /** JSON Schema validated via AJV. Step output is JSON.parse'd first; non-JSON output fails with `expect_failed: not JSON`. */
+  schema?: object;
+  /** Deep-equal comparison. Strings compared verbatim; objects/arrays compared via JSON canonical form. */
+  equals?: unknown;
+  /** Regex (string source, no flags) matched against the stringified output. */
+  matches?: string;
+  /** Substring(s) that must appear in the stringified output. Array → all must be present. */
+  contains?: string | string[];
+  /**
+   * What to do when an assertion fails. `halt` (default) flips the step to
+   * status:error with haltReason `expect_failed: ...`. `warn` keeps status
+   * but attaches the failure list to `stepResult.expectWarnings`.
+   */
+  on_fail?: "halt" | "warn";
 }
 
 export interface YamlTrigger {
@@ -238,6 +279,113 @@ export function evaluateExpect(
           message: `Expected context["${key}"] to contain "${expectedVal}", got "${actual}"`,
         });
       }
+    }
+  }
+
+  return failures;
+}
+
+/**
+ * Lazy AJV for `step.expect.schema`. Initialised on first use so recipes
+ * without schema assertions don't pay the import/compile cost.
+ */
+let _stepExpectAjv: import("ajv").Ajv | undefined;
+async function getStepExpectAjv(): Promise<import("ajv").Ajv> {
+  if (!_stepExpectAjv) {
+    const { Ajv } = await import("ajv");
+    _stepExpectAjv = new Ajv({ strict: false, allErrors: true });
+  }
+  return _stepExpectAjv;
+}
+
+/**
+ * Stringify a step value for assertion purposes. Strings pass through;
+ * other values JSON.stringify so `matches`/`contains` see something stable.
+ */
+function stringifyForAssert(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * Evaluate a per-step `expect` block against the step's output value.
+ * Returns the list of failure messages (empty = all assertions passed).
+ *
+ * Slice 2 of the agentic-workflow primitives. v1 supports
+ * schema/equals/matches/contains; `on_fail: judge` deliberately omitted —
+ * see comment on `StepExpect`.
+ */
+export async function evaluateStepExpect(
+  expect: StepExpect,
+  value: unknown,
+): Promise<string[]> {
+  const failures: string[] = [];
+  const asString = stringifyForAssert(value);
+
+  if (expect.equals !== undefined) {
+    const expected = expect.equals;
+    const expectedStr =
+      typeof expected === "string" ? expected : stringifyForAssert(expected);
+    if (asString !== expectedStr) {
+      failures.push(
+        `equals: expected ${JSON.stringify(expectedStr)}, got ${JSON.stringify(asString)}`,
+      );
+    }
+  }
+
+  if (expect.contains !== undefined) {
+    const needles = Array.isArray(expect.contains)
+      ? expect.contains
+      : [expect.contains];
+    for (const needle of needles) {
+      if (!asString.includes(needle)) {
+        failures.push(`contains: missing ${JSON.stringify(needle)}`);
+      }
+    }
+  }
+
+  if (expect.matches !== undefined) {
+    let re: RegExp;
+    try {
+      re = new RegExp(expect.matches);
+    } catch (err) {
+      failures.push(
+        `matches: invalid regex ${JSON.stringify(expect.matches)} (${err instanceof Error ? err.message : String(err)})`,
+      );
+      return failures;
+    }
+    if (!re.test(asString)) {
+      failures.push(
+        `matches: ${JSON.stringify(expect.matches)} did not match output`,
+      );
+    }
+  }
+
+  if (expect.schema !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = typeof value === "string" ? JSON.parse(value) : value;
+    } catch {
+      failures.push(`schema: output is not valid JSON`);
+      return failures;
+    }
+    try {
+      const ajv = await getStepExpectAjv();
+      const validate = ajv.compile(expect.schema);
+      if (!validate(parsed)) {
+        const errs = (validate.errors ?? [])
+          .map((e) => `${e.instancePath || "/"} ${e.message ?? "invalid"}`)
+          .join("; ");
+        failures.push(`schema: ${errs || "validation failed"}`);
+      }
+    } catch (err) {
+      failures.push(
+        `schema: compile error (${err instanceof Error ? err.message : String(err)})`,
+      );
     }
   }
 
@@ -399,6 +547,14 @@ export type StepResult = {
    * (Val "halt cleanly with reason" idea, refined per plan review).
    */
   haltReason?: string;
+  /**
+   * Slice 2 — per-step `expect` block warnings when `on_fail: warn` is set.
+   * Each entry is a one-line failure message (assertion that did not pass).
+   * Populated only when the step's status remains `ok` despite an expect
+   * mismatch. For `on_fail: halt` the failures are folded into `haltReason`
+   * instead and this stays undefined.
+   */
+  expectWarnings?: string[];
   durationMs: number;
 };
 
@@ -972,6 +1128,37 @@ export async function runYamlRecipe(
                 ...(judgeVerdict !== undefined && { judgeVerdict }),
                 durationMs: Date.now() - stepStart,
               });
+              // Slice 2 — per-step expect eval. Runs on the value just
+              // committed to ctx[intoKey]. Halt failure flips the just-pushed
+              // result to error and rolls back the ctx commit so downstream
+              // steps don't see a value the recipe author rejected.
+              if (step.expect) {
+                const failures = await evaluateStepExpect(
+                  step.expect,
+                  ctx[intoKey],
+                );
+                if (failures.length > 0) {
+                  const onFail = step.expect.on_fail ?? "halt";
+                  const last = stepResults[stepResults.length - 1];
+                  if (last) {
+                    if (onFail === "halt") {
+                      last.status = "error";
+                      last.error = `expect_failed: ${failures.join("; ")}`;
+                      last.haltReason = `expect_failed in step "${stepId}": ${failures.join("; ")}`;
+                      const fbk = recipe.on_error?.fallback;
+                      const fbkOpen =
+                        fbk === "log_only" || fbk === "deliver_original";
+                      const failOpenAgent = step.optional === true || fbkOpen;
+                      if (!failOpenAgent) {
+                        runError = runError ?? last.haltReason;
+                      }
+                      delete ctx[intoKey];
+                    } else {
+                      last.expectWarnings = failures;
+                    }
+                  }
+                }
+              }
             }
           }
         } catch (err) {
@@ -1010,7 +1197,37 @@ export async function runYamlRecipe(
         thrownError = undefined;
         thrownErrorCode = undefined;
         try {
-          result = await executeStep(step, ctx, stepDeps);
+          // Slice (sandbox-alternative): per-step wall-clock timeout via
+          // Promise.race. The underlying tool keeps running in the
+          // background — this is a halt signal for the runner, not a
+          // process kill. The thrown error carries a `step_timeout`
+          // prefix so categoriseHaltReason maps it correctly.
+          const timeoutMs =
+            typeof step.timeout_ms === "number" && step.timeout_ms > 0
+              ? step.timeout_ms
+              : 0;
+          if (timeoutMs > 0) {
+            let timer: NodeJS.Timeout | undefined;
+            const timeoutPromise = new Promise<string | null>((_, reject) => {
+              timer = setTimeout(() => {
+                reject(
+                  new Error(
+                    `step_timeout: exceeded ${timeoutMs}ms in step "${step.into ?? step.tool ?? "?"}"`,
+                  ),
+                );
+              }, timeoutMs);
+            });
+            try {
+              result = await Promise.race([
+                executeStep(step, ctx, stepDeps),
+                timeoutPromise,
+              ]);
+            } finally {
+              if (timer) clearTimeout(timer);
+            }
+          } else {
+            result = await executeStep(step, ctx, stepDeps);
+          }
           // Detect tool-level errors reported as JSON {ok: false, error: ...}
           if (result !== null) {
             try {
@@ -1116,7 +1333,32 @@ export async function runYamlRecipe(
             );
           }
         }
-        if (step.into) {
+        // Slice 2 — per-step expect eval. Runs on the post-transform value
+        // (what would land in ctx) and only when the step otherwise succeeded.
+        // Halt failure flips the just-pushed result to error and suppresses
+        // the ctx commit by nulling `result` so the downstream `if (step.into)`
+        // block skips. Composes with `optional: true` / `on_error.fallback`.
+        if (step.expect && !thrownError && !stepError && result !== null) {
+          const failures = await evaluateStepExpect(step.expect, result);
+          if (failures.length > 0) {
+            const onFail = step.expect.on_fail ?? "halt";
+            const last = stepResults[stepResults.length - 1];
+            if (last) {
+              if (onFail === "halt") {
+                last.status = "error";
+                last.error = `expect_failed: ${failures.join("; ")}`;
+                last.haltReason = `expect_failed in step "${stepId}": ${failures.join("; ")}`;
+                if (!failOpen) {
+                  runError = runError ?? last.haltReason;
+                }
+                result = null;
+              } else {
+                last.expectWarnings = failures;
+              }
+            }
+          }
+        }
+        if (result !== null && step.into) {
           ctx[step.into] = result;
           if (step.tool) {
             applyToolOutputContext(step.tool, step.into, result, ctx);
@@ -1298,10 +1540,18 @@ export async function executeStep(
   // Check if tool is registered in the new registry
   if (hasTool(toolId)) {
     const tool = getTool(toolId);
-    // Build params with template rendering for string values
+    // Build params with template rendering for string values.
+    // `do` is left raw: it carries a nested sub-step template (used by
+    // `fan_out`) whose `{{item.*}}` placeholders must be rendered per-iter
+    // with the loop variable in scope, not pre-rendered against the outer
+    // ctx (which would resolve them to empty strings).
     const params: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(step)) {
       if (key === "tool" || key === "agent" || key === "into") continue;
+      if (key === "do") {
+        params[key] = value;
+        continue;
+      }
       params[key] = deepRender(value, ctx);
     }
 
@@ -1740,10 +1990,11 @@ function makeProviderDriverFn(): (
       const timeoutMs = 300_000;
       const startupTimeoutMs = 30_000;
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      const resolvedWorkspace = process.cwd();
       try {
         const result = await driver.run({
           prompt,
-          workspace: process.cwd(),
+          workspace: resolvedWorkspace,
           timeoutMs,
           startupTimeoutMs,
           signal: controller.signal,
