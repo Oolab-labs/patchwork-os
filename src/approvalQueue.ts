@@ -44,6 +44,23 @@ export interface PendingApproval {
   personalSignals?: import("./approvalSignals.js").PersonalSignal[];
   /** 256-bit hex token for phone-path approve/reject. Only present when push is configured. */
   approvalToken?: string;
+  /**
+   * Phase 0β provenance — recipe run that originated this approval.
+   * Populated when the bridge can correlate the approval call to a
+   * recipe-step context (the `personalSignals` pipeline already
+   * sources from `recipe_run_log`, but that's read-only signal data;
+   * these two fields surface the link itself on the wire so the
+   * dashboard approval detail page can render an "originating run"
+   * chip without re-deriving it from filenames or sessionId.
+   *
+   * TODO(phase-0β-pop): population is deferred — the immediate goal
+   * is unblocking the dashboard schema. Computing the link without a
+   * deeper refactor requires sessionId→runSeq mapping that today
+   * lives behind `personalSignals.source: "recipe_run_log"`. Wiring
+   * that explicitly into `handleApprovalRequest` is the follow-up.
+   */
+  runSeq?: number;
+  recipeName?: string;
 }
 
 /**

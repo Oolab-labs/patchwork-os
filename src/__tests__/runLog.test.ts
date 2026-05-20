@@ -854,3 +854,74 @@ describe("RecipeRunLog.record", () => {
     expect(fs.existsSync(`${file}.tmp`)).toBe(false);
   });
 });
+
+describe("RecipeRunLog — inboxOutputs (Phase 0β provenance)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(os.tmpdir(), "runlog-inbox-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("appendDirect round-trips inboxOutputs through query()", () => {
+    const log = new RecipeRunLog({ dir });
+    log.appendDirect({
+      taskId: "t1",
+      recipeName: "morning-brief",
+      trigger: "cron",
+      status: "done",
+      createdAt: 1,
+      startedAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+      inboxOutputs: [{ filename: "brief.md", deliveredAt: 12345 }],
+    });
+    const found = log.query()[0];
+    expect(found?.inboxOutputs).toEqual([
+      { filename: "brief.md", deliveredAt: 12345 },
+    ]);
+  });
+
+  it("completeRun persists inboxOutputs into the JSONL row", () => {
+    const log = new RecipeRunLog({ dir });
+    const seq = log.startRun({
+      taskId: "t2",
+      recipeName: "morning",
+      trigger: "cron",
+      createdAt: 1,
+      startedAt: 1,
+    });
+    log.completeRun(seq, {
+      status: "done",
+      doneAt: 2,
+      durationMs: 1,
+      stepResults: [],
+      inboxOutputs: [{ filename: "a.md", deliveredAt: 999 }],
+    });
+    const found = log.query().find((r) => r.seq === seq);
+    expect(found?.inboxOutputs).toEqual([
+      { filename: "a.md", deliveredAt: 999 },
+    ]);
+  });
+
+  it("omits inboxOutputs when empty", () => {
+    const log = new RecipeRunLog({ dir });
+    const seq = log.startRun({
+      taskId: "t3",
+      recipeName: "morning",
+      trigger: "cron",
+      createdAt: 1,
+      startedAt: 1,
+    });
+    log.completeRun(seq, {
+      status: "done",
+      doneAt: 2,
+      durationMs: 1,
+      stepResults: [],
+      inboxOutputs: [],
+    });
+    const found = log.query().find((r) => r.seq === seq);
+    expect(found?.inboxOutputs).toBeUndefined();
+  });
+});

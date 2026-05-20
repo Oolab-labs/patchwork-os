@@ -21,6 +21,67 @@ import path from "node:path";
 import { respond500 } from "./httpErrorResponse.js";
 
 /**
+ * Phase 0β provenance shape. Optional + additive — files without
+ * frontmatter return `provenance: undefined`.
+ */
+export interface InboxProvenance {
+  recipe?: string;
+  runSeq?: number;
+  trigger?: string;
+  deliveredAt?: string;
+}
+
+/**
+ * Split a markdown file into its YAML-frontmatter block (parsed as a flat
+ * `key: value` map) and the remaining body. Frontmatter is recognised
+ * only when the file begins with `---\n` and a closing `---` line is
+ * found within the first 30 lines (cap to bound the scan). Returns
+ * `{ provenance: undefined, body: content }` for files without
+ * frontmatter so callers degrade gracefully on legacy inbox items.
+ */
+export function parseInboxFile(content: string): {
+  provenance: InboxProvenance | undefined;
+  body: string;
+} {
+  if (!content.startsWith("---\n")) {
+    return { provenance: undefined, body: content };
+  }
+  const lines = content.split("\n");
+  // lines[0] === "---". Find the next "---" delimiter.
+  let endIdx = -1;
+  const maxScan = Math.min(lines.length, 30);
+  for (let i = 1; i < maxScan; i++) {
+    if (lines[i] === "---") {
+      endIdx = i;
+      break;
+    }
+  }
+  if (endIdx === -1) {
+    // Malformed — no closing delimiter. Treat as body-only.
+    return { provenance: undefined, body: content };
+  }
+  const fm: InboxProvenance = {};
+  for (let i = 1; i < endIdx; i++) {
+    const line = lines[i] ?? "";
+    const m = /^([a-zA-Z][a-zA-Z0-9_]*):\s*(.*)$/.exec(line);
+    if (!m) continue;
+    const key = m[1] as string;
+    const rawVal = (m[2] ?? "").trim();
+    if (key === "runSeq") {
+      const n = Number.parseInt(rawVal, 10);
+      if (Number.isFinite(n)) fm.runSeq = n;
+    } else if (key === "recipe" || key === "trigger" || key === "deliveredAt") {
+      (fm as Record<string, string>)[key] = rawVal;
+    }
+  }
+  const body = lines.slice(endIdx + 1).join("\n");
+  // Strip a single leading blank line if present (frontmatter writers
+  // emit a trailing blank line by convention).
+  const trimmedBody = body.startsWith("\n") ? body.slice(1) : body;
+  return { provenance: fm, body: trimmedBody };
+}
+
+/**
  * Filename guard shared by every inbox sub-route. Rejects directory
  * separators and `..` segments so the request can never escape the inbox
  * directory. Returns the joined absolute path on success, or null with the
@@ -64,7 +125,15 @@ export function tryHandleInboxRoute(
               readFile(filePath, "utf8"),
               stat(filePath),
             ]);
-            const stripped = content
+            // Phase 0β — consume frontmatter FIRST, then strip
+            // heading-`#` lines from the body only. Previously the
+            // `#`-strip ran over the whole file, which meant any
+            // pre-existing `#`-prefixed body line was eaten AND, more
+            // subtly, frontmatter values (lines like `recipe: x`,
+            // `---`) leaked into the preview because they weren't
+            // `#`-prefixed. Splitting the two passes fixes both.
+            const { provenance, body } = parseInboxFile(content);
+            const stripped = body
               .split("\n")
               .filter((l) => !l.startsWith("#"))
               .join("\n")
@@ -79,6 +148,7 @@ export function tryHandleInboxRoute(
               name,
               modifiedAt: stats.mtime.toISOString(),
               preview: stripped.slice(0, 200),
+              ...(provenance && { provenance }),
             };
           }),
         );
@@ -112,11 +182,13 @@ export function tryHandleInboxRoute(
           stat(filePath),
         ]);
         res.writeHead(200, { "Content-Type": "application/json" });
+        const { provenance } = parseInboxFile(content);
         res.end(
           JSON.stringify({
             name: filename,
             content,
             modifiedAt: stats.mtime.toISOString(),
+            ...(provenance && { provenance }),
           }),
         );
       } catch (err: unknown) {

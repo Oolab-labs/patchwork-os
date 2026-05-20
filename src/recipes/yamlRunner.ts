@@ -568,6 +568,74 @@ export async function runYamlRecipe(
   };
 
   const stepDeps = resolveStepDeps(deps, { recipeName: recipe.name });
+
+  // Phase 0β — inbox provenance. When a recipe `file.write` / `file.append`
+  // step targets `~/.patchwork/inbox/`, prepend a YAML frontmatter block
+  // (first write only) recording recipe + run + trigger, and accumulate the
+  // delivered filename onto the run record's `inboxOutputs`. Old recipes /
+  // non-inbox paths pass through unchanged.
+  const inboxDir = `${os.homedir()}/.patchwork/inbox/`;
+  const inboxOutputs: Array<{ filename: string; deliveredAt: number }> = [];
+  const isInboxPath = (abs: string): boolean =>
+    abs.startsWith(inboxDir) && !path.basename(abs).startsWith(".");
+  const buildFrontmatter = (): string => {
+    const triggerKindAtWrite = yamlTriggerKind;
+    const lines = ["---", `recipe: ${recipe.name}`];
+    if (runSeq !== undefined) lines.push(`runSeq: ${runSeq}`);
+    lines.push(
+      `trigger: ${triggerKindAtWrite}`,
+      `deliveredAt: ${new Date().toISOString()}`,
+      "---",
+      "",
+      "",
+    );
+    return lines.join("\n");
+  };
+  const recordInboxDelivery = (abs: string): void => {
+    inboxOutputs.push({
+      filename: path.basename(abs),
+      deliveredAt: Date.now(),
+    });
+  };
+  const fileAlreadyHasFrontmatter = (abs: string): boolean => {
+    try {
+      if (!existsSync(abs)) return false;
+      const fd = readFileSync(abs, "utf-8");
+      return fd.startsWith("---\n");
+    } catch {
+      return false;
+    }
+  };
+  const originalWrite = stepDeps.writeFile;
+  const originalAppend = stepDeps.appendFile;
+  stepDeps.writeFile = (p: string, content: string) => {
+    if (isInboxPath(p)) {
+      const needsFm = !fileAlreadyHasFrontmatter(p);
+      const final = needsFm ? buildFrontmatter() + content : content;
+      originalWrite(p, final);
+      recordInboxDelivery(p);
+      return;
+    }
+    originalWrite(p, content);
+  };
+  stepDeps.appendFile = (p: string, content: string) => {
+    if (isInboxPath(p)) {
+      // file.append: never re-prepend. If file is brand-new (no existing
+      // frontmatter), seed one so a recipe that only ever uses append still
+      // gets provenance — without this, a recipe using append-only would
+      // produce frontmatter-less inbox items and the UI would degrade.
+      const exists = existsSync(p);
+      if (!exists) {
+        originalWrite(p, buildFrontmatter() + content);
+      } else {
+        originalAppend(p, content);
+      }
+      recordInboxDelivery(p);
+      return;
+    }
+    originalAppend(p, content);
+  };
+
   // PR2b: one per-run budget shared across all agent steps. Absent
   // `recipe.budget` → no enforcement, no overhead.
   const runBudget = new RunBudget(recipe.budget);
@@ -1082,6 +1150,7 @@ export async function runYamlRecipe(
           outputTail,
           ...(runError !== undefined && { errorMessage: runError }),
           ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
+          ...(inboxOutputs.length > 0 ? { inboxOutputs } : {}),
         });
         emit("recipe_done", {
           runSeq,
@@ -1118,6 +1187,7 @@ export async function runYamlRecipe(
           errorMessage: runError,
           stepResults: finalStepResults,
           ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
+          ...(inboxOutputs.length > 0 ? { inboxOutputs } : {}),
         });
       }
     } catch {
