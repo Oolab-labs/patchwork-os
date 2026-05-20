@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
+import { canonicalRecipeKey } from "@/lib/entityKey";
 import { relTime } from "@/components/time";
 import { ACTIVITY_NOISE_EVENTS } from "@/lib/activityNoise";
 import { subscribeStreamLiveness, subscribeStreamMessage } from "@/lib/streamLiveness";
@@ -66,7 +67,7 @@ function getLifecycleMeta(e: ActivityEvent) {
     sessionId:
       typeof m.sessionId === "string" ? m.sessionId.slice(0, 8) : undefined,
     summary: typeof m.summary === "string" ? m.summary : undefined,
-    recipeName: rawRecipe ? rawRecipe.replace(/:agent$/, "") : undefined,
+    recipeName: rawRecipe ? canonicalRecipeKey(rawRecipe) : undefined,
   };
 }
 
