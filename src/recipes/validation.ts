@@ -27,63 +27,8 @@ export interface LintResult {
   errors: number;
 }
 
-/**
- * Recursively scan raw recipe steps for the `parallel: { each, as, steps }`
- * map-reduce object form. That syntax is accepted by the linter (it flattens
- * the inner steps at flattenValidationStep) but NO runner executes it —
- * `chainedRunner.expandParallelSteps` only handles the static-array form, and
- * the `each` template resolves at runtime so it cannot be statically
- * expanded. A recipe using it silently no-ops the step. Collect the ids of
- * any offending steps so validation can fail loud at preflight.
- */
-function collectUnsupportedParallelSteps(steps: unknown): string[] {
-  if (!Array.isArray(steps)) return [];
-  const offenders: string[] = [];
-  const visit = (step: unknown): void => {
-    if (!step || typeof step !== "object" || Array.isArray(step)) return;
-    const record = step as Record<string, unknown>;
-    const parallel = record.parallel;
-    if (
-      parallel &&
-      typeof parallel === "object" &&
-      !Array.isArray(parallel) &&
-      "each" in (parallel as Record<string, unknown>)
-    ) {
-      offenders.push(typeof record.id === "string" ? record.id : "(unnamed)");
-    }
-    // Recurse into static-array parallel groups and branch arms so a nested
-    // object-form parallel is still caught.
-    if (Array.isArray(parallel)) {
-      for (const child of parallel) visit(child);
-    }
-    if (Array.isArray(record.branch)) {
-      for (const arm of record.branch) {
-        if (arm && typeof arm === "object") {
-          visit((arm as Record<string, unknown>).otherwise);
-          visit(arm);
-        }
-      }
-    }
-  };
-  for (const step of steps) visit(step);
-  return offenders;
-}
-
 export function validateRecipeDefinition(recipe: unknown): LintResult {
   const issues: LintIssue[] = [];
-  // Scan the RAW recipe before normalization — normalizeRecipeForValidation
-  // flattens `parallel: {each}` away, so this must run on the pre-flatten input.
-  if (recipe && typeof recipe === "object" && !Array.isArray(recipe)) {
-    const offenders = collectUnsupportedParallelSteps(
-      (recipe as Record<string, unknown>).steps,
-    );
-    for (const id of offenders) {
-      issues.push({
-        level: "error",
-        message: `Step "${id}" uses the 'parallel: { each, as, steps }' map-reduce form, which is not executed by any runner — the step would silently no-op at runtime. Use the 'fan_out' tool for runtime iteration, or the static 'parallel: [ ... ]' array form for a fixed set of branches.`,
-      });
-    }
-  }
   const normalizedRecipe = normalizeRecipeForValidation(recipe);
 
   if (!normalizedRecipe || typeof normalizedRecipe !== "object") {
