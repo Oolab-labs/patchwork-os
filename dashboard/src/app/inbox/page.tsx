@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { apiPath } from "@/lib/api";
+import { inboxItemKey } from "@/lib/entityKey";
 import { EmptyState, ErrorState, HintCard } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { InboxDeliveryCard } from "@/components/InboxDeliveryCard";
@@ -942,7 +943,12 @@ const filteredItems = items.filter((item) => {
 
                   {/* Action buttons (bottom) */}
                   {(() => {
-                    const recipeNameForSelected = selected.name.replace(/\.md$/, "").replace(/-\d{4}-\d{2}-\d{2}$/, "");
+                    // Strip .md only; the trailing date stays — recipe
+                    // identity from a filename is a sibling-PR concern
+                    // (moves to provenance metadata). For now the deep
+                    // link can include the date and the recipes page
+                    // will gracefully no-op if no recipe matches.
+                    const recipeNameForSelected = inboxItemKey(selected.name);
                     return (
                       <>
                       <div className="inbox-reader-actions" style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--line-1)" }}>

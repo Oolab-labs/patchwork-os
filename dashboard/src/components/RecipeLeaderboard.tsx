@@ -9,6 +9,7 @@ import {
 } from "@/components/patchwork";
 import { relTime } from "@/components/time";
 import { useRunRecipe } from "@/hooks/useRunRecipe";
+import { canonicalRecipeKey } from "@/lib/entityKey";
 
 /**
  * Recipe activity leaderboard for the Overview page. Replaces the old
@@ -67,7 +68,7 @@ function aggregateByRecipe(
   const byName = new Map<string, LeaderboardRun[]>();
   for (const r of runs) {
     if (r.startedAt < cutoff) continue;
-    const name = (r.recipeName ?? r.recipe ?? "").replace(/:agent$/, "");
+    const name = canonicalRecipeKey(r.recipeName ?? r.recipe ?? "");
     if (!name) continue;
     const list = byName.get(name) ?? [];
     list.push(r);
