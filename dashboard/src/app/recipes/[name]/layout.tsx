@@ -15,7 +15,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { use, useEffect, useMemo, useRef } from "react";
 import { canonicalRecipeKey } from "@/lib/entityKey";
-import { RelationStrip, StatusPill } from "@/components/patchwork";
+import { Breadcrumb, RelationStrip, StatusPill } from "@/components/patchwork";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 
 interface RecipeSummary {
@@ -161,32 +161,14 @@ function TabBar({ name }: { name: string }) {
   );
 }
 
-function Breadcrumb({ name }: { name: string }) {
+function RecipeBreadcrumb({ name }: { name: string }) {
   return (
-    <nav aria-label="Breadcrumb" style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>
-      <ol
-        style={{
-          display: "flex",
-          gap: 6,
-          alignItems: "center",
-          listStyle: "none",
-          padding: 0,
-          margin: 0,
-        }}
-      >
-        <li>
-          <Link href="/recipes" style={{ color: "var(--ink-3)", textDecoration: "none" }}>
-            Recipes
-          </Link>
-        </li>
-        <li aria-hidden="true" style={{ color: "var(--ink-4, var(--ink-3))" }}>
-          /
-        </li>
-        <li aria-current="page" style={{ color: "var(--ink-2)", fontFamily: "var(--font-mono)" }}>
-          {name}
-        </li>
-      </ol>
-    </nav>
+    <Breadcrumb
+      items={[
+        { label: "Recipes", href: "/recipes" },
+        { label: name },
+      ]}
+    />
   );
 }
 
@@ -271,7 +253,7 @@ export default function RecipeDetailLayout({
   return (
     <section>
       <div style={{ marginBottom: 16 }}>
-        <Breadcrumb name={name} />
+        <RecipeBreadcrumb name={name} />
         <div
           style={{
             display: "flex",
