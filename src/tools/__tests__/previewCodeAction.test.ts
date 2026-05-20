@@ -45,7 +45,8 @@ describe("previewCodeAction", () => {
       actionTitle: "Add missing import",
     });
     expect(result.isError).toBe(true);
-    expect(JSON.parse(result.content[0]!.text).code).toBe("extension_required");
+    // Machine-readable error code lives in structuredContent (ADR-0004).
+    expect((result as any).structuredContent.code).toBe("extension_required");
   });
 
   it("returns preview data on success", async () => {

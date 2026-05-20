@@ -7,7 +7,13 @@ import { createSpawnWorkspaceTool } from "../spawnWorkspace.js";
 
 // ---- helpers ---------------------------------------------------------------
 
-function parseText(result: { content: Array<{ type: string; text: string }> }) {
+function parseText(result: {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+  structuredContent?: unknown;
+}) {
+  if (result.isError && result.structuredContent !== undefined)
+    return result.structuredContent as any;
   return JSON.parse(result.content[0]?.text ?? "{}");
 }
 

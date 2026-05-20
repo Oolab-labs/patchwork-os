@@ -8,7 +8,15 @@ import { createSendHttpRequestTool } from "../httpClient.js";
 
 const tool = createSendHttpRequestTool();
 
-function parse(result: { content: Array<{ type: string; text: string }> }) {
+function parse(result: {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+  structuredContent?: unknown;
+}) {
+  // Error results carry the plain message in `text` and machine-readable
+  // fields in `structuredContent` (ADR-0004).
+  if (result.isError && result.structuredContent !== undefined)
+    return result.structuredContent as any;
   return JSON.parse(result.content.at(0)?.text ?? "{}");
 }
 
@@ -228,8 +236,7 @@ describe("sendHttpRequest — Host header SSRF bypass prevention", () => {
       headers: { Host: "evil.com\r\nX-Injected: yes" },
     });
     expect(result.isError).toBe(true);
-    expect(JSON.parse(result.content[0]?.text ?? "{}").error).toMatch(
-      /invalid characters/i,
-    );
+    // Error `text` is the plain message (ADR-0004).
+    expect(result.content[0]?.text ?? "").toMatch(/invalid characters/i);
   });
 });

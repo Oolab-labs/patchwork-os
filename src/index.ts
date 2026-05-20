@@ -250,9 +250,17 @@ if (
       `  recipe run <name> [--vars k=v]            Run a recipe by name\n` +
       `  recipe install <source>                   Install from a path or GitHub source\n` +
       `  recipe --help                             Full recipe subcommand index\n\n` +
+      `Operate\n` +
+      `  start [--port N] [--workspace <dir>]      Start a single bridge (no tmux)\n` +
+      `  status                                    One-line bridge status (port, uptime)\n` +
+      `  tools [list|search <q>] [--slim] [--json] List tools the bridge would register\n` +
+      `  analytics <show|configure|clear|test>     Manage opt-in telemetry config\n` +
+      `  launchd <install|uninstall|status>        Manage the macOS auto-start LaunchAgent\n\n` +
       `Diagnose\n` +
       `  halts [--window 1h|24h|overnight|7d]      Morning summary of recent recipe halts\n` +
       `  judgments [--window ...] [--recipe N]     Recent judge-step verdicts across runs\n` +
+      `  suggest [--since-days N]                  Recipe + unused-tool suggestions\n` +
+      `  token-efficiency benchmark                Measure token cost across tool sets\n` +
       `  traces export                             Bundle approval / recipe / decision traces\n` +
       `  print-token [--port N]                    Print the active bridge auth token\n\n` +
       `Safety\n` +

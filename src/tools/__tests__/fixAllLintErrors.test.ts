@@ -45,6 +45,11 @@ function makeProbes(overrides: Record<string, boolean> = {}) {
 }
 
 function parse(result: any) {
+  // Error results carry the plain message in `text` and machine-readable
+  // fields in `structuredContent` (ADR-0004).
+  if (result.isError && result.structuredContent !== undefined) {
+    return result.structuredContent;
+  }
   return JSON.parse(result.content[0].text);
 }
 

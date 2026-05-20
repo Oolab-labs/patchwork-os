@@ -301,28 +301,51 @@ export function successStructuredLarge(data: unknown): {
   };
 }
 
+/**
+ * Build a tool-error result (ADR-0004 Tier 2).
+ *
+ * The `text` content block carries the plain, human/LLM-readable error
+ * message — never a JSON blob. An LLM consuming a failed tool call should be
+ * able to read the message directly without JSON-parsing it.
+ *
+ * Machine-readable fields (`code` and any extra fields passed via the object
+ * form) are surfaced in `structuredContent` for non-LLM clients that want a
+ * stable, parseable shape. `structuredContent.error` always holds the same
+ * message string as the text block.
+ *
+ * Accepts either a plain message string or an object. For the object form the
+ * human-readable message is taken from `error` / `message`, falling back to a
+ * JSON rendering only when neither is present.
+ */
 export function error(
   data: string | Record<string, unknown>,
   code?: string,
 ): {
   content: Array<{ type: string; text: string }>;
+  structuredContent: Record<string, unknown>;
   isError: true;
 } {
-  let payload: Record<string, unknown>;
+  let message: string;
+  let structured: Record<string, unknown>;
   if (typeof data === "string") {
-    payload = { error: data };
+    message = data;
+    structured = { error: data };
   } else {
-    payload = { ...data };
+    structured = { ...data };
+    const m = data.error ?? data.message;
+    message = typeof m === "string" ? m : JSON.stringify(data);
+    structured.error = message;
   }
-  if (code !== undefined) payload.code = code;
+  if (code !== undefined) structured.code = code;
   return {
-    content: [{ type: "text", text: JSON.stringify(payload) }],
+    content: [{ type: "text", text: message }],
+    structuredContent: structured,
     isError: true,
   };
 }
 
 export function extensionRequired(feature: string, alternatives?: string[]) {
-  let msg = `VS Code extension not connected — ${feature} requires the extension.\n\nTo reconnect: Cmd+Shift+P → "Claude IDE Bridge: Reconnect"`;
+  let msg = `VS Code extension not connected — ${feature} requires the extension.\n\nTo reconnect: open the Command Palette → "Claude IDE Bridge: Reconnect"`;
   if (alternatives?.length) {
     msg += `\n\nAlternatives that work without the extension:\n${alternatives.map((a) => `  • ${a}`).join("\n")}`;
   }

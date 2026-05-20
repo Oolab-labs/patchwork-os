@@ -9,17 +9,12 @@ function parse(result: {
   content: Array<{ type: string; text: string }>;
   isError?: boolean;
 }) {
-  const raw = JSON.parse(result.content.at(0)?.text ?? "{}") as unknown;
-  if (
-    result.isError &&
-    typeof raw === "object" &&
-    raw !== null &&
-    "error" in (raw as object) &&
-    typeof (raw as Record<string, unknown>).error === "string"
-  ) {
-    return (raw as Record<string, unknown>).error as string;
+  // Error results (ADR-0004): `text` is the plain message string — return it
+  // directly. Success results carry a JSON-stringified payload in `text`.
+  if (result.isError) {
+    return result.content.at(0)?.text ?? "";
   }
-  return raw;
+  return JSON.parse(result.content.at(0)?.text ?? "{}") as unknown;
 }
 
 describe("replaceBlock TOCTOU bug", () => {
