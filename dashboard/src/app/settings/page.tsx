@@ -13,6 +13,7 @@ import {
 } from "@/lib/pushSubscription";
 import { ConfigFileCard } from "./_components/ConfigFileCard";
 import { PermColumn } from "./_components/PermColumn";
+import { TelemetrySection } from "./_components/TelemetrySection";
 import { ToggleRow } from "./_components/ToggleRow";
 
 interface StatusResponse {
@@ -256,97 +257,8 @@ export default function SettingsPage() {
   const [haltsPrefBusy, setHaltsPrefBusy] = useState(false);
   const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
-  // Telemetry — persisted via GET/POST /api/bridge/telemetry-prefs
-  const [telCrash, setTelCrash] = useState(false);
-  const [telUsage, setTelUsage] = useState(false);
-  // Default false — the card subtitle says "Everything off by default".
-  // `true` here flashed the toggle ON before the GET resolved,
-  // misrepresenting the consent posture. Server is source of truth.
-  const [telDiag, setTelDiag] = useState(false);
-  const telInitialized = useRef(false);
-  const [telLastSentAt, setTelLastSentAt] = useState<string | null>(null);
-  const [telEndpoint, setTelEndpoint] = useState<string | null>(null);
-  const [telEndpointSource, setTelEndpointSource] = useState<string | null>(
-    null,
-  );
-  const [telResetBusy, setTelResetBusy] = useState(false);
-  const [telResetMsg, setTelResetMsg] = useState<{
-    ok: boolean;
-    text: string;
-  } | null>(null);
-
-  // Fetch analytics prefs (including lastSentAt + endpoint info) from bridge
-  useEffect(() => {
-    let alive = true;
-    const fetch_ = async () => {
-      try {
-        const res = await fetch(apiPath("/api/bridge/telemetry-prefs"));
-        if (res.ok) {
-          const data = (await res.json()) as {
-            lastSentAt?: string;
-            endpoint?: string;
-            endpointSource?: string;
-          };
-          if (!alive) return;
-          if (typeof data.lastSentAt === "string") {
-            setTelLastSentAt(data.lastSentAt);
-          }
-          if (typeof data.endpoint === "string") {
-            setTelEndpoint(data.endpoint);
-          }
-          if (typeof data.endpointSource === "string") {
-            setTelEndpointSource(data.endpointSource);
-          }
-        }
-      } catch {
-        // Bridge offline — no-op
-      }
-    };
-    fetch_();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  async function resetTelemetryData() {
-    if (
-      !confirm(
-        "Delete all local telemetry data?\n\nThis clears your saved preferences, the analytics endpoint config, and the install-identifying salt. Equivalent to a fresh install for telemetry purposes.",
-      )
-    ) {
-      return;
-    }
-    setTelResetBusy(true);
-    setTelResetMsg(null);
-    try {
-      const res = await fetch(apiPath("/api/bridge/telemetry-prefs"), {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        setTelResetMsg({
-          ok: false,
-          text: body.error ?? `Error ${res.status}`,
-        });
-      } else {
-        // Local state reset — server salt is gone, prefs reset to false.
-        setTelCrash(false);
-        setTelUsage(false);
-        setTelDiag(false);
-        setTelLastSentAt(null);
-        setTelResetMsg({ ok: true, text: "Local telemetry data cleared." });
-      }
-    } catch (e) {
-      setTelResetMsg({
-        ok: false,
-        text: e instanceof Error ? e.message : String(e),
-      });
-    } finally {
-      setTelResetBusy(false);
-    }
-  }
+  // Telemetry section state + handlers extracted to
+  // ./_components/TelemetrySection.tsx — it owns its own endpoint.
 
   // Kill-switch state — fetched from /api/bridge/kill-switch (proxy to
   // bridge `GET /kill-switch`). Polls in tandem with /status below.
@@ -490,35 +402,6 @@ export default function SettingsPage() {
     };
   }, []);
 
-  // Load telemetry prefs on mount (once). Fail-soft — if bridge is offline
-  // the toggles remain at their default values.
-  useEffect(() => {
-    if (telInitialized.current) return;
-    let cancel = false;
-    (async () => {
-      try {
-        const res = await fetch(apiPath("/api/bridge/telemetry-prefs"));
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          crashReports?: boolean;
-          usageStats?: boolean;
-          localDiagnostics?: boolean;
-        };
-        if (cancel) return;
-        if (typeof data.crashReports === "boolean") setTelCrash(data.crashReports);
-        if (typeof data.usageStats === "boolean") setTelUsage(data.usageStats);
-        if (typeof data.localDiagnostics === "boolean") setTelDiag(data.localDiagnostics);
-        telInitialized.current = true;
-      } catch {
-        /* fail-soft — bridge may not be running */
-      }
-    })();
-    return () => {
-      cancel = true;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Read current Web Push subscription status on mount. Idempotently
   // register the SW so a fresh visit can later subscribe without a reload —
   // pushManager.subscribe() requires an active registration.
@@ -596,24 +479,6 @@ export default function SettingsPage() {
     setSaveState("saving");
     setTimeout(() => setSaveState("saved"), 600);
     setTimeout(() => setSaveState("idle"), 2400);
-  }
-
-  async function saveTelemetryPref(
-    field: "crashReports" | "usageStats" | "localDiagnostics",
-    value: boolean,
-  ) {
-    // Optimistic local update already applied by the caller via setter.
-    try {
-      await fetch(apiPath("/api/bridge/telemetry-prefs"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: value }),
-        signal: abortRef.current?.signal,
-      });
-      flashSaved();
-    } catch {
-      /* fail-soft — UI already shows the optimistic value */
-    }
   }
 
   async function saveApiKey(provider: ApiKeyProvider, explicitKey?: string) {
@@ -1787,134 +1652,8 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Telemetry */}
-            <div id="s-telemetry" className="card" style={{ marginTop: 16 }}>
-              <div className="card-head">
-                <div>
-                  <h2 style={{ margin: 0 }}>Telemetry</h2>
-                  <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginTop: 2 }}>
-                    Opt-in. Everything off by default. Local-only until you flip a switch.
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ padding: "16px 0", display: "flex", flexDirection: "column", gap: 14 }}>
-                <ToggleRow
-                  id="tel-crash"
-                  label="Crash reports"
-                  help="Send anonymized stack traces to help diagnose bridge crashes. No source files, no env vars."
-                  checked={telCrash}
-                  onChange={(v) => {
-                    setTelCrash(v);
-                    void saveTelemetryPref("crashReports", v);
-                  }}
-                />
-                <ToggleRow
-                  id="tel-usage"
-                  label="Anonymous usage stats"
-                  help="Tool-call counts and feature flag usage. No prompts, no file paths, no identifiers."
-                  checked={telUsage}
-                  onChange={(v) => {
-                    setTelUsage(v);
-                    void saveTelemetryPref("usageStats", v);
-                  }}
-                />
-                <ToggleRow
-                  id="tel-diag"
-                  label="Local diagnostics retention"
-                  help="Keep last 7 days of bridge logs on this machine for debugging. Never leaves your computer."
-                  checked={telDiag}
-                  onChange={(v) => {
-                    setTelDiag(v);
-                    void saveTelemetryPref("localDiagnostics", v);
-                  }}
-                />
-                {telLastSentAt && (
-                  <div
-                    style={{
-                      fontSize: "var(--fs-s)",
-                      color: "var(--ink-2)",
-                      paddingTop: 4,
-                    }}
-                  >
-                    Last sent:{" "}
-                    {new Date(telLastSentAt).toLocaleDateString(undefined, {
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </div>
-                )}
-                {telEndpoint && (
-                  <div
-                    style={{
-                      fontSize: "var(--fs-s)",
-                      color: "var(--ink-2)",
-                      paddingTop: 4,
-                    }}
-                    aria-label="Telemetry destination"
-                  >
-                    Sending to{" "}
-                    <span className="mono">{telEndpoint}</span>
-                    {telEndpointSource && (
-                      <span style={{ color: "var(--ink-3)" }}>
-                        {" "}
-                        (source: {telEndpointSource})
-                      </span>
-                    )}
-                  </div>
-                )}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    flexWrap: "wrap",
-                    paddingTop: 8,
-                    borderTop: "1px solid var(--border-default)",
-                    marginTop: 4,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => void resetTelemetryData()}
-                    disabled={telResetBusy}
-                    aria-label="Delete local telemetry data"
-                    style={{
-                      background: "transparent",
-                      color: "var(--fg-2)",
-                      border: "1px solid var(--border-default)",
-                      borderRadius: "var(--r-2)",
-                      padding: "5px 10px",
-                      fontSize: "var(--fs-s)",
-                      cursor: telResetBusy ? "default" : "pointer",
-                      opacity: telResetBusy ? 0.5 : 1,
-                    }}
-                  >
-                    {telResetBusy
-                      ? "Clearing…"
-                      : "Delete local telemetry data"}
-                  </button>
-                  <span
-                    style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)" }}
-                  >
-                    Clears prefs, endpoint config, and the install salt.
-                  </span>
-                  {telResetMsg && (
-                    <span
-                      style={{
-                        fontSize: "var(--fs-s)",
-                        color: telResetMsg.ok ? "var(--ok)" : "var(--err)",
-                      }}
-                    >
-                      {telResetMsg.text}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
+            {/* Telemetry — extracted to ./_components/TelemetrySection */}
+            <TelemetrySection flashSaved={flashSaved} />
           </div>
         </div>
       )}
