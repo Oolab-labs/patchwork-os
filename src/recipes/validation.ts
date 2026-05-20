@@ -1,5 +1,5 @@
-import { Ajv, type ErrorObject } from "ajv";
 import cron from "node-cron";
+import { createAjv2020, type ErrorObject } from "../ajv2020.js";
 import { FLAG_SCHEMA_LINT, isEnabled } from "../featureFlags.js";
 import {
   defaultDeprecationWarn,
@@ -354,7 +354,7 @@ function flattenValidationStep(step: unknown): unknown[] {
 function validateRecipeSchema(recipe: unknown): LintIssue[] {
   try {
     const schemas = generateSchemaSet();
-    const ajv = new Ajv({ strict: false, allErrors: true });
+    const ajv = createAjv2020({ strict: false, allErrors: true });
 
     for (const schema of Object.values(schemas.namespaces)) {
       ajv.addSchema(schema as object);

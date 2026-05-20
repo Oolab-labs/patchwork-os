@@ -1,6 +1,6 @@
-import { Ajv, type ValidateFunction } from "ajv";
 import { WebSocket } from "ws";
 import type { ActivityLog } from "./activityLog.js";
+import { createAjv2020, type ValidateFunction } from "./ajv2020.js";
 import { ErrorCodes } from "./errors.js";
 import { consumeToken, refillBucket } from "./fp/tokenBucket.js";
 import type { Logger } from "./logger.js";
@@ -161,7 +161,7 @@ export class McpTransport {
   public onActivity: (() => void) | undefined = undefined;
   private activityLog: ActivityLog | null = null;
   private isExtensionConnectedFn: (() => boolean) | null = null;
-  private readonly ajv = new Ajv({ strict: false, allErrors: true });
+  private readonly ajv = createAjv2020({ strict: false, allErrors: true });
   private readonly schemaValidators = new Map<string, ValidateFunction>();
   private readonly outputValidators = new Map<string, ValidateFunction>();
   /** Cached wire-schema array for tools/list (full mode). Invalidated on any tool registration change. */
