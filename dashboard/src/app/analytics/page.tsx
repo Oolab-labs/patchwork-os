@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { StatCard } from "@/components/StatCard";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
-import { AreaChart, EmptyState, ErrorState } from "@/components/patchwork";
+import { AreaChart, EmptyState, ErrorState, RelationStrip, ToolChip } from "@/components/patchwork";
 import type { AreaChartSeries } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { isHaltStatus } from "@/lib/runStatus";
@@ -146,6 +146,13 @@ export default function AnalyticsPage() {
           <div className="editorial-sub">
             tool usage · hook activity · automation history
           </div>
+          <RelationStrip
+            items={[
+              { label: "Runs", href: "/runs", title: "Recipe runs that drove this usage" },
+              { label: "Activity", href: "/activity", title: "Raw activity stream" },
+              { label: "Insights", href: "/insights", title: "Per-tool approval signals" },
+            ]}
+          />
         </div>
       </div>
 
@@ -262,7 +269,9 @@ export default function AnalyticsPage() {
                     // unique (same tool across MCP namespaces / aggregation
                     // dupes). Suffix the index to avoid React key collisions.
                     <tr key={`${t.tool}-${i}`} style={{ borderBottom: "1px solid var(--line-3)" }}>
-                      <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: "var(--ink-0)", whiteSpace: "nowrap" }}>{t.tool}</td>
+                      <td style={{ padding: "7px 8px", fontSize: "var(--fs-xs)", color: "var(--ink-0)", whiteSpace: "nowrap" }}>
+                        <ToolChip name={t.tool} variant="link" />
+                      </td>
                       <td style={{ padding: "7px 8px", width: "100%" }}>
                         <div style={{ background: "var(--line-3)", borderRadius: 2, height: 5, width: "100%" }}>
                           <div style={{ background: "var(--orange)", borderRadius: 2, height: 5, width: `${(t.calls / maxCalls) * 100}%` }} />

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
 import { EmptyState, HintCard } from "@/components/patchwork";
+import { canonicalRecipeKey } from "@/lib/entityKey";
 import { InstallConfirmDialog } from "./_components/InstallConfirmDialog";
 import { apiPath } from "@/lib/api";
 import {
@@ -325,17 +326,20 @@ function RecipeCard({
 
         <div style={{ flexShrink: 0 }}>
           {isInstalled ? (
-            <span
+            <Link
+              href={`/recipes/${canonicalRecipeKey(recipe.name)}`}
               className="pill"
               style={{
                 background: "var(--ok-soft)",
                 color: "var(--ok)",
                 border: "1px solid var(--ok)",
                 fontSize: "var(--fs-xs)",
+                textDecoration: "none",
               }}
+              title="Open installed recipe"
             >
               &#10003; Installed
-            </span>
+            </Link>
           ) : bridgeStatus === "online" ? (
             <button
               type="button"

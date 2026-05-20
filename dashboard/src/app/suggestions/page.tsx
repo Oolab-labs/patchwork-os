@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
-import { EmptyState, ErrorState, HintCard } from "@/components/patchwork";
+import { EmptyState, ErrorState, HintCard, RelationStrip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 
 const SINCE_DAYS_OPTIONS = [1, 7, 30, 90] as const;
@@ -190,6 +190,13 @@ export default function SuggestionsPage() {
           <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
             Read-only — nothing on this page changes policy. Same data <code>patchwork suggest</code> prints.
           </div>
+          <RelationStrip
+            items={[
+              { label: "Approvals", href: "/approvals", title: "Approval calls these suggestions touch" },
+              { label: "Insights", href: "/insights", title: "Per-tool approval aggregates" },
+              { label: "Knowledge", href: "/decisions", title: "Saved decisions" },
+            ]}
+          />
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <label htmlFor="since-days" style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>

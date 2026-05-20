@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { apiPath } from "@/lib/api";
 import { inboxItemKey } from "@/lib/entityKey";
-import { EmptyState, ErrorState, HintCard } from "@/components/patchwork";
+import { EmptyState, ErrorState, HintCard, RelationStrip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { InboxDeliveryCard } from "@/components/InboxDeliveryCard";
 import { useToast } from "@/components/Toast";
@@ -566,6 +566,14 @@ const filteredItems = items.filter((item) => {
               <HintCard.Toggle id="inbox" />
             </div>
             <div className="editorial-sub">~/.patchwork/inbox · briefs · summaries · agent reports</div>
+            <RelationStrip
+              items={[
+                { label: "Recipes", href: "/recipes", title: "Recipes that produce inbox items" },
+                { label: "Runs", href: "/runs", title: "Runs that generated these messages" },
+                { label: "Traces", href: "/traces", title: "Decisions tied to these outputs" },
+                { label: "Connections", href: "/connections", title: "Connectors used to source content" },
+              ]}
+            />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {unseen > 0 && (

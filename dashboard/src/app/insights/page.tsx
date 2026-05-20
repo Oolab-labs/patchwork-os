@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { apiPath } from "@/lib/api";
-import { EmptyState, ErrorState } from "@/components/patchwork";
+import { EmptyState, ErrorState, RelationStrip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 
 interface ToolInsight {
@@ -231,6 +231,14 @@ export default function InsightsPage() {
           <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
             Your personal approval history in aggregate. Same signals shown per-call in the approval modal. Read-only.
           </div>
+          <RelationStrip
+            items={[
+              { label: "Approvals", href: "/approvals", title: "Individual approval calls" },
+              { label: "Traces", href: "/traces", title: "Decision traces" },
+              { label: "Knowledge", href: "/decisions", title: "Saved decisions" },
+              { label: "Suggestions", href: "/suggestions", title: "Patterns mined from runs" },
+            ]}
+          />
         </div>
         <div
           style={{
@@ -242,12 +250,31 @@ export default function InsightsPage() {
         >
           {data && (
             <>
-              <span className="pill muted">{data.totalDecisions} decisions</span>
-              <span className="pill ok">{data.trustedToolCount} trusted</span>
+              <Link
+                href="/activity"
+                className="pill muted"
+                style={{ textDecoration: "none" }}
+                title="See activity stream"
+              >
+                {data.totalDecisions} decisions
+              </Link>
+              <Link
+                href="/approvals?decision=approved"
+                className="pill ok"
+                style={{ textDecoration: "none" }}
+                title="See approved calls"
+              >
+                {data.trustedToolCount} trusted
+              </Link>
               {data.rejectedToolCount > 0 && (
-                <span className="pill err">
+                <Link
+                  href="/approvals?decision=rejected"
+                  className="pill err"
+                  style={{ textDecoration: "none" }}
+                  title="See rejected calls"
+                >
                   {data.rejectedToolCount} rejected
-                </span>
+                </Link>
               )}
             </>
           )}

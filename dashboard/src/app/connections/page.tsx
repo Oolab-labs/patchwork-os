@@ -4,7 +4,7 @@ import { apiPath } from "@/lib/api";
 import AddConnectionModal from "./AddConnectionModal";
 import { YourConnectorRequests } from "./YourConnectorRequests";
 import { Dialog } from "@/components/Dialog";
-import { EmptyState, HintCard } from "@/components/patchwork";
+import { EmptyState, HintCard, RelationStrip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import type { ConnectorStatus } from "./types";
@@ -1203,6 +1203,13 @@ export default function ConnectionsPage() {
           <div className="editorial-sub">
             oauth · scoped to your machine · tokens in ~/.patchwork/secrets
           </div>
+          <RelationStrip
+            items={[
+              { label: "Recipes", href: "/recipes", title: "Recipes that use these connectors" },
+              { label: "Inbox", href: "/inbox", title: "Outputs produced via these connectors" },
+              { label: "Marketplace", href: "/marketplace", title: "Find recipes for these providers" },
+            ]}
+          />
         </div>
         {!loading && !bridgeOffline && (
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
