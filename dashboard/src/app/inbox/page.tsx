@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { apiPath } from "@/lib/api";
 import { EmptyState, HintCard } from "@/components/patchwork";
 import { InboxDeliveryCard } from "@/components/InboxDeliveryCard";
@@ -944,13 +945,16 @@ const filteredItems = items.filter((item) => {
                         >
                           Replay recipe
                         </button>
-                        <a
+                        <Link
+                          // next/link applies the `/dashboard` basePath
+                          // automatically — a raw <a href="/traces"> 404s
+                          // because it skips the prefix.
                           href={`/traces?q=${encodeURIComponent(recipeNameForSelected)}`}
                           className="btn sm ghost"
                           style={{ fontSize: "var(--fs-xs)", textDecoration: "none" }}
                         >
                           View trace
-                        </a>
+                        </Link>
                         <button
                           type="button"
                           className="btn sm ghost"
