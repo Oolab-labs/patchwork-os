@@ -65,12 +65,22 @@ afterEach(() => {
 });
 
 describe("defaultClaudeCodeFn — workspace cwd threading", () => {
-  it("spawns the agent subprocess with cwd = PATCHWORK_WORKSPACE", async () => {
-    process.env.PATCHWORK_WORKSPACE = workspace;
-    const out = await defaultClaudeCodeFn("ignored — fake binary");
-    // `pwd` on macOS may resolve /var → /private/var; compare via realpath.
-    expect(realpathSync(out)).toBe(realpathSync(workspace));
-  });
+  // The fake `claude` is a `#!/bin/sh` script — POSIX-only. Windows
+  // `spawnSync` can't execute it, so the spawn fails, `defaultClaudeCodeFn`
+  // returns the `[agent step failed: claude CLI not found]` placeholder,
+  // and `realpathSync` on that string throws an unrelated ENOENT. The
+  // resolver logic itself is covered platform-agnostically by
+  // `resolveWorkspaceRoot.test.ts`; skip this end-to-end spawn assertion
+  // on Windows.
+  it.skipIf(process.platform === "win32")(
+    "spawns the agent subprocess with cwd = PATCHWORK_WORKSPACE",
+    async () => {
+      process.env.PATCHWORK_WORKSPACE = workspace;
+      const out = await defaultClaudeCodeFn("ignored — fake binary");
+      // `pwd` on macOS may resolve /var → /private/var; compare via realpath.
+      expect(realpathSync(out)).toBe(realpathSync(workspace));
+    },
+  );
 
   it("returns the typed recipe_no_workspace error when no workspace resolves", async () => {
     // No env var, no .git ancestor of a deeply-nested tmpdir.
