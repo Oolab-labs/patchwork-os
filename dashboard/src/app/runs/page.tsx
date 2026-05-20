@@ -867,7 +867,11 @@ export default function RunsPage() {
                   >
                     Clear filters
                   </button>
-                ) : undefined
+                ) : (
+                  <Link href="/recipes" className="btn sm" style={{ textDecoration: "none" }}>
+                    Go to recipes →
+                  </Link>
+                )
               }
             />
           );
