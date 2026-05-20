@@ -125,6 +125,21 @@ export async function getPushSubscriptionStatus(): Promise<"subscribed" | "denie
   return sub ? "subscribed" : "unsubscribed";
 }
 
+/**
+ * Endpoint URL of the current browser's push subscription, or null if
+ * not subscribed. The endpoint is the stable key the bridge / dashboard
+ * push store uses, so callers need it to read or update per-subscription
+ * preferences (see /api/push/prefs).
+ */
+export async function getPushSubscriptionEndpoint(): Promise<string | null> {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window))
+    return null;
+  const reg = await navigator.serviceWorker.getRegistration("/dashboard/");
+  if (!reg) return null;
+  const sub = await reg.pushManager.getSubscription();
+  return sub?.endpoint ?? null;
+}
+
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
