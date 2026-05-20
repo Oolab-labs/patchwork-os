@@ -686,6 +686,11 @@ const filteredItems = items.filter((item) => {
                 </div>
               </>
             }
+            action={
+              <Link href="/recipes" className="btn sm" style={{ textDecoration: "none" }}>
+                Run a recipe →
+              </Link>
+            }
           />
         ) : (
           <div

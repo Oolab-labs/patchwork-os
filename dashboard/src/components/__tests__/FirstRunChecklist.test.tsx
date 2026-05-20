@@ -1,10 +1,9 @@
 /**
- * Verifies the first-run orchestrator on /dashboard:
- *   - probes 4 endpoints and auto-checks steps that have data
- *   - hides when all 4 are complete (the happy path is established)
- *   - hides when the user dismisses + persists across remounts
- *   - shows incomplete steps with a CTA + hint
- *   - completed steps render with a check mark and line-through
+ * Verifies the first-run funnel on /dashboard:
+ *   - step ordering: recipe → run → inbox → connect
+ *   - first incomplete step is marked as "next" (data-next="true")
+ *   - collapses when all 4 steps are complete
+ *   - collapses when the user dismisses + persists across remounts
  */
 
 import { fireEvent, render, waitFor } from "@testing-library/react";
@@ -18,8 +17,7 @@ type Probe =
   | { kind: "wrap"; key: string; arr: unknown[] };
 
 function makeFetch(perPath: Record<string, Probe>): typeof fetch {
-  // Order keys longest-first so a URL like /api/bridge/approvals/history
-  // matches its specific entry instead of the shorter /api/bridge/approvals.
+  // Order keys longest-first so more-specific paths match first.
   const keysByLength = Object.keys(perPath).sort((a, b) => b.length - a.length);
   const spy = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
     const url = typeof input === "string" ? input : input.toString();
@@ -43,29 +41,57 @@ describe("<FirstRunChecklist/>", () => {
     global.fetch = originalFetch;
   });
 
-  it("renders four steps with the right completion state from the probes", async () => {
+  it("step 1 (recipe) is active/next when no data exists", async () => {
     global.fetch = makeFetch({
-      "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [{ id: "gmail" }] },
       "/api/bridge/recipes": { kind: "wrap", key: "recipes", arr: [] },
       "/api/bridge/runs": { kind: "wrap", key: "runs", arr: [] },
-      "/api/bridge/approvals": { kind: "arr", arr: [] },
-      "/api/bridge/traces?traceType=approval": { kind: "wrap", key: "traces", arr: [] },
+      "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
+      "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
     });
     const { findByText, container } = render(<FirstRunChecklist />);
     expect(await findByText(/Get started/)).toBeInTheDocument();
-    // Step 1 (connections) is done — check mark renders, line-through.
-    expect(container.textContent).toMatch(/Connect a service/);
-    // Step 4 (approvals) is incomplete — its CTA link is in the DOM.
-    expect(container.querySelector('a[href="/approvals"]')).not.toBeNull();
+    // Step 1 label is present
+    expect(container.textContent).toMatch(/Install or create a recipe/);
+    // First item should have data-next="true"
+    const items = container.querySelectorAll("li");
+    expect(items[0]?.getAttribute("data-next")).toBe("true");
+    expect(items[1]?.getAttribute("data-next")).toBeNull();
+  });
+
+  it("step 2 (run) is next when recipes are installed but no runs", async () => {
+    global.fetch = makeFetch({
+      "/api/bridge/recipes": { kind: "wrap", key: "recipes", arr: [{ name: "x" }] },
+      "/api/bridge/runs": { kind: "wrap", key: "runs", arr: [] },
+      "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
+      "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
+    });
+    const { findByText, container } = render(<FirstRunChecklist />);
+    await findByText(/Get started/);
+    const items = container.querySelectorAll("li");
+    // Step 1 done (no data-next), step 2 is next
+    expect(items[0]?.getAttribute("data-next")).toBeNull();
+    expect(items[1]?.getAttribute("data-next")).toBe("true");
+  });
+
+  it("step 3 (inbox) is next when recipes + runs exist but inbox empty", async () => {
+    global.fetch = makeFetch({
+      "/api/bridge/recipes": { kind: "wrap", key: "recipes", arr: [{ name: "x" }] },
+      "/api/bridge/runs": { kind: "wrap", key: "runs", arr: [{ seq: 1 }] },
+      "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
+      "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
+    });
+    const { findByText, container } = render(<FirstRunChecklist />);
+    await findByText(/Get started/);
+    const items = container.querySelectorAll("li");
+    expect(items[2]?.getAttribute("data-next")).toBe("true");
   });
 
   it("collapses entirely when all four steps are complete", async () => {
     global.fetch = makeFetch({
-      "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [{ id: "gmail" }] },
       "/api/bridge/recipes": { kind: "wrap", key: "recipes", arr: [{ name: "x" }] },
       "/api/bridge/runs": { kind: "wrap", key: "runs", arr: [{ seq: 1 }] },
-      "/api/bridge/approvals": { kind: "arr", arr: [{ callId: "a" }] },
-      "/api/bridge/traces?traceType=approval": { kind: "wrap", key: "traces", arr: [] },
+      "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [{ id: "i1" }] },
+      "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [{ id: "gmail" }] },
     });
     const { container } = render(<FirstRunChecklist />);
     await waitFor(() => {
@@ -78,25 +104,21 @@ describe("<FirstRunChecklist/>", () => {
 
   it("renders nothing on first paint (waits for probes) — no skeleton flash", () => {
     global.fetch = makeFetch({
-      "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
       "/api/bridge/recipes": { kind: "wrap", key: "recipes", arr: [] },
       "/api/bridge/runs": { kind: "wrap", key: "runs", arr: [] },
-      "/api/bridge/approvals": { kind: "arr", arr: [] },
-      "/api/bridge/traces?traceType=approval": { kind: "wrap", key: "traces", arr: [] },
+      "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
+      "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
     });
     const { container } = render(<FirstRunChecklist />);
-    // Pre-fetch, container is empty (no skeleton because a fresh user
-    // would see a flicker every Overview load).
     expect(container.firstChild).toBeNull();
   });
 
   it("dismissal persists across remounts via localStorage", async () => {
     global.fetch = makeFetch({
-      "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
       "/api/bridge/recipes": { kind: "wrap", key: "recipes", arr: [] },
       "/api/bridge/runs": { kind: "wrap", key: "runs", arr: [] },
-      "/api/bridge/approvals": { kind: "arr", arr: [] },
-      "/api/bridge/traces?traceType=approval": { kind: "wrap", key: "traces", arr: [] },
+      "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
+      "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
     });
     const { findByRole, container, unmount } = render(<FirstRunChecklist />);
     const dismiss = await findByRole("button", {
@@ -106,12 +128,25 @@ describe("<FirstRunChecklist/>", () => {
     expect(container.firstChild).toBeNull();
     unmount();
     const { container: c2 } = render(<FirstRunChecklist />);
-    // Even after the new mount's probes settle, the checklist stays
-    // hidden because of the persisted dismissal.
     await waitFor(() => {
-      // No assertion needed mid-await — we just want probes to fire.
       expect(global.fetch).toHaveBeenCalled();
     });
     expect(c2.firstChild).toBeNull();
+  });
+
+  it("step CTAs link to the correct pages", async () => {
+    global.fetch = makeFetch({
+      "/api/bridge/recipes": { kind: "wrap", key: "recipes", arr: [] },
+      "/api/bridge/runs": { kind: "wrap", key: "runs", arr: [] },
+      "/api/bridge/inbox": { kind: "wrap", key: "items", arr: [] },
+      "/api/bridge/connections": { kind: "wrap", key: "connectors", arr: [] },
+    });
+    const { findByText, container } = render(<FirstRunChecklist />);
+    await findByText(/Get started/);
+    // All 4 steps have CTAs since nothing is done
+    expect(container.querySelector('a[href="/marketplace"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/recipes"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/inbox"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/connections"]')).not.toBeNull();
   });
 });

@@ -5,26 +5,22 @@ import { useCallback, useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 
 /**
- * Four-step "first run" orchestration shown on /dashboard for users
- * whose workspace hasn't yet seen the full happy path. Each step
- * auto-checks against a real bridge endpoint:
+ * First-run funnel shown on /dashboard for users who haven't yet seen the
+ * full happy path. Steps are ordered by the natural onboarding sequence:
  *
- *   1. Connect a service        — `/api/bridge/connections` has any entry
- *   2. Install / create a recipe — `/api/bridge/recipes` returns >= 1
- *   3. Run it                    — `/api/bridge/runs` returns >= 1
- *   4. Approve when prompted     — `/api/bridge/approvals/history` has >= 1
+ *   1. Install or create a recipe  — `/api/bridge/recipes` returns >= 1
+ *   2. Run it                       — `/api/bridge/runs` returns >= 1
+ *   3. See a result in inbox        — `/api/bridge/inbox` returns >= 1 item
+ *   4. Connect a service            — `/api/bridge/connections` has any entry
  *
- * Strategic-critique gap: "What does a brand-new user see when /tasks,
- * /recipes, /activity are all empty? Today: 15 unstructured empty-
- * state divs, no orchestration." This component is the orchestration.
+ * The "next" step (first incomplete one) is visually emphasised so the
+ * user always knows what to do next.
  *
  * Collapses (renders null) when:
- *   - all 4 steps are complete (the happy path is established)
+ *   - all steps are complete (the happy path is established)
  *   - the user has dismissed it
  *
- * Dismissals persist in localStorage. A "Restore checklist" mechanic
- * is intentionally NOT here — Settings is the natural place for that,
- * filed for a follow-up commit.
+ * Dismissals persist in localStorage.
  */
 
 const STORAGE_KEY = "patchwork.firstRun.dismissed";
@@ -41,7 +37,7 @@ interface Status {
   connections: StepStatus;
   recipes: StepStatus;
   runs: StepStatus;
-  approvals: StepStatus;
+  inbox: StepStatus;
   loaded: boolean;
 }
 
@@ -50,7 +46,7 @@ function emptyStatus(): Status {
     connections: { done: false },
     recipes: { done: false },
     runs: { done: false },
-    approvals: { done: false },
+    inbox: { done: false },
     loaded: false,
   };
 }
@@ -99,60 +95,44 @@ export function FirstRunChecklist() {
   }, []);
 
   const probe = useCallback(async (signal?: AbortSignal) => {
-    // Probe all 5 endpoints in parallel — cheap reads, brand-new
-    // workspace is the hot path. Endpoint shapes (verified against
-    // the live bridge):
-    //   /connections                       -> { connectors: [...] }
-    //   /recipes                           -> { recipes: [...] }
-    //   /runs                              -> { runs: [...] }
-    //   /approvals                         -> [...] (pending queue)
-    //   /traces?traceType=approval         -> { traces: [...] }
-    // Step 4 is satisfied if EITHER an approval is currently pending
-    // (the user is mid-flow) OR an approval trace was ever saved (the
-    // user has been through the flow at least once).
-    const [conn, recipes, runs, pendingApprovals, approvalTraces] =
-      await Promise.all([
-        probeArray("/api/bridge/connections", "connectors", signal),
-        probeArray("/api/bridge/recipes", "recipes", signal),
-        probeArray("/api/bridge/runs", "runs", signal),
-        probeArray("/api/bridge/approvals", undefined, signal),
-        probeArray("/api/bridge/traces?traceType=approval", "traces", signal),
-      ]);
+    const [recipes, runs, inboxItems, conn] = await Promise.all([
+      probeArray("/api/bridge/recipes", "recipes", signal),
+      probeArray("/api/bridge/runs", "runs", signal),
+      probeArray("/api/bridge/inbox", "items", signal),
+      probeArray("/api/bridge/connections", "connectors", signal),
+    ]);
     if (signal?.aborted) return;
     setStatus({
-      connections: {
-        done: conn > 0,
-        hint: "Gmail, Slack, or any HTTP API. Credentials stay in ~/.patchwork.",
-        doneHint: "Add more in /connections — one recipe can fan across services.",
-      },
       recipes: {
         done: recipes > 0,
         hint: "Browse the marketplace or scaffold one with patchwork recipe new.",
-        doneHint: "YAML lives in ~/.patchwork/recipes. Tweak triggers and steps in /recipes.",
+        doneHint:
+          "YAML lives in ~/.patchwork/recipes. Tweak triggers and steps in /recipes.",
       },
       runs: {
         done: runs > 0,
         hint: "Hit Run on any recipe, or wait for a scheduled trigger.",
-        doneHint: "Watch live in /activity. Halts and errors land in /runs.",
+        doneHint: "Watch live in /runs. Halts and errors appear there too.",
       },
-      approvals: {
-        done: pendingApprovals > 0 || approvalTraces > 0,
-        hint: "Nothing leaves your machine without a nod. The queue is in /approvals.",
-        doneHint: "Approval patterns in /insights surface what's safe to auto-approve.",
+      inbox: {
+        done: inboxItems > 0,
+        hint: "After a recipe run, results land here as inbox items.",
+        doneHint:
+          "Inbox delivers briefs. Set up phone delivery so results reach you anywhere.",
+      },
+      connections: {
+        done: conn > 0,
+        hint: "Gmail, Slack, or any HTTP API. Credentials stay in ~/.patchwork.",
+        doneHint:
+          "Add more in /connections — one recipe can fan across services.",
       },
       loaded: true,
     });
   }, []);
 
   useEffect(() => {
-    // #605: own per-tick AbortController so unmount cancels in-flight
-    // probes (and the 5 parallel probeArray fetches inside).
     const controller = new AbortController();
     void probe(controller.signal);
-    // Refresh every 30s — the checklist auto-completes as the user
-    // works through it, so polling makes the green checkmarks appear
-    // without a reload. Each tick gets its own controller so per-tick
-    // abort doesn't kill all future ticks.
     const id = setInterval(() => {
       const tickCtrl = new AbortController();
       void probe(tickCtrl.signal);
@@ -165,17 +145,19 @@ export function FirstRunChecklist() {
 
   if (dismissed) return null;
   if (!status.loaded) return null;
+
   const allDone =
-    status.connections.done &&
     status.recipes.done &&
     status.runs.done &&
-    status.approvals.done;
+    status.inbox.done &&
+    status.connections.done;
   if (allDone) return null;
+
   const doneCount =
-    (status.connections.done ? 1 : 0) +
     (status.recipes.done ? 1 : 0) +
     (status.runs.done ? 1 : 0) +
-    (status.approvals.done ? 1 : 0);
+    (status.inbox.done ? 1 : 0) +
+    (status.connections.done ? 1 : 0);
 
   const steps: Array<{
     n: number;
@@ -185,29 +167,32 @@ export function FirstRunChecklist() {
   }> = [
     {
       n: 1,
-      label: "Connect a service",
-      cta: { href: "/connections", label: "Connect →" },
-      step: status.connections,
-    },
-    {
-      n: 2,
       label: "Install or create a recipe",
       cta: { href: "/marketplace", label: "Browse marketplace →" },
       step: status.recipes,
     },
     {
-      n: 3,
-      label: "Run it",
+      n: 2,
+      label: "Run a recipe",
       cta: { href: "/recipes", label: "Open recipes →" },
       step: status.runs,
     },
     {
+      n: 3,
+      label: "See a result in your inbox",
+      cta: { href: "/inbox", label: "Open inbox →" },
+      step: status.inbox,
+    },
+    {
       n: 4,
-      label: "Approve when prompted",
-      cta: { href: "/approvals", label: "See queue →" },
-      step: status.approvals,
+      label: "Connect a service",
+      cta: { href: "/connections", label: "Connect →" },
+      step: status.connections,
     },
   ];
+
+  // Index of the first incomplete step — this is the "next" step.
+  const nextIdx = steps.findIndex((s) => !s.step.done);
 
   return (
     <section
@@ -274,86 +259,117 @@ export function FirstRunChecklist() {
           gap: 8,
         }}
       >
-        {steps.map((s) => (
-          <li
-            key={s.n}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              padding: "8px 12px",
-              borderRadius: "var(--r-2)",
-              background: s.step.done
-                ? "color-mix(in srgb, var(--green) 7%, transparent)"
-                : "var(--recess)",
-              opacity: s.step.done ? 0.65 : 1,
-              transition: "opacity 180ms, background 180ms",
-            }}
-          >
-            <span
-              aria-hidden="true"
+        {steps.map((s, idx) => {
+          const isNext = idx === nextIdx;
+          return (
+            <li
+              key={s.n}
+              data-next={isNext ? "true" : undefined}
               style={{
-                width: 22,
-                height: 22,
-                borderRadius: "50%",
-                background: s.step.done ? "var(--green)" : "transparent",
-                border: s.step.done
-                  ? "1px solid var(--green)"
-                  : "1px solid var(--line-2)",
-                color: s.step.done ? "var(--on-accent, #fff)" : "var(--ink-3)",
-                display: "inline-flex",
+                display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                fontSize: "var(--fs-xs)",
-                fontWeight: 700,
-                flexShrink: 0,
+                gap: 12,
+                padding: "8px 12px",
+                borderRadius: "var(--r-2)",
+                background: s.step.done
+                  ? "color-mix(in srgb, var(--green) 7%, transparent)"
+                  : isNext
+                    ? "color-mix(in srgb, var(--accent) 8%, var(--recess))"
+                    : "var(--recess)",
+                opacity: s.step.done ? 0.65 : 1,
+                outline: isNext
+                  ? "1.5px solid color-mix(in srgb, var(--accent) 35%, transparent)"
+                  : "none",
+                transition: "opacity 180ms, background 180ms",
               }}
             >
-              {s.step.done ? "✓" : s.n}
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
+              <span
+                aria-hidden="true"
                 style={{
-                  fontSize: "var(--fs-s)",
-                  fontWeight: 500,
-                  color: "var(--ink-1)",
-                  textDecoration: s.step.done ? "line-through" : "none",
-                }}
-              >
-                {s.label}
-              </div>
-              {(() => {
-                const tip = s.step.done ? s.step.doneHint : s.step.hint;
-                if (!tip) return null;
-                return (
-                  <div
-                    style={{
-                      fontSize: "var(--fs-xs)",
-                      color: "var(--ink-3)",
-                      marginTop: 2,
-                    }}
-                  >
-                    {tip}
-                  </div>
-                );
-              })()}
-            </div>
-            {!s.step.done && (
-              <Link
-                href={s.cta.href}
-                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: "50%",
+                  background: s.step.done
+                    ? "var(--green)"
+                    : isNext
+                      ? "var(--accent)"
+                      : "transparent",
+                  border: s.step.done
+                    ? "1px solid var(--green)"
+                    : isNext
+                      ? "1px solid var(--accent)"
+                      : "1px solid var(--line-2)",
+                  color:
+                    s.step.done || isNext
+                      ? "var(--on-accent, #fff)"
+                      : "var(--ink-3)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                   fontSize: "var(--fs-xs)",
-                  fontWeight: 600,
-                  color: "var(--accent)",
-                  textDecoration: "none",
+                  fontWeight: 700,
                   flexShrink: 0,
                 }}
               >
-                {s.cta.label}
-              </Link>
-            )}
-          </li>
-        ))}
+                {s.step.done ? "✓" : s.n}
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: "var(--fs-s)",
+                    fontWeight: isNext ? 600 : 500,
+                    color: "var(--ink-1)",
+                    textDecoration: s.step.done ? "line-through" : "none",
+                  }}
+                >
+                  {s.label}
+                  {isNext && (
+                    <span
+                      style={{
+                        marginLeft: 8,
+                        fontSize: "var(--fs-xs)",
+                        fontWeight: 600,
+                        color: "var(--accent)",
+                        verticalAlign: "middle",
+                      }}
+                    >
+                      ← next
+                    </span>
+                  )}
+                </div>
+                {(() => {
+                  const tip = s.step.done ? s.step.doneHint : s.step.hint;
+                  if (!tip) return null;
+                  return (
+                    <div
+                      style={{
+                        fontSize: "var(--fs-xs)",
+                        color: "var(--ink-3)",
+                        marginTop: 2,
+                      }}
+                    >
+                      {tip}
+                    </div>
+                  );
+                })()}
+              </div>
+              {!s.step.done && (
+                <Link
+                  href={s.cta.href}
+                  style={{
+                    fontSize: "var(--fs-xs)",
+                    fontWeight: 600,
+                    color: "var(--accent)",
+                    textDecoration: "none",
+                    flexShrink: 0,
+                  }}
+                >
+                  {s.cta.label}
+                </Link>
+              )}
+            </li>
+          );
+        })}
       </ol>
     </section>
   );
