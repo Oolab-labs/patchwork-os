@@ -83,11 +83,18 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
-      // The blocking inline script below sets `data-theme` on <html>
-      // before React hydrates. Server markup has no data-theme, so
-      // hydration would otherwise log a mismatch on every page.
-      // suppressHydrationWarning is exactly for this attribute-set-by-
-      // pre-hydration-script pattern — scoped to <html> only.
+      // Render the default theme (`dark`) on the server so SSR markup and
+      // the client's first render agree on the `data-theme` attribute.
+      // Previously the server emitted no `data-theme` and the blocking
+      // inline script below added it pre-hydration — React then saw an
+      // attribute it never rendered and logged a hydration mismatch on
+      // every route (the dev overlay surfaced it repeatedly via the
+      // HTTPAccessFallback boundary re-rendering <html>). With the default
+      // rendered server-side, dark-theme users (the default) get a clean
+      // hydration; the inline script only ever *upgrades* to `paper` when
+      // that's the stored preference. suppressHydrationWarning stays as a
+      // belt-and-suspenders for the paper-preference upgrade case.
+      data-theme="dark"
       suppressHydrationWarning
       className={`${albertSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
     >

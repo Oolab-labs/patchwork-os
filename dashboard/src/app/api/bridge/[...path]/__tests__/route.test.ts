@@ -11,6 +11,8 @@
 import type { NextRequest } from "next/server";
 import { describe, expect, it, vi } from "vitest";
 
+const mockFindBridge = vi.fn<() => unknown>(() => null);
+
 vi.mock("@/lib/bridge", () => ({
   bridgeFetch: vi.fn(async () =>
     new Response(JSON.stringify({ ok: true }), {
@@ -18,12 +20,12 @@ vi.mock("@/lib/bridge", () => ({
       headers: { "content-type": "application/json" },
     }),
   ),
-  findBridge: () => null,
-  resolveBridgeUrl: () => "",
+  findBridge: () => mockFindBridge(),
+  resolveBridgeUrl: () => "http://127.0.0.1:9999/stream",
 }));
 
 // Importing after mocks are registered.
-const { POST } = await import("../route");
+const { GET, POST } = await import("../route");
 
 function makeReq(body: string, contentLength?: string): NextRequest {
   const headers: Record<string, string> = {
@@ -75,6 +77,68 @@ describe("catch-all bridge proxy — body cap", () => {
       ctx,
     );
     expect(res.status).toBe(200);
+  });
+});
+
+describe("catch-all bridge proxy — SSE /stream non-OK passthrough", () => {
+  function makeStreamReq(): NextRequest {
+    const req = new Request("https://dashboard.local/api/bridge/stream", {
+      method: "GET",
+      headers: { "sec-fetch-site": "same-origin" },
+    });
+    Object.defineProperty(req, "nextUrl", {
+      value: { search: "" },
+      configurable: true,
+    });
+    return req as unknown as NextRequest;
+  }
+  const ctx = { params: Promise.resolve({ path: ["stream"] }) };
+
+  it("passes a 503 (subscriber cap) straight through — no fake event-stream wrapper", async () => {
+    mockFindBridge.mockReturnValueOnce({ authToken: "t", port: 9999 });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ error: "Too many SSE subscribers (max 20)" }),
+          { status: 503, headers: { "content-type": "application/json" } },
+        ),
+      );
+    try {
+      const res = await GET(makeStreamReq(), ctx);
+      // Status preserved.
+      expect(res.status).toBe(503);
+      // Must NOT be wrapped as an event-stream — the old code prepended
+      // a `: connected` heartbeat which falsely signalled a connection.
+      const ct = res.headers.get("content-type") ?? "";
+      expect(ct).not.toContain("text/event-stream");
+      const body = await res.text();
+      expect(body).not.toContain(": connected");
+      expect(JSON.parse(body)).toMatchObject({
+        error: "Too many SSE subscribers (max 20)",
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("still streams a 200 upstream as text/event-stream with a heartbeat", async () => {
+    mockFindBridge.mockReturnValueOnce({ authToken: "t", port: 9999 });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(new ReadableStream({ start: (c) => c.close() }), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+      );
+    try {
+      const res = await GET(makeStreamReq(), ctx);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/event-stream");
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });
 

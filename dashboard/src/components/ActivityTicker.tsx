@@ -159,7 +159,16 @@ export function ActivityTicker() {
       />
       {visible.length === 0 ? (
         <span style={{ color: "var(--ink-3)", whiteSpace: "nowrap" }}>
-          {connected ? "Listening for events…" : "Bridge stream offline"}
+          {/*
+            This indicator reflects the LIVE EVENT STREAM (SSE), which is
+            a distinct system from the bridge process itself. The bridge
+            can be reachable (header pill green, /status 200) while the
+            event stream is unavailable — e.g. the bridge's SSE
+            subscriber cap is saturated. Label it "Live stream" rather
+            than "Bridge" so the two indicators can never appear to
+            contradict each other.
+          */}
+          {connected ? "Listening for events…" : "Live stream offline"}
         </span>
       ) : (
         <ul

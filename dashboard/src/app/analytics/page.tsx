@@ -260,8 +260,11 @@ export default function AnalyticsPage() {
             <div className="card" style={{ padding: "var(--s-5)" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-s)" }}>
                 <tbody>
-                  {topTools.map((t) => (
-                    <tr key={t.tool} style={{ borderBottom: "1px solid var(--line-3)" }}>
+                  {topTools.map((t, i) => (
+                    // Bridge-supplied list — toolName is not guaranteed
+                    // unique (same tool across MCP namespaces / aggregation
+                    // dupes). Suffix the index to avoid React key collisions.
+                    <tr key={`${t.tool}-${i}`} style={{ borderBottom: "1px solid var(--line-3)" }}>
                       <td style={{ padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: "var(--ink-0)", whiteSpace: "nowrap" }}>{t.tool}</td>
                       <td style={{ padding: "7px 8px", width: "100%" }}>
                         <div style={{ background: "var(--line-3)", borderRadius: 2, height: 5, width: "100%" }}>

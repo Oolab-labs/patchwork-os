@@ -58,7 +58,7 @@ describe("<ActivityTicker/>", () => {
 
   it("shows a placeholder while idle", () => {
     const { getByText } = render(<ActivityTicker />);
-    expect(getByText(/Listening for events|Bridge stream offline/)).toBeInTheDocument();
+    expect(getByText(/Listening for events|Live stream offline/)).toBeInTheDocument();
   });
 
   it("renders the most-recent tool event with its name + duration", async () => {
