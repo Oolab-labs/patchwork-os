@@ -6,6 +6,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-beta.6] — 2026-05-20
+
+Reliability + correctness batch (#763–#766).
+
+### Fixed
+
+- **Recipe agent steps ran from `$HOME`, not the project.** The bridge LaunchAgent sets `WorkingDirectory: $HOME`, so recipe agent-step subprocesses inherited `$HOME` as cwd — shell-outs (`git log`, `npm audit`, project scripts) failed with `fatal: not a git repository` and the run recorded catch-all `agent_silent_fail` halts. The 2026-05-20 `improvement-research` run halted 231/232 steps this way. New `resolveWorkspaceRoot()` (explicit `workspace:` → `PATCHWORK_WORKSPACE` env → `.git`-ancestor walk) resolves the real project root before spawn; an unresolvable workspace now fails fast with a typed `recipe_no_workspace` reason instead of silently running against `$HOME` (#765).
+- **Marketplace recipe install was broken.** GitHub host fallback + scoped-name handling fixed so `recipe install` works (#763).
+
+### Changed
+
+- AJV validation (transport-layer tool-arg checks, recipe lint, recipe `step.expect`) pinned to the JSON Schema **2020-12** dialect per MCP SEP-1613. Additive — the draft-07 meta-schema stays registered so existing schemas validate unchanged (#766).
+
+### Docs
+
+- Corrected the RFC citation for `/.well-known/oauth-protected-resource` — it implements **RFC 9728** (OAuth 2.0 Protected Resource Metadata), not RFC 9396 (#764).
+
+---
+
 ## [0.2.0-beta.5] — 2026-05-18
 
 Second-day audit batch: 14 PRs (#596–#609) closing **7 BLOCKERs** + **25+ MAJOR/MINOR** items surfaced by two rounds of structured dogfooding (issues #600 and #605). Security-relevant — recommended upgrade for every beta.4 user.
