@@ -1274,6 +1274,76 @@ button.topbar-search {
     border-bottom-right-radius: var(--r-l);
   }
 }
+/* Overview "Live and recent runs" strip — horizontal scroll-snap carousel.
+   Hide the scrollbar chrome on desktop (the cards themselves are the cue)
+   while keeping the track scrollable via wheel / trackpad / touch. */
+.live-runs-strip {
+  scrollbar-width: thin;
+}
+.live-runs-strip::-webkit-scrollbar {
+  height: 6px;
+}
+.live-runs-strip::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 3px;
+}
+
+/* /runs responsive layout — dense table on desktop, stacked cards on
+   phones. The 6-column run table is unreadable crammed into a 390px
+   viewport, so below 768px the table is swapped for a tappable card
+   list (matching the stacked pattern other list pages use). */
+.runs-card-list {
+  display: none;
+}
+@media (max-width: 768px) {
+  .runs-table-desktop {
+    display: none;
+  }
+  .runs-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+.run-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-m);
+  background: var(--card-bg);
+  cursor: pointer;
+}
+.run-card[data-status="running"] {
+  box-shadow: inset 3px 0 0 var(--blue);
+}
+.run-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.run-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.run-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: var(--fs-xs);
+}
+.run-card-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-1);
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;

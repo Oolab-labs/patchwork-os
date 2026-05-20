@@ -63,6 +63,9 @@ interface RunDetail {
   childSeqs?: number[];
   /** PR5c — stable id shared across resumed retries of the same attempt. */
   manualRunId?: string;
+  /** Run finished `done` but ≥1 step ended in error — "completed with
+   *  errors". Set by the bridge run log (see runLog.hadStepErrors). */
+  hadStepErrors?: boolean;
 }
 
 interface PlanStep {
@@ -1219,13 +1222,37 @@ export default function RunDetailPage() {
         {run && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>{run.trigger}</span>
-            <span
-              className={`pill ${run.assertionFailures?.length ? "err" : statusPillClass(run.status)}`}
-              style={{ fontSize: "var(--fs-xs)" }}
-            >
-              {run.status !== "running" && <span className="pill-dot" />}
-              {run.status}
-            </span>
+            {(() => {
+              // Honest partial-failure: a run can finish `done` while a step
+              // errored. The bridge run log carries `hadStepErrors`; older
+              // runs without the field fall back to scanning stepResults.
+              const hadStepErrors =
+                run.hadStepErrors ??
+                (run.stepResults ?? []).some((s) => s.status === "error");
+              const partialFail =
+                run.status === "done" &&
+                hadStepErrors &&
+                !run.assertionFailures?.length;
+              const cls = run.assertionFailures?.length
+                ? "err"
+                : partialFail
+                  ? "warn"
+                  : statusPillClass(run.status);
+              return (
+                <span
+                  className={`pill ${cls}`}
+                  style={{ fontSize: "var(--fs-xs)" }}
+                  title={
+                    partialFail
+                      ? "Run finished but one or more steps errored"
+                      : undefined
+                  }
+                >
+                  {run.status !== "running" && <span className="pill-dot" />}
+                  {partialFail ? "completed with errors" : run.status}
+                </span>
+              );
+            })()}
             <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>
               {fmtDur(run.durationMs)}
             </span>

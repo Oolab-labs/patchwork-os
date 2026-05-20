@@ -8,7 +8,7 @@ export {
 } from "./RelationStrip";
 export { HintCard } from "./HintCard";
 export { Glossary, type GlossaryProps } from "./Glossary";
-export { StatusPill, type StatusTone } from "./StatusPill";
+export { StatusPill, deriveRunStatus, type StatusTone } from "./StatusPill";
 export { RiskPill, type RiskLevel } from "./RiskPill";
 export { ActionPill } from "./ActionPill";
 export { LivePill, type LivePillConnection } from "./LivePill";
