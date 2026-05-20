@@ -631,6 +631,7 @@ function ApprovalsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const sessionFilter = searchParams.get("session");
+  const recipeFilter = searchParams.get("recipe");
 
   const [pending, setPending] = useState<Pending[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -1353,6 +1354,35 @@ function ApprovalsContent() {
             onClick={() => router.push("/approvals")}
           >
             Clear filter
+          </button>
+        </div>
+      )}
+
+      {recipeFilter && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "var(--s-2) var(--s-3)",
+            marginBottom: "var(--s-3)",
+            background: "var(--bg-2)",
+            border: "1px solid var(--line-2)",
+            borderRadius: "var(--r-2)",
+            fontSize: "var(--fs-s)",
+          }}
+        >
+          <span style={{ color: "var(--ink-2)" }}>Linked from recipe:</span>
+          <code style={{ fontFamily: "var(--font-mono)" }}>{recipeFilter}</code>
+          <span style={{ color: "var(--ink-3)" }}>
+            · approval payloads don&apos;t carry a recipe identifier — showing all pending approvals
+          </span>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => router.push("/approvals")}
+          >
+            Clear
           </button>
         </div>
       )}

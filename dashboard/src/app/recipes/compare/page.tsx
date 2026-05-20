@@ -194,7 +194,9 @@ function PlanColumn({
 
 function CompareInner() {
   const params = useSearchParams();
-  const nameA = params.get("a") ?? "";
+  // ?name= seeds slot a (emitted by "Compare versions" on the recipe hub).
+  // ?a= / ?b= are the canonical keys used once both slots are filled.
+  const nameA = params.get("a") ?? params.get("name") ?? "";
   const nameB = params.get("b") ?? "";
 
   const [planA, setPlanA] = useState<DryRunPlan | null>(null);
@@ -291,10 +293,11 @@ function CompareInner() {
   if (!nameA || !nameB) {
     return (
       <div className="empty-state">
-        <h3>Missing recipe names</h3>
+        <h3>{nameA ? "Select a second recipe to compare" : "Missing recipe names"}</h3>
         <p>
-          Use <code>/recipes/compare?a=recipe-name&b=recipe-name-v2</code>. The
-          Fork button on the Recipes page links here automatically.
+          {nameA
+            ? <>Comparing <code>{nameA}</code> — add <code>?b=recipe-name-v2</code> to pick the second variant.</>
+            : <>Use <code>/recipes/compare?a=recipe-name&amp;b=recipe-name-v2</code>. The Fork button on the Recipes page links here automatically.</>}
         </p>
         <p style={{ marginTop: "var(--s-3)" }}>
           <Link href="/recipes" className="btn sm primary" style={{ textDecoration: "none" }}>
