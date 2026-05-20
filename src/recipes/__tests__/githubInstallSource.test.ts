@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildGithubApiUrl,
   buildGithubRawUrl,
+  fetchGithubInstallFile,
   loadAllowlist,
+  type ParsedGithubInstallSource,
   parseGithubInstallSource,
 } from "../githubInstallSource.js";
 
@@ -192,5 +195,183 @@ describe("buildGithubRawUrl", () => {
     ).toBe(
       "https://raw.githubusercontent.com/acme/cookbook/main/bundles/ops-pack/patchwork-bundle.json",
     );
+  });
+});
+
+describe("buildGithubApiUrl", () => {
+  it("constructs the Contents-API recipe URL", () => {
+    expect(
+      buildGithubApiUrl({
+        kind: "recipe",
+        owner: "patchworkos",
+        repo: "recipes",
+        name: "morning-brief",
+      }),
+    ).toBe(
+      "https://api.github.com/repos/patchworkos/recipes/contents/recipes/morning-brief/morning-brief.yaml?ref=main",
+    );
+  });
+
+  it("constructs the Contents-API bundle URL", () => {
+    expect(
+      buildGithubApiUrl({
+        kind: "bundle",
+        owner: "acme",
+        repo: "cookbook",
+        name: "ops-pack",
+      }),
+    ).toBe(
+      "https://api.github.com/repos/acme/cookbook/contents/bundles/ops-pack/patchwork-bundle.json?ref=main",
+    );
+  });
+});
+
+describe("fetchGithubInstallFile — raw-first, api.github.com fallback", () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  const parsed: ParsedGithubInstallSource = {
+    kind: "recipe",
+    owner: "patchworkos",
+    repo: "recipes",
+    name: "morning-brief",
+  };
+  const rawUrl =
+    "https://raw.githubusercontent.com/patchworkos/recipes/main/recipes/morning-brief/morning-brief.yaml";
+  const apiUrl =
+    "https://api.github.com/repos/patchworkos/recipes/contents/recipes/morning-brief/morning-brief.yaml?ref=main";
+
+  it("uses raw when raw responds ok — no API call made", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("name: morning-brief", { status: 200 }),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await fetchGithubInstallFile(parsed);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(await result.response.text()).toBe("name: morning-brief");
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(rawUrl);
+  });
+
+  it("falls back to api.github.com when raw throws a network error", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed: ENOTFOUND"))
+      .mockResolvedValueOnce(new Response("name: from-api", { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await fetchGithubInstallFile(parsed);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(await result.response.text()).toBe("name: from-api");
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(rawUrl);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(apiUrl);
+    // Fallback sends the raw-bytes Accept header.
+    const apiInit = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect((apiInit.headers as Record<string, string>).Accept).toBe(
+      "application/vnd.github.raw",
+    );
+  });
+
+  it("falls back to api.github.com when raw responds non-ok", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("blocked", { status: 503 }))
+      .mockResolvedValueOnce(new Response("name: from-api", { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await fetchGithubInstallFile(parsed);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(await result.response.text()).toBe("name: from-api");
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces network_error when BOTH raw and api throw", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("raw blocked"))
+      .mockRejectedValueOnce(new TypeError("api blocked"));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await fetchGithubInstallFile(parsed);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.kind).toBe("network_error");
+    }
+  });
+
+  it("surfaces not_found when both hosts return 404 (genuine missing recipe)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Not Found", { status: 404 }))
+      .mockResolvedValueOnce(new Response("Not Found", { status: 404 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await fetchGithubInstallFile(parsed);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.kind).toBe("not_found");
+      if (result.kind === "not_found") {
+        expect(result.response.status).toBe(404);
+      }
+    }
+  });
+
+  it("surfaces upstream_error when raw 404s but api returns a non-404 failure", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Not Found", { status: 404 }))
+      .mockResolvedValueOnce(new Response("rate limited", { status: 403 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await fetchGithubInstallFile(parsed);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.kind).toBe("upstream_error");
+      if (result.kind === "upstream_error") {
+        expect(result.response.status).toBe(403);
+      }
+    }
+  });
+
+  it("treats a raw 404 as not_found when the api also throws a network error", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Not Found", { status: 404 }))
+      .mockRejectedValueOnce(new TypeError("api blocked"));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await fetchGithubInstallFile(parsed);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.kind).toBe("not_found");
+    }
+  });
+
+  it("forwards the abort signal to both fetch attempts", async () => {
+    const ctl = new AbortController();
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("raw blocked"))
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await fetchGithubInstallFile(parsed, { signal: ctl.signal });
+    const rawInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const apiInit = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect(rawInit.signal).toBe(ctl.signal);
+    expect(apiInit.signal).toBe(ctl.signal);
   });
 });
