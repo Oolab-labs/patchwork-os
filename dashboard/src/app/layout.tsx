@@ -81,7 +81,16 @@ export const dynamic = "force-dynamic";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${albertSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}>
+    <html
+      lang="en"
+      // The blocking inline script below sets `data-theme` on <html>
+      // before React hydrates. Server markup has no data-theme, so
+      // hydration would otherwise log a mismatch on every page.
+      // suppressHydrationWarning is exactly for this attribute-set-by-
+      // pre-hydration-script pattern — scoped to <html> only.
+      suppressHydrationWarning
+      className={`${albertSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
+    >
       <head>
         {/* Blocking inline script: set data-theme before first paint to
             prevent the paper-theme flash on refresh. Must stay in sync

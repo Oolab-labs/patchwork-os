@@ -171,7 +171,7 @@ function DecisionsContent() {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <h1 className="editorial-h1" style={{ margin: 0 }}>
-              Decisions — <span className="accent">the knowledge base your agents wrote.</span>
+              Knowledge — <span className="accent">the knowledge base your agents wrote.</span>
             </h1>
             <HintCard.Toggle id="decisions" />
           </div>
@@ -282,7 +282,7 @@ function DecisionsContent() {
           description={
             error.startsWith("/traces")
               ? "The /traces response didn't match the schema this dashboard expects."
-              : "The bridge isn't responding. Decisions will reload on the next tick."
+              : "The bridge isn't responding. Knowledge will reload on the next tick."
           }
           error={error}
           onRetry={refetch}
