@@ -648,7 +648,13 @@ export default function MarketplacePage() {
     // /recipes endpoint returns) — strip the `@scope/` prefix so the
     // Set lookup at the card-render sites matches.
     setInstalledNames((prev) => new Set([...prev, shortName(recipe.name)]));
-    toast.success("Recipe installed successfully");
+    const recipeKey = canonicalRecipeKey(recipe.name);
+    toast.success(`Installed ${shortName(recipe.name)}`, {
+      action: {
+        label: "View in Recipes",
+        onClick: () => router.push(`/recipes/${recipeKey}`),
+      },
+    });
     // Authoritative refresh from the bridge re-reads the unscoped names
     // from disk — keep the Set in sync in case the actual YAML `name:`
     // field differs from the slug the user clicked.

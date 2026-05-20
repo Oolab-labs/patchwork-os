@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import AddConnectionModal from "./AddConnectionModal";
@@ -567,9 +568,10 @@ interface GridCardProps {
   onDisconnect: () => void;
   onTest: () => Promise<{ ok: boolean; message?: string }>;
   loading: boolean;
+  recipeCount?: number;
 }
 
-function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, loading }: GridCardProps) {
+function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, loading, recipeCount }: GridCardProps) {
   const [testResult, setTestResult] = useState<{ ok: boolean; message?: string } | null>(null);
   const [testing, setTesting] = useState(false);
 
@@ -683,6 +685,30 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
         ) : (
           <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", fontWeight: 400 }}>
             {def.tools} available tools
+          </div>
+        )}
+
+        {/* Recipe count badge */}
+        {recipeCount !== undefined && recipeCount > 0 && (
+          <div style={{ marginTop: 6 }}>
+            <Link
+              href={`/recipes?connector=${encodeURIComponent(def.id)}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: "var(--fs-2xs)",
+                color: "var(--accent)",
+                textDecoration: "none",
+                padding: "2px 7px",
+                borderRadius: 999,
+                background: "var(--accent-soft)",
+                border: "1px solid var(--accent-tint)",
+              }}
+              title={`${recipeCount} installed recipe${recipeCount === 1 ? "" : "s"} use this connector`}
+            >
+              {recipeCount} recipe{recipeCount === 1 ? "" : "s"}
+            </Link>
           </div>
         )}
 
@@ -878,6 +904,12 @@ function RecentCard({ def, lastSync }: { def: ConnectorDef; lastSync: string }) 
 
 export default function ConnectionsPage() {
   const [connectors, setConnectors] = useState<ConnectorStatus[]>([]);
+  // Connector id → number of installed recipes that reference it.
+  // Derived by fetching /api/bridge/recipes once on mount and scanning
+  // recipe names + descriptions for connector keywords (same heuristic
+  // as the Recipes page's detectConnectors). If the bridge is offline the
+  // map stays empty and no badges render — fail-soft.
+  const [connectorRecipeCounts, setConnectorRecipeCounts] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>();
   const [bridgeOffline, setBridgeOffline] = useState(false);
@@ -922,6 +954,52 @@ export default function ConnectionsPage() {
 
   useEffect(() => {
     fetchConnectors();
+
+    // Fetch installed recipes and derive connector→recipe count map.
+    // Tool-prefix heuristic mirrors the Recipes page detectConnectors fn.
+    const TOOL_KEYWORD_TO_CONNECTOR_ID: Record<string, string> = {
+      slack: "slack",
+      github: "github",
+      jira: "jira",
+      linear: "linear",
+      gmail: "gmail",
+      calendar: "google-calendar",
+      googlecalendar: "google-calendar",
+      intercom: "intercom",
+      hubspot: "hubspot",
+      datadog: "datadog",
+      stripe: "stripe",
+      sentry: "sentry",
+      notion: "notion",
+      discord: "discord",
+      confluence: "confluence",
+      pagerduty: "pagerduty",
+      zendesk: "zendesk",
+      asana: "asana",
+      gitlab: "gitlab",
+    };
+    fetch(apiPath("/api/bridge/recipes"))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { recipes?: Array<{ name: string; description?: string }>; } | Array<{ name: string; description?: string }> | null) => {
+        const list: Array<{ name: string; description?: string }> = Array.isArray(data)
+          ? data
+          : Array.isArray((data as { recipes?: unknown })?.recipes)
+            ? ((data as { recipes: Array<{ name: string; description?: string }> }).recipes)
+            : [];
+        const counts = new Map<string, number>();
+        for (const recipe of list) {
+          const haystack = `${recipe.name} ${recipe.description ?? ""}`.toLowerCase();
+          const seen = new Set<string>();
+          for (const [keyword, connId] of Object.entries(TOOL_KEYWORD_TO_CONNECTOR_ID)) {
+            if (!seen.has(connId) && haystack.includes(keyword)) {
+              counts.set(connId, (counts.get(connId) ?? 0) + 1);
+              seen.add(connId);
+            }
+          }
+        }
+        setConnectorRecipeCounts(counts);
+      })
+      .catch(() => {});
   }, []);
 
   function getConnector(id: string): ConnectorStatus {
@@ -1322,6 +1400,7 @@ export default function ConnectionsPage() {
                 onDisconnect={() => setConfirmDisconnectId(def.id)}
                 onTest={() => handleTest(def.id)}
                 loading={acting === def.id}
+                recipeCount={connectorRecipeCounts.get(def.id)}
               />
             ))}
           </div>

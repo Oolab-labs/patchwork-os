@@ -215,6 +215,7 @@ const ApprovalCard = memo(function ApprovalCard({
     else setRejecting(true);
     try {
       await onDecide(p.callId, decision, reason);
+      toast.success(decision === "approve" ? "Approved" : "Denied");
     } catch (e) {
       toast.error(
         `${decision === "approve" ? "Approve" : "Reject"} failed: ${e instanceof Error ? e.message : String(e)}`,
