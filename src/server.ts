@@ -138,7 +138,7 @@ export class Server extends EventEmitter<ServerEvents> {
    * The real cure for the known leak is the dashboard proxy aborting its
    * upstream fetch on client disconnect; this is the backstop.
    */
-  private sseSubscribers = new Set<{ close: () => void }>();
+  private sseSubscribers = new Set<() => void>();
   /** Cache for CC permission rules (30s TTL) to avoid filesystem walks on each dashboard poll */
   private _explainRulesCache: {
     at: number;
@@ -1103,18 +1103,13 @@ export class Server extends EventEmitter<ServerEvents> {
         // subscriber whose socket is dead-but-not-erroring can otherwise
         // permanently brick /stream. The dashboard proxy abort-on-disconnect
         // fix is the real cure; this guarantees recovery either way.
+        // sseSubscriberCount and sseSubscribers.size stay in lockstep
+        // (both mutated together below + in cleanup()), so when the
+        // counter is at the cap there is always an evictable subscriber —
+        // eviction always frees the slot.
         if (this.sseSubscriberCount >= Server.MAX_SSE_SUBSCRIBERS) {
           const oldest = this.sseSubscribers.values().next().value;
-          if (oldest) oldest.close();
-        }
-        // If eviction somehow didn't free a slot (no registered
-        // subscribers but counter still pinned), fail closed with 503.
-        if (this.sseSubscriberCount >= Server.MAX_SSE_SUBSCRIBERS) {
-          res.writeHead(503, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({ error: "Too many SSE subscribers (max 20)" }),
-          );
-          return;
+          oldest?.();
         }
         this.sseSubscriberCount++;
         // Disable socket timeout — SSE connections are long-lived by design
@@ -1138,23 +1133,22 @@ export class Server extends EventEmitter<ServerEvents> {
         let cleanedUp = false;
         let pingHandle: ReturnType<typeof setInterval> | null = null;
         let unsub: () => void = () => {};
-        const subscriber = { close: () => {} };
+        // Single teardown closure, also stored directly in the registry
+        // as this subscriber's eviction handler — it tears down state AND
+        // destroys the socket so the peer (and any orphaned proxy in
+        // between) observes the close. It removes this exact function
+        // from the Set, so no placeholder/no-op function is ever created.
         const cleanup = () => {
           if (cleanedUp) return;
           cleanedUp = true;
           this.sseSubscriberCount--;
-          this.sseSubscribers.delete(subscriber);
+          this.sseSubscribers.delete(cleanup);
           if (pingHandle) clearInterval(pingHandle);
           unsub();
-        };
-        // Eviction path: tear down state AND destroy the socket so the
-        // peer (and any orphaned proxy in between) observes the close.
-        subscriber.close = () => {
-          cleanup();
           res.end();
           res.socket?.destroy();
         };
-        this.sseSubscribers.add(subscriber);
+        this.sseSubscribers.add(cleanup);
 
         unsub =
           this.streamFn?.((kind, entry) => {
