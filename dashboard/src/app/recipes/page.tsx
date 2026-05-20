@@ -78,6 +78,45 @@ function detectConnectors(recipes: Recipe[]): string[] {
   return Array.from(found).sort();
 }
 
+// Keyword → connections-page connector id. Mirrors the heuristic the
+// /connections page uses to derive its "N recipes" badge — keeping both
+// in sync means the badge count and this filtered list agree. Maps to
+// the connections-page `def.id` values (e.g. `google-calendar`), which
+// is the id form the `?connector=` deep-link param carries.
+const CONNECTOR_KEYWORD_BY_ID: Record<string, string[]> = {
+  slack: ["slack"],
+  github: ["github"],
+  jira: ["jira"],
+  linear: ["linear"],
+  gmail: ["gmail"],
+  "google-calendar": ["calendar", "googlecalendar"],
+  intercom: ["intercom"],
+  hubspot: ["hubspot"],
+  datadog: ["datadog"],
+  stripe: ["stripe"],
+  sentry: ["sentry"],
+  notion: ["notion"],
+  discord: ["discord"],
+  confluence: ["confluence"],
+  pagerduty: ["pagerduty"],
+  zendesk: ["zendesk"],
+  asana: ["asana"],
+  gitlab: ["gitlab"],
+};
+
+/**
+ * True when a recipe references the given connector id, using the same
+ * name/description keyword scan as the /connections page badge. Returns
+ * false for unknown connector ids so an unrecognised `?connector=` param
+ * yields an empty (rather than full) list.
+ */
+function recipeMatchesConnector(recipe: Recipe, connectorId: string): boolean {
+  const keywords = CONNECTOR_KEYWORD_BY_ID[connectorId];
+  if (!keywords) return false;
+  const haystack = `${recipe.name} ${recipe.description ?? ""}`.toLowerCase();
+  return keywords.some((kw) => haystack.includes(kw));
+}
+
 function relTime(ms: number): string {
   const diff = Date.now() - ms;
   const sec = Math.floor(diff / 1000);
@@ -1034,10 +1073,18 @@ export default function RecipesPage() {
   // page re-renders on every SSE step event via LiveRunsContext, and
   // each rebuild was rebroadcasting a fresh array identity downstream,
   // breaking React.memo on row components. Perf audit 2026-05-19.
+  // #748 follow-up: /connections links here with ?connector=<id> when a
+  // user clicks the "N recipes" badge. Honour it as an additional filter
+  // so the deep-link actually narrows the list. Absent param → no-op.
+  const connectorFilter = searchParams.get("connector");
+
   const filteredRecipes = useMemo(() => {
     return (recipes ?? []).filter((r) => {
       if (statusFilter === "enabled" && r.enabled === false) return false;
       if (statusFilter === "paused" && r.enabled !== false) return false;
+      if (connectorFilter && !recipeMatchesConnector(r, connectorFilter)) {
+        return false;
+      }
       if (!search.trim()) return true;
       const q = search.toLowerCase();
       return (
@@ -1045,7 +1092,7 @@ export default function RecipesPage() {
         (r.description ?? "").toLowerCase().includes(q)
       );
     });
-  }, [recipes, statusFilter, search]);
+  }, [recipes, statusFilter, search, connectorFilter]);
 
   const { enabledCount, pausedCount, installedCount } = useMemo(() => {
     const list = recipes ?? [];
@@ -1254,6 +1301,51 @@ export default function RecipesPage() {
       </div>
 
       <HintCard id="recipes" />
+
+      {connectorFilter && (
+        <div
+          role="status"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            margin: "0 0 var(--s-4)",
+            padding: "5px 6px 5px 12px",
+            borderRadius: 999,
+            fontSize: "var(--fs-s)",
+            background: "var(--accent-soft)",
+            border: "1px solid var(--accent-tint)",
+            color: "var(--accent)",
+          }}
+        >
+          <span>
+            Filtered by connector:{" "}
+            <strong style={{ fontWeight: 600 }}>{connectorFilter}</strong>
+          </span>
+          <button
+            type="button"
+            onClick={() => router.push("/recipes")}
+            aria-label="Clear connector filter"
+            title="Clear connector filter"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 22,
+              height: 22,
+              borderRadius: "50%",
+              border: "none",
+              cursor: "pointer",
+              background: "transparent",
+              color: "var(--accent)",
+              fontSize: "var(--fs-m)",
+              lineHeight: 1,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {err && (recipes === null || recipes.length === 0) && (
         <ErrorState

@@ -353,9 +353,14 @@ export default function RecipeHubOverviewPage({
             body: JSON.stringify(body),
           },
         );
-        const data = (await res.json()) as { ok: boolean; taskId?: string; error?: string };
+        const data = (await res.json()) as { ok: boolean; taskId?: string; seq?: number; error?: string };
         if (data.ok) {
-          toast.success(`Started ${recipe.name}`);
+          const runHref = typeof data.seq === "number"
+            ? `/runs/${data.seq}`
+            : `/runs?recipe=${encodeURIComponent(recipe.name)}`;
+          toast.success("Run started", {
+            action: { label: "View run", onClick: () => router.push(runHref) },
+          });
           setRunModalOpen(false);
         } else {
           toast.error(`Run failed: ${data.error ?? "unknown"}`);
@@ -366,7 +371,7 @@ export default function RecipeHubOverviewPage({
         setRunStarting(false);
       }
     },
-    [recipe, toast],
+    [recipe, toast, router],
   );
 
   const handleToggle = useCallback(async () => {
