@@ -9,7 +9,16 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createOpenFileTool } from "../openFile.js";
 
-function parse(r: { content: Array<{ type: string; text: string }> }) {
+function parse(r: {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+  structuredContent?: unknown;
+}) {
+  // Error results carry the plain message in `text` and machine-readable
+  // fields in `structuredContent` (ADR-0004). Success results keep the
+  // JSON-stringified payload in `text`.
+  if (r.isError && r.structuredContent !== undefined)
+    return r.structuredContent as any;
   return JSON.parse(r.content[0]?.text ?? "{}");
 }
 

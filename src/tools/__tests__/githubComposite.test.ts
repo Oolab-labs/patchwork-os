@@ -19,17 +19,13 @@ function parse(r: {
   content: Array<{ type: string; text: string }>;
   isError?: true;
 }) {
-  const raw = JSON.parse(r.content.at(0)?.text ?? "{}") as unknown;
-  if (
-    r.isError &&
-    typeof raw === "object" &&
-    raw !== null &&
-    "error" in (raw as object) &&
-    typeof (raw as Record<string, unknown>).error === "string"
-  ) {
-    return (raw as Record<string, unknown>).error as string;
+  // Error results (ADR-0004): `text` is the plain message string — return it
+  // directly so callers can assert on the error text. Success results carry
+  // a JSON-stringified payload in `text`.
+  if (r.isError) {
+    return r.content.at(0)?.text ?? "";
   }
-  return raw;
+  return JSON.parse(r.content.at(0)?.text ?? "{}") as unknown;
 }
 
 const ok = (stdout: string, stderr = "") => ({

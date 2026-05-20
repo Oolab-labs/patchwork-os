@@ -64,7 +64,15 @@ describe("isValidRef", () => {
   });
 });
 
-function parse(result: { content: Array<{ type: string; text: string }> }) {
+function parse(result: {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+  structuredContent?: unknown;
+}) {
+  // Error results carry the plain message in `text` and machine-readable
+  // fields in `structuredContent` (ADR-0004).
+  if (result.isError && result.structuredContent !== undefined)
+    return result.structuredContent as any;
   return JSON.parse(result.content.at(0)?.text ?? "{}");
 }
 

@@ -8,6 +8,9 @@
  * No bridge connection required — reads static registry at import time.
  */
 
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { TOOL_CATEGORIES } from "../tools/index.js";
 
 // ---------------------------------------------------------------------------
@@ -221,11 +224,115 @@ export interface ToolEntry {
   categories: string[];
 }
 
-/** Build the full tool catalog from TOOL_CATEGORIES + TOOL_DESCRIPTIONS. */
+/**
+ * Scan a single tool module source for every `schema: { ... name: "x" ... }`
+ * block and return the tool names it registers. Works on both compiled JS
+ * (shipped in dist/) and TypeScript source — the schema object literal shape
+ * is identical after compilation.
+ *
+ * Ported from scripts/audit-lsp-tools.mjs so the CLI catalog is derived from
+ * the same registry-of-truth the audit gate enforces.
+ */
+function extractToolNamesFromModule(src: string): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i < src.length) {
+    const schemaIdx = src.indexOf("schema: {", i);
+    if (schemaIdx === -1) break;
+    let depth = 0;
+    let blockStart = -1;
+    for (let j = schemaIdx + 8; j < src.length; j++) {
+      if (src[j] === "{") {
+        depth++;
+        if (depth === 1) blockStart = j;
+      } else if (src[j] === "}") {
+        if (depth === 1) {
+          const block = src.slice(blockStart, j + 1);
+          const m = block.match(/\bname:\s*"([a-zA-Z][a-zA-Z0-9_]+)"/);
+          if (m?.[1]) out.push(m[1]);
+          break;
+        }
+        depth--;
+      }
+    }
+    i = schemaIdx + 9;
+  }
+  return out;
+}
+
+/**
+ * Enumerate every registered tool name by scanning the tool modules on disk.
+ *
+ * This is the registry-of-truth: it scans the actual `dist/tools/*.js` (or
+ * `src/tools/*.ts` in dev) modules that `registerAllTools` loads, so the
+ * count and catalog cannot drift from the hand-maintained `TOOL_CATEGORIES` /
+ * `TOOL_DESCRIPTIONS` metadata maps. Returns `null` if the tool directory
+ * cannot be located (e.g. an unusual install layout) so callers can fall
+ * back to the metadata maps.
+ */
+export function discoverRegisteredToolNames(): Set<string> | null {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  // Compiled: dist/commands/tools.js → dist/tools. Dev (tsx): src/commands → src/tools.
+  const candidates = [
+    path.resolve(here, "..", "tools"),
+    path.resolve(here, "..", "..", "src", "tools"),
+  ];
+  for (const dir of candidates) {
+    let files: string[];
+    try {
+      files = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    const mods = files.filter(
+      (f) =>
+        (f.endsWith(".js") || f.endsWith(".ts")) &&
+        !f.endsWith(".d.ts") &&
+        !f.endsWith(".map"),
+    );
+    if (mods.length === 0) continue;
+    const names = new Set<string>();
+    for (const f of mods) {
+      let src: string;
+      try {
+        src = readFileSync(path.join(dir, f), "utf8");
+      } catch {
+        continue;
+      }
+      for (const n of extractToolNamesFromModule(src)) names.add(n);
+    }
+    if (names.size > 0) return names;
+  }
+  return null;
+}
+
+/**
+ * Build the full tool catalog.
+ *
+ * The set of tools is derived from the actual registered tool modules
+ * (`discoverRegisteredToolNames`) so the printed count never drifts. The
+ * `TOOL_CATEGORIES` / `TOOL_DESCRIPTIONS` maps supply categories and
+ * human-readable descriptions as metadata overlays. If module discovery
+ * fails, falls back to the union of the two metadata maps.
+ */
 export function buildToolCatalog(): ToolEntry[] {
-  const seen = new Set<string>();
+  const registered = discoverRegisteredToolNames();
   const entries: ToolEntry[] = [];
 
+  if (registered) {
+    for (const name of registered) {
+      entries.push({
+        name,
+        description: TOOL_DESCRIPTIONS[name] ?? "",
+        categories: TOOL_CATEGORIES[name] ?? [],
+      });
+    }
+    return entries.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  // Fallback: union of the metadata maps (drift-prone, used only when the
+  // tool modules can't be located on disk).
+  const seen = new Set<string>();
   for (const [name, cats] of Object.entries(TOOL_CATEGORIES)) {
     seen.add(name);
     entries.push({
@@ -234,14 +341,11 @@ export function buildToolCatalog(): ToolEntry[] {
       categories: cats,
     });
   }
-
-  // Also include tools in the description map that have no category entry.
   for (const [name, desc] of Object.entries(TOOL_DESCRIPTIONS)) {
     if (!seen.has(name)) {
       entries.push({ name, description: desc, categories: [] });
     }
   }
-
   return entries.sort((a, b) => a.name.localeCompare(b.name));
 }
 

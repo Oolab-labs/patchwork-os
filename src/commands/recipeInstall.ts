@@ -874,9 +874,14 @@ export function printInstalledList(entries: InstalledRecipeEntry[]): void {
   for (const entry of entries) {
     const version = (entry.version ?? "—").padEnd(maxVersion);
     const status = (entry.enabled ? "enabled" : "disabled").padEnd(8);
-    const detail = entry.hasManifest
+    const rawDetail = entry.hasManifest
       ? (entry.description ?? "")
       : `[${(entry.yamlFiles ?? []).join(", ")}]`;
+    // Truncate the description/files column so a long value can't wrap and
+    // destroy column alignment on 80-col terminals. Matches the 120-char
+    // cap used by the `halts` command for recent reasons.
+    const detail =
+      rawDetail.length > 120 ? `${rawDetail.slice(0, 117)}…` : rawDetail;
     console.log(
       `${entry.name.padEnd(maxName)}  ${version}  ${status}  ${detail}`,
     );

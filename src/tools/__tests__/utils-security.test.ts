@@ -18,29 +18,33 @@ describe("success() and error() format", () => {
     expect(result.isError).toBeUndefined();
   });
 
-  it("error returns compact JSON with isError: true", () => {
+  it("error returns the plain message as text with isError: true", () => {
     const result = error("something failed");
     expect(result.isError).toBe(true);
-    const parsed = JSON.parse(result.content.at(0)?.text ?? "{}");
-    expect(parsed.error).toBe("something failed");
-    expect(parsed.code).toBeUndefined();
+    // text content is the plain, human/LLM-readable message — not JSON.
+    expect(result.content.at(0)?.text).toBe("something failed");
+    // machine-readable fields live in structuredContent.
+    expect(result.structuredContent.error).toBe("something failed");
+    expect(result.structuredContent.code).toBeUndefined();
   });
 
   it("error with optional code field (string message)", () => {
     const result = error("not found", "file_not_found");
     expect(result.isError).toBe(true);
-    const parsed = JSON.parse(result.content.at(0)?.text ?? "{}");
-    expect(parsed.error).toBe("not found");
-    expect(parsed.code).toBe("file_not_found");
+    expect(result.content.at(0)?.text).toBe("not found");
+    expect(result.structuredContent.error).toBe("not found");
+    expect(result.structuredContent.code).toBe("file_not_found");
   });
 
-  it("error with object payload (legacy structured errors)", () => {
+  it("error with object payload surfaces fields in structuredContent", () => {
     const result = error({ fixed: false, source: "cli", error: "lint failed" });
     expect(result.isError).toBe(true);
-    const parsed = JSON.parse(result.content.at(0)?.text ?? "{}");
-    expect(parsed.fixed).toBe(false);
-    expect(parsed.error).toBe("lint failed");
-    expect(parsed.code).toBeUndefined();
+    // text is the human-readable message extracted from the `error` field.
+    expect(result.content.at(0)?.text).toBe("lint failed");
+    expect(result.structuredContent.fixed).toBe(false);
+    expect(result.structuredContent.source).toBe("cli");
+    expect(result.structuredContent.error).toBe("lint failed");
+    expect(result.structuredContent.code).toBeUndefined();
   });
 
   it("error with object payload plus code", () => {
@@ -48,8 +52,8 @@ describe("success() and error() format", () => {
       { fixed: false, error: "lint failed" },
       "external_command_failed",
     );
-    const parsed = JSON.parse(result.content.at(0)?.text ?? "{}");
-    expect(parsed.code).toBe("external_command_failed");
+    expect(result.content.at(0)?.text).toBe("lint failed");
+    expect(result.structuredContent.code).toBe("external_command_failed");
   });
 
   it("success with null", () => {

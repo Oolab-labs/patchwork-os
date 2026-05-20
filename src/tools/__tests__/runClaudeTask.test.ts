@@ -18,11 +18,16 @@ function makeOrchestrator(driver?: ProviderDriver) {
 }
 
 function resultText(result: any): string {
-  return result.content[0]?.text ?? "";
+  // For error results (ADR-0004) `text` is the plain message; the machine
+  // code lives in `structuredContent.code`. Combine both so callers can
+  // assert against either the message text or the error code.
+  const text = result.content[0]?.text ?? "";
+  const code = result.structuredContent?.code;
+  return typeof code === "string" ? `${text} ${code}` : text;
 }
 
 function resultData(result: any): unknown {
-  return JSON.parse(resultText(result));
+  return JSON.parse(result.content[0]?.text ?? "");
 }
 
 describe("runClaudeTask", () => {

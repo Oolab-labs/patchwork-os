@@ -97,12 +97,14 @@ describe("toCallToolResult", () => {
   it("error case → isError:true", () => {
     const result = toCallToolResult(err("timeout", "timed out"));
     expect((result as { isError?: boolean }).isError).toBe(true);
-    const parsed = JSON.parse(result.content[0]!.text) as Record<
-      string,
-      unknown
-    >;
-    expect(parsed.error).toBe("timed out");
-    expect(parsed.code).toBe("timeout");
+    // text content is the plain message; machine-readable fields are in
+    // structuredContent (ADR-0004).
+    expect(result.content[0]!.text).toBe("timed out");
+    const structured = (
+      result as { structuredContent?: Record<string, unknown> }
+    ).structuredContent;
+    expect(structured?.error).toBe("timed out");
+    expect(structured?.code).toBe("timeout");
   });
 });
 
