@@ -122,10 +122,24 @@ export function CommandPalette({
         label: "Toggle theme (paper / dark)",
         group: "Actions",
         perform: () => {
-          const current = localStorage.getItem("patchwork.theme") === "paper" ? "paper" : "dark";
-          const next = current === "dark" ? "paper" : "dark";
-          localStorage.setItem("patchwork.theme", next);
-          window.dispatchEvent(new StorageEvent("storage", { key: "patchwork.theme", newValue: next }));
+          // localStorage throws in private mode / cookies-blocked —
+          // guard so the command palette can't crash the app.
+          try {
+            const current =
+              localStorage.getItem("patchwork.theme") === "paper"
+                ? "paper"
+                : "dark";
+            const next = current === "dark" ? "paper" : "dark";
+            localStorage.setItem("patchwork.theme", next);
+            window.dispatchEvent(
+              new StorageEvent("storage", {
+                key: "patchwork.theme",
+                newValue: next,
+              }),
+            );
+          } catch {
+            // private mode — theme toggle unavailable, non-fatal
+          }
         },
       },
       {

@@ -94,7 +94,11 @@ function teardownStream() {
   if (!es) return;
   es.close();
   es = null;
-  isLive = false;
+  lastHeartbeatAt = 0;
+  // Route through setLive so getStreamLiveness() (and any future
+  // listener) sees a consistent value — a bare `isLive = false`
+  // bypassed notify() and left non-React readers stale.
+  setLive(false);
 }
 
 function streamHasSubscribers(): boolean {
