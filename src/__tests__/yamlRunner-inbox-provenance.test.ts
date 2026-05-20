@@ -19,7 +19,11 @@ vi.mock("../patchworkConfig.js", async () => {
   return { ...actual, loadConfig: vi.fn(() => ({})) };
 });
 
-import { runYamlRecipe, type YamlRecipe } from "../recipes/yamlRunner.js";
+import {
+  isInboxPathFor,
+  runYamlRecipe,
+  type YamlRecipe,
+} from "../recipes/yamlRunner.js";
 
 let fakeHome = "";
 let realHome: string | undefined;
@@ -33,6 +37,75 @@ afterEach(() => {
   if (realHome === undefined) delete process.env.HOME;
   else process.env.HOME = realHome;
   if (fakeHome) rmSync(fakeHome, { recursive: true, force: true });
+});
+
+describe("isInboxPathFor — separator-agnostic detection (Windows regression)", () => {
+  // PR #742 follow-up: the original literal-`/` prefix never matched on
+  // Windows because `os.homedir()` returns `C:\Users\…` and resolved
+  // recipe paths use `\` separators. This unit drives both POSIX and
+  // Win32 path semantics by injecting the path module — no real
+  // filesystem touched, so the test is cross-platform.
+  it("matches a direct child under the POSIX inbox dir", () => {
+    expect(
+      isInboxPathFor(
+        "/home/u/.patchwork/inbox/brief.md",
+        "/home/u/.patchwork/inbox",
+        path.posix,
+      ),
+    ).toBe(true);
+  });
+  it("matches a direct child under a Win32 inbox dir with `\\` separators", () => {
+    expect(
+      isInboxPathFor(
+        "C:\\Users\\u\\.patchwork\\inbox\\brief.md",
+        "C:\\Users\\u\\.patchwork\\inbox",
+        path.win32,
+      ),
+    ).toBe(true);
+  });
+  it("rejects dotfiles + the .archive subnamespace", () => {
+    expect(
+      isInboxPathFor(
+        "/home/u/.patchwork/inbox/.archive",
+        "/home/u/.patchwork/inbox",
+        path.posix,
+      ),
+    ).toBe(false);
+  });
+  it("rejects nested children (inbox/sub/foo.md)", () => {
+    expect(
+      isInboxPathFor(
+        "/home/u/.patchwork/inbox/sub/foo.md",
+        "/home/u/.patchwork/inbox",
+        path.posix,
+      ),
+    ).toBe(false);
+    expect(
+      isInboxPathFor(
+        "C:\\Users\\u\\.patchwork\\inbox\\sub\\foo.md",
+        "C:\\Users\\u\\.patchwork\\inbox",
+        path.win32,
+      ),
+    ).toBe(false);
+  });
+  it("rejects paths outside the inbox dir (`..` escape)", () => {
+    expect(
+      isInboxPathFor(
+        "/home/u/.patchwork/other/foo.md",
+        "/home/u/.patchwork/inbox",
+        path.posix,
+      ),
+    ).toBe(false);
+  });
+  it("rejects the inbox dir itself", () => {
+    expect(
+      isInboxPathFor(
+        "/home/u/.patchwork/inbox",
+        "/home/u/.patchwork/inbox",
+        path.posix,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("yamlRunner — inbox provenance", () => {

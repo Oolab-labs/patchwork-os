@@ -430,6 +430,29 @@ export type StepDeps = Required<
 };
 
 // Strip tool-call narration some models (e.g. Gemini) prepend before the markdown block.
+/**
+ * Phase 0β — separator-agnostic inbox-path detector. Extracted so the
+ * Windows path-separator behaviour can be unit-tested by injecting
+ * `path.win32` / `path.posix` without booting a real recipe runner.
+ *
+ * Returns true when `candidate` resolves to a direct child of
+ * `inboxDirAbs`, isn't a dotfile, and lives in (not above) the inbox
+ * dir. Both arguments must already be platform-appropriate absolute
+ * paths (resolve them with the same path module before calling).
+ */
+export function isInboxPathFor(
+  candidate: string,
+  inboxDirAbs: string,
+  pathMod: typeof path,
+): boolean {
+  const target = pathMod.resolve(candidate);
+  const rel = pathMod.relative(inboxDirAbs, target);
+  if (!rel || rel.startsWith("..") || pathMod.isAbsolute(rel)) return false;
+  if (pathMod.basename(target).startsWith(".")) return false;
+  // Only direct children — `~/.patchwork/inbox/foo.md`, not nested.
+  return !rel.includes(pathMod.sep);
+}
+
 function stripLeadingNarration(text: string): string {
   const lines = text.split("\n");
   const firstMarkdown = lines.findIndex((l) =>
@@ -574,10 +597,20 @@ export async function runYamlRecipe(
   // (first write only) recording recipe + run + trigger, and accumulate the
   // delivered filename onto the run record's `inboxOutputs`. Old recipes /
   // non-inbox paths pass through unchanged.
-  const inboxDir = `${os.homedir()}/.patchwork/inbox/`;
+  //
+  // Windows path-separator fix (CI repro 2026-05-20): the original
+  // implementation built the prefix as `${os.homedir()}/.patchwork/inbox/`
+  // and compared with `startsWith`, which failed on Windows where
+  // resolved absolute paths use `\` separators and `os.homedir()` returns
+  // `C:\Users\...`. Now we resolve both sides through `path.resolve()`
+  // and use `path.relative()` to detect containment so the comparison is
+  // separator-agnostic. Also case-insensitive on Win32 (NTFS).
+  const inboxDirAbs = path.resolve(
+    path.join(os.homedir(), ".patchwork", "inbox"),
+  );
   const inboxOutputs: Array<{ filename: string; deliveredAt: number }> = [];
   const isInboxPath = (abs: string): boolean =>
-    abs.startsWith(inboxDir) && !path.basename(abs).startsWith(".");
+    isInboxPathFor(abs, inboxDirAbs, path);
   const buildFrontmatter = (): string => {
     const triggerKindAtWrite = yamlTriggerKind;
     const lines = ["---", `recipe: ${recipe.name}`];
@@ -597,21 +630,30 @@ export async function runYamlRecipe(
       deliveredAt: Date.now(),
     });
   };
-  const fileAlreadyHasFrontmatter = (abs: string): boolean => {
+  // Atomic read-or-default: a single `readFileSync` in a try/catch. No
+  // `existsSync`/`statSync` probe around the write — on Windows a stat
+  // immediately before write can race a concurrent fd holder and surface
+  // `EBUSY`/`EPERM`. The read either succeeds (file present) or throws
+  // ENOENT (treated as new file). Either way we never stat the same path
+  // we're about to write.
+  const readExistingOrEmpty = (abs: string): string => {
     try {
-      if (!existsSync(abs)) return false;
-      const fd = readFileSync(abs, "utf-8");
-      return fd.startsWith("---\n");
+      return readFileSync(abs, "utf-8");
     } catch {
-      return false;
+      return "";
     }
   };
   const originalWrite = stepDeps.writeFile;
   const originalAppend = stepDeps.appendFile;
   stepDeps.writeFile = (p: string, content: string) => {
     if (isInboxPath(p)) {
-      const needsFm = !fileAlreadyHasFrontmatter(p);
-      const final = needsFm ? buildFrontmatter() + content : content;
+      // First-write detection by content shape, not by stat. Empty string
+      // (ENOENT) and any file that does NOT already begin with `---\n`
+      // gets frontmatter; pre-frontmattered files are overwritten as-is
+      // so consumers can replay a recipe without doubling the header.
+      const existing = readExistingOrEmpty(p);
+      const hasFm = existing.startsWith("---\n");
+      const final = hasFm ? content : buildFrontmatter() + content;
       originalWrite(p, final);
       recordInboxDelivery(p);
       return;
@@ -620,12 +662,11 @@ export async function runYamlRecipe(
   };
   stepDeps.appendFile = (p: string, content: string) => {
     if (isInboxPath(p)) {
-      // file.append: never re-prepend. If file is brand-new (no existing
-      // frontmatter), seed one so a recipe that only ever uses append still
-      // gets provenance — without this, a recipe using append-only would
-      // produce frontmatter-less inbox items and the UI would degrade.
-      const exists = existsSync(p);
-      if (!exists) {
+      // file.append: never re-prepend. If file is brand-new, seed one
+      // frontmatter block so an append-only recipe still gets
+      // provenance. Same atomic read-or-default — no stat probe.
+      const existing = readExistingOrEmpty(p);
+      if (existing.length === 0) {
         originalWrite(p, buildFrontmatter() + content);
       } else {
         originalAppend(p, content);
