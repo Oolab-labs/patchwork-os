@@ -1,8 +1,18 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import {
+  subscribeStreamLiveness,
+  subscribeStreamMessage,
+} from "@/lib/streamLiveness";
 
 const RECONNECT_DELAY_MS = 3_000;
+
+/** The shared lifecycle stream. Subscriptions to this path are
+ *  multiplexed through the `streamLiveness` singleton so a tab opens
+ *  exactly one EventSource for it regardless of how many components
+ *  consume it. Any other path falls back to a direct EventSource. */
+const SHARED_STREAM_PATH = "/api/bridge/stream";
 
 export function useBridgeStream(
 	path: string,
@@ -19,6 +29,26 @@ export function useBridgeStream(
 	useEffect(() => {
 		if (!enabled) return;
 
+		// Shared lifecycle stream: ride the singleton instead of opening
+		// a second socket. The bridge emits default (unnamed) SSE frames,
+		// so the legacy direct-EventSource path always reported the event
+		// type as "message" — preserve that exactly here so consumers see
+		// no behavior change from the multiplex.
+		if (path === SHARED_STREAM_PATH) {
+			const unsubMsg = subscribeStreamMessage((_type, data) => {
+				onEventRef.current("message", data);
+			});
+			const unsubLive = subscribeStreamLiveness((live) => {
+				setConnected(live);
+				setError(live ? undefined : "Disconnected — reconnecting…");
+			});
+			return () => {
+				unsubMsg();
+				unsubLive();
+			};
+		}
+
+		// Fallback: any other endpoint gets its own EventSource.
 		let es: EventSource | null = null;
 		let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 		let alive = true;
