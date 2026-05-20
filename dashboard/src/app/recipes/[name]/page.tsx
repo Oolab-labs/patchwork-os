@@ -16,10 +16,10 @@
  */
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiPath } from "@/lib/api";
-import { canonicalRecipeKey } from "@/lib/entityKey";
+import { canonicalRecipeKey, inboxItemKey } from "@/lib/entityKey";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useToast } from "@/components/Toast";
 import { Dialog } from "@/components/Dialog";
@@ -266,9 +266,11 @@ export default function RecipeHubOverviewPage({
   );
 
   // Runs filtered by recipe — bridge supports ?recipe= filter.
-  const { data: runsResp } = useBridgeFetch<{ runs: RunRecord[] }>(
+  // intervalMs is adaptive: poll at 3s when any run is in-flight, 10s otherwise.
+  const [runsIntervalMs, setRunsIntervalMs] = useState(10_000);
+  const { data: runsResp, refetch: refetchRuns } = useBridgeFetch<{ runs: RunRecord[] }>(
     `/api/bridge/runs?recipe=${encodeURIComponent(name)}&limit=50`,
-    { intervalMs: 10_000 },
+    { intervalMs: runsIntervalMs },
   );
   const runs: RunRecord[] = useMemo(() => {
     const raw = runsResp?.runs ?? [];
@@ -277,6 +279,49 @@ export default function RecipeHubOverviewPage({
       .filter((r) => canonicalRecipeKey(r.recipeName ?? r.recipe ?? "") === name)
       .sort((a, b) => b.startedAt - a.startedAt);
   }, [runsResp, name]);
+
+  // Adaptive polling interval: 3s while any run is in-flight, 10s when idle.
+  // We update via setState only when the value needs to change to avoid loops.
+  const prevInFlightRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    const IN_FLIGHT_STATUSES = new Set(["running", "queued", "pending"]);
+    const hasInFlight = runs.some((r) => IN_FLIGHT_STATUSES.has(r.status));
+    if (prevInFlightRef.current === hasInFlight) return; // stable, no-op
+    prevInFlightRef.current = hasInFlight;
+    setRunsIntervalMs(hasInFlight ? 3_000 : 10_000);
+  }, [runs]);
+
+  // Toast once when a newly-completed run with inbox output is detected.
+  // -1 = "not yet initialised" (skip toasting until we've seen the initial data).
+  const lastSeenCompletedSeqRef = useRef<number>(-1);
+  useEffect(() => {
+    if (runs.length === 0) return;
+    const highestSeq = runs.reduce<number>((m, r) => (typeof r.seq === "number" && r.seq > m ? r.seq : m), -1);
+    // First render: mark existing runs as already-seen so we don't spam toasts on load.
+    if (lastSeenCompletedSeqRef.current === -1) {
+      lastSeenCompletedSeqRef.current = highestSeq;
+      return;
+    }
+    const DONE_STATUSES = new Set(["done", "success"]);
+    // Find completed runs newer than last-seen that produced inbox output.
+    for (const r of runs) {
+      if (typeof r.seq !== "number") continue;
+      if (r.seq <= lastSeenCompletedSeqRef.current) break; // already seen (runs sorted desc)
+      if (DONE_STATUSES.has(r.status) && Array.isArray(r.inboxOutputs) && r.inboxOutputs.length > 0) {
+        const output = [...r.inboxOutputs].sort((a, b) => b.deliveredAt - a.deliveredAt)[0];
+        const key = inboxItemKey(output.filename);
+        toast.success("Output delivered to inbox", {
+          action: {
+            label: "View in inbox",
+            onClick: () => router.push(`/inbox?item=${encodeURIComponent(key)}`),
+          },
+        });
+        break; // toast at most once per poll cycle
+      }
+    }
+    lastSeenCompletedSeqRef.current = highestSeq;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runs]);
 
   // Halt summary filtered by recipe.
   const { data: haltSummary } = useBridgeFetch<HaltSummary>(
@@ -365,6 +410,8 @@ export default function RecipeHubOverviewPage({
             action: { label: "View run", onClick: () => router.push(runHref) },
           });
           setRunModalOpen(false);
+          refetchRuns();
+          refetchRecipes();
         } else {
           toast.error(`Run failed: ${data.error ?? "unknown"}`);
         }
@@ -374,7 +421,7 @@ export default function RecipeHubOverviewPage({
         setRunStarting(false);
       }
     },
-    [recipe, toast, router],
+    [recipe, toast, router, refetchRuns, refetchRecipes],
   );
 
   const handleToggle = useCallback(async () => {
@@ -612,6 +659,20 @@ export default function RecipeHubOverviewPage({
                   <span style={{ fontFamily: "var(--font-mono)" }}>{r.status}</span>
                 )}
                 <span style={{ flex: 1, color: "var(--ink-3)" }}>{relTime(r.startedAt)}</span>
+                {Array.isArray(r.inboxOutputs) && r.inboxOutputs.length > 0 && (
+                  <Link
+                    href={`/inbox?item=${encodeURIComponent(inboxItemKey(r.inboxOutputs[0].filename))}`}
+                    title="View inbox output"
+                    style={{
+                      fontSize: "var(--fs-xs)",
+                      color: "var(--accent)",
+                      textDecoration: "none",
+                      opacity: 0.75,
+                    }}
+                  >
+                    → inbox
+                  </Link>
+                )}
                 <span style={{ color: "var(--ink-2)", fontFamily: "var(--font-mono)" }}>
                   {formatDuration(r.durationMs)}
                 </span>
@@ -694,12 +755,18 @@ export default function RecipeHubOverviewPage({
       {/* LATEST INBOX OUTPUT */}
       {latestInboxOutput && (
         <PatchCard style={{ padding: "var(--s-4)" }}>
-          <SectionHeader>Latest inbox output</SectionHeader>
+          <SectionHeader>Latest output → Inbox</SectionHeader>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-s)" }}>
             <InboxChip name={latestInboxOutput.filename} recipeName={name} />
             <span style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>
-              {relTime(latestInboxOutput.deliveredAt)}
+              delivered {relTime(latestInboxOutput.deliveredAt)}
             </span>
+            <Link
+              href={`/inbox?item=${encodeURIComponent(inboxItemKey(latestInboxOutput.filename))}`}
+              style={{ fontSize: "var(--fs-xs)", color: "var(--accent)", textDecoration: "none", marginLeft: "auto" }}
+            >
+              View in inbox →
+            </Link>
           </div>
         </PatchCard>
       )}
