@@ -4,6 +4,8 @@ import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { apiPath } from "@/lib/api";
 import { EmptyState, ErrorState, RelationStrip } from "@/components/patchwork";
+import { ToolChip } from "@/components/patchwork/entity";
+import Link from "next/link";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useToast } from "@/components/Toast";
@@ -20,13 +22,8 @@ interface SessionSummary {
   clientType?: string;
 }
 
-function recipeFor(s: SessionSummary): string {
+function firstToolFor(s: SessionSummary): string {
   return s.firstTool ?? "session";
-}
-
-function descriptionFor(recipe: string, hasRealRecipe: boolean): string {
-  if (!hasRealRecipe) return "no first tool reported";
-  return `first tool · ${recipe}`;
 }
 
 function activityState(
@@ -230,14 +227,21 @@ export default function SessionsPage() {
               const act = activityState(lastMs);
               const toolCount = s.toolCount ?? 0;
               const isSelected = selectedId === s.id;
-              const recipe = recipeFor(s);
-              const description = descriptionFor(recipe, Boolean(s.firstTool));
+              const firstTool = firstToolFor(s);
+              const hasRealTool = Boolean(s.firstTool);
 
               return (
-                <button
+                <div
                   key={s.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedId(isSelected ? null : s.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedId(isSelected ? null : s.id);
+                    }
+                  }}
                   className="glass-card glass-card--hover"
                   style={{
                     textAlign: "left",
@@ -274,7 +278,7 @@ export default function SessionsPage() {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        s{idx + 1} · {recipe}
+                        s{idx + 1}
                       </div>
                     </div>
                     <span
@@ -298,17 +302,26 @@ export default function SessionsPage() {
                     </span>
                   </div>
 
-                  {/* description */}
+                  {/* description — First tool, surfaced as a ToolChip when
+                      one was actually reported. */}
                   <div
                     style={{
                       fontSize: "var(--fs-s)",
                       color: "var(--ink-2)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      flexWrap: "wrap",
                     }}
                   >
-                    {description}
+                    <span style={{ color: "var(--ink-3)" }}>First tool:</span>
+                    {hasRealTool ? (
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <ToolChip name={firstTool} variant="row" />
+                      </span>
+                    ) : (
+                      <span className="muted">none reported</span>
+                    )}
                   </div>
 
                   {/* metrics row */}
@@ -321,7 +334,12 @@ export default function SessionsPage() {
                       borderTop: "1px solid var(--line-3)",
                     }}
                   >
-                    <div>
+                    <Link
+                      href={`/activity?session=${encodeURIComponent(s.id)}`}
+                      onClick={(e) => e.stopPropagation()}
+                      title={`Activity for session ${s.id.slice(0, 8)}`}
+                      style={{ textDecoration: "none", color: "inherit" }}
+                    >
                       <div
                         style={{
                           fontSize: "var(--fs-stat)",
@@ -345,8 +363,13 @@ export default function SessionsPage() {
                       >
                         Tools
                       </div>
-                    </div>
-                    <div>
+                    </Link>
+                    <Link
+                      href={`/sessions/${encodeURIComponent(s.id)}`}
+                      onClick={(e) => e.stopPropagation()}
+                      title="Open session detail"
+                      style={{ textDecoration: "none", color: "inherit" }}
+                    >
                       <div
                         style={{
                           fontSize: "var(--fs-stat)",
@@ -370,8 +393,13 @@ export default function SessionsPage() {
                       >
                         Files
                       </div>
-                    </div>
-                    <div>
+                    </Link>
+                    <Link
+                      href={`/approvals?session=${encodeURIComponent(s.id)}`}
+                      onClick={(e) => e.stopPropagation()}
+                      title="Approvals for this session"
+                      style={{ textDecoration: "none", color: "inherit" }}
+                    >
                       <div
                         style={{
                           fontSize: "var(--fs-stat)",
@@ -396,7 +424,7 @@ export default function SessionsPage() {
                       >
                         Pending
                       </div>
-                    </div>
+                    </Link>
                   </div>
 
                   {/* footer */}
@@ -413,7 +441,7 @@ export default function SessionsPage() {
                       <span className="mono">{s.remoteAddr}</span>
                     )}
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

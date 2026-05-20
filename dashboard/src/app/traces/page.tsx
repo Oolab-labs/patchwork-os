@@ -9,6 +9,7 @@ import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 import { EmptyState, ErrorState, HintCard, LivePill, RelationStrip } from "@/components/patchwork";
+import { ApprovalChip, RecipeChip } from "@/components/patchwork/entity";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { SkeletonList } from "@/components/Skeleton";
 
@@ -965,31 +966,51 @@ export default function TracesPage() {
                   >
                     {t.key}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => toggle(rowKey)}
+                  <div
                     style={{
-                      fontSize: "var(--fs-m)",
-                      // Anonymous traces (no body.recipeName) used to fall back to
-                      // t.key here, which was already rendered in the prior column
-                      // — every "anon:Bash" row showed "anon:Bash anon:Bash". Mute
-                      // and em-dash when the recipe name would just duplicate.
-                      color:
-                        typeof t.body?.recipeName === "string"
-                          ? "var(--ink-1)"
-                          : "var(--ink-3)",
-                      background: "transparent",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      textAlign: "left",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      minWidth: 0,
                       overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
                     }}
                   >
-                    {typeof t.body?.recipeName === "string" ? t.body.recipeName : "—"}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => toggle(rowKey)}
+                      aria-label={isOpen ? "Collapse details" : "Expand details"}
+                      style={{
+                        fontSize: "var(--fs-m)",
+                        color:
+                          typeof t.body?.recipeName === "string"
+                            ? "var(--ink-1)"
+                            : "var(--ink-3)",
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {typeof t.body?.recipeName === "string" ? t.body.recipeName : "—"}
+                    </button>
+                    {typeof t.body?.recipeName === "string" && (
+                      <RecipeChip
+                        name={t.body.recipeName}
+                        variant="link"
+                      />
+                    )}
+                    {t.traceType === "approval" &&
+                      typeof t.body?.callId === "string" && (
+                        <ApprovalChip
+                          callId={t.body.callId}
+                          variant="link"
+                        />
+                      )}
+                  </div>
                   <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", textAlign: "right" }}>
                     {relTime(t.ts)}
                   </span>

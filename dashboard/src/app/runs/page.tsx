@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LivePill } from "@/components/patchwork/LivePill";
 import { AnimatedNumber, EmptyState, ErrorState, RelationStrip } from "@/components/patchwork";
+import { RecipeChip } from "@/components/patchwork/entity";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useDebounced } from "@/hooks/useDebounced";
@@ -932,13 +933,20 @@ export default function RunsPage() {
                         )}
                       </td>
                       <td className="mono">
-                        <Link
-                          href={`/runs/${r.seq}`}
+                        {/* Chip links to the recipe hub; row click still
+                            expands; row-level "Open full run →" in the
+                            drawer handles the run navigation. */}
+                        <span
                           onClick={(e) => e.stopPropagation()}
-                          style={{ fontWeight: 600 }}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          style={{ display: "inline-flex" }}
                         >
-                          {formatRecipeName(r.recipeName, r.trigger)}
-                        </Link>
+                          <RecipeChip
+                            name={r.recipeName}
+                            trigger={normaliseTrigger(r.trigger)}
+                            variant="row"
+                          />
+                        </span>
                       </td>
                       <td>
                         <span className="pill muted">{normaliseTrigger(r.trigger)}</span>
@@ -1206,14 +1214,17 @@ export default function RunsPage() {
                 aria-expanded={isExpanded}
               >
                 <div className="run-card-head">
-                  <Link
-                    href={`/runs/${r.seq}`}
+                  <span
                     onClick={(e) => e.stopPropagation()}
-                    className="mono"
-                    style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    style={{ display: "inline-flex", minWidth: 0 }}
                   >
-                    {formatRecipeName(r.recipeName, r.trigger)}
-                  </Link>
+                    <RecipeChip
+                      name={r.recipeName}
+                      trigger={normaliseTrigger(r.trigger)}
+                      variant="row"
+                    />
+                  </span>
                   <span
                     className={`pill ${sClass}`}
                     style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
