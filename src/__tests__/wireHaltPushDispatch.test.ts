@@ -139,3 +139,77 @@ describe("wireHaltPushDispatch", () => {
     );
   });
 });
+
+describe("wireHaltPushDispatch — dedup", () => {
+  it("collapses repeat recipe_done for the same runSeq inside the window", () => {
+    let clock = 1_000;
+    wireHaltPushDispatch({
+      activityLog,
+      getPushConfig: () => CFG,
+      dedupWindowMs: 60_000,
+      now: () => clock,
+    });
+
+    activityLog.recordEvent("recipe_done", {
+      runSeq: 7,
+      recipeName: "x",
+      status: "error",
+    });
+    clock += 30_000; // still inside the 60s window
+    activityLog.recordEvent("recipe_done", {
+      runSeq: 7,
+      recipeName: "x",
+      status: "error",
+    });
+
+    expect(dispatchHaltPushNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("dispatches again once the dedup window has elapsed", () => {
+    let clock = 1_000;
+    wireHaltPushDispatch({
+      activityLog,
+      getPushConfig: () => CFG,
+      dedupWindowMs: 60_000,
+      now: () => clock,
+    });
+
+    activityLog.recordEvent("recipe_done", {
+      runSeq: 7,
+      recipeName: "x",
+      status: "error",
+    });
+    clock += 61_000; // past the window
+    activityLog.recordEvent("recipe_done", {
+      runSeq: 7,
+      recipeName: "x",
+      status: "error",
+    });
+
+    expect(dispatchHaltPushNotification).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not dedup distinct runSeqs", () => {
+    wireHaltPushDispatch({ activityLog, getPushConfig: () => CFG });
+    activityLog.recordEvent("recipe_done", {
+      runSeq: 1,
+      recipeName: "x",
+      status: "error",
+    });
+    activityLog.recordEvent("recipe_done", {
+      runSeq: 2,
+      recipeName: "y",
+      status: "error",
+    });
+    expect(dispatchHaltPushNotification).toHaveBeenCalledTimes(2);
+  });
+
+  it("never dedups the runSeq=0 unknown sentinel", () => {
+    wireHaltPushDispatch({ activityLog, getPushConfig: () => CFG });
+    // Two distinct unknown-seq runs must both fire — collapsing them
+    // would silently drop a real halt.
+    activityLog.recordEvent("recipe_done", { status: "error" });
+    activityLog.recordEvent("recipe_done", { status: "error" });
+    expect(dispatchHaltPushNotification).toHaveBeenCalledTimes(2);
+  });
+});
