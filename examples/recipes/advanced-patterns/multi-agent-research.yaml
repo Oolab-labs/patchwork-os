@@ -1,5 +1,9 @@
 # vision-tier — demonstrates the runClaudeTask parent→child spawn pattern.
-# Works today if --driver subprocess is active.
+# DOES NOT RUN AS-IS: the `parallel: { each, as, steps }` map-reduce form
+# below is not executed by any runner (no static expansion is possible —
+# `each` resolves only at runtime). Validation rejects it. For runtime
+# iteration today, use the `fan_out` tool. This file is kept as a design
+# artifact for the eventual agent-fan-out (fan_out v2) feature.
 # Each topic gets its own Claude subprocess; parent merges results.
 # requires: file-mcp (read/write), driver (subprocess or api)
 version: 1.0.0
