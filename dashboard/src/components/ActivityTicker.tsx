@@ -128,9 +128,15 @@ export function ActivityTicker() {
   return (
     <div
       className="activity-ticker"
-      role="status"
+      // Decorative "feels alive" ticker — its three rows churn every few
+      // seconds. `aria-live="polite"` here produced continuous
+      // screen-reader chatter for no actionable benefit (the same events
+      // are reachable via the /activity page). Mark it `aria-live="off"`
+      // and drop `role="status"` so assistive tech ignores the churn;
+      // the rows stay individually focusable links for anyone who wants
+      // to explore them.
       aria-label="Live activity ticker"
-      aria-live="polite"
+      aria-live="off"
       style={{
         display: "flex",
         alignItems: "center",

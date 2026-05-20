@@ -621,7 +621,17 @@ export default function TasksPage() {
                 pointerEvents: "none",
               }}
             />
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {/* Tasks render as a button list (not a <table>); advertise the
+              j/k row-navigation shortcut on the group container so screen
+              readers announce it. Each task button already carries an
+              aria-label. `role="group"` (not `list`) keeps the existing
+              focusable <button> children valid as group members. */}
+          <div
+            role="group"
+            aria-label="Tasks — press j or k to move between tasks"
+            aria-keyshortcuts="j k"
+            style={{ display: "flex", flexDirection: "column", gap: 4 }}
+          >
             {filteredTasks.length === 0 && (
               <div style={{ padding: "var(--s-4)", color: "var(--ink-3)", fontSize: "var(--fs-m)" }}>
                 No tasks match this filter.

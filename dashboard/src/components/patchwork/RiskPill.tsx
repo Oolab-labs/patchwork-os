@@ -7,9 +7,15 @@ const TONE: Record<RiskLevel, string> = {
 };
 
 export function RiskPill({ level, label }: { level: RiskLevel; label?: string }) {
+  // The colored `.dot` is decorative (`aria-hidden`) — risk must never be
+  // conveyed by colour alone (WCAG 1.4.1). Always render the visible text
+  // label; `aria-label` spells out "risk" so the bare "LOW/MEDIUM/HIGH"
+  // text isn't ambiguous out of context for screen-reader users.
+  const text = label ?? level;
   return (
     <span
       className={`chip ${TONE[level]}`}
+      aria-label={`${level} risk`}
       style={{
         textTransform: "uppercase",
         letterSpacing: "0.06em",
@@ -19,7 +25,7 @@ export function RiskPill({ level, label }: { level: RiskLevel; label?: string })
       }}
     >
       <span className="dot" aria-hidden="true" />
-      {label ?? level}
+      {text}
     </span>
   );
 }

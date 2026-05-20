@@ -537,26 +537,24 @@ function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       {/*
-        Drawer ARIA: at desktop width the sidebar is just a navigation
-        landmark, but on mobile (≤768 px) it's a modal dialog —
-        useFocusTrap inerts the rest of the app + locks scroll while
-        it's open. Mirror that semantically with `role="dialog"` +
-        `aria-modal` so screen readers announce "Primary navigation
-        dialog" / "modal" instead of leaking it as just another
-        landmark. `tabIndex={-1}` is needed for the focus trap to
-        focus the container when there are no focusable children.
+        Drawer ARIA: at desktop width the sidebar is a permanent
+        navigation landmark — it has no dismiss path and is always
+        "open", so exposing it as a `role="dialog"` is wrong (a dialog
+        with no way to close confuses screen-reader users). On mobile
+        (≤768 px) it genuinely IS a modal dialog — useFocusTrap inerts
+        the rest of the app + locks scroll while it's open — so the
+        dialog role + `aria-modal` are correct THERE.
 
-        Desktop screen readers don't see the dialog role as wrong —
-        the drawer is always "open" at desktop, so behaving as a
-        dialog with no dismiss path is benign. The inertSelector
-        passed to useFocusTrap is `main, .app-header,
-        .mobile-bottom-nav` which only fires on mobile because none
-        of those targets actually go inert at desktop scope.
+        Render `role` conditionally: `dialog` only when `mobileOpen`,
+        otherwise `undefined` so the inner `<nav aria-label="Main
+        navigation">` is exposed as a plain navigation landmark.
+        `tabIndex={-1}` is needed for the focus trap to focus the
+        container when there are no focusable children.
       */}
       <aside
         ref={drawerRef}
         className="app-sidebar"
-        role="dialog"
+        role={mobileOpen ? "dialog" : undefined}
         aria-modal={mobileOpen ? "true" : undefined}
         aria-label="Primary navigation"
         tabIndex={-1}

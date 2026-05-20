@@ -833,7 +833,7 @@ export default function RunsPage() {
         <>
         {/* Desktop / tablet: dense multi-column table. Hidden ≤768px. */}
         <div className="table-wrap runs-table-desktop">
-          <table className="table">
+          <table className="table" aria-keyshortcuts="j k">
             <thead>
               <tr>
                 <th style={{ width: 120 }}>When</th>
@@ -873,6 +873,7 @@ export default function RunsPage() {
                       tabIndex={0}
                       role="button"
                       aria-expanded={isExpanded}
+                      aria-label={`Run of ${formatRecipeName(r.recipeName, r.trigger)}, ${statusLabel(r)}, ${normaliseTrigger(r.trigger)} trigger`}
                       style={{
                         cursor: "pointer",
                         boxShadow:
