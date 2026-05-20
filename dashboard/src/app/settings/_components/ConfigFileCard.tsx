@@ -48,12 +48,18 @@ export function ConfigFileCard({ path }: { path: string }) {
       </div>
       <div
         className="mono"
+        title={path}
         style={{
           fontSize: "var(--fs-xs)",
           color: "var(--fg-1)",
           marginTop: 6,
-          wordBreak: "break-all",
           lineHeight: 1.4,
+          // Truncate cleanly with an ellipsis rather than breaking the
+          // path mid-word ("config.jso\nn"). Full path stays available
+          // via the title tooltip and the Copy button below.
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
         }}
       >
         {path}

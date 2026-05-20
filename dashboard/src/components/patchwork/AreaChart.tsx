@@ -71,9 +71,34 @@ export function AreaChart({
     })
     .join("; ");
 
-  const xTicks = (xLabels ?? [])
-    .map((lbl, i) => ({ lbl, i }))
-    .filter(({ lbl }) => lbl.length > 0);
+  // Build x-axis ticks, then drop any tick that would render too close
+  // to the previously kept one. Without this, the first-bucket label and
+  // an adjacent N-hour tick collided (e.g. "11:00" overlapping "12:00").
+  // The last tick ("now") always wins — it's right-anchored, so we keep
+  // it and instead drop the prior tick if they'd overlap.
+  const MIN_TICK_GAP_PCT = 9; // ~one HH:MM label width at typical chart sizes
+  const xTicks = (() => {
+    const candidates = (xLabels ?? [])
+      .map((lbl, i) => ({ lbl, i, pct: (i / Math.max(n - 1, 1)) * 100 }))
+      .filter(({ lbl }) => lbl.length > 0);
+    if (candidates.length <= 1) return candidates;
+    const lastIdx = candidates.length - 1;
+    const kept: typeof candidates = [];
+    for (let c = 0; c < candidates.length; c++) {
+      const cur = candidates[c];
+      const isLast = c === lastIdx;
+      const prev = kept[kept.length - 1];
+      if (!prev || cur.pct - prev.pct >= MIN_TICK_GAP_PCT) {
+        kept.push(cur);
+        continue;
+      }
+      // Too close to the previously kept tick. The right-anchored final
+      // tick takes priority — replace the prior tick with it.
+      if (isLast) kept[kept.length - 1] = cur;
+      // otherwise: drop the current tick.
+    }
+    return kept;
+  })();
 
   return (
     <figure

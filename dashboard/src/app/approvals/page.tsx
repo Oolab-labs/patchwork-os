@@ -1160,10 +1160,13 @@ function ApprovalsContent() {
 
       <HintCard id="approvals" />
 
-      {/* Hero status bar — counts by tier. When the queue is empty the
-          tier breakdown is all zeros — collapse it to avoid repeating
-          "0 pending" + "All clear" + four zero-tiles. The historical rate
-          strip (below) stays visible if there are past decisions. */}
+      {/* Hero status bar — counts by tier. When the queue is empty this
+          whole card is suppressed: the dedicated "All caught up!"
+          EmptyState below is the single empty state, so rendering a
+          "Queue — All clear" card here too was a redundant double
+          empty-state (UX audit 2026-05-20). The historical rate strip
+          still surfaces past decisions via the empty-state path. */}
+      {pending.length > 0 && (
       <div
         className="card"
         style={{
@@ -1189,7 +1192,7 @@ function ApprovalsContent() {
             Queue
           </div>
           <div style={{ fontSize: "var(--fs-3xl)", fontWeight: 800, color: "var(--ink-0)", lineHeight: 1.1 }}>
-            {pending.length === 0 ? "All clear" : `${pending.length} awaiting decision`}
+            {`${pending.length} awaiting decision`}
           </div>
         </div>
         {pending.length > 0 && (
@@ -1299,6 +1302,7 @@ function ApprovalsContent() {
           );
         })()}
       </div>
+      )}
 
       {/* Risk filter buttons — hidden when there's nothing to filter */}
       {pending.length > 0 && (
