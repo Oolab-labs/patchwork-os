@@ -1059,6 +1059,10 @@ export async function runYamlRecipe(
           status: runError ? "error" : "done",
           durationMs: doneAt - recipeStartedAt,
           stepCount: finalStepResults.length,
+          // A `done` run can still carry step errors — the runner
+          // continues past a non-fatal step failure. Surface it so
+          // live consumers can show "completed with errors".
+          hadStepErrors: finalStepResults.some((s) => s.status === "error"),
           ...(runError !== undefined && { errorMessage: runError }),
           ...(assertionFailures.length > 0 && {
             assertionFailureCount: assertionFailures.length,

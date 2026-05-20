@@ -94,6 +94,15 @@ export interface RecipeRun {
   durationMs: number;
   /** Per-step execution results — present when run via yamlRunner or chainedRunner. */
   stepResults?: RunStepResult[];
+  /**
+   * True when the run finished `done` but at least one step ended with
+   * `status: "error"`. The runner continues past a non-fatal step
+   * error, so such a run is legitimately `done` — but flat-green
+   * "success" hides that a step failed. Consumers (the dashboard
+   * Overview) use this to render an honest "completed with errors"
+   * state. Absent / false = a clean run.
+   */
+  hadStepErrors?: boolean;
   /** seq of the parent run that triggered this one, if trigger === "recipe". */
   parentSeq?: number;
   /** Assertion failures from the recipe's expect block — present when assertions fail. */
@@ -329,7 +338,12 @@ export class RecipeRunLog {
   /** Write a run directly (e.g. from yamlRunner which has no orchestrator task). */
   appendDirect(run: Omit<RecipeRun, "seq">): void {
     const seq = ++this.seq;
-    const full: RecipeRun = { ...run, seq };
+    // Derive hadStepErrors the same way completeRun does, so the
+    // CLI / no-orchestrator path stays consistent with the bridge path.
+    const hadStepErrors = (run.stepResults ?? []).some(
+      (s) => s.status === "error",
+    );
+    const full: RecipeRun = { ...run, seq, hadStepErrors };
     mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
     this.append(full);
     this.runs.push(full);
@@ -418,6 +432,10 @@ export class RecipeRunLog {
       doneAt: opts.doneAt,
       durationMs: opts.durationMs,
       stepResults: opts.stepResults,
+      // Derived, single source of truth: a run with any error-status
+      // step "completed with errors" even if its terminal status is
+      // `done` (the runner continues past non-fatal step errors).
+      hadStepErrors: opts.stepResults.some((s) => s.status === "error"),
       ...(opts.outputTail !== undefined && { outputTail: opts.outputTail }),
       ...(opts.errorMessage !== undefined && {
         errorMessage: opts.errorMessage,
