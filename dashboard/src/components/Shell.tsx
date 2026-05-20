@@ -305,7 +305,20 @@ function useTheme() {
 
 // ------------------------------------------------------------------ shell
 
+/**
+ * Route-aware shell wrapper. The root layout renders <Shell> for every
+ * route, but /login is pre-auth and must NOT show the app chrome
+ * (sidebar, bridge-status widgets, banners). Short-circuit there and
+ * render the page bare. Bonus: AppShell's hooks (bridge pollers, SSE)
+ * don't even run on the login page.
+ */
 export function Shell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  if (pathname === "/login") return <>{children}</>;
+  return <AppShell>{children}</AppShell>;
+}
+
+function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const status = useBridgeStatus();
   const approvalCount = useApprovalCount();

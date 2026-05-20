@@ -74,6 +74,10 @@ export function MobileBottomNav() {
   // exactly when oncall needs it.
   const haltCount = useHaltCount();
 
+  // /login is pre-auth — no app chrome. Early return after all hooks
+  // so hook order stays stable (rules-of-hooks).
+  if (pathname === "/login") return null;
+
   return (
     <>
       <nav className="mobile-bottom-nav" aria-label="Primary">
