@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { apiPath } from "@/lib/api";
+import { canonicalRecipeKey } from "@/lib/entityKey";
 import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
@@ -1360,19 +1361,18 @@ export default function RecipesPage() {
                         key={r.path ?? r.id ?? `${r.name}:${i}`}
                         className={`recipe-row${sel ? " is-selected" : ""}${enabled ? "" : " is-off"}`}
                         data-recipe-row={r.name}
-                        onClick={() =>
-                          setSelectedName((prev) => (prev === r.name ? null : r.name))
-                        }
+                        onClick={() => {
+                          router.push(`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`);
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            setSelectedName((prev) => (prev === r.name ? null : r.name));
+                            router.push(`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`);
                           }
                         }}
                         tabIndex={0}
-                        role="button"
-                        aria-pressed={sel}
-                        aria-label={`Select recipe ${r.name}`}
+                        role="link"
+                        aria-label={`Open recipe ${r.name}`}
                       >
                         <td style={{ textAlign: "center" }}>
                           <SuccessRing pct={pct} />
@@ -1380,7 +1380,7 @@ export default function RecipesPage() {
                         <td className="mono" style={{ overflow: "hidden" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <Link
-                              href={`/recipes/${encodeURIComponent(r.name)}/edit`}
+                              href={`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`}
                               onClick={(e) => e.stopPropagation()}
                               style={{
                                 whiteSpace: "nowrap",
