@@ -7,7 +7,8 @@ import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
-import { EmptyState, ErrorState, Glossary, HintCard, LivePill } from "@/components/patchwork";
+import { EmptyState, ErrorState, Glossary, HintCard, LivePill, RelationStrip } from "@/components/patchwork";
+import { EntityLink } from "@/components/patchwork/entity";
 import { SkeletonList } from "@/components/Skeleton";
 
 interface DecisionTrace {
@@ -183,6 +184,14 @@ function DecisionsContent() {
             </span>
             <LivePill label="5s" tone="muted" />
           </div>
+          <RelationStrip
+            items={[
+              { label: "Traces", href: "/traces", title: "Underlying decision-trace stream" },
+              { label: "Approvals", href: "/approvals", title: "Per-call approvals" },
+              { label: "Insights", href: "/insights", title: "Per-tool approval aggregates" },
+              { label: "Recipes", href: "/recipes", title: "Recipes whose decisions are saved here" },
+            ]}
+          />
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -364,7 +373,18 @@ function DecisionsContent() {
                       flexShrink: 0,
                     }}
                   >
-                    {b.ref ?? t.key}
+                    {(() => {
+                      const refStr = String(b.ref ?? t.key ?? "");
+                      const prMatch = refStr.match(/^PR[-#](\d+)$/i);
+                      const hashMatch = refStr.match(/^#(\d+)$/);
+                      if (prMatch) {
+                        return <EntityLink kind="run" id={prMatch[1]} variant="link" />;
+                      }
+                      if (hashMatch) {
+                        return <EntityLink kind="run" id={hashMatch[1]} variant="link" />;
+                      }
+                      return refStr;
+                    })()}
                   </span>
                   <span style={{ flex: 1 }} />
                   {typeof b.sessionId === "string" && b.sessionId.length > 0 && (
