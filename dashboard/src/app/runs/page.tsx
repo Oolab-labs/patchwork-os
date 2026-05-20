@@ -417,8 +417,13 @@ export default function RunsPage() {
       const nextKey = `${list[next].taskId}-${list[next].seq}`;
       setExpanded(nextKey);
       requestAnimationFrame(() => {
-        const row = document.querySelector(`[data-run-row="${CSS.escape(nextKey)}"]`);
+        const row = document.querySelector<HTMLElement>(
+          `[data-run-row="${CSS.escape(nextKey)}"]`,
+        );
         row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        // Move real DOM focus so keyboard + screen-reader users get
+        // feedback from j/k, not just a visual selection change.
+        row?.focus();
       });
     };
     globalThis.addEventListener("keydown", onKey);

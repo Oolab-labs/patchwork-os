@@ -1104,10 +1104,13 @@ export default function RecipesPage() {
       // Scroll the newly-selected row into view (centered) so j/k feels
       // like a cursor walk rather than a silent state change off-screen.
       requestAnimationFrame(() => {
-        const row = document.querySelector(
+        const row = document.querySelector<HTMLElement>(
           `[data-recipe-row="${CSS.escape(nextName)}"]`,
         );
         row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        // Move real DOM focus so keyboard + screen-reader users get
+        // feedback from j/k, not just a visual selection change.
+        row?.focus();
       });
     };
     window.addEventListener("keydown", onKey);

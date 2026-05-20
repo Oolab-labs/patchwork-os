@@ -29,6 +29,17 @@ export function AnimatedNumber({
     if (fromRef.current === value && prevValueRef.current === value) {
       return;
     }
+    // Reduced-motion: a CSS rule can't stop a JS rAF loop, so honour
+    // the preference here — snap straight to the target, no count-up.
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      prevValueRef.current = value;
+      fromRef.current = value;
+      setN(value);
+      return;
+    }
     if (prevValueRef.current !== value) {
       flashTone.current = value > prevValueRef.current ? "up" : "down";
       setFlashKey((k) => k + 1);

@@ -447,8 +447,13 @@ export default function TasksPage() {
       const nextId = visible[next].taskId;
       setSelectedTaskId(nextId);
       requestAnimationFrame(() => {
-        const row = document.querySelector(`[data-task-row="${CSS.escape(nextId)}"]`);
+        const row = document.querySelector<HTMLElement>(
+          `[data-task-row="${CSS.escape(nextId)}"]`,
+        );
         row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        // Move real DOM focus, not just visual selection — otherwise
+        // keyboard + screen-reader users get no feedback from j/k.
+        row?.focus();
       });
     };
     window.addEventListener("keydown", onKey);
