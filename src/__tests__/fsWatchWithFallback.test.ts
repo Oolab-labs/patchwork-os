@@ -15,6 +15,25 @@ import { watchDirectoryWithFallback } from "../fsWatchWithFallback.js";
  *   - stop() releases timer
  */
 
+/**
+ * Poll until `predicate` is true or `timeoutMs` elapses. Replaces fixed
+ * `setTimeout` waits — those flake under full-suite load (event-loop
+ * saturation makes "fs.watch fires within ~10ms" untrue), while a poll
+ * resolves the instant the condition holds and only spends the budget on
+ * genuine failure.
+ */
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 2000,
+  stepMs = 10,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, stepMs));
+  }
+}
+
 describe("watchDirectoryWithFallback — polling fallback", () => {
   let tmp: string;
   let stops: Array<() => void> = [];
@@ -51,7 +70,7 @@ describe("watchDirectoryWithFallback — polling fallback", () => {
     // Create the directory + a file. Polling should detect on its next tick.
     require("node:fs").mkdirSync(missing);
     writeFileSync(path.join(missing, "a.txt"), "hi");
-    await new Promise((r) => setTimeout(r, 80));
+    await waitFor(() => onChange.mock.calls.length > 0);
     expect(onChange).toHaveBeenCalled();
   });
 
@@ -77,14 +96,14 @@ describe("watchDirectoryWithFallback — polling fallback", () => {
 
     require("node:fs").mkdirSync(watchPath);
     writeFileSync(path.join(watchPath, "g.txt"), "v1");
-    await new Promise((r) => setTimeout(r, 60));
+    await waitFor(() => onChange.mock.calls.length > 0);
     expect(onChange).toHaveBeenCalled();
     onChange.mockClear();
 
     // Bump mtime on an existing file.
     await new Promise((r) => setTimeout(r, 20)); // ensure mtime resolution
     writeFileSync(path.join(watchPath, "g.txt"), "v2");
-    await new Promise((r) => setTimeout(r, 60));
+    await waitFor(() => onChange.mock.calls.length > 0);
     expect(onChange).toHaveBeenCalled();
   });
 
@@ -108,8 +127,7 @@ describe("watchDirectoryWithFallback — polling fallback", () => {
     });
     stops.push(stop);
     writeFileSync(path.join(tmp, "new.txt"), "x");
-    // fs.watch fires within ~10ms on local filesystems
-    await new Promise((r) => setTimeout(r, 50));
+    await waitFor(() => onChange.mock.calls.length > 0);
     expect(onChange).toHaveBeenCalled();
   });
 });
