@@ -127,12 +127,29 @@ export class Server extends EventEmitter<ServerEvents> {
   private oauthServer: OAuthServer | null = null;
   private oauthIssuerUrl: string | null = null;
   private sseSubscriberCount = 0;
+  /**
+   * Registered SSE subscribers on `/stream`, oldest-first by insertion
+   * order. Used as a defense-in-depth backstop: if a subscriber's peer is
+   * a dead-but-not-erroring socket (e.g. an orphaned proxy connection),
+   * the ping-write cleanup can fail to fire and the subscriber leaks. To
+   * guarantee a leak can never *permanently* brick `/stream`, a new
+   * request arriving at the cap evicts the oldest subscriber instead of
+   * returning 503 — mirroring the HTTP-session eviction in ADR-0005.
+   * The real cure for the known leak is the dashboard proxy aborting its
+   * upstream fetch on client disconnect; this is the backstop.
+   */
+  private sseSubscribers = new Set<{ close: () => void }>();
   /** Cache for CC permission rules (30s TTL) to avoid filesystem walks on each dashboard poll */
   private _explainRulesCache: {
     at: number;
     rules: AttributedPermissionRules;
   } | null = null;
   private static readonly MAX_SSE_SUBSCRIBERS = 20;
+
+  /** Number of currently-registered `/stream` SSE subscribers. Read-only. */
+  public get sseSubscribers_count(): number {
+    return this.sseSubscriberCount;
+  }
 
   /** Set by bridge to provide health data */
   public healthDataFn: (() => Record<string, unknown>) | null = null;
@@ -1081,6 +1098,17 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
       if (req.url === "/stream" && req.method === "GET") {
+        // Backstop (ADR-0005 pattern): at the cap, evict the oldest
+        // subscriber rather than returning 503 forever. A leaked
+        // subscriber whose socket is dead-but-not-erroring can otherwise
+        // permanently brick /stream. The dashboard proxy abort-on-disconnect
+        // fix is the real cure; this guarantees recovery either way.
+        if (this.sseSubscriberCount >= Server.MAX_SSE_SUBSCRIBERS) {
+          const oldest = this.sseSubscribers.values().next().value;
+          if (oldest) oldest.close();
+        }
+        // If eviction somehow didn't free a slot (no registered
+        // subscribers but counter still pinned), fail closed with 503.
         if (this.sseSubscriberCount >= Server.MAX_SSE_SUBSCRIBERS) {
           res.writeHead(503, { "Content-Type": "application/json" });
           res.end(
@@ -1110,13 +1138,23 @@ export class Server extends EventEmitter<ServerEvents> {
         let cleanedUp = false;
         let pingHandle: ReturnType<typeof setInterval> | null = null;
         let unsub: () => void = () => {};
+        const subscriber = { close: () => {} };
         const cleanup = () => {
           if (cleanedUp) return;
           cleanedUp = true;
           this.sseSubscriberCount--;
+          this.sseSubscribers.delete(subscriber);
           if (pingHandle) clearInterval(pingHandle);
           unsub();
         };
+        // Eviction path: tear down state AND destroy the socket so the
+        // peer (and any orphaned proxy in between) observes the close.
+        subscriber.close = () => {
+          cleanup();
+          res.end();
+          res.socket?.destroy();
+        };
+        this.sseSubscribers.add(subscriber);
 
         unsub =
           this.streamFn?.((kind, entry) => {
