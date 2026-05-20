@@ -3229,4 +3229,75 @@ describe("runYamlRecipe — SSE lifecycle emissions", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it("emits recipe_step_done for agent steps", async () => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "yaml-agent-sse-"));
+    try {
+      const { ActivityLog } = await import("../../activityLog.js");
+      const { RecipeRunLog } = await import("../../runLog.js");
+      const activityLog = new ActivityLog();
+      const runLog = new RecipeRunLog({ dir: tmp });
+      const events: Array<{
+        event: string;
+        metadata?: Record<string, unknown>;
+      }> = [];
+      activityLog.subscribe((_kind, entry) => {
+        if ("event" in entry) {
+          events.push({
+            event: entry.event,
+            metadata: entry.metadata as Record<string, unknown>,
+          });
+        }
+      });
+
+      const recipe = makeRecipe({
+        name: "agent-sse",
+        steps: [{ agent: { prompt: "hello", into: "out" } }],
+      });
+      const claudeFn = vi.fn().mockResolvedValue("agent-result");
+
+      await runYamlRecipe(recipe, {
+        ...noop(),
+        runLog,
+        activityLog,
+        claudeFn,
+        claudeCodeFn: claudeFn,
+        localFn: claudeFn,
+        providerDriverFn: claudeFn,
+      });
+
+      const stepDone = events.find((e) => e.event === "recipe_step_done");
+      expect(stepDone).toBeDefined();
+      expect(stepDone?.metadata?.status).toBe("ok");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("runYamlRecipe — orphaned-run guard", () => {
+  it("finalizes the run even when a step throws uncaught", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "yaml-orphan-"));
+    try {
+      const runLog = new RecipeRunLog({ dir: tmp });
+      // Agent step with no `prompt` — render(undefined) throws a TypeError
+      // at a point outside the per-step try/catch. Without the loop guard
+      // this escapes runYamlRecipe and the run-log entry is stranded at
+      // "running" forever.
+      const recipe = makeRecipe({
+        name: "orphan-test",
+        steps: [{ agent: { into: "a" } }] as YamlRecipe["steps"],
+      });
+
+      await runYamlRecipe(recipe, { ...noop(), runLog });
+
+      const runs = runLog.query({ limit: 10 });
+      expect(runs).toHaveLength(1);
+      expect(runs[0]?.status).not.toBe("running");
+      expect(runs[0]?.status).toBe("error");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
