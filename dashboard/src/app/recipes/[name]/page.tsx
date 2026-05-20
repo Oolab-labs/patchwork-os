@@ -29,10 +29,11 @@ import {
   EntityTimeline,
   InboxChip,
   PatchCard,
+  RelatedPanel,
   RunChip,
   StatusPill,
 } from "@/components/patchwork";
-import type { TimelineEvent } from "@/components/patchwork";
+import type { TimelineEvent, RelatedGroup } from "@/components/patchwork";
 import { detectConnectorsForRecipe } from "./layout";
 
 interface RecipeVar {
@@ -465,8 +466,56 @@ export default function RecipeHubOverviewPage({
     );
   }
 
+  // Build groups for the related panel from data already loaded on this page.
+  const relatedGroups: RelatedGroup[] = [
+    {
+      label: "Recent runs",
+      items: recentRuns.slice(0, 5).map((r) => ({
+        kind: "run" as const,
+        id: String(r.seq ?? ""),
+        label: typeof r.seq === "number" ? `#${r.seq}` : r.status,
+        meta: r.durationMs ? formatDuration(r.durationMs) : relTime(r.startedAt),
+      })).filter((item) => item.id !== ""),
+    },
+    {
+      label: "Connectors",
+      items: requiredConnectors.map((id) => ({
+        kind: "connector" as const,
+        id,
+        label: id,
+        meta: connectorHealthMap.get(id) === true
+          ? "healthy"
+          : connectorHealthMap.get(id) === false
+            ? "unhealthy"
+            : undefined,
+      })),
+    },
+    {
+      label: "Latest inbox",
+      items: latestInboxOutput
+        ? [
+            {
+              kind: "inbox" as const,
+              id: latestInboxOutput.filename,
+              label: latestInboxOutput.filename,
+              meta: relTime(latestInboxOutput.deliveredAt),
+            },
+          ]
+        : [],
+    },
+  ];
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)" }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr) minmax(0, 200px)",
+        gap: "var(--s-4, 16px)",
+        alignItems: "start",
+      }}
+    >
+      {/* main column */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)", minWidth: 0 }}>
       <RunModal
         open={runModalOpen}
         recipe={recipe}
@@ -709,6 +758,22 @@ export default function RecipeHubOverviewPage({
           </button>
         </div>
       </PatchCard>
+      </div>{/* end main column */}
+
+      {/* related panel column */}
+      <aside
+        style={{
+          position: "sticky",
+          top: 80,
+          padding: "var(--s-4, 16px)",
+          background: "var(--bg-1)",
+          borderRadius: "var(--r-2, 8px)",
+          border: "1px solid var(--line-2)",
+          minWidth: 0,
+        }}
+      >
+        <RelatedPanel groups={relatedGroups} />
+      </aside>
     </div>
   );
 }

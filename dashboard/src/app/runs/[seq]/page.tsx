@@ -3,8 +3,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
-import { EntityTimeline, RelationStrip } from "@/components/patchwork";
-import type { TimelineEvent } from "@/components/patchwork";
+import { EntityTimeline, RelationStrip, RelatedPanel } from "@/components/patchwork";
+import type { TimelineEvent, RelatedGroup } from "@/components/patchwork";
 import { RecipeChip, RunChip, ToolChip, InboxChip } from "@/components/patchwork/entity";
 import { StepDiffHover } from "@/components/StepDiffHover";
 import { Dialog } from "@/components/Dialog";
@@ -1382,6 +1382,74 @@ export default function RunDetailPage() {
 
       {run && (
         <>
+          {/* ── two-column layout: main content + related panel ── */}
+          {/* On narrow viewports the grid stacks to a single column
+              automatically via the minmax() column definition. */}
+          {/* The RelatedPanel side rail is placed here at the top-level
+              so it stays visible as the user scrolls the main content. */}
+          {/* NOTE: The outer <> fragment is kept; the grid only wraps the
+              two columns — the sticky header + replay banner live outside. */}
+          {(() => {
+            const relatedGroups: RelatedGroup[] = [
+              {
+                label: "Recipe",
+                items: [
+                  {
+                    kind: "recipe",
+                    id: run.recipeName,
+                    label: run.recipeName,
+                    href: `/recipes/${encodeURIComponent(run.recipeName)}`,
+                    meta: run.trigger,
+                  },
+                ],
+              },
+              {
+                label: "Inbox outputs",
+                items: (run.inboxOutputs ?? []).map((out) => ({
+                  kind: "inbox" as const,
+                  id: out.filename,
+                  label: out.filename,
+                  meta: new Date(out.deliveredAt).toISOString().slice(0, 19).replace("T", " "),
+                })),
+              },
+              {
+                label: "Approvals",
+                items: (run.stepResults ?? [])
+                  .filter((s) => s.tool === "requestApproval" || s.id.startsWith("approval"))
+                  .slice(0, 5)
+                  .map((s) => ({
+                    kind: "approval" as const,
+                    id: s.id,
+                    label: s.id,
+                    meta: s.status,
+                  })),
+              },
+              {
+                label: "Traces",
+                items: [
+                  {
+                    kind: "trace" as const,
+                    id: run.recipeName,
+                    label: run.recipeName,
+                    href: `/traces?recipe=${encodeURIComponent(run.recipeName)}`,
+                    meta: "decision traces",
+                  },
+                ],
+              },
+            ];
+            return (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 200px)",
+                  gap: "var(--s-4, 16px)",
+                  alignItems: "start",
+                  // On viewports narrower than ~640px the panel stacks below
+                  // the main column rather than floating beside it.
+                }}
+              >
+                {/* ── main column ── */}
+                <div style={{ minWidth: 0 }}>
           {/* ── tabs ── */}
           <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border-subtle)", marginBottom: 16 }}>
             <button style={tabStyle("steps")} onClick={() => setTab("steps")}>
@@ -1681,6 +1749,25 @@ export default function RunDetailPage() {
               </div>
             )}
           </div>
+                </div>{/* end main column */}
+
+                {/* ── related panel column ── */}
+                <aside
+                  style={{
+                    position: "sticky",
+                    top: 80,
+                    padding: "var(--s-4, 16px)",
+                    background: "var(--bg-1)",
+                    borderRadius: "var(--r-2, 8px)",
+                    border: "1px solid var(--line-2)",
+                    minWidth: 0,
+                  }}
+                >
+                  <RelatedPanel groups={relatedGroups} />
+                </aside>
+              </div>
+            );
+          })()}
         </>
       )}
     </section>
