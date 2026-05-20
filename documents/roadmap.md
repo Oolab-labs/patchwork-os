@@ -417,7 +417,7 @@ FileLock `tryAcquire` (non-blocking); `watchActivityLog` + `contextBundle` slim-
 **v2.4.10 shipped (2026-03-19) — Full OAuth 2.0 for claude.ai custom connectors:**
 - `--issuer-url <url>` flag: activates OAuth 2.0 mode; sets issuer in all discovery documents
 - `--cors-origin <url>` flag (repeatable): adds `Access-Control-Allow-Origin` for specific origin on ALL responses (including 401s); env var `CLAUDE_IDE_BRIDGE_CORS_ORIGINS` (comma-separated)
-- RFC 9396 `/.well-known/oauth-protected-resource` endpoint (claude.ai probes this before OAuth)
+- RFC 9728 `/.well-known/oauth-protected-resource` endpoint (claude.ai probes this before OAuth)
 - RFC 7591 `POST /oauth/register` dynamic client registration (claude.ai registers client_id before PKCE)
 - Approval page: bridge token entered in browser at `/oauth/authorize` (no more `?token=` URL)
 - POST `/oauth/authorize` route fixed (was GET-only; form submission fell through to 401)

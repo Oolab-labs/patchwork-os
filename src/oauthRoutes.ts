@@ -1,7 +1,7 @@
 /**
  * OAuth 2.0 route dispatcher — extracted from src/server.ts.
  *
- * Owns the public OAuth endpoints (RFC 8414 discovery, RFC 9396 protected-
+ * Owns the public OAuth endpoints (RFC 8414 discovery, RFC 9728 protected-
  * resource metadata, RFC 7591 dynamic client registration, authorize,
  * token, RFC 7009 revoke). All routes are unauthenticated — they MUST
  * run before the bearer-auth gate.
@@ -53,7 +53,7 @@ export function tryHandleOAuthRoute(
     return true;
   }
 
-  // RFC 9396 Protected Resource Metadata — Claude.ai probes this to discover
+  // RFC 9728 Protected Resource Metadata — Claude.ai probes this to discover
   // which authorization server protects this resource. Both the bare and
   // resource-path variants are handled.
   if (

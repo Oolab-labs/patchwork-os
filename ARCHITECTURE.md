@@ -78,7 +78,7 @@ Two independent WebSocket connections run simultaneously. The **Claude Code ↔ 
 
 | File | Purpose |
 |---|---|
-| `src/oauth.ts` | `OAuthServerImpl`: RFC 8414/7591/9396 endpoints; PKCE S256; 24h opaque access tokens; timing-safe comparisons |
+| `src/oauth.ts` | `OAuthServerImpl`: RFC 8414/7591/9728 endpoints; PKCE S256; 24h opaque access tokens; timing-safe comparisons |
 | `src/probe.ts` | `probeAll()`: detects available CLI tools (ctags, typescript-language-server, rg, git, gh); results drive `getToolCapabilities` |
 | `src/activityLog.ts` | Bounded ring buffer (500 entries); percentiles; co-occurrence; JSONL persistence |
 | `src/errors.ts` | `ErrorCodes` (JSON-RPC -32xxx) and `ToolErrorCodes` (string codes for `isError: true` content) |

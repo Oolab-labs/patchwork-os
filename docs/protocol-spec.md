@@ -502,7 +502,7 @@ When the bridge is started with `--issuer-url <public-https-url>`, it activates 
 | Path | Standard |
 |---|---|
 | `GET /.well-known/oauth-authorization-server` | RFC 8414 discovery |
-| `GET /.well-known/oauth-protected-resource` | RFC 9396 resource metadata |
+| `GET /.well-known/oauth-protected-resource` | RFC 9728 resource metadata |
 | `POST /oauth/register` | RFC 7591 dynamic client registration |
 | `GET /oauth/authorize` | Authorization code flow (PKCE S256 required) |
 | `POST /oauth/token` | Token exchange |
