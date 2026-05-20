@@ -386,7 +386,7 @@ describe("RecipeRunLog.record", () => {
     log.appendDirect({
       taskId: "yaml:partial:1",
       recipeName: "partial",
-      trigger: "manual",
+      trigger: "recipe",
       status: "done",
       createdAt: 1_000,
       doneAt: 2_000,
