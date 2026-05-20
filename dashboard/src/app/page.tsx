@@ -14,11 +14,14 @@ import {
   ActionPill,
   AnimatedNumber,
   AreaChart,
+  EntityTimeline,
   LivePill,
   QuiltHero,
   Sparkline,
+  type TimelineEvent,
 } from "@/components/patchwork";
 import { RecipeChip, ToolChip } from "@/components/patchwork/entity";
+import { canonicalRecipeKey } from "@/lib/entityKey";
 import {
   RecipeLeaderboard,
   type LeaderboardRun,
@@ -658,6 +661,329 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
 
 
 // ---------------------------------------------------------------------------
+// Needs-attention band
+// ---------------------------------------------------------------------------
+
+/**
+ * Mission-control attention band.
+ *
+ * Shows three signals: pending approvals, halted runs in last 24h, and
+ * error-status runs in last 24h. Each is a clickable chip that deep-links
+ * into the relevant filtered surface. When all three are zero we render a
+ * calm "all clear" state instead of an empty card — the card always
+ * provides value (either "action needed" or "nothing broken").
+ *
+ * Deep-link verification:
+ *  - /approvals         — no filter needed, approvals page shows all pending
+ *  - /runs?halt=1       — runs/page.tsx reads searchParams.get("halt") === "1"
+ *  - /runs?status=error — runs/page.tsx reads searchParams.get("status") but
+ *                         the filter is named differently; use /runs?halt=1
+ *                         for halts and /runs unfiltered for general errors
+ *  - /activity          — activity/page.tsx is unfiltered entry point
+ */
+function NeedsAttentionBand({
+  pendingCount,
+  haltCount24h,
+  failingCount24h,
+  bridgeOk,
+}: {
+  pendingCount: number;
+  haltCount24h: number;
+  failingCount24h: number;
+  bridgeOk: boolean;
+}) {
+  const items = [
+    pendingCount > 0 && {
+      count: pendingCount,
+      label: pendingCount === 1 ? "approval pending" : "approvals pending",
+      href: "/approvals",
+      urgent: true,
+    },
+    haltCount24h > 0 && {
+      count: haltCount24h,
+      label: haltCount24h === 1 ? "halt · 24h" : "halts · 24h",
+      href: "/runs?halt=1",
+      urgent: false,
+    },
+    failingCount24h > 0 && {
+      count: failingCount24h,
+      label: failingCount24h === 1 ? "run failed · 24h" : "runs failed · 24h",
+      href: "/runs",
+      urgent: false,
+    },
+  ].filter(Boolean) as Array<{ count: number; label: string; href: string; urgent: boolean }>;
+
+  const allClear = items.length === 0;
+
+  return (
+    <div
+      className="card"
+      style={{
+        padding: "14px 20px",
+        marginBottom: "var(--s-4)",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        flexWrap: "wrap",
+      }}
+    >
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "var(--fs-2xs)",
+          fontWeight: 700,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          color: "var(--ink-3)",
+          flexShrink: 0,
+        }}
+      >
+        Needs attention
+      </span>
+
+      {allClear ? (
+        <span
+          style={{
+            fontSize: "var(--fs-s)",
+            color: bridgeOk ? "var(--green, #4caf50)" : "var(--ink-3)",
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          {bridgeOk ? (
+            <>
+              <span aria-hidden="true">✓</span>
+              All clear — no approvals pending, no halts, no failures.
+            </>
+          ) : (
+            "Bridge offline — connect to see agent status."
+          )}
+        </span>
+      ) : (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {items.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "5px 12px",
+                borderRadius: "var(--r-2)",
+                background: item.urgent ? "var(--amber-bg, rgba(212,154,58,0.12))" : "var(--surface-2, var(--line-3))",
+                border: `1px solid ${item.urgent ? "var(--amber, #d49a3a)" : "var(--line-2)"}`,
+                color: item.urgent ? "var(--amber, #d49a3a)" : "var(--ink-1)",
+                fontWeight: 700,
+                fontSize: "var(--fs-s)",
+                textDecoration: "none",
+                transition: "opacity 0.15s",
+              }}
+              aria-label={`${item.count} ${item.label} — view all`}
+            >
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-m)" }}>
+                {item.count}
+              </span>
+              <span style={{ fontWeight: 400, fontSize: "var(--fs-xs)" }}>{item.label}</span>
+              <span aria-hidden="true" style={{ fontSize: "var(--fs-xs)", opacity: 0.6 }}>→</span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Unified activity timeline (EntityTimeline-based)
+// ---------------------------------------------------------------------------
+
+/**
+ * Reshapes recent runs + pending approvals into TimelineEvent[] for
+ * EntityTimeline. Merges and sorts newest-first; each item links out.
+ *
+ * Uses runs data (already fetched) and pendingApprovals. No new endpoints.
+ */
+function buildTimelineEvents(
+  runs: LiveRun[],
+  approvals: Pending[],
+  activityEvents: ActivityEvent[],
+): TimelineEvent[] {
+  const events: TimelineEvent[] = [];
+
+  // Recent runs (capped at 8)
+  const recentRuns = [...runs]
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .slice(0, 8);
+  for (const r of recentRuns) {
+    events.push({
+      id: `run-${r.seq}`,
+      kind: "run",
+      timestamp: r.startedAt,
+      label: r.recipeName ?? `run #${r.seq}`,
+      status: r.status,
+      meta: {
+        seq: r.seq,
+        recipeName: r.recipeName,
+        hadStepErrors: r.hadStepErrors,
+      },
+    });
+  }
+
+  // Pending approvals
+  for (const ap of approvals.slice(0, 4)) {
+    events.push({
+      id: `approval-${ap.callId}`,
+      kind: "approval",
+      timestamp: ap.requestedAt,
+      label: ap.summary ?? ap.toolName,
+      status: "pending",
+      meta: {
+        callId: ap.callId,
+        decision: "pending",
+      },
+    });
+  }
+
+  // Supplement with a few recent activity events that aren't covered by runs
+  const activitySlice = activityEvents
+    .filter((e) => e.kind === "lifecycle" && e.event === "approval_decision")
+    .slice(0, 3);
+  for (const e of activitySlice) {
+    const callId = (e.metadata as Record<string, unknown>)?.callId as string | undefined;
+    if (!callId) continue;
+    // Don't duplicate an already-present pending approval
+    if (events.some((ev) => ev.id === `approval-${callId}`)) continue;
+    events.push({
+      id: `act-${e.id ?? e.at}`,
+      kind: "approval",
+      timestamp: e.at ?? Date.now(),
+      label: (e.metadata as Record<string, unknown>)?.decision as string ?? "decision",
+      meta: {
+        callId,
+        decision: (e.metadata as Record<string, unknown>)?.decision as string,
+      },
+    });
+  }
+
+  return events.sort((a, b) => b.timestamp - a.timestamp).slice(0, 15);
+}
+
+// ---------------------------------------------------------------------------
+// Recipes-at-a-glance strip
+// ---------------------------------------------------------------------------
+
+/**
+ * Top recipes by recent activity. Each links to /runs?recipe=<name>.
+ * Uses the runs data already fetched — no new endpoint.
+ */
+function RecipesAtAGlance({ runs }: { runs: LiveRun[] }) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const recipeMap = new Map<string, { count: number; lastAt: number; hasHalt: boolean }>();
+  for (const r of runs) {
+    if (!r.recipeName) continue;
+    const key = r.recipeName;
+    const existing = recipeMap.get(key) ?? { count: 0, lastAt: 0, hasHalt: false };
+    recipeMap.set(key, {
+      count: existing.count + 1,
+      lastAt: Math.max(existing.lastAt, r.startedAt),
+      hasHalt: existing.hasHalt || isHaltStatus(r.status),
+    });
+  }
+  const sorted = Array.from(recipeMap.entries())
+    .filter(([, v]) => Date.now() - v.lastAt < 7 * dayMs)
+    .sort(([, a], [, b]) => b.count - a.count)
+    .slice(0, 6);
+
+  if (sorted.length === 0) return null;
+
+  return (
+    <div className="card" style={{ padding: "18px 20px", marginBottom: "var(--s-5)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <h2
+          style={{
+            fontSize: "var(--fs-m)",
+            fontWeight: 700,
+            margin: 0,
+            color: "var(--ink-0)",
+            flex: 1,
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+          }}
+        >
+          Recipes · 7d
+        </h2>
+        <ActionPill href="/recipes" ariaLabel="View all recipes">
+          view all →
+        </ActionPill>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {sorted.map(([name, stats]) => {
+          const recipeKey = canonicalRecipeKey(name);
+          return (
+            <Link
+              key={name}
+              href={`/runs?recipe=${encodeURIComponent(recipeKey)}`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "7px 8px",
+                borderRadius: "var(--r-1)",
+                textDecoration: "none",
+                color: "inherit",
+              }}
+              className="row-hover"
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: stats.hasHalt ? "var(--err)" : "var(--green, #4caf50)",
+                  flexShrink: 0,
+                }}
+                aria-hidden="true"
+              />
+              <span
+                style={{
+                  flex: 1,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "var(--fs-s)",
+                  color: "var(--ink-0)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {recipeKey}
+              </span>
+              <span
+                style={{
+                  fontSize: "var(--fs-xs)",
+                  color: "var(--ink-3)",
+                  flexShrink: 0,
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                {stats.count} run{stats.count !== 1 ? "s" : ""}
+              </span>
+              {stats.hasHalt && (
+                <span className="pill err" style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}>
+                  halted
+                </span>
+              )}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -979,6 +1305,17 @@ export default function HomePage() {
       />
 
       {/* ------------------------------------------------------------------ */}
+      {/* NEEDS ATTENTION — mission-control band: pending approvals, halts,  */}
+      {/* and errors. Zero state renders "all clear". Every chip links out.   */}
+      {/* ------------------------------------------------------------------ */}
+      <NeedsAttentionBand
+        pendingCount={pendingCount}
+        haltCount24h={haltCount24h}
+        failingCount24h={errCount24h}
+        bridgeOk={bridgeStatus.ok === true}
+      />
+
+      {/* ------------------------------------------------------------------ */}
       {/* LIVE WIRE — always-present 1-row heartbeat ("● 2 running · last    */}
       {/* finished 4m ago"). Pairs with LiveRunsStrip below, which only shows */}
       {/* when there's something in flight or just-finished — keeps the page */}
@@ -1145,13 +1482,39 @@ export default function HomePage() {
       />
 
       {/* ------------------------------------------------------------------ */}
-      {/* Activity thread + Recent recipes                                     */}
+      {/* Activity thread + Recipes at a glance                               */}
       {/* ------------------------------------------------------------------ */}
       {/* Use the .grid-2 utility (collapses to a single column at ≤760 px)
           rather than an inline 2-col grid that ignored viewport. Side-by-
           side at phone width forced both cards to ~150 px wide and made
           activity timestamps + recipe slugs collide. */}
       <div className="grid-2" style={{ marginBottom: "var(--s-5)" }}>
+        {/* Left col: unified entity timeline (runs + approvals) */}
+        <div className="card" style={{ padding: "18px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <h2
+              style={{
+                fontSize: "var(--fs-m)",
+                fontWeight: 700,
+                margin: 0,
+                color: "var(--ink-0)",
+                flex: 1,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+              }}
+            >
+              Activity stream
+            </h2>
+            <ActionPill href="/activity" ariaLabel="View all activity">
+              view all →
+            </ActionPill>
+          </div>
+          <EntityTimeline
+            events={buildTimelineEvents(runs, pendingApprovals, activityEvents)}
+            ariaLabel="Recent runs and approvals"
+          />
+        </div>
+        {/* Right col: classic activity thread for tool-level detail */}
         <ActivityThread
           events={activityEvents
             .filter((e) => !isNoiseEvent(e))
@@ -1159,8 +1522,16 @@ export default function HomePage() {
             .reverse()
             .slice(0, 12)}
         />
-        <RecipeLeaderboard runs={runs as LeaderboardRun[]} />
       </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Recipes at a glance — top 6 by run count over last 7 days           */}
+      {/* Each row links to /runs?recipe=<name> (param honored by runs/page) */}
+      {/* ------------------------------------------------------------------ */}
+      <RecipesAtAGlance runs={runs} />
+
+      {/* Recipe leaderboard — detailed health view */}
+      <RecipeLeaderboard runs={runs as LeaderboardRun[]} />
 
     </section>
   );
