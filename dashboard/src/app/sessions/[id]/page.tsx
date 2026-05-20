@@ -447,7 +447,7 @@ export default function SessionDetailPage() {
       {decisions.length > 0 && (
         <div className="card" style={{ marginTop: "var(--s-4)" }}>
           <div className="card-head">
-            <h2>Decisions saved</h2>
+            <h2>Knowledge saved</h2>
             <span className="pill muted">{decisions.length}</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

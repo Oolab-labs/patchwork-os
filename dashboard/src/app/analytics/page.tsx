@@ -144,7 +144,7 @@ export default function AnalyticsPage() {
             Analytics — <span className="accent">what your agents actually do.</span>
           </h1>
           <div className="editorial-sub">
-            tool usage · hook activity · automation history
+            tool usage · hook activity · recipe history
           </div>
           <RelationStrip
             items={[
@@ -295,7 +295,7 @@ export default function AnalyticsPage() {
                 style={{ marginTop: "var(--s-8)", marginBottom: "var(--s-4)" }}
               >
                 <div>
-                  <h2>Recent automation tasks</h2>
+                  <h2>Recent recipe tasks</h2>
                 </div>
               </div>
 
