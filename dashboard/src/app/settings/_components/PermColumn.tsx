@@ -13,6 +13,12 @@ export function PermColumn({
   title: string;
   rules: string[];
 }) {
+  // The bridge's cc-permissions payload can repeat a rule (the same
+  // pattern arriving from both managed + project scope). Rendering
+  // `key={rule}` then collides — React logs a duplicate-key error on
+  // every re-render. Dedupe: a permission grid showing the same rule
+  // twice is itself wrong, so collapsing is the correct fix.
+  const uniqueRules = [...new Set(rules)];
   return (
     <div
       style={{
@@ -28,10 +34,10 @@ export function PermColumn({
       >
         <StatusPill tone={tone}>{title}</StatusPill>
         <span style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>
-          {rules.length}
+          {uniqueRules.length}
         </span>
       </div>
-      {rules.length === 0 ? (
+      {uniqueRules.length === 0 ? (
         <div style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>—</div>
       ) : (
         <ul
@@ -44,7 +50,7 @@ export function PermColumn({
             gap: 3,
           }}
         >
-          {rules.slice(0, 8).map((r) => (
+          {uniqueRules.slice(0, 8).map((r) => (
             <li
               key={r}
               className="mono"
@@ -57,9 +63,9 @@ export function PermColumn({
               {r}
             </li>
           ))}
-          {rules.length > 8 && (
+          {uniqueRules.length > 8 && (
             <li style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>
-              +{rules.length - 8} more
+              +{uniqueRules.length - 8} more
             </li>
           )}
         </ul>
