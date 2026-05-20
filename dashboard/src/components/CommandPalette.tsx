@@ -3,14 +3,18 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { flatRoutes } from "@/lib/navRoutes";
+import { canonicalRecipeKey, inboxItemKey } from "@/lib/entityKey";
 
 interface Command {
   id: string;
   label: string;
   hint?: string;
-  group: "Navigate" | "Recipes" | "Approvals" | "Actions";
+  group: "Navigate" | "Recipes" | "Runs" | "Inbox" | "Sessions" | "Approvals" | "Actions";
   perform: () => void;
 }
+
+/** Cap on per-section live-entity results so the palette stays scannable. */
+const ENTITY_SECTION_CAP = 5;
 
 /**
  * Nav destinations are derived from the single-source-of-truth navRoutes
@@ -43,6 +47,44 @@ function score(haystack: string, needle: string): number {
   return matched === n.length ? 100 - (h.length - n.length) : 0;
 }
 
+// ---------------------------------------------------------------------------
+// Entity data shapes (subset of what each page uses)
+// ---------------------------------------------------------------------------
+
+interface RecipeEntity {
+  name: string;
+}
+
+interface RunEntity {
+  seq: number;
+  recipeName: string;
+  status: string;
+}
+
+interface InboxEntity {
+  name: string;
+  preview?: string;
+}
+
+interface SessionEntity {
+  id: string;
+  clientType?: string;
+  connectedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Debounce helper
+// ---------------------------------------------------------------------------
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState<T>(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+
 export function CommandPalette({
   open,
   onClose,
@@ -55,12 +97,21 @@ export function CommandPalette({
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
-  const [recipes, setRecipes] = useState<{ name: string }[]>([]);
+
+  // Static entities fetched once on open (cheap, cached for session)
+  const [recipes, setRecipes] = useState<RecipeEntity[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<
     { callId: string; toolName: string }[]
   >([]);
 
-  // Lazily fetch dynamic data the first time the palette opens; cache for the
+  // Live entity search state — populated by debounced query
+  const [liveRuns, setLiveRuns] = useState<RunEntity[]>([]);
+  const [liveInbox, setLiveInbox] = useState<InboxEntity[]>([]);
+  const [liveSessions, setLiveSessions] = useState<SessionEntity[]>([]);
+
+  const debouncedQuery = useDebounce(query, 200);
+
+  // Lazily fetch static data the first time the palette opens; cache for the
   // session. Both endpoints are demo-safe (return mock fixtures when bridge
   // offline) so we don't need to gate on bridge status here.
   useEffect(() => {
@@ -94,6 +145,65 @@ export function CommandPalette({
     return () => controller.abort();
   }, [open]);
 
+  // Debounced entity search: fetch runs, inbox, sessions when query changes.
+  // Fail-soft: errors are swallowed so offline bridge never breaks static nav.
+  useEffect(() => {
+    if (!open || !debouncedQuery.trim()) {
+      setLiveRuns([]);
+      setLiveInbox([]);
+      setLiveSessions([]);
+      return;
+    }
+    const controller = new AbortController();
+    const sig = controller.signal;
+    const q = encodeURIComponent(debouncedQuery.trim());
+
+    // Runs: fetch recent runs (capped server-side; filter client-side by recipeName)
+    fetch(apiPath(`/api/bridge/runs?limit=50`), { signal: sig })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list = (d?.runs ?? d ?? []) as RunEntity[];
+        const matched = list.filter((run) => {
+          const s = score(run.recipeName ?? "", debouncedQuery) +
+            score(String(run.seq), debouncedQuery);
+          return s > 0;
+        }).slice(0, ENTITY_SECTION_CAP);
+        setLiveRuns(matched);
+      })
+      .catch(() => {});
+
+    // Inbox: use the non-bridge /api/inbox which works even with bridge offline
+    fetch(apiPath("/api/inbox"), { signal: sig })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list = (d?.items ?? d ?? []) as InboxEntity[];
+        const matched = list.filter((item) => {
+          const key = inboxItemKey(item.name);
+          return score(key, debouncedQuery) + (item.preview ? score(item.preview, debouncedQuery) * 0.3 : 0) > 0;
+        }).slice(0, ENTITY_SECTION_CAP);
+        setLiveInbox(matched);
+      })
+      .catch(() => {});
+
+    // Sessions
+    fetch(apiPath("/api/bridge/sessions"), { signal: sig })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list = (Array.isArray(d) ? d : (d?.sessions ?? [])) as SessionEntity[];
+        const matched = list.filter((s) => {
+          return score(s.id, debouncedQuery) +
+            (s.clientType ? score(s.clientType, debouncedQuery) : 0) > 0;
+        }).slice(0, ENTITY_SECTION_CAP);
+        setLiveSessions(matched);
+      })
+      .catch(() => {});
+
+    // Suppress lint warning — q is only used for the URL but debouncedQuery is the dep
+    void q;
+
+    return () => controller.abort();
+  }, [open, debouncedQuery]);
+
   const commands = useMemo<Command[]>(() => {
     const navCmds: Command[] = NAV_DESTINATIONS.map((d) => ({
       id: `nav:${d.href}`,
@@ -107,7 +217,7 @@ export function CommandPalette({
       label: r.name,
       hint: "Open recipe",
       group: "Recipes" as const,
-      perform: () => router.push(`/recipes/${encodeURIComponent(r.name)}`),
+      perform: () => router.push(`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`),
     }));
     const approvalCmds: Command[] = pendingApprovals.map((a) => ({
       id: `approval:${a.callId}`,
@@ -115,6 +225,30 @@ export function CommandPalette({
       hint: a.callId.slice(0, 12),
       group: "Approvals" as const,
       perform: () => router.push(`/approvals#${a.callId}`),
+    }));
+    const runCmds: Command[] = liveRuns.map((run) => ({
+      id: `run:${run.seq}`,
+      label: `${run.recipeName} #${run.seq}`,
+      hint: run.status,
+      group: "Runs" as const,
+      perform: () => router.push(`/runs/${run.seq}`),
+    }));
+    const inboxCmds: Command[] = liveInbox.map((item) => {
+      const key = inboxItemKey(item.name);
+      return {
+        id: `inbox:${item.name}`,
+        label: key,
+        hint: item.preview?.slice(0, 60) ?? "Inbox item",
+        group: "Inbox" as const,
+        perform: () => router.push(`/inbox?item=${encodeURIComponent(key)}`),
+      };
+    });
+    const sessionCmds: Command[] = liveSessions.map((s) => ({
+      id: `session:${s.id}`,
+      label: s.id.slice(0, 16),
+      hint: s.clientType ?? "Session",
+      group: "Sessions" as const,
+      perform: () => router.push(`/sessions/${encodeURIComponent(s.id)}`),
     }));
     const actionCmds: Command[] = [
       {
@@ -149,8 +283,8 @@ export function CommandPalette({
         perform: () => window.location.reload(),
       },
     ];
-    return [...navCmds, ...recipeCmds, ...approvalCmds, ...actionCmds];
-  }, [router, recipes, pendingApprovals]);
+    return [...navCmds, ...recipeCmds, ...approvalCmds, ...runCmds, ...inboxCmds, ...sessionCmds, ...actionCmds];
+  }, [router, recipes, pendingApprovals, liveRuns, liveInbox, liveSessions]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return commands;
