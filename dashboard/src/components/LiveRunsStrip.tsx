@@ -82,12 +82,21 @@ export function LiveRunsStrip({
   return (
     <section
       aria-label="Live and recent recipe runs"
+      className="live-runs-strip"
       style={{
         marginBottom: "var(--s-4)",
         display: "flex",
         gap: 10,
         overflowX: "auto",
+        // Scroll-snap carousel: each card snaps to the start edge so a
+        // phone user can flick through them without a card half-clipped.
+        scrollSnapType: "x proximity",
+        // Right padding + scroll-padding keep the last card fully visible
+        // and reachable instead of bleeding past the viewport edge.
+        paddingRight: 12,
+        scrollPaddingInline: 4,
         paddingBottom: 4,
+        WebkitOverflowScrolling: "touch",
       }}
     >
       {visible.map((r, i) => {
@@ -111,7 +120,10 @@ export function LiveRunsStrip({
             data-live={isLive ? "1" : "0"}
             data-tone={tone}
             style={{
-              flex: "0 0 260px",
+              // Cap at 260px but allow the card to shrink on narrow phones
+              // so it never bleeds past the viewport edge with no scroll cue.
+              flex: "0 0 clamp(220px, 78vw, 260px)",
+              scrollSnapAlign: "start",
               padding: "10px 12px",
               borderRadius: "var(--r-2)",
               border: "1px solid var(--line-3)",

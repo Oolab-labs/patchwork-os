@@ -59,6 +59,9 @@ interface Run {
   assertionFailures?: AssertionFailure[];
   /** PR5c — stable id for one logical retry-attempt; ties resumed runs together. */
   manualRunId?: string;
+  /** Run finished `done` but ≥1 step ended in error — "completed with
+   *  errors". Set by the bridge run log (see runLog.hadStepErrors). */
+  hadStepErrors?: boolean;
 }
 
 type TriggerFilter = "all" | "cron" | "webhook" | "recipe" | "manual" | "git_hook";
@@ -88,9 +91,20 @@ function fmtDur(ms: number): string {
 function statusPill(r: Run): "ok" | "err" | "warn" | "muted" | "running" {
   if (r.status === "running") return "running";
   if (r.assertionFailures && r.assertionFailures.length > 0) return "err";
+  // Honest partial-failure: a run can finish `done` while a step errored.
+  // Render amber "completed with errors" instead of a clean green "done".
+  if (r.status === "done" && r.hadStepErrors) return "warn";
   if (r.status === "done") return "ok";
   if (r.status === "error") return "err";
   return "warn";
+}
+
+/** Display label for the status cell — honest about partial failure. */
+function statusLabel(r: Run): string {
+  if (r.status === "done" && r.hadStepErrors && !r.assertionFailures?.length) {
+    return "completed with errors";
+  }
+  return r.status;
 }
 
 const RUNS_PAGE_SIZE = 100;
@@ -816,7 +830,9 @@ export default function RunsPage() {
           );
         })()
       ) : (
-        <div className="table-wrap">
+        <>
+        {/* Desktop / tablet: dense multi-column table. Hidden ≤768px. */}
+        <div className="table-wrap runs-table-desktop">
           <table className="table">
             <thead>
               <tr>
@@ -907,7 +923,7 @@ export default function RunsPage() {
                           {sClass !== "running" && (
                             <span className="pill-dot" />
                           )}
-                          {r.status}
+                          {statusLabel(r)}
                           {r.assertionFailures &&
                             r.assertionFailures.length > 0 &&
                             ` · ${r.assertionFailures.length} fail`}
@@ -1120,6 +1136,112 @@ export default function RunsPage() {
             </div>
           )}
         </div>
+
+        {/* Mobile (≤768px): stacked card layout. The dense table is
+            unreadable crammed into a phone viewport, so each run becomes
+            a tappable card. Shown only ≤768px via .runs-card-list CSS. */}
+        <div className="runs-card-list">
+          {windowedRuns.map((r) => {
+            const key = `${r.taskId}-${r.seq}`;
+            const isExpanded = expanded === key;
+            const sClass = statusPill(r);
+            return (
+              <div
+                key={key}
+                data-run-row={key}
+                className="run-card"
+                data-status={r.status}
+                onClick={() => setExpanded(isExpanded ? null : key)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setExpanded(isExpanded ? null : key);
+                  }
+                }}
+                tabIndex={0}
+                role="button"
+                aria-expanded={isExpanded}
+              >
+                <div className="run-card-head">
+                  <Link
+                    href={`/runs/${r.seq}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="mono"
+                    style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}
+                  >
+                    {formatRecipeName(r.recipeName, r.trigger)}
+                  </Link>
+                  <span
+                    className={`pill ${sClass}`}
+                    style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
+                  >
+                    {sClass !== "running" && <span className="pill-dot" />}
+                    {statusLabel(r)}
+                    {r.assertionFailures &&
+                      r.assertionFailures.length > 0 &&
+                      ` · ${r.assertionFailures.length} fail`}
+                  </span>
+                </div>
+                <div className="run-card-meta">
+                  <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }}>
+                    {normaliseTrigger(r.trigger)}
+                  </span>
+                  <span className="mono muted">
+                    {fmtWhen(
+                      r.status === "running"
+                        ? r.startedAt ?? r.createdAt
+                        : r.doneAt,
+                    )}
+                  </span>
+                  <span className="mono muted">
+                    {r.status === "running"
+                      ? fmtDur(Date.now() - (r.startedAt ?? r.createdAt))
+                      : fmtDur(r.durationMs)}
+                  </span>
+                  {r.taskId && (
+                    <span className="mono muted" title={r.taskId}>
+                      {r.taskId.slice(0, 8)}
+                    </span>
+                  )}
+                </div>
+                {isExpanded && (
+                  <div className="run-card-detail">
+                    {r.errorMessage && (
+                      <pre className="task-output" style={{ color: "var(--red)" }}>
+                        {r.errorMessage}
+                      </pre>
+                    )}
+                    {r.outputTail && (
+                      <pre className="task-output">{r.outputTail}</pre>
+                    )}
+                    <Link
+                      href={`/runs/${r.seq}`}
+                      className="btn sm ghost"
+                      style={{ textDecoration: "none" }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Open full run →
+                    </Link>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {runs != null &&
+            runs.length >= limit &&
+            (windowedRuns == null ||
+              windowedRuns.length === runs.length) && (
+              <button
+                type="button"
+                className="btn ghost"
+                style={{ alignSelf: "center", marginTop: "var(--s-3)" }}
+                onClick={() => setLimit((n) => n + RUNS_PAGE_SIZE)}
+              >
+                Load more (+{RUNS_PAGE_SIZE})
+              </button>
+            )}
+        </div>
+        </>
       )}
     </section>
   );
