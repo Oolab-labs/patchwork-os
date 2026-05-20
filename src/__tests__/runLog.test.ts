@@ -336,6 +336,68 @@ describe("RecipeRunLog.record", () => {
     expect(parsed.status).toBe("done");
   });
 
+  it("completeRun sets hadStepErrors=true when a step ended in error but the run is done", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    const seq = log.startRun({
+      taskId: "chained:partial:1",
+      recipeName: "partial",
+      trigger: "recipe",
+      createdAt: 1_000,
+    });
+    log.completeRun(seq, {
+      status: "done",
+      doneAt: 2_000,
+      durationMs: 1_000,
+      stepResults: [
+        { id: "a", status: "ok", durationMs: 100 },
+        {
+          id: "b",
+          status: "error",
+          durationMs: 200,
+          haltReason: "tool x failed",
+        },
+        { id: "c", status: "ok", durationMs: 100 },
+      ],
+    });
+    const run = log.getBySeq(seq);
+    expect(run?.status).toBe("done");
+    expect(run?.hadStepErrors).toBe(true);
+  });
+
+  it("completeRun sets hadStepErrors=false for a clean run", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    const seq = log.startRun({
+      taskId: "chained:clean:1",
+      recipeName: "clean",
+      trigger: "recipe",
+      createdAt: 1_000,
+    });
+    log.completeRun(seq, {
+      status: "done",
+      doneAt: 2_000,
+      durationMs: 1_000,
+      stepResults: [{ id: "a", status: "ok", durationMs: 100 }],
+    });
+    expect(log.getBySeq(seq)?.hadStepErrors).toBe(false);
+  });
+
+  it("appendDirect derives hadStepErrors the same way", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    log.appendDirect({
+      taskId: "yaml:partial:1",
+      recipeName: "partial",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1_000,
+      doneAt: 2_000,
+      durationMs: 1_000,
+      stepResults: [
+        { id: "a", status: "error", durationMs: 50, haltReason: "boom" },
+      ],
+    });
+    expect(log.query({ limit: 1 })[0]?.hadStepErrors).toBe(true);
+  });
+
   it("query() returns running entries alongside terminal ones", () => {
     const log = new RecipeRunLog({ dir: tmp });
     log.appendDirect({
