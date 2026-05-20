@@ -96,6 +96,6 @@ const slackPostMessage: RegisteredTool = {
 };
 
 registerTool(slackPostMessage);
-// camelCase alias — older recipes (registry/, examples/) reference
+// camelCase alias — older recipes (e.g. under examples/) reference
 // `slack.postMessage`. Aliased to the snake_case canonical impl.
 registerTool({ ...slackPostMessage, id: "slack.postMessage" });
