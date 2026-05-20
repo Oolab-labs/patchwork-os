@@ -655,371 +655,401 @@ export async function runYamlRecipe(
   // without a second roundtrip.
   const stepStartTs = new Map<string, number>();
 
-  for (const step of recipe.steps) {
-    const stepIdForEmit = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
-    const stepTs = Date.now();
-    stepStartTs.set(stepIdForEmit, stepTs);
-    emit("recipe_step_start", {
+  // Emit recipe_step_done for the step result just pushed onto
+  // `stepResults`. Every loop branch (skip / budget / agent / tool)
+  // pushes exactly one result before it ends, so the last element is
+  // always the current step. `stepId` mirrors recipe_step_start's
+  // `stepIdForEmit` so live consumers can correlate start↔done — the
+  // pushed result's own id can diverge for agent steps without `into`.
+  const emitStepDone = (stepIdForEmit: string): void => {
+    const justPushed = stepResults[stepResults.length - 1];
+    if (!justPushed) return;
+    const haltReason = justPushed.haltReason;
+    emit("recipe_step_done", {
       runSeq,
       recipeName: recipe.name,
       stepId: stepIdForEmit,
-      tool: step.agent ? "agent" : step.tool,
-      ts: stepTs,
+      tool: justPushed.tool,
+      status: justPushed.status,
+      durationMs: justPushed.durationMs,
+      ...(justPushed.error !== undefined && { error: justPushed.error }),
+      ...(haltReason !== undefined && {
+        haltReason,
+        haltCategory: categoriseHaltReason(haltReason),
+      }),
+      ts: Date.now(),
     });
-    // Evaluate `when` guard before running anything. Mirrors
-    // chainedRunner.ts:248-266 — render the template, then truthy-check the
-    // result (empty string, "0", "false", "null", "undefined" are falsy).
-    // A falsy guard records the step as `skipped`, increments stepsRun, and
-    // continues — it is NOT a failure. Bridge-dev iMessage recipes rely on
-    // this to suppress the iMessage agent step when phone is empty.
-    if (typeof step.when === "string" && step.when.length > 0) {
-      const rendered = render(step.when, ctx).trim().toLowerCase();
-      const truthy =
-        !!rendered &&
-        rendered !== "0" &&
-        rendered !== "false" &&
-        rendered !== "null" &&
-        rendered !== "undefined";
-      if (!truthy) {
-        const skipId = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
-        stepResults.push({
-          id: skipId,
-          tool: step.agent ? "agent" : step.tool,
-          status: "skipped",
-          durationMs: 0,
-        });
-        stepsRun++;
-        persistLiveStepResults();
-        emit("recipe_step_done", {
-          runSeq,
-          recipeName: recipe.name,
-          stepId: skipId,
-          tool: step.agent ? "agent" : step.tool,
-          status: "skipped",
-          durationMs: 0,
-          ts: Date.now(),
-        });
-        continue;
-      }
-    }
+  };
 
-    // Handle agent steps separately
-    if (step.agent) {
-      const agentCfg = step.agent;
-      const isJudge = agentCfg.kind === "judge";
-      // PR3a: judge prompt convention. Append the structured-verdict
-      // suffix and, when `reviews: <stepId>` is set, inject the
-      // upstream step's output as an <artefact> block.
-      let renderedPrompt = render(agentCfg.prompt, ctx);
-      if (isJudge) {
-        if (agentCfg.reviews) {
-          renderedPrompt += buildJudgeArtefactBlock(ctx[agentCfg.reviews]);
+  // The step loop is wrapped so an uncaught throw from any unguarded
+  // call site (a `when`/prompt render on a malformed step, a path-jail
+  // re-check, etc.) cannot escape `runYamlRecipe` and strand the
+  // run-log entry at "running" forever. On throw we capture the
+  // message into `runError` and fall through to the normal
+  // finalization path, which marks the run "error".
+  try {
+    for (const step of recipe.steps) {
+      const stepIdForEmit = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
+      const stepTs = Date.now();
+      stepStartTs.set(stepIdForEmit, stepTs);
+      emit("recipe_step_start", {
+        runSeq,
+        recipeName: recipe.name,
+        stepId: stepIdForEmit,
+        tool: step.agent ? "agent" : step.tool,
+        ts: stepTs,
+      });
+      // Evaluate `when` guard before running anything. Mirrors
+      // chainedRunner.ts:248-266 — render the template, then truthy-check the
+      // result (empty string, "0", "false", "null", "undefined" are falsy).
+      // A falsy guard records the step as `skipped`, increments stepsRun, and
+      // continues — it is NOT a failure. Bridge-dev iMessage recipes rely on
+      // this to suppress the iMessage agent step when phone is empty.
+      if (typeof step.when === "string" && step.when.length > 0) {
+        const rendered = render(step.when, ctx).trim().toLowerCase();
+        const truthy =
+          !!rendered &&
+          rendered !== "0" &&
+          rendered !== "false" &&
+          rendered !== "null" &&
+          rendered !== "undefined";
+        if (!truthy) {
+          const skipId = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
+          stepResults.push({
+            id: skipId,
+            tool: step.agent ? "agent" : step.tool,
+            status: "skipped",
+            durationMs: 0,
+          });
+          stepsRun++;
+          persistLiveStepResults();
+          emit("recipe_step_done", {
+            runSeq,
+            recipeName: recipe.name,
+            stepId: skipId,
+            tool: step.agent ? "agent" : step.tool,
+            status: "skipped",
+            durationMs: 0,
+            ts: Date.now(),
+          });
+          continue;
         }
-        renderedPrompt += JUDGE_PROMPT_SUFFIX;
       }
-      const intoKey = agentCfg.into ?? "agent_output";
-      const stepId = intoKey;
-      const stepStart = Date.now();
-      let agentResult: string;
-      // PR2b: per-recipe token budget. Admission check before dispatch;
-      // reconcile actual consumption after. Subscription drivers
-      // (Claude CLI, provider subprocess) report `usage === undefined`
-      // — `RunBudget.reconcile` records a fail-open warning per driver
-      // per run and continues.
-      const admission = runBudget.admit();
-      if (!admission.admitted) {
-        const reason =
-          admission.reason ??
-          "Run exceeded its token budget — budget_exceeded.";
-        runError = runError ?? reason;
-        stepResults.push({
-          id: stepId,
-          tool: "agent",
-          status: "error",
-          error: reason,
-          haltReason: reason,
-          durationMs: 0,
-        });
-        stepsRun++;
-        persistLiveStepResults();
-        continue;
-      }
-      try {
-        const agentReturn = await _executeAgent(
-          {
-            prompt: renderedPrompt,
-            driver: agentCfg.driver === "api" ? "anthropic" : agentCfg.driver,
-            model: agentCfg.model,
-            ...(agentCfg.mcpAccess !== undefined && {
-              mcpAccess: agentCfg.mcpAccess,
-            }),
-          },
-          buildAgentExecutorDeps(stepDeps, deps),
-        );
-        agentResult = agentReturn.text;
-        runBudget.reconcile(
-          agentCfg.driver === "api" ? "anthropic" : (agentCfg.driver ?? "auto"),
-          agentReturn.usage,
-        );
-        // Catch both `[agent step failed: ...]` (existing) and the
-        // silent-fail patterns `[agent step skipped: ...]` etc. via the
-        // shared detector. Per-step opt-out via `silentFailDetection: false`.
-        const agentSilentFail =
-          step.silentFailDetection !== false
-            ? detectSilentFail(agentResult)
-            : null;
-        if (agentResult.startsWith("[agent step failed:") || agentSilentFail) {
-          const reason = agentSilentFail
-            ? `silent-fail detected (${agentSilentFail.reason}): ${agentSilentFail.matched}`
-            : agentResult;
+
+      // Handle agent steps separately
+      if (step.agent) {
+        const agentCfg = step.agent;
+        const isJudge = agentCfg.kind === "judge";
+        // PR3a: judge prompt convention. Append the structured-verdict
+        // suffix and, when `reviews: <stepId>` is set, inject the
+        // upstream step's output as an <artefact> block.
+        let renderedPrompt = render(agentCfg.prompt, ctx);
+        if (isJudge) {
+          if (agentCfg.reviews) {
+            renderedPrompt += buildJudgeArtefactBlock(ctx[agentCfg.reviews]);
+          }
+          renderedPrompt += JUDGE_PROMPT_SUFFIX;
+        }
+        const intoKey = agentCfg.into ?? "agent_output";
+        const stepId = intoKey;
+        const stepStart = Date.now();
+        let agentResult: string;
+        // PR2b: per-recipe token budget. Admission check before dispatch;
+        // reconcile actual consumption after. Subscription drivers
+        // (Claude CLI, provider subprocess) report `usage === undefined`
+        // — `RunBudget.reconcile` records a fail-open warning per driver
+        // per run and continues.
+        const admission = runBudget.admit();
+        if (!admission.admitted) {
+          const reason =
+            admission.reason ??
+            "Run exceeded its token budget — budget_exceeded.";
           runError = runError ?? reason;
           stepResults.push({
             id: stepId,
             tool: "agent",
             status: "error",
             error: reason,
-            haltReason: agentSilentFail
-              ? `Agent step "${stepId}" returned no usable output (silent-fail: ${agentSilentFail.reason}).`
-              : `Agent step "${stepId}" reported failure.`,
-            durationMs: Date.now() - stepStart,
+            haltReason: reason,
+            durationMs: 0,
           });
-        } else {
-          const stripped = stripLeadingNarration(agentResult);
-          if (!stripped.trim()) {
-            const errMsg = `[agent step failed: ${agentCfg.driver ?? "agent"} returned only narration or whitespace — no content]`;
-            runError = runError ?? errMsg;
+          stepsRun++;
+          persistLiveStepResults();
+          emitStepDone(stepIdForEmit);
+          continue;
+        }
+        try {
+          const agentReturn = await _executeAgent(
+            {
+              prompt: renderedPrompt,
+              driver: agentCfg.driver === "api" ? "anthropic" : agentCfg.driver,
+              model: agentCfg.model,
+              ...(agentCfg.mcpAccess !== undefined && {
+                mcpAccess: agentCfg.mcpAccess,
+              }),
+            },
+            buildAgentExecutorDeps(stepDeps, deps),
+          );
+          agentResult = agentReturn.text;
+          runBudget.reconcile(
+            agentCfg.driver === "api"
+              ? "anthropic"
+              : (agentCfg.driver ?? "auto"),
+            agentReturn.usage,
+          );
+          // Catch both `[agent step failed: ...]` (existing) and the
+          // silent-fail patterns `[agent step skipped: ...]` etc. via the
+          // shared detector. Per-step opt-out via `silentFailDetection: false`.
+          const agentSilentFail =
+            step.silentFailDetection !== false
+              ? detectSilentFail(agentResult)
+              : null;
+          if (
+            agentResult.startsWith("[agent step failed:") ||
+            agentSilentFail
+          ) {
+            const reason = agentSilentFail
+              ? `silent-fail detected (${agentSilentFail.reason}): ${agentSilentFail.matched}`
+              : agentResult;
+            runError = runError ?? reason;
             stepResults.push({
               id: stepId,
               tool: "agent",
               status: "error",
-              error: errMsg,
-              haltReason: `Agent step "${stepId}" returned only narration or whitespace — no content.`,
+              error: reason,
+              haltReason: agentSilentFail
+                ? `Agent step "${stepId}" returned no usable output (silent-fail: ${agentSilentFail.reason}).`
+                : `Agent step "${stepId}" reported failure.`,
               durationMs: Date.now() - stepStart,
             });
           } else {
-            // Try to parse as JSON so dot-notation ({{meeting.field}}) works
-            try {
-              const jsonMatch = /```(?:json)?\s*([\s\S]*?)```/.exec(
-                stripped,
-              ) ?? [null, stripped];
-              const parsed = sanitizeParsed(
-                JSON.parse((jsonMatch[1] ?? "").trim()),
-              ) as RunContext[string];
-              ctx[intoKey] = parsed;
-            } catch {
-              ctx[intoKey] = stripped;
+            const stripped = stripLeadingNarration(agentResult);
+            if (!stripped.trim()) {
+              const errMsg = `[agent step failed: ${agentCfg.driver ?? "agent"} returned only narration or whitespace — no content]`;
+              runError = runError ?? errMsg;
+              stepResults.push({
+                id: stepId,
+                tool: "agent",
+                status: "error",
+                error: errMsg,
+                haltReason: `Agent step "${stepId}" returned only narration or whitespace — no content.`,
+                durationMs: Date.now() - stepStart,
+              });
+            } else {
+              // Try to parse as JSON so dot-notation ({{meeting.field}}) works
+              try {
+                const jsonMatch = /```(?:json)?\s*([\s\S]*?)```/.exec(
+                  stripped,
+                ) ?? [null, stripped];
+                const parsed = sanitizeParsed(
+                  JSON.parse((jsonMatch[1] ?? "").trim()),
+                ) as RunContext[string];
+                ctx[intoKey] = parsed;
+              } catch {
+                ctx[intoKey] = stripped;
+              }
+              outputs.push(intoKey);
+              // PR3a: parse + stash the judge verdict on the step result.
+              // Augment-only: a `request_changes` verdict still yields
+              // `status: "ok"`. The verdict surfaces via the runlog +
+              // future PR3b dashboard panel, but never gates the run.
+              const judgeVerdict = isJudge
+                ? parseJudgeVerdict(stripped)
+                : undefined;
+              stepResults.push({
+                id: stepId,
+                tool: "agent",
+                status: "ok",
+                ...(judgeVerdict !== undefined && { judgeVerdict }),
+                durationMs: Date.now() - stepStart,
+              });
             }
-            outputs.push(intoKey);
-            // PR3a: parse + stash the judge verdict on the step result.
-            // Augment-only: a `request_changes` verdict still yields
-            // `status: "ok"`. The verdict surfaces via the runlog +
-            // future PR3b dashboard panel, but never gates the run.
-            const judgeVerdict = isJudge
-              ? parseJudgeVerdict(stripped)
-              : undefined;
-            stepResults.push({
-              id: stepId,
-              tool: "agent",
-              status: "ok",
-              ...(judgeVerdict !== undefined && { judgeVerdict }),
-              durationMs: Date.now() - stepStart,
-            });
           }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          runError = runError ?? `agent step "${stepId}" failed: ${msg}`;
+          stepResults.push({
+            id: stepId,
+            tool: "agent",
+            status: "error",
+            error: msg,
+            haltReason: `Agent step "${stepId}" threw before completing: ${msg}`,
+            durationMs: Date.now() - stepStart,
+          });
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        runError = runError ?? `agent step "${stepId}" failed: ${msg}`;
+        stepsRun++;
+        persistLiveStepResults();
+        emitStepDone(stepIdForEmit);
+        continue;
+      }
+
+      const stepStart = Date.now();
+      const stepId = step.into ?? `step_${stepsRun}`;
+      // Resolve retry policy: step-level overrides recipe-level.
+      const retryCount = step.retry ?? recipe.on_error?.retry ?? 0;
+      const retryDelayMs =
+        step.retryDelay ?? recipe.on_error?.retryDelay ?? 1000;
+      let result: string | null = null;
+      let stepError: string | undefined;
+      let thrownError: string | undefined;
+      let thrownErrorCode: string | undefined;
+      for (let attempt = 0; attempt <= retryCount; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, retryDelayMs));
+        }
+        stepError = undefined;
+        thrownError = undefined;
+        thrownErrorCode = undefined;
+        try {
+          result = await executeStep(step, ctx, stepDeps);
+          // Detect tool-level errors reported as JSON {ok: false, error: ...}
+          if (result !== null) {
+            try {
+              const parsed = JSON.parse(result) as Record<string, unknown>;
+              if (parsed.ok === false && typeof parsed.error === "string") {
+                stepError = parsed.error;
+              }
+            } catch {
+              /* non-JSON result is fine */
+            }
+          }
+          // Silent-fail detection: tools that return string placeholders
+          // (`(git branches unavailable)`, `[agent step skipped: ...]`)
+          // or empty list-tool error shapes (`{count:0,error:"..."}`)
+          // succeed with bad data — flag them as `error` so the runner
+          // doesn't quietly hand garbage to a downstream agent. Per-step
+          // opt-out via `silentFailDetection: false`.
+          if (
+            !stepError &&
+            result !== null &&
+            step.silentFailDetection !== false
+          ) {
+            const detected = detectSilentFail(result);
+            if (detected) {
+              stepError = `silent-fail detected (${detected.reason}): ${detected.matched}`;
+            }
+          }
+        } catch (err) {
+          thrownError = err instanceof Error ? err.message : String(err);
+          // Preserve structured error codes (e.g. recipe_path_jail_escape)
+          // so callers and tests can branch on `err.code` per R2 M-4
+          // without scraping the message string.
+          const code = (err as { code?: unknown })?.code;
+          if (typeof code === "string") thrownErrorCode = code;
+          result = null;
+        }
+        if (!stepError && !thrownError) break;
+      }
+
+      // Recipe-level fallback: log_only / deliver_original treat step failure
+      // as non-fatal (fail-open) — same semantics as step-level optional: true.
+      const fallback = recipe.on_error?.fallback;
+      const fallbackFailOpen =
+        fallback === "log_only" || fallback === "deliver_original";
+      const failOpen = step.optional === true || fallbackFailOpen;
+
+      if (thrownError) {
+        const retryNote =
+          retryCount > 0 ? ` after ${retryCount + 1} attempts` : "";
         stepResults.push({
           id: stepId,
-          tool: "agent",
+          tool: step.tool,
           status: "error",
-          error: msg,
-          haltReason: `Agent step "${stepId}" threw before completing: ${msg}`,
+          error: thrownError,
+          ...(thrownErrorCode ? { errorCode: thrownErrorCode } : {}),
+          haltReason: `Tool "${step.tool ?? "?"}" in step "${stepId}" threw${retryNote}: ${thrownError}`,
           durationMs: Date.now() - stepStart,
         });
-      }
-      stepsRun++;
-      persistLiveStepResults();
-      continue;
-    }
-
-    const stepStart = Date.now();
-    const stepId = step.into ?? `step_${stepsRun}`;
-    // Resolve retry policy: step-level overrides recipe-level.
-    const retryCount = step.retry ?? recipe.on_error?.retry ?? 0;
-    const retryDelayMs = step.retryDelay ?? recipe.on_error?.retryDelay ?? 1000;
-    let result: string | null = null;
-    let stepError: string | undefined;
-    let thrownError: string | undefined;
-    let thrownErrorCode: string | undefined;
-    for (let attempt = 0; attempt <= retryCount; attempt++) {
-      if (attempt > 0) {
-        await new Promise((r) => setTimeout(r, retryDelayMs));
-      }
-      stepError = undefined;
-      thrownError = undefined;
-      thrownErrorCode = undefined;
-      try {
-        result = await executeStep(step, ctx, stepDeps);
-        // Detect tool-level errors reported as JSON {ok: false, error: ...}
-        if (result !== null) {
-          try {
-            const parsed = JSON.parse(result) as Record<string, unknown>;
-            if (parsed.ok === false && typeof parsed.error === "string") {
-              stepError = parsed.error;
-            }
-          } catch {
-            /* non-JSON result is fine */
-          }
-        }
-        // Silent-fail detection: tools that return string placeholders
-        // (`(git branches unavailable)`, `[agent step skipped: ...]`)
-        // or empty list-tool error shapes (`{count:0,error:"..."}`)
-        // succeed with bad data — flag them as `error` so the runner
-        // doesn't quietly hand garbage to a downstream agent. Per-step
-        // opt-out via `silentFailDetection: false`.
-        if (
-          !stepError &&
-          result !== null &&
-          step.silentFailDetection !== false
-        ) {
-          const detected = detectSilentFail(result);
-          if (detected) {
-            stepError = `silent-fail detected (${detected.reason}): ${detected.matched}`;
-          }
-        }
-      } catch (err) {
-        thrownError = err instanceof Error ? err.message : String(err);
-        // Preserve structured error codes (e.g. recipe_path_jail_escape)
-        // so callers and tests can branch on `err.code` per R2 M-4
-        // without scraping the message string.
-        const code = (err as { code?: unknown })?.code;
-        if (typeof code === "string") thrownErrorCode = code;
-        result = null;
-      }
-      if (!stepError && !thrownError) break;
-    }
-
-    // Recipe-level fallback: log_only / deliver_original treat step failure
-    // as non-fatal (fail-open) — same semantics as step-level optional: true.
-    const fallback = recipe.on_error?.fallback;
-    const fallbackFailOpen =
-      fallback === "log_only" || fallback === "deliver_original";
-    const failOpen = step.optional === true || fallbackFailOpen;
-
-    if (thrownError) {
-      const retryNote =
-        retryCount > 0 ? ` after ${retryCount + 1} attempts` : "";
-      stepResults.push({
-        id: stepId,
-        tool: step.tool,
-        status: "error",
-        error: thrownError,
-        ...(thrownErrorCode ? { errorCode: thrownErrorCode } : {}),
-        haltReason: `Tool "${step.tool ?? "?"}" in step "${stepId}" threw${retryNote}: ${thrownError}`,
-        durationMs: Date.now() - stepStart,
-      });
-      if (!failOpen) {
-        runError = runError ?? `${step.tool} failed: ${thrownError}`;
-      } else if (fallbackFailOpen && !step.optional) {
-        console.warn(
-          `step ${stepId} failed but on_error.fallback=${fallback} — treating as non-fatal: ${thrownError}`,
-        );
-      }
-    } else {
-      const finalStatus =
-        result === null ? "skipped" : stepError ? "error" : "ok";
-      const retryNote =
-        retryCount > 0 ? ` after ${retryCount + 1} attempts` : "";
-      stepResults.push({
-        id: stepId,
-        tool: step.tool,
-        status: finalStatus,
-        error: stepError,
-        ...(finalStatus === "error" && stepError
-          ? {
-              haltReason: `Tool "${step.tool ?? "?"}" in step "${stepId}" reported an error${retryNote}: ${stepError}`,
-            }
-          : {}),
-        durationMs: Date.now() - stepStart,
-      });
-      if (stepError) {
         if (!failOpen) {
-          runError = runError ?? `${step.tool} failed: ${stepError}`;
+          runError = runError ?? `${step.tool} failed: ${thrownError}`;
         } else if (fallbackFailOpen && !step.optional) {
           console.warn(
-            `step ${stepId} failed but on_error.fallback=${fallback} — treating as non-fatal: ${stepError}`,
+            `step ${stepId} failed but on_error.fallback=${fallback} — treating as non-fatal: ${thrownError}`,
+          );
+        }
+      } else {
+        const finalStatus =
+          result === null ? "skipped" : stepError ? "error" : "ok";
+        const retryNote =
+          retryCount > 0 ? ` after ${retryCount + 1} attempts` : "";
+        stepResults.push({
+          id: stepId,
+          tool: step.tool,
+          status: finalStatus,
+          error: stepError,
+          ...(finalStatus === "error" && stepError
+            ? {
+                haltReason: `Tool "${step.tool ?? "?"}" in step "${stepId}" reported an error${retryNote}: ${stepError}`,
+              }
+            : {}),
+          durationMs: Date.now() - stepStart,
+        });
+        if (stepError) {
+          if (!failOpen) {
+            runError = runError ?? `${step.tool} failed: ${stepError}`;
+          } else if (fallbackFailOpen && !step.optional) {
+            console.warn(
+              `step ${stepId} failed but on_error.fallback=${fallback} — treating as non-fatal: ${stepError}`,
+            );
+          }
+        }
+      }
+      stepsRun++;
+      if (result !== null) {
+        // Apply transform if present — render template with $result injected
+        if (step.transform) {
+          try {
+            result = render(step.transform, { ...ctx, $result: result });
+          } catch (err) {
+            // warn but fall through with original result
+            console.warn(
+              `transform failed for step ${step.into ?? step.tool ?? "?"}: ${err}`,
+            );
+          }
+        }
+        if (step.into) {
+          ctx[step.into] = result;
+          if (step.tool) {
+            applyToolOutputContext(step.tool, step.into, result, ctx);
+          }
+        }
+        if (step.tool === "file.write" || step.tool === "file.append") {
+          // R2 C-1 / F-02: re-validate the rendered path against the jail so a
+          // template substitution that survived earlier checks (e.g. via a
+          // chained sub-recipe deps override) cannot smuggle an out-of-jail
+          // path into the run log / dashboard outputs list.
+          const renderedPath = render(step.path as string, ctx);
+          outputs.push(
+            resolveRecipePath(renderedPath, {
+              workspace: stepDeps.workdir,
+              write: true,
+            }),
           );
         }
       }
+      persistLiveStepResults();
+      emitStepDone(stepIdForEmit);
     }
-    stepsRun++;
-    if (result !== null) {
-      // Apply transform if present — render template with $result injected
-      if (step.transform) {
-        try {
-          result = render(step.transform, { ...ctx, $result: result });
-        } catch (err) {
-          // warn but fall through with original result
-          console.warn(
-            `transform failed for step ${step.into ?? step.tool ?? "?"}: ${err}`,
-          );
-        }
-      }
-      if (step.into) {
-        ctx[step.into] = result;
-        if (step.tool) {
-          applyToolOutputContext(step.tool, step.into, result, ctx);
-        }
-      }
-      if (step.tool === "file.write" || step.tool === "file.append") {
-        // R2 C-1 / F-02: re-validate the rendered path against the jail so a
-        // template substitution that survived earlier checks (e.g. via a
-        // chained sub-recipe deps override) cannot smuggle an out-of-jail
-        // path into the run log / dashboard outputs list.
-        const renderedPath = render(step.path as string, ctx);
-        outputs.push(
-          resolveRecipePath(renderedPath, {
-            workspace: stepDeps.workdir,
-            write: true,
-          }),
-        );
-      }
-    }
-    persistLiveStepResults();
-    // Emit recipe_step_done for live-tail SSE. Look up the matching
-    // entry in stepResults (the loop pushed at most one with this id);
-    // payload mirrors chainedRunner's done event plus haltCategory.
-    const justPushed = stepResults
-      .slice()
-      .reverse()
-      .find((r) => r.id === stepIdForEmit);
-    if (justPushed) {
-      const haltReason = justPushed.haltReason;
-      emit("recipe_step_done", {
-        runSeq,
-        recipeName: recipe.name,
-        stepId: justPushed.id,
-        tool: justPushed.tool,
-        status: justPushed.status,
-        durationMs: justPushed.durationMs,
-        ...(justPushed.error !== undefined && { error: justPushed.error }),
-        ...(haltReason !== undefined && {
-          haltReason,
-          haltCategory: categoriseHaltReason(haltReason),
-        }),
-        ts: Date.now(),
-      });
-    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    runError = runError ?? `recipe run aborted: ${msg}`;
   }
 
-  // Evaluate expect block before persisting so failures are stored in the run log
-  const assertionFailures = recipe.expect
-    ? evaluateExpect(
+  // Evaluate expect block before persisting so failures are stored in the
+  // run log. Guarded: a throw here must not skip finalization and strand
+  // the run at "running".
+  let assertionFailures: AssertionFailure[] = [];
+  if (recipe.expect) {
+    try {
+      assertionFailures = evaluateExpect(
         { stepsRun, outputs, context: ctx, errorMessage: runError },
         recipe.expect,
-      )
-    : [];
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      runError = runError ?? `expect evaluation failed: ${msg}`;
+    }
+  }
 
   // Write to RecipeRunLog so the dashboard Runs page shows this execution.
   // Bridge path: completeRun on the running entry opened above (live-tail).
