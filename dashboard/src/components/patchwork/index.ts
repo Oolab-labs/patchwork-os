@@ -1,5 +1,6 @@
 export { PatchCard } from "./PatchCard";
 export { BackLink, type BackLinkProps } from "./BackLink";
+export { Breadcrumb, type BreadcrumbItem, type BreadcrumbProps } from "./Breadcrumb";
 export {
   RelationStrip,
   type RelationItem,
