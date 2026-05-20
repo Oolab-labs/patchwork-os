@@ -125,6 +125,17 @@ function SenderAvatar({ name, size = 40 }: { name: string; size?: number }) {
 function stripMarkdown(text: string): string {
   return text
     .replace(/^#{1,6}\s+/gm, "")
+    // Drop GFM table delimiter rows ("| --- | :--: |") entirely — they
+    // carry no content, only render as "|---|---|" noise in the preview.
+    .replace(/^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/gm, "")
+    // Flatten remaining table rows: split cells on pipes, keep the text.
+    .replace(/^\s*\|(.+)\|\s*$/gm, (_, row: string) =>
+      row
+        .split("|")
+        .map((c) => c.trim())
+        .filter(Boolean)
+        .join(" · "),
+    )
     .replace(/\*\*(.+?)\*\*/g, "$1")
     .replace(/\*(.+?)\*/g, "$1")
     .replace(/^[-*]\s+/gm, "")
@@ -796,7 +807,24 @@ const filteredItems = items.filter((item) => {
                               </div>
                               {/* Row 2: preview snippet (Gmail-style, 1 line on mobile) */}
                               {plainPreview && (
-                                <div className="inbox-item-preview" style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", lineHeight: 1.4 }}>
+                                <div
+                                  className="inbox-item-preview"
+                                  style={{
+                                    fontSize: "var(--fs-s)",
+                                    color: "var(--ink-2)",
+                                    lineHeight: 1.4,
+                                    // Clamp to 2 lines with an ellipsis so the
+                                    // snippet never cuts off mid-word. The
+                                    // .inbox-item-preview class only clamps
+                                    // inside the mobile media query — desktop
+                                    // had no clamp at all.
+                                    display: "-webkit-box",
+                                    WebkitLineClamp: 2,
+                                    WebkitBoxOrient: "vertical",
+                                    overflow: "hidden",
+                                    overflowWrap: "anywhere",
+                                  }}
+                                >
                                   {plainPreview}
                                 </div>
                               )}
