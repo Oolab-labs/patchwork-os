@@ -124,6 +124,15 @@ export interface RecipeRun {
    * just round-trips the value.
    */
   manualRunId?: string;
+  /**
+   * Phase 0β provenance — files this run delivered to the inbox
+   * (`~/.patchwork/inbox/`). One entry per `file.write` step whose
+   * resolved path is inside the inbox dir; populated by yamlRunner.
+   * Lets the dashboard link a run to its produced inbox items
+   * without filename-string-munging. Optional + additive: pre-Phase-0β
+   * runs simply omit it.
+   */
+  inboxOutputs?: Array<{ filename: string; deliveredAt: number }>;
 }
 
 const MAX_OUTPUT_TAIL = 2_000;
@@ -420,6 +429,7 @@ export class RecipeRunLog {
       outputTail?: string;
       errorMessage?: string;
       assertionFailures?: RecipeRun["assertionFailures"];
+      inboxOutputs?: RecipeRun["inboxOutputs"];
     },
   ): void {
     const idx = this.runs.findIndex((r) => r.seq === seq);
@@ -443,6 +453,10 @@ export class RecipeRunLog {
       ...(opts.assertionFailures !== undefined && {
         assertionFailures: opts.assertionFailures,
       }),
+      ...(opts.inboxOutputs !== undefined &&
+        opts.inboxOutputs.length > 0 && {
+          inboxOutputs: opts.inboxOutputs,
+        }),
     };
     this.runs[idx] = finalized;
     mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
