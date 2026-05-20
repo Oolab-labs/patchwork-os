@@ -14,6 +14,24 @@
 
 import { render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// The insights page uses useSearchParams()/useRouter() (added with the
+// ?tool= deep-link support). Without the app-router context those hooks
+// throw "invariant expected app router to be mounted" — so mock the
+// module: empty search params + a no-op router.
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    refresh: vi.fn(),
+  }),
+  usePathname: () => "/insights",
+}));
+
 import InsightsPage from "@/app/insights/page";
 
 const DUP_PAYLOAD = {

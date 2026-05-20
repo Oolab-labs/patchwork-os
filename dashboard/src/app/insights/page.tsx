@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { apiPath } from "@/lib/api";
 import { EmptyState, ErrorState, RelationStrip } from "@/components/patchwork";
@@ -133,6 +134,33 @@ function RuleCell({ explanation }: { explanation: RuleExplanation | null | undef
 }
 
 export default function InsightsPage() {
+  return (
+    <Suspense fallback={<SkeletonList rows={6} columns={5} />}>
+      <InsightsContent />
+    </Suspense>
+  );
+}
+
+function InsightsContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const toolFromUrl = searchParams?.get("tool") ?? "";
+  const highlightRef = useRef<HTMLTableRowElement | null>(null);
+
+  // Scroll highlighted tool row into view when param is set.
+  useEffect(() => {
+    if (toolFromUrl && highlightRef.current) {
+      highlightRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [toolFromUrl]);
+
+  const clearToolFilter = () => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.delete("tool");
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+  };
+
   const { data, error, loading, refetch } = useBridgeFetch<InsightsResponse>(
     "/api/bridge/approval-insights",
     { intervalMs: 30000 },
@@ -284,6 +312,28 @@ export default function InsightsPage() {
         </div>
       </div>
 
+      {toolFromUrl && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "var(--s-2) var(--s-3)",
+            marginBottom: "var(--s-3)",
+            background: "var(--bg-2)",
+            border: "1px solid var(--line-2)",
+            borderRadius: "var(--r-2)",
+            fontSize: "var(--fs-s)",
+          }}
+        >
+          <span style={{ color: "var(--ink-2)" }}>Filtered by tool:</span>
+          <code>{toolFromUrl}</code>
+          <button type="button" className="btn sm ghost" onClick={clearToolFilter}>
+            Clear
+          </button>
+        </div>
+      )}
+
       {loading && tools.length === 0 && (
         <SkeletonList rows={6} columns={5} />
       )}
@@ -422,7 +472,9 @@ export default function InsightsPage() {
               </tr>
             </thead>
             <tbody>
-              {tools.map((t, i) => (
+              {tools.map((t, i) => {
+                const isHighlighted = toolFromUrl !== "" && t.toolName === toolFromUrl;
+                return (
                 <tr
                   // The bridge can return the same toolName more than once
                   // (e.g. a tool exposed under two MCP namespaces, or an
@@ -430,7 +482,13 @@ export default function InsightsPage() {
                   // alone then collides ("two children with the same key").
                   // Suffix the index so the key is unique regardless.
                   key={`${t.toolName}-${i}`}
-                  style={{ borderBottom: "1px solid var(--border-subtle)" }}
+                  ref={isHighlighted ? highlightRef : undefined}
+                  style={{
+                    borderBottom: "1px solid var(--border-subtle)",
+                    background: isHighlighted ? "color-mix(in srgb, var(--accent) 8%, transparent)" : undefined,
+                    outline: isHighlighted ? "2px solid var(--accent)" : undefined,
+                    outlineOffset: isHighlighted ? -2 : undefined,
+                  }}
                 >
                   <td style={{ padding: "10px 0", verticalAlign: "middle" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -534,7 +592,8 @@ export default function InsightsPage() {
                     {relativeTime(t.lastDecisionAt)}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           </div>

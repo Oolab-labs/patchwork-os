@@ -423,6 +423,8 @@ export default function InboxPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const filterFromUrl = searchParams?.get("filter");
+  const itemFromUrl = searchParams?.get("item") ?? "";
+  const recipeFromUrl = searchParams?.get("recipe") ?? "";
   const [activeFilter, setActiveFilterState] = useState<FilterCategory>(
     isFilterCategory(filterFromUrl) ? filterFromUrl : "All",
   );
@@ -495,9 +497,20 @@ export default function InboxPage() {
     };
   }, [listData]);
 
-  // Auto-select first item after initial load if nothing is selected
+  // Auto-select item from ?item= param on first load.
+  const itemParamHandledRef = useRef(false);
   useEffect(() => {
-    if (!loading && items.length > 0 && !selected && !detailLoading) {
+    if (loading || itemParamHandledRef.current) return;
+    if (itemFromUrl && items.length > 0) {
+      itemParamHandledRef.current = true;
+      const match = items.find((i) => i.name === itemFromUrl);
+      if (match) {
+        void selectItem(match.name);
+        return;
+      }
+    }
+    // Auto-select first item after initial load if nothing is selected
+    if (items.length > 0 && !selected && !detailLoading && !itemFromUrl) {
       void selectItem(items[0].name);
     }
     // Only on initial load — don't re-trigger on polling updates
@@ -505,6 +518,7 @@ export default function InboxPage() {
   }, [loading]);
 
 const filteredItems = items.filter((item) => {
+    if (recipeFromUrl && item.provenance?.recipe !== recipeFromUrl) return false;
     if (activeFilter !== "All" && categoryForItem(item.name) !== activeFilter) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -636,6 +650,37 @@ const filteredItems = items.filter((item) => {
         </div>
 
         <HintCard id="inbox" />
+
+        {recipeFromUrl && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "var(--s-2) var(--s-3)",
+              marginBottom: "var(--s-3)",
+              background: "var(--bg-2)",
+              border: "1px solid var(--line-2)",
+              borderRadius: "var(--r-2)",
+              fontSize: "var(--fs-s)",
+            }}
+          >
+            <span style={{ color: "var(--ink-2)" }}>Filtered by recipe:</span>
+            <code>{recipeFromUrl}</code>
+            <button
+              type="button"
+              className="btn sm ghost"
+              onClick={() => {
+                const params = new URLSearchParams(searchParams?.toString() ?? "");
+                params.delete("recipe");
+                const qs = params.toString();
+                router.replace(qs ? `?${qs}` : "/inbox", { scroll: false });
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        )}
 
         {/*
           Discovery card for the "deliver to phone" capability. Lives

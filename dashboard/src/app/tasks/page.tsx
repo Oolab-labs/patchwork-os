@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { fmtDuration } from "@/components/time";
 import { SkeletonList } from "@/components/Skeleton";
@@ -283,13 +284,23 @@ function fmtAvg(ms: number): string {
 }
 
 export default function TasksPage() {
+  return (
+    <Suspense fallback={null}>
+      <TasksContent />
+    </Suspense>
+  );
+}
+
+function TasksContent() {
+  const searchParams = useSearchParams();
+  const idFromUrl = searchParams?.get("id") ?? "";
   const toast = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [err, setErr] = useState<string>();
   const [, setTick] = useState(0);
   const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(idFromUrl || null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "live" | "done" | "error">("all");
   // Cap rendered rows. /tasks is an audit log that can hit 500+ entries;
@@ -302,6 +313,19 @@ export default function TasksPage() {
     setVisibleCount(ROW_PAGE);
   }, [search, statusFilter]);
   const searchInputRef = useSearchHotkey();
+
+  // Scroll the pre-selected row into view after initial load.
+  const idScrolledRef = useRef(false);
+  useEffect(() => {
+    if (!idFromUrl || idScrolledRef.current || !hasLoaded) return;
+    const row = document.querySelector<HTMLElement>(
+      `[data-task-row="${CSS.escape(idFromUrl)}"]`,
+    );
+    if (row) {
+      idScrolledRef.current = true;
+      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [idFromUrl, hasLoaded]);
 
   const refetchRef = useRef<() => void>(() => {});
 

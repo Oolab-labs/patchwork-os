@@ -13,6 +13,7 @@ import {
   HBarList,
   HintCard,
   LivePill,
+  RelationStrip,
   type LivePillConnection,
 } from "@/components/patchwork";
 import {
@@ -116,6 +117,7 @@ export default function ActivityPage() {
   const searchParams = useSearchParams();
   const tabFromUrl = searchParams?.get("tab");
   const toolFromUrl = searchParams?.get("tool") ?? "";
+  const sessionFromUrl = searchParams?.get("session") ?? "";
   const [tab, setTabState] = useState<Tab>(isTab(tabFromUrl) ? tabFromUrl : "all");
   const setTab = (next: Tab) => {
     setTabState(next);
@@ -128,6 +130,12 @@ export default function ActivityPage() {
   const clearToolFilter = () => {
     const params = new URLSearchParams(searchParams?.toString() ?? "");
     params.delete("tool");
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+  };
+  const clearSessionFilter = () => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.delete("session");
     const qs = params.toString();
     router.replace(qs ? `?${qs}` : "?", { scroll: false });
   };
@@ -264,8 +272,17 @@ export default function ActivityPage() {
     if (toolFromUrl) {
       out = out.filter((e) => e.tool === toolFromUrl);
     }
+    if (sessionFromUrl) {
+      out = out.filter((e) => {
+        const meta = getLifecycleMeta(e);
+        return (
+          meta.fullSessionId === sessionFromUrl ||
+          (typeof e.sessionId === "string" && e.sessionId === sessionFromUrl)
+        );
+      });
+    }
     return out;
-  }, [events, tab, toolFromUrl]);
+  }, [events, tab, toolFromUrl, sessionFromUrl]);
 
   const stats = useMemo(() => {
     let tools = 0;
@@ -312,6 +329,13 @@ export default function ActivityPage() {
               {events.length} events · last 24h · {stats.errors} errored
             </div>
           )}
+          <RelationStrip
+            items={[
+              { label: "Sessions", href: "/sessions", title: "Sessions that produced this activity" },
+              { label: "Runs", href: "/runs", title: "Recipe runs visible here" },
+              { label: "Approvals", href: "/approvals", title: "Approval decisions in the stream" },
+            ]}
+          />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button
@@ -367,6 +391,28 @@ export default function ActivityPage() {
           <span style={{ color: "var(--ink-2)" }}>Filtering by tool:</span>
           <code>{toolFromUrl}</code>
           <button type="button" className="btn sm ghost" onClick={clearToolFilter}>
+            Clear
+          </button>
+        </div>
+      )}
+
+      {sessionFromUrl && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "var(--s-2) var(--s-3)",
+            marginBottom: "var(--s-3)",
+            background: "var(--bg-2)",
+            border: "1px solid var(--line-2)",
+            borderRadius: "var(--r-2)",
+            fontSize: "var(--fs-s)",
+          }}
+        >
+          <span style={{ color: "var(--ink-2)" }}>Filtering by session:</span>
+          <code>{sessionFromUrl.slice(0, 8)}</code>
+          <button type="button" className="btn sm ghost" onClick={clearSessionFilter}>
             Clear
           </button>
         </div>

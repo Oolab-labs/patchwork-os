@@ -148,6 +148,7 @@ export default function AnalyticsPage() {
           </div>
           <RelationStrip
             items={[
+              { label: "Recipes", href: "/recipes", title: "Recipes that produced this usage" },
               { label: "Runs", href: "/runs", title: "Recipe runs that drove this usage" },
               { label: "Activity", href: "/activity", title: "Raw activity stream" },
               { label: "Insights", href: "/insights", title: "Per-tool approval signals" },
