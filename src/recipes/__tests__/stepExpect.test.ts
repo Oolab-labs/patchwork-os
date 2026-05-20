@@ -64,7 +64,7 @@ describe("step.expect — equals", () => {
         },
       ],
     } as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("ok");
     expect(result.errorMessage).toBeUndefined();
   });
@@ -82,7 +82,7 @@ describe("step.expect — equals", () => {
         },
       ],
     } as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("error");
     expect(result.stepResults?.[0]?.haltReason).toMatch(/expect_failed/i);
     expect(categoriseHaltReason(result.stepResults?.[0]?.haltReason)).toBe(
@@ -104,7 +104,7 @@ describe("step.expect — equals", () => {
         },
       ],
     } as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("ok");
     expect(result.errorMessage).toBeUndefined();
     expect(
@@ -127,7 +127,7 @@ describe("step.expect — contains", () => {
         },
       ],
     } as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("ok");
   });
 
@@ -144,7 +144,7 @@ describe("step.expect — contains", () => {
         },
       ],
     } as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("error");
     expect(result.stepResults?.[0]?.haltReason).toMatch(/MISSING/);
   });
@@ -164,7 +164,7 @@ describe("step.expect — matches (regex)", () => {
         },
       ],
     } as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("ok");
   });
 
@@ -181,7 +181,7 @@ describe("step.expect — matches (regex)", () => {
         },
       ],
     } as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("error");
   });
 });
@@ -202,7 +202,7 @@ describe("step.expect — schema (AJV)", () => {
         },
       ],
     } as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("ok");
   });
 
@@ -219,7 +219,7 @@ describe("step.expect — schema (AJV)", () => {
         },
       ],
     } as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("error");
   });
 });

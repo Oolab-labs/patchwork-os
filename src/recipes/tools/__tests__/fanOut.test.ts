@@ -72,7 +72,7 @@ describe("fan_out — basics", () => {
       ],
     } as unknown as YamlRecipe;
     const d = deps();
-    const result = await runYamlRecipe(recipe, d, { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...d, testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("ok");
     // File got 3 appends in order
     const content = d.readFile?.(outPath) ?? "";
@@ -103,7 +103,7 @@ describe("fan_out — basics", () => {
       ],
     } as unknown as YamlRecipe;
     const d = deps();
-    await runYamlRecipe(recipe, d, { testMode: true });
+    await runYamlRecipe(recipe, { ...d, testMode: true });
     expect(d.readFile?.(outPath)).toBe("0:x\n1:y\n");
   });
 
@@ -124,7 +124,7 @@ describe("fan_out — basics", () => {
         },
       ],
     } as unknown as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("ok");
     expect(JSON.parse(result.context.results ?? "[]")).toEqual([]);
   });
@@ -150,7 +150,7 @@ describe("fan_out — input handling", () => {
       ],
     } as unknown as YamlRecipe;
     const d = deps();
-    await runYamlRecipe(recipe, d, { testMode: true });
+    await runYamlRecipe(recipe, { ...d, testMode: true });
     expect(d.readFile?.(outPath)).toBe("1-a\n2-b\n");
   });
 
@@ -170,7 +170,7 @@ describe("fan_out — input handling", () => {
         },
       ],
     } as unknown as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("error");
   });
 
@@ -191,7 +191,7 @@ describe("fan_out — input handling", () => {
         },
       ],
     } as unknown as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("error");
     expect(result.stepResults?.[0]?.haltReason).toMatch(/max_iterations/);
   });
@@ -221,7 +221,7 @@ describe("fan_out — error handling", () => {
       ],
     } as unknown as YamlRecipe;
     const d = deps();
-    const result = await runYamlRecipe(recipe, d, { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...d, testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("ok");
     expect(d.readFile?.(outPath)).toBe("abc");
   });

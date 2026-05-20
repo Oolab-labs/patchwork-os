@@ -80,7 +80,7 @@ describe("step.timeout_ms", () => {
       ],
     } as unknown as YamlRecipe;
     const start = Date.now();
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     const elapsed = Date.now() - start;
     expect(result.stepResults?.[0]?.status).toBe("error");
     expect(result.stepResults?.[0]?.haltReason).toMatch(/step_timeout/i);
@@ -103,7 +103,7 @@ describe("step.timeout_ms", () => {
         },
       ],
     } as unknown as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("ok");
   });
 
@@ -118,7 +118,7 @@ describe("step.timeout_ms", () => {
         },
       ],
     } as unknown as YamlRecipe;
-    const result = await runYamlRecipe(recipe, deps(), { testMode: true });
+    const result = await runYamlRecipe(recipe, { ...deps(), testMode: true });
     expect(result.stepResults?.[0]?.status).toBe("ok");
   });
 });
