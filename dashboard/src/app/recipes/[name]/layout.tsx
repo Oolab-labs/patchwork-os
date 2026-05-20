@@ -198,7 +198,7 @@ export default function RecipeDetailLayout({
   const { data: recipes } = useBridgeFetch<RecipeSummary[]>(
     "/api/bridge/recipes",
     {
-      intervalMs: 30_000,
+      intervalMs: 10_000,
       transform: (raw) => {
         if (Array.isArray(raw)) return raw as RecipeSummary[];
         const obj = raw as RecipesListResponse;
