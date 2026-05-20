@@ -1990,11 +1990,7 @@ function makeProviderDriverFn(): (
       const timeoutMs = 300_000;
       const startupTimeoutMs = 30_000;
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      // Same P2 reasoning as the orchestrator path: don't trust process.cwd()
-      // — the bridge runs from $HOME under launchd. Resolve a real workspace
-      // (env > git-ancestor walk) so non-claude provider drivers (openai /
-      // grok / gemini) also land in the repo, not $HOME.
-      const resolvedWorkspace = resolveWorkspaceRoot()?.path ?? process.cwd();
+      const resolvedWorkspace = process.cwd();
       try {
         const result = await driver.run({
           prompt,
