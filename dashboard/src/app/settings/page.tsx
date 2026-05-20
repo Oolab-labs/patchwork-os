@@ -5,6 +5,7 @@ import { apiPath } from "@/lib/api";
 import { subscribeStreamMessage } from "@/lib/streamLiveness";
 import { EmptyState, StatusPill } from "@/components/patchwork";
 import {
+  getPushSubscriptionEndpoint,
   getPushSubscriptionStatus,
   registerServiceWorker,
   subscribeToPush,
@@ -246,6 +247,10 @@ export default function SettingsPage() {
   const [pushMsg, setPushMsg] = useState<{ ok: boolean; text: string } | null>(
     null,
   );
+  // Per-subscription "notify me when runs halt" preference. Defaults
+  // on; loaded from /api/push/prefs once a subscription exists.
+  const [haltsPref, setHaltsPref] = useState(true);
+  const [haltsPrefBusy, setHaltsPrefBusy] = useState(false);
   const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
   // Telemetry — persisted via GET/POST /api/bridge/telemetry-prefs
@@ -529,6 +534,33 @@ export default function SettingsPage() {
       cancel = true;
     };
   }, []);
+
+  // Load the per-subscription halt-notification preference once a
+  // subscription exists. Defaults on (DEFAULT_PREFS) so a missing
+  // record reads as enabled.
+  useEffect(() => {
+    if (pushStatus !== "subscribed") return;
+    let cancel = false;
+    (async () => {
+      try {
+        const endpoint = await getPushSubscriptionEndpoint();
+        if (!endpoint || cancel) return;
+        const res = await fetch(
+          apiPath(`/api/push/prefs?endpoint=${encodeURIComponent(endpoint)}`),
+        );
+        if (!res.ok || cancel) return;
+        const data = (await res.json()) as { prefs?: { halts?: boolean } };
+        if (!cancel && typeof data.prefs?.halts === "boolean") {
+          setHaltsPref(data.prefs.halts);
+        }
+      } catch {
+        // fail-soft — leave the default
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [pushStatus]);
 
   // Scroll-spy active section — rAF-throttled. Previously
   // `getBoundingClientRect()` ×6 fired on every scroll event,
@@ -855,6 +887,35 @@ export default function SettingsPage() {
       });
     } finally {
       setPushBusy(false);
+    }
+  }
+
+  async function handleHaltsPrefToggle(next: boolean) {
+    setHaltsPrefBusy(true);
+    // Optimistic — revert on failure.
+    const prev = haltsPref;
+    setHaltsPref(next);
+    try {
+      const endpoint = await getPushSubscriptionEndpoint();
+      if (!endpoint) throw new Error("no active push subscription");
+      const res = await fetch(apiPath("/api/push/prefs"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint, halts: next }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      flashSaved();
+    } catch (e) {
+      setHaltsPref(prev);
+      setPushMsg({
+        ok: false,
+        text: `Couldn't update halt-notification preference: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    } finally {
+      setHaltsPrefBusy(false);
     }
   }
 
@@ -1675,6 +1736,28 @@ export default function SettingsPage() {
                     </>
                   )}
                 </div>
+                {pushStatus === "subscribed" && (
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      marginTop: 12,
+                      fontSize: "var(--fs-s)",
+                      color: "var(--ink-1)",
+                      cursor: haltsPrefBusy ? "default" : "pointer",
+                      opacity: haltsPrefBusy ? 0.6 : 1,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={haltsPref}
+                      disabled={haltsPrefBusy}
+                      onChange={(e) => handleHaltsPrefToggle(e.target.checked)}
+                    />
+                    Notify me when a recipe run halts or errors
+                  </label>
+                )}
                 {pushMsg && (
                   <p
                     style={{
