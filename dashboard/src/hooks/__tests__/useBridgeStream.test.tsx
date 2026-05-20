@@ -295,7 +295,7 @@ describe("useBridgeStream — shared /stream multiplex", () => {
     expect(subscribeStreamLiveness).toHaveBeenCalledTimes(1);
   });
 
-  it("forwards singleton messages to onEvent with the legacy 'message' type", () => {
+  it("forwards the singleton's derived event type to onEvent", () => {
     const onEvent = vi.fn();
     renderHook(() => useBridgeStream("/api/bridge/stream", onEvent));
     // Pull the message callback the hook registered, fire a payload.
@@ -303,9 +303,9 @@ describe("useBridgeStream — shared /stream multiplex", () => {
     act(() => {
       msgCb("lifecycle", { kind: "lifecycle", event: "recipe_done" });
     });
-    // Type is forced to "message" to preserve the legacy contract — the
-    // bridge emits default (unnamed) SSE frames.
-    expect(onEvent).toHaveBeenCalledWith("message", {
+    // Type is the payload `kind` (via subscribeStreamMessage) — what
+    // consumers guard on. Forwarded verbatim.
+    expect(onEvent).toHaveBeenCalledWith("lifecycle", {
       kind: "lifecycle",
       event: "recipe_done",
     });
