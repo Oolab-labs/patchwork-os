@@ -26,11 +26,13 @@ import { Dialog } from "@/components/Dialog";
 import {
   ConnectorChip,
   EmptyState,
+  EntityTimeline,
   InboxChip,
   PatchCard,
   RunChip,
   StatusPill,
 } from "@/components/patchwork";
+import type { TimelineEvent } from "@/components/patchwork";
 import { detectConnectorsForRecipe } from "./layout";
 
 interface RecipeVar {
@@ -568,6 +570,24 @@ export default function RecipeHubOverviewPage({
             ))}
           </div>
         )}
+      </PatchCard>
+
+      {/* RECENT RUNS TIMELINE */}
+      <PatchCard style={{ padding: "var(--s-4)" }}>
+        <SectionHeader>Run timeline</SectionHeader>
+        <EntityTimeline
+          ariaLabel={`Recent run timeline for ${name}`}
+          events={recentRuns.map((r, i): TimelineEvent => ({
+            id: `run-${r.seq ?? r.startedAt}-${i}`,
+            kind: "run",
+            timestamp: r.startedAt,
+            label: `Run — ${r.status}`,
+            status: r.status,
+            meta: typeof r.seq === "number"
+              ? { seq: r.seq, recipeName: r.recipeName ?? r.recipe, hadStepErrors: r.hadStepErrors }
+              : undefined,
+          }))}
+        />
       </PatchCard>
 
       {/* HALT SUMMARY */}

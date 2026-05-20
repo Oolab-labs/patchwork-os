@@ -3,7 +3,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
-import { RelationStrip } from "@/components/patchwork";
+import { EntityTimeline, RelationStrip } from "@/components/patchwork";
+import type { TimelineEvent } from "@/components/patchwork";
 import { RecipeChip, RunChip, ToolChip, InboxChip } from "@/components/patchwork/entity";
 import { StepDiffHover } from "@/components/StepDiffHover";
 import { Dialog } from "@/components/Dialog";
@@ -1395,6 +1396,70 @@ export default function RunDetailPage() {
           {tab === "steps" && (
             <>
               <CausalChainCard run={run} />
+
+              {/* ── Timeline card ── */}
+              {(() => {
+                const events: TimelineEvent[] = [];
+                // trigger event
+                events.push({
+                  id: `trigger-${run.seq}`,
+                  kind: "trigger",
+                  timestamp: run.createdAt,
+                  label: `Triggered by: ${run.trigger}`,
+                });
+                // the run itself
+                events.push({
+                  id: `run-${run.seq}`,
+                  kind: "run",
+                  timestamp: run.startedAt ?? run.createdAt,
+                  label: `Run #${run.seq} — ${run.status}`,
+                  status: run.status,
+                  meta: {
+                    seq: run.seq,
+                    recipeName: run.recipeName,
+                    hadStepErrors: run.hadStepErrors,
+                  },
+                });
+                // step events
+                for (const step of run.stepResults ?? []) {
+                  events.push({
+                    id: `step-${run.seq}-${step.id}`,
+                    kind: "step",
+                    timestamp: step.startedAt ?? run.startedAt ?? run.createdAt,
+                    label: step.tool ? `${step.tool} (${step.id})` : step.id,
+                    status: step.status,
+                    href: `#step-${step.id}`,
+                  });
+                }
+                // inbox outputs
+                for (const out of run.inboxOutputs ?? []) {
+                  events.push({
+                    id: `inbox-${run.seq}-${out.filename}`,
+                    kind: "inbox",
+                    timestamp: out.deliveredAt,
+                    label: out.filename,
+                    meta: { name: out.filename, recipeName: run.recipeName },
+                  });
+                }
+                return (
+                  <div className="card" style={{ marginBottom: 20, padding: 0, overflow: "hidden" }}>
+                    <div
+                      style={{
+                        padding: "10px 16px",
+                        borderBottom: "1px solid var(--border-subtle)",
+                        fontSize: "var(--fs-s)",
+                        fontWeight: 600,
+                        color: "var(--ink-2)",
+                      }}
+                    >
+                      Timeline
+                    </div>
+                    <div style={{ padding: "12px 16px" }}>
+                      <EntityTimeline events={events} ariaLabel={`Timeline for run #${run.seq}`} />
+                    </div>
+                  </div>
+                );
+              })()}
               {run.inboxOutputs && run.inboxOutputs.length > 0 && (
                 <div
                   className="card"
