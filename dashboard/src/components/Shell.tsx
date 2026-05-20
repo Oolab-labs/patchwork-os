@@ -275,12 +275,35 @@ function applyTheme(theme: ThemePref) {
   document.body.dataset.theme = theme;
 }
 
+// localStorage access throws (not returns null) in Firefox/Safari
+// private mode and when cookies are blocked. `useTheme` runs inside
+// `Shell`, which wraps every route — an unguarded throw here unmounts
+// the whole app to a white screen. The blocking inline script in
+// layout.tsx is already try-caught; these guards keep the React copy
+// consistent.
+function readStoredTheme(): string | null {
+  try {
+    return (
+      localStorage.getItem("patchwork.theme") ??
+      localStorage.getItem("pw-theme")
+    );
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredTheme(value: string): void {
+  try {
+    localStorage.setItem("patchwork.theme", value);
+  } catch {
+    // private mode / quota — theme still applies for this session
+  }
+}
+
 function useTheme() {
   const [active, setActive] = useState<ThemePref>("dark");
   useEffect(() => {
-    const stored = normalizeTheme(
-      localStorage.getItem("patchwork.theme") ?? localStorage.getItem("pw-theme"),
-    );
+    const stored = normalizeTheme(readStoredTheme());
     setActive(stored);
     applyTheme(stored);
     const onStorage = (e: StorageEvent) => {
@@ -298,7 +321,7 @@ function useTheme() {
     const next: ThemePref = active === "dark" ? "paper" : "dark";
     setActive(next);
     applyTheme(next);
-    localStorage.setItem("patchwork.theme", next);
+    writeStoredTheme(next);
   };
   return { active, toggle };
 }

@@ -81,7 +81,12 @@ function persist(store: Map<string, PushEntry>): void {
   let fd: number | null = null;
   try {
     const body = JSON.stringify([...store.entries()]);
-    fd = fs.openSync(tmp, "w");
+    // Mode 0600 — the store holds every push endpoint + the
+    // `keys.auth` / `keys.p256dh` secrets that authorize sending Web
+    // Push to those browsers. Default open mode (0666 minus umask)
+    // would leave them group/world-readable. Set it on the temp fd
+    // so the file is never briefly world-readable before the rename.
+    fd = fs.openSync(tmp, "w", 0o600);
     fs.writeSync(fd, body);
     fs.fsyncSync(fd);
     fs.closeSync(fd);
