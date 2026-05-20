@@ -25,6 +25,9 @@ export interface LiveRun {
   status: string;
   durationMs?: number;
   haltReason?: string;
+  /** Run finished `done` but ≥1 step ended in error — "completed with
+   *  errors". Set by the bridge run log (see runLog.hadStepErrors). */
+  hadStepErrors?: boolean;
 }
 
 interface LiveRunsStripProps {
