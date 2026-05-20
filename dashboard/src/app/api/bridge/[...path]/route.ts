@@ -43,6 +43,25 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
         { status: 502, headers: { "content-type": "application/json" } },
       );
     }
+    // Upstream rejected the subscription (e.g. 503 — the bridge's SSE
+    // subscriber cap is saturated). Don't wrap a non-OK response in a
+    // fake `text/event-stream` body with a `: connected` heartbeat —
+    // that misleads the client into thinking it briefly connected.
+    // Pass the upstream status + JSON error straight through so the
+    // EventSource fails cleanly and the UI shows "Live stream offline".
+    if (!upstream.ok) {
+      const errText = await upstream.text().catch(() => "");
+      return new Response(
+        errText || JSON.stringify({ error: "Bridge stream unavailable" }),
+        {
+          status: upstream.status,
+          headers: {
+            "content-type":
+              upstream.headers.get("content-type") ?? "application/json",
+          },
+        },
+      );
+    }
     // Wrap the upstream body so we can flush an initial heartbeat comment
     // immediately. Without this, the browser's EventSource.onopen never fires
     // until the first real event arrives (the bridge holds /stream idle).

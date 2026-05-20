@@ -395,9 +395,14 @@ export default function InsightsPage() {
               </tr>
             </thead>
             <tbody>
-              {tools.map((t) => (
+              {tools.map((t, i) => (
                 <tr
-                  key={t.toolName}
+                  // The bridge can return the same toolName more than once
+                  // (e.g. a tool exposed under two MCP namespaces, or an
+                  // aggregation that double-counts) — keying by toolName
+                  // alone then collides ("two children with the same key").
+                  // Suffix the index so the key is unique regardless.
+                  key={`${t.toolName}-${i}`}
                   style={{ borderBottom: "1px solid var(--border-subtle)" }}
                 >
                   <td style={{ padding: "10px 0", verticalAlign: "middle" }}>

@@ -596,13 +596,18 @@ function AppShell({ children }: { children: ReactNode }) {
 
 function IdentityPill({ ok, host, port }: { ok: boolean; host: string; port?: number }) {
   const portText = port ? `127.0.0.1:${port}` : "offline";
+  // `ok` comes from useBridgeStatus → /api/bridge/status (an HTTP poll of
+  // the bridge process). It says nothing about the live SSE event stream,
+  // which the ActivityTicker tracks separately. Label this pill
+  // "reachable/unreachable" — describing the bridge PROCESS — so it can
+  // never read as a contradiction of the ticker's "Live stream" state.
   return (
     <span
       className={`identity-pill${ok ? "" : " is-offline"}`}
-      title={ok ? `Connected to ${host} on ${portText}` : "Bridge offline"}
+      title={ok ? `Bridge reachable — ${host} on ${portText}` : "Bridge unreachable"}
     >
       <span className={`identity-pill-dot${ok ? " online" : ""}`} aria-hidden="true" />
-      <span className="sr-only">Bridge {ok ? "online" : "offline"}.</span>
+      <span className="sr-only">Bridge {ok ? "reachable" : "unreachable"}.</span>
       <span className="identity-pill-host">{host}</span>
       <span className="identity-pill-sep" aria-hidden="true">·</span>
       <span className="identity-pill-port">{portText}</span>
