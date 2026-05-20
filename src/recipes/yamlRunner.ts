@@ -74,7 +74,6 @@ import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import type { ErrorPolicy } from "./schema.js";
 import { detectSilentFail } from "./stepObservation.js";
-
 // Import tool registry and trigger tool self-registration
 import {
   applyToolOutputContext,
@@ -83,6 +82,7 @@ import {
   hasTool,
   registerPluginTools,
 } from "./toolRegistry.js";
+import { resolveWorkspaceRoot } from "./workspaceRoot.js";
 import "./tools/index.js";
 
 /**
@@ -1917,11 +1917,21 @@ export function resolveClaudeBinary(): string {
   return ensureCmdShim("claude");
 }
 
-function defaultClaudeCodeFn(
+export function defaultClaudeCodeFn(
   prompt: string,
   _opts?: { mcpAccess?: boolean },
 ): Promise<string> {
   const binary = resolveClaudeBinary();
+  // Resolve a workspace cwd so the spawned `claude -p` doesn't inherit the
+  // bridge LaunchAgent's `$HOME` (P2 from the 2026-05-20 research run).
+  // When nothing resolves, surface a typed reason instead of silently
+  // shelling out from the wrong directory.
+  const workspace = resolveWorkspaceRoot();
+  if (!workspace) {
+    return Promise.resolve(
+      `[agent step failed: recipe_no_workspace — no .git ancestor of "${process.cwd()}" and PATCHWORK_WORKSPACE not set. Set PATCHWORK_WORKSPACE in the bridge environment or add a 'workspace:' field to the recipe.]`,
+    );
+  }
   try {
     const result = spawnSync(
       binary,
@@ -1933,6 +1943,7 @@ function defaultClaudeCodeFn(
         "--no-session-persistence",
       ],
       {
+        cwd: workspace.path,
         encoding: "utf-8",
         timeout: 120_000,
         maxBuffer: 10 * 1024 * 1024,

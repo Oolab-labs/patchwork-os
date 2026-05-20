@@ -85,6 +85,22 @@ describe("detectSilentFail — agent-step placeholders", () => {
     expect(detectSilentFail("[step skipped: missing dep]")).not.toBeNull();
   });
 
+  it("gives recipe_no_workspace its own typed reason, not the generic bucket", () => {
+    // Regression: P7 of the 2026-05-20 improvement-research run. With the
+    // workspace-root fix shipped in P2, this string is now emitted whenever
+    // a recipe step can't resolve a workspace. Without a dedicated pattern
+    // it collapses into the generic "agent step skipped or failed" bucket,
+    // hiding the actual cause — defeating the point of P2's typed error.
+    const m = detectSilentFail(
+      '[agent step failed: recipe_no_workspace — no .git ancestor of "/Users/wesh" and PATCHWORK_WORKSPACE not set]',
+    );
+    expect(m).not.toBeNull();
+    expect(m?.reason).toBe("recipe_no_workspace");
+    // The generic agent-step pattern (which matches the same prefix) must
+    // NOT have fired first.
+    expect(m?.reason).not.toMatch(/agent step skipped or failed/);
+  });
+
   it("does NOT flag bracketed text that isn't the placeholder shape", () => {
     expect(detectSilentFail("[INFO] some log line")).toBeNull();
     expect(detectSilentFail("[error] handled gracefully")).toBeNull();
