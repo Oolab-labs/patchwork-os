@@ -25,6 +25,7 @@ import {
   StatusPill,
   SuccessRing,
 } from "@/components/patchwork";
+import { RunChip } from "@/components/patchwork/entity";
 
 /**
  * Trigger-type → chip tone. Triggers used to all render in the same
@@ -142,6 +143,10 @@ interface Recipe {
 interface RunRecord {
   recipe: string;
   recipeName?: string;
+  /** Bridge run sequence — required for /runs/[seq] deep-link. The bridge
+   *  /runs API already returns this; the field was simply missing from
+   *  the dashboard-side type. */
+  seq?: number;
   startedAt: number;
   status: string;
   durationMs?: number;
@@ -542,7 +547,16 @@ function RecipeDetailPanel({
                     fontFamily: "var(--font-mono)",
                   }}
                 >
-                  <StatusPill tone={tone}>{ok ? "ok" : run.status}</StatusPill>
+                  {typeof run.seq === "number" ? (
+                    <RunChip
+                      seq={run.seq}
+                      status={run.status}
+                      recipeName={run.recipeName ?? run.recipe}
+                      variant="row"
+                    />
+                  ) : (
+                    <StatusPill tone={tone}>{ok ? "ok" : run.status}</StatusPill>
+                  )}
                   <span style={{ color: "var(--ink-3)", flex: 1 }}>{relTime(run.startedAt)}</span>
                   <span style={{ color: "var(--ink-2)" }}>{formatDuration(run.durationMs)}</span>
                   {typeof run.toolCount === "number" && (

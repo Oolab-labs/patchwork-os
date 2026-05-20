@@ -227,8 +227,13 @@ export default function SessionDetailPage() {
               },
               {
                 label: "Activity stream",
-                href: "/activity",
-                title: "Live event firehose",
+                href: `/activity?session=${encodeURIComponent(id)}`,
+                title: `Events emitted by session ${id}`,
+              },
+              {
+                label: "Approvals",
+                href: `/approvals?session=${encodeURIComponent(id)}`,
+                title: `Approvals waiting on session ${id}`,
               },
               {
                 label: "All sessions",

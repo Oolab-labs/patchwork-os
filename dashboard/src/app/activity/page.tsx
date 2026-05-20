@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { canonicalRecipeKey } from "@/lib/entityKey";
@@ -16,6 +15,12 @@ import {
   LivePill,
   type LivePillConnection,
 } from "@/components/patchwork";
+import {
+  ApprovalChip,
+  RecipeChip,
+  SessionChip,
+  ToolChip,
+} from "@/components/patchwork/entity";
 import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { RecentHaltsPanel } from "@/components/RecentHaltsPanel";
@@ -66,6 +71,11 @@ function getLifecycleMeta(e: ActivityEvent) {
     specifier: typeof m.specifier === "string" ? m.specifier : undefined,
     sessionId:
       typeof m.sessionId === "string" ? m.sessionId.slice(0, 8) : undefined,
+    /** Full session id — kept separately for chip linking (the trimmed
+     *  one above is for label display in the legacy text path). */
+    fullSessionId:
+      typeof m.sessionId === "string" ? m.sessionId : undefined,
+    callId: typeof m.callId === "string" ? m.callId : undefined,
     summary: typeof m.summary === "string" ? m.summary : undefined,
     recipeName: rawRecipe ? canonicalRecipeKey(rawRecipe) : undefined,
   };
@@ -582,7 +592,9 @@ export default function ActivityPage() {
                         ? `activity-row is-fresh${isErr ? " is-err" : ""}`
                         : "activity-row"
                     }
-                    style={{ cursor: "pointer" }}
+                    /* Row had cursor:pointer but no onClick — deceptive
+                       affordance. Chips inside the row are now the real
+                       click targets. */
                   >
                     <td
                       className="muted"
@@ -595,21 +607,38 @@ export default function ActivityPage() {
                     </td>
                     <td className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>
                       {meta.recipeName ? (
-                        <Link
-                          href={`/recipes/${encodeURIComponent(meta.recipeName)}/edit`}
-                          onClick={(ev) => ev.stopPropagation()}
-                          style={{ color: "var(--accent)", textDecoration: "none" }}
-                          title={`Recipe ${meta.recipeName}`}
-                        >
-                          {meta.recipeName}
-                        </Link>
+                        <RecipeChip
+                          name={meta.recipeName}
+                          variant="row"
+                        />
                       ) : (
                         <span className="muted">—</span>
                       )}
                     </td>
                     <td className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 300 }}>
-                      {mainLabel}
-                      {subLabel && <span className="muted">{subLabel}</span>}
+                      {isTool && e.tool ? (
+                        <ToolChip name={e.tool} variant="row" />
+                      ) : isApproval && meta.callId ? (
+                        <ApprovalChip
+                          callId={meta.callId}
+                          tier={meta.toolName}
+                          decision={
+                            meta.decision === "allow"
+                              ? "approved"
+                              : meta.decision === "deny"
+                                ? "rejected"
+                                : undefined
+                          }
+                          variant="row"
+                        />
+                      ) : isLifecycle && meta.fullSessionId ? (
+                        <SessionChip id={meta.fullSessionId} variant="row" />
+                      ) : (
+                        <>
+                          {mainLabel}
+                          {subLabel && <span className="muted">{subLabel}</span>}
+                        </>
+                      )}
                     </td>
                     <td className="mono muted">{durationCell}</td>
                     <td>

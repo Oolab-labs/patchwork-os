@@ -18,6 +18,7 @@ import {
   QuiltHero,
   Sparkline,
 } from "@/components/patchwork";
+import { RecipeChip, ToolChip } from "@/components/patchwork/entity";
 import {
   RecipeLeaderboard,
   type LeaderboardRun,
@@ -576,43 +577,33 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                   }}
                 >
                   {recipe && (
-                    <Link
-                      href={`/recipes/${encodeURIComponent(recipe)}/edit`}
-                      title={`Recipe ${recipe}`}
-                      onClick={(ev) => ev.stopPropagation()}
+                    <RecipeChip
+                      name={recipe}
+                      variant="row"
+                    />
+                  )}
+                  {recipe && (
+                    <span aria-hidden="true" style={{ color: "var(--ink-3)" }}>·</span>
+                  )}
+                  {e.kind === "tool" && e.tool ? (
+                    <ToolChip name={e.tool} variant="row" />
+                  ) : (
+                    <span
                       style={{
                         fontFamily: "var(--font-mono)",
-                        fontSize: "var(--fs-xs)",
-                        color: "var(--accent)",
-                        textDecoration: "none",
-                        flexShrink: 0,
-                        maxWidth: 140,
+                        fontSize: "var(--fs-s)",
+                        color: "var(--ink-0)",
+                        fontWeight: 600,
+                        flex: 1,
+                        minWidth: 0,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {recipe}
-                    </Link>
+                      {tool}
+                    </span>
                   )}
-                  {recipe && (
-                    <span aria-hidden="true" style={{ color: "var(--ink-3)" }}>·</span>
-                  )}
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "var(--fs-s)",
-                      color: "var(--ink-0)",
-                      fontWeight: 600,
-                      flex: 1,
-                      minWidth: 0,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {tool}
-                  </span>
                   {repeatCount > 1 && (
                     <span
                       className="pill muted"

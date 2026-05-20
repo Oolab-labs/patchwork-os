@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { RelationStrip } from "@/components/patchwork";
+import { RecipeChip, RunChip, ToolChip, InboxChip } from "@/components/patchwork/entity";
 import { StepDiffHover } from "@/components/StepDiffHover";
 import { Dialog } from "@/components/Dialog";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
@@ -66,6 +67,10 @@ interface RunDetail {
   /** Run finished `done` but ≥1 step ended in error — "completed with
    *  errors". Set by the bridge run log (see runLog.hadStepErrors). */
   hadStepErrors?: boolean;
+  /** Bridge-provided list of inbox files this run produced (see
+   *  RecipeRun.inboxOutputs in src/runLog.ts). Forwarded straight
+   *  through the dashboard's bridge pass-through proxy. */
+  inboxOutputs?: Array<{ filename: string; deliveredAt: number }>;
 }
 
 interface PlanStep {
@@ -487,7 +492,17 @@ function StepRow({
               whiteSpace: "nowrap",
             }}
           >
-            {step.tool ?? step.id}
+            {step.tool ? (
+              <span
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                style={{ display: "inline-flex" }}
+              >
+                <ToolChip name={step.tool} variant="link" />
+              </span>
+            ) : (
+              step.id
+            )}
           </div>
           {step.tool && step.tool !== step.id && (
             <div className="mono muted" style={{ fontSize: "var(--fs-xs)", marginTop: 2 }}>
@@ -810,33 +825,30 @@ function CausalChainCard({ run }: { run: RunDetail }) {
       </div>
       <div style={{ padding: "8px 0" }}>
         {hasParent && (
-          <Link
-            href={`/runs/${run.parentSeq}`}
+          <div
             style={{
               display: "flex",
               alignItems: "center",
               gap: 10,
               padding: "6px 16px",
-              textDecoration: "none",
-              color: "inherit",
             }}
           >
             <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", minWidth: 56 }}>triggered by</span>
-            <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>#{run.parentSeq}</span>
-            <span style={{ fontSize: "var(--fs-m)" }}>
-              {parent ? parent.recipeName : <span style={{ color: "var(--ink-3)" }}>…</span>}
-            </span>
+            <RunChip
+              seq={run.parentSeq as number}
+              status={parent?.status}
+              recipeName={parent?.recipeName}
+              variant="row"
+            />
             {parent && (
-              <>
-                <span className={`pill ${statusPillClass(parent.status)}`} style={{ fontSize: "var(--fs-2xs)" }}>
-                  {parent.status}
-                </span>
-                <span className="mono muted" style={{ fontSize: "var(--fs-xs)", marginLeft: "auto" }}>
-                  {fmtDur(parent.durationMs)}
-                </span>
-              </>
+              <RecipeChip name={parent.recipeName} variant="link" />
             )}
-          </Link>
+            {parent && (
+              <span className="mono muted" style={{ fontSize: "var(--fs-xs)", marginLeft: "auto" }}>
+                {fmtDur(parent.durationMs)}
+              </span>
+            )}
+          </div>
         )}
         {hasParent && hasChildren && (
           <div style={{ margin: "2px 16px", borderTop: "1px solid var(--border-subtle)" }} />
@@ -844,35 +856,32 @@ function CausalChainCard({ run }: { run: RunDetail }) {
         {(run.childSeqs ?? []).map((childSeq, i) => {
           const child = children.find((c) => c.seq === childSeq);
           return (
-            <Link
+            <div
               key={childSeq}
-              href={`/runs/${childSeq}`}
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 10,
                 padding: "6px 16px",
-                textDecoration: "none",
-                color: "inherit",
                 borderTop: i > 0 ? "1px solid var(--border-subtle)" : undefined,
               }}
             >
               <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", minWidth: 56 }}>triggered</span>
-              <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>#{childSeq}</span>
-              <span style={{ fontSize: "var(--fs-m)" }}>
-                {child ? child.recipeName : <span style={{ color: "var(--ink-3)" }}>…</span>}
-              </span>
+              <RunChip
+                seq={childSeq}
+                status={child?.status}
+                recipeName={child?.recipeName}
+                variant="row"
+              />
               {child && (
-                <>
-                  <span className={`pill ${statusPillClass(child.status)}`} style={{ fontSize: "var(--fs-2xs)" }}>
-                    {child.status}
-                  </span>
-                  <span className="mono muted" style={{ fontSize: "var(--fs-xs)", marginLeft: "auto" }}>
-                    {fmtDur(child.durationMs)}
-                  </span>
-                </>
+                <RecipeChip name={child.recipeName} variant="link" />
               )}
-            </Link>
+              {child && (
+                <span className="mono muted" style={{ fontSize: "var(--fs-xs)", marginLeft: "auto" }}>
+                  {fmtDur(child.durationMs)}
+                </span>
+              )}
+            </div>
           );
         })}
       </div>
@@ -1170,7 +1179,11 @@ export default function RunDetailPage() {
             <span className="mono">#{seq}</span>
           </div>
           <h1 style={{ margin: 0, fontSize: 22 }}>
-            {run ? run.recipeName : <span style={{ color: "var(--ink-3)" }}>…</span>}
+            {run ? (
+              <RecipeChip name={run.recipeName} variant="link" />
+            ) : (
+              <span style={{ color: "var(--ink-3)" }}>…</span>
+            )}
           </h1>
           {/*
             "Feels connected" strip for the run detail. Runs are the
@@ -1382,6 +1395,38 @@ export default function RunDetailPage() {
           {tab === "steps" && (
             <>
               <CausalChainCard run={run} />
+              {run.inboxOutputs && run.inboxOutputs.length > 0 && (
+                <div
+                  className="card"
+                  style={{
+                    marginBottom: 20,
+                    padding: "10px 16px",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "var(--fs-xs)",
+                      color: "var(--ink-3)",
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                    }}
+                  >
+                    Delivered to inbox
+                  </span>
+                  {run.inboxOutputs.map((out) => (
+                    <InboxChip
+                      key={out.filename}
+                      name={out.filename}
+                      recipeName={run.recipeName}
+                    />
+                  ))}
+                </div>
+              )}
               {run.assertionFailures && run.assertionFailures.length > 0 && (
                 <AssertionFailuresPanel failures={run.assertionFailures} />
               )}

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { apiPath } from "@/lib/api";
 import { inboxItemKey } from "@/lib/entityKey";
 import { EmptyState, ErrorState, HintCard, RelationStrip } from "@/components/patchwork";
+import { RecipeChip, RunChip } from "@/components/patchwork/entity";
 import { SkeletonList } from "@/components/Skeleton";
 import { InboxDeliveryCard } from "@/components/InboxDeliveryCard";
 import { useToast } from "@/components/Toast";
@@ -29,17 +30,29 @@ type FilterCategory = "All" | "Morning Briefs" | "Recipe Outputs" | "Agent Repor
 
 // ------------------------------------------------------------------ types
 
+/** Provenance frontmatter the bridge writes onto inbox files (PR #742).
+ *  Optional + additive — older files without frontmatter have no
+ *  `provenance` and the UI suppresses the header strip. */
+interface InboxProvenance {
+  recipe?: string;
+  runSeq?: number;
+  trigger?: string;
+  deliveredAt?: number;
+}
+
 interface InboxItem {
   name: string;
   path: string;
   modifiedAt: string;
   preview: string;
+  provenance?: InboxProvenance;
 }
 
 interface InboxDetail {
   name: string;
   content: string;
   modifiedAt: string;
+  provenance?: InboxProvenance;
 }
 
 // ------------------------------------------------------------------ slug helpers
@@ -900,13 +913,43 @@ const filteredItems = items.filter((item) => {
                     {slugToTitle(selected.name)}
                   </h2>
 
-                  {/* Sender row: avatar + name + time */}
+                  {/* Sender row: avatar + provenance (when present) + time.
+                      With provenance frontmatter (PR #742) we render a
+                      truthful "Produced by <recipe> · run <#seq>" strip.
+                      Without it we suppress the legacy "Local agent" guess
+                      — silence is more honest than a generic label. */}
                   <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, paddingBottom: 14, borderBottom: "1px solid var(--line-1)" }}>
                     <SenderAvatar name={selected.name} size={40} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--ink-0)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        Local agent
-                      </div>
+                      {selected.provenance?.recipe && (
+                        <div
+                          style={{
+                            fontSize: "var(--fs-m)",
+                            color: "var(--ink-0)",
+                            display: "flex",
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                            gap: 6,
+                          }}
+                        >
+                          <span style={{ color: "var(--ink-3)" }}>Produced by</span>
+                          <RecipeChip
+                            name={selected.provenance.recipe}
+                            trigger={selected.provenance.trigger}
+                            variant="link"
+                          />
+                          {selected.provenance.runSeq !== undefined && (
+                            <>
+                              <span style={{ color: "var(--ink-3)" }}>· run</span>
+                              <RunChip
+                                seq={selected.provenance.runSeq}
+                                recipeName={selected.provenance.recipe}
+                                variant="link"
+                              />
+                            </>
+                          )}
+                        </div>
+                      )}
                       <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 2 }}>
                         {new Date(selected.modifiedAt).toLocaleString()}
                       </div>
@@ -951,12 +994,12 @@ const filteredItems = items.filter((item) => {
 
                   {/* Action buttons (bottom) */}
                   {(() => {
-                    // Strip .md only; the trailing date stays — recipe
-                    // identity from a filename is a sibling-PR concern
-                    // (moves to provenance metadata). For now the deep
-                    // link can include the date and the recipes page
-                    // will gracefully no-op if no recipe matches.
-                    const recipeNameForSelected = inboxItemKey(selected.name);
+                    // Prefer provenance.recipe (PR #742 frontmatter) over
+                    // a filename-regex guess. Older files without
+                    // provenance fall back to the .md-stripped filename
+                    // — the recipes page no-ops gracefully on a miss.
+                    const recipeNameForSelected =
+                      selected.provenance?.recipe ?? inboxItemKey(selected.name);
                     return (
                       <>
                       <div className="inbox-reader-actions" style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--line-1)" }}>
