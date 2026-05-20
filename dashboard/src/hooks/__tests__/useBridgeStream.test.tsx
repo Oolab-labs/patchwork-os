@@ -2,6 +2,19 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The shared `/api/bridge/stream` path is multiplexed through the
+// streamLiveness singleton — mock it so the shared-path tests can drive
+// message + liveness callbacks deterministically. The direct-EventSource
+// tests below use a NON-shared path and never touch this mock.
+vi.mock("@/lib/streamLiveness", () => ({
+  subscribeStreamMessage: vi.fn(() => () => {}),
+  subscribeStreamLiveness: vi.fn(() => () => {}),
+}));
+
+import {
+  subscribeStreamLiveness,
+  subscribeStreamMessage,
+} from "@/lib/streamLiveness";
 import { useBridgeStream } from "../useBridgeStream";
 
 // Minimal EventSource shim — exposes the same surface jsdom doesn't
@@ -31,6 +44,8 @@ beforeEach(() => {
   FakeEventSource.instances = [];
   originalEventSource = (globalThis as { EventSource?: typeof EventSource }).EventSource;
   vi.stubGlobal("EventSource", FakeEventSource);
+  vi.mocked(subscribeStreamMessage).mockClear();
+  vi.mocked(subscribeStreamLiveness).mockClear();
 });
 
 afterEach(() => {
@@ -50,16 +65,16 @@ function latest(): FakeEventSource {
 describe("useBridgeStream — connect lifecycle", () => {
   it("constructs an EventSource at apiPath(path) on mount", () => {
     renderHook(() =>
-      useBridgeStream("/api/bridge/stream", () => {}),
+      useBridgeStream("/api/bridge/fallback-stream", () => {}),
     );
     expect(FakeEventSource.instances).toHaveLength(1);
     // apiPath is a passthrough in dev; just assert the trailing path made it in.
-    expect(latest().url).toContain("/api/bridge/stream");
+    expect(latest().url).toContain("/api/bridge/fallback-stream");
   });
 
   it("sets connected=true with no error after onopen", async () => {
     const { result } = renderHook(() =>
-      useBridgeStream("/api/bridge/stream", () => {}),
+      useBridgeStream("/api/bridge/fallback-stream", () => {}),
     );
 
     act(() => {
@@ -72,7 +87,7 @@ describe("useBridgeStream — connect lifecycle", () => {
 
   it("clears error on subsequent onopen (after a reconnect)", async () => {
     const { result } = renderHook(() =>
-      useBridgeStream("/api/bridge/stream", () => {}),
+      useBridgeStream("/api/bridge/fallback-stream", () => {}),
     );
     act(() => {
       latest().onerror?.(new Event("error"));
@@ -100,7 +115,7 @@ describe("useBridgeStream — connect lifecycle", () => {
 describe("useBridgeStream — error + reconnect", () => {
   it("onerror sets connected=false, error string, and closes the ES", async () => {
     const { result } = renderHook(() =>
-      useBridgeStream("/api/bridge/stream", () => {}),
+      useBridgeStream("/api/bridge/fallback-stream", () => {}),
     );
     const first = latest();
 
@@ -118,7 +133,7 @@ describe("useBridgeStream — error + reconnect", () => {
   it("schedules a reconnect 3s after onerror", async () => {
     vi.useFakeTimers();
     renderHook(() =>
-      useBridgeStream("/api/bridge/stream", () => {}),
+      useBridgeStream("/api/bridge/fallback-stream", () => {}),
     );
     const first = latest();
 
@@ -137,7 +152,7 @@ describe("useBridgeStream — error + reconnect", () => {
   it("cleanup cancels the pending reconnect timer", () => {
     vi.useFakeTimers();
     const { unmount } = renderHook(() =>
-      useBridgeStream("/api/bridge/stream", () => {}),
+      useBridgeStream("/api/bridge/fallback-stream", () => {}),
     );
     const first = latest();
 
@@ -159,7 +174,7 @@ describe("useBridgeStream — onmessage dispatch", () => {
   it("parses JSON and invokes onEvent with (type, data)", () => {
     const onEvent = vi.fn();
     renderHook(() =>
-      useBridgeStream("/api/bridge/stream", onEvent),
+      useBridgeStream("/api/bridge/fallback-stream", onEvent),
     );
 
     act(() => {
@@ -178,7 +193,7 @@ describe("useBridgeStream — onmessage dispatch", () => {
   it("falls back to type 'message' when msg.type is empty", () => {
     const onEvent = vi.fn();
     renderHook(() =>
-      useBridgeStream("/api/bridge/stream", onEvent),
+      useBridgeStream("/api/bridge/fallback-stream", onEvent),
     );
 
     act(() => {
@@ -194,7 +209,7 @@ describe("useBridgeStream — onmessage dispatch", () => {
   it("silently drops unparseable JSON without throwing", () => {
     const onEvent = vi.fn();
     renderHook(() =>
-      useBridgeStream("/api/bridge/stream", onEvent),
+      useBridgeStream("/api/bridge/fallback-stream", onEvent),
     );
 
     expect(() => {
@@ -211,7 +226,7 @@ describe("useBridgeStream — onmessage dispatch", () => {
     const second = vi.fn();
     const { rerender } = renderHook(
       ({ cb }: { cb: (t: string, d: unknown) => void }) =>
-        useBridgeStream("/api/bridge/stream", cb),
+        useBridgeStream("/api/bridge/fallback-stream", cb),
       { initialProps: { cb: first as (t: string, d: unknown) => void } },
     );
 
@@ -232,7 +247,7 @@ describe("useBridgeStream — onmessage dispatch", () => {
 describe("useBridgeStream — short-circuit guards", () => {
   it("does not construct an EventSource when enabled=false", () => {
     renderHook(() =>
-      useBridgeStream("/api/bridge/stream", () => {}, { enabled: false }),
+      useBridgeStream("/api/bridge/fallback-stream", () => {}, { enabled: false }),
     );
     expect(FakeEventSource.instances).toHaveLength(0);
   });
@@ -247,7 +262,7 @@ describe("useBridgeStream — short-circuit guards", () => {
 
     expect(() => {
       renderHook(() =>
-        useBridgeStream("/api/bridge/stream", () => {}),
+        useBridgeStream("/api/bridge/fallback-stream", () => {}),
       );
     }).not.toThrow();
   });
@@ -256,17 +271,83 @@ describe("useBridgeStream — short-circuit guards", () => {
 describe("useBridgeStream — initial + cleanup", () => {
   it("starts as { connected: false, error: undefined }", () => {
     const { result } = renderHook(() =>
-      useBridgeStream("/api/bridge/stream", () => {}),
+      useBridgeStream("/api/bridge/fallback-stream", () => {}),
     );
     expect(result.current).toEqual({ connected: false, error: undefined });
   });
 
   it("closes the EventSource on unmount", () => {
     const { unmount } = renderHook(() =>
-      useBridgeStream("/api/bridge/stream", () => {}),
+      useBridgeStream("/api/bridge/fallback-stream", () => {}),
     );
     const es = latest();
     unmount();
     expect(es.closed).toBe(true);
+  });
+});
+
+describe("useBridgeStream — shared /stream multiplex", () => {
+  it("rides the streamLiveness singleton instead of opening its own EventSource", () => {
+    renderHook(() => useBridgeStream("/api/bridge/stream", () => {}));
+    // No direct EventSource — the singleton owns the socket.
+    expect(FakeEventSource.instances).toHaveLength(0);
+    expect(subscribeStreamMessage).toHaveBeenCalledTimes(1);
+    expect(subscribeStreamLiveness).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards singleton messages to onEvent with the legacy 'message' type", () => {
+    const onEvent = vi.fn();
+    renderHook(() => useBridgeStream("/api/bridge/stream", onEvent));
+    // Pull the message callback the hook registered, fire a payload.
+    const msgCb = vi.mocked(subscribeStreamMessage).mock.calls[0]![0];
+    act(() => {
+      msgCb("lifecycle", { kind: "lifecycle", event: "recipe_done" });
+    });
+    // Type is forced to "message" to preserve the legacy contract — the
+    // bridge emits default (unnamed) SSE frames.
+    expect(onEvent).toHaveBeenCalledWith("message", {
+      kind: "lifecycle",
+      event: "recipe_done",
+    });
+  });
+
+  it("maps singleton liveness to connected + error", async () => {
+    const { result } = renderHook(() =>
+      useBridgeStream("/api/bridge/stream", () => {}),
+    );
+    const liveCb = vi.mocked(subscribeStreamLiveness).mock.calls[0]![0];
+
+    act(() => liveCb(true));
+    await waitFor(() => {
+      expect(result.current.connected).toBe(true);
+      expect(result.current.error).toBeUndefined();
+    });
+
+    act(() => liveCb(false));
+    await waitFor(() => {
+      expect(result.current.connected).toBe(false);
+      expect(result.current.error).toBe("Disconnected — reconnecting…");
+    });
+  });
+
+  it("unsubscribes from the singleton on unmount", () => {
+    const unsubMsg = vi.fn();
+    const unsubLive = vi.fn();
+    vi.mocked(subscribeStreamMessage).mockReturnValueOnce(unsubMsg);
+    vi.mocked(subscribeStreamLiveness).mockReturnValueOnce(unsubLive);
+    const { unmount } = renderHook(() =>
+      useBridgeStream("/api/bridge/stream", () => {}),
+    );
+    unmount();
+    expect(unsubMsg).toHaveBeenCalledTimes(1);
+    expect(unsubLive).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not subscribe when enabled=false", () => {
+    renderHook(() =>
+      useBridgeStream("/api/bridge/stream", () => {}, { enabled: false }),
+    );
+    expect(subscribeStreamMessage).not.toHaveBeenCalled();
+    expect(subscribeStreamLiveness).not.toHaveBeenCalled();
   });
 });
