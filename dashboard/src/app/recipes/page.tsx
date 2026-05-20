@@ -717,9 +717,10 @@ export default function RecipesPage() {
   const [err, setErr] = useState<string>();
   const [unsupported, setUnsupported] = useState(false);
   const [running, setRunning] = useState<Record<string, string>>({});
-  // Initial selection read from ?selected=<name> on first render, then
-  // kept in sync via replaceState so refresh / share-link works without
-  // bloating history.
+  // ?selected=<name> deep-link (e.g. from suggestions/page.tsx) — redirect
+  // immediately to the hub so keyboard and mouse behave identically.
+  // We keep the state initialiser below reading the param so the redirect
+  // useEffect fires once after mount (when router is available).
   const [selectedName, setSelectedName] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const sp = new URLSearchParams(window.location.search);
@@ -777,6 +778,19 @@ export default function RecipesPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedName, modal]);
+  // ?selected=<name> deep-link redirect: navigate to hub so the user
+  // always lands on the full recipe hub page regardless of entry point.
+  // This keeps links from suggestions/page.tsx working while ensuring
+  // keyboard and mouse navigation are identical (both go to the hub).
+  useEffect(() => {
+    if (!selectedName) return;
+    router.replace(
+      `/recipes/${encodeURIComponent(canonicalRecipeKey(selectedName))}`,
+    );
+  // Run once on mount (when selectedName comes from ?selected= param).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const deepLinkConsumedRef = useRef(false);
 
   // Mirror selectedName → URL `?selected=<name>` via replaceState so the
@@ -928,21 +942,31 @@ export default function RecipesPage() {
           body: JSON.stringify(body),
         },
       );
-      const data = (await res.json()) as { ok: boolean; taskId?: string; error?: string };
+      const data = (await res.json()) as { ok: boolean; taskId?: string; seq?: number; error?: string };
       if (data.ok && data.taskId) {
         setRunning((p) => ({ ...p, [name]: `queued ${data.taskId?.slice(0, 8)}` }));
+        const runsHref = data.seq != null
+          ? `/runs/${data.seq}`
+          : `/runs?recipe=${encodeURIComponent(name)}`;
+        toast.success("Run started", {
+          action: { label: "View run", onClick: () => router.push(runsHref) },
+        });
+        void load();
       } else {
         const errMsg =
           data.error === "already_in_flight"
             ? "Already running"
             : `error: ${data.error ?? "unknown"}`;
         setRunning((p) => ({ ...p, [name]: errMsg }));
+        toast.error(`Run failed: ${data.error ?? "unknown"}`);
       }
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       setRunning((p) => ({
         ...p,
-        [name]: `error: ${e instanceof Error ? e.message : String(e)}`,
+        [name]: `error: ${msg}`,
       }));
+      toast.error(`Run failed: ${msg}`);
     }
   }
 
@@ -1161,23 +1185,27 @@ export default function RecipesPage() {
             ? 0
             : filteredRecipes.length - 1
           : (idx + delta + filteredRecipes.length) % filteredRecipes.length;
-      const nextName = filteredRecipes[next].name;
-      setSelectedName(nextName);
-      // Scroll the newly-selected row into view (centered) so j/k feels
-      // like a cursor walk rather than a silent state change off-screen.
+      const nextRecipe = filteredRecipes[next];
+      const nextName = nextRecipe.name;
+      // Scroll the newly-focused row into view and move DOM focus so j/k
+      // feels like a cursor walk rather than a silent state change off-screen.
       requestAnimationFrame(() => {
         const row = document.querySelector<HTMLElement>(
           `[data-recipe-row="${CSS.escape(nextName)}"]`,
         );
         row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        // Move real DOM focus so keyboard + screen-reader users get
-        // feedback from j/k, not just a visual selection change.
         row?.focus();
       });
+      // If Enter is pressed after j/k movement the row's onKeyDown handler
+      // calls router.push — same as a click. We no longer open the inline
+      // RecipeDetailPanel from j/k; both input methods navigate to the hub.
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [filteredRecipes, selectedName, modal]);
+  // selectedName intentionally removed from deps — j/k no longer drives
+  // the side panel; it only moves DOM focus so the row can handle Enter.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredRecipes, modal]);
 
   return (
     <section>

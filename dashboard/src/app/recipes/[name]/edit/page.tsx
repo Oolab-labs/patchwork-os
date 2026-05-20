@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { use, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
-import { BackLink, RelationStrip } from "@/components/patchwork";
+// BackLink and RelationStrip are rendered by the shared recipes/[name]/layout.tsx
 import { useToast } from "@/components/Toast";
 import dynamic from "next/dynamic";
 
@@ -308,66 +308,10 @@ export default function RecipeEditPage({
 
   return (
     <section>
-      {/* Header */}
-      <div className="page-head">
-        <div>
-          <BackLink href="/recipes" label="Recipes" />
-          <h1 style={{ marginTop: 0 }}>
-            Edit{" "}
-            <code
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: "0.85em",
-                background: "var(--bg-2)",
-                padding: "2px 8px",
-                borderRadius: "var(--r-1)",
-              }}
-            >
-              {name}
-            </code>
-          </h1>
-          <div className="page-head-sub">Edit recipe YAML and save or run.</div>
-          {/*
-            "Feels connected" strip for the recipe detail. Lets users
-            jump from editing the YAML straight to: the runs this
-            recipe has produced (filtered by name), the live activity
-            stream (where its events show up in real time), and the
-            marketplace (to see published variants). Each chip is a
-            link to a filtered list — the recipe detail used to dead-
-            end into the editor with no outbound context.
-          */}
-          <RelationStrip
-            items={[
-              {
-                label: "Recent runs",
-                href: `/runs?recipe=${encodeURIComponent(name)}`,
-                title: `Recent runs of ${name}`,
-              },
-              {
-                label: "Halts",
-                href: `/runs?recipe=${encodeURIComponent(name)}&halt=1`,
-                tone: "warn",
-                title: `Runs of ${name} that hit a halt reason`,
-              },
-              {
-                label: "Traces",
-                href: `/traces?recipe=${encodeURIComponent(name)}`,
-                title: `Decision logs for ${name}`,
-              },
-              {
-                label: "Live activity",
-                href: "/activity",
-                title: "Stream of every event from this and other recipes",
-              },
-              {
-                label: "Marketplace",
-                href: "/marketplace",
-                title: "Community-published recipes",
-              },
-            ]}
-          />
-        </div>
-        <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}>
+      {/* The layout at recipes/[name]/layout.tsx already renders
+          breadcrumb, H1, StatusPill, RelationStrip, and TabBar.
+          Only edit-specific actions live here. */}
+      <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center", marginBottom: "var(--s-4)" }}>
           <Link
             href={`/recipes/${encodeURIComponent(name)}/plan`}
             className="btn"
@@ -392,7 +336,6 @@ export default function RecipeEditPage({
           >
             {saving ? "Saving…" : dirty ? "Save •" : "Save"}
           </button>
-        </div>
       </div>
 
       {/* Recipe-not-found banner — fires when /api/bridge/recipes/:name 404'd

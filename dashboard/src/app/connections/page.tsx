@@ -955,6 +955,12 @@ export default function ConnectionsPage() {
   useEffect(() => {
     fetchConnectors();
 
+    // Background poll every 30s so expired/degraded OAuth tokens show
+    // an up-to-date badge instead of a stale "Connected" forever.
+    const pollId = setInterval(() => {
+      void fetchConnectors();
+    }, 30_000);
+
     // Fetch installed recipes and derive connector→recipe count map.
     // Tool-prefix heuristic mirrors the Recipes page detectConnectors fn.
     const TOOL_KEYWORD_TO_CONNECTOR_ID: Record<string, string> = {
@@ -1000,6 +1006,10 @@ export default function ConnectionsPage() {
         setConnectorRecipeCounts(counts);
       })
       .catch(() => {});
+
+    return () => {
+      clearInterval(pollId);
+    };
   }, []);
 
   function getConnector(id: string): ConnectorStatus {
