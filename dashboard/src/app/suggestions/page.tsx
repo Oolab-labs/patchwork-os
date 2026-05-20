@@ -288,7 +288,17 @@ export default function SuggestionsPage() {
             if (!isTrustDetails(s.details)) return null;
             const { recipeName } = s.details;
             return (
-              <GraduateButton recipeName={recipeName} />
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <GraduateButton recipeName={recipeName} />
+                <Link
+                  href={`/recipes?selected=${encodeURIComponent(recipeName)}`}
+                  className="btn sm ghost"
+                  style={{ textDecoration: "none" }}
+                  title={`View ${recipeName} recipe`}
+                >
+                  View recipe
+                </Link>
+              </span>
             );
           }}
         />
@@ -299,7 +309,24 @@ export default function SuggestionsPage() {
           title="Installed tools you haven't called recently"
           subtitle={KIND_META.installed_but_unused.explanation}
           items={byKind.installed_but_unused}
-          renderAction={() => null}
+          renderAction={(s) => {
+            if (!isUnusedDetails(s.details) || s.details.examples.length === 0) return null;
+            return (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                {s.details.examples.slice(0, 3).map((toolName) => (
+                  <Link
+                    key={toolName}
+                    href={`/activity?tool=${encodeURIComponent(toolName)}&tab=tools`}
+                    className="btn sm ghost"
+                    style={{ textDecoration: "none", fontFamily: "var(--font-mono, monospace)", fontSize: "var(--fs-xs)" }}
+                    title={`See activity for ${toolName}`}
+                  >
+                    {toolName}
+                  </Link>
+                ))}
+              </span>
+            );
+          }}
         />
       )}
 

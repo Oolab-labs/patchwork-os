@@ -259,19 +259,19 @@ export default function InsightsPage() {
                 {data.totalDecisions} decisions
               </Link>
               <Link
-                href="/approvals?decision=approved"
+                href="/traces"
                 className="pill ok"
                 style={{ textDecoration: "none" }}
-                title="See approved calls"
+                title="See trusted tool traces"
               >
                 {data.trustedToolCount} trusted
               </Link>
               {data.rejectedToolCount > 0 && (
                 <Link
-                  href="/approvals?decision=rejected"
+                  href="/approvals?risk=high"
                   className="pill err"
                   style={{ textDecoration: "none" }}
-                  title="See rejected calls"
+                  title="See high-risk pending approvals"
                 >
                   {data.rejectedToolCount} rejected
                 </Link>
@@ -477,7 +477,17 @@ export default function InsightsPage() {
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
-                    {t.approvals}
+                    {t.approvals > 0 ? (
+                      <Link
+                        href={`/activity?tool=${encodeURIComponent(t.toolName)}&tab=tools`}
+                        style={{ color: "inherit", textDecoration: "none" }}
+                        title={`${t.approvals} approvals for ${t.toolName}`}
+                      >
+                        {t.approvals}
+                      </Link>
+                    ) : (
+                      t.approvals
+                    )}
                   </td>
                   <td
                     style={{
@@ -491,7 +501,17 @@ export default function InsightsPage() {
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
-                    {t.rejections}
+                    {t.rejections > 0 ? (
+                      <Link
+                        href={`/activity?tool=${encodeURIComponent(t.toolName)}&tab=tools`}
+                        style={{ color: "inherit", textDecoration: "none" }}
+                        title={`${t.rejections} rejections for ${t.toolName}`}
+                      >
+                        {t.rejections}
+                      </Link>
+                    ) : (
+                      t.rejections
+                    )}
                   </td>
                   <td
                     style={{
