@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write  # required for npm trusted publishing (OIDC)
 
 jobs:
   publish-canary:
@@ -40,6 +41,10 @@ jobs:
           node-version: '20'
           cache: npm
           registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing (OIDC) requires npm >= 11.5.1. Node 20 ships with npm 10.x.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
 
       - run: npm ci
       - run: npm run build
@@ -78,8 +83,6 @@ jobs:
       - name: Publish canary to npm
         if: steps.npm_check.outputs.skip != 'true'
         run: npm publish --access public --tag canary
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Summary
         if: always()
