@@ -84,10 +84,24 @@ describe("useApprovalPatterns — initial state", () => {
   });
 });
 
+// The bridge emits approval decisions as kind:"lifecycle" frames with
+// the decision payload nested in `metadata`. useBridgeStream forwards
+// `(kind, payload)` — so the hook sees type "lifecycle".
+function fireDecision(
+  toolName: unknown,
+  decision: unknown,
+): void {
+  fireEvent("lifecycle", {
+    kind: "lifecycle",
+    event: "approval_decision",
+    metadata: { toolName, decision },
+  });
+}
+
 describe("useApprovalPatterns — approval_decision stream events", () => {
   it("creates a new entry when toolName is unknown", () => {
     const { result } = renderHook(() => useApprovalPatterns());
-    fireEvent("approval_decision", { toolName: "Bash", decision: "approve" });
+    fireDecision("Bash", "approve");
     const got = result.current.patterns.get("Bash");
     expect(got).toBeDefined();
     expect(got!.approved).toBe(1);
@@ -104,15 +118,15 @@ describe("useApprovalPatterns — approval_decision stream events", () => {
       }),
     );
     const { result } = renderHook(() => useApprovalPatterns());
-    fireEvent("approval_decision", { toolName: "Bash", decision: "approve" });
+    fireDecision("Bash", "approve");
     expect(result.current.patterns.get("Bash")!.approved).toBe(6);
     expect(result.current.patterns.get("Bash")!.rejected).toBe(1);
   });
 
   it("increments the rejected counter on 'reject' decision", () => {
     const { result } = renderHook(() => useApprovalPatterns());
-    fireEvent("approval_decision", { toolName: "WebFetch", decision: "reject" });
-    fireEvent("approval_decision", { toolName: "WebFetch", decision: "reject" });
+    fireDecision("WebFetch", "reject");
+    fireDecision("WebFetch", "reject");
     expect(result.current.patterns.get("WebFetch")).toMatchObject({
       approved: 0,
       rejected: 2,
@@ -121,25 +135,32 @@ describe("useApprovalPatterns — approval_decision stream events", () => {
 
   it("persists updated patterns to localStorage", () => {
     renderHook(() => useApprovalPatterns());
-    fireEvent("approval_decision", { toolName: "Bash", decision: "approve" });
+    fireDecision("Bash", "approve");
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
     expect(stored.Bash).toMatchObject({ approved: 1, rejected: 0 });
   });
 
-  it("ignores non-approval_decision event types", () => {
+  it("ignores non-lifecycle frames and non-decision lifecycle events", () => {
     const { result } = renderHook(() => useApprovalPatterns());
-    fireEvent("connector_status", { toolName: "Bash", decision: "approve" });
-    fireEvent("ping", { x: 1 });
+    // wrong kind
+    fireEvent("tool", { kind: "tool", tool: "Bash" });
+    // lifecycle, but not an approval decision
+    fireEvent("lifecycle", {
+      kind: "lifecycle",
+      event: "recipe_done",
+      metadata: {},
+    });
     expect(result.current.patterns.size).toBe(0);
   });
 
-  it("ignores malformed event data (missing or wrong-shape fields)", () => {
+  it("ignores malformed decision payloads", () => {
     const { result } = renderHook(() => useApprovalPatterns());
-    fireEvent("approval_decision", null);
-    fireEvent("approval_decision", { toolName: "Bash" }); // missing decision
-    fireEvent("approval_decision", { decision: "approve" }); // missing toolName
-    fireEvent("approval_decision", { toolName: 7, decision: "approve" }); // wrong types
-    fireEvent("approval_decision", { toolName: "Bash", decision: "maybe" }); // bad enum
+    fireEvent("lifecycle", null);
+    fireEvent("lifecycle", { kind: "lifecycle", event: "approval_decision" }); // no metadata
+    fireDecision("Bash", undefined); // missing decision
+    fireDecision(undefined, "approve"); // missing toolName
+    fireDecision(7, "approve"); // wrong type
+    fireDecision("Bash", "maybe"); // bad enum
     expect(result.current.patterns.size).toBe(0);
   });
 });

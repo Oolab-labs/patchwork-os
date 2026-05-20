@@ -41,18 +41,32 @@ function saveToStorage(map: Map<string, ToolPattern>): void {
   }
 }
 
-interface ApprovalDecisionEvent {
+interface ApprovalDecision {
   toolName: string;
   decision: "approve" | "reject";
 }
 
-function isApprovalDecisionEvent(data: unknown): data is ApprovalDecisionEvent {
-  if (!data || typeof data !== "object") return false;
+/**
+ * Extract `{toolName, decision}` from a bridge SSE frame, or null if
+ * it isn't an approval-decision event.
+ *
+ * The bridge emits `{kind:"lifecycle", event, metadata:{...}}`. The
+ * approval-decision payload carries `toolName` + `decision` inside
+ * `metadata` — NOT at the top level. The previous predicate checked
+ * the top level, so it never matched even when the event was the
+ * right kind. (Compounding bug: the consumer also guarded on the
+ * SSE frame type, which was always "message" — see useBridgeStream.)
+ */
+function readApprovalDecision(data: unknown): ApprovalDecision | null {
+  if (!data || typeof data !== "object") return null;
   const d = data as Record<string, unknown>;
-  return (
-    typeof d.toolName === "string" &&
-    (d.decision === "approve" || d.decision === "reject")
-  );
+  if (d.event !== "approval_decision") return null;
+  const md = d.metadata;
+  if (!md || typeof md !== "object") return null;
+  const m = md as Record<string, unknown>;
+  if (typeof m.toolName !== "string") return null;
+  if (m.decision !== "approve" && m.decision !== "reject") return null;
+  return { toolName: m.toolName, decision: m.decision };
 }
 
 export function useApprovalPatterns(): {
@@ -68,10 +82,14 @@ export function useApprovalPatterns(): {
   patternsRef.current = patterns;
 
   const onEvent = useCallback((type: string, data: unknown) => {
-    if (type !== "approval_decision") return;
-    if (!isApprovalDecisionEvent(data)) return;
+    // The shared stream tags frames by `kind` — approval decisions
+    // arrive as kind:"lifecycle". Filter to lifecycle, then pull the
+    // decision out of the metadata envelope.
+    if (type !== "lifecycle") return;
+    const decided = readApprovalDecision(data);
+    if (!decided) return;
 
-    const { toolName, decision } = data;
+    const { toolName, decision } = decided;
     const prev = patternsRef.current;
     const existing = prev.get(toolName) ?? {
       approved: 0,

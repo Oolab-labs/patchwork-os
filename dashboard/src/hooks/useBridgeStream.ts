@@ -30,13 +30,15 @@ export function useBridgeStream(
 		if (!enabled) return;
 
 		// Shared lifecycle stream: ride the singleton instead of opening
-		// a second socket. The bridge emits default (unnamed) SSE frames,
-		// so the legacy direct-EventSource path always reported the event
-		// type as "message" — preserve that exactly here so consumers see
-		// no behavior change from the multiplex.
+		// a second socket. `subscribeStreamMessage` derives the event
+		// type from the payload's `kind` field (e.g. "lifecycle",
+		// "tool"), which is what stream consumers actually want to
+		// switch on — the legacy direct path forwarded the SSE frame's
+		// `.type` ("message" for the bridge's unnamed frames), which
+		// silently broke every consumer that guarded on `type`.
 		if (path === SHARED_STREAM_PATH) {
-			const unsubMsg = subscribeStreamMessage((_type, data) => {
-				onEventRef.current("message", data);
+			const unsubMsg = subscribeStreamMessage((type, data) => {
+				onEventRef.current(type, data);
 			});
 			const unsubLive = subscribeStreamLiveness((live) => {
 				setConnected(live);
