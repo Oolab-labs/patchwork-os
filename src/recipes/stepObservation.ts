@@ -66,6 +66,15 @@ const SILENT_FAIL_PATTERNS: Array<{ regex: RegExp; reason: string }> = [
       /^\s*\(([^()]*?)(unavailable|not available|not configured|no data|error|failed)\)/i,
     reason: "tool returned a parens-wrapped placeholder",
   },
+  // Typed reason: recipe step ran with no workspace root resolved. Emitted
+  // by `defaultClaudeCodeFn` when `resolveWorkspaceRoot()` returns null —
+  // first fix in the halt-taxonomy refinement (P7 of the 2026-05-20
+  // research run). MUST match before the generic agent-step pattern below
+  // so the typed reason isn't swallowed by the catch-all.
+  {
+    regex: /^\s*\[agent step failed:\s*recipe_no_workspace\b/i,
+    reason: "recipe_no_workspace",
+  },
   // Agent-step short-circuit: agentExecutor's own error/skip strings.
   // Used by `executeAgent` when an API key is missing or the LLM
   // returns nothing. Not surfaced as JSON, so the runner never saw it.
