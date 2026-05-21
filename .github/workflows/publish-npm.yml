@@ -5,6 +5,15 @@ on:
     tags:
       - 'v*-alpha*'
       - 'v*-beta*'
+  # Canary publishes fire after CI succeeds on a main push (a PR merge).
+  # Consolidated here from the former publish-canary.yml: npm trusted
+  # publishing allows only ONE trusted-publisher entry per package,
+  # matched by exact workflow filename — so every publish path for this
+  # package must live in this single file.
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       bump:
@@ -202,3 +211,78 @@ jobs:
             --title "v${{ env.VERSION }}" \
             --generate-notes \
             --repo Oolab-labs/patchwork-os
+
+  publish-canary:
+    # Fires after the CI workflow succeeds on a main push (a PR merge):
+    # publishes a <version>.canary.<run_number> build under the `canary`
+    # dist-tag so `npm install -g patchwork-os@canary` tracks main.
+    # `latest` / `beta` users are untouched. Consolidated from the former
+    # publish-canary.yml — see the `on:` block above for why.
+    if: >
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Pin to the exact commit CI validated, not whatever main is now.
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Upgrade npm for OIDC publishing
+        run: npm install -g npm@latest
+
+      - run: npm ci
+      - run: npm run build
+
+      # Canary version shape: <current>.canary.<runNumber> — always sorts
+      # above the base version and below the next base bump.
+      - name: Compute canary version
+        id: ver
+        run: |
+          BASE=$(node -p "require('./package.json').version")
+          CANARY="${BASE}.canary.${{ github.run_number }}"
+          echo "version=$CANARY" >> "$GITHUB_OUTPUT"
+          echo "Canary version: $CANARY"
+
+      # Idempotency: a workflow_run retry would otherwise fail with E403.
+      - name: Check if version already published
+        id: npm_check
+        run: |
+          if npm view "patchwork-os@${{ steps.ver.outputs.version }}" version > /dev/null 2>&1; then
+            echo "Already published — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write canary version into package.json
+        if: steps.npm_check.outputs.skip != 'true'
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json','utf-8'));
+            pkg.version = '${{ steps.ver.outputs.version }}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg,null,2)+'\n');
+          "
+
+      # No NODE_AUTH_TOKEN — OIDC trusted publishing, same as the tagged
+      # publish jobs above.
+      - name: Publish canary to npm
+        if: steps.npm_check.outputs.skip != 'true'
+        run: npm publish --access public --tag canary
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Canary publish" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Version: \`${{ steps.ver.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Skipped: \`${{ steps.npm_check.outputs.skip == 'true' }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Install: \`npm install -g patchwork-os@canary\`" >> "$GITHUB_STEP_SUMMARY"
