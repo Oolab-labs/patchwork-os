@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # deploy/bootstrap-vps.sh
-# Full VPS bootstrap for patchworkos.com
-# Run as root on a fresh Ubuntu 24.04 VPS
-# Usage: bash bootstrap-vps.sh
+# Full VPS bootstrap for a single Patchwork OS bridge.
+# Run as root on a fresh Ubuntu 24.04 VPS.
+# Usage: PATCHWORK_DOMAIN=your.tld PATCHWORK_ACME_EMAIL=you@your.tld bash bootstrap-vps.sh
 
 set -euo pipefail
 
-DOMAIN="patchworkos.com"
-EMAIL="support@gigsecure.co.ke"
+# Domain + ACME contact are deployment-specific — supply them via the
+# environment so no real domain/email is committed to version control.
+DOMAIN="${PATCHWORK_DOMAIN:?set PATCHWORK_DOMAIN, e.g. your.tld}"
+EMAIL="${PATCHWORK_ACME_EMAIL:?set PATCHWORK_ACME_EMAIL, e.g. you@your.tld}"
 BRIDGE_PORT=3284
 BRIDGE_USER="patchwork"
 BRIDGE_HOME="/opt/patchwork"
@@ -81,7 +83,6 @@ ExecStart=${BRIDGE_BIN} \\
   --vps \\
   --issuer-url https://${DOMAIN} \\
   --cors-origin https://claude.ai \\
-  --cors-origin https://app.patchworkos.com \\
   --fixed-token ${FIXED_TOKEN}
 
 Restart=always
@@ -117,11 +118,11 @@ ufw status
 
 # ── 8. Nginx config — HTTP only first (certbot needs nginx up to issue cert) ──
 info "Writing nginx config (HTTP only)..."
-cat > /etc/nginx/sites-available/patchworkos <<'NGINX'
+cat > /etc/nginx/sites-available/patchwork <<'NGINX'
 server {
     listen 80;
     listen [::]:80;
-    server_name patchworkos.com www.patchworkos.com;
+    server_name __DOMAIN__ www.__DOMAIN__;
 
     location /.well-known/acme-challenge/ { root /var/www/html; }
 
@@ -140,7 +141,11 @@ server {
 }
 NGINX
 
-ln -sf /etc/nginx/sites-available/patchworkos /etc/nginx/sites-enabled/patchworkos
+# Substitute the deployment domain into the just-written config (the heredoc
+# is quoted so nginx's own $variables survive un-expanded).
+sed -i "s/__DOMAIN__/${DOMAIN}/g" /etc/nginx/sites-available/patchwork
+
+ln -sf /etc/nginx/sites-available/patchwork /etc/nginx/sites-enabled/patchwork
 rm -f /etc/nginx/sites-enabled/default
 
 nginx -t
