@@ -36,11 +36,14 @@ jobs:
           # Pin to the exact commit CI validated, not whatever main is now.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      # Deliberately NO `registry-url:` — setup-node would write an .npmrc
+      # with a placeholder `_authToken`, and `npm publish` would then attempt
+      # (failing, E404) token auth instead of OIDC. OIDC requires npm see no
+      # auth token. Default registry is registry.npmjs.org. (Mirrors #769.)
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
-          registry-url: 'https://registry.npmjs.org'
 
       # Trusted publishing (OIDC) requires npm >= 11.5.1. Node 20 ships with npm 10.x.
       - name: Upgrade npm for trusted publishing
