@@ -118,15 +118,6 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Temporary diagnostic — confirms npm is >= 11.5.1 and the GitHub
-      # OIDC token endpoint is exposed to the job before the publish.
-      - name: Diagnose OIDC publish prerequisites
-        run: |
-          echo "npm version : $(npm -v)"
-          echo "node version: $(node -v)"
-          echo "registry    : $(npm config get registry)"
-          echo "OIDC token URL present: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
-
       - name: Publish beta to npm
         if: steps.npm_check.outputs.skip != 'true'
         run: npm publish --access public --tag beta
