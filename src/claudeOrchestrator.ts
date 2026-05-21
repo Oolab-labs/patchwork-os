@@ -14,6 +14,7 @@ function getConfigDir(): string {
 }
 
 import type { IClaudeDriver } from "./drivers/types.js";
+import { resolveWorkspaceRoot } from "./recipes/workspaceRoot.js";
 import { writeFileAtomic, writeFileAtomicSync } from "./writeFileAtomic.js";
 
 export type TaskStatus =
@@ -407,11 +408,23 @@ export class ClaudeOrchestrator {
       controller.abort();
     }, task.timeoutMs);
 
+    // The bridge LaunchAgent defaults its WorkingDirectory to $HOME, so
+    // `this.workspace` is typically $HOME unless the bridge was started
+    // with an explicit --workspace. Resolve a real workspace per task
+    // (PATCHWORK_WORKSPACE env, then a .git-ancestor walk) so agent steps
+    // don't shell out from $HOME and fail with `fatal: not a git
+    // repository` — the dominant `agent_silent_fail` halt cause. #765
+    // fixed the --local path (defaultClaudeCodeFn); this closes the
+    // bridge-orchestrated path.
+    const resolvedWorkspace =
+      resolveWorkspaceRoot({ startDir: this.workspace })?.path ??
+      this.workspace;
+
     try {
       const result = await this.driver.run({
         prompt: task.prompt,
         contextFiles: task.contextFiles,
-        workspace: this.workspace,
+        workspace: resolvedWorkspace,
         timeoutMs: task.timeoutMs,
         signal: controller.signal,
         model: task.model,
