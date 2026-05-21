@@ -1,3 +1,7 @@
+import { execSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   afterEach,
   beforeEach,
@@ -958,5 +962,82 @@ describe("ClaudeOrchestrator._drain does not loop forever when all tasks exceed 
     // Cleanup
     releaseBlocker?.();
     await new Promise((r) => setTimeout(r, 50));
+  });
+});
+
+// ── Workspace resolution ──────────────────────────────────────────────────────
+//
+// The bridge LaunchAgent defaults WorkingDirectory to $HOME, so the
+// orchestrator's constructor `workspace` is typically $HOME. The orchestrator
+// must resolve a real workspace (PATCHWORK_WORKSPACE env, then a .git-ancestor
+// walk) before handing it to the driver as cwd — otherwise agent steps shell
+// out from $HOME and fail with `fatal: not a git repository`.
+
+function makeCapturingDriver(): {
+  driver: ProviderDriver;
+  lastWorkspace: () => string | undefined;
+} {
+  let seen: string | undefined;
+  return {
+    driver: {
+      name: "capturing",
+      async run(input: ProviderTaskInput) {
+        seen = input.workspace;
+        return { text: "ok", exitCode: 0, durationMs: 1 };
+      },
+    },
+    lastWorkspace: () => seen,
+  };
+}
+
+describe("ClaudeOrchestrator — workspace resolution", () => {
+  let savedEnv: string | undefined;
+  let tmp: string;
+
+  beforeEach(() => {
+    savedEnv = process.env.PATCHWORK_WORKSPACE;
+    delete process.env.PATCHWORK_WORKSPACE;
+    tmp = mkdtempSync(path.join(os.tmpdir(), "orch-ws-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+    if (savedEnv === undefined) delete process.env.PATCHWORK_WORKSPACE;
+    else process.env.PATCHWORK_WORKSPACE = savedEnv;
+  });
+
+  it("PATCHWORK_WORKSPACE overrides a non-repo constructor workspace", async () => {
+    const wsRepo = mkdtempSync(path.join(os.tmpdir(), "orch-ws-env-"));
+    try {
+      execSync("git init -q -b main", { cwd: wsRepo });
+      process.env.PATCHWORK_WORKSPACE = wsRepo;
+      // Constructor workspace is a non-repo dir — stands in for $HOME.
+      const cap = makeCapturingDriver();
+      const orch = new ClaudeOrchestrator(cap.driver, tmp, noop);
+      orch.enqueue({ prompt: "hello" });
+      await new Promise((r) => setImmediate(r));
+      expect(cap.lastWorkspace()).toBe(path.resolve(wsRepo));
+    } finally {
+      rmSync(wsRepo, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves a .git-ancestor when the constructor workspace is a repo", async () => {
+    execSync("git init -q -b main", { cwd: tmp });
+    const cap = makeCapturingDriver();
+    const orch = new ClaudeOrchestrator(cap.driver, tmp, noop);
+    orch.enqueue({ prompt: "hello" });
+    await new Promise((r) => setImmediate(r));
+    expect(cap.lastWorkspace()).toBe(tmp);
+  });
+
+  it("falls back to the constructor workspace when nothing resolves", async () => {
+    // tmp has no .git ancestor and no env var — must not crash, just pass
+    // the original workspace through unchanged.
+    const cap = makeCapturingDriver();
+    const orch = new ClaudeOrchestrator(cap.driver, tmp, noop);
+    orch.enqueue({ prompt: "hello" });
+    await new Promise((r) => setImmediate(r));
+    expect(cap.lastWorkspace()).toBe(tmp);
   });
 });
