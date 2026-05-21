@@ -30,11 +30,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Deliberately NO `registry-url:` — setup-node would write an
+      # .npmrc with a placeholder `_authToken`, and `npm publish` would
+      # then attempt (failing) token auth instead of OIDC. OIDC requires
+      # npm see no auth token. Default registry is registry.npmjs.org.
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
-          registry-url: 'https://registry.npmjs.org'
 
       # OIDC trusted publishing requires npm >= 11.5.1; node 20 ships
       # npm 10.x. Upgrade in place.
@@ -96,7 +99,6 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Upgrade npm for OIDC publishing
         run: npm install -g npm@latest
@@ -153,7 +155,6 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Upgrade npm for OIDC publishing
         run: npm install -g npm@latest
