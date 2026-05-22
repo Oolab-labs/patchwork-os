@@ -84,3 +84,113 @@ describe("jira token storage", () => {
     expect(existsSync(join(tokensDir, "patchwork-os.jira.enc"))).toBe(true);
   });
 });
+
+describe("handleJiraConnect", () => {
+  const tmpDir = join(os.tmpdir(), `patchwork-jira-h-${Date.now()}`);
+  const homeDir = join(tmpDir, "home");
+  const patchworkHome = join(homeDir, ".patchwork");
+  const tokensDir = join(patchworkHome, "tokens");
+
+  beforeEach(() => {
+    process.env.HOME = homeDir;
+    process.env.PATCHWORK_HOME = patchworkHome;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    mkdirSync(tokensDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    delete process.env.HOME;
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    delete process.env.JIRA_API_TOKEN;
+    delete process.env.JIRA_INSTANCE_URL;
+    delete process.env.JIRA_EMAIL;
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("is exported (route wiring sanity check — would 404 if missing)", async () => {
+    const mod = await import("../jira.js");
+    expect(typeof mod.handleJiraConnect).toBe("function");
+    expect(typeof mod.handleJiraTest).toBe("function");
+    expect(typeof mod.handleJiraDisconnect).toBe("function");
+  });
+
+  it("returns 400 when apiToken missing", async () => {
+    const { handleJiraConnect } = await import("../jira.js");
+    const result = await handleJiraConnect(
+      JSON.stringify({
+        email: "d@a.com",
+        instanceUrl: "https://a.atlassian.net",
+      }),
+    );
+    expect(result.status).toBe(400);
+    expect(JSON.parse(result.body).error).toMatch(/apiToken/);
+  });
+
+  it("rejects non-atlassian.net hostnames (SSRF guard)", async () => {
+    const { handleJiraConnect } = await import("../jira.js");
+    const result = await handleJiraConnect(
+      JSON.stringify({
+        apiToken: "t",
+        email: "d@a.com",
+        instanceUrl: "http://169.254.169.254/",
+      }),
+    );
+    expect(result.status).toBe(400);
+    expect(JSON.parse(result.body).error).toMatch(/atlassian\.net/);
+  });
+
+  it("returns 200 and stores tokens on success", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ accountId: "abc" }),
+    }) as unknown as typeof fetch;
+
+    const { handleJiraConnect, loadTokens } = await import("../jira.js");
+    const result = await handleJiraConnect(
+      JSON.stringify({
+        apiToken: "my-token",
+        email: "dev@acme.com",
+        instanceUrl: "https://acme.atlassian.net/",
+      }),
+    );
+    expect(result.status).toBe(200);
+    const stored = loadTokens();
+    expect(stored?.accessToken).toBe("my-token");
+    expect(stored?.instanceUrl).toBe("https://acme.atlassian.net");
+    expect(stored?.isCloud).toBe(true);
+  });
+
+  it("returns 401 when Jira rejects credentials", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: async () => ({}),
+    }) as unknown as typeof fetch;
+
+    const { handleJiraConnect } = await import("../jira.js");
+    const result = await handleJiraConnect(
+      JSON.stringify({
+        apiToken: "bad",
+        email: "dev@acme.com",
+        instanceUrl: "https://acme.atlassian.net",
+      }),
+    );
+    expect(result.status).toBe(401);
+  });
+});
+
+describe("connectorRoutes /connections/jira/connect wiring", () => {
+  it("connectorRoutes.ts references handleJiraConnect (regression: was 404)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(
+      new URL("../../connectorRoutes.ts", import.meta.url),
+      "utf-8",
+    );
+    expect(src).toMatch(/\/connections\/jira\/connect/);
+    expect(src).toMatch(/handleJiraConnect/);
+  });
+});

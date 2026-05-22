@@ -16,7 +16,32 @@ import {
   type ConnectorError,
   type ConnectorStatus,
 } from "./baseConnector.js";
-import { getSecretJsonSync, storeSecretJsonSync } from "./tokenStorage.js";
+import {
+  deleteSecretJsonSync,
+  getSecretJsonSync,
+  storeSecretJsonSync,
+} from "./tokenStorage.js";
+
+/**
+ * Accept only https Atlassian-cloud hostnames for the caller-supplied
+ * `instanceUrl` handed to `handleJiraConnect`. Without this, an
+ * authenticated caller could submit `http://169.254.169.254/...` or
+ * `http://127.0.0.1/admin` and the bridge would POST Basic-auth credentials
+ * to it. On-prem deployments override via the JIRA_INSTANCE_URL env (which
+ * is operator-trusted, not caller-controlled). Mirrors the Confluence guard.
+ */
+function isAllowedJiraUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "https:") return false;
+    return (
+      parsed.hostname === "atlassian.net" ||
+      parsed.hostname.endsWith(".atlassian.net")
+    );
+  } catch {
+    return false;
+  }
+}
 
 export interface JiraTokens {
   accessToken: string; // OAuth or API token
@@ -496,9 +521,27 @@ export function saveTokens(tokens: JiraTokens): void {
   }
 }
 
+export function clearTokens(): void {
+  try {
+    deleteSecretJsonSync("jira");
+  } catch {
+    // ignore
+  }
+  const legacyTokenPath = getLegacyTokenPath();
+  if (existsSync(legacyTokenPath)) {
+    try {
+      unlinkSync(legacyTokenPath);
+    } catch {}
+  }
+}
+
 // ── Singleton instance ───────────────────────────────────────────────────────
 
 let _instance: JiraConnector | null = null;
+
+function resetJiraConnector(): void {
+  _instance = null;
+}
 
 export function getJiraConnector(): JiraConnector {
   if (!_instance) {
@@ -508,3 +551,220 @@ export function getJiraConnector(): JiraConnector {
 }
 
 export { getJiraConnector as jira };
+
+// ── HTTP Handlers ────────────────────────────────────────────────────────────
+// Wired in src/connectorRoutes.ts under /connections/jira/*
+
+export interface ConnectorHandlerResult {
+  status: number;
+  body: string;
+  contentType?: string;
+}
+
+/**
+ * POST /connections/jira/connect  { apiToken, email, instanceUrl }
+ *
+ * Also accepts legacy `token` field as a synonym for `apiToken` so older
+ * dashboard builds keep working.
+ */
+export async function handleJiraConnect(
+  body: string,
+): Promise<ConnectorHandlerResult> {
+  let apiToken: string;
+  let email: string;
+  let instanceUrl: string;
+
+  try {
+    const parsed = JSON.parse(body) as {
+      apiToken?: unknown;
+      token?: unknown;
+      email?: unknown;
+      instanceUrl?: unknown;
+    };
+    const tokenValue =
+      typeof parsed.apiToken === "string" && parsed.apiToken
+        ? parsed.apiToken
+        : typeof parsed.token === "string" && parsed.token
+          ? parsed.token
+          : "";
+    if (!tokenValue) {
+      return {
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: false, error: "apiToken is required" }),
+      };
+    }
+    if (typeof parsed.email !== "string" || !parsed.email) {
+      return {
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: false, error: "email is required" }),
+      };
+    }
+    if (typeof parsed.instanceUrl !== "string" || !parsed.instanceUrl) {
+      return {
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: false,
+          error: "instanceUrl is required (e.g. https://myteam.atlassian.net)",
+        }),
+      };
+    }
+    // SSRF defence — see isAllowedJiraUrl above. On-prem deployments must
+    // route through the JIRA_INSTANCE_URL env path, not the dashboard POST.
+    if (!isAllowedJiraUrl(parsed.instanceUrl)) {
+      return {
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: false,
+          error:
+            "instanceUrl must be https and on atlassian.net (e.g. https://myteam.atlassian.net)",
+        }),
+      };
+    }
+    apiToken = tokenValue;
+    email = parsed.email;
+    instanceUrl = parsed.instanceUrl.replace(/\/$/, "");
+  } catch {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: false, error: "Invalid JSON body" }),
+    };
+  }
+
+  // Verify credentials by hitting /rest/api/3/myself
+  try {
+    const basic = Buffer.from(`${email}:${apiToken}`).toString("base64");
+    const res = await fetch(`${instanceUrl}${JIRA_CLOUD_API}/myself`, {
+      headers: {
+        Authorization: `Basic ${basic}`,
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) {
+      return {
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: false,
+          error: `Credentials rejected by Jira (HTTP ${res.status}) — check API token and email`,
+        }),
+      };
+    }
+
+    const tokens: JiraTokens = {
+      accessToken: apiToken,
+      email,
+      instanceUrl,
+      isCloud: true,
+      connected_at: new Date().toISOString(),
+    };
+    saveTokens(tokens);
+    resetJiraConnector();
+
+    return {
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        instanceUrl,
+        connectedAt: tokens.connected_at,
+      }),
+    };
+  } catch (err) {
+    return {
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    };
+  }
+}
+
+/**
+ * POST /connections/jira/test
+ *
+ * Hits /rest/api/3/myself directly (rather than going through the connector
+ * health-check, which checks /mypermissions and requires project scope) so
+ * a freshly-issued token with no project access still validates.
+ */
+export async function handleJiraTest(): Promise<ConnectorHandlerResult> {
+  const tokens = loadTokens();
+  if (!tokens) {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: false, error: "Jira not connected" }),
+    };
+  }
+  try {
+    const email = tokens.email ?? "";
+    const basic = Buffer.from(`${email}:${tokens.accessToken}`).toString(
+      "base64",
+    );
+    const api = tokens.isCloud ? JIRA_CLOUD_API : JIRA_SERVER_API;
+    const res = await fetch(`${tokens.instanceUrl}${api}/myself`, {
+      headers: {
+        Authorization:
+          tokens.isCloud && !tokens.email
+            ? `Bearer ${tokens.accessToken}`
+            : `Basic ${basic}`,
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) {
+      return {
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: false,
+          error: `Jira rejected credentials (HTTP ${res.status})`,
+        }),
+      };
+    }
+    const data = (await res.json()) as {
+      accountId?: string;
+      emailAddress?: string;
+      displayName?: string;
+    };
+    return {
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        user: {
+          accountId: data.accountId,
+          email: data.emailAddress,
+          displayName: data.displayName,
+        },
+      }),
+    };
+  } catch (err) {
+    return {
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    };
+  }
+}
+
+/**
+ * DELETE /connections/jira
+ */
+export function handleJiraDisconnect(): ConnectorHandlerResult {
+  clearTokens();
+  resetJiraConnector();
+  return {
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ ok: true }),
+  };
+}
