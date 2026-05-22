@@ -27,6 +27,10 @@ const EXPECTED_CONNECT = new Set([
   "zendesk", "pagerduty",
   // Wave 1a data-store connectors (PAT, lazy driver imports).
   "postgres", "mongodb", "redis", "elasticsearch",
+  // Wave 1b — PAT comms connectors.
+  "sendgrid", "twilio",
+  // Wave 2 — PAT SaaS connectors.
+  "figma", "airtable", "webflow",
 ]);
 const EXPECTED_TEST = new Set([
   "gmail", "github", "linear", "sentry", "google-calendar", "google-drive",
@@ -35,6 +39,10 @@ const EXPECTED_TEST = new Set([
   "pagerduty",
   // Wave 1a data-store connectors.
   "postgres", "mongodb", "redis", "elasticsearch",
+  // Wave 1b — PAT comms connectors.
+  "sendgrid", "twilio",
+  // Wave 2 — PAT SaaS connectors.
+  "figma", "airtable", "webflow",
 ]);
 const EXPECTED_DELETE = EXPECTED_TEST;
 

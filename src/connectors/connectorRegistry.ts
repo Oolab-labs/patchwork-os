@@ -195,6 +195,38 @@ export const CONNECTORS: readonly ConnectorDescriptor[] = [
     authKind: "pat",
     supports: { connect: true, test: true, delete: true },
   },
+  // Wave 1b — PAT comms connectors.
+  {
+    id: "sendgrid",
+    label: "SendGrid",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "twilio",
+    label: "Twilio",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  // Wave 2 — PAT SaaS connectors (skip Wave 3 OAuth-app connectors for now).
+  {
+    id: "figma",
+    label: "Figma",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "airtable",
+    label: "Airtable",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "webflow",
+    label: "Webflow",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
   // jira: PAT. Concurrent work is wiring the bridge routes. The
   // `supports` capabilities here are deliberately empty until those
   // routes exist; flipping them in this file is the one-line change

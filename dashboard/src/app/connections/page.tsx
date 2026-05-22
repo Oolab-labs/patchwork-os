@@ -325,6 +325,11 @@ const SUPPORTED_CONNECTORS = new Set([
   "mongodb",
   "redis",
   "elasticsearch",
+  "sendgrid",
+  "twilio",
+  "figma",
+  "airtable",
+  "webflow",
 ]);
 
 const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
@@ -515,6 +520,94 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
       { key: "apiKey", label: "API key (base64 id:secret)", placeholder: "VnVhQ2ZHY0JDZGJrUW0tZTVhT3g6...", type: "text", required: false },
       { key: "cloudId", label: "Elastic Cloud ID (alternative to node URL)", placeholder: "deployment:dXMtZWFzdC0xLmF3cy5l...", type: "text", required: false },
     ],
+  },
+  sendgrid: {
+    name: "SendGrid",
+    icon: <IconEnvelope />,
+    instructions: (
+      <>
+        Create an API key in{" "}
+        <a href="https://app.sendgrid.com/settings/api_keys" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          SendGrid → Settings → API Keys
+        </a>
+        . Restricted-access keys with Mail Send + Templates read are enough.
+        Optionally set a verified sender email so the <code>send</code> tool can
+        default the From address.
+      </>
+    ),
+    placeholder: "SendGrid API key (starts with SG.)",
+    tokenKey: "apiKey",
+    extraFields: [
+      { key: "fromEmail", label: "Default sender email (optional)", placeholder: "you@your-org.com", type: "email", required: false },
+    ],
+  },
+  twilio: {
+    name: "Twilio",
+    icon: <IconEnvelope />,
+    instructions: (
+      <>
+        Find your Account SID + Auth Token in{" "}
+        <a href="https://console.twilio.com/" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          Twilio Console
+        </a>
+        . Add a default From number (E.164, e.g. <code>+15551234567</code>) so
+        the <code>sendSms</code> tool can default it.
+      </>
+    ),
+    placeholder: "Twilio Account SID (starts with AC)",
+    tokenKey: "accountSid",
+    extraFields: [
+      { key: "authToken", label: "Auth token", placeholder: "Twilio auth token", type: "text", required: true },
+      { key: "defaultFrom", label: "Default From number (E.164, optional)", placeholder: "+15551234567", type: "text", required: false },
+    ],
+  },
+  figma: {
+    name: "Figma",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Generate a Personal Access Token at{" "}
+        <a href="https://www.figma.com/settings" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          Figma → Settings → Personal access tokens
+        </a>
+        . Read-only by default — Figma's API surface is mostly read.
+      </>
+    ),
+    placeholder: "Figma personal access token (starts with figd_)",
+    tokenKey: "accessToken",
+  },
+  airtable: {
+    name: "Airtable",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Create a Personal Access Token at{" "}
+        <a href="https://airtable.com/create/tokens" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          Airtable → Developer hub → Personal access tokens
+        </a>
+        . Grant <code>data.records:read</code> for read tools, plus
+        <code> data.records:write</code> if you want create/update tools.
+        Scope to specific bases for safety.
+      </>
+    ),
+    placeholder: "Airtable personal access token (starts with pat)",
+    tokenKey: "accessToken",
+  },
+  webflow: {
+    name: "Webflow",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Create a Site API Token in{" "}
+        <a href="https://webflow.com/dashboard/account/integrations" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          Webflow → Account → Integrations → API access
+        </a>
+        . Webflow v2 tokens are scoped to one site — the connector captures
+        the first site at connect time.
+      </>
+    ),
+    placeholder: "Webflow site API token",
+    tokenKey: "accessToken",
   },
 };
 
