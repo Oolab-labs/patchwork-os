@@ -46,7 +46,7 @@ const CATALOG: ConnectorDef[] = [
   { id: "jira",             name: "Jira",             initials: "JI", category: "Project",    wave: 1, tools: 8,  bg: "#0052CC" },
   { id: "notion",           name: "Notion",           initials: "NO", category: "Docs",       wave: 1, tools: 6,  bg: "#000000" },
   { id: "pagerduty",        name: "PagerDuty",        initials: "PD", category: "Ops",        wave: 1, tools: 7,  bg: "#06AC38" },
-  { id: "docs",             name: "Docs",             initials: "DO", category: "Docs",       wave: 1, tools: 3,  bg: "#4285F4" },
+  { id: "google-docs",      name: "Google Docs",      initials: "DO", category: "Docs",       wave: 1, tools: 2,  bg: "#4285F4" },
   { id: "confluence",       name: "Confluence",       initials: "CF", category: "Docs",       wave: 1, tools: 5,  bg: "#0052CC" },
   { id: "linear",           name: "Linear",           initials: "LI", category: "Project",    wave: 1, tools: 6,  bg: "#5E6AD2" },
   { id: "slack",            name: "Slack",            initials: "SL", category: "Comms",      wave: 1, tools: 7,  bg: "#4A154B" },
@@ -330,6 +330,7 @@ const SUPPORTED_CONNECTORS = new Set([
   "figma",
   "airtable",
   "webflow",
+  "google-docs",
 ]);
 
 const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {

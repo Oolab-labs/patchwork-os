@@ -338,6 +338,7 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
     figma: () => import("./figma.js"),
     airtable: () => import("./airtable.js"),
     webflow: () => import("./webflow.js"),
+    "google-docs": () => import("./googleDocs.js"),
   };
   const tokenPasteProbes = CONNECTORS.filter(
     (c) => !EXPLICIT_IDS.has(c.id),

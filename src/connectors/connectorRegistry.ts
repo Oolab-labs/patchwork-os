@@ -71,6 +71,12 @@ export const CONNECTORS: readonly ConnectorDescriptor[] = [
     supports: { auth: true, test: true, delete: true },
   },
   {
+    id: "google-docs",
+    label: "Google Docs",
+    authKind: "oauth",
+    supports: { auth: true, test: true, delete: true },
+  },
+  {
     id: "github",
     label: "GitHub",
     authKind: "oauth",

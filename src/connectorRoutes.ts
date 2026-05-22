@@ -196,6 +196,29 @@ export function tryHandlePublicConnectorRoute(
     return true;
   }
   if (
+    parsedUrl.pathname === "/connections/google-docs/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      try {
+        const { handleDocsCallback } = await import(
+          "./connectors/googleDocs.js"
+        );
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleDocsCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
     parsedUrl.pathname === "/connections/slack/callback" &&
     req.method === "GET"
   ) {
@@ -1918,6 +1941,71 @@ export function tryHandleConnectorRoute(
           "./connectors/googleDrive.js"
         );
         const result = await handleDriveDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Google Docs routes ──────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/google-docs/auth" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      try {
+        const { handleDocsAuthRedirect } = await import(
+          "./connectors/googleDocs.js"
+        );
+        const result = handleDocsAuthRedirect();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/google-docs/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleDocsTest } = await import("./connectors/googleDocs.js");
+        const result = await handleDocsTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/google-docs" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleDocsDisconnect } = await import(
+          "./connectors/googleDocs.js"
+        );
+        const result = await handleDocsDisconnect();
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });

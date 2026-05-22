@@ -21,6 +21,8 @@ const EXPECTED_AUTH = new Set([
   "gmail", "google-calendar", "google-drive", "github", "linear", "sentry",
   "slack", "asana", "discord", "gitlab",
   "notion", "confluence", "datadog", "hubspot", "intercom", "stripe", "zendesk",
+  // Wave 3 — Google Docs (extends Google cluster).
+  "google-docs",
 ]);
 const EXPECTED_CONNECT = new Set([
   "notion", "confluence", "datadog", "hubspot", "intercom", "stripe",
@@ -43,6 +45,8 @@ const EXPECTED_TEST = new Set([
   "sendgrid", "twilio",
   // Wave 2 — PAT SaaS connectors.
   "figma", "airtable", "webflow",
+  // Wave 3 — Google Docs (OAuth).
+  "google-docs",
 ]);
 const EXPECTED_DELETE = EXPECTED_TEST;
 
