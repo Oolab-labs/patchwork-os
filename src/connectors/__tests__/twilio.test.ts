@@ -186,8 +186,8 @@ describe("sendSms", () => {
     });
     const c = getTwilioConnector();
     await c.sendSms({ to: "+14155551234", body: "hi" });
-    const call = fetchMock.mock.calls[0]!;
-    const init = call[1] as RequestInit;
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const init = call[1];
     expect(String(init.body)).toContain("From=%2B14155550100");
     expect(String(init.body)).toContain("To=%2B14155551234");
     expect(String(init.body)).toContain("Body=hi");
@@ -221,7 +221,7 @@ describe("listMessages", () => {
       dateSent: "2026-01-01",
       limit: 50,
     });
-    const url = fetchMock.mock.calls[0]![0] as string;
+    const url = (fetchMock.mock.calls[0] as unknown as [string])[0];
     expect(url).toContain("PageSize=50");
     expect(url).toContain("To=%2B14155551234");
     expect(url).toContain("From=%2B14155550100");
@@ -239,7 +239,7 @@ describe("listMessages", () => {
     });
     const c = getTwilioConnector();
     await c.listMessages();
-    const url = fetchMock.mock.calls[0]![0] as string;
+    const url = (fetchMock.mock.calls[0] as unknown as [string])[0];
     expect(url).toContain("PageSize=20");
   });
 });
