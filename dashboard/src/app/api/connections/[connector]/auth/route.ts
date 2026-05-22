@@ -1,32 +1,18 @@
 import { bridgeFetch } from "@/lib/bridge";
 import { forwardOrGeneric } from "@/lib/forwardOrGeneric";
+import { authAllowedConnectorIds } from "../../../../../../../src/connectors/connectorRegistry";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const ALLOWED_CONNECTORS = new Set([
-  "gmail",
-  "google-calendar",
-  "google-drive",
-  "github",
-  "linear",
-  "sentry",
-  "slack",
-  "notion",
-  "confluence",
-  "datadog",
-  "hubspot",
-  "intercom",
-  "stripe",
-  "zendesk",
-]);
+const ALLOWED = new Set(authAllowedConnectorIds());
 
 export async function GET(
   _req: Request,
   ctx: { params: Promise<{ connector: string }> },
 ): Promise<Response> {
   const { connector } = await ctx.params;
-  if (!ALLOWED_CONNECTORS.has(connector)) {
+  if (!ALLOWED.has(connector)) {
     return new Response(JSON.stringify({ error: "Unknown connector" }), {
       status: 404, headers: { "content-type": "application/json" },
     });

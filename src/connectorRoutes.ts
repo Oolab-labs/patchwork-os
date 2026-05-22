@@ -968,6 +968,51 @@ export function tryHandleConnectorRoute(
     return true;
   }
 
+  // ── Jira routes ─────────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/jira/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/jira.js");
+      return m.handleJiraConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/jira/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleJiraTest } = await import("./connectors/jira.js");
+        const result = await handleJiraTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (parsedUrl.pathname === "/connections/jira" && req.method === "DELETE") {
+    void (async () => {
+      try {
+        const { handleJiraDisconnect } = await import("./connectors/jira.js");
+        const result = handleJiraDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
   // ── Zendesk routes ──────────────────────────────────────────────
   if (
     parsedUrl.pathname === "/connections/zendesk/connect" &&

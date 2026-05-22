@@ -21,6 +21,7 @@ import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -58,15 +59,7 @@ export interface VendorConfig {
 
 // ── Known vendor configs ─────────────────────────────────────────────────────
 
-function defaultBridgeBase(): string {
-  const port = process.env.PATCHWORK_BRIDGE_PORT ?? "3101";
-  return (
-    process.env.PATCHWORK_BRIDGE_URL ?? `http://localhost:${port}`
-  ).replace(/\/$/, "");
-}
-
 export function vendorConfig(vendor: VendorId): VendorConfig {
-  const bridgeBase = defaultBridgeBase();
   switch (vendor) {
     case "github":
       return {
@@ -76,7 +69,7 @@ export function vendorConfig(vendor: VendorId): VendorConfig {
         tokenEndpoint: "https://github.com/login/oauth/access_token",
         revocationEndpoint: undefined, // GitHub OAuth apps use a different revoke path; best-effort delete only
         scopes: ["repo", "read:org", "read:user"],
-        redirectUri: `${bridgeBase}/connections/github/callback`,
+        redirectUri: connectorRedirectUri("github"),
         useDynamicRegistration: false,
         preregisteredClientId: process.env.PATCHWORK_GITHUB_CLIENT_ID ?? "",
         preregisteredClientSecret: process.env.PATCHWORK_GITHUB_CLIENT_SECRET,
@@ -92,7 +85,7 @@ export function vendorConfig(vendor: VendorId): VendorConfig {
         registrationEndpoint: "https://mcp.linear.app/register",
         revocationEndpoint: "https://mcp.linear.app/token", // per discovery doc
         scopes: [],
-        redirectUri: `${bridgeBase}/connections/linear/callback`,
+        redirectUri: connectorRedirectUri("linear"),
         useDynamicRegistration: true,
         clientName: "Patchwork OS",
       };
@@ -105,7 +98,7 @@ export function vendorConfig(vendor: VendorId): VendorConfig {
         registrationEndpoint: "https://mcp.sentry.dev/oauth/register",
         revocationEndpoint: "https://mcp.sentry.dev/oauth/token",
         scopes: ["org:read", "project:write", "event:write"],
-        redirectUri: `${bridgeBase}/connections/sentry/callback`,
+        redirectUri: connectorRedirectUri("sentry"),
         useDynamicRegistration: true,
         clientName: "Patchwork OS",
       };

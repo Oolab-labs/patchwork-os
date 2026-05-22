@@ -15,6 +15,7 @@ import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -22,9 +23,7 @@ import {
 } from "./tokenStorage.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"];
-const REDIRECT_URI = process.env.PATCHWORK_DASHBOARD_URL
-  ? `${process.env.PATCHWORK_DASHBOARD_URL}/connections/google-calendar/callback`
-  : "http://localhost:3200/dashboard/connections/google-calendar/callback";
+const REDIRECT_URI = connectorRedirectUri("google-calendar");
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 function getTokenPath() {
   const dir =
@@ -283,7 +282,7 @@ async function revokeToken(token: string): Promise<void> {
 
 import { createOAuthStateStore } from "./oauthStateStore.js";
 
-const pendingStates = createOAuthStateStore();
+const pendingStates = createOAuthStateStore({ namespace: "googleCalendar" });
 
 function generateState(): string {
   const state = crypto.randomBytes(32).toString("hex");

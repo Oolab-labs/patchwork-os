@@ -39,6 +39,7 @@ import {
   type ConnectorStatus,
   type OAuthConfig,
 } from "./baseConnector.js";
+import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
 import {
   deleteSecretJsonSync,
@@ -115,11 +116,7 @@ function clientSecret(): string {
 }
 
 function redirectUri(): string {
-  const base = (
-    process.env.PATCHWORK_BRIDGE_URL ??
-    `http://localhost:${process.env.PATCHWORK_BRIDGE_PORT ?? "3101"}`
-  ).replace(/\/$/, "");
-  return `${base}/connections/discord/callback`;
+  return connectorRedirectUri("discord");
 }
 
 function isConfigured(): boolean {
@@ -157,7 +154,10 @@ export function isConnected(): boolean {
 import { createOAuthStateStore } from "./oauthStateStore.js";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
-const pendingStates = createOAuthStateStore({ ttlMs: STATE_TTL_MS });
+const pendingStates = createOAuthStateStore({
+  ttlMs: STATE_TTL_MS,
+  namespace: "discord",
+});
 
 function generateState(): string {
   const state = crypto.randomBytes(32).toString("hex");
