@@ -282,7 +282,7 @@ async function revokeToken(token: string): Promise<void> {
 
 import { createOAuthStateStore } from "./oauthStateStore.js";
 
-const pendingStates = createOAuthStateStore();
+const pendingStates = createOAuthStateStore({ namespace: "googleCalendar" });
 
 function generateState(): string {
   const state = crypto.randomBytes(32).toString("hex");

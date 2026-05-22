@@ -154,7 +154,10 @@ export function isConnected(): boolean {
 import { createOAuthStateStore } from "./oauthStateStore.js";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
-const pendingStates = createOAuthStateStore({ ttlMs: STATE_TTL_MS });
+const pendingStates = createOAuthStateStore({
+  ttlMs: STATE_TTL_MS,
+  namespace: "discord",
+});
 
 function generateState(): string {
   const state = crypto.randomBytes(32).toString("hex");

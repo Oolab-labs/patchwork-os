@@ -294,7 +294,7 @@ export async function fetchDocName(
 
 import { createOAuthStateStore } from "./oauthStateStore.js";
 
-const pendingStates = createOAuthStateStore();
+const pendingStates = createOAuthStateStore({ namespace: "googleDrive" });
 
 function generateState(): string {
   const state = crypto.randomBytes(32).toString("hex");
