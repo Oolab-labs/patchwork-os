@@ -69,7 +69,13 @@ async function gmailSearch(
     // 2. Fetch details for each message
     const messages = await Promise.all(
       ids.slice(0, max).map(async (m) => {
-        const detailUrl = `https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=Subject,From,Date`;
+        // Gmail's metadataHeaders param must be REPEATED per header, not
+        // comma-joined. `metadataHeaders=Subject,From,Date` is silently
+        // dropped server-side — the response then carries an empty
+        // headers array and every {subject,from,date} field returns "",
+        // which made downstream tools that branch on the subject (e.g.
+        // resolveMeetingNotes) silently no-op against real emails.
+        const detailUrl = `https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`;
         const detailRes = await fetch(detailUrl, {
           headers: { Authorization: `Bearer ${token}` },
         });
