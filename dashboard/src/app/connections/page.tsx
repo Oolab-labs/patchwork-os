@@ -570,7 +570,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
         <a href="https://www.figma.com/settings" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
           Figma → Settings → Personal access tokens
         </a>
-        . Read-only by default — Figma's API surface is mostly read.
+        . Read-only by default — Figma&apos;s API surface is mostly read.
       </>
     ),
     placeholder: "Figma personal access token (starts with figd_)",
