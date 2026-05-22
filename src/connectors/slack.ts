@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { writeFileAtomicSync } from "../writeFileAtomic.js";
+import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
 import {
   deleteSecretJsonSync,
@@ -73,11 +74,7 @@ function clientSecret(): string {
 }
 
 function redirectUri(): string {
-  const base = (
-    process.env.PATCHWORK_BRIDGE_URL ??
-    `http://localhost:${process.env.PATCHWORK_BRIDGE_PORT ?? "3101"}`
-  ).replace(/\/$/, "");
-  return `${base}/connections/slack/callback`;
+  return connectorRedirectUri("slack");
 }
 
 // ── Token storage ─────────────────────────────────────────────────────────────

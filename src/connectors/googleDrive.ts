@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -9,9 +10,7 @@ import {
 } from "./tokenStorage.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/drive.readonly"];
-const REDIRECT_URI = process.env.PATCHWORK_DASHBOARD_URL
-  ? `${process.env.PATCHWORK_DASHBOARD_URL}/connections/google-drive/callback`
-  : "http://localhost:3200/dashboard/connections/google-drive/callback";
+const REDIRECT_URI = connectorRedirectUri("google-drive");
 
 function getTokenPath() {
   const dir =

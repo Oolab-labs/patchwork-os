@@ -16,6 +16,7 @@ import crypto from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -23,7 +24,7 @@ import {
 } from "./tokenStorage.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
-const REDIRECT_URI = `http://localhost:${process.env.PATCHWORK_BRIDGE_PORT ?? "3101"}/connections/gmail/callback`;
+const REDIRECT_URI = connectorRedirectUri("gmail");
 function getTokenPath() {
   const dir =
     process.env.PATCHWORK_TOKEN_DIR ??

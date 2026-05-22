@@ -43,6 +43,7 @@ import {
   type ConnectorStatus,
   type OAuthConfig,
 } from "./baseConnector.js";
+import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
 import {
   deleteSecretJsonSync,
@@ -143,11 +144,7 @@ function clientSecret(): string {
 }
 
 function redirectUri(): string {
-  const base = (
-    process.env.PATCHWORK_BRIDGE_URL ??
-    `http://localhost:${process.env.PATCHWORK_BRIDGE_PORT ?? "3101"}`
-  ).replace(/\/$/, "");
-  return `${base}/connections/asana/callback`;
+  return connectorRedirectUri("asana");
 }
 
 function isConfigured(): boolean {
