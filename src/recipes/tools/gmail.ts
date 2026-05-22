@@ -477,8 +477,15 @@ registerTool({
 
     for (const msg of messages) {
       const subject = msg.subject ?? "";
+      // Gemini's notification email format changed at least once. Earlier
+      // emails said "Notes by Gemini" in the subject; the current format
+      // (as of 2026) is `Notes: "<meeting title>" <date>` from
+      // gemini-notes@google.com — no "by Gemini" anywhere. Match both, plus
+      // the generic Drive-share variants Drive uses when the Doc is shared
+      // separately. Also accept any subject that already references a
+      // docs.google.com URL via the snippet.
       const isGemini =
-        /notes by gemini|document shared with you|shared a document|invited you to (?:edit|view|comment)/i.test(
+        /notes by gemini|^notes:\s|document shared with you|shared a document|invited you to (?:edit|view|comment)/i.test(
           subject,
         ) ||
         /notes by gemini|docs\.google\.com\/document/i.test(msg.snippet ?? "");
