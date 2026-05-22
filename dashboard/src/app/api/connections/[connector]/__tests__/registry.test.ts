@@ -23,6 +23,8 @@ const EXPECTED_AUTH = new Set([
   "notion", "confluence", "datadog", "hubspot", "intercom", "stripe", "zendesk",
   // Wave 3 — Google Docs (extends Google cluster).
   "google-docs",
+  // Wave final — Monday + Salesforce (OAuth).
+  "monday", "salesforce",
 ]);
 const EXPECTED_CONNECT = new Set([
   "notion", "confluence", "datadog", "hubspot", "intercom", "stripe",
@@ -33,6 +35,8 @@ const EXPECTED_CONNECT = new Set([
   "sendgrid", "twilio",
   // Wave 2 — PAT SaaS connectors.
   "figma", "airtable", "webflow",
+  // Wave final — Shopify (Admin API access token) + Snowflake (PAT).
+  "shopify", "snowflake",
 ]);
 const EXPECTED_TEST = new Set([
   "gmail", "github", "linear", "sentry", "google-calendar", "google-drive",
@@ -47,6 +51,8 @@ const EXPECTED_TEST = new Set([
   "figma", "airtable", "webflow",
   // Wave 3 — Google Docs (OAuth).
   "google-docs",
+  // Wave final — Monday + Salesforce (OAuth) + Shopify + Snowflake (PAT).
+  "monday", "salesforce", "shopify", "snowflake",
 ]);
 const EXPECTED_DELETE = EXPECTED_TEST;
 
