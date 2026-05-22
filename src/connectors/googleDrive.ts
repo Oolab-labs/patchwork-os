@@ -272,6 +272,46 @@ export async function fetchDocContent(
   return plain ?? "";
 }
 
+export interface DriveFileSummary {
+  id: string;
+  name: string;
+  url: string;
+  modifiedTime: string;
+}
+
+/**
+ * Find the most recently modified Google Doc whose name contains the given
+ * substring. Returns null when no match. Drive's `q` `contains` operator is
+ * case-insensitive substring match; single-quote literals must be escaped.
+ */
+export async function findLatestDoc(
+  nameContains: string,
+  accessToken: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<DriveFileSummary | null> {
+  const safe = nameContains.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const q = `name contains '${safe}' and mimeType = 'application/vnd.google-apps.document' and trashed = false`;
+  const url =
+    `https://www.googleapis.com/drive/v3/files?` +
+    `q=${encodeURIComponent(q)}&orderBy=modifiedTime desc&pageSize=1` +
+    `&fields=files(id,name,modifiedTime)`;
+  const res = await fetchFn(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Drive list failed: ${res.status}`);
+  const data = (await res.json()) as {
+    files?: Array<{ id: string; name: string; modifiedTime: string }>;
+  };
+  const f = data.files?.[0];
+  if (!f) return null;
+  return {
+    id: f.id,
+    name: f.name,
+    url: `https://docs.google.com/document/d/${f.id}/edit`,
+    modifiedTime: f.modifiedTime,
+  };
+}
+
 /** Fetch the Drive file's display name. Returns "" on failure. */
 export async function fetchDocName(
   urlOrId: string,
