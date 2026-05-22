@@ -507,20 +507,25 @@ registerTool({
         continue;
       }
 
-      // Gemini notes — fetch full message to get Drive URL
+      // Gemini notes — fetch full message and look for either a Doc URL OR
+      // an inlined-body. Newer Gemini emails (2026+) inline the full notes
+      // directly in the email body and DON'T include a docs.google.com URL.
+      // Older Gemini / Meet emails just link to a Drive doc.
       let driveUrl = "";
+      let emailBody = "";
       try {
         const fullMsg = await gmailGetMessage(msg.id, deps);
         const parsed = JSON.parse(fullMsg) as {
           links?: string[];
           body?: string;
         };
+        emailBody = parsed.body ?? "";
         const links = parsed.links ?? [];
         driveUrl = links.find(isDocsGoogleHost) ?? "";
         if (!driveUrl) {
           // Try extracting from body text
           const bodyMatch = /https?:\/\/docs\.google\.com\/[^\s"'<>]+/.exec(
-            parsed.body ?? "",
+            emailBody,
           );
           driveUrl = bodyMatch?.[0] ?? "";
         }
@@ -535,11 +540,15 @@ registerTool({
       }
 
       if (!driveUrl) {
+        // No linked Doc — use the email body itself as the meeting content.
+        // Gemini's inlined-notes format is what the parser already expects:
+        // a "Summary" section, topical sections, etc. Fall back to snippet
+        // only when even the body is empty (rare).
         results.push({
           emailId: msg.id,
           subject,
           source: "email",
-          content: msg.snippet ?? "",
+          content: emailBody.length > 0 ? emailBody : (msg.snippet ?? ""),
         });
         continue;
       }
