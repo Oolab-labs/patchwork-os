@@ -25,12 +25,16 @@ const EXPECTED_AUTH = new Set([
 const EXPECTED_CONNECT = new Set([
   "notion", "confluence", "datadog", "hubspot", "intercom", "stripe",
   "zendesk", "pagerduty",
+  // Wave 1a data-store connectors (PAT, lazy driver imports).
+  "postgres", "mongodb", "redis", "elasticsearch",
 ]);
 const EXPECTED_TEST = new Set([
   "gmail", "github", "linear", "sentry", "google-calendar", "google-drive",
   "slack", "asana", "discord", "gitlab",
   "notion", "confluence", "datadog", "hubspot", "intercom", "stripe", "zendesk",
   "pagerduty",
+  // Wave 1a data-store connectors.
+  "postgres", "mongodb", "redis", "elasticsearch",
 ]);
 const EXPECTED_DELETE = EXPECTED_TEST;
 

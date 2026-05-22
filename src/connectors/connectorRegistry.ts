@@ -164,6 +164,37 @@ export const CONNECTORS: readonly ConnectorDescriptor[] = [
     authKind: "pat",
     supports: { connect: true, test: true, delete: true },
   },
+  // postgres: PAT (connection string / discrete fields). Not in the legacy
+  // `auth` allowlist because there is no OAuth redirect to start.
+  {
+    id: "postgres",
+    label: "Postgres",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  // mongodb: PAT (connection URI). Lazy-loads the `mongodb` driver.
+  {
+    id: "mongodb",
+    label: "MongoDB",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  // redis: PAT (connection URL). Lazy-loads the `redis` driver. Read-only
+  // command allowlist enforced inside the connector.
+  {
+    id: "redis",
+    label: "Redis",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  // elasticsearch: PAT (node URL + apiKey/basic, or cloudId + apiKey).
+  // Lazy-loads the `@elastic/elasticsearch` driver.
+  {
+    id: "elasticsearch",
+    label: "Elasticsearch",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
   // jira: PAT. Concurrent work is wiring the bridge routes. The
   // `supports` capabilities here are deliberately empty until those
   // routes exist; flipping them in this file is the one-line change
