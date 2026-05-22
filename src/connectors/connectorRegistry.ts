@@ -233,6 +233,33 @@ export const CONNECTORS: readonly ConnectorDescriptor[] = [
     authKind: "pat",
     supports: { connect: true, test: true, delete: true },
   },
+  // Wave final — OAuth (Monday, Salesforce) + PAT (Shopify, Snowflake).
+  // OAuth client id/secret read from env at startup; connectors sit inert
+  // until the user registers a vendor OAuth app and sets the env vars.
+  {
+    id: "monday",
+    label: "Monday",
+    authKind: "oauth",
+    supports: { auth: true, test: true, delete: true },
+  },
+  {
+    id: "salesforce",
+    label: "Salesforce",
+    authKind: "oauth",
+    supports: { auth: true, test: true, delete: true },
+  },
+  {
+    id: "shopify",
+    label: "Shopify",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "snowflake",
+    label: "Snowflake",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
   // jira: PAT. Concurrent work is wiring the bridge routes. The
   // `supports` capabilities here are deliberately empty until those
   // routes exist; flipping them in this file is the one-line change

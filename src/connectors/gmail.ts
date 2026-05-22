@@ -339,6 +339,10 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
     airtable: () => import("./airtable.js"),
     webflow: () => import("./webflow.js"),
     "google-docs": () => import("./googleDocs.js"),
+    monday: () => import("./monday.js"),
+    salesforce: () => import("./salesforce.js"),
+    shopify: () => import("./shopify.js"),
+    snowflake: () => import("./snowflake.js"),
   };
   const tokenPasteProbes = CONNECTORS.filter(
     (c) => !EXPLICIT_IDS.has(c.id),

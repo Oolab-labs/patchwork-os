@@ -219,6 +219,50 @@ export function tryHandlePublicConnectorRoute(
     return true;
   }
   if (
+    parsedUrl.pathname === "/connections/monday/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      try {
+        const { handleMondayCallback } = await import("./connectors/monday.js");
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleMondayCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/salesforce/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      try {
+        const { handleSalesforceCallback } = await import(
+          "./connectors/salesforce.js"
+        );
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleSalesforceCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
     parsedUrl.pathname === "/connections/slack/callback" &&
     req.method === "GET"
   ) {
@@ -2006,6 +2050,237 @@ export function tryHandleConnectorRoute(
           "./connectors/googleDocs.js"
         );
         const result = await handleDocsDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Monday routes ───────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/monday/auth" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      try {
+        const { handleMondayAuthRedirect } = await import(
+          "./connectors/monday.js"
+        );
+        const result = handleMondayAuthRedirect();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/monday/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleMondayTest } = await import("./connectors/monday.js");
+        const result = await handleMondayTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (parsedUrl.pathname === "/connections/monday" && req.method === "DELETE") {
+    void (async () => {
+      try {
+        const { handleMondayDisconnect } = await import(
+          "./connectors/monday.js"
+        );
+        const result = await handleMondayDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Salesforce routes ───────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/salesforce/auth" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      try {
+        const { handleSalesforceAuthRedirect } = await import(
+          "./connectors/salesforce.js"
+        );
+        const result = handleSalesforceAuthRedirect();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/salesforce/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleSalesforceTest } = await import(
+          "./connectors/salesforce.js"
+        );
+        const result = await handleSalesforceTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/salesforce" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleSalesforceDisconnect } = await import(
+          "./connectors/salesforce.js"
+        );
+        const result = await handleSalesforceDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Shopify routes ──────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/shopify/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/shopify.js");
+      return m.handleShopifyConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/shopify/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleShopifyTest } = await import("./connectors/shopify.js");
+        const result = await handleShopifyTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/shopify" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleShopifyDisconnect } = await import(
+          "./connectors/shopify.js"
+        );
+        const result = handleShopifyDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Snowflake routes ────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/snowflake/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/snowflake.js");
+      return m.handleSnowflakeConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/snowflake/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleSnowflakeTest } = await import(
+          "./connectors/snowflake.js"
+        );
+        const result = await handleSnowflakeTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/snowflake" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleSnowflakeDisconnect } = await import(
+          "./connectors/snowflake.js"
+        );
+        const result = await handleSnowflakeDisconnect();
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });

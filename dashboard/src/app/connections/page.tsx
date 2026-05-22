@@ -331,6 +331,10 @@ const SUPPORTED_CONNECTORS = new Set([
   "airtable",
   "webflow",
   "google-docs",
+  "monday",
+  "salesforce",
+  "shopify",
+  "snowflake",
 ]);
 
 const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
@@ -609,6 +613,51 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     ),
     placeholder: "Webflow site API token",
     tokenKey: "accessToken",
+  },
+  shopify: {
+    name: "Shopify",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Create a Custom App in your Shopify admin under{" "}
+        <a href="https://admin.shopify.com/settings/apps/development" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          Settings → Apps and sales channels → Develop apps
+        </a>
+        . Grant <code>read_products</code>, <code>read_orders</code>, and
+        <code> read_customers</code> Admin API scopes; install the app; copy
+        the Admin API access token (starts with <code>shpat_</code>).
+      </>
+    ),
+    placeholder: "Shopify Admin API access token (starts with shpat_)",
+    tokenKey: "accessToken",
+    extraFields: [
+      { key: "shopDomain", label: "Shop domain (the permanent *.myshopify.com URL)", placeholder: "your-store.myshopify.com", type: "text", required: true },
+    ],
+  },
+  snowflake: {
+    name: "Snowflake",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Create a Personal Access Token in{" "}
+        <a href="https://docs.snowflake.com/en/user-guide/programmatic-access-tokens" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          Snowflake → User → Personal access tokens
+        </a>
+        . Read-only role recommended — only SELECT/SHOW/DESC/EXPLAIN
+        statements are accepted. Account identifier looks like
+        <code> xy12345.us-east-1</code> (locator + region).
+      </>
+    ),
+    placeholder: "Snowflake PAT",
+    tokenKey: "pat",
+    extraFields: [
+      { key: "accountIdentifier", label: "Account identifier (locator.region)", placeholder: "xy12345.us-east-1", type: "text", required: true },
+      { key: "user", label: "Snowflake username", placeholder: "your_user", type: "text", required: true },
+      { key: "warehouse", label: "Default warehouse (optional)", placeholder: "COMPUTE_WH", type: "text", required: false },
+      { key: "database", label: "Default database (optional)", placeholder: "ANALYTICS", type: "text", required: false },
+      { key: "schema", label: "Default schema (optional)", placeholder: "PUBLIC", type: "text", required: false },
+      { key: "role", label: "Default role (optional)", placeholder: "READ_ONLY", type: "text", required: false },
+    ],
   },
 };
 
