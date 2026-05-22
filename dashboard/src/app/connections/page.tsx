@@ -269,6 +269,25 @@ function IconZendesk() {
   );
 }
 
+function IconDatabase() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <ellipse cx="10" cy="5" rx="6" ry="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M4 5v5c0 1.1 2.7 2 6 2s6-.9 6-2V5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M4 10v5c0 1.1 2.7 2 6 2s6-.9 6-2v-5" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function IconSearch() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <circle cx="9" cy="9" r="5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M13 13l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // ------------------------------------------------------------------ token modal config
 
 interface TokenModalConfig {
@@ -302,6 +321,10 @@ const SUPPORTED_CONNECTORS = new Set([
   "pagerduty",
   "stripe",
   "zendesk",
+  "postgres",
+  "mongodb",
+  "redis",
+  "elasticsearch",
 ]);
 
 const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
@@ -434,6 +457,63 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     extraFields: [
       { key: "subdomain", label: "Zendesk subdomain", placeholder: "your-org", type: "text", required: true },
       { key: "email", label: "Agent email", placeholder: "you@your-org.com", type: "email", required: true },
+    ],
+  },
+  postgres: {
+    name: "Postgres",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Paste a Postgres connection string. The bridge validates by running <code>SELECT 1</code> before storing.
+        Read-only credentials recommended — only SELECT/SHOW/EXPLAIN are accepted at query time.
+        Requires <code>npm install pg</code> in the bridge install (lazy-loaded; bridge does not bundle the driver).
+      </>
+    ),
+    placeholder: "postgres://user:pass@host:5432/dbname",
+    tokenKey: "connectionString",
+  },
+  mongodb: {
+    name: "MongoDB",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Paste a MongoDB connection URI. The bridge validates via <code>admin.ping</code> before storing.
+        Read-only credentials recommended — write/aggregation operators like <code>$where</code>, <code>$out</code>,
+        and <code>$merge</code> are rejected at query time.
+        Requires <code>npm install mongodb</code> in the bridge install.
+      </>
+    ),
+    placeholder: "mongodb+srv://user:pass@cluster.example.net/dbname",
+    tokenKey: "connectionString",
+  },
+  redis: {
+    name: "Redis",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Paste a Redis URL. The bridge validates via <code>PING</code> before storing.
+        Read-only commands only — SET/DEL/FLUSHDB/CONFIG/EVAL etc. are rejected at the allowlist.
+        Use <code>rediss://</code> for TLS. Requires <code>npm install redis</code> in the bridge install.
+      </>
+    ),
+    placeholder: "redis://default:password@host:6379/0",
+    tokenKey: "url",
+  },
+  elasticsearch: {
+    name: "Elasticsearch",
+    icon: <IconSearch />,
+    instructions: (
+      <>
+        Either a node URL + API key, or an Elastic Cloud ID + API key. The bridge validates via <code>cluster.ping</code>
+        before storing. Read-only — <code>script</code>/<code>script_fields</code> are rejected; size capped at 100.
+        Requires <code>npm install @elastic/elasticsearch</code> in the bridge install.
+      </>
+    ),
+    placeholder: "https://your-cluster.example.es.io:9243",
+    tokenKey: "node",
+    extraFields: [
+      { key: "apiKey", label: "API key (base64 id:secret)", placeholder: "VnVhQ2ZHY0JDZGJrUW0tZTVhT3g6...", type: "text", required: false },
+      { key: "cloudId", label: "Elastic Cloud ID (alternative to node URL)", placeholder: "deployment:dXMtZWFzdC0xLmF3cy5l...", type: "text", required: false },
     ],
   },
 };

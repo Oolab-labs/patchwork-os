@@ -1312,6 +1312,203 @@ export function tryHandleConnectorRoute(
     return true;
   }
 
+  // ── Postgres routes ─────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/postgres/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/postgres.js");
+      return m.handlePostgresConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/postgres/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handlePostgresTest } = await import("./connectors/postgres.js");
+        const result = await handlePostgresTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/postgres" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handlePostgresDisconnect } = await import(
+          "./connectors/postgres.js"
+        );
+        const result = await handlePostgresDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── MongoDB routes ──────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/mongodb/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/mongodb.js");
+      return m.handleMongoConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/mongodb/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleMongoTest } = await import("./connectors/mongodb.js");
+        const result = await handleMongoTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/mongodb" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleMongoDisconnect } = await import(
+          "./connectors/mongodb.js"
+        );
+        const result = await handleMongoDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Redis routes ────────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/redis/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/redis.js");
+      return m.handleRedisConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/redis/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleRedisTest } = await import("./connectors/redis.js");
+        const result = await handleRedisTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (parsedUrl.pathname === "/connections/redis" && req.method === "DELETE") {
+    void (async () => {
+      try {
+        const { handleRedisDisconnect } = await import("./connectors/redis.js");
+        const result = await handleRedisDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Elasticsearch routes ────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/elasticsearch/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/elasticsearch.js");
+      return m.handleElasticsearchConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/elasticsearch/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleElasticsearchTest } = await import(
+          "./connectors/elasticsearch.js"
+        );
+        const result = await handleElasticsearchTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/elasticsearch" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleElasticsearchDisconnect } = await import(
+          "./connectors/elasticsearch.js"
+        );
+        const result = await handleElasticsearchDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
   // ── Google Calendar routes ──────────────────────────────────────
   if (
     parsedUrl.pathname === "/connections/google-calendar/auth" &&
