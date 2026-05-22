@@ -1509,6 +1509,248 @@ export function tryHandleConnectorRoute(
     return true;
   }
 
+  // ── SendGrid routes ─────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/sendgrid/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/sendgrid.js");
+      return m.handleSendGridConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/sendgrid/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleSendGridTest } = await import("./connectors/sendgrid.js");
+        const result = await handleSendGridTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/sendgrid" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleSendGridDisconnect } = await import(
+          "./connectors/sendgrid.js"
+        );
+        const result = handleSendGridDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Twilio routes ───────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/twilio/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/twilio.js");
+      return m.handleTwilioConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/twilio/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleTwilioTest } = await import("./connectors/twilio.js");
+        const result = await handleTwilioTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (parsedUrl.pathname === "/connections/twilio" && req.method === "DELETE") {
+    void (async () => {
+      try {
+        const { handleTwilioDisconnect } = await import(
+          "./connectors/twilio.js"
+        );
+        const result = handleTwilioDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Figma routes ────────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/figma/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/figma.js");
+      return m.handleFigmaConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/figma/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleFigmaTest } = await import("./connectors/figma.js");
+        const result = await handleFigmaTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (parsedUrl.pathname === "/connections/figma" && req.method === "DELETE") {
+    void (async () => {
+      try {
+        const { handleFigmaDisconnect } = await import("./connectors/figma.js");
+        const result = handleFigmaDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Airtable routes ─────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/airtable/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/airtable.js");
+      return m.handleAirtableConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/airtable/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleAirtableTest } = await import("./connectors/airtable.js");
+        const result = await handleAirtableTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/airtable" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleAirtableDisconnect } = await import(
+          "./connectors/airtable.js"
+        );
+        const result = handleAirtableDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Webflow routes ──────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/webflow/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/webflow.js");
+      return m.handleWebflowConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/webflow/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleWebflowTest } = await import("./connectors/webflow.js");
+        const result = await handleWebflowTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/webflow" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleWebflowDisconnect } = await import(
+          "./connectors/webflow.js"
+        );
+        const result = handleWebflowDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
   // ── Google Calendar routes ──────────────────────────────────────
   if (
     parsedUrl.pathname === "/connections/google-calendar/auth" &&

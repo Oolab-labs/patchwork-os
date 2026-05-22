@@ -333,6 +333,11 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
     mongodb: () => import("./mongodb.js"),
     redis: () => import("./redis.js"),
     elasticsearch: () => import("./elasticsearch.js"),
+    sendgrid: () => import("./sendgrid.js"),
+    twilio: () => import("./twilio.js"),
+    figma: () => import("./figma.js"),
+    airtable: () => import("./airtable.js"),
+    webflow: () => import("./webflow.js"),
   };
   const tokenPasteProbes = CONNECTORS.filter(
     (c) => !EXPLICIT_IDS.has(c.id),
