@@ -17,6 +17,7 @@ import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
+import { CONNECTORS } from "./connectorRegistry.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -250,7 +251,7 @@ async function fetchUserEmail(accessToken: string): Promise<string> {
 
 import { createOAuthStateStore } from "./oauthStateStore.js";
 
-const pendingStates = createOAuthStateStore();
+const pendingStates = createOAuthStateStore({ namespace: "gmail" });
 
 function generateState(): string {
   const state = crypto.randomBytes(32).toString("hex");
@@ -301,21 +302,45 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
 
   // Token-paste connectors expose loadTokens() which returns null when
   // no credentials are stored. Probe each one so the dashboard reflects
-  // their actual state instead of always-disconnected.
-  const tokenPasteProbes = [
-    { id: "asana", mod: () => import("./asana.js") },
-    { id: "notion", mod: () => import("./notion.js") },
-    { id: "confluence", mod: () => import("./confluence.js") },
-    { id: "datadog", mod: () => import("./datadog.js") },
-    { id: "discord", mod: () => import("./discord.js") },
-    { id: "gitlab", mod: () => import("./gitlab.js") },
-    { id: "hubspot", mod: () => import("./hubspot.js") },
-    { id: "intercom", mod: () => import("./intercom.js") },
-    { id: "pagerduty", mod: () => import("./pagerduty.js") },
-    { id: "stripe", mod: () => import("./stripe.js") },
-    { id: "zendesk", mod: () => import("./zendesk.js") },
-    { id: "jira", mod: () => import("./jira.js") },
-  ] as const;
+  // their actual state instead of always-disconnected. The probe list
+  // is derived from connectorRegistry — every connector NOT handled by
+  // the explicit branches below. Webpack/esbuild can't statically resolve
+  // a dynamic import path, so we map ids to their loader explicitly; the
+  // registry just enforces membership.
+  const EXPLICIT_IDS = new Set([
+    "gmail",
+    "github",
+    "sentry",
+    "linear",
+    "google-calendar",
+    "google-drive",
+    "slack",
+  ]);
+  const loaders: Record<string, () => Promise<unknown>> = {
+    asana: () => import("./asana.js"),
+    notion: () => import("./notion.js"),
+    confluence: () => import("./confluence.js"),
+    datadog: () => import("./datadog.js"),
+    discord: () => import("./discord.js"),
+    gitlab: () => import("./gitlab.js"),
+    hubspot: () => import("./hubspot.js"),
+    intercom: () => import("./intercom.js"),
+    pagerduty: () => import("./pagerduty.js"),
+    stripe: () => import("./stripe.js"),
+    zendesk: () => import("./zendesk.js"),
+    jira: () => import("./jira.js"),
+  };
+  const tokenPasteProbes = CONNECTORS.filter(
+    (c) => !EXPLICIT_IDS.has(c.id),
+  ).map((c) => {
+    const mod = loaders[c.id];
+    if (!mod) {
+      throw new Error(
+        `connectorRegistry has connector "${c.id}" with no loader in handleConnectionsList`,
+      );
+    }
+    return { id: c.id, mod };
+  });
   const tokenPasteStatuses = await Promise.all(
     tokenPasteProbes.map(async (probe) => {
       try {

@@ -6,17 +6,16 @@ import {
   bodyTooLargeResponse,
   readBodyWithCap,
 } from "@/lib/readBodyWithCap";
+import { connectAllowedConnectorIds } from "../../../../../../../src/connectors/connectorRegistry";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 // Token-paste connectors only — OAuth vendors (gmail, google-calendar,
 // github, linear, sentry, slack) authenticate via /api/connections/<id>/auth
-// and have no bridge /connections/<id>/connect handler.
-const ALLOWED_CONNECTORS = new Set([
-  "notion", "confluence", "datadog", "hubspot", "intercom", "stripe", "zendesk",
-  "pagerduty",
-]);
+// and have no bridge /connections/<id>/connect handler. Membership lives
+// in src/connectors/connectorRegistry.ts.
+const ALLOWED = new Set(connectAllowedConnectorIds());
 
 export async function POST(
   req: Request,
@@ -25,7 +24,7 @@ export async function POST(
   const guard = requireSameOrigin(req);
   if (guard) return guard;
   const { connector } = await ctx.params;
-  if (!ALLOWED_CONNECTORS.has(connector)) {
+  if (!ALLOWED.has(connector)) {
     return new Response(JSON.stringify({ error: "Unknown connector" }), {
       status: 404,
       headers: { "content-type": "application/json" },
