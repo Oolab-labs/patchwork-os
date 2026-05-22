@@ -7,7 +7,9 @@ export const runtime = "nodejs";
 
 const ALLOWED_CONNECTORS = new Set([
   "gmail", "github", "linear", "sentry", "google-calendar", "google-drive", "slack",
+  "asana", "discord", "gitlab",
   "notion", "confluence", "datadog", "hubspot", "intercom", "stripe", "zendesk",
+  "pagerduty",
 ]);
 
 export async function POST(

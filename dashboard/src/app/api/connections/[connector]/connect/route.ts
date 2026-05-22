@@ -15,6 +15,7 @@ export const runtime = "nodejs";
 // and have no bridge /connections/<id>/connect handler.
 const ALLOWED_CONNECTORS = new Set([
   "notion", "confluence", "datadog", "hubspot", "intercom", "stripe", "zendesk",
+  "pagerduty",
 ]);
 
 export async function POST(
