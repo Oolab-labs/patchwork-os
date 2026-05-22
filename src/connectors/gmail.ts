@@ -329,6 +329,10 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
     stripe: () => import("./stripe.js"),
     zendesk: () => import("./zendesk.js"),
     jira: () => import("./jira.js"),
+    postgres: () => import("./postgres.js"),
+    mongodb: () => import("./mongodb.js"),
+    redis: () => import("./redis.js"),
+    elasticsearch: () => import("./elasticsearch.js"),
   };
   const tokenPasteProbes = CONNECTORS.filter(
     (c) => !EXPLICIT_IDS.has(c.id),
