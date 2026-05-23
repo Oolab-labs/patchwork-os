@@ -37,6 +37,7 @@ let port = 0;
 const originalFetch = globalThis.fetch;
 const originalAllowedHosts =
   process.env.CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS;
+const originalRepoAllowlist = process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST;
 
 function makeRequest(
   options: http.RequestOptions,
@@ -89,6 +90,11 @@ afterAll(() => {
   } else {
     delete process.env.CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS;
   }
+  if (originalRepoAllowlist !== undefined) {
+    process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST = originalRepoAllowlist;
+  } else {
+    delete process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST;
+  }
 });
 
 beforeEach(async () => {
@@ -102,6 +108,7 @@ afterEach(async () => {
   port = 0;
   globalThis.fetch = originalFetch;
   delete process.env.CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS;
+  delete process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST;
 });
 
 /** Build a Response-shape that streams `body` through the fetch reader path. */
