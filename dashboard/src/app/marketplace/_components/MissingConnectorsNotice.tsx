@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { formatConnectorLabel } from "@/lib/registry";
+import { formatConnectorLabel, normalizeConnectorId } from "@/lib/registry";
 
 /**
  * Post-install warning rendered on InstallPanel / BundleInstallPanel
@@ -14,10 +13,18 @@ import { formatConnectorLabel } from "@/lib/registry";
  * notice that survives the page sitting open. Toast auto-dismisses
  * after 8s and gives them nothing to come back to.
  *
- * Renders connectors as a comma-separated label list with a single
- * action link to /connections. No "Dismiss" button — the notice
- * disappears once the install state changes (e.g. on a successful
- * re-install) or the page reloads.
+ * Wave 1 fix: each connector now gets its OWN row with a deep-link
+ * straight to `/connections#<connector-id>` (the connections page
+ * scrolls to the anchor, so the user lands on the right row). The old
+ * version was a single comma-joined label list with one generic
+ * "Open connections →" button that dumped every user on the same
+ * index — a textbook dead-end. The `<a>` is intentionally raw (not
+ * Next `<Link>`) because Next's router strips hash fragments on
+ * client-side navigation.
+ *
+ * Renders as a `role="alert"` block so screen readers announce the
+ * full list. Each link reads "Connect Gmail" → screen readers say
+ * "Connect Gmail, link".
  */
 export function MissingConnectorsNotice({
   connectors,
@@ -25,7 +32,13 @@ export function MissingConnectorsNotice({
   connectors: string[];
 }) {
   if (connectors.length === 0) return null;
-  const labels = connectors.map(formatConnectorLabel);
+  // Normalise display ids so a recipe that imported as `googleCalendar`
+  // still lands on `/connections#google-calendar`, matching the
+  // canonical id used on that page's anchor targets.
+  const items = connectors.map((raw) => {
+    const id = normalizeConnectorId(raw);
+    return { id, label: formatConnectorLabel(id) };
+  });
   return (
     <div
       role="alert"
@@ -44,20 +57,35 @@ export function MissingConnectorsNotice({
     >
       <div>
         <strong style={{ color: "var(--ink-0)" }}>
-          Connect {labels.length === 1 ? "this service" : "these services"}{" "}
+          Connect {items.length === 1 ? "this service" : "these services"}{" "}
           before the recipe can run:
-        </strong>{" "}
-        {labels.join(", ")}.
+        </strong>
       </div>
-      <div>
-        <Link
-          href="/connections"
-          className="btn sm"
-          style={{ textDecoration: "none" }}
-        >
-          Open connections →
-        </Link>
-      </div>
+      <ul
+        style={{
+          listStyle: "none",
+          padding: 0,
+          margin: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--s-1)",
+        }}
+      >
+        {items.map(({ id, label }) => (
+          <li key={id}>
+            <a
+              href={`/connections#${id}`}
+              className="btn sm"
+              style={{
+                textDecoration: "none",
+                display: "inline-block",
+              }}
+            >
+              Connect {label} →
+            </a>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

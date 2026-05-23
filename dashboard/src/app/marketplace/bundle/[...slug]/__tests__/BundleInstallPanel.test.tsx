@@ -219,7 +219,14 @@ describe("BundleInstallPanel — install action", () => {
     fireEvent.click(confirmBtns[confirmBtns.length - 1]);
 
     await waitFor(() => expect(screen.getByText(/2 failed:/i)).toBeInTheDocument());
-    expect(screen.getByText(/Installed 1 recipe:/i)).toBeInTheDocument();
+    // Wave 1: when failures dominate (here 2 failed vs 1 installed),
+    // the green "Installed N recipes" headline is demoted to a yellow
+    // "Only N of M recipes installed" line so the user can't miss the
+    // failure list underneath. Old assertion looked for "Installed 1
+    // recipe:" which no longer renders in this state.
+    expect(
+      screen.getByText(/Only 1 of 3 recipes installed/i),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Upstream returned 404/i)).toBeInTheDocument();
     expect(
       screen.getByText(/Recipe body exceeded 1 MB cap/i),
@@ -279,11 +286,15 @@ describe("BundleInstallPanel — install action", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/Connect these services/i);
-    expect(alert).toHaveTextContent(/Gmail/);
-    expect(alert).toHaveTextContent(/Linear/);
+    // Wave 1: per-connector deep-links replace the single
+    // "Open connections" button (which was a dead-end dropping the
+    // user on the connections index with no anchor).
     expect(
-      screen.getByRole("link", { name: /Open connections/i }),
-    ).toHaveAttribute("href", "/connections");
+      screen.getByRole("link", { name: /Connect Gmail/i }),
+    ).toHaveAttribute("href", "/connections#gmail");
+    expect(
+      screen.getByRole("link", { name: /Connect Linear/i }),
+    ).toHaveAttribute("href", "/connections#linear");
   });
 });
 

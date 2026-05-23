@@ -1581,9 +1581,16 @@ export function tryHandleRecipeRoute(
             action: "created" | "replaced";
           }> = [];
           const failures: Array<{ name: string; error: string }> = [];
-          const { writeFileSync, mkdirSync, unlinkSync } = await import(
-            "node:fs"
-          );
+          // Wave 1 fix: aggregate connector preflight across every
+          // bundle-installed recipe so the dashboard can surface a
+          // single "you need to connect Gmail + Slack + Calendar before
+          // running these" notice, matching the single-recipe install's
+          // missingConnectors behaviour. Previously bundle installs
+          // returned no preflight hint → users hit first-run "no Slack
+          // token" surprise on every recipe.
+          const aggregatedMissingConnectors = new Set<string>();
+          const { writeFileSync, mkdirSync, unlinkSync, readFileSync } =
+            await import("node:fs");
           const { installRecipeFromFile } = await import(
             "./recipes/installer.js"
           );
@@ -1657,6 +1664,60 @@ export function tryHandleRecipeRoute(
                   recipesDir,
                 });
                 installed.push({ name: r, action: installResult.action });
+                // Per-recipe connector preflight — same shape as the
+                // single-recipe path (lines ~2005+). Defensive: any
+                // failure must not roll back the install.
+                try {
+                  const installedJson = readFileSync(
+                    installResult.installedPath,
+                    "utf-8",
+                  );
+                  const recipeForPreflight = JSON.parse(installedJson) as {
+                    steps?: unknown[];
+                  };
+                  if (Array.isArray(recipeForPreflight.steps)) {
+                    const { detectRequiredConnectors, findMissingConnectors } =
+                      await import("./recipes/connectorPreflight.js");
+                    const required = detectRequiredConnectors(
+                      recipeForPreflight as Parameters<
+                        typeof detectRequiredConnectors
+                      >[0],
+                    );
+                    if (required.length > 0) {
+                      const { handleConnectionsList } = await import(
+                        "./connectors/gmail.js"
+                      );
+                      const connsResult = await handleConnectionsList();
+                      let connections: Array<{
+                        id?: string;
+                        status?: string;
+                      }> = [];
+                      try {
+                        const body = JSON.parse(connsResult.body) as {
+                          connectors?: Array<{
+                            id?: string;
+                            status?: string;
+                          }>;
+                        };
+                        connections = body.connectors ?? [];
+                      } catch {
+                        /* malformed body — treat as no connections */
+                      }
+                      const missing = findMissingConnectors(
+                        required,
+                        connections,
+                      );
+                      for (const id of missing) {
+                        aggregatedMissingConnectors.add(id);
+                      }
+                    }
+                  }
+                } catch (preflightErr) {
+                  console.warn(
+                    `[recipes/install] bundle preflight for "${r}" failed (non-blocking):`,
+                    preflightErr,
+                  );
+                }
               } finally {
                 try {
                   unlinkSync(tmpFile);
@@ -1700,6 +1761,9 @@ export function tryHandleRecipeRoute(
               bundleName,
               installed,
               failures,
+              ...(aggregatedMissingConnectors.size > 0 && {
+                missingConnectors: Array.from(aggregatedMissingConnectors),
+              }),
               ...(Object.keys(advisory).length > 0 && { advisory }),
             }),
           );

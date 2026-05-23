@@ -183,12 +183,18 @@ describe("InstallPanel — install-confirm dialog", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/Connect these services/i);
-    expect(alert).toHaveTextContent(/Gmail/);
-    expect(alert).toHaveTextContent(/Slack/);
-    expect(alert).toHaveTextContent(/Google Calendar/);
+    // Wave 1: per-connector deep-links replace the single "Open
+    // connections" button. Each link reads "Connect <Label> →" and
+    // points at `/connections#<connector-id>` for direct landing.
     expect(
-      screen.getByRole("link", { name: /Open connections/i }),
-    ).toHaveAttribute("href", "/connections");
+      screen.getByRole("link", { name: /Connect Gmail/i }),
+    ).toHaveAttribute("href", "/connections#gmail");
+    expect(
+      screen.getByRole("link", { name: /Connect Slack/i }),
+    ).toHaveAttribute("href", "/connections#slack");
+    expect(
+      screen.getByRole("link", { name: /Connect Google Calendar/i }),
+    ).toHaveAttribute("href", "/connections#google-calendar");
   });
 
   it("Cancel button in the dialog does not POST", async () => {
