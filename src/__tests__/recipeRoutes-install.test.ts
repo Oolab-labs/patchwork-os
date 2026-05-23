@@ -693,4 +693,37 @@ describe("Server /recipes/:name/run — A-PR2 body cap (32 KB)", () => {
     );
     expect(status).toBe(503);
   });
+
+  // ── Marketplace trust Wave 0 — kill-switch gate ───────────────────────
+  it("install-kill-switch: PATCHWORK_FLAG_KILL_SWITCH_WRITES=1 → 503 kill_switch_blocked", async () => {
+    // Engage kill-switch dynamically via the in-process flag setter so
+    // the test doesn't need a bridge restart. `kill-switch.writes` reads
+    // from the env-lock snapshot, so flip it via setFlag at runtime.
+    const { setFlag, KILL_SWITCH_WRITES, _resetEnvLockForTesting } =
+      await import("../featureFlags.js");
+    _resetEnvLockForTesting();
+    setFlag(KILL_SWITCH_WRITES, true, false);
+    try {
+      const { status, body } = await makeRequest(
+        {
+          method: "POST",
+          path: "/recipes/install",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOKEN}`,
+          },
+        },
+        JSON.stringify({
+          source: "github:patchworkos/recipes/recipes/morning-brief",
+        }),
+      );
+      expect(status).toBe(503);
+      const parsed = JSON.parse(body);
+      expect(parsed.ok).toBe(false);
+      expect(parsed.code).toBe("kill_switch_blocked");
+      expect(parsed.error).toMatch(/kill switch/i);
+    } finally {
+      setFlag(KILL_SWITCH_WRITES, false, false);
+    }
+  });
 });

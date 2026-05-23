@@ -218,8 +218,9 @@ export default function BundleInstallPanel({
           {allInstalled ? (
             <>
               <span style={{ color: "var(--ok)", marginRight: 6 }}>✓</span>
-              All {recipes.length} recipes installed locally — enable each
-              with <code>patchwork recipe enable &lt;name&gt;</code>.
+              All {recipes.length} recipes installed locally — they run on
+              their triggers immediately. To pause one, use{" "}
+              <code>patchwork recipe disable &lt;name&gt;</code>.
             </>
           ) : partialInstalled ? (
             <>
