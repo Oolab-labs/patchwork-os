@@ -306,9 +306,23 @@ export default function BundleInstallPanel({
             // doesn't miss the red failure list sitting underneath.
             // Previously a 1-of-5-installed result still showed a
             // green checkmark + downplayed failures.
+            //
+            // Wave 2 fix (item 14): same demotion applies when the
+            // bundle declared a plugin or policy_template — the green
+            // success line hid the "Manual follow-up needed" block
+            // below, and users reported "the bundle installed but my
+            // plugin tool doesn't work." Yellow + "Installed with
+            // follow-up required" headline keeps the block visible.
             const installedCount = result.installed?.length ?? 0;
             const failureCount = result.failures?.length ?? 0;
             const failuresDominate = failureCount > installedCount;
+            const hasAdvisory = Boolean(plugin || policyTemplate);
+            const elevated = failuresDominate || hasAdvisory;
+            const headlineText = failuresDominate
+              ? `Only ${installedCount} of ${installedCount + failureCount} recipes installed`
+              : hasAdvisory
+                ? `Installed ${installedCount} recipe${installedCount === 1 ? "" : "s"} — follow-up required`
+                : `Installed ${installedCount} recipe${installedCount === 1 ? "" : "s"}`;
             return (
               <>
                 {installedCount > 0 && (
@@ -317,15 +331,13 @@ export default function BundleInstallPanel({
                   >
                     <span
                       style={{
-                        color: failuresDominate ? "var(--warn)" : "var(--ok)",
+                        color: elevated ? "var(--warn)" : "var(--ok)",
                         marginRight: 6,
                       }}
                     >
-                      {failuresDominate ? "⚠" : "✓"}
+                      {elevated ? "⚠" : "✓"}
                     </span>
-                    {failuresDominate
-                      ? `Only ${installedCount} of ${installedCount + failureCount} recipes installed`
-                      : `Installed ${installedCount} recipe${installedCount === 1 ? "" : "s"}`}
+                    {headlineText}
                     :{" "}
                     <span style={{ fontFamily: "var(--font-mono)" }}>
                       {result.installed?.map((r) => r.name).join(", ")}

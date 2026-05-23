@@ -76,9 +76,10 @@ beforeEach(() => {
     value: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
   // Drop any draft a previous test wrote — the page restores from
-  // sessionStorage on mount and we want each test to start from a clean
-  // form.
+  // localStorage (Wave 2 — was sessionStorage in v1) on mount and we
+  // want each test to start from a clean form.
   sessionStorage.clear();
+  localStorage.clear();
 });
 
 afterEach(() => {
@@ -347,28 +348,35 @@ describe("MarketplaceSubmitPage — lint-pass badge", () => {
 // sessionStorage draft restore
 // =====================================================================
 
-describe("MarketplaceSubmitPage — sessionStorage draft", () => {
+describe("MarketplaceSubmitPage — localStorage draft", () => {
   beforeEach(() => {
     fetchMock.mockResolvedValue(jsonResponse(503, {}));
   });
 
-  it("restores form state from sessionStorage on mount", async () => {
-    sessionStorage.setItem(
-      "patchwork.marketplaceSubmit.draft.v1",
+  it("restores form state from localStorage on mount", async () => {
+    // Wave 2: storage moved from sessionStorage (v1, tab-scoped) to
+    // localStorage (v2, cross-tab + 7-day TTL). Entries are wrapped in
+    // a `{ savedAt, data }` envelope so the page can compute draft
+    // age + auto-expire.
+    localStorage.setItem(
+      "patchwork.marketplaceSubmit.draft.v2",
       JSON.stringify({
-        slugRaw: "restored-slug",
-        authorRaw: "restored-author",
-        version: "2.1.0",
-        description: "Restored description.",
-        tagsInput: "restored",
-        connectorsInput: "",
-        license: "Apache-2.0",
-        homepage: "",
-        riskLevel: "medium",
-        networkAccess: true,
-        fileAccess: false,
-        approvalBehavior: "always_ask",
-        yaml: "name: restored-slug\n",
+        savedAt: Date.now(),
+        data: {
+          slugRaw: "restored-slug",
+          authorRaw: "restored-author",
+          version: "2.1.0",
+          description: "Restored description.",
+          tagsInput: "restored",
+          connectorsInput: "",
+          license: "Apache-2.0",
+          homepage: "",
+          riskLevel: "medium",
+          networkAccess: true,
+          fileAccess: false,
+          approvalBehavior: "always_ask",
+          yaml: "name: restored-slug\n",
+        },
       }),
     );
 
@@ -394,23 +402,26 @@ describe("MarketplaceSubmitPage — sessionStorage draft", () => {
     // then refreshed the page. Pre-fix the user landed back on compose
     // view with the draft restored — losing access to the second-file
     // button, and a Submit-again would open a duplicate prefilled tab.
-    sessionStorage.setItem(
-      "patchwork.marketplaceSubmit.draft.v1",
+    localStorage.setItem(
+      "patchwork.marketplaceSubmit.draft.v2",
       JSON.stringify({
-        slugRaw: "my-recipe",
-        authorRaw: "myhandle",
-        version: "1.0.0",
-        description: "test",
-        tagsInput: "test",
-        connectorsInput: "",
-        license: "MIT",
-        homepage: "",
-        riskLevel: "low",
-        networkAccess: false,
-        fileAccess: false,
-        approvalBehavior: "ask_on_novel",
-        yaml: "name: my-recipe\n",
-        stage: "submitted",
+        savedAt: Date.now(),
+        data: {
+          slugRaw: "my-recipe",
+          authorRaw: "myhandle",
+          version: "1.0.0",
+          description: "test",
+          tagsInput: "test",
+          connectorsInput: "",
+          license: "MIT",
+          homepage: "",
+          riskLevel: "low",
+          networkAccess: false,
+          fileAccess: false,
+          approvalBehavior: "ask_on_novel",
+          yaml: "name: my-recipe\n",
+          stage: "submitted",
+        },
       }),
     );
 
@@ -429,23 +440,26 @@ describe("MarketplaceSubmitPage — sessionStorage draft", () => {
     // Drafts saved before the stage field shipped won't have it.
     // Don't accidentally land users on a never-submitted "submitted"
     // view.
-    sessionStorage.setItem(
-      "patchwork.marketplaceSubmit.draft.v1",
+    localStorage.setItem(
+      "patchwork.marketplaceSubmit.draft.v2",
       JSON.stringify({
-        slugRaw: "from-v1",
-        authorRaw: "",
-        version: "1.0.0",
-        description: "",
-        tagsInput: "",
-        connectorsInput: "",
-        license: "MIT",
-        homepage: "",
-        riskLevel: "low",
-        networkAccess: false,
-        fileAccess: false,
-        approvalBehavior: "ask_on_novel",
-        yaml: "name: from-v1\n",
-        // intentionally no `stage`
+        savedAt: Date.now(),
+        data: {
+          slugRaw: "from-older-draft",
+          authorRaw: "",
+          version: "1.0.0",
+          description: "",
+          tagsInput: "",
+          connectorsInput: "",
+          license: "MIT",
+          homepage: "",
+          riskLevel: "low",
+          networkAccess: false,
+          fileAccess: false,
+          approvalBehavior: "ask_on_novel",
+          yaml: "name: from-older-draft\n",
+          // intentionally no `stage`
+        },
       }),
     );
 
@@ -456,9 +470,9 @@ describe("MarketplaceSubmitPage — sessionStorage draft", () => {
     ).toBeInTheDocument();
   });
 
-  it("falls back to defaults when sessionStorage contains malformed data", () => {
-    sessionStorage.setItem(
-      "patchwork.marketplaceSubmit.draft.v1",
+  it("falls back to defaults when localStorage contains malformed data", () => {
+    localStorage.setItem(
+      "patchwork.marketplaceSubmit.draft.v2",
       "{ not valid json",
     );
 
@@ -482,13 +496,13 @@ describe("MarketplaceSubmitPage — sessionStorage draft", () => {
 
     // Auto-save fired before submit — confirm there IS something in storage.
     expect(
-      sessionStorage.getItem("patchwork.marketplaceSubmit.draft.v1"),
+      localStorage.getItem("patchwork.marketplaceSubmit.draft.v2"),
     ).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /Start over/i }));
 
     expect(
-      sessionStorage.getItem("patchwork.marketplaceSubmit.draft.v1"),
+      localStorage.getItem("patchwork.marketplaceSubmit.draft.v2"),
     ).toBeNull();
   });
 });
@@ -591,8 +605,11 @@ describe("MarketplaceSubmitPage — Validate-before-submit guard", () => {
     // guard is meant to catch.
     fireEvent.click(screen.getByRole("button", { name: /Open PR on GitHub/i }));
 
+    // Wave 2 fix: clearer copy explains the soft-bypass path through
+    // an offline bridge — match on "Click Validate" rather than the
+    // verbatim old "Click Validate first" string.
     expect(
-      await screen.findByText(/Click Validate first/i),
+      await screen.findByText(/Click Validate/i),
     ).toBeInTheDocument();
     // GitHub tab was NOT opened.
     expect(openMock).not.toHaveBeenCalled();
@@ -604,30 +621,36 @@ describe("MarketplaceSubmitPage — Validate-before-submit guard", () => {
 // =====================================================================
 
 describe("MarketplaceSubmitPage — draft-restored banner", () => {
-  it("shows the banner when a draft was restored from sessionStorage", () => {
-    sessionStorage.setItem(
-      "patchwork.marketplaceSubmit.draft.v1",
+  it("shows the banner when a draft was restored from localStorage", () => {
+    localStorage.setItem(
+      "patchwork.marketplaceSubmit.draft.v2",
       JSON.stringify({
-        slugRaw: "restored",
-        authorRaw: "",
-        version: "1.0.0",
-        description: "",
-        tagsInput: "",
-        connectorsInput: "",
-        license: "MIT",
-        homepage: "",
-        riskLevel: "low",
-        networkAccess: false,
-        fileAccess: false,
-        approvalBehavior: "ask_on_novel",
-        yaml: "name: restored\n",
+        savedAt: Date.now(),
+        data: {
+          slugRaw: "restored",
+          authorRaw: "",
+          version: "1.0.0",
+          description: "",
+          tagsInput: "",
+          connectorsInput: "",
+          license: "MIT",
+          homepage: "",
+          riskLevel: "low",
+          networkAccess: false,
+          fileAccess: false,
+          approvalBehavior: "ask_on_novel",
+          yaml: "name: restored\n",
+        },
       }),
     );
     fetchMock.mockResolvedValue(jsonResponse(503, {}));
 
     render(<MarketplaceSubmitPage />);
 
-    expect(screen.getByText(/Draft restored\./i)).toBeInTheDocument();
+    // Wave 2: banner now reads "Draft restored from <age> ago. Drafts
+    // auto-discard after 7 days." — match on the "Draft restored"
+    // prefix only since the age string varies per millisecond.
+    expect(screen.getByText(/Draft restored/i)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Discard and start fresh/i }),
     ).toBeInTheDocument();
@@ -636,26 +659,29 @@ describe("MarketplaceSubmitPage — draft-restored banner", () => {
   it("does NOT show the banner on a clean first visit", () => {
     fetchMock.mockResolvedValue(jsonResponse(503, {}));
     render(<MarketplaceSubmitPage />);
-    expect(screen.queryByText(/Draft restored\./i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Draft restored/i)).not.toBeInTheDocument();
   });
 
   it("'Discard and start fresh' clears all fields and dismisses the banner", async () => {
-    sessionStorage.setItem(
-      "patchwork.marketplaceSubmit.draft.v1",
+    localStorage.setItem(
+      "patchwork.marketplaceSubmit.draft.v2",
       JSON.stringify({
-        slugRaw: "to-discard",
-        authorRaw: "ghost",
-        version: "1.0.0",
-        description: "Stale.",
-        tagsInput: "old",
-        connectorsInput: "",
-        license: "MIT",
-        homepage: "",
-        riskLevel: "low",
-        networkAccess: false,
-        fileAccess: false,
-        approvalBehavior: "ask_on_novel",
-        yaml: "name: to-discard\n",
+        savedAt: Date.now(),
+        data: {
+          slugRaw: "to-discard",
+          authorRaw: "ghost",
+          version: "1.0.0",
+          description: "Stale.",
+          tagsInput: "old",
+          connectorsInput: "",
+          license: "MIT",
+          homepage: "",
+          riskLevel: "low",
+          networkAccess: false,
+          fileAccess: false,
+          approvalBehavior: "ask_on_novel",
+          yaml: "name: to-discard\n",
+        },
       }),
     );
     fetchMock.mockResolvedValue(jsonResponse(503, {}));
@@ -665,7 +691,7 @@ describe("MarketplaceSubmitPage — draft-restored banner", () => {
       screen.getByRole("button", { name: /Discard and start fresh/i }),
     );
 
-    expect(screen.queryByText(/Draft restored\./i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Draft restored/i)).not.toBeInTheDocument();
     expect(
       (screen.getByLabelText(/^Slug/i) as HTMLInputElement).value,
     ).toBe("");
@@ -673,7 +699,7 @@ describe("MarketplaceSubmitPage — draft-restored banner", () => {
       (screen.getByLabelText(/Author handle/i) as HTMLInputElement).value,
     ).toBe("");
     expect(
-      sessionStorage.getItem("patchwork.marketplaceSubmit.draft.v1"),
+      localStorage.getItem("patchwork.marketplaceSubmit.draft.v2"),
     ).toBeNull();
   });
 });

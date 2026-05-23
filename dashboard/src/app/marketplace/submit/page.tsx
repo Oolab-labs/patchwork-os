@@ -30,6 +30,7 @@ import {
   REGISTRY_REPO,
   STARTER_RECIPE_YAML,
   SUBMIT_DRAFT_STORAGE_KEY,
+  SUBMIT_DRAFT_TTL_MS,
   URL_SAFE_CONTENT_LIMIT,
   validateSubmission,
   type SubmissionFormData,
@@ -77,45 +78,76 @@ interface DraftState {
   stage: Stage;
 }
 
-function readDraft(): DraftState | null {
+/**
+ * v2 storage envelope wraps the form state with a savedAt timestamp so
+ * the page can surface "restored from X days ago" and auto-expire
+ * abandoned drafts. v1 (sessionStorage) is gone — its tab-scoped
+ * lifetime was hostile to users who closed the tab to come back
+ * tomorrow.
+ */
+interface DraftEnvelope {
+  savedAt: number;
+  data: DraftState;
+}
+
+/**
+ * Returns the restored draft and how stale it is (in ms since save).
+ * Auto-clears drafts older than SUBMIT_DRAFT_TTL_MS — Wave 2 fix; v1
+ * had no TTL and a 6-month-old half-filled form could pollute a fresh
+ * compose session indefinitely.
+ */
+function readDraft(): { data: DraftState; ageMs: number } | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.sessionStorage.getItem(SUBMIT_DRAFT_STORAGE_KEY);
+    const raw = window.localStorage.getItem(SUBMIT_DRAFT_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<DraftState>;
-    // Coarse shape guard — sessionStorage can be tampered with by extensions
-    // or older app versions; require both yaml and slug fields to be strings.
+    const envelope = JSON.parse(raw) as Partial<DraftEnvelope>;
+    const parsed = (envelope?.data ?? envelope) as Partial<DraftState>;
+    const savedAt =
+      typeof envelope?.savedAt === "number" ? envelope.savedAt : Date.now();
+    const ageMs = Date.now() - savedAt;
+    // Coarse shape guard — localStorage can be tampered with by extensions
+    // or older app versions; require yaml field to be string.
     if (typeof parsed?.yaml !== "string") return null;
+    // TTL check — auto-discard drafts older than 7 days.
+    if (ageMs > SUBMIT_DRAFT_TTL_MS) {
+      clearDraft();
+      return null;
+    }
     return {
-      slugRaw: typeof parsed.slugRaw === "string" ? parsed.slugRaw : "",
-      authorRaw: typeof parsed.authorRaw === "string" ? parsed.authorRaw : "",
-      version: typeof parsed.version === "string" ? parsed.version : "1.0.0",
-      description:
-        typeof parsed.description === "string" ? parsed.description : "",
-      tagsInput:
-        typeof parsed.tagsInput === "string" ? parsed.tagsInput : "",
-      connectorsInput:
-        typeof parsed.connectorsInput === "string"
-          ? parsed.connectorsInput
-          : "",
-      license: typeof parsed.license === "string" ? parsed.license : "MIT",
-      homepage: typeof parsed.homepage === "string" ? parsed.homepage : "",
-      riskLevel:
-        parsed.riskLevel === "medium" || parsed.riskLevel === "high"
-          ? parsed.riskLevel
-          : "low",
-      networkAccess: parsed.networkAccess === true,
-      fileAccess: parsed.fileAccess === true,
-      approvalBehavior:
-        parsed.approvalBehavior === "always_ask" ||
-        parsed.approvalBehavior === "auto_approve"
-          ? parsed.approvalBehavior
-          : "ask_on_novel",
-      yaml: parsed.yaml,
-      // Older drafts (pre-PR550-followup) won't have `stage` — default to
-      // compose so a v1 draft restored under v2 lands the user on the
-      // form, not a stale submitted view.
-      stage: parsed.stage === "submitted" ? "submitted" : "compose",
+      ageMs,
+      data: {
+        slugRaw: typeof parsed.slugRaw === "string" ? parsed.slugRaw : "",
+        authorRaw:
+          typeof parsed.authorRaw === "string" ? parsed.authorRaw : "",
+        version: typeof parsed.version === "string" ? parsed.version : "1.0.0",
+        description:
+          typeof parsed.description === "string" ? parsed.description : "",
+        tagsInput:
+          typeof parsed.tagsInput === "string" ? parsed.tagsInput : "",
+        connectorsInput:
+          typeof parsed.connectorsInput === "string"
+            ? parsed.connectorsInput
+            : "",
+        license: typeof parsed.license === "string" ? parsed.license : "MIT",
+        homepage: typeof parsed.homepage === "string" ? parsed.homepage : "",
+        riskLevel:
+          parsed.riskLevel === "medium" || parsed.riskLevel === "high"
+            ? parsed.riskLevel
+            : "low",
+        networkAccess: parsed.networkAccess === true,
+        fileAccess: parsed.fileAccess === true,
+        approvalBehavior:
+          parsed.approvalBehavior === "always_ask" ||
+          parsed.approvalBehavior === "auto_approve"
+            ? parsed.approvalBehavior
+            : "ask_on_novel",
+        yaml: parsed.yaml,
+        // Older drafts won't have `stage` — default to compose so an
+        // older draft restored under a newer schema lands on the form,
+        // not a stale submitted view.
+        stage: parsed.stage === "submitted" ? "submitted" : "compose",
+      },
     };
   } catch {
     return null;
@@ -125,24 +157,39 @@ function readDraft(): DraftState | null {
 function clearDraft(): void {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.removeItem(SUBMIT_DRAFT_STORAGE_KEY);
+    window.localStorage.removeItem(SUBMIT_DRAFT_STORAGE_KEY);
   } catch {
     /* storage unavailable / quota — non-fatal */
   }
 }
 
+function fmtDraftAge(ageMs: number): string {
+  const seconds = Math.floor(ageMs / 1000);
+  if (seconds < 60) return "less than a minute ago";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60)
+    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
 export default function MarketplaceSubmitPage() {
   const toast = useToast();
 
-  // Lazy initializers so each useState reads from sessionStorage ONCE on
+  // Lazy initializers so each useState reads from localStorage ONCE on
   // mount (no flash of empty form on hot-reload). The draft is written
   // back by a single effect lower down so we don't pay per-keystroke
-  // JSON serialisation in every setter.
-  const restored = useRef<DraftState | null>(null);
+  // JSON serialisation in every setter. Wave 2: storage moved from
+  // sessionStorage (tab-scoped) to localStorage + 7-day TTL — the
+  // ageMs surfaced here drives the restored-banner copy.
+  const restored = useRef<{ data: DraftState; ageMs: number } | null>(null);
   if (restored.current === null && typeof window !== "undefined") {
     restored.current = readDraft();
   }
-  const draft = restored.current;
+  const draft = restored.current?.data ?? null;
+  const draftAgeMs = restored.current?.ageMs ?? 0;
   // Sticky banner state: tells the user we restored a previous draft.
   // Hidden once they dismiss or discard — we don't tie it to draft
   // existence directly because the auto-save effect re-writes the draft
@@ -333,9 +380,11 @@ export default function MarketplaceSubmitPage() {
         yaml,
         stage,
       };
-      window.sessionStorage.setItem(
+      // Wave 2: v2 envelope wraps the form state with a savedAt
+      // timestamp so the restore path can compute draft age + TTL.
+      window.localStorage.setItem(
         SUBMIT_DRAFT_STORAGE_KEY,
-        JSON.stringify(snapshot),
+        JSON.stringify({ savedAt: Date.now(), data: snapshot }),
       );
     } catch {
       /* storage quota / disabled — non-fatal */
@@ -520,10 +569,18 @@ export default function MarketplaceSubmitPage() {
       return;
     }
     if (!lintIsFresh && lintError === null) {
+      // Wave 2: the previous "Click Validate first" message was a dead
+      // end when the bridge was offline — users would click Validate,
+      // get a fast error, but the soft-bypass path (`lintError !==
+      // null`) wasn't obvious. Spell it out: clicking Validate ALWAYS
+      // unblocks submit, whether the bridge accepts the lint or
+      // reports unreachable.
       errMap.yaml =
-        "Click Validate first — submit needs a fresh lint pass (or a recorded bridge-unreachable result).";
+        "Click Validate to lint the YAML. If the bridge is offline, " +
+        "Validate will surface that immediately and let you proceed " +
+        "(full validation runs server-side during PR review).";
       setSubmitErrors(errMap);
-      toast.error("Please Validate the YAML before submitting.");
+      toast.error("Click Validate before submitting.");
       return;
     }
 
@@ -712,8 +769,8 @@ export default function MarketplaceSubmitPage() {
           }}
         >
           <span>
-            <strong>Draft restored.</strong> Picked up where you left off in
-            this browser tab.
+            <strong>Draft restored</strong> from {fmtDraftAge(draftAgeMs)}.
+            Drafts auto-discard after 7 days.
           </span>
           <span style={{ display: "flex", gap: "var(--s-2)" }}>
             <button
@@ -1439,9 +1496,15 @@ function SubmittedView({
         <li style={{ marginBottom: "var(--s-3)" }}>
           <strong>Add the manifest:</strong> click the button below to open a
           second GitHub tab prefilled with{" "}
-          <code>{recipeJsonPath(formData)}</code>. Commit it{" "}
-          <em>to the same branch</em> as step 1 (GitHub will offer this in the
-          branch dropdown).
+          <code>{recipeJsonPath(formData)}</code>.{" "}
+          <strong style={{ color: "var(--err)" }}>
+            Commit it to the SAME branch you used in step 1
+          </strong>
+          {" "}— GitHub may default to a new branch like{" "}
+          <code>patch-2</code>; use the branch dropdown at the top of the
+          editor to switch to step-1&apos;s branch (typically{" "}
+          <code>patch-1</code>). Two different branches means two separate
+          PRs, neither one complete.
         </li>
         <li>
           <strong>Done:</strong> reload your PR — both files will appear.
@@ -1453,21 +1516,38 @@ function SubmittedView({
       <div
         style={{
           display: "flex",
-          gap: "var(--s-3)",
+          flexDirection: "column",
+          gap: "var(--s-2)",
           marginBottom: "var(--s-6)",
-          flexWrap: "wrap",
         }}
       >
-        <button
-          type="button"
-          className="btn primary"
-          onClick={onOpenManifestTab}
+        <div
+          style={{
+            background: "var(--warn-soft)",
+            border: "1px solid var(--warn)",
+            borderRadius: "var(--r-2)",
+            color: "var(--ink-1)",
+            fontSize: "var(--fs-s)",
+            padding: "var(--s-2) var(--s-3)",
+          }}
         >
-          Open recipe.json on GitHub →
-        </button>
-        <button type="button" className="btn ghost" onClick={onStartOver}>
-          ← Start over
-        </button>
+          <strong>Branch check:</strong> before clicking Commit on the next
+          tab, confirm the branch dropdown at the top of GitHub&apos;s editor
+          reads the SAME branch you committed step 1 to. Both files must
+          land on one branch for the PR to be complete.
+        </div>
+        <div style={{ display: "flex", gap: "var(--s-3)", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={onOpenManifestTab}
+          >
+            Open recipe.json on GitHub →
+          </button>
+          <button type="button" className="btn ghost" onClick={onStartOver}>
+            ← Start over
+          </button>
+        </div>
       </div>
 
       <SubmissionSummary
