@@ -18,6 +18,7 @@ describe("stripe token helpers", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     delete process.env.HOME;
     delete process.env.PATCHWORK_HOME;
     delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveModel } from "../patchworkCli.js";
 import type { PatchworkConfig } from "../patchworkConfig.js";
 
@@ -8,37 +8,29 @@ function stubLoad(overrides: Partial<PatchworkConfig> = {}) {
 }
 
 describe("resolveModel", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("returns null when no --model and no --patchwork-config", () => {
     expect(resolveModel([], { loadConfig: stubLoad() })).toBeNull();
   });
 
   it("returns adapter when --model passed", () => {
-    const prev = process.env.OPENAI_API_KEY;
-    process.env.OPENAI_API_KEY = "sk-test";
-    try {
-      const out = resolveModel(["--model", "openai"], {
-        loadConfig: stubLoad(),
-      });
-      expect(out?.adapter.name).toBe("openai");
-      expect(out?.config.model).toBe("openai");
-    } finally {
-      if (prev === undefined) delete process.env.OPENAI_API_KEY;
-      else process.env.OPENAI_API_KEY = prev;
-    }
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    const out = resolveModel(["--model", "openai"], {
+      loadConfig: stubLoad(),
+    });
+    expect(out?.adapter.name).toBe("openai");
+    expect(out?.config.model).toBe("openai");
   });
 
   it("--model wins over config file", () => {
-    const prev = process.env.GOOGLE_API_KEY;
-    process.env.GOOGLE_API_KEY = "AIza-test";
-    try {
-      const out = resolveModel(["--model", "gemini"], {
-        loadConfig: stubLoad({ model: "claude" }),
-      });
-      expect(out?.config.model).toBe("gemini");
-    } finally {
-      if (prev === undefined) delete process.env.GOOGLE_API_KEY;
-      else process.env.GOOGLE_API_KEY = prev;
-    }
+    vi.stubEnv("GOOGLE_API_KEY", "AIza-test");
+    const out = resolveModel(["--model", "gemini"], {
+      loadConfig: stubLoad({ model: "claude" }),
+    });
+    expect(out?.config.model).toBe("gemini");
   });
 
   it("rejects invalid --model values", () => {

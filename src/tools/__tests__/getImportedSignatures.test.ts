@@ -1,13 +1,26 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createGetImportedSignaturesTool } from "../getImportedSignatures.js";
 
-const workspace = "/tmp";
+let workspace: string;
+
+beforeAll(() => {
+  workspace = mkdtempSync(path.join(tmpdir(), "imported-sigs-test-"));
+});
+
+afterAll(() => {
+  rmSync(workspace, { recursive: true, force: true });
+});
 
 function makeClient(overrides: Record<string, any> = {}) {
   return {
     isConnected: vi.fn(() => true),
     goToDefinition: vi.fn(() =>
-      Promise.resolve([{ file: "/tmp/lib.ts", line: 5, column: 1 }]),
+      Promise.resolve([
+        { file: path.join(workspace, "lib.ts"), line: 5, column: 1 },
+      ]),
     ),
     getHover: vi.fn(() =>
       Promise.resolve({
@@ -18,15 +31,14 @@ function makeClient(overrides: Record<string, any> = {}) {
   };
 }
 
-// Tests write real fixture files under hard-coded "/tmp/..." and pass
-// "/tmp" as the workspace; both fail on Win32 where the path doesn't
-// exist and `resolveFilePath` rejects POSIX absolutes outside the
-// workspace. The tool is path-agnostic in production.
+// Tests write real fixture files inside a temp workspace directory.
+// Skipped on Win32 where resolveFilePath rejects POSIX-style absolute paths.
 describe.skipIf(process.platform === "win32")("getImportedSignatures", () => {
   it("returns extensionRequired when disconnected", async () => {
     const client = makeClient({ isConnected: vi.fn(() => false) });
     const tool = createGetImportedSignaturesTool(workspace, client as never);
-    const result = (await tool.handler({ filePath: "/tmp/foo.ts" })) as any;
+    const filePath = path.join(workspace, "foo.ts");
+    const result = (await tool.handler({ filePath })) as any;
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/extension/i);
   });
@@ -37,11 +49,10 @@ describe.skipIf(process.platform === "win32")("getImportedSignatures", () => {
 
     // Write a temp file with no imports
     const { promises: fsp } = await import("node:fs");
-    await fsp.writeFile("/tmp/no-imports.ts", "const x = 1;\n");
+    const filePath = path.join(workspace, "no-imports.ts");
+    await fsp.writeFile(filePath, "const x = 1;\n");
 
-    const result = (await tool.handler({
-      filePath: "/tmp/no-imports.ts",
-    })) as any;
+    const result = (await tool.handler({ filePath })) as any;
     expect(result.content[0]).toBeDefined();
     const data = JSON.parse(result.content[0].text);
     expect(data.count).toBe(0);
@@ -53,14 +64,10 @@ describe.skipIf(process.platform === "win32")("getImportedSignatures", () => {
     const tool = createGetImportedSignaturesTool(workspace, client as never);
 
     const { promises: fsp } = await import("node:fs");
-    await fsp.writeFile(
-      "/tmp/single-import.ts",
-      "import { useState } from 'react';\n",
-    );
+    const filePath = path.join(workspace, "single-import.ts");
+    await fsp.writeFile(filePath, "import { useState } from 'react';\n");
 
-    const result = (await tool.handler({
-      filePath: "/tmp/single-import.ts",
-    })) as any;
+    const result = (await tool.handler({ filePath })) as any;
     const data = JSON.parse(result.content[0].text);
     expect(data.imports).toHaveLength(1);
     expect(data.imports[0].name).toBe("useState");
@@ -76,12 +83,10 @@ describe.skipIf(process.platform === "win32")("getImportedSignatures", () => {
     const tool = createGetImportedSignaturesTool(workspace, client as never);
 
     const { promises: fsp } = await import("node:fs");
-    await fsp.writeFile(
-      "/tmp/no-def.ts",
-      "import { unknown } from 'some-pkg';\n",
-    );
+    const filePath = path.join(workspace, "no-def.ts");
+    await fsp.writeFile(filePath, "import { unknown } from 'some-pkg';\n");
 
-    const result = (await tool.handler({ filePath: "/tmp/no-def.ts" })) as any;
+    const result = (await tool.handler({ filePath })) as any;
     const data = JSON.parse(result.content[0].text);
     expect(data.imports[0].signature).toBeNull();
     expect(data.imports[0].definitionFile).toBeNull();
@@ -94,14 +99,13 @@ describe.skipIf(process.platform === "win32")("getImportedSignatures", () => {
     const tool = createGetImportedSignaturesTool(workspace, client as never);
 
     const { promises: fsp } = await import("node:fs");
+    const filePath = path.join(workspace, "multi-import.ts");
     await fsp.writeFile(
-      "/tmp/multi-import.ts",
+      filePath,
       "import { useState, useEffect } from 'react';\n",
     );
 
-    const result = (await tool.handler({
-      filePath: "/tmp/multi-import.ts",
-    })) as any;
+    const result = (await tool.handler({ filePath })) as any;
     const data = JSON.parse(result.content[0].text);
     expect(data.imports).toHaveLength(2);
     expect(data.imports.map((i: any) => i.name)).toContain("useState");
@@ -113,14 +117,10 @@ describe.skipIf(process.platform === "win32")("getImportedSignatures", () => {
     const tool = createGetImportedSignaturesTool(workspace, client as never);
 
     const { promises: fsp } = await import("node:fs");
-    await fsp.writeFile(
-      "/tmp/namespace-import.ts",
-      "import * as React from 'react';\n",
-    );
+    const filePath = path.join(workspace, "namespace-import.ts");
+    await fsp.writeFile(filePath, "import * as React from 'react';\n");
 
-    const result = (await tool.handler({
-      filePath: "/tmp/namespace-import.ts",
-    })) as any;
+    const result = (await tool.handler({ filePath })) as any;
     const data = JSON.parse(result.content[0].text);
     expect(data.count).toBe(0);
   });
@@ -130,14 +130,10 @@ describe.skipIf(process.platform === "win32")("getImportedSignatures", () => {
     const tool = createGetImportedSignaturesTool(workspace, client as never);
 
     const { promises: fsp } = await import("node:fs");
-    await fsp.writeFile(
-      "/tmp/type-import.ts",
-      "import type { FC } from 'react';\n",
-    );
+    const filePath = path.join(workspace, "type-import.ts");
+    await fsp.writeFile(filePath, "import type { FC } from 'react';\n");
 
-    const result = (await tool.handler({
-      filePath: "/tmp/type-import.ts",
-    })) as any;
+    const result = (await tool.handler({ filePath })) as any;
     const data = JSON.parse(result.content[0].text);
     expect(data.imports).toHaveLength(1);
     expect(data.imports[0].name).toBe("FC");
@@ -148,15 +144,10 @@ describe.skipIf(process.platform === "win32")("getImportedSignatures", () => {
     const tool = createGetImportedSignaturesTool(workspace, client as never);
 
     const { promises: fsp } = await import("node:fs");
-    await fsp.writeFile(
-      "/tmp/many-imports.ts",
-      "import { a, b, c, d, e, f } from 'pkg';\n",
-    );
+    const filePath = path.join(workspace, "many-imports.ts");
+    await fsp.writeFile(filePath, "import { a, b, c, d, e, f } from 'pkg';\n");
 
-    const result = (await tool.handler({
-      filePath: "/tmp/many-imports.ts",
-      maxImports: 3,
-    })) as any;
+    const result = (await tool.handler({ filePath, maxImports: 3 })) as any;
     const data = JSON.parse(result.content[0].text);
     expect(data.imports.length).toBeLessThanOrEqual(3);
   });
@@ -169,14 +160,10 @@ describe.skipIf(process.platform === "win32")("getImportedSignatures", () => {
     const tool = createGetImportedSignaturesTool(workspace, client as never);
 
     const { promises: fsp } = await import("node:fs");
-    await fsp.writeFile(
-      "/tmp/long-hover.ts",
-      "import { bigThing } from 'pkg';\n",
-    );
+    const filePath = path.join(workspace, "long-hover.ts");
+    await fsp.writeFile(filePath, "import { bigThing } from 'pkg';\n");
 
-    const result = (await tool.handler({
-      filePath: "/tmp/long-hover.ts",
-    })) as any;
+    const result = (await tool.handler({ filePath })) as any;
     const data = JSON.parse(result.content[0].text);
     expect(data.imports[0].signature!.length).toBeLessThanOrEqual(4000);
   });
@@ -186,7 +173,7 @@ describe.skipIf(process.platform === "win32")("getImportedSignatures", () => {
     const tool = createGetImportedSignaturesTool(workspace, client as never);
 
     const result = (await tool.handler({
-      filePath: "/tmp/nonexistent-file-xyz.ts",
+      filePath: path.join(workspace, "nonexistent-file-xyz.ts"),
     })) as any;
     const data = JSON.parse(result.content[0].text);
     expect(data.count).toBe(0);

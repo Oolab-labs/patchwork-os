@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { warnAboutLegacyPermissionsSidecars } from "../recipes/migrationWarnings.js";
 
 /**
@@ -17,6 +17,7 @@ beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), "patchwork-boot-warn-"));
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -71,16 +72,11 @@ describe("warnAboutLegacyPermissionsSidecars", () => {
   it("skips emission under NODE_ENV=test (default console.warn path)", () => {
     writeFileSync(path.join(dir, "foo.permissions.json"), "{}");
 
-    const prevEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = "test";
-    try {
-      // Default code path (no `warn` override) → must not call console.warn.
-      const result = warnAboutLegacyPermissionsSidecars(dir);
-      expect(result.count).toBe(1);
-      expect(result.warned).toBe(false);
-    } finally {
-      process.env.NODE_ENV = prevEnv;
-    }
+    vi.stubEnv("NODE_ENV", "test");
+    // Default code path (no `warn` override) → must not call console.warn.
+    const result = warnAboutLegacyPermissionsSidecars(dir);
+    expect(result.count).toBe(1);
+    expect(result.warned).toBe(false);
   });
 
   it("uniqueness — single grammar form for count=1", () => {

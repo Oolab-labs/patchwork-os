@@ -41,6 +41,7 @@ describe("createOpenInBrowserTool", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   // darwin-only spawn path; uses tmpdir + `open` binary that don't exist on Windows.
@@ -105,18 +106,13 @@ describe("createOpenInBrowserTool", () => {
       configurable: true,
     });
     // Simulate a graphical session so hasDisplay() returns true
-    const origDisplay = process.env.DISPLAY;
-    process.env.DISPLAY = ":0";
-    try {
-      const html = "<html></html>";
-      await tool.handler({ html });
+    vi.stubEnv("DISPLAY", ":0");
+    const html = "<html></html>";
+    await tool.handler({ html });
 
-      expect(execSafe).toHaveBeenCalledWith("xdg-open", [
-        expect.stringMatching(/\.html$/),
-      ]);
-    } finally {
-      process.env.DISPLAY = origDisplay;
-    }
+    expect(execSafe).toHaveBeenCalledWith("xdg-open", [
+      expect.stringMatching(/\.html$/),
+    ]);
   });
 
   it("uses cmd /c start on win32", async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { validateModelChoice } from "../../patchworkConfig.js";
 import { ClaudeAdapter } from "../claude.js";
 import { GeminiAdapter } from "../gemini.js";
@@ -57,6 +57,10 @@ describe("validateModelChoice", () => {
 });
 
 describe("ClaudeAdapter", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("calls Messages API + parses text + tool_use", async () => {
     const fetchImpl = mockFetch({
       content: [
@@ -86,16 +90,10 @@ describe("ClaudeAdapter", () => {
   });
 
   it("throws on missing api key", async () => {
-    const prev = process.env.ANTHROPIC_API_KEY;
-    process.env.ANTHROPIC_API_KEY = "";
-    try {
-      await expect(
-        new ClaudeAdapter().complete({ systemPrompt: "", messages: [] }),
-      ).rejects.toThrow(/no API key/);
-    } finally {
-      if (prev !== undefined) process.env.ANTHROPIC_API_KEY = prev;
-      else process.env.ANTHROPIC_API_KEY = undefined as unknown as string;
-    }
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    await expect(
+      new ClaudeAdapter().complete({ systemPrompt: "", messages: [] }),
+    ).rejects.toThrow(/no API key/);
   });
 
   it("surfaces API error", async () => {
@@ -255,6 +253,10 @@ describe("LocalAdapter (OpenAI-compat)", () => {
 });
 
 describe("GrokAdapter", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("reuses OpenAI shape", async () => {
     const fetchImpl = mockFetch({
       choices: [
@@ -275,14 +277,8 @@ describe("GrokAdapter", () => {
   });
 
   it("throws without key", () => {
-    const prev = process.env.XAI_API_KEY;
-    process.env.XAI_API_KEY = "";
-    try {
-      expect(() => createGrokAdapter({})).toThrow(/no API key/);
-    } finally {
-      if (prev !== undefined) process.env.XAI_API_KEY = prev;
-      else process.env.XAI_API_KEY = undefined as unknown as string;
-    }
+    vi.stubEnv("XAI_API_KEY", "");
+    expect(() => createGrokAdapter({})).toThrow(/no API key/);
   });
 });
 
