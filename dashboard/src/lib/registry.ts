@@ -381,6 +381,37 @@ export function shortName(name: string): string {
 }
 
 /**
+ * Canonical connector ids match the bridge's `connectorRegistry.ts` —
+ * kebab-case, no namespace. Recipes in the wild use three spellings of
+ * the Google Calendar one (`googleCalendar` in the live registry,
+ * `calendar` in the old fallback data, `google-calendar` everywhere
+ * else). Map all known aliases to the canonical id at the dashboard
+ * boundary so chip rendering, install dialogs, and the deep-link target
+ * on `/connections#<id>` are consistent.
+ *
+ * Adding a new alias is cheaper than fixing every consumer. The bridge
+ * `KNOWN_CONNECTOR_IDS` set in `app/recipes/[name]/layout.tsx` is the
+ * authoritative target — entries here must resolve into that set.
+ */
+const CONNECTOR_ID_ALIASES: Record<string, string> = {
+  googlecalendar: "google-calendar",
+  calendar: "google-calendar",
+  gcal: "google-calendar",
+  googledrive: "google-drive",
+  gdrive: "google-drive",
+  googledocs: "google-docs",
+  gdocs: "google-docs",
+  docs: "google-docs",
+  mongo: "mongodb",
+  es: "elasticsearch",
+};
+
+export function normalizeConnectorId(raw: string): string {
+  const lower = raw.toLowerCase();
+  return CONNECTOR_ID_ALIASES[lower] ?? lower;
+}
+
+/**
  * Render a connector id (e.g. "google-calendar", "slack") as a
  * user-facing label. Title-cases each hyphen segment; special-cases a
  * couple of acronyms that look wrong with vanilla title-case.
@@ -389,11 +420,14 @@ export function shortName(name: string): string {
  * missing-connectors toast and the detail-page InstallPanel /
  * BundleInstallPanel inline notices. Keep terse — no marketing copy.
  */
-export function formatConnectorLabel(id: string): string {
+export function formatConnectorLabel(rawId: string): string {
+  const id = normalizeConnectorId(rawId);
   if (id === "github") return "GitHub";
   if (id === "gitlab") return "GitLab";
   if (id === "pagerduty") return "PagerDuty";
   if (id === "hubspot") return "HubSpot";
+  if (id === "sendgrid") return "SendGrid";
+  if (id === "mongodb") return "MongoDB";
   return id
     .split("-")
     .map((part) =>

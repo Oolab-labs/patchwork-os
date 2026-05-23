@@ -11,6 +11,7 @@ import {
   assertValidInstallSource,
   type ApprovalBehavior,
   formatConnectorLabel,
+  normalizeConnectorId,
   type RegistryBundle,
   type RegistryData,
   type RegistryRecipe,
@@ -31,7 +32,7 @@ const FALLBACK_REGISTRY: RegistryData = {
       description:
         "Daily 6am digest: Gmail unread, Linear assigned issues, Slack DMs, and today's calendar — composed into one Slack message.",
       tags: ["productivity", "morning", "daily"],
-      connectors: ["gmail", "linear", "slack", "calendar"],
+      connectors: ["gmail", "linear", "slack", "google-calendar"],
       install: "github:patchworkos/recipes/recipes/morning-brief",
       downloads: 0,
       risk_level: "low",
@@ -297,7 +298,13 @@ function RecipeCard({
         }}
       >
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          {recipe.connectors.map((c) => (
+          {recipe.connectors.map((rawId) => {
+            // Wave 1: normalize legacy connector-id spellings (the live
+            // registry uses `googleCalendar`; older fallback data uses
+            // `calendar`; canonical is `google-calendar`). Without this
+            // the chip dot rendered grey with garbage initials.
+            const c = normalizeConnectorId(rawId);
+            return (
             <span
               key={c}
               className="connector-dot"
@@ -307,7 +314,8 @@ function RecipeCard({
             >
               {connectorInitials(c)}
             </span>
-          ))}
+            );
+          })}
           {recipe.downloads > 0 && (
             <span
               style={{

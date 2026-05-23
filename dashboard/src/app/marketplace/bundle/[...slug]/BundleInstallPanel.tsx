@@ -299,32 +299,58 @@ export default function BundleInstallPanel({
             borderTop: "1px solid var(--line-1)",
           }}
         >
-          {result.installed && result.installed.length > 0 && (
-            <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-1)" }}>
-              <span style={{ color: "var(--ok)", marginRight: 6 }}>✓</span>
-              Installed {result.installed.length} recipe
-              {result.installed.length === 1 ? "" : "s"}:{" "}
-              <span style={{ fontFamily: "var(--font-mono)" }}>
-                {result.installed.map((r) => r.name).join(", ")}
-              </span>
-            </div>
-          )}
-          {result.failures && result.failures.length > 0 && (
-            <div style={{ fontSize: "var(--fs-s)", color: "var(--err)" }}>
-              <strong>{result.failures.length} failed:</strong>
-              <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
-                {result.failures.map((f) => (
-                  <li key={f.name}>
-                    <span style={{ fontFamily: "var(--font-mono)" }}>
-                      {f.name}
+          {(() => {
+            // Wave 1 fix: when failures dominate (more recipes failed
+            // than installed), demote the green "✓ Installed N recipes"
+            // headline to yellow "Installed with errors" so the user
+            // doesn't miss the red failure list sitting underneath.
+            // Previously a 1-of-5-installed result still showed a
+            // green checkmark + downplayed failures.
+            const installedCount = result.installed?.length ?? 0;
+            const failureCount = result.failures?.length ?? 0;
+            const failuresDominate = failureCount > installedCount;
+            return (
+              <>
+                {installedCount > 0 && (
+                  <div
+                    style={{ fontSize: "var(--fs-s)", color: "var(--ink-1)" }}
+                  >
+                    <span
+                      style={{
+                        color: failuresDominate ? "var(--warn)" : "var(--ok)",
+                        marginRight: 6,
+                      }}
+                    >
+                      {failuresDominate ? "⚠" : "✓"}
                     </span>
-                    {" — "}
-                    {f.error}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+                    {failuresDominate
+                      ? `Only ${installedCount} of ${installedCount + failureCount} recipes installed`
+                      : `Installed ${installedCount} recipe${installedCount === 1 ? "" : "s"}`}
+                    :{" "}
+                    <span style={{ fontFamily: "var(--font-mono)" }}>
+                      {result.installed?.map((r) => r.name).join(", ")}
+                    </span>
+                  </div>
+                )}
+                {failureCount > 0 && (
+                  <div style={{ fontSize: "var(--fs-s)", color: "var(--err)" }}>
+                    <strong>{failureCount} failed:</strong>
+                    <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
+                      {result.failures?.map((f) => (
+                        <li key={f.name}>
+                          <span style={{ fontFamily: "var(--font-mono)" }}>
+                            {f.name}
+                          </span>
+                          {" — "}
+                          {f.error}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 
