@@ -39,10 +39,10 @@ export default function RecipeEditPage({
 }: {
   // Next 15: dynamic route params are Promise-typed; client components
   // unwrap with React.use().
-  params: Promise<{ name: string }>;
+  params: Promise<{ name: string[] }>;
 }) {
-  const { name: rawName } = use(params);
-  const name = decodeURIComponent(rawName);
+  const { name: rawNameParts } = use(params);
+  const name = decodeURIComponent(rawNameParts.join("/"));
   const [content, setContent] = useState<string>("");
   const [savedContent, setSavedContent] = useState<string>("");
   const [loading, setLoading] = useState(true);

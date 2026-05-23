@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 // Next 15: dynamic route params arrive as a Promise.
-type RouteContext = { params: Promise<{ name: string }> };
+type RouteContext = { params: Promise<{ name: string[] }> };
 
 export async function POST(
   req: NextRequest,
@@ -23,7 +23,7 @@ export async function POST(
   const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.run);
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.run);
   try {
-    const encodedName = encodeURIComponent(name);
+    const encodedName = name.map(encodeURIComponent).join("/");
     const res = await bridgeFetch(`/recipes/${encodedName}/run`, {
       method: "POST",
       headers: { "content-type": req.headers.get("content-type") ?? "application/json" },

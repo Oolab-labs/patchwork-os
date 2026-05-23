@@ -287,10 +287,10 @@ export default function RecipeDetailLayout({
   params,
 }: {
   children: React.ReactNode;
-  params: Promise<{ name: string }>;
+  params: Promise<{ name: string[] }>;
 }) {
-  const { name: rawName } = use(params);
-  const name = canonicalRecipeKey(decodeURIComponent(rawName));
+  const { name: rawNameParts } = use(params);
+  const name = canonicalRecipeKey(decodeURIComponent(rawNameParts.join("/")));
 
   // Resolve the recipe from the list endpoint. Cheap, cached, and the
   // single-recipe `/api/bridge/recipes/[name]` returns raw YAML rather

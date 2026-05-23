@@ -121,10 +121,10 @@ export default function RecipePlanPage({
 }: {
   // Next 15: dynamic route params are Promise-typed; client components
   // unwrap with React.use().
-  params: Promise<{ name: string }>;
+  params: Promise<{ name: string[] }>;
 }) {
-  const { name: rawName } = use(params);
-  const name = decodeURIComponent(rawName);
+  const { name: rawNameParts } = use(params);
+  const name = decodeURIComponent(rawNameParts.join("/"));
   const [plan, setPlan] = useState<DryRunPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
