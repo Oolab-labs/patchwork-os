@@ -6,6 +6,60 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-beta.7] — 2026-05-23
+
+Connector catalog complete · Recipe AI repair · Halts overhaul · 3-wave security audit (#775–#804).
+
+### Security
+
+- **3-wave security audit** (5 PRs — #800–#804). Recommended upgrade.
+  - **SSRF `::ffff:0:` dead-code ordering** — IPv4-translated prefix (`::ffff:0:`) was checked AFTER the shorter IPv4-mapped prefix (`::ffff:`), making the translated check unreachable. Fixed ordering so longer prefix wins (#802).
+  - **SSRF 6to4 block** — added `2002::/16` to the lexical blocklist; a 6to4 address for a private IPv4 (e.g. `2002:c0a8:0101:: → 192.168.1.1`) bypassed the IPv4 checks. DNS rebinding test coverage: 5 new `dns.lookup` mock tests (#801, #802).
+  - **ReDoS guard on `step.expect.matches`** — unbounded regex patterns compiled from recipe YAML could hang the engine. Now capped at 500-char pattern / 64 KB input (#801).
+  - **AJV recompile on every lint call** — `validateRecipeSchema` recompiled the schema on every invocation; after the `parallel:{each}` expansion this hit ~15s in CI. Compiled validator cached at module level (#802).
+  - **OTel bundle bloat** — `@opentelemetry/sdk-node` transitively pulled in grpc/proto/metrics/logs exporters (~170 MB on disk). Replaced with minimal `@opentelemetry/sdk-trace-node` + `@opentelemetry/resources` (#803).
+  - **IntelliJ plugin interpreter blocklist** — `ExecuteInTerminalHandler` ran commands via `/bin/sh -c` with only a metachar blocklist; bare interpreter names (`bash script.sh`, `python3 evil.py`, `node index.js`) passed. Now rejects the permanent `INTERPRETER_COMMANDS` set (mirrors `src/config.ts`) (#804).
+  - **8 additional audit findings** (#800): ntfy auth token moved to URL query param (was in path), dashboard middleware halt-route exemption, `runLog.ts` disk persistence + interrupted-sweep recovery, `clientIp.ts` trust-proxy moved inside function body for testability, `getDiagnostics` schema description fix, CI HUSKY env, npm publish idempotency.
+  - **Cron UTC default** — `RecipeScheduler` now defaults to UTC when no timezone specified, preventing silent local-time drift (#801).
+  - **Windows atomic rename EEXIST** — `writeFileAtomic` now handles `EEXIST` on Windows rename (NTFS doesn't overwrite like POSIX) (#801).
+  - **Companion version pinning** — bundled companion server configs locked to specific versions; reviewer gate added to the companion audit script (#798).
+
+### Added — Connectors (catalog now complete)
+
+- **14 new connectors** shipped across 4 PRs — connector catalog is now full: Postgres, MongoDB, Redis, Elasticsearch (#778); SendGrid, Twilio, Figma, Airtable, Webflow (#779); Google Docs (#780); Monday, Salesforce, Shopify, Snowflake (#781). OAuth redirect-uri normalization + dashboard fixes (#777).
+
+### Added — Recipe Editor (AI repair)
+
+- **`/recipes/repair` endpoint** — LLM-driven repair of broken recipe YAML, feature-flagged (`PATCHWORK_FLAG_RECIPE_REPAIR`). Accepts a recipe name or raw YAML + optional error context; returns a suggested fix diff (#787).
+- **Dashboard "Fix with AI" button** — surfaces above lint errors on the recipe detail page. Opens a preview-diff modal showing the suggested repair before applying (#788).
+- **Inline lint gutter** — YAML position offsets now flow from the bridge to the dashboard; CodeMirror editor shows squiggly underlines at the exact error location (#786).
+- **Edit mode toggle + form skeleton** — recipe edit mode (Phase 2B-A) with field-by-field form editing alongside the raw YAML path (#793).
+- **Connector preflight on edit** — editing a recipe shows which connector authorisations it requires before saving (#782).
+
+### Added — Halts
+
+- **Expanded `HaltCategory`** — new sub-categories: `auth_expired`, `auth_missing`, `rate_limit_hard`, `rate_limit_soft`, `network_timeout`, `network_dns`, `missing_connector`. Typed at the throw site, not re-derived by regex (#789, #792).
+- **Per-category actionable hints** — dashboard halts pills and `patchwork halts` CLI output now include a one-line hint (e.g. "re-authorise the connector", "add exponential backoff") for each category (#790, #791).
+
+### Added — CLI
+
+- **`patchwork doctor`** — self-diagnosis: checks bridge reachability, extension connection, lock file health, tool count, pending auth, connector status (#797).
+- **`patchwork audit-env`** — inspects the runtime environment for common misconfiguration: missing env vars, bad token shapes, conflicting port bindings (#797).
+- **`patchwork shadow-scan`** — scans running bridge tools against the registered schema for shape drift (warns when a tool's live schema diverges from the expected output schema) (#797).
+
+### Fixed
+
+- Marketplace registry: connector id drift, bundle preflight failures, FALLBACK refresh, draft TTL, submit branch-check, advisory headline (#783–#785).
+- Orchestrator: silence unhandled-rejection crashes on subprocess task errors + CI matrix hardening (#796).
+- Recipe schema completeness: `step.timeout_ms`, `step.expect`, `agent.mcpAccess`, `agent.kind`, `budget`, `servers`, `parallel.{each,as,steps}` map-reduce shape now in the generated JSON Schema (#802).
+
+### Changed
+
+- CI: consolidated canary publish into `publish-npm.yml` (single trusted-publisher entry per npm package) (#775).
+- Deps: `uuid`, `node-cron` bumped (#794); `qs`, `express` bumped in push-relay (#795).
+
+---
+
 ## [0.2.0-beta.6] — 2026-05-20
 
 Reliability + correctness batch (#763–#766).
