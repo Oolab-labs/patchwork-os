@@ -108,8 +108,22 @@ export const RECIPE_PRESETS: readonly RecipePreset[] = [
   },
 ];
 
-/** sessionStorage key used to auto-save the in-progress form draft. */
-export const SUBMIT_DRAFT_STORAGE_KEY = "patchwork.marketplaceSubmit.draft.v1";
+/**
+ * Storage key used to auto-save the in-progress form draft.
+ *
+ * v1 was `sessionStorage` (tab-scoped — closing the tab wiped the
+ * draft with no warning). v2 (Wave 2 fix) is `localStorage` with an
+ * embedded `savedAt` timestamp + a 7-day TTL: drafts older than that
+ * are auto-cleared on read so a stale unfinished submission can't
+ * lurk forever, and a banner announces "Restored draft from X days
+ * ago — discard?" when the restored draft is more than an hour old.
+ *
+ * v1 entries are left in place; a v1 → v2 migration would risk
+ * surfacing a stale draft as "fresh" without the user knowing, so
+ * intentionally a clean break.
+ */
+export const SUBMIT_DRAFT_STORAGE_KEY = "patchwork.marketplaceSubmit.draft.v2";
+export const SUBMIT_DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export interface SubmissionFormData {
   /** Unscoped kebab-case slug (e.g. "my-recipe"). */

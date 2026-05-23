@@ -22,9 +22,15 @@ import { useToast } from "@/components/Toast";
 
 // ------------------------------------------------------------------ fallback data (shown when bridge offline)
 
+// Snapshot of the live registry at `raw.githubusercontent.com/patchworkos/
+// recipes/main/index.json`, with trust metadata layered in (the live
+// JSON doesn't carry `risk_level` / `network_access` etc. yet — Wave 0
+// fixes the dialog gate to default-deny in their absence; this fallback
+// fills them in for the offline read-view UX). Refresh when new recipes
+// land in the live registry.
 const FALLBACK_REGISTRY: RegistryData = {
   version: "1",
-  updated_at: "2026-04-24T00:00:00Z",
+  updated_at: "2026-05-23T00:00:00Z",
   recipes: [
     {
       name: "@patchworkos/morning-brief",
@@ -94,6 +100,51 @@ const FALLBACK_REGISTRY: RegistryData = {
       tags: ["sales", "hubspot", "crm"],
       connectors: ["hubspot", "slack", "notion"],
       install: "github:patchworkos/recipes/recipes/deal-won-celebration",
+      downloads: 0,
+      risk_level: "low",
+      network_access: true,
+      file_access: false,
+      approval_behavior: "ask_on_novel",
+      maintainer: "@patchworkos",
+    },
+    {
+      name: "@patchworkos/end-of-day-shutdown",
+      version: "1.0.0",
+      description:
+        "Weekday 6pm shutdown digest: open Linear issues, unread Slack DMs, and tomorrow's calendar — composed into a 4-line Slack message.",
+      tags: ["productivity", "evening", "daily"],
+      connectors: ["linear", "slack", "google-calendar"],
+      install: "github:patchworkos/recipes/recipes/end-of-day-shutdown",
+      downloads: 0,
+      risk_level: "low",
+      network_access: true,
+      file_access: false,
+      approval_behavior: "ask_on_novel",
+      maintainer: "@patchworkos",
+    },
+    {
+      name: "@patchworkos/standup-digest",
+      version: "1.0.0",
+      description:
+        "Weekday 9am standup post: yesterday's closed Linear issues plus today's in-progress work, composed into a 3-line yesterday/today/blockers update for Slack.",
+      tags: ["engineering", "daily", "standup"],
+      connectors: ["linear", "slack"],
+      install: "github:patchworkos/recipes/recipes/standup-digest",
+      downloads: 0,
+      risk_level: "low",
+      network_access: true,
+      file_access: false,
+      approval_behavior: "ask_on_novel",
+      maintainer: "@patchworkos",
+    },
+    {
+      name: "@patchworkos/friday-recap",
+      version: "1.0.0",
+      description:
+        "Friday 4pm weekly recap: closed Linear issues, calendar load, and active Slack threads — composed into a wins/losses summary posted to Slack and optionally appended to a Notion weekly log.",
+      tags: ["engineering", "weekly", "recap"],
+      connectors: ["linear", "slack", "google-calendar", "notion"],
+      install: "github:patchworkos/recipes/recipes/friday-recap",
       downloads: 0,
       risk_level: "low",
       network_access: true,
@@ -602,7 +653,25 @@ export default function MarketplacePage() {
       void refreshInstalled();
     }, 30_000);
 
-    return () => clearInterval(pollId);
+    // Wave 2 fix (item 12): re-fetch the registry every 5 min so a long-
+    // lived tab picks up new recipes added to GitHub. Previously the
+    // registry was fetched ONCE on mount — a tab opened during a brief
+    // GitHub outage would show the FALLBACK_REGISTRY for its entire
+    // lifetime, or a tab open all day during a registry add would
+    // never see the new recipe. 5 min matches the bridge's templates
+    // cache TTL — anything faster would hit the cache anyway.
+    const registryPollId = setInterval(() => {
+      void load().catch(() => {
+        // swallow — fall through to whatever we had; setLoadErr was
+        // already wired on the initial load. A revalidation failure
+        // shouldn't flip a working catalog into an error state.
+      });
+    }, 5 * 60_000);
+
+    return () => {
+      clearInterval(pollId);
+      clearInterval(registryPollId);
+    };
   // refreshInstalled is stable (useCallback with no deps)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
