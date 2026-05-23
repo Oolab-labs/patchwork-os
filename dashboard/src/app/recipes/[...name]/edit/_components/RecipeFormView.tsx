@@ -171,7 +171,7 @@ const iconBtnStyle: React.CSSProperties = {
   color: "var(--ink-3)",
   display: "inline-flex",
   alignItems: "center",
-  fontSize: 14,
+  fontSize: "var(--fs-base)",
   lineHeight: 1,
   minHeight: 24,
 };
@@ -257,7 +257,7 @@ function StepCard({ step, index, total, editable, onChangeField, onRemove, onMov
               borderRadius: 9,
               background: stepIssues.some((i) => i.level === "error") ? "var(--err)" : "var(--warn)",
               color: "#fff",
-              fontSize: 10,
+              fontSize: "var(--fs-2xs)",
               fontWeight: 700,
               lineHeight: 1,
               padding: "0 5px",
