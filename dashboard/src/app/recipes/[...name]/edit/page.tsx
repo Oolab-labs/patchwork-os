@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useMemo, useRef, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 // BackLink and RelationStrip are rendered by the shared recipes/[name]/layout.tsx
 import { useToast } from "@/components/Toast";
@@ -12,6 +12,7 @@ import {
   detectConnectorsFromYaml,
 } from "../layout";
 import type { YamlLintIssue } from "./_components/YamlEditor";
+import { RecipeFormView } from "./_components/RecipeFormView";
 import dynamic from "next/dynamic";
 
 /** Minimal shape we need from `/api/bridge/connectors/status` to drive
@@ -38,10 +39,10 @@ export default function RecipeEditPage({
 }: {
   // Next 15: dynamic route params are Promise-typed; client components
   // unwrap with React.use().
-  params: Promise<{ name: string }>;
+  params: Promise<{ name: string[] }>;
 }) {
-  const { name: rawName } = use(params);
-  const name = decodeURIComponent(rawName);
+  const { name: rawNameParts } = use(params);
+  const name = decodeURIComponent(rawNameParts.join("/"));
   const [content, setContent] = useState<string>("");
   const [savedContent, setSavedContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -72,6 +73,18 @@ export default function RecipeEditPage({
     warnings: string[];
   } | null>(null);
   const [linting, setLinting] = useState(false);
+  // Phase 2B: edit mode toggle — "yaml" (default) or "form" (structured editor).
+  // Preference is persisted to localStorage so returning users stay in their
+  // chosen mode. Form mode is built incrementally: PR A (this) ships the
+  // toggle + skeleton; PRs B/C add the actual form fields.
+  const [editMode, setEditMode] = useState<"yaml" | "form">(() => {
+    if (typeof window === "undefined") return "yaml";
+    return (localStorage.getItem("recipe-edit-mode") as "yaml" | "form" | null) ?? "yaml";
+  });
+  const switchEditMode = useCallback((mode: "yaml" | "form") => {
+    setEditMode(mode);
+    localStorage.setItem("recipe-edit-mode", mode);
+  }, []);
   const toast = useToast();
 
   // Connector preflight surfaced on the edit page (Phase 1A item 5,
@@ -514,7 +527,42 @@ export default function RecipeEditPage({
       {/* The layout at recipes/[name]/layout.tsx already renders
           breadcrumb, H1, StatusPill, RelationStrip, and TabBar.
           Only edit-specific actions live here. */}
-      <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center", marginBottom: "var(--s-4)" }}>
+      <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center", marginBottom: "var(--s-4)", flexWrap: "wrap" }}>
+        {/* Mode toggle — segmented control */}
+        <div
+          role="group"
+          aria-label="Edit mode"
+          style={{
+            display: "flex",
+            borderRadius: "var(--r-2)",
+            border: "1px solid var(--line-2)",
+            overflow: "hidden",
+            flexShrink: 0,
+          }}
+        >
+          {(["yaml", "form"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={editMode === mode}
+              onClick={() => switchEditMode(mode)}
+              style={{
+                padding: "6px 14px",
+                fontSize: "var(--fs-s)",
+                fontWeight: editMode === mode ? 600 : 400,
+                background: editMode === mode ? "var(--ink-0)" : "transparent",
+                color: editMode === mode ? "var(--bg-0)" : "var(--ink-2)",
+                border: "none",
+                cursor: "pointer",
+                transition: "background 0.12s, color 0.12s",
+                minHeight: 32,
+              }}
+            >
+              {mode === "yaml" ? "YAML" : "Form"}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center", marginLeft: "auto" }}>
           <Link
             href={`/recipes/${encodeURIComponent(name)}/plan`}
             className="btn"
@@ -539,6 +587,7 @@ export default function RecipeEditPage({
           >
             {saving ? "Saving…" : dirty ? "Save •" : "Save"}
           </button>
+        </div>
       </div>
 
       {/* Recipe-not-found banner — fires when /api/bridge/recipes/:name 404'd
@@ -939,6 +988,15 @@ export default function RecipeEditPage({
           <div className="empty-state">
             <p>Loading…</p>
           </div>
+        ) : editMode === "form" ? (
+          <RecipeFormView
+            yaml={content}
+            onChange={(v) => {
+              setContent(v);
+              if (saveError) setSaveError(null);
+            }}
+            lintIssues={lintIssues}
+          />
         ) : (
           <YamlEditor
             value={content}
@@ -952,23 +1010,25 @@ export default function RecipeEditPage({
             lintIssues={lintIssues}
           />
         )}
-        <div
-          style={{
-            marginTop: "var(--s-3)",
-            fontSize: "var(--fs-s)",
-            color: "var(--fg-3)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <span>
-            {content.split("\n").length} lines &middot; {content.length} chars
-          </span>
-          <span>
-            {linting ? "Linting… " : ""}Tab inserts 2 spaces &middot; Cmd/Ctrl+S to save
-          </span>
-        </div>
+        {editMode === "yaml" && (
+          <div
+            style={{
+              marginTop: "var(--s-3)",
+              fontSize: "var(--fs-s)",
+              color: "var(--fg-3)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <span>
+              {content.split("\n").length} lines &middot; {content.length} chars
+            </span>
+            <span>
+              {linting ? "Linting… " : ""}Tab inserts 2 spaces &middot; Cmd/Ctrl+S to save
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Mobile-only sticky save bar. The desktop Save button lives in

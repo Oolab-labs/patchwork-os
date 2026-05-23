@@ -41,7 +41,7 @@ import type { ApprovalBehavior, RiskLevel } from "@/lib/registry";
 
 // CodeMirror touches `document` on mount — load it client-only.
 const YamlEditor = dynamic(
-  () => import("../../recipes/[name]/edit/_components/YamlEditor"),
+  () => import("../../recipes/[...name]/edit/_components/YamlEditor"),
   { ssr: false },
 );
 

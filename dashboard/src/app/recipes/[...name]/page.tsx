@@ -278,10 +278,10 @@ function RunModal({
 export default function RecipeHubOverviewPage({
   params,
 }: {
-  params: Promise<{ name: string }>;
+  params: Promise<{ name: string[] }>;
 }) {
-  const { name: rawName } = use(params);
-  const name = canonicalRecipeKey(decodeURIComponent(rawName));
+  const { name: rawNameParts } = use(params);
+  const name = canonicalRecipeKey(decodeURIComponent(rawNameParts.join("/")));
   const toast = useToast();
   const router = useRouter();
 
