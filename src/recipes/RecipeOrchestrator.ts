@@ -4,6 +4,7 @@
  * all entry paths (HTTP webhook, CLI, scheduler, automation hooks).
  */
 
+import type { Logger } from "../logger.js";
 import type { ChainedRunResult } from "./chainedRunner.js";
 import {
   loadYamlRecipe as defaultLoadYamlRecipe,
@@ -38,11 +39,15 @@ export interface FireDeps {
     deps: RunnerDeps,
     seedContext?: Record<string, string>,
   ) => Promise<RunResult | ChainedRunResult>;
+  logger?: Logger;
 }
+
+type ResolvedFireDeps = Required<Omit<FireDeps, "logger">> &
+  Pick<FireDeps, "logger">;
 
 export class RecipeOrchestrator {
   private readonly inFlight = new Set<string>();
-  private readonly fireDeps: Required<FireDeps>;
+  private readonly fireDeps: ResolvedFireDeps;
 
   constructor(
     private readonly deps: RunnerDeps,
@@ -51,6 +56,7 @@ export class RecipeOrchestrator {
     this.fireDeps = {
       loadYamlRecipe: fireDeps.loadYamlRecipe ?? defaultLoadYamlRecipe,
       dispatchFn: fireDeps.dispatchFn ?? dispatchRecipe,
+      logger: fireDeps.logger,
     };
   }
 
@@ -81,9 +87,15 @@ export class RecipeOrchestrator {
     const taskId = `${name}-${Date.now()}`;
     this.inFlight.add(name);
 
-    dispatch(recipe, this.deps, seedContext).finally(() => {
-      this.inFlight.delete(name);
-    });
+    dispatch(recipe, this.deps, seedContext)
+      .finally(() => {
+        this.inFlight.delete(name);
+      })
+      .catch((err: unknown) => {
+        this.fireDeps.logger?.warn?.(
+          `[orchestrator] recipe "${name}" dispatch failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
 
     return { ok: true, taskId, name };
   }

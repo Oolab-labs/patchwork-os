@@ -308,6 +308,31 @@ describe("RecipeOrchestrator.fire()", () => {
     expect(constructorDispatch).not.toHaveBeenCalled();
   });
 
+  it("isInFlight(name) returns false after dispatch rejects (no unhandled rejection)", async () => {
+    const recipe = makeYamlRecipe("reject-recipe");
+    const loadYamlRecipe = vi.fn().mockReturnValue(recipe);
+    const { promise, reject } = deferred<RunResult>();
+    const dispatchFn = vi.fn().mockReturnValue(promise);
+
+    const orchestrator = new RecipeOrchestrator(baseDeps(), {
+      loadYamlRecipe,
+      dispatchFn,
+    });
+    await orchestrator.fire({
+      filePath: "/recipes/reject-recipe.yaml",
+      name: "reject-recipe",
+      triggerSource: "test",
+    });
+
+    expect(orchestrator.isInFlight("reject-recipe")).toBe(true);
+
+    reject(new Error("dispatch failed"));
+    // Flush microtasks so .finally() handler runs
+    await new Promise((r) => setImmediate(r));
+
+    expect(orchestrator.isInFlight("reject-recipe")).toBe(false);
+  });
+
   it("listInFlight() returns all currently running recipe names", async () => {
     const loadYamlRecipe = vi
       .fn()
