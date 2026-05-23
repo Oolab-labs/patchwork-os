@@ -47,9 +47,9 @@ function walkTestFiles(dir, acc = []) {
   return acc;
 }
 
-/** Return a stable relative path from the repo root. */
+/** Return a stable relative path from the repo root (forward slashes, cross-platform). */
 function rel(absPath) {
-  return relative(ROOT, absPath);
+  return relative(ROOT, absPath).replace(/\\/g, "/");
 }
 
 // ── scan ─────────────────────────────────────────────────────────────────────
