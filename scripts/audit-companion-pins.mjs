@@ -44,7 +44,7 @@ if (pins.size === 0) {
 // ── npm registry fetch ────────────────────────────────────────────────────────
 
 async function fetchLatest(pkg) {
-  const url = `https://registry.npmjs.org/${encodeURIComponent(pkg).replace(/%40/, "@")}/latest`;
+  const url = `https://registry.npmjs.org/${encodeURIComponent(pkg).replace(/%40/g, "@")}/latest`;
   const res = await fetch(url, {
     headers: { Accept: "application/json" },
     signal: AbortSignal.timeout(10_000),
