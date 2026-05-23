@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { parse as parseYaml } from "yaml";
+import { useCallback, useMemo, useRef } from "react";
+import { parseDocument, Document as YamlDocument, YAMLMap, YAMLSeq } from "yaml";
 
 // Minimal structural types — enough to render cards. Not exhaustive.
 interface RecipeStep {
@@ -33,16 +33,23 @@ interface RecipeDoc {
 
 interface ParseResult {
   doc: RecipeDoc | null;
+  yamlDoc: YamlDocument | null;
   error: string | null;
 }
 
 function parseRecipeYaml(yaml: string): ParseResult {
   try {
-    const doc = parseYaml(yaml) as RecipeDoc;
-    if (!doc || typeof doc !== "object") return { doc: null, error: "Not a valid recipe YAML object." };
-    return { doc, error: null };
+    const yamlDoc = parseDocument(yaml, { keepSourceTokens: true });
+    if (yamlDoc.errors.length > 0) {
+      return { doc: null, yamlDoc: null, error: yamlDoc.errors[0]?.message ?? "YAML parse error" };
+    }
+    const doc = yamlDoc.toJS() as RecipeDoc;
+    if (!doc || typeof doc !== "object") {
+      return { doc: null, yamlDoc: null, error: "Not a valid recipe YAML object." };
+    }
+    return { doc, yamlDoc, error: null };
   } catch (e) {
-    return { doc: null, error: e instanceof Error ? e.message : String(e) };
+    return { doc: null, yamlDoc: null, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -94,7 +101,63 @@ function RiskDot({ risk }: { risk: string | undefined }) {
   );
 }
 
-function StepCard({ step, index }: { step: RecipeStep; index: number }) {
+/** Shared label + input layout used in both metadata and step cards. */
+function FieldRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <label
+        style={{
+          fontSize: "var(--fs-xs)",
+          fontWeight: 600,
+          color: "var(--ink-2)",
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+        }}
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "6px 10px",
+  borderRadius: "var(--r-2)",
+  border: "1px solid var(--line-2)",
+  background: "var(--bg-0)",
+  color: "var(--ink-0)",
+  fontSize: "var(--fs-s)",
+  fontFamily: "inherit",
+  lineHeight: 1.5,
+  boxSizing: "border-box",
+  outline: "none",
+  transition: "border-color 0.12s",
+};
+
+const textareaStyle: React.CSSProperties = {
+  ...inputStyle,
+  fontFamily: "var(--font-mono)",
+  fontSize: "var(--fs-xs)",
+  resize: "vertical",
+  minHeight: 80,
+};
+
+interface StepCardProps {
+  step: RecipeStep;
+  index: number;
+  editable: boolean;
+  onChangeField: (stepIndex: number, path: string[], value: string) => void;
+}
+
+function StepCard({ step, index, editable, onChangeField }: StepCardProps) {
   const id = step.id ?? step.into ?? `step_${index + 1}`;
   const tools = step.tool
     ? [step.tool]
@@ -104,7 +167,7 @@ function StepCard({ step, index }: { step: RecipeStep; index: number }) {
         ? ["agent"]
         : [];
   const isAgent = !!step.agent || (!step.tool && !step.tools);
-  const prompt = step.agent?.prompt?.trim();
+  const prompt = step.agent?.prompt ?? "";
 
   return (
     <div
@@ -165,29 +228,83 @@ function StepCard({ step, index }: { step: RecipeStep; index: number }) {
         )}
       </div>
 
-      {/* Prompt preview */}
-      {prompt && (
-        <div
-          style={{
-            padding: "var(--s-2) var(--s-3)",
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--fs-xs)",
-            color: "var(--ink-2)",
-            lineHeight: 1.5,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-            maxHeight: 96,
-            overflow: "hidden",
-            maskImage: "linear-gradient(to bottom, black 60%, transparent 100%)",
-            WebkitMaskImage: "linear-gradient(to bottom, black 60%, transparent 100%)",
-          }}
-        >
-          {prompt}
-        </div>
-      )}
+      {/* Editable body */}
+      <div style={{ padding: "var(--s-3)", display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
+        {/* Tool field (non-agent steps) */}
+        {!isAgent && step.tool !== undefined && (
+          <FieldRow label="Tool">
+            {editable ? (
+              <input
+                style={inputStyle}
+                value={step.tool}
+                onChange={(e) => onChangeField(index, ["tool"], e.target.value)}
+                placeholder="e.g. inbox.fetch"
+              />
+            ) : (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)", color: "var(--ink-1)" }}>
+                {step.tool}
+              </span>
+            )}
+          </FieldRow>
+        )}
+
+        {/* Agent prompt */}
+        {isAgent && (
+          <FieldRow label="Prompt">
+            {editable ? (
+              <textarea
+                style={textareaStyle}
+                value={prompt}
+                onChange={(e) => onChangeField(index, ["agent", "prompt"], e.target.value)}
+                placeholder="Describe what the agent should do…"
+                rows={Math.max(4, prompt.split("\n").length + 1)}
+              />
+            ) : (
+              prompt ? (
+                <pre
+                  style={{
+                    margin: 0,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "var(--fs-xs)",
+                    color: "var(--ink-2)",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    maxHeight: 96,
+                    overflow: "hidden",
+                    maskImage: "linear-gradient(to bottom, black 60%, transparent 100%)",
+                    WebkitMaskImage: "linear-gradient(to bottom, black 60%, transparent 100%)",
+                  }}
+                >
+                  {prompt}
+                </pre>
+              ) : (
+                <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>(no prompt)</span>
+              )
+            )}
+          </FieldRow>
+        )}
+
+        {/* into field */}
+        {step.into !== undefined && (
+          <FieldRow label="Output variable (into)">
+            {editable ? (
+              <input
+                style={{ ...inputStyle, fontFamily: "var(--font-mono)" }}
+                value={step.into}
+                onChange={(e) => onChangeField(index, ["into"], e.target.value)}
+                placeholder="e.g. results"
+              />
+            ) : (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)", color: "var(--ink-1)" }}>
+                {step.into}
+              </span>
+            )}
+          </FieldRow>
+        )}
+      </div>
 
       {/* Metadata footer */}
-      {(step.into ?? step.retry ?? step.timeout_ms) && (
+      {(step.retry != null || step.timeout_ms != null) && (
         <div
           style={{
             display: "flex",
@@ -199,7 +316,6 @@ function StepCard({ step, index }: { step: RecipeStep; index: number }) {
             fontFamily: "var(--font-mono)",
           }}
         >
-          {step.into && <span>into: {step.into}</span>}
           {step.retry != null && <span>retry: {step.retry}</span>}
           {step.timeout_ms != null && <span>timeout: {step.timeout_ms}ms</span>}
         </div>
@@ -210,10 +326,64 @@ function StepCard({ step, index }: { step: RecipeStep; index: number }) {
 
 interface RecipeFormViewProps {
   yaml: string;
+  onChange?: (yaml: string) => void;
 }
 
-export function RecipeFormView({ yaml }: RecipeFormViewProps) {
-  const { doc, error } = useMemo(() => parseRecipeYaml(yaml), [yaml]);
+export function RecipeFormView({ yaml, onChange }: RecipeFormViewProps) {
+  const editable = !!onChange;
+
+  const { doc, yamlDoc, error } = useMemo(() => parseRecipeYaml(yaml), [yaml]);
+
+  // Stable ref so mutation callbacks don't need to re-close over yamlDoc
+  const yamlDocRef = useRef<YamlDocument | null>(null);
+  yamlDocRef.current = yamlDoc;
+
+  const emitChange = useCallback(
+    (mutate: (d: YamlDocument) => void) => {
+      if (!yamlDocRef.current || !onChange) return;
+      // Clone to avoid mutating the cached parse result
+      const clone = parseDocument(yaml, { keepSourceTokens: true });
+      mutate(clone);
+      onChange(String(clone));
+    },
+    // yaml changes → new yamlDoc → ref updates; onChange is stable from parent
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [yaml, onChange],
+  );
+
+  const handleMetaChange = useCallback(
+    (key: "name" | "description", value: string) => {
+      emitChange((d) => d.setIn([key], value));
+    },
+    [emitChange],
+  );
+
+  const handleStepFieldChange = useCallback(
+    (stepIndex: number, path: string[], value: string) => {
+      emitChange((d) => {
+        const stepsNode = d.get("steps", true);
+        if (!(stepsNode instanceof YAMLSeq)) return;
+        const stepNode = stepsNode.get(stepIndex, true);
+        if (!(stepNode instanceof YAMLMap)) return;
+        // For nested path (e.g. ["agent", "prompt"]), walk into the node
+        if (path.length === 1) {
+          stepNode.set(path[0], value);
+        } else {
+          // path.length === 2 (e.g. agent.prompt)
+          const parentKey = path[0]!;
+          const childKey = path[1]!;
+          let parent = stepNode.get(parentKey, true);
+          if (!(parent instanceof YAMLMap)) {
+            // Create the parent map if it doesn't exist yet
+            stepNode.set(parentKey, d.createNode({ [childKey]: value }));
+          } else {
+            parent.set(childKey, value);
+          }
+        }
+      });
+    },
+    [emitChange],
+  );
 
   if (!yaml.trim()) {
     return (
@@ -265,13 +435,10 @@ export function RecipeFormView({ yaml }: RecipeFormViewProps) {
           padding: "var(--s-3) var(--s-4)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--s-2)",
+          gap: "var(--s-3)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)", flexWrap: "wrap" }}>
-          <span style={{ fontWeight: 600, fontSize: "var(--fs-m)", color: "var(--ink-0)" }}>
-            {doc.name ?? "(no name)"}
-          </span>
           {doc.version && (
             <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", fontFamily: "var(--font-mono)" }}>
               v{doc.version}
@@ -279,11 +446,35 @@ export function RecipeFormView({ yaml }: RecipeFormViewProps) {
           )}
           {doc.trigger && <TriggerBadge trigger={doc.trigger} />}
         </div>
-        {doc.description && (
-          <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--ink-2)", lineHeight: 1.5 }}>
-            {doc.description}
-          </p>
-        )}
+        <FieldRow label="Name">
+          {editable ? (
+            <input
+              style={{ ...inputStyle, fontFamily: "var(--font-mono)" }}
+              value={doc.name ?? ""}
+              onChange={(e) => handleMetaChange("name", e.target.value)}
+              placeholder="recipe-name"
+            />
+          ) : (
+            <span style={{ fontWeight: 600, fontSize: "var(--fs-m)", color: "var(--ink-0)" }}>
+              {doc.name ?? "(no name)"}
+            </span>
+          )}
+        </FieldRow>
+        <FieldRow label="Description">
+          {editable ? (
+            <textarea
+              style={{ ...textareaStyle, fontFamily: "inherit", minHeight: 56 }}
+              value={doc.description ?? ""}
+              onChange={(e) => handleMetaChange("description", e.target.value)}
+              placeholder="What does this recipe do?"
+              rows={2}
+            />
+          ) : doc.description ? (
+            <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--ink-2)", lineHeight: 1.5 }}>
+              {doc.description}
+            </p>
+          ) : null}
+        </FieldRow>
       </div>
 
       {/* Steps */}
@@ -297,22 +488,29 @@ export function RecipeFormView({ yaml }: RecipeFormViewProps) {
             {steps.length} step{steps.length === 1 ? "" : "s"}
           </div>
           {steps.map((step, i) => (
-            <StepCard key={step.id ?? step.into ?? i} step={step} index={i} />
+            <StepCard
+              key={step.id ?? step.into ?? i}
+              step={step}
+              index={i}
+              editable={editable}
+              onChangeField={handleStepFieldChange}
+            />
           ))}
         </div>
       )}
 
-      {/* Phase 2B-C notice */}
-      <div
-        style={{
-          fontSize: "var(--fs-xs)",
-          color: "var(--ink-3)",
-          textAlign: "center",
-          padding: "var(--s-2) 0",
-        }}
-      >
-        Form view is read-only — editing coming in a future update. Switch to YAML to make changes.
-      </div>
+      {!editable && (
+        <div
+          style={{
+            fontSize: "var(--fs-xs)",
+            color: "var(--ink-3)",
+            textAlign: "center",
+            padding: "var(--s-2) 0",
+          }}
+        >
+          Read-only — switch to YAML to edit directly.
+        </div>
+      )}
     </div>
   );
 }

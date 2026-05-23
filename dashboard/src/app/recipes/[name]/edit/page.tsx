@@ -989,7 +989,13 @@ export default function RecipeEditPage({
             <p>Loading…</p>
           </div>
         ) : editMode === "form" ? (
-          <RecipeFormView yaml={content} />
+          <RecipeFormView
+            yaml={content}
+            onChange={(v) => {
+              setContent(v);
+              if (saveError) setSaveError(null);
+            }}
+          />
         ) : (
           <YamlEditor
             value={content}
