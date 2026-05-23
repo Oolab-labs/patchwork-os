@@ -11,6 +11,7 @@ import {
   detectConnectorsForRecipe,
   detectConnectorsFromYaml,
 } from "../layout";
+import type { YamlLintIssue } from "./_components/YamlEditor";
 import dynamic from "next/dynamic";
 
 /** Minimal shape we need from `/api/bridge/connectors/status` to drive
@@ -54,6 +55,11 @@ export default function RecipeEditPage({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lintErrors, setLintErrors] = useState<string[]>([]);
   const [lintWarnings, setLintWarnings] = useState<string[]>([]);
+  // Phase 1B: structured issues drive the CodeMirror gutter linter.
+  // The display lists above continue to use plain message strings for
+  // the lint banner; this state carries the line/column/code/path
+  // fields needed for inline diagnostics.
+  const [lintIssues, setLintIssues] = useState<YamlLintIssue[]>([]);
   const [linting, setLinting] = useState(false);
   const toast = useToast();
 
@@ -234,6 +240,7 @@ export default function RecipeEditPage({
     if (!content.trim()) {
       setLintErrors([]);
       setLintWarnings([]);
+      setLintIssues([]);
       setLinting(false);
       return;
     }
@@ -277,6 +284,42 @@ export default function RecipeEditPage({
             : [];
           setLintErrors(errors);
           setLintWarnings(warnings);
+          // Phase 1B: collect structured issues (with line/column where
+          // resolvable) to drive CodeMirror gutter diagnostics. Filters
+          // raw items that lack the required `level` + `message` shape.
+          const toIssue = (raw: unknown, level: "error" | "warning"): YamlLintIssue | null => {
+            if (
+              raw &&
+              typeof raw === "object" &&
+              typeof (raw as { message?: unknown }).message === "string"
+            ) {
+              const r = raw as Partial<YamlLintIssue>;
+              return {
+                level,
+                message: r.message as string,
+                ...(typeof r.line === "number" && { line: r.line }),
+                ...(typeof r.column === "number" && { column: r.column }),
+                ...(typeof r.code === "string" && { code: r.code }),
+                ...(typeof r.path === "string" && { path: r.path }),
+              };
+            }
+            return null;
+          };
+          const structuredErrors = Array.isArray(
+            (data as { errors?: unknown }).errors,
+          )
+            ? (data as { errors: unknown[] }).errors
+                .map((r) => toIssue(r, "error"))
+                .filter((i): i is YamlLintIssue => i !== null)
+            : [];
+          const structuredWarnings = Array.isArray(
+            (data as { warnings?: unknown }).warnings,
+          )
+            ? (data as { warnings: unknown[] }).warnings
+                .map((r) => toIssue(r, "warning"))
+                .filter((i): i is YamlLintIssue => i !== null)
+            : [];
+          setLintIssues([...structuredErrors, ...structuredWarnings]);
         })
         .catch(() => {
           // ignore lint failures; server may be unavailable
@@ -686,6 +729,7 @@ export default function RecipeEditPage({
             onSave={() => void handleSave()}
             minHeight={400}
             highlightLine={highlightLine}
+            lintIssues={lintIssues}
           />
         )}
         <div
