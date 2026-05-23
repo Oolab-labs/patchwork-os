@@ -94,7 +94,6 @@
   "spyOnWithoutRestore": [
     "src/__tests__/bridge-connectivity.test.ts",
     "src/__tests__/claudeDriver.test.ts",
-    "src/__tests__/extensionClient.test.ts",
     "src/__tests__/automation-on-compaction.test.ts",
     "src/__tests__/automation-on-debug-session.test.ts",
     "src/__tests__/automation-on-diagnostics-state.test.ts",
