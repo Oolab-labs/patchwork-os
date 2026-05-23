@@ -372,8 +372,7 @@ jobs:
           exit 1
       - name: Verify tools/list returns tools
         run: |
-          # Streamable HTTP MCP requires initialize → tools/list sequence.
-          # Capture the Mcp-Session-Id from the initialize response headers.
+          # MCP handshake: initialize → notifications/initialized → tools/list
           INIT_RESPONSE=$(curl -sf -D - -X POST \
             -H "Authorization: Bearer 00000000-0000-0000-0000-000000000001" \
             -H "Content-Type: application/json" \
@@ -381,6 +380,13 @@ jobs:
             http://127.0.0.1:18765/mcp)
           SESSION_ID=$(echo "$INIT_RESPONSE" | grep -i "^mcp-session-id:" | tr -d '\r' | awk '{print $2}')
           echo "Session ID: $SESSION_ID"
+          # notifications/initialized completes the handshake (returns 202, no body)
+          curl -sf -X POST \
+            -H "Authorization: Bearer 00000000-0000-0000-0000-000000000001" \
+            -H "Content-Type: application/json" \
+            -H "Mcp-Session-Id: $SESSION_ID" \
+            -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            http://127.0.0.1:18765/mcp || true
           COUNT=$(curl -sf -X POST \
             -H "Authorization: Bearer 00000000-0000-0000-0000-000000000001" \
             -H "Content-Type: application/json" \
