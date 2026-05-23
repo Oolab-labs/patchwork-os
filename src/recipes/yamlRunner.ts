@@ -55,7 +55,7 @@ import {
   type AgentExecutorDeps,
   type AgentResult,
 } from "./agentExecutor.js";
-import { categoriseHaltReason } from "./haltCategory.js";
+import { categoriseHaltReason, type HaltCategory } from "./haltCategory.js";
 import {
   assertValidManualRunId,
   deriveScopeKey,
@@ -548,6 +548,13 @@ export type StepResult = {
    */
   haltReason?: string;
   /**
+   * Pre-tagged category for this halt — set at the throw site so
+   * `summariseHalts` / the emit path don't need to re-derive it via
+   * free-text regex. Falls back to `categoriseHaltReason(haltReason)`
+   * when absent (e.g. legacy persisted run-log rows).
+   */
+  haltCategory?: HaltCategory;
+  /**
    * Slice 2 — per-step `expect` block warnings when `on_fail: warn` is set.
    * Each entry is a one-line failure message (assertion that did not pass).
    * Populated only when the step's status remains `ok` despite an expect
@@ -940,7 +947,8 @@ export async function runYamlRecipe(
       ...(justPushed.error !== undefined && { error: justPushed.error }),
       ...(haltReason !== undefined && {
         haltReason,
-        haltCategory: categoriseHaltReason(haltReason),
+        haltCategory:
+          justPushed.haltCategory ?? categoriseHaltReason(haltReason),
       }),
       ts: Date.now(),
     });
@@ -1036,6 +1044,7 @@ export async function runYamlRecipe(
             status: "error",
             error: reason,
             haltReason: reason,
+            haltCategory: "budget_exceeded",
             durationMs: 0,
           });
           stepsRun++;
@@ -1085,6 +1094,7 @@ export async function runYamlRecipe(
               haltReason: agentSilentFail
                 ? `Agent step "${stepId}" returned no usable output (silent-fail: ${agentSilentFail.reason}).`
                 : `Agent step "${stepId}" reported failure.`,
+              haltCategory: "agent_silent_fail",
               durationMs: Date.now() - stepStart,
             });
           } else {
@@ -1098,6 +1108,7 @@ export async function runYamlRecipe(
                 status: "error",
                 error: errMsg,
                 haltReason: `Agent step "${stepId}" returned only narration or whitespace — no content.`,
+                haltCategory: "agent_narration_only",
                 durationMs: Date.now() - stepStart,
               });
             } else {
@@ -1145,6 +1156,7 @@ export async function runYamlRecipe(
                       last.status = "error";
                       last.error = `expect_failed: ${failures.join("; ")}`;
                       last.haltReason = `expect_failed in step "${stepId}": ${failures.join("; ")}`;
+                      last.haltCategory = "expect_failed";
                       const fbk = recipe.on_error?.fallback;
                       const fbkOpen =
                         fbk === "log_only" || fbk === "deliver_original";
@@ -1170,6 +1182,7 @@ export async function runYamlRecipe(
             status: "error",
             error: msg,
             haltReason: `Agent step "${stepId}" threw before completing: ${msg}`,
+            haltCategory: "agent_threw",
             durationMs: Date.now() - stepStart,
           });
         }
@@ -1284,6 +1297,10 @@ export async function runYamlRecipe(
           error: thrownError,
           ...(thrownErrorCode ? { errorCode: thrownErrorCode } : {}),
           haltReason: `Tool "${step.tool ?? "?"}" in step "${stepId}" threw${retryNote}: ${thrownError}`,
+          haltCategory:
+            thrownErrorCode === "kill_switch_blocked"
+              ? "kill_switch"
+              : "tool_threw",
           durationMs: Date.now() - stepStart,
         });
         if (!failOpen) {
@@ -1306,6 +1323,7 @@ export async function runYamlRecipe(
           ...(finalStatus === "error" && stepError
             ? {
                 haltReason: `Tool "${step.tool ?? "?"}" in step "${stepId}" reported an error${retryNote}: ${stepError}`,
+                haltCategory: "tool_error" as HaltCategory,
               }
             : {}),
           durationMs: Date.now() - stepStart,
@@ -1348,6 +1366,7 @@ export async function runYamlRecipe(
                 last.status = "error";
                 last.error = `expect_failed: ${failures.join("; ")}`;
                 last.haltReason = `expect_failed in step "${stepId}": ${failures.join("; ")}`;
+                last.haltCategory = "expect_failed";
                 if (!failOpen) {
                   runError = runError ?? last.haltReason;
                 }
@@ -1421,6 +1440,7 @@ export async function runYamlRecipe(
         status: s.status,
         error: s.error,
         ...(s.haltReason ? { haltReason: s.haltReason } : {}),
+        ...(s.haltCategory ? { haltCategory: s.haltCategory } : {}),
         ...(s.judgeVerdict ? { judgeVerdict: s.judgeVerdict } : {}),
         durationMs: s.durationMs,
       }));
