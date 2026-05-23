@@ -60,6 +60,17 @@ export default function RecipeEditPage({
   // the lint banner; this state carries the line/column/code/path
   // fields needed for inline diagnostics.
   const [lintIssues, setLintIssues] = useState<YamlLintIssue[]>([]);
+  // Phase 2A.2: "Fix with AI" — proposes a repaired YAML via the
+  // bridge's /recipes/repair endpoint and shows the result in a
+  // preview modal so the user can apply or discard. Gated behind the
+  // `recipe.repair-ai` flag on the bridge side; when off the bridge
+  // returns 503 feature_disabled and the dashboard renders a toast
+  // pointing at Settings → Feature flags.
+  const [repairBusy, setRepairBusy] = useState(false);
+  const [repairProposal, setRepairProposal] = useState<{
+    yaml: string;
+    warnings: string[];
+  } | null>(null);
   const [linting, setLinting] = useState(false);
   const toast = useToast();
 
@@ -432,6 +443,72 @@ export default function RecipeEditPage({
     }
   }
 
+  async function handleFixWithAi() {
+    if (repairBusy) return;
+    setRepairBusy(true);
+    try {
+      const res = await fetch(apiPath("/api/bridge/recipes/repair"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentYaml: content, lintIssues }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        yaml?: string;
+        warnings?: string[];
+        error?: string;
+        code?: string;
+        unavailable?: boolean;
+        retryAfterSeconds?: number;
+      };
+      if (res.status === 503 && data.code === "feature_disabled") {
+        toast.info(
+          "Recipe AI repair is off by default. Enable the `recipe.repair-ai` flag in Settings → Feature flags.",
+        );
+        return;
+      }
+      if (res.status === 503) {
+        toast.error(
+          "Recipe AI repair unavailable — needs `patchwork --driver subprocess` running.",
+        );
+        return;
+      }
+      if (res.status === 429) {
+        toast.error(
+          `Rate-limited. Try again in ${data.retryAfterSeconds ?? 60}s.`,
+        );
+        return;
+      }
+      if (!res.ok || !data.ok || !data.yaml) {
+        toast.error(
+          `AI repair failed: ${data.error ?? `HTTP ${res.status}`}`,
+        );
+        return;
+      }
+      setRepairProposal({
+        yaml: data.yaml,
+        warnings: data.warnings ?? [],
+      });
+    } catch (e) {
+      toast.error(
+        `AI repair request failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    } finally {
+      setRepairBusy(false);
+    }
+  }
+
+  function applyRepair() {
+    if (!repairProposal) return;
+    setContent(repairProposal.yaml);
+    setRepairProposal(null);
+    toast.success("Applied AI proposal. Review + save to commit.");
+  }
+
+  function discardRepair() {
+    setRepairProposal(null);
+  }
+
   return (
     <section>
       {/* The layout at recipes/[name]/layout.tsx already renders
@@ -562,14 +639,157 @@ export default function RecipeEditPage({
             fontSize: "var(--fs-m)",
           }}
         >
-          <strong style={{ display: "block", marginBottom: 4 }}>
-            {lintErrors.length} lint error{lintErrors.length === 1 ? "" : "s"}
-          </strong>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "var(--s-3)",
+              marginBottom: 4,
+            }}
+          >
+            <strong>
+              {lintErrors.length} lint error
+              {lintErrors.length === 1 ? "" : "s"}
+            </strong>
+            {/* Phase 2A.2: Fix with AI — posts to /recipes/repair (the
+                bridge gates this behind the `recipe.repair-ai` flag;
+                503 + feature_disabled → toast pointing at Settings). */}
+            <button
+              type="button"
+              onClick={() => void handleFixWithAi()}
+              disabled={repairBusy}
+              className="btn sm"
+              style={{ flexShrink: 0 }}
+              aria-label="Propose an AI fix for the lint errors"
+            >
+              {repairBusy ? "Asking AI…" : "Fix with AI"}
+            </button>
+          </div>
           <ul style={{ margin: 0, paddingLeft: 18, fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}>
             {lintErrors.map((msg, idx) => (
               <li key={`lint-err-${idx}`}>{msg}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Phase 2A.2: AI repair preview modal. Renders the proposed
+          YAML; user applies (overwrites editor content) or discards. */}
+      {repairProposal !== null && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="AI-proposed recipe fix"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 80,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "var(--s-4)",
+          }}
+          onClick={(e) => {
+            // Backdrop click discards.
+            if (e.target === e.currentTarget) discardRepair();
+          }}
+        >
+          <div
+            style={{
+              background: "var(--bg-0)",
+              borderRadius: "var(--r-3)",
+              border: "1px solid var(--line-2)",
+              maxWidth: 880,
+              width: "100%",
+              maxHeight: "85vh",
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--s-3)",
+              padding: "var(--s-5)",
+              overflow: "hidden",
+            }}
+          >
+            <div>
+              <h2 style={{ margin: 0, fontSize: "var(--fs-l)" }}>
+                AI proposed a fix
+              </h2>
+              <p
+                style={{
+                  margin: "var(--s-2) 0 0",
+                  color: "var(--ink-2)",
+                  fontSize: "var(--fs-s)",
+                }}
+              >
+                Review the proposed YAML below. Apply will replace your
+                editor content — save afterwards to commit. Discard
+                throws this proposal away (your buffer is unchanged).
+              </p>
+            </div>
+            {repairProposal.warnings.length > 0 && (
+              <div
+                style={{
+                  background: "var(--warn-soft)",
+                  border: "1px solid var(--warn)",
+                  borderRadius: "var(--r-2)",
+                  padding: "var(--s-2) var(--s-3)",
+                  fontSize: "var(--fs-s)",
+                  color: "var(--warn)",
+                }}
+              >
+                <strong>
+                  {repairProposal.warnings.length} warning
+                  {repairProposal.warnings.length === 1 ? "" : "s"}:
+                </strong>
+                <ul style={{ margin: "4px 0 0 18px", padding: 0 }}>
+                  {repairProposal.warnings.map((w, idx) => (
+                    <li key={`repair-warn-${idx}`}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <pre
+              style={{
+                flex: 1,
+                overflow: "auto",
+                background: "var(--recess)",
+                border: "1px solid var(--line-2)",
+                borderRadius: "var(--r-2)",
+                padding: "var(--s-3)",
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--fs-s)",
+                color: "var(--ink-0)",
+                margin: 0,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}
+            >
+              {repairProposal.yaml}
+            </pre>
+            <div
+              style={{
+                display: "flex",
+                gap: "var(--s-3)",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={discardRepair}
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={applyRepair}
+              >
+                Apply proposal
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
