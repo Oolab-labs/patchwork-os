@@ -26,6 +26,27 @@ export type HaltCategory =
   | "expect_failed"
   /** Per-step wall-clock `timeout_ms` exceeded (sandbox-alternative slice). */
   | "step_timeout"
+  /**
+   * Connector returned 401/403 — token expired or scopes insufficient.
+   * Actionable: user should reconnect from /connections.
+   */
+  | "auth_failure"
+  /**
+   * External service returned 429 / rate limit. Actionable: retry later
+   * or back off the cron cadence.
+   */
+  | "rate_limited"
+  /**
+   * Transport failed before the request reached the service
+   * (ECONNREFUSED, ENOTFOUND, fetch failed). Distinct from a 4xx/5xx
+   * from the service itself — usually a local network / DNS issue.
+   */
+  | "network_error"
+  /**
+   * Tool needed a connector that isn't configured for this workspace.
+   * Actionable: install/connect from /connections.
+   */
+  | "missing_connector"
   /** Whole-recipe failure (e.g. circular dependencies) — has no step row. */
   | "run_level"
   | "unknown";
@@ -47,6 +68,31 @@ export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   // Must precede the `^Tool ... threw` matcher: timeouts surface wrapped
   // inside the tool-threw envelope (`Tool "x" in step "y" threw: step_timeout: ...`).
   if (/step_timeout/i.test(reason)) return "step_timeout";
+  // Sub-categories that peek inside the wrapped `Tool "x" threw: <inner>` /
+  // `Tool "x" reported an error: <inner>` envelope. Must precede the
+  // generic `tool_threw` / `tool_error` matchers below. Patterns are
+  // deliberately narrow — e.g. "unreachable" alone stays in `tool_error`
+  // because too many tools use it as a generic phrase.
+  if (
+    /\b(401|403)\b|unauthori[sz]ed|forbidden|invalid[_ -]?token|token[_ -]?expired|authentication[_ -]?failed/i.test(
+      reason,
+    )
+  )
+    return "auth_failure";
+  if (/\b429\b|rate[_ -]?limit|too many requests/i.test(reason))
+    return "rate_limited";
+  if (
+    /ECONNREFUSED|ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|network[_ -]?error|getaddrinfo/i.test(
+      reason,
+    )
+  )
+    return "network_error";
+  if (
+    /connector[_ -]?not[_ -]?configured|no[_ -]?(connector[_ -]?)?token|not[_ -]?connected|missing[_ -]?connector/i.test(
+      reason,
+    )
+  )
+    return "missing_connector";
   if (/^Agent step .* threw/i.test(reason)) return "agent_threw";
   if (/^Tool .* threw/i.test(reason)) return "tool_threw";
   if (/^Tool .* reported an error/i.test(reason)) return "tool_error";

@@ -74,6 +74,13 @@ type HaltCategory =
   | "tool_threw"
   | "tool_error"
   | "kill_switch"
+  | "budget_exceeded"
+  | "expect_failed"
+  | "step_timeout"
+  | "auth_failure"
+  | "rate_limited"
+  | "network_error"
+  | "missing_connector"
   | "run_level"
   | "unknown";
 
@@ -99,6 +106,13 @@ const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   tool_threw: "tool threw",
   tool_error: "tool error",
   kill_switch: "kill switch",
+  budget_exceeded: "budget exceeded",
+  expect_failed: "expect failed",
+  step_timeout: "step timeout",
+  auth_failure: "auth failure",
+  rate_limited: "rate limited",
+  network_error: "network error",
+  missing_connector: "missing connector",
   run_level: "run-level",
   unknown: "unknown",
 };
