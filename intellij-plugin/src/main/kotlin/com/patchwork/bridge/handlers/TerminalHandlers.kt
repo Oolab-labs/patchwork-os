@@ -353,6 +353,23 @@ class ExecuteInTerminalHandler : BridgeHandler {
     companion object {
         private const val MAX_OUTPUT_BYTES = 512 * 1024
         private val METACHAR_RE = Regex("""[;&|`${'$'}()<>{}!\\]""")
+        // Mirrors INTERPRETER_COMMANDS in src/config.ts — permanently blocked regardless of metachar check.
+        // A bare interpreter name (e.g. "bash /tmp/script.sh") passes the metachar filter but allows
+        // arbitrary code execution, inconsistent with the TypeScript bridge's security posture.
+        private val INTERPRETER_COMMANDS = setOf(
+            "node", "python", "python3", "make",
+            "bash", "sh", "zsh", "dash", "fish", "ksh", "csh", "tcsh",
+            "ruby", "perl", "lua", "php",
+            "cmd", "powershell", "pwsh", "wscript", "cscript",
+        )
+
+        /** Extract the executable name from the first token (strips path + Windows extensions). */
+        private fun commandExecutable(cmd: String): String {
+            val first = cmd.trim().split(Regex("\\s+")).firstOrNull() ?: return ""
+            // Strip directory prefix (POSIX or Windows) then lowercase + strip Windows exe extensions
+            return first.substringAfterLast('/').substringAfterLast('\\')
+                .lowercase().replace(Regex("\\.(exe|cmd|bat|com|ps1)$"), "")
+        }
     }
 
     override fun handle(params: JsonObject?, project: Project?): JsonElement {
@@ -373,6 +390,13 @@ class ExecuteInTerminalHandler : BridgeHandler {
             return JsonObject().apply {
                 addProperty("success", false)
                 addProperty("error", "Command must not contain shell metacharacters")
+            }
+        }
+        val executable = commandExecutable(command)
+        if (executable in INTERPRETER_COMMANDS) {
+            return JsonObject().apply {
+                addProperty("success", false)
+                addProperty("error", "Interpreter command \"$executable\" is not allowed (matches permanent blocklist)")
             }
         }
 

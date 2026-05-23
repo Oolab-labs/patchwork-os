@@ -92,7 +92,7 @@ class ReplaceBlockHandler : BridgeHandler {
                 try {
                     doc.replaceString(firstIndex, endOffset, newContent)
                 } catch (e: Exception) {
-                    applyError = "VS Code failed to apply the replacement"
+                    applyError = "Failed to apply the replacement"
                 }
             }
         }

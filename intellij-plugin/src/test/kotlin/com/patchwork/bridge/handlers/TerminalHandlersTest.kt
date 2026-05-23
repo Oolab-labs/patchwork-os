@@ -293,4 +293,65 @@ class ExecuteInTerminalHandlerTest {
         assertTrue(synthetic.has("exitCode"))
         assertTrue(synthetic.has("output"))
     }
+
+    // --- interpreter blocklist ---
+
+    @Test
+    fun `bash command is rejected by interpreter blocklist`() {
+        val params = JsonObject().apply { addProperty("command", "bash /tmp/script.sh") }
+        val result = handler.handle(params, project = null).asJsonObject
+        assertFalse(result.get("success").asBoolean)
+        assertTrue(result.get("error").asString.contains("bash"))
+        assertTrue(result.get("error").asString.contains("blocklist"))
+    }
+
+    @Test
+    fun `sh command is rejected by interpreter blocklist`() {
+        val params = JsonObject().apply { addProperty("command", "sh /tmp/run.sh") }
+        val result = handler.handle(params, project = null).asJsonObject
+        assertFalse(result.get("success").asBoolean)
+        assertTrue(result.get("error").asString.contains("sh"))
+    }
+
+    @Test
+    fun `python3 command is rejected by interpreter blocklist`() {
+        val params = JsonObject().apply { addProperty("command", "python3 script.py") }
+        val result = handler.handle(params, project = null).asJsonObject
+        assertFalse(result.get("success").asBoolean)
+        assertTrue(result.get("error").asString.contains("python3"))
+    }
+
+    @Test
+    fun `node command is rejected by interpreter blocklist`() {
+        val params = JsonObject().apply { addProperty("command", "node index.js") }
+        val result = handler.handle(params, project = null).asJsonObject
+        assertFalse(result.get("success").asBoolean)
+        assertTrue(result.get("error").asString.contains("node"))
+    }
+
+    @Test
+    fun `interpreter with path prefix is still rejected`() {
+        val params = JsonObject().apply { addProperty("command", "/usr/bin/python3 script.py") }
+        val result = handler.handle(params, project = null).asJsonObject
+        assertFalse(result.get("success").asBoolean)
+        assertTrue(result.get("error").asString.contains("python3"))
+    }
+
+    @Test
+    fun `gradle build passes interpreter check`() {
+        val params = JsonObject().apply { addProperty("command", "gradle build") }
+        // null project → no terminal plugin, but must not be rejected at the interpreter gate
+        val result = handler.handle(params, project = null).asJsonObject
+        // Will fail with terminal-not-available, NOT interpreter-blocked error
+        val error = result.get("error")?.asString ?: ""
+        assertFalse(error.contains("blocklist"), "gradle should not be blocked as interpreter: $error")
+    }
+
+    @Test
+    fun `git status passes interpreter check`() {
+        val params = JsonObject().apply { addProperty("command", "git status") }
+        val result = handler.handle(params, project = null).asJsonObject
+        val error = result.get("error")?.asString ?: ""
+        assertFalse(error.contains("blocklist"), "git should not be blocked as interpreter: $error")
+    }
 }
