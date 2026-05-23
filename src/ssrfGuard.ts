@@ -78,6 +78,9 @@ export function isPrivateHost(hostname: string): boolean {
   if (host === "::1") return true; // loopback
   if (host.startsWith("fe80:")) return true; // link-local
   if (host.startsWith("fc") || host.startsWith("fd")) return true; // ULA (RFC 4193)
+  if (host.startsWith("2002:")) return true; // 6to4 (RFC 3056) — embeds IPv4 in bits 16-47;
+  // a 6to4 address for a private IPv4 (e.g. 2002:c0a8:0101:: → 192.168.1.1) bypasses
+  // the IPv4 checks above unless we block the entire /16 here.
   if (host.startsWith("::ffff:")) return isPrivateHost(host.slice(7));
   if (host.startsWith("::ffff:0:")) return isPrivateHost(host.slice(9));
 

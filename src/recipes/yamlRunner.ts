@@ -349,6 +349,16 @@ export async function evaluateStepExpect(
   }
 
   if (expect.matches !== undefined) {
+    // Guard against ReDoS: limit pattern and input string length before
+    // compiling / executing user-supplied regex.
+    const MAX_PATTERN = 500;
+    const MAX_INPUT = 65_536; // 64 KB
+    if (expect.matches.length > MAX_PATTERN) {
+      failures.push(
+        `matches: regex pattern too long (${expect.matches.length} chars, max ${MAX_PATTERN})`,
+      );
+      return failures;
+    }
     let re: RegExp;
     try {
       re = new RegExp(expect.matches);
@@ -358,7 +368,9 @@ export async function evaluateStepExpect(
       );
       return failures;
     }
-    if (!re.test(asString)) {
+    const testInput =
+      asString.length > MAX_INPUT ? asString.slice(0, MAX_INPUT) : asString;
+    if (!re.test(testInput)) {
       failures.push(
         `matches: ${JSON.stringify(expect.matches)} did not match output`,
       );
