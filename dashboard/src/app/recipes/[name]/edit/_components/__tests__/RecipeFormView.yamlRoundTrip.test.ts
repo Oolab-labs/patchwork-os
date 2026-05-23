@@ -4,7 +4,7 @@
  * mounting any React components.
  */
 import { describe, expect, it } from "vitest";
-import { parseDocument, YAMLMap, YAMLSeq } from "yaml";
+import { parseDocument, YAMLMap, YAMLSeq, Document as YamlDocument } from "yaml";
 
 const EXAMPLE_YAML = `# yaml-language-server: $schema=https://example.com/recipe.json
 version: 1.0.0
@@ -24,10 +24,49 @@ steps:
     into: digest
 `;
 
-function mutateAndStringify(yaml: string, mutate: (d: ReturnType<typeof parseDocument>) => void): string {
+function mutateAndStringify(yaml: string, mutate: (d: YamlDocument) => void): string {
   const doc = parseDocument(yaml, { keepSourceTokens: true });
   mutate(doc);
   return String(doc);
+}
+
+// Helpers mirroring the component's add/remove/move logic
+function addStep(yaml: string, kind: "agent" | "tool"): string {
+  return mutateAndStringify(yaml, (d) => {
+    let stepsNode = d.get("steps", true);
+    if (!(stepsNode instanceof YAMLSeq)) {
+      stepsNode = d.createNode([]) as YAMLSeq;
+      d.set("steps", stepsNode);
+    }
+    const seq = stepsNode as YAMLSeq;
+    const idx = seq.items.length;
+    const newStep =
+      kind === "agent"
+        ? d.createNode({ id: `step_${idx + 1}`, agent: { prompt: "" }, into: `out_${idx + 1}` })
+        : d.createNode({ id: `step_${idx + 1}`, tool: "", into: `out_${idx + 1}` });
+    seq.add(newStep);
+  });
+}
+
+function removeStep(yaml: string, stepIndex: number): string {
+  return mutateAndStringify(yaml, (d) => {
+    const stepsNode = d.get("steps", true);
+    if (!(stepsNode instanceof YAMLSeq)) return;
+    stepsNode.items.splice(stepIndex, 1);
+  });
+}
+
+function moveStep(yaml: string, stepIndex: number, direction: "up" | "down"): string {
+  return mutateAndStringify(yaml, (d) => {
+    const stepsNode = d.get("steps", true);
+    if (!(stepsNode instanceof YAMLSeq)) return;
+    const items = stepsNode.items;
+    const targetIndex = direction === "up" ? stepIndex - 1 : stepIndex + 1;
+    if (targetIndex < 0 || targetIndex >= items.length) return;
+    const tmp = items[stepIndex]!;
+    items[stepIndex] = items[targetIndex]!;
+    items[targetIndex] = tmp;
+  });
 }
 
 describe("RecipeFormView YAML round-trip", () => {
@@ -99,6 +138,7 @@ describe("RecipeFormView YAML round-trip", () => {
   });
 
   it("handles a recipe with no agent block by creating it", () => {
+
     const noAgentYaml = `name: simple\nsteps:\n  - id: s1\n    tool: myTool\n    into: out\n`;
     const result = mutateAndStringify(noAgentYaml, (d) => {
       const steps = d.get("steps", true);
@@ -111,5 +151,71 @@ describe("RecipeFormView YAML round-trip", () => {
     expect(result).toContain("agent:");
     expect(result).toContain("prompt: Hello world.");
     expect(result).toContain("tool: myTool");
+  });
+});
+
+describe("RecipeFormView step add/remove/move", () => {
+  it("adds an agent step appended after existing steps", () => {
+    const result = addStep(EXAMPLE_YAML, "agent");
+    const parsed = parseDocument(result);
+    expect(parsed.errors).toHaveLength(0);
+    const doc = parsed.toJS() as { steps: unknown[] };
+    expect(doc.steps).toHaveLength(3);
+    expect((doc.steps[2] as { id: string }).id).toBe("step_3");
+    // Original steps untouched
+    expect(result).toContain("id: fetch");
+    expect(result).toContain("id: summarize");
+  });
+
+  it("adds a tool step with an empty tool field", () => {
+    const result = addStep(EXAMPLE_YAML, "tool");
+    const doc = parseDocument(result).toJS() as { steps: Array<{ tool?: string }> };
+    expect(doc.steps).toHaveLength(3);
+    expect(Object.prototype.hasOwnProperty.call(doc.steps[2], "tool")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(doc.steps[2], "agent")).toBe(false);
+  });
+
+  it("removes a step by index without touching others", () => {
+    const result = removeStep(EXAMPLE_YAML, 0);
+    const parsed = parseDocument(result);
+    expect(parsed.errors).toHaveLength(0);
+    const doc = parsed.toJS() as { steps: Array<{ id: string }> };
+    expect(doc.steps).toHaveLength(1);
+    expect(doc.steps[0]!.id).toBe("summarize");
+  });
+
+  it("moves a step up", () => {
+    const result = moveStep(EXAMPLE_YAML, 1, "up");
+    const doc = parseDocument(result).toJS() as { steps: Array<{ id: string }> };
+    expect(doc.steps[0]!.id).toBe("summarize");
+    expect(doc.steps[1]!.id).toBe("fetch");
+  });
+
+  it("moves a step down", () => {
+    const result = moveStep(EXAMPLE_YAML, 0, "down");
+    const doc = parseDocument(result).toJS() as { steps: Array<{ id: string }> };
+    expect(doc.steps[0]!.id).toBe("summarize");
+    expect(doc.steps[1]!.id).toBe("fetch");
+  });
+
+  it("no-ops when moving first step up", () => {
+    const result = moveStep(EXAMPLE_YAML, 0, "up");
+    const doc = parseDocument(result).toJS() as { steps: Array<{ id: string }> };
+    expect(doc.steps[0]!.id).toBe("fetch");
+    expect(doc.steps[1]!.id).toBe("summarize");
+  });
+
+  it("no-ops when moving last step down", () => {
+    const result = moveStep(EXAMPLE_YAML, 1, "down");
+    const doc = parseDocument(result).toJS() as { steps: Array<{ id: string }> };
+    expect(doc.steps[0]!.id).toBe("fetch");
+    expect(doc.steps[1]!.id).toBe("summarize");
+  });
+
+  it("add then remove returns to original step count", () => {
+    const afterAdd = addStep(EXAMPLE_YAML, "agent");
+    const afterRemove = removeStep(afterAdd, 2);
+    const doc = parseDocument(afterRemove).toJS() as { steps: unknown[] };
+    expect(doc.steps).toHaveLength(2);
   });
 });

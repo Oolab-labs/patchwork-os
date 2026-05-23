@@ -154,12 +154,29 @@ const textareaStyle: React.CSSProperties = {
 interface StepCardProps {
   step: RecipeStep;
   index: number;
+  total: number;
   editable: boolean;
   onChangeField: (stepIndex: number, path: string[], value: string) => void;
+  onRemove: (index: number) => void;
+  onMove: (index: number, direction: "up" | "down") => void;
   stepIssues: YamlLintIssue[];
 }
 
-function StepCard({ step, index, editable, onChangeField, stepIssues }: StepCardProps) {
+const iconBtnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "none",
+  cursor: "pointer",
+  padding: "2px 4px",
+  borderRadius: "var(--r-1)",
+  color: "var(--ink-3)",
+  display: "inline-flex",
+  alignItems: "center",
+  fontSize: 14,
+  lineHeight: 1,
+  minHeight: 24,
+};
+
+function StepCard({ step, index, total, editable, onChangeField, onRemove, onMove, stepIssues }: StepCardProps) {
   const id = step.id ?? step.into ?? `step_${index + 1}`;
   const tools = step.tool
     ? [step.tool]
@@ -249,6 +266,41 @@ function StepCard({ step, index, editable, onChangeField, stepIssues }: StepCard
           >
             {stepIssues.length}
           </span>
+        )}
+        {editable && (
+          <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+            <button
+              type="button"
+              style={iconBtnStyle}
+              disabled={index === 0}
+              onClick={() => onMove(index, "up")}
+              aria-label="Move step up"
+              title="Move up"
+            >
+              ▲
+            </button>
+            <button
+              type="button"
+              style={iconBtnStyle}
+              disabled={index === total - 1}
+              onClick={() => onMove(index, "down")}
+              aria-label="Move step down"
+              title="Move down"
+            >
+              ▼
+            </button>
+            <button
+              type="button"
+              style={{ ...iconBtnStyle, color: "var(--err)" }}
+              onClick={() => {
+                if (window.confirm(`Remove step "${id}"?`)) onRemove(index);
+              }}
+              aria-label="Remove step"
+              title="Remove step"
+            >
+              ✕
+            </button>
+          </div>
         )}
       </div>
 
@@ -410,6 +462,54 @@ export function RecipeFormView({ yaml, onChange, lintIssues = [] }: RecipeFormVi
     [emitChange],
   );
 
+  const handleAddStep = useCallback(
+    (kind: "agent" | "tool") => {
+      emitChange((d) => {
+        let stepsNode = d.get("steps", true);
+        if (!(stepsNode instanceof YAMLSeq)) {
+          stepsNode = d.createNode([]) as YAMLSeq;
+          d.set("steps", stepsNode);
+        }
+        const seq = stepsNode as YAMLSeq;
+        const idx = seq.items.length;
+        const newStep =
+          kind === "agent"
+            ? d.createNode({ id: `step_${idx + 1}`, agent: { prompt: "" }, into: `out_${idx + 1}` })
+            : d.createNode({ id: `step_${idx + 1}`, tool: "", into: `out_${idx + 1}` });
+        seq.add(newStep);
+      });
+    },
+    [emitChange],
+  );
+
+  const handleRemoveStep = useCallback(
+    (stepIndex: number) => {
+      emitChange((d) => {
+        const stepsNode = d.get("steps", true);
+        if (!(stepsNode instanceof YAMLSeq)) return;
+        stepsNode.items.splice(stepIndex, 1);
+      });
+    },
+    [emitChange],
+  );
+
+  const handleMoveStep = useCallback(
+    (stepIndex: number, direction: "up" | "down") => {
+      emitChange((d) => {
+        const stepsNode = d.get("steps", true);
+        if (!(stepsNode instanceof YAMLSeq)) return;
+        const items = stepsNode.items;
+        const targetIndex = direction === "up" ? stepIndex - 1 : stepIndex + 1;
+        if (targetIndex < 0 || targetIndex >= items.length) return;
+        // Swap
+        const tmp = items[stepIndex]!;
+        items[stepIndex] = items[targetIndex]!;
+        items[targetIndex] = tmp;
+      });
+    },
+    [emitChange],
+  );
+
   if (!yaml.trim()) {
     return (
       <div
@@ -517,11 +617,11 @@ export function RecipeFormView({ yaml, onChange, lintIssues = [] }: RecipeFormVi
       </div>
 
       {/* Steps */}
-      {steps.length === 0 ? (
+      {steps.length === 0 && !editable ? (
         <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-s)", textAlign: "center", padding: "var(--s-4)" }}>
           No steps defined yet.
         </div>
-      ) : (
+      ) : steps.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)" }}>
           <div style={{ fontSize: "var(--fs-s)", fontWeight: 600, color: "var(--ink-2)" }}>
             {steps.length} step{steps.length === 1 ? "" : "s"}
@@ -531,11 +631,36 @@ export function RecipeFormView({ yaml, onChange, lintIssues = [] }: RecipeFormVi
               key={step.id ?? step.into ?? i}
               step={step}
               index={i}
+              total={steps.length}
               editable={editable}
               onChangeField={handleStepFieldChange}
+              onRemove={handleRemoveStep}
+              onMove={handleMoveStep}
               stepIssues={issuesByStep.get(i) ?? []}
             />
           ))}
+        </div>
+      ) : null}
+
+      {/* Add step controls (editable mode only) */}
+      {editable && (
+        <div style={{ display: "flex", gap: "var(--s-2)", justifyContent: "center" }}>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => handleAddStep("agent")}
+            title="Append an agent step with a prompt"
+          >
+            + Agent step
+          </button>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => handleAddStep("tool")}
+            title="Append a tool step"
+          >
+            + Tool step
+          </button>
         </div>
       )}
 
