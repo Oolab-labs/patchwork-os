@@ -117,6 +117,25 @@ const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   unknown: "unknown",
 };
 
+// Mirrors /runs page — one-line actionable hint per category.
+const HALT_CATEGORY_HINT: Record<HaltCategory, string> = {
+  agent_silent_fail: "Agent finished without producing usable output. Inspect prompt + check the trace.",
+  agent_narration_only: "Agent narrated but didn't produce structured output — tighten the prompt or add an into: target.",
+  agent_threw: "Agent step threw before completing. Open the run trace.",
+  tool_threw: "Tool threw an unhandled exception. Check the inner error in the trace.",
+  tool_error: "Tool returned an error response. Check the inner error in the trace.",
+  kill_switch: "Write blocked by the kill-switch. Run `patchwork kill-switch release` to re-enable.",
+  budget_exceeded: "Run exceeded its tokensMax budget. Raise tokensMax in the recipe or shrink prompts.",
+  expect_failed: "A step's expect: assertion didn't match. Inspect the assertion + actual output.",
+  step_timeout: "Step exceeded its timeout_ms. Bump the timeout or speed up the step.",
+  auth_failure: "Connector token expired or scopes insufficient. Reconnect from /connections.",
+  rate_limited: "External service rate-limited the request. Back off the cron cadence or wait and retry.",
+  network_error: "Transport-level failure (DNS, refused, timeout). Check connectivity to the upstream service.",
+  missing_connector: "Recipe references a connector that isn't configured. Install/connect from /connections.",
+  run_level: "Whole-recipe failure (no step ran). Check the recipe for circular deps / parse errors.",
+  unknown: "Uncategorised halt. Open the run trace for the raw error.",
+};
+
 function relTime(ms: number): string {
   const diff = Date.now() - ms;
   const sec = Math.floor(diff / 1000);
@@ -740,6 +759,7 @@ export default function RecipeHubOverviewPage({
               ([cat, count]) => (
                 <div
                   key={cat}
+                  title={HALT_CATEGORY_HINT[cat] ?? "Uncategorised halt."}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -750,6 +770,7 @@ export default function RecipeHubOverviewPage({
                     border: "1px solid color-mix(in srgb, var(--amber) 35%, transparent)",
                     fontSize: "var(--fs-xs)",
                     color: "var(--amber)",
+                    cursor: "help",
                   }}
                 >
                   <span style={{ fontFamily: "var(--font-mono)" }}>

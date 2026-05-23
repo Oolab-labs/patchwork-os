@@ -170,6 +170,34 @@ const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   unknown: "uncategorised",
 };
 
+// One-line actionable hint per category. Surfaced as the pill's
+// `title` tooltip so users see what to do without leaving the page —
+// the categoriser knows the cause, this map tells them the fix.
+const HALT_CATEGORY_HINT: Record<HaltCategory, string> = {
+  agent_silent_fail:
+    "Agent finished without producing usable output. Inspect prompt + check the trace.",
+  agent_narration_only:
+    "Agent narrated but didn't produce structured output — tighten the prompt or add an into: target.",
+  agent_threw: "Agent step threw before completing. Open the run trace.",
+  tool_threw: "Tool threw an unhandled exception. Check the inner error in the trace.",
+  tool_error: "Tool returned an error response. Check the inner error in the trace.",
+  kill_switch:
+    "Write blocked by the kill-switch. Run `patchwork kill-switch release` to re-enable.",
+  budget_exceeded:
+    "Run exceeded its tokensMax budget. Raise tokensMax in the recipe or shrink prompts.",
+  expect_failed: "A step's expect: assertion didn't match. Inspect the assertion + actual output.",
+  step_timeout: "Step exceeded its timeout_ms. Bump the timeout or speed up the step.",
+  auth_failure: "Connector token expired or scopes insufficient. Reconnect from /connections.",
+  rate_limited:
+    "External service rate-limited the request. Back off the cron cadence or wait and retry.",
+  network_error:
+    "Transport-level failure (DNS, refused, timeout). Check connectivity to the upstream service.",
+  missing_connector:
+    "Recipe references a connector that isn't configured. Install/connect from /connections.",
+  run_level: "Whole-recipe failure (no step ran). Check the recipe for circular deps / parse errors.",
+  unknown: "Uncategorised halt. Open the run trace for the raw error.",
+};
+
 type TimeWindow = "any" | "1h" | "24h" | "overnight" | "7d";
 
 const TIME_WINDOW_LABEL: Record<TimeWindow, string> = {
@@ -570,8 +598,8 @@ export default function RunsPage() {
                 type="button"
                 className="pill"
                 onClick={() => setStatus("error")}
-                aria-label={`Filter to errored runs (${HALT_CATEGORY_LABEL[cat]} · ${count})`}
-                title="Click to filter list to errored runs"
+                aria-label={`Filter to errored runs (${HALT_CATEGORY_LABEL[cat]} · ${count}) — ${HALT_CATEGORY_HINT[cat]}`}
+                title={`${HALT_CATEGORY_HINT[cat]}\n\nClick to filter list to errored runs.`}
                 style={{
                   fontSize: "var(--fs-2xs)",
                   background: cat === "unknown" ? "var(--bg-1)" : undefined,
