@@ -22,6 +22,7 @@ import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
+import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -71,8 +72,9 @@ export function vendorConfig(vendor: VendorId): VendorConfig {
         scopes: ["repo", "read:org", "read:user"],
         redirectUri: connectorRedirectUri("github"),
         useDynamicRegistration: false,
-        preregisteredClientId: process.env.PATCHWORK_GITHUB_CLIENT_ID ?? "",
-        preregisteredClientSecret: process.env.PATCHWORK_GITHUB_CLIENT_SECRET,
+        preregisteredClientId: readSecret("PATCHWORK_GITHUB_CLIENT_ID"),
+        preregisteredClientSecret:
+          readSecret("PATCHWORK_GITHUB_CLIENT_SECRET") || undefined,
         clientName: "Patchwork OS",
         skipPkce: true, // GitHub OAuth Apps don't support PKCE (GitHub Apps do)
       };

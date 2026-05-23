@@ -45,6 +45,7 @@ import {
 } from "./baseConnector.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
+import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -136,11 +137,11 @@ export interface UpdateTaskParams {
 // ── Config ───────────────────────────────────────────────────────────────────
 
 function clientId(): string {
-  return process.env.ASANA_CLIENT_ID ?? "";
+  return readSecret("ASANA_CLIENT_ID");
 }
 
 function clientSecret(): string {
-  return process.env.ASANA_CLIENT_SECRET ?? "";
+  return readSecret("ASANA_CLIENT_SECRET");
 }
 
 function redirectUri(): string {

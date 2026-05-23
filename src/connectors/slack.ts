@@ -19,6 +19,7 @@ import path from "node:path";
 import { writeFileAtomicSync } from "../writeFileAtomic.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
+import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -66,11 +67,11 @@ export interface ConnectorHandlerResult {
 // ── Config ───────────────────────────────────────────────────────────────────
 
 function clientId(): string {
-  return process.env.PATCHWORK_SLACK_CLIENT_ID ?? "";
+  return readSecret("PATCHWORK_SLACK_CLIENT_ID");
 }
 
 function clientSecret(): string {
-  return process.env.PATCHWORK_SLACK_CLIENT_SECRET ?? "";
+  return readSecret("PATCHWORK_SLACK_CLIENT_SECRET");
 }
 
 function redirectUri(): string {

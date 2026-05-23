@@ -39,6 +39,7 @@ import {
 } from "./baseConnector.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
+import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -50,11 +51,11 @@ const SCOPES = ["read_user", "read_api", "read_repository"];
 // ── Config ───────────────────────────────────────────────────────────────────
 
 function clientId(): string {
-  return process.env.GITLAB_CLIENT_ID ?? "";
+  return readSecret("GITLAB_CLIENT_ID");
 }
 
 function clientSecret(): string {
-  return process.env.GITLAB_CLIENT_SECRET ?? "";
+  return readSecret("GITLAB_CLIENT_SECRET");
 }
 
 /**
