@@ -51,6 +51,66 @@ describe("categoriseHaltReason", () => {
     expect(categoriseHaltReason("kill-switch active")).toBe("kill_switch");
   });
 
+  it("recognises auth_failure inside wrapped tool envelopes", () => {
+    expect(
+      categoriseHaltReason(
+        'Tool "github.createIssue" in step "open" threw: 401 Unauthorized',
+      ),
+    ).toBe("auth_failure");
+    expect(
+      categoriseHaltReason(
+        'Tool "slack.post" in step "n" reported an error: token_expired',
+      ),
+    ).toBe("auth_failure");
+    expect(categoriseHaltReason("403 Forbidden")).toBe("auth_failure");
+  });
+
+  it("recognises rate_limited halts", () => {
+    expect(
+      categoriseHaltReason(
+        'Tool "github.search" in step "s" threw: 429 Too Many Requests',
+      ),
+    ).toBe("rate_limited");
+    expect(categoriseHaltReason("rate-limit exceeded")).toBe("rate_limited");
+  });
+
+  it("recognises network_error halts (transport-level)", () => {
+    expect(
+      categoriseHaltReason(
+        'Tool "http.get" in step "s" threw: connect ECONNREFUSED 127.0.0.1:443',
+      ),
+    ).toBe("network_error");
+    expect(
+      categoriseHaltReason(
+        'Tool "x" threw: getaddrinfo ENOTFOUND api.example.com',
+      ),
+    ).toBe("network_error");
+    expect(categoriseHaltReason("fetch failed")).toBe("network_error");
+  });
+
+  it("recognises missing_connector halts", () => {
+    expect(
+      categoriseHaltReason(
+        'Tool "gmail.send" in step "s" threw: connector_not_configured',
+      ),
+    ).toBe("missing_connector");
+    expect(
+      categoriseHaltReason(
+        'Tool "x" reported an error: no connector token for slack',
+      ),
+    ).toBe("missing_connector");
+  });
+
+  it("leaves the existing 'remote unreachable' phrase in tool_error (network match is narrow)", () => {
+    // Regression guard: too many tools use "unreachable" as a generic
+    // phrase — keep it in tool_error, not network_error.
+    expect(
+      categoriseHaltReason(
+        'Tool "git.x" in step "y" reported an error: remote unreachable',
+      ),
+    ).toBe("tool_error");
+  });
+
   it("returns 'unknown' for missing or unrecognised reasons", () => {
     expect(categoriseHaltReason(undefined)).toBe("unknown");
     expect(categoriseHaltReason("")).toBe("unknown");

@@ -2287,6 +2287,13 @@ if (process.argv[2] === "halts") {
         tool_threw: "tool threw",
         tool_error: "tool error",
         kill_switch: "kill-switch blocked",
+        budget_exceeded: "budget exceeded",
+        expect_failed: "expect failed",
+        step_timeout: "step timeout",
+        auth_failure: "auth failure",
+        rate_limited: "rate limited",
+        network_error: "network error",
+        missing_connector: "missing connector",
         run_level: "run-level halt",
         unknown: "uncategorised",
       };
