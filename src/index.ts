@@ -2314,13 +2314,37 @@ if (process.argv[2] === "halts") {
         process.exit(0);
       }
 
+      // Mirrors dashboard HALT_CATEGORY_HINT — actionable one-liner so
+      // SSH / mobile users get the "what to do" without opening the UI.
+      const hints: Record<string, string> = {
+        agent_silent_fail: "inspect prompt + check trace",
+        agent_narration_only: "tighten prompt or add `into:` target",
+        agent_threw: "open run trace",
+        tool_threw: "check inner error in trace",
+        tool_error: "check inner error in trace",
+        kill_switch: "run `patchwork kill-switch release`",
+        budget_exceeded: "raise tokensMax or shrink prompts",
+        expect_failed: "inspect assertion vs actual output",
+        step_timeout: "bump timeout_ms or speed up step",
+        auth_failure: "reconnect from /connections",
+        rate_limited: "back off cron cadence or wait",
+        network_error: "check connectivity to upstream",
+        missing_connector: "install/connect from /connections",
+        run_level: "check recipe for circular deps / parse errors",
+        unknown: "open run trace for raw error",
+      };
+
       const entries = Object.entries(summary.byCategory).sort(
         ([, a], [, b]) => b - a,
       );
       process.stdout.write("\nBy category:\n");
       for (const [cat, count] of entries) {
         const label = labels[cat] ?? cat;
-        process.stdout.write(`  ${String(count).padStart(3)}  ${label}\n`);
+        const hint = hints[cat];
+        const hintSuffix = hint ? `  — ${hint}` : "";
+        process.stdout.write(
+          `  ${String(count).padStart(3)}  ${label}${hintSuffix}\n`,
+        );
       }
 
       if (summary.recent.length > 0) {
