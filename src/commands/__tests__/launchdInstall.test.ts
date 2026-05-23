@@ -2,7 +2,7 @@
  * Behaviour test: runLaunchdInstall fails early and clearly when a workspace
  * symlink install is detected, and succeeds when the install is a real copy.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const { PATCHWORK_PACKAGE_NAME } = vi.hoisted(() => ({
   PATCHWORK_PACKAGE_NAME: "patchwork-os",
@@ -45,10 +45,6 @@ import { detectWorkspaceSymlinkInstall } from "../../installGuard.js";
 import { runLaunchdInstall } from "../launchd.js";
 
 const mockedDetect = vi.mocked(detectWorkspaceSymlinkInstall);
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 describe("runLaunchdInstall — symlink guard", () => {
   it("exits with code 1 and prints actionable error when install is a workspace symlink", async () => {
