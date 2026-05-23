@@ -85,7 +85,11 @@ interface HaltSummary {
 
 interface ConnectorStatus {
   id: string;
+  /** `healthy` is currently null for every connector (bridge doesn't
+   *  populate it). Use `status` for the positive signal — see Phase 1A.1
+   *  dogfood note in the edit page. */
   healthy?: boolean;
+  status?: "connected" | "disconnected" | "needs_reauth";
 }
 
 const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
@@ -348,8 +352,13 @@ export default function RecipeHubOverviewPage({
   );
 
   const connectorHealthMap = useMemo(() => {
+    // Phase 1A.1: derive health from `status` (which is populated)
+    // rather than `healthy` (which is always null on the bridge today).
+    // `needs_reauth` and `disconnected` both register as not-healthy.
     const m = new Map<string, boolean | undefined>();
-    for (const c of connectorStatuses ?? []) m.set(c.id, c.healthy);
+    for (const c of connectorStatuses ?? []) {
+      m.set(c.id, c.status === "connected");
+    }
     return m;
   }, [connectorStatuses]);
 

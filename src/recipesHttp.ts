@@ -23,7 +23,10 @@ import {
   isInstallDirDisabled,
 } from "./recipes/disabledMarkers.js";
 import { RECIPE_NAME_RE } from "./recipes/names.js";
-import { validateRecipeDefinition } from "./recipes/validation.js";
+import {
+  type LintIssue,
+  validateRecipeDefinition,
+} from "./recipes/validation.js";
 
 /**
  * Returns true unless `filePath` lives inside an install dir whose
@@ -891,13 +894,28 @@ export async function promoteRecipeVariant(
  * dashboard edit UI to surface validateRecipeDefinition warnings live, in
  * addition to the warnings returned by saveRecipeContent on save.
  */
+/**
+ * Lints raw YAML/JSON recipe content. Returns structured `LintIssue` objects
+ * (not flat strings) so the dashboard can surface code/path metadata —
+ * required for inline editor diagnostics in Phase 1B (CodeMirror linter
+ * extension keyed off `path`).
+ *
+ * Wire format note: the `errors`/`warnings` arrays USED to be `string[]`.
+ * Three in-repo callers (dashboard edit page, marketplace submit page,
+ * server-recipes-content test) were updated alongside this change. External
+ * MCP clients of `/recipes/lint` may need to read `.message` on each item.
+ */
 export function lintRecipeContent(content: string): {
   ok: boolean;
-  errors: string[];
-  warnings: string[];
+  errors: LintIssue[];
+  warnings: LintIssue[];
 } {
   if (!content.trim()) {
-    return { ok: false, errors: ["Recipe content is required"], warnings: [] };
+    return {
+      ok: false,
+      errors: [{ level: "error", message: "Recipe content is required" }],
+      warnings: [],
+    };
   }
 
   let parsed: unknown;
@@ -906,17 +924,23 @@ export function lintRecipeContent(content: string): {
   } catch (err) {
     return {
       ok: false,
-      errors: [err instanceof Error ? err.message : String(err)],
+      errors: [
+        {
+          level: "error",
+          message: err instanceof Error ? err.message : String(err),
+          code: "yaml-parse",
+        },
+      ],
       warnings: [],
     };
   }
 
   const validation = validateRecipeDefinition(parsed);
-  const errors: string[] = [];
-  const warnings: string[] = [];
+  const errors: LintIssue[] = [];
+  const warnings: LintIssue[] = [];
   for (const issue of validation.issues) {
-    if (issue.level === "error") errors.push(issue.message);
-    else warnings.push(issue.message);
+    if (issue.level === "error") errors.push(issue);
+    else warnings.push(issue);
   }
   return { ok: errors.length === 0, errors, warnings };
 }

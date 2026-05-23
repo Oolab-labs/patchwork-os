@@ -41,6 +41,7 @@ import {
 } from "./baseConnector.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
+import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -108,11 +109,11 @@ export interface DiscordMessage {
 // ── Config ───────────────────────────────────────────────────────────────────
 
 function clientId(): string {
-  return process.env.DISCORD_CLIENT_ID ?? "";
+  return readSecret("DISCORD_CLIENT_ID");
 }
 
 function clientSecret(): string {
-  return process.env.DISCORD_CLIENT_SECRET ?? "";
+  return readSecret("DISCORD_CLIENT_SECRET");
 }
 
 function redirectUri(): string {

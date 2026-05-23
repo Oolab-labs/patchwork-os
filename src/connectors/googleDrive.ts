@@ -3,6 +3,7 @@ import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
+import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -46,11 +47,11 @@ export interface ConnectorHandlerResult {
 }
 
 function clientId(): string {
-  return process.env.GOOGLE_DRIVE_CLIENT_ID ?? "";
+  return readSecret("GOOGLE_DRIVE_CLIENT_ID");
 }
 
 function clientSecret(): string {
-  return process.env.GOOGLE_DRIVE_CLIENT_SECRET ?? "";
+  return readSecret("GOOGLE_DRIVE_CLIENT_SECRET");
 }
 
 function isConfigured(): boolean {
@@ -97,8 +98,8 @@ export function getStatus(): ConnectorStatus {
   if (!tokens) return { id: "google-drive", status: "disconnected" };
   const expired = !tokens.expiry_date || Date.now() > tokens.expiry_date;
   const hasCredentials = Boolean(
-    (process.env.GOOGLE_DRIVE_CLIENT_ID || tokens._client_id) &&
-      (process.env.GOOGLE_DRIVE_CLIENT_SECRET || tokens._client_secret),
+    (readSecret("GOOGLE_DRIVE_CLIENT_ID") || tokens._client_id) &&
+      (readSecret("GOOGLE_DRIVE_CLIENT_SECRET") || tokens._client_secret),
   );
   const canRefresh = Boolean(tokens.refresh_token) && hasCredentials;
   const status = expired && !canRefresh ? "needs_reauth" : "connected";

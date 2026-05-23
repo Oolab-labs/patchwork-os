@@ -18,6 +18,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { CONNECTORS } from "./connectorRegistry.js";
+import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -52,11 +53,11 @@ export interface ConnectorStatus {
 }
 
 function clientId(): string {
-  return process.env.GMAIL_CLIENT_ID ?? "";
+  return readSecret("GMAIL_CLIENT_ID");
 }
 
 function clientSecret(): string {
-  return process.env.GMAIL_CLIENT_SECRET ?? "";
+  return readSecret("GMAIL_CLIENT_SECRET");
 }
 
 function isConfigured(): boolean {
@@ -276,8 +277,8 @@ function gmailStatus(tokens: GmailTokens | null): ConnectorStatus["status"] {
   if (!tokens) return "disconnected";
   const expired = !tokens.expiry_date || Date.now() > tokens.expiry_date;
   const hasCredentials = Boolean(
-    (process.env.GMAIL_CLIENT_ID || tokens._client_id) &&
-      (process.env.GMAIL_CLIENT_SECRET || tokens._client_secret),
+    (readSecret("GMAIL_CLIENT_ID") || tokens._client_id) &&
+      (readSecret("GMAIL_CLIENT_SECRET") || tokens._client_secret),
   );
   const canRefresh = Boolean(tokens.refresh_token) && hasCredentials;
   return expired && !canRefresh ? "needs_reauth" : "connected";

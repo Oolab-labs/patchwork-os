@@ -16,8 +16,25 @@ import { listToolOutputContextKeys } from "./toolRegistry.js";
 export interface LintIssue {
   level: "error" | "warning";
   message: string;
+  /** 1-indexed line in the source YAML, when available (populated in a later phase). */
   line?: number;
+  /** 1-indexed column in the source YAML, when available. */
   column?: number;
+  /**
+   * Stable, machine-readable code for UI keying. Schema-validation issues
+   * use the AJV keyword (`required`, `type`, `enum`, ...); future hand-rolled
+   * checks can adopt their own short kebab-case codes. Optional — older
+   * issues without a code render the same way they always did.
+   */
+  code?: string;
+  /**
+   * Dot-separated path into the recipe object pointing at the offending
+   * field (e.g. `steps.0.tool` or `trigger.at`). For schema-validation
+   * issues this is the AJV `instancePath` with leading slash dropped and
+   * remaining slashes turned into dots; `recipe` if the issue is at root.
+   * Unset for issues whose location is implicit in the message.
+   */
+  path?: string;
 }
 
 export interface LintResult {
@@ -462,6 +479,8 @@ function toSchemaLintIssue(error: ErrorObject): LintIssue {
   return {
     level: "error",
     message: `Schema validation: ${path} ${error.message ?? "is invalid"}`,
+    code: error.keyword,
+    path,
   };
 }
 

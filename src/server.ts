@@ -51,6 +51,7 @@ import {
   respond413,
   tryHandleRecipeRoute,
 } from "./recipeRoutes.js";
+import type { LintIssue } from "./recipes/validation.js";
 import type { RecipeDraft } from "./recipesHttp.js";
 import { PACKAGE_VERSION } from "./version.js";
 
@@ -233,8 +234,8 @@ export class Server extends EventEmitter<ServerEvents> {
   public lintRecipeContentFn:
     | ((content: string) => {
         ok: boolean;
-        errors: string[];
-        warnings: string[];
+        errors: LintIssue[];
+        warnings: LintIssue[];
       })
     | null = null;
   /** Patchwork: set by bridge to save a new recipe draft to disk. */
