@@ -10,7 +10,6 @@
  * no" message.
  */
 
-import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
 import { requireSameOrigin } from "@/lib/csrf";
 import {
@@ -22,7 +21,10 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function POST(req: NextRequest): Promise<Response> {
+// Signature uses bare `Request` (not `NextRequest`) to match the
+// existing /api/bridge/recipes/generate proxy so the test file can
+// pass `new Request(...)` directly without a NextRequest cast.
+export async function POST(req: Request): Promise<Response> {
   const guard = requireSameOrigin(req);
   if (guard) return guard;
   // Same cap as `/recipes/lint` since the body carries the full YAML

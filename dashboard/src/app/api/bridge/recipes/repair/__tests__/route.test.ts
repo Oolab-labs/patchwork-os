@@ -10,7 +10,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import { POST } from "../route";
 
-let bridgeFetchMock = vi.fn(
+// Typed signature so the per-test reassignment of `bridgeFetchMock`
+// doesn't lose its arg shape — strict tsc rejected `vi.fn(async () => …)`
+// as zero-arg.
+let bridgeFetchMock: (
+  path: string,
+  init: RequestInit,
+) => Promise<Response> = vi.fn(
   async () =>
     new Response(JSON.stringify({ ok: true, yaml: "name: fixed\n" }), {
       status: 200,
@@ -19,8 +25,7 @@ let bridgeFetchMock = vi.fn(
 );
 
 vi.mock("@/lib/bridge", () => ({
-  bridgeFetch: (path: string, init: RequestInit) =>
-    bridgeFetchMock(path as never, init as never),
+  bridgeFetch: (path: string, init: RequestInit) => bridgeFetchMock(path, init),
 }));
 
 function makeReq(body: string, contentLength?: string): Request {
