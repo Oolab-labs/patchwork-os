@@ -100,24 +100,28 @@ export async function verifySession(
   }
 }
 
+const IS_DEV = process.env.NODE_ENV === "development";
+
 export function sessionCookieHeader(value: string, maxAgeSec = TTL_MS / 1000): string {
-  return [
+  const parts = [
     `${SESSION_COOKIE_NAME}=${value}`,
     "Path=/",
     `Max-Age=${maxAgeSec}`,
     "HttpOnly",
-    "Secure",
     "SameSite=Strict",
-  ].join("; ");
+  ];
+  if (!IS_DEV) parts.push("Secure");
+  return parts.join("; ");
 }
 
 export function clearSessionCookieHeader(): string {
-  return [
+  const parts = [
     `${SESSION_COOKIE_NAME}=`,
     "Path=/",
     "Max-Age=0",
     "HttpOnly",
-    "Secure",
     "SameSite=Strict",
-  ].join("; ");
+  ];
+  if (!IS_DEV) parts.push("Secure");
+  return parts.join("; ");
 }
