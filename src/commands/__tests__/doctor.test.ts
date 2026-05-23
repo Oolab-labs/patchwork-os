@@ -58,8 +58,8 @@ describe("runDoctor", () => {
     expect(result.ok).toBe(false);
     const failing = result.checks.filter((c) => c.status === "fail");
     expect(failing).toHaveLength(1);
-    expect(failing[0].name).toBe("Workspace path");
-    expect(failing[0].detail).toBe("path missing");
+    expect(failing[0]!.name).toBe("Workspace path");
+    expect(failing[0]!.detail).toBe("path missing");
   });
 
   // ── ok=true when some checks are warn ────────────────────────────────────
@@ -78,7 +78,7 @@ describe("runDoctor", () => {
     expect(result.ok).toBe(true);
     const warns = result.checks.filter((c) => c.status === "warn");
     expect(warns).toHaveLength(1);
-    expect(warns[0].name).toBe("Git");
+    expect(warns[0]!.name).toBe("Git");
   });
 
   // ── skip checks map to ok ─────────────────────────────────────────────────
@@ -93,7 +93,7 @@ describe("runDoctor", () => {
     const result = await runDoctor();
 
     expect(result.ok).toBe(true);
-    expect(result.checks[0].status).toBe("ok");
+    expect(result.checks[0]!.status).toBe("ok");
   });
 
   // ── multiple fails still ok=false ────────────────────────────────────────
@@ -155,7 +155,7 @@ describe("runDoctor", () => {
 
     const result = await runDoctor({ workspace: "/fake/workspace" });
 
-    expect(result.checks[0].suggestion).toBe("Create the directory");
+    expect(result.checks[0]!.suggestion).toBe("Create the directory");
   });
 
   // ── empty checks list → ok=true ──────────────────────────────────────────
