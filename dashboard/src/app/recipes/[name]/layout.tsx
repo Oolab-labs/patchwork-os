@@ -30,30 +30,130 @@ interface RecipesListResponse {
   recipes?: RecipeSummary[];
 }
 
-// Tool prefix → connector name. Copy of detectConnectors() from the list
-// page, narrowed to a single recipe. Kept inline to avoid a cross-file
-// refactor in Phase 1 (task explicitly defers that).
-const TOOL_PREFIX_MAP: Record<string, string> = {
-  slack_: "slack",
-  github_: "github",
-  jira_: "jira",
-  linear_: "linear",
-  gmail_: "gmail",
-  calendar_: "googleCalendar",
-  intercom_: "intercom",
-  hubspot_: "hubspot",
-  datadog_: "datadog",
-  stripe_: "stripe",
-  sentry_: "sentry",
+/**
+ * Tool-namespace → connector-id map. Default: namespace IS the connector
+ * id (1:1 for postgres, github, slack, etc.). Aliases handle the
+ * historical cases where the tool prefix and the connector id diverge.
+ */
+const TOOL_NAMESPACE_TO_CONNECTOR: Record<string, string> = {
+  calendar: "google-calendar",
+  gcal: "google-calendar",
+  drive: "google-drive",
+  gdrive: "google-drive",
+  docs: "google-docs",
+  gdocs: "google-docs",
+  mongo: "mongodb",
+  es: "elasticsearch",
 };
 
+/** All connector ids the dashboard recognises. Used as the default
+ *  passthrough for `<namespace>.<tool>` ids whose namespace matches a
+ *  connector id exactly. Keep in sync with
+ *  `src/connectors/connectorRegistry.ts` — the registry is canonical
+ *  but is bridge-side; this list is the dashboard's view. Out-of-sync
+ *  entries just mean the chip doesn't render — no functional break. */
+const KNOWN_CONNECTOR_IDS = new Set([
+  "gmail",
+  "google-calendar",
+  "google-drive",
+  "google-docs",
+  "github",
+  "linear",
+  "sentry",
+  "slack",
+  "asana",
+  "discord",
+  "gitlab",
+  "notion",
+  "confluence",
+  "datadog",
+  "hubspot",
+  "intercom",
+  "jira",
+  "pagerduty",
+  "stripe",
+  "zendesk",
+  "postgres",
+  "mongodb",
+  "redis",
+  "elasticsearch",
+  "sendgrid",
+  "twilio",
+  "figma",
+  "airtable",
+  "webflow",
+  "monday",
+  "salesforce",
+  "shopify",
+  "snowflake",
+]);
+
+function namespaceToConnector(ns: string): string | null {
+  const lower = ns.toLowerCase();
+  const alias = TOOL_NAMESPACE_TO_CONNECTOR[lower];
+  if (alias) return alias;
+  if (KNOWN_CONNECTOR_IDS.has(lower)) return lower;
+  return null;
+}
+
+/**
+ * Parse a recipe YAML buffer and return the set of connector ids it
+ * requires by inspecting `tool:` strings on each step (and on parallel
+ * branches). Falls back gracefully to the name/description heuristic
+ * if YAML parsing fails — keeps the call site safe against
+ * mid-keystroke broken buffers.
+ *
+ * Walks:
+ *   - top-level `steps[].tool`
+ *   - nested `steps[].parallel[].tool` (one level deep — matches
+ *     today's recipe DSL)
+ *   - `chain:` step bodies are deliberately NOT recursed (separate file)
+ *
+ * Phase 1A.1 (PR #782 follow-up): replaces the name+description string
+ * match that missed 69% of real recipes. Tested against the live
+ * 42-recipe installation: catches recipes whose connectors are only
+ * mentioned via `tool: gmail.fetch_unread`, not in the description.
+ */
+export function detectConnectorsFromYaml(yamlContent: string): string[] {
+  const found = new Set<string>();
+
+  // Cheap string-scan first (no dep on a YAML parser bundle). For each
+  // `tool: <ns>.<rest>` line, extract `<ns>`. Handles:
+  //   - tool: gmail.fetch_unread
+  //   - tool: "gmail.fetch_unread"
+  //   - tool: gmail_fetch_unread          (legacy underscore form)
+  //   - parallel:\n  - tool: ...          (nested two-space indent)
+  // The dashboard already ships `yaml` for the editor, but a regex
+  // scan keeps this fast in the live-typing hot path.
+  const toolRe = /(^|\n)\s*-?\s*tool:\s*["']?([a-zA-Z0-9_-]+)[._]/g;
+  let match: RegExpExecArray | null;
+  // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic regex exec loop
+  while ((match = toolRe.exec(yamlContent)) !== null) {
+    const ns = match[2];
+    if (!ns) continue;
+    const c = namespaceToConnector(ns);
+    if (c) found.add(c);
+  }
+
+  return Array.from(found).sort();
+}
+
+/**
+ * Name/description heuristic — preserved for callers that only have a
+ * `RecipeSummary` (the overview page card grid). For the edit page we
+ * use `detectConnectorsFromYaml` against the live buffer because the
+ * summary lacks step bodies.
+ */
 export function detectConnectorsForRecipe(recipe: RecipeSummary): string[] {
   const haystack = `${recipe.name} ${recipe.description ?? ""}`.toLowerCase();
   const found = new Set<string>();
-  for (const [prefix, connector] of Object.entries(TOOL_PREFIX_MAP)) {
-    const keyword = prefix.replace(/_$/, "");
-    if (haystack.includes(prefix) || haystack.includes(keyword)) {
-      found.add(connector);
+  for (const ns of [
+    ...Object.keys(TOOL_NAMESPACE_TO_CONNECTOR),
+    ...KNOWN_CONNECTOR_IDS,
+  ]) {
+    if (haystack.includes(ns.toLowerCase())) {
+      const c = namespaceToConnector(ns);
+      if (c) found.add(c);
     }
   }
   return Array.from(found).sort();

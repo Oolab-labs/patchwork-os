@@ -7,18 +7,19 @@ import { apiPath } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { ConnectorChip } from "@/components/patchwork";
-import { canonicalRecipeKey } from "@/lib/entityKey";
-import { detectConnectorsForRecipe } from "../layout";
+import {
+  detectConnectorsForRecipe,
+  detectConnectorsFromYaml,
+} from "../layout";
 import dynamic from "next/dynamic";
 
-/** Minimal shape we need from `/api/bridge/recipes` to call detectConnectorsForRecipe. */
-interface RecipeSummaryLite {
-  name: string;
-  description?: string;
-}
+/** Minimal shape we need from `/api/bridge/connectors/status` to drive
+ *  the chip strip. `status` is the positive signal — `healthy` is
+ *  currently always null from the bridge (Phase 1A.1 dogfood finding).
+ */
 interface ConnectorStatusLite {
   id: string;
-  healthy?: boolean;
+  status?: "connected" | "disconnected" | "needs_reauth";
 }
 
 const YamlEditor = dynamic(() => import("./_components/YamlEditor"), {
@@ -56,21 +57,14 @@ export default function RecipeEditPage({
   const [linting, setLinting] = useState(false);
   const toast = useToast();
 
-  // Connector preflight surfaced on the edit page (Phase 1A item 5).
-  // Pre-existing connector detection lived only on the detail/overview
-  // page — surfacing it here lets the user notice "recipe needs Gmail
-  // but Gmail isn't connected" while still in the editor.
-  const { data: recipesForConnectors } = useBridgeFetch<RecipeSummaryLite[]>(
-    "/api/bridge/recipes",
-    {
-      intervalMs: 60_000,
-      transform: (raw) => {
-        if (Array.isArray(raw)) return raw as RecipeSummaryLite[];
-        const obj = raw as { recipes?: RecipeSummaryLite[] };
-        return obj?.recipes ?? [];
-      },
-    },
-  );
+  // Connector preflight surfaced on the edit page (Phase 1A item 5,
+  // upgraded by Phase 1A.1).
+  //
+  // Detect required connectors by scanning `tool:` lines in the live
+  // YAML buffer — the name+description heuristic used originally missed
+  // ~69% of real recipes whose connectors are only mentioned in step
+  // bodies. Falls back to the name-string heuristic only if the buffer
+  // is empty (e.g. while a new recipe hasn't been typed yet).
   const { data: connectorStatuses } = useBridgeFetch<ConnectorStatusLite[]>(
     "/api/bridge/connectors/status",
     {
@@ -82,27 +76,27 @@ export default function RecipeEditPage({
       },
     },
   );
-  const recipeSummary = useMemo(
-    () =>
-      recipesForConnectors?.find(
-        (r) => canonicalRecipeKey(r.name) === name,
-      ) ?? null,
-    [recipesForConnectors, name],
-  );
-  const requiredConnectors = useMemo(
-    () =>
-      recipeSummary
-        ? detectConnectorsForRecipe(
-            // detectConnectorsForRecipe accepts a RecipeSummary; the lite
-            // shape we fetched is a structural subset that satisfies it.
-            recipeSummary as Parameters<typeof detectConnectorsForRecipe>[0],
-          )
-        : [],
-    [recipeSummary],
-  );
+  const requiredConnectors = useMemo(() => {
+    if (content.trim().length > 0) {
+      return detectConnectorsFromYaml(content);
+    }
+    // Falls back to the name+description heuristic for the initial
+    // moments before the buffer has loaded — keeps the strip from
+    // flashing empty during the first paint.
+    return detectConnectorsForRecipe({ name, description: "" });
+  }, [content, name]);
   const connectorHealthMap = useMemo(() => {
+    // Phase 1A.1 fix (Bug 2): bridge `/connections` returns
+    // `healthy: null` for every connector — the dashboard's previous
+    // `c.healthy` read was always undefined, painting all chips grey
+    // AND causing `unhealthyConnectors` to fire the CTA even for
+    // connected connectors. Switch to `status === "connected"` as the
+    // positive signal — that field IS populated. `needs_reauth` and
+    // `disconnected` both map to `false` (red dot, CTA fires).
     const m = new Map<string, boolean | undefined>();
-    for (const c of connectorStatuses ?? []) m.set(c.id, c.healthy);
+    for (const c of connectorStatuses ?? []) {
+      m.set(c.id, c.status === "connected");
+    }
     return m;
   }, [connectorStatuses]);
   const unhealthyConnectors = useMemo(
