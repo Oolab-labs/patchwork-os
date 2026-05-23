@@ -47,7 +47,7 @@ import { runLaunchdInstall } from "../launchd.js";
 const mockedDetect = vi.mocked(detectWorkspaceSymlinkInstall);
 
 afterEach(() => {
-  vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("runLaunchdInstall — symlink guard", () => {

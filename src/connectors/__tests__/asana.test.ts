@@ -20,6 +20,7 @@ describe("asana token storage", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     delete process.env.HOME;
     delete process.env.PATCHWORK_HOME;
     delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
@@ -386,6 +387,7 @@ describe("AsanaConnector token refresh on 401", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     delete process.env.HOME;
     delete process.env.PATCHWORK_HOME;
     delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;

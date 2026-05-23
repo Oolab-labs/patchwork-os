@@ -26,6 +26,7 @@ const servers: Server[] = [];
 const openedClients: WebSocket[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
   for (const ws of openedClients) {
     if (ws.readyState === WebSocket.OPEN) ws.close();

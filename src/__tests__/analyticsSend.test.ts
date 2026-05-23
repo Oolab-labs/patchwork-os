@@ -3,8 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const ORIGINAL_ENV = { ...process.env };
-
 let tmpRoot: string;
 
 function makeFetchSpy(status = 204) {
@@ -19,10 +17,10 @@ async function importFresh(
     delete process.env[k];
   }
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "asend-"));
-  process.env.CLAUDE_CONFIG_DIR = tmpRoot;
+  vi.stubEnv("CLAUDE_CONFIG_DIR", tmpRoot);
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
+    else vi.stubEnv(k, v);
   }
   if (configFile) {
     const dir = path.join(tmpRoot, "ide");
@@ -46,7 +44,7 @@ describe("sendAnalytics endpoint resolution", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
-    process.env = { ...ORIGINAL_ENV };
+    vi.unstubAllEnvs();
     if (tmpRoot) {
       try {
         fs.rmSync(tmpRoot, { recursive: true, force: true });

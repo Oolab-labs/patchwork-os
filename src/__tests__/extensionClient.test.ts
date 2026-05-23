@@ -23,6 +23,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   client.disconnect();
   await new Promise<void>((resolve) => {
     wss.close(() => resolve());

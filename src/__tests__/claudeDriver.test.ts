@@ -495,6 +495,7 @@ describe("ApiDriver", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     if (origKey === undefined) {
       delete process.env.ANTHROPIC_API_KEY;
     } else {

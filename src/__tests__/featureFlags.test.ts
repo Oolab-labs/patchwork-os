@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertWriteAllowed,
   isEnabled,
@@ -9,15 +9,8 @@ import {
 } from "../featureFlags.js";
 
 describe("featureFlags", () => {
-  const originalEnv = process.env;
-
-  beforeEach(() => {
-    // Clear test flags before each test
-    process.env = { ...originalEnv };
-  });
-
   afterEach(() => {
-    process.env = originalEnv;
+    vi.unstubAllEnvs();
   });
 
   it("registers a flag with default value", () => {
@@ -55,7 +48,7 @@ describe("featureFlags", () => {
     });
 
     setFlag("test.env-override", false);
-    process.env.PATCHWORK_FLAG_TEST_ENV_OVERRIDE = "true";
+    vi.stubEnv("PATCHWORK_FLAG_TEST_ENV_OVERRIDE", "true");
 
     expect(isEnabled("test.env-override")).toBe(true);
   });

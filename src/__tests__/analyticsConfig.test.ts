@@ -3,17 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const ORIGINAL_ENV = { ...process.env };
-
 let tmpRoot: string;
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "analytics-cfg-"));
-  process.env.CLAUDE_CONFIG_DIR = tmpRoot;
+  vi.stubEnv("CLAUDE_CONFIG_DIR", tmpRoot);
 });
 
 afterEach(() => {
-  process.env = { ...ORIGINAL_ENV };
+  vi.unstubAllEnvs();
   try {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   } catch {

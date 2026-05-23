@@ -20,6 +20,7 @@ describe("discord token storage", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     delete process.env.HOME;
     delete process.env.PATCHWORK_HOME;
     delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
@@ -282,6 +283,7 @@ describe("DiscordConnector token refresh on 401", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     delete process.env.HOME;
     delete process.env.PATCHWORK_HOME;
     delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
@@ -596,6 +598,7 @@ describe("DiscordConnector.sendMessage refresh on 401", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     delete process.env.HOME;
     delete process.env.PATCHWORK_HOME;
     delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
