@@ -12,6 +12,7 @@ import {
   detectConnectorsFromYaml,
 } from "../layout";
 import type { YamlLintIssue } from "./_components/YamlEditor";
+import { RecipeFormView } from "./_components/RecipeFormView";
 import dynamic from "next/dynamic";
 
 /** Minimal shape we need from `/api/bridge/connectors/status` to drive
@@ -32,52 +33,6 @@ const YamlEditor = dynamic(() => import("./_components/YamlEditor"), {
   ),
 });
 
-
-/**
- * Phase 2B-A: placeholder rendered when the user switches to Form mode.
- * Subsequent PRs replace this with the real structured form fields.
- */
-function RecipeFormSkeleton() {
-  return (
-    <div
-      style={{
-        minHeight: 400,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "var(--s-4)",
-        color: "var(--ink-3)",
-        padding: "var(--s-6) var(--s-4)",
-        textAlign: "center",
-      }}
-    >
-      <svg
-        width={40}
-        height={40}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.4}
-        aria-hidden="true"
-      >
-        <rect x={3} y={3} width={7} height={5} rx={1} />
-        <rect x={14} y={3} width={7} height={5} rx={1} />
-        <rect x={3} y={10} width={18} height={5} rx={1} />
-        <rect x={3} y={17} width={18} height={4} rx={1} />
-      </svg>
-      <div>
-        <p style={{ margin: 0, fontWeight: 600, fontSize: "var(--fs-m)", color: "var(--ink-1)" }}>
-          Form editor — coming soon
-        </p>
-        <p style={{ margin: "var(--s-2) 0 0", fontSize: "var(--fs-s)" }}>
-          Switch back to <strong>YAML</strong> to edit for now.
-          The form view will let you add and configure steps without writing YAML by hand.
-        </p>
-      </div>
-    </div>
-  );
-}
 
 export default function RecipeEditPage({
   params,
@@ -1034,7 +989,7 @@ export default function RecipeEditPage({
             <p>Loading…</p>
           </div>
         ) : editMode === "form" ? (
-          <RecipeFormSkeleton />
+          <RecipeFormView yaml={content} />
         ) : (
           <YamlEditor
             value={content}
