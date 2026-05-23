@@ -539,6 +539,54 @@ function overallHealth(
   return "healthy";
 }
 
+// ── CLI-safe export (no extensionClient / ProbeResults required) ─────────────
+
+/**
+ * Run the subset of health checks that are safe without a live bridge
+ * (no extensionClient, no ProbeResults). Suitable for the `patchwork doctor`
+ * CLI verb where those deps are unavailable.
+ *
+ * Checks run: workspace path, git binary + repo, lock file, automation policy.
+ */
+export async function runBridgeHealthChecks(
+  workspace: string,
+  config?: { port?: number; automationPolicyPath?: string },
+): Promise<CheckResult[]> {
+  const port = config?.port ?? 0;
+  const automationPolicyPath = config?.automationPolicyPath;
+
+  const results = await Promise.all([
+    checkWorkspacePath(workspace),
+    checkGit(workspace),
+    checkLockFile(port),
+    automationPolicyPath != null
+      ? (async (): Promise<CheckResult> => {
+          try {
+            fs.accessSync(automationPolicyPath, fs.constants.R_OK);
+            return {
+              name: "Automation Policy",
+              status: "ok",
+              detail: `Policy file readable: ${automationPolicyPath}`,
+            };
+          } catch {
+            return {
+              name: "Automation Policy",
+              status: "error",
+              detail: `Policy file unreadable: ${automationPolicyPath}`,
+              suggestion: "Verify path and file permissions",
+            };
+          }
+        })()
+      : Promise.resolve<CheckResult>({
+          name: "Automation Policy",
+          status: "skip",
+          detail: "No --automation-policy path configured",
+        }),
+  ]);
+
+  return results;
+}
+
 // ── Tool factory ─────────────────────────────────────────────────────────────
 
 export function createBridgeDoctorTool(

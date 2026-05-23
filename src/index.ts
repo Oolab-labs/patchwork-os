@@ -184,6 +184,8 @@ const KNOWN_SUBCOMMANDS = [
   "halts",
   "judgments",
   "analytics",
+  "doctor",
+  "shadow-scan",
 ] as const;
 
 const __invokedSubcommand = (() => {
@@ -1186,17 +1188,18 @@ if (
   process.stdout.write(
     `Usage: patchwork recipe <subcommand> [args...]\n\n` +
       `Subcommands:\n` +
-      `  new <name>       Scaffold a recipe (interactive with -i)\n` +
-      `  list             List installed recipes (workspace + user)\n` +
-      `  run <name>       Run a recipe by name\n` +
-      `  install <src>    Install a recipe from a path or GitHub source\n` +
-      `  uninstall <name> Remove an installed recipe\n` +
-      `  enable <name>    Re-enable a disabled recipe\n` +
-      `  disable <name>   Pause a recipe (scheduled triggers stop firing)\n` +
-      `  preflight <file> Static-validate a recipe YAML before running\n` +
-      `  lint <file>      Run all lint checks on a recipe YAML\n` +
-      `  fmt <file>       Format a recipe YAML in place\n` +
-      `  schema           Print the recipe JSON Schema\n\n` +
+      `  new <name>         Scaffold a recipe (interactive with -i)\n` +
+      `  list               List installed recipes (workspace + user)\n` +
+      `  run <name>         Run a recipe by name\n` +
+      `  install <src>      Install a recipe from a path or GitHub source\n` +
+      `  uninstall <name>   Remove an installed recipe\n` +
+      `  enable <name>      Re-enable a disabled recipe\n` +
+      `  disable <name>     Pause a recipe (scheduled triggers stop firing)\n` +
+      `  preflight <file>   Static-validate a recipe YAML before running\n` +
+      `  lint <file>        Run all lint checks on a recipe YAML\n` +
+      `  fmt <file>         Format a recipe YAML in place\n` +
+      `  schema             Print the recipe JSON Schema\n` +
+      `  audit-env <recipe> Check {{env.FOO}} vars are present in environment\n\n` +
       `Run \`patchwork recipe <subcommand> --help\` for subcommand-specific options.\n`,
   );
   process.exit(0);
@@ -2733,6 +2736,60 @@ if (process.argv[2] === "recipe" && process.argv[3] === "lint") {
   })();
 }
 
+// Patchwork: `patchwork recipe audit-env <recipe>` — check {{env.FOO}} references are satisfied.
+if (process.argv[2] === "recipe" && process.argv[3] === "audit-env") {
+  const recipeArg = process.argv[4];
+  if (!recipeArg) {
+    process.stderr.write(
+      "Usage: patchwork recipe audit-env <recipe> [--env-file <path>] [--workspace <path>]\n",
+    );
+    process.exit(1);
+  }
+  (async () => {
+    try {
+      const args = process.argv.slice(5);
+      const envFileIdx = args.indexOf("--env-file");
+      const envFile = envFileIdx !== -1 ? args[envFileIdx + 1] : undefined;
+      const workspaceIdx = args.indexOf("--workspace");
+      const workspace =
+        workspaceIdx !== -1 && args[workspaceIdx + 1]
+          ? args[workspaceIdx + 1]
+          : process.cwd();
+
+      const { runAuditEnv } = await import("./commands/auditEnv.js");
+      const result = await runAuditEnv(recipeArg, {
+        ...(envFile ? { envFile } : {}),
+        workspace,
+      });
+
+      if (result.warnings.length > 0) {
+        for (const w of result.warnings) {
+          process.stderr.write(`  ⚠ ${w}\n`);
+        }
+      }
+      if (result.present.length > 0) {
+        for (const v of result.present) {
+          process.stdout.write(`  ✓ ${v}\n`);
+        }
+      }
+      if (result.missing.length > 0) {
+        for (const v of result.missing) {
+          process.stderr.write(`  ✗ missing: ${v}\n`);
+        }
+      }
+      if (!result.ok) {
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
 // Patchwork: `patchwork recipe preflight <file.yaml>` — static policy check (lint + plan + writes + fixtures).
 if (process.argv[2] === "recipe" && process.argv[3] === "preflight") {
   const args = process.argv.slice(4);
@@ -4035,6 +4092,101 @@ Options:
     process.exit(1);
   }
   process.exit(0);
+}
+
+// `patchwork doctor` — run CLI-safe bridge health checks.
+if (process.argv[2] === "doctor") {
+  const args = process.argv.slice(3);
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(
+      "Usage: patchwork doctor [--workspace <path>] [--port <n>] [--json]\n\n" +
+        "Runs bridge health checks (workspace, git, lock file, automation policy).\n" +
+        "Exits 1 if any check fails.\n",
+    );
+    process.exit(0);
+  }
+  (async () => {
+    try {
+      const workspaceIdx = args.indexOf("--workspace");
+      const workspace =
+        workspaceIdx !== -1 && args[workspaceIdx + 1]
+          ? args[workspaceIdx + 1]
+          : process.cwd();
+      const portIdx = args.indexOf("--port");
+      const portArg = portIdx !== -1 ? args[portIdx + 1] : undefined;
+      const port = portArg !== undefined ? Number(portArg) : undefined;
+      const jsonFlag = args.includes("--json");
+
+      const { runDoctor } = await import("./commands/doctor.js");
+      const result = await runDoctor({ workspace, port, json: jsonFlag });
+
+      if (jsonFlag) {
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      } else {
+        for (const check of result.checks) {
+          const icon =
+            check.status === "ok" ? "✓" : check.status === "warn" ? "⚠" : "✗";
+          const detail = check.detail ? `  ${check.detail}` : "";
+          process.stdout.write(`  ${icon} ${check.name}${detail}\n`);
+          if (check.suggestion) {
+            process.stdout.write(`      → ${check.suggestion}\n`);
+          }
+        }
+      }
+
+      process.exit(result.ok ? 0 : 1);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
+// `patchwork shadow-scan` — replay run history through the destructive-tool classifier.
+if (process.argv[2] === "shadow-scan") {
+  const args = process.argv.slice(3);
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(
+      "Usage: patchwork shadow-scan [--since <duration|ISO>] [--limit <n>] [--runs-file <path>] [--json]\n\n" +
+        "Replays historical run data through the destructive-tool classifier.\n" +
+        "Exits 1 if any runs would be reclassified.\n\n" +
+        "  --since <duration|ISO>  Lookback window, e.g. '24h', '7d', or ISO date (default: 7d)\n" +
+        "  --limit <n>             Cap the number of runs to scan\n" +
+        "  --runs-file <path>      Override default ~/.claude/ide/runs.jsonl path\n" +
+        "  --json                  Emit JSON output\n",
+    );
+    process.exit(0);
+  }
+  (async () => {
+    try {
+      const sinceIdx = args.indexOf("--since");
+      const since = sinceIdx !== -1 ? args[sinceIdx + 1] : undefined;
+      const limitIdx = args.indexOf("--limit");
+      const limitArg = limitIdx !== -1 ? args[limitIdx + 1] : undefined;
+      const limit = limitArg !== undefined ? Number(limitArg) : undefined;
+      const runsFileIdx = args.indexOf("--runs-file");
+      const runsFile = runsFileIdx !== -1 ? args[runsFileIdx + 1] : undefined;
+      const jsonFlag = args.includes("--json");
+
+      const { runShadowScanCli } = await import("./commands/shadowScan.js");
+      await runShadowScanCli({
+        ...(since !== undefined ? { since } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(runsFile !== undefined
+          ? { runsFile, workspace: process.cwd() }
+          : {}),
+        json: jsonFlag,
+      });
+      // runShadowScanCli sets process.exitCode = 1 on reclassified > 0; no explicit exit needed.
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
 }
 
 // Handle launchd subcommand — install/uninstall macOS LaunchAgent for auto-start
