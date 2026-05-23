@@ -96,6 +96,26 @@ describe("InstallPanel — install-confirm dialog", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 
+  it("opens the confirm dialog when trust metadata is missing (live-registry case)", async () => {
+    // Marketplace trust Wave 0 — the live registry doesn't carry
+    // risk_level / network_access / file_access on any recipe today.
+    // The old gate ("show dialog only if elevated === true") would
+    // silent-install every live recipe. The new gate requires the
+    // recipe to EXPLICITLY claim {risk: low, networkAccess: false,
+    // fileAccess: false} to bypass — missing fields fail closed.
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { recipes: [] }));
+    render(<InstallPanel install={INSTALL} name={NAME} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /^Install$/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Install$/i }));
+    // Dialog opens — install POST does NOT fire yet.
+    await screen.findByRole("dialog");
+    expect(fetchMock).toHaveBeenCalledTimes(1); // status poll only
+  });
+
   it("opens the confirm dialog before installing a high-risk recipe", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(200, { recipes: [] })) // status poll
@@ -146,7 +166,13 @@ describe("InstallPanel — install-confirm dialog", () => {
         }),
       );
     render(
-      <InstallPanel install={INSTALL} name={NAME} riskLevel="low" />,
+      <InstallPanel
+        install={INSTALL}
+        name={NAME}
+        riskLevel="low"
+        networkAccess={false}
+        fileAccess={false}
+      />,
     );
     await waitFor(() =>
       expect(

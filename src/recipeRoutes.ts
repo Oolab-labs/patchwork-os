@@ -34,6 +34,7 @@ import {
   computeSummary as computeActivationSummary,
   loadMetrics as loadActivationMetrics,
 } from "./activationMetrics.js";
+import { isWriteKillSwitchActive } from "./featureFlags.js";
 import {
   consumeToken,
   refillBucket,
@@ -1398,6 +1399,26 @@ export function tryHandleRecipeRoute(
     // an explicitly-allowlisted hostname STILL has to clear the SSRF check
     // (so an admin can't accidentally allowlist `localhost`).
     // ---------------------------------------------------------------------
+    //
+    // Marketplace trust Wave 0 (#782 follow-up): gate the route on the
+    // global write kill-switch. Install writes recipe files to disk;
+    // when an operator engages `PATCHWORK_FLAG_KILL_SWITCH_WRITES` or
+    // flips the `kill-switch.writes` flag, this previously kept writing
+    // anyway — a latent trust gap. Returns 503 with a code the
+    // dashboard can match against to render the right banner.
+    if (isWriteKillSwitchActive()) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          ok: false,
+          code: "kill_switch_blocked",
+          error:
+            "Recipe install blocked by kill switch (PATCHWORK_FLAG_KILL_SWITCH_WRITES / kill-switch.writes). " +
+            "Unset the env var or POST /kill-switch with {engaged:false} to restore.",
+        }),
+      );
+      return true;
+    }
     void (async () => {
       const parsedBody = await readJsonBody<{ source?: string }>(
         req,

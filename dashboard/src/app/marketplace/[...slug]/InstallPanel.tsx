@@ -62,11 +62,25 @@ export default function InstallPanel({
   // troubleshoot if the recipe never runs.
   const [missingConnectors, setMissingConnectors] = useState<string[]>([]);
 
-  const elevated =
-    riskLevel === "medium" ||
-    riskLevel === "high" ||
-    networkAccess === true ||
-    fileAccess === true;
+  // Marketplace trust Wave 0 (#782 follow-up): default-deny semantics.
+  //
+  // Previously the confirmation dialog ONLY appeared when one of
+  // {riskLevel >= medium, networkAccess === true, fileAccess === true}
+  // was set, which meant a registry author who forgot to flag a
+  // file-writing recipe gave users a silent one-tap install. The live
+  // marketplace registry has NO trust metadata on any recipe today
+  // (`risk_level`/`network_access`/`file_access` are absent), so every
+  // live install bypassed confirmation.
+  //
+  // New rule: only bypass confirmation if the recipe EXPLICITLY claims
+  // low risk AND explicitly disclaims network + file access. Anything
+  // missing those flags is treated as elevated — same as if the author
+  // explicitly marked it high-risk. Honest fail-closed.
+  const elevated = !(
+    riskLevel === "low" &&
+    networkAccess === false &&
+    fileAccess === false
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -177,10 +191,12 @@ export default function InstallPanel({
           {isInstalled ? (
             <>
               <span style={{ color: "var(--ok)", marginRight: 6 }}>✓</span>
-              Installed locally — enable with{" "}
+              Installed locally — runs on its trigger immediately. To
+              pause it later, use{" "}
               <code style={{ background: "var(--recess)", padding: "2px 6px", borderRadius: 4 }}>
-                patchwork recipe enable {shortName(name)}
+                patchwork recipe disable {shortName(name)}
               </code>
+              .
             </>
           ) : bridgeStatus === "online" ? (
             "Bridge connected — install with one click."
