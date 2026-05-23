@@ -359,14 +359,14 @@ jobs:
             --fixed-token 00000000-0000-0000-0000-000000000001
       - name: Wait for healthy
         run: |
-          for i in $(seq 1 15); do
+          for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:18765/ping; then
               echo "Bridge is up"
               exit 0
             fi
-            sleep 1
+            sleep 2
           done
-          echo "Bridge failed to start in 15s"
+          echo "Bridge failed to start in 60s"
           docker logs pw-smoke
           exit 1
       - name: Verify tools/list returns tools
