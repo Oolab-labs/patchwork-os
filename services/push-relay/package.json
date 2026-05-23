@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@parse/node-apn": "^8.1.0",
-    "express": "^4.18.2",
+    "express": "^4.22.2",
     "express-rate-limit": "^8.5.2",
     "firebase-admin": "^12.0.0",
     "helmet": "^8.1.0",
