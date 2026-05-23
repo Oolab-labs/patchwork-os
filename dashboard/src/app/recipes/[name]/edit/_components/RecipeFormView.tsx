@@ -449,7 +449,7 @@ export function RecipeFormView({ yaml, onChange, lintIssues = [] }: RecipeFormVi
           // path.length === 2 (e.g. agent.prompt)
           const parentKey = path[0]!;
           const childKey = path[1]!;
-          let parent = stepNode.get(parentKey, true);
+          const parent = stepNode.get(parentKey, true);
           if (!(parent instanceof YAMLMap)) {
             // Create the parent map if it doesn't exist yet
             stepNode.set(parentKey, d.createNode({ [childKey]: value }));
@@ -510,6 +510,20 @@ export function RecipeFormView({ yaml, onChange, lintIssues = [] }: RecipeFormVi
     [emitChange],
   );
 
+  // Map lint issues to step indices by matching path prefix "steps.N"
+  const issuesByStep = useMemo(() => {
+    const map = new Map<number, YamlLintIssue[]>();
+    for (const issue of lintIssues) {
+      const m = issue.path?.match(/^steps\.(\d+)/);
+      if (!m) continue;
+      const idx = parseInt(m[1]!, 10);
+      const bucket = map.get(idx) ?? [];
+      bucket.push(issue);
+      map.set(idx, bucket);
+    }
+    return map;
+  }, [lintIssues]);
+
   if (!yaml.trim()) {
     return (
       <div
@@ -548,20 +562,6 @@ export function RecipeFormView({ yaml, onChange, lintIssues = [] }: RecipeFormVi
   }
 
   const steps = Array.isArray(doc.steps) ? doc.steps : [];
-
-  // Map lint issues to step indices by matching path prefix "steps.N"
-  const issuesByStep = useMemo(() => {
-    const map = new Map<number, YamlLintIssue[]>();
-    for (const issue of lintIssues) {
-      const m = issue.path?.match(/^steps\.(\d+)/);
-      if (!m) continue;
-      const idx = parseInt(m[1]!, 10);
-      const bucket = map.get(idx) ?? [];
-      bucket.push(issue);
-      map.set(idx, bucket);
-    }
-    return map;
-  }, [lintIssues]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
