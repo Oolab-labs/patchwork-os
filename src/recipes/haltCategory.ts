@@ -117,6 +117,8 @@ interface HaltSummaryInputRun {
   stepResults?: Array<{
     status: "ok" | "skipped" | "error";
     haltReason?: string;
+    /** Pre-tagged category from yamlRunner throw site — avoids regex re-derivation when present. */
+    haltCategory?: HaltCategory;
   }>;
 }
 
@@ -139,7 +141,7 @@ export function summariseHalts(runs: HaltSummaryInputRun[]): HaltSummary {
       if (step.status !== "error" || !step.haltReason) continue;
       stepHaltsForRun++;
       total++;
-      const cat = categoriseHaltReason(step.haltReason);
+      const cat = step.haltCategory ?? categoriseHaltReason(step.haltReason);
       byCategory[cat] = (byCategory[cat] ?? 0) + 1;
       if (recent.length < 5) {
         recent.push({

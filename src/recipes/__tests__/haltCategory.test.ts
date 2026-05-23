@@ -181,6 +181,26 @@ describe("summariseHalts", () => {
     expect(summary.recent).toEqual([]);
   });
 
+  it("uses pre-tagged haltCategory when present, skipping regex", () => {
+    const runs = [
+      {
+        seq: 1,
+        status: "error" as const,
+        stepResults: [
+          {
+            status: "error" as const,
+            // haltReason text looks like tool_threw but the pre-tag says auth_failure
+            haltReason: 'Tool "x" in step "s" threw: some error',
+            haltCategory: "auth_failure" as const,
+          },
+        ],
+      },
+    ];
+    const summary = summariseHalts(runs);
+    expect(summary.byCategory).toEqual({ auth_failure: 1 });
+    expect(summary.recent[0]?.category).toBe("auth_failure");
+  });
+
   it("counts run-level errorMessage as run_level when no per-step halts cover it", () => {
     const runs = [
       {
