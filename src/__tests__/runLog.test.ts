@@ -300,8 +300,12 @@ describe("RecipeRunLog.record", () => {
     expect(run?.status).toBe("running");
     expect(run?.recipeName).toBe("foo");
     expect(run?.taskId).toBe("chained:foo:1700000000000");
-    // No JSONL write yet — running entries are in-memory only.
-    expect(() => readFileSync(path.join(tmp, "runs.jsonl"), "utf-8")).toThrow();
+    // startRun now persists to disk immediately so restarts leave an "interrupted" record.
+    const disk = readFileSync(path.join(tmp, "runs.jsonl"), "utf-8")
+      .trim()
+      .split("\n");
+    expect(disk).toHaveLength(1);
+    expect(JSON.parse(disk[0]!).status).toBe("running");
   });
 
   it("completeRun finalizes running entry + persists to disk", () => {
@@ -326,12 +330,14 @@ describe("RecipeRunLog.record", () => {
     expect(run?.doneAt).toBe(2_500);
     expect(run?.durationMs).toBe(1_500);
     expect(run?.stepResults).toHaveLength(2);
-    // Now on disk.
+    // Two rows on disk: the initial "running" record from startRun and the
+    // finalized "done" record from completeRun. Consumers read the last record
+    // per seq; the running row is a crash-recovery breadcrumb.
     const lines = readFileSync(path.join(tmp, "runs.jsonl"), "utf-8")
       .trim()
       .split("\n");
-    expect(lines).toHaveLength(1);
-    const parsed = JSON.parse(lines[0]!);
+    expect(lines).toHaveLength(2);
+    const parsed = JSON.parse(lines[1]!);
     expect(parsed.seq).toBe(seq);
     expect(parsed.status).toBe("done");
   });
@@ -593,8 +599,12 @@ describe("RecipeRunLog.record", () => {
       { id: "s2", status: "ok", durationMs: 75 },
     ]);
     expect(log.getBySeq(seq)?.stepResults).toHaveLength(2);
-    // Still no disk write — only completeRun persists.
-    expect(() => readFileSync(path.join(tmp, "runs.jsonl"), "utf-8")).toThrow();
+    // updateRunSteps is memory-only; the initial "running" row from startRun is already on disk.
+    const diskLines = readFileSync(path.join(tmp, "runs.jsonl"), "utf-8")
+      .trim()
+      .split("\n");
+    expect(diskLines).toHaveLength(1);
+    expect(JSON.parse(diskLines[0]!).status).toBe("running");
   });
 
   it("VD-2: pre-VD-2 runs.jsonl rows load fine (no resolvedParams/output/registrySnapshot)", () => {

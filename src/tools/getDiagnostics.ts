@@ -161,7 +161,7 @@ export function createGetDiagnosticsTool(
           },
           maxResults: {
             type: "number",
-            description: "Max diagnostics to return (default: 100, max: 2000)",
+            description: "Max diagnostics to return (default: 100, max: 500)",
           },
           topN: {
             type: "number",

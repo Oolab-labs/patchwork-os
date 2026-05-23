@@ -193,6 +193,8 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Commit and tag version bump
+        env:
+          HUSKY: "0"
         run: |
           git add package.json package-lock.json
           git commit -m "chore: bump to ${{ env.VERSION }}"
@@ -200,13 +202,30 @@ jobs:
           git push origin main
           git push origin "v${{ env.VERSION }}"
 
+      # Idempotency guard — if the tag was pushed but publish failed and the
+      # job was re-run, the version may already be on the registry. Skip
+      # cleanly rather than failing with E403.
+      - name: Check if version already published
+        id: npm_check
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if npm view "patchwork-os@$V" version > /dev/null 2>&1; then
+            echo "Already published: patchwork-os@$V — skipping npm publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm
+        if: steps.npm_check.outputs.skip != 'true'
         run: npm publish --access public
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.OOLAB_PAT }}
         run: |
+          if gh release view "v${{ env.VERSION }}" --repo Oolab-labs/patchwork-os > /dev/null 2>&1; then
+            echo "Release v${{ env.VERSION }} already exists — skipping"
+            exit 0
+          fi
           gh release create "v${{ env.VERSION }}" \
             --title "v${{ env.VERSION }}" \
             --generate-notes \

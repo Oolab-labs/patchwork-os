@@ -171,9 +171,8 @@ describe("runChainedRecipe — runLog (singleton) path", () => {
     const finalRun = log.getBySeq(observedDuringRun!.seq);
     expect(finalRun?.status).toBe("done");
     expect((finalRun?.stepResults ?? []).length).toBeGreaterThan(0);
-    // Disk persists exactly one row (the completed one — running entries
-    // don't hit disk).
-    expect(readRunLog()).toHaveLength(1);
+    // Disk has two rows: initial "running" (from startRun) + final "done" (from completeRun).
+    expect(readRunLog()).toHaveLength(2);
   });
 
   it("finalizes to 'error' status when a step fails", async () => {
@@ -203,9 +202,9 @@ describe("runChainedRecipe — runLog (singleton) path", () => {
       optsWithLog({ runLog: log }),
       okDeps,
     );
-    // Singleton has 1 run; disk file (written via completeRun) has 1 row.
+    // Singleton has 1 run; disk has 2 rows (running + done).
     expect(log.query()).toHaveLength(1);
-    expect(readRunLog()).toHaveLength(1);
+    expect(readRunLog()).toHaveLength(2);
   });
 });
 
