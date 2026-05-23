@@ -569,7 +569,7 @@ export default function MarketplacePage() {
           ? data.recipes
           : [];
       setBridgeStatus("online");
-      setInstalledNames(new Set(list.map((r: { name: string }) => r.name) as string[]));
+      setInstalledNames(new Set(list.map((r: { name: string }) => shortName(r.name))));
     } catch {
       setBridgeStatus("offline");
     }

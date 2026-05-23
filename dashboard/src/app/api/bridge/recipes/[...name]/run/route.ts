@@ -23,7 +23,7 @@ export async function POST(
   const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.run);
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.run);
   try {
-    const encodedName = name.map(encodeURIComponent).join("/");
+    const encodedName = name.join("/");
     const res = await bridgeFetch(`/recipes/${encodedName}/run`, {
       method: "POST",
       headers: { "content-type": req.headers.get("content-type") ?? "application/json" },
