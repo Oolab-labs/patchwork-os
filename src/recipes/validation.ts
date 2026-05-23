@@ -1,3 +1,4 @@
+import type { ValidateFunction } from "ajv";
 import cron from "node-cron";
 import { createAjv2020, type ErrorObject } from "../ajv2020.js";
 import { FLAG_SCHEMA_LINT, isEnabled } from "../featureFlags.js";
@@ -368,16 +369,26 @@ function flattenValidationStep(step: unknown): unknown[] {
   return [record];
 }
 
+// Cached compiled validator — schema is deterministic per process lifetime.
+// generateSchemaSet() + ajv.compile() together take ~100-500ms depending on
+// machine speed; recompiling per call makes the lint test suite O(n * compile)
+// when it should be O(1 compile + n validate).
+let _cachedValidate: ValidateFunction | null = null;
+
+function getRecipeValidator(): ValidateFunction {
+  if (_cachedValidate) return _cachedValidate;
+  const schemas = generateSchemaSet();
+  const ajv = createAjv2020({ strict: false, allErrors: true });
+  for (const schema of Object.values(schemas.namespaces)) {
+    ajv.addSchema(schema as object);
+  }
+  _cachedValidate = ajv.compile(schemas.recipe as object);
+  return _cachedValidate;
+}
+
 function validateRecipeSchema(recipe: unknown): LintIssue[] {
   try {
-    const schemas = generateSchemaSet();
-    const ajv = createAjv2020({ strict: false, allErrors: true });
-
-    for (const schema of Object.values(schemas.namespaces)) {
-      ajv.addSchema(schema as object);
-    }
-
-    const validate = ajv.compile(schemas.recipe as object);
+    const validate = getRecipeValidator();
     const valid = validate(recipe);
     if (valid) {
       return [];
