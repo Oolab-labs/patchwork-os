@@ -216,7 +216,7 @@ export default function InstallPanel({
         )}
         {!isInstalled && bridgeStatus === "unauth" && (
           <Link
-            href={`/login?next=/dashboard/marketplace/${name}`}
+            href={`/login?next=${encodeURIComponent(`/dashboard/marketplace/${name}`)}`}
             className="btn sm"
             style={{ textDecoration: "none", flexShrink: 0 }}
           >
