@@ -25,13 +25,15 @@ export const COMPANIONS: Record<string, CompanionEntry> = {
     description: "Persistent memory across Claude sessions",
     npmPackage: "@modelcontextprotocol/server-memory",
     command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-memory"],
+    // Pinned: npm view @modelcontextprotocol/server-memory version → 2026.1.26 (2026-05-23)
+    args: ["-y", "@modelcontextprotocol/server-memory@2026.1.26"],
   },
   superpowers: {
     description: "Structured planning, task decomposition",
     npmPackage: "superpowers-mcp",
     command: "npx",
-    args: ["-y", "superpowers-mcp"],
+    // Pinned: npm view superpowers-mcp version → 4.3.2 (2026-05-23)
+    args: ["-y", "superpowers-mcp@4.3.2"],
   },
   // To connect to an existing Chrome instead of auto-launching:
   // add --browser-url http://127.0.0.1:9222 to args.
@@ -40,14 +42,16 @@ export const COMPANIONS: Record<string, CompanionEntry> = {
       "Full Chrome browser control — automate, debug, inspect network/console/performance",
     npmPackage: "chrome-devtools-mcp",
     command: "npx",
-    args: ["-y", "chrome-devtools-mcp"],
+    // Pinned: npm view chrome-devtools-mcp version → 1.0.1 (2026-05-23)
+    args: ["-y", "chrome-devtools-mcp@1.0.1"],
   },
   database: {
     description:
       "Multi-database query tools (Postgres, MySQL, SQLite, SQL Server, MariaDB)",
     npmPackage: "@bytebase/dbhub",
     command: "npx",
-    args: ["-y", "@bytebase/dbhub", "--transport", "stdio"],
+    // Pinned: npm view @bytebase/dbhub version → 0.21.2 (2026-05-23)
+    args: ["-y", "@bytebase/dbhub@0.21.2", "--transport", "stdio"],
     requiredEnv: { DSN: "<postgresql://user:pass@localhost/mydb>" },
     postInstallMessage:
       "Replace the DSN placeholder in claude_desktop_config.json with your real connection string,\n" +
@@ -59,7 +63,8 @@ export const COMPANIONS: Record<string, CompanionEntry> = {
       "Post Slack messages from automation hooks (onPullRequest, onGitPush, etc.)",
     npmPackage: "slack-mcp-server",
     command: "npx",
-    args: ["-y", "slack-mcp-server"],
+    // Pinned: npm view slack-mcp-server version → 1.3.0 (2026-05-23)
+    args: ["-y", "slack-mcp-server@1.3.0"],
     requiredEnv: {
       SLACK_BOT_TOKEN: "<xoxb-your-token>",
       SLACK_TEAM_ID: "<T00000000>",
@@ -73,7 +78,8 @@ export const COMPANIONS: Record<string, CompanionEntry> = {
       "AI-driven browser automation — navigate, click, fill forms, screenshot (e2e testing)",
     npmPackage: "@playwright/mcp",
     command: "npx",
-    args: ["-y", "@playwright/mcp"],
+    // Pinned: npm view @playwright/mcp version → 0.0.75 (2026-05-23)
+    args: ["-y", "@playwright/mcp@0.0.75"],
     postInstallMessage:
       "Browsers must be installed separately:\n  npx playwright install chromium",
   },
@@ -85,6 +91,7 @@ export const COMPANIONS: Record<string, CompanionEntry> = {
     args: [],
     skipNpmInstall: true,
     postInstallMessage:
+      // WARNING: curl|bash install has no integrity check — replace with versioned npm package when available on npm
       "Install the binary first (not on npm):\n" +
       "  curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash\n" +
       "Then restart Claude Desktop.",

@@ -47,7 +47,10 @@
     "anthropic",
     "ollama",
     "local-first",
-    "coding-assistant"
+    "coding-assistant",
+    "smithery",
+    "model-context-protocol",
+    "developer-tools"
   ],
   "repository": {
     "type": "git",
