@@ -361,7 +361,7 @@ jobs:
       - name: Wait for healthy
         run: |
           for i in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:18765/health; then
+            if curl -sf http://127.0.0.1:18765/ping; then
               echo "Bridge is up"
               exit 0
             fi
