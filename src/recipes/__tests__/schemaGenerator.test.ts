@@ -201,8 +201,14 @@ describe("schemaGenerator", () => {
       required: ["parallel"],
       properties: {
         parallel: {
-          type: "array",
-          items: { oneOf: expect.any(Array) },
+          // oneOf: [array form, map-reduce object form]
+          oneOf: expect.arrayContaining([
+            expect.objectContaining({ type: "array" }),
+            expect.objectContaining({
+              type: "object",
+              required: expect.arrayContaining(["each", "steps"]),
+            }),
+          ]),
         },
         id: { type: "string" },
         awaits: { type: "array" },

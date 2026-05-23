@@ -81,8 +81,9 @@ export function isPrivateHost(hostname: string): boolean {
   if (host.startsWith("2002:")) return true; // 6to4 (RFC 3056) — embeds IPv4 in bits 16-47;
   // a 6to4 address for a private IPv4 (e.g. 2002:c0a8:0101:: → 192.168.1.1) bypasses
   // the IPv4 checks above unless we block the entire /16 here.
-  if (host.startsWith("::ffff:")) return isPrivateHost(host.slice(7));
+  // Check longer prefix first — ::ffff:0: (IPv4-translated) before ::ffff: (IPv4-mapped)
   if (host.startsWith("::ffff:0:")) return isPrivateHost(host.slice(9));
+  if (host.startsWith("::ffff:")) return isPrivateHost(host.slice(7));
 
   return false;
 }

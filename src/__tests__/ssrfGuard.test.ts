@@ -7,7 +7,8 @@
  * the other.
  */
 
-import { describe, expect, it } from "vitest";
+import dns from "node:dns/promises";
+import { describe, expect, it, vi } from "vitest";
 import { isPrivateHost, validateSafeUrl } from "../ssrfGuard.js";
 
 describe("isPrivateHost", () => {
@@ -43,6 +44,26 @@ describe("isPrivateHost", () => {
 
   it("blocks IPv6-mapped IPv4 loopback", () => {
     expect(isPrivateHost("::ffff:127.0.0.1")).toBe(true);
+    expect(isPrivateHost("::ffff:10.0.0.1")).toBe(true);
+    expect(isPrivateHost("::ffff:192.168.1.1")).toBe(true);
+  });
+
+  it("blocks 6to4 addresses (RFC 3056) — embeds private IPv4", () => {
+    // 2002:c0a8:0101:: embeds 192.168.1.1 — must block entire 2002::/16
+    expect(isPrivateHost("2002:c0a8:0101::1")).toBe(true);
+    expect(isPrivateHost("2002:7f00:0001::1")).toBe(true);
+    expect(isPrivateHost("2002:0a00:0001::1")).toBe(true);
+    // Even 6to4 that embeds a public IP is blocked — we block the /16 wholesale
+    expect(isPrivateHost("2002:0808:0808::1")).toBe(true);
+  });
+
+  it("blocks ::ffff:0: mapped addresses", () => {
+    expect(isPrivateHost("::ffff:0:127.0.0.1")).toBe(true);
+    expect(isPrivateHost("::ffff:0:10.0.0.1")).toBe(true);
+  });
+
+  it("blocks 0.0.0.0", () => {
+    expect(isPrivateHost("0.0.0.0")).toBe(true);
   });
 
   it("blocks hex/octal IPv4 obfuscation", () => {
@@ -94,5 +115,64 @@ describe("validateSafeUrl", () => {
     // true (we let fetch surface the error). The only failure mode here is
     // if DNS resolves to a private IP — which it won't for github.com.
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("validateSafeUrl — DNS rebinding", () => {
+  it("blocks host that DNS-resolves to a private IP (private_host_after_dns)", async () => {
+    vi.spyOn(dns, "lookup").mockResolvedValueOnce({
+      address: "192.168.1.1",
+      family: 4,
+    });
+    const result = await validateSafeUrl("https://evil.example.com/secret");
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("private_host_after_dns");
+    expect(result.detail).toContain("192.168.1.1");
+    vi.restoreAllMocks();
+  });
+
+  it("blocks host that DNS-resolves to loopback (private_host_after_dns)", async () => {
+    vi.spyOn(dns, "lookup").mockResolvedValueOnce({
+      address: "127.0.0.1",
+      family: 4,
+    });
+    const result = await validateSafeUrl("https://legit-looking.example.com/");
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("private_host_after_dns");
+    vi.restoreAllMocks();
+  });
+
+  it("blocks host that DNS-resolves to IPv6 loopback (private_host_after_dns)", async () => {
+    vi.spyOn(dns, "lookup").mockResolvedValueOnce({
+      address: "::1",
+      family: 6,
+    });
+    const result = await validateSafeUrl("https://v6evil.example.com/");
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("private_host_after_dns");
+    vi.restoreAllMocks();
+  });
+
+  it("allows host that DNS-resolves to a public IP", async () => {
+    vi.spyOn(dns, "lookup").mockResolvedValueOnce({
+      address: "140.82.112.4",
+      family: 4,
+    });
+    const result = await validateSafeUrl("https://github.com/foo");
+    expect(result.ok).toBe(true);
+    expect(result.resolvedIp).toBe("140.82.112.4");
+    vi.restoreAllMocks();
+  });
+
+  it("allows (ok: true) when DNS lookup fails — caller fetch surfaces the error", async () => {
+    vi.spyOn(dns, "lookup").mockRejectedValueOnce(
+      Object.assign(new Error("ENOTFOUND"), { code: "ENOTFOUND" }),
+    );
+    const result = await validateSafeUrl(
+      "https://nonexistent.example.invalid/",
+    );
+    expect(result.ok).toBe(true);
+    expect(result.resolvedIp).toBeUndefined();
+    vi.restoreAllMocks();
   });
 });

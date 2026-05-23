@@ -155,6 +155,45 @@ function generateRecipeSchema(
       type: "number",
       description: "Milliseconds to wait between retries (default 1000)",
     },
+    timeout_ms: {
+      type: "number",
+      description:
+        "Wall-clock timeout in milliseconds. If the step takes longer, the run halts with category step_timeout. Agent steps are not subject to this timeout.",
+    },
+    expect: {
+      type: "object",
+      description:
+        "Per-step assertions evaluated against the step output. Multiple fields are AND-composed.",
+      properties: {
+        schema: {
+          type: "object",
+          description: "JSON Schema validated against the step output via AJV",
+        },
+        equals: {
+          description:
+            "Deep-equal comparison. Strings compared verbatim; objects/arrays compared via JSON canonical form.",
+        },
+        matches: {
+          type: "string",
+          description:
+            "Regex (string source, no flags) matched against the stringified output. Max 500 chars.",
+        },
+        contains: {
+          oneOf: [
+            { type: "string" },
+            { type: "array", items: { type: "string" } },
+          ],
+          description:
+            "Substring(s) that must appear in the stringified output. Array → all must be present.",
+        },
+        on_fail: {
+          type: "string",
+          enum: ["halt", "warn"],
+          description:
+            "halt (default): step becomes error on assertion failure. warn: step passes but failure list is attached to stepResult.expectWarnings.",
+        },
+      },
+    },
   };
   const toolRefs = Object.keys(namespaceSchemas).map((ns) => ({
     allOf: [
@@ -227,6 +266,17 @@ function generateRecipeSchema(
               ],
             },
             into: { type: "string" },
+            mcpAccess: {
+              type: "boolean",
+              description:
+                "When true, grants the agent step access to MCP tools registered on the bridge. Defaults to false for subprocess driver steps.",
+            },
+            kind: {
+              type: "string",
+              enum: ["judge"],
+              description:
+                "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log.",
+            },
           },
         },
       },
@@ -257,10 +307,38 @@ function generateRecipeSchema(
         items: { type: "string" },
       },
       parallel: {
-        type: "array",
         description:
-          "Run these steps concurrently. All must finish before later steps that await this group.",
-        items: { oneOf: leafStepVariants },
+          "Run these steps concurrently. Array form: steps run in parallel. Object form: map-reduce — each item in `each` is bound to `as` and the steps array runs once per item.",
+        oneOf: [
+          {
+            type: "array",
+            description: "Run these steps concurrently.",
+            items: { oneOf: leafStepVariants },
+          },
+          {
+            type: "object",
+            description:
+              "Map-reduce form — iterate over a collection and run steps once per item.",
+            required: ["each", "steps"],
+            properties: {
+              each: {
+                type: "string",
+                description:
+                  "Template expression that resolves to an array of items to iterate over (e.g. '{{outputs.list}}').",
+              },
+              as: {
+                type: "string",
+                description:
+                  "Variable name each item is bound to inside the steps (default: 'item').",
+              },
+              steps: {
+                type: "array",
+                description: "Steps to run for each item in the collection.",
+                items: { oneOf: leafStepVariants },
+              },
+            },
+          },
+        ],
       },
     },
   };
@@ -438,6 +516,17 @@ function generateRecipeSchema(
                       type: "string",
                       description: "Variable name to store output in context",
                     },
+                    mcpAccess: {
+                      type: "boolean",
+                      description:
+                        "When true, grants the agent step access to MCP tools registered on the bridge. Defaults to false for subprocess driver steps.",
+                    },
+                    kind: {
+                      type: "string",
+                      enum: ["judge"],
+                      description:
+                        "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log.",
+                    },
                   },
                 },
               },
@@ -523,10 +612,35 @@ function generateRecipeSchema(
           notify: {
             type: "boolean",
             description:
-              "Reserved. yamlRunner currently posts Slack notifications on any step failure when slack is connected; gating on this flag is not yet wired.",
+              "When false, suppresses Slack notifications on step failure even when a Slack connector is connected.",
             default: true,
           },
         },
+      },
+      budget: {
+        type: "object",
+        description:
+          "Per-recipe token budget (PR2b). When set, the runner tracks cumulative tokens across API driver calls; on breach the run halts with budget_exceeded. Subscription drivers (Claude CLI) don't report token counts and are skipped.",
+        properties: {
+          tokensMax: {
+            type: "number",
+            description:
+              "Cumulative input + output tokens allowed across the whole run",
+          },
+          onBreach: {
+            type: "string",
+            enum: ["halt", "warn"],
+            description:
+              "halt (default): stop run on next admission check. warn: continue but record the breach in the run log.",
+            default: "halt",
+          },
+        },
+      },
+      servers: {
+        type: "array",
+        description:
+          "Plugin package specifiers (npm package names or file paths) whose tools are loaded and available to steps in this recipe. Loaded once at run start.",
+        items: { type: "string" },
       },
     },
   };
