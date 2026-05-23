@@ -18,10 +18,8 @@ export interface HeadersLike {
   get(name: string): string | null;
 }
 
-const trustProxy = process.env.BRIDGE_TRUST_PROXY === "true";
-
 export function clientKey(headers: HeadersLike): string {
-  if (trustProxy) {
+  if (process.env.BRIDGE_TRUST_PROXY === "true") {
     const xff = headers.get("x-forwarded-for");
     if (xff) {
       const first = xff.split(",")[0];
