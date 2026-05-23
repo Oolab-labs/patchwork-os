@@ -995,6 +995,7 @@ export default function RecipeEditPage({
               setContent(v);
               if (saveError) setSaveError(null);
             }}
+            lintIssues={lintIssues}
           />
         ) : (
           <YamlEditor

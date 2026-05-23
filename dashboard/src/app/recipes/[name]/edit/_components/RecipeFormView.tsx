@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef } from "react";
 import { parseDocument, Document as YamlDocument, YAMLMap, YAMLSeq } from "yaml";
+import type { YamlLintIssue } from "./YamlEditor";
 
 // Minimal structural types — enough to render cards. Not exhaustive.
 interface RecipeStep {
@@ -155,9 +156,10 @@ interface StepCardProps {
   index: number;
   editable: boolean;
   onChangeField: (stepIndex: number, path: string[], value: string) => void;
+  stepIssues: YamlLintIssue[];
 }
 
-function StepCard({ step, index, editable, onChangeField }: StepCardProps) {
+function StepCard({ step, index, editable, onChangeField, stepIssues }: StepCardProps) {
   const id = step.id ?? step.into ?? `step_${index + 1}`;
   const tools = step.tool
     ? [step.tool]
@@ -225,6 +227,28 @@ function StepCard({ step, index, editable, onChangeField }: StepCardProps) {
         </div>
         {step.optional && (
           <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>optional</span>
+        )}
+        {stepIssues.length > 0 && (
+          <span
+            title={stepIssues.map((i) => i.message).join("\n")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minWidth: 18,
+              height: 18,
+              borderRadius: 9,
+              background: stepIssues.some((i) => i.level === "error") ? "var(--err)" : "var(--warn)",
+              color: "#fff",
+              fontSize: 10,
+              fontWeight: 700,
+              lineHeight: 1,
+              padding: "0 5px",
+              flexShrink: 0,
+            }}
+          >
+            {stepIssues.length}
+          </span>
         )}
       </div>
 
@@ -327,9 +351,10 @@ function StepCard({ step, index, editable, onChangeField }: StepCardProps) {
 interface RecipeFormViewProps {
   yaml: string;
   onChange?: (yaml: string) => void;
+  lintIssues?: YamlLintIssue[];
 }
 
-export function RecipeFormView({ yaml, onChange }: RecipeFormViewProps) {
+export function RecipeFormView({ yaml, onChange, lintIssues = [] }: RecipeFormViewProps) {
   const editable = !!onChange;
 
   const { doc, yamlDoc, error } = useMemo(() => parseRecipeYaml(yaml), [yaml]);
@@ -424,6 +449,20 @@ export function RecipeFormView({ yaml, onChange }: RecipeFormViewProps) {
 
   const steps = Array.isArray(doc.steps) ? doc.steps : [];
 
+  // Map lint issues to step indices by matching path prefix "steps.N"
+  const issuesByStep = useMemo(() => {
+    const map = new Map<number, YamlLintIssue[]>();
+    for (const issue of lintIssues) {
+      const m = issue.path?.match(/^steps\.(\d+)/);
+      if (!m) continue;
+      const idx = parseInt(m[1]!, 10);
+      const bucket = map.get(idx) ?? [];
+      bucket.push(issue);
+      map.set(idx, bucket);
+    }
+    return map;
+  }, [lintIssues]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
       {/* Recipe metadata card */}
@@ -494,6 +533,7 @@ export function RecipeFormView({ yaml, onChange }: RecipeFormViewProps) {
               index={i}
               editable={editable}
               onChangeField={handleStepFieldChange}
+              stepIssues={issuesByStep.get(i) ?? []}
             />
           ))}
         </div>
