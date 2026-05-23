@@ -336,8 +336,16 @@ describe("lintRecipeContent", () => {
 
     expect(lintRecipeContent(content)).toEqual({
       ok: false,
+      // Phase 1B: lint issues now carry `line`/`column` from
+      // `enrichIssuesWithPositions` — Step 1's `agent:` row in the
+      // sample YAML lives at line 5 col 5.
       errors: [
-        { level: "error", message: "Step 1: Agent step missing 'prompt'" },
+        {
+          level: "error",
+          message: "Step 1: Agent step missing 'prompt'",
+          line: 5,
+          column: 5,
+        },
       ],
       warnings: [{ level: "warning", message: "Missing 'description' field" }],
     });

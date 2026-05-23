@@ -2,10 +2,46 @@
 
 import { useEffect, useRef } from "react";
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from "@codemirror/view";
-import { EditorState, type Extension } from "@codemirror/state";
+import { EditorState, StateEffect, StateField, type Extension } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldKeymap } from "@codemirror/language";
 import { yaml } from "@codemirror/lang-yaml";
+import { linter, type Diagnostic } from "@codemirror/lint";
+
+/**
+ * Lint issue shape mirrored from `src/recipes/validation.ts`. Kept
+ * local so the editor component has no cross-package import; the
+ * dashboard route fetches `LintIssue[]` from `/api/bridge/recipes/lint`
+ * and forwards via the `lintIssues` prop.
+ */
+export interface YamlLintIssue {
+  level: "error" | "warning";
+  message: string;
+  /** 1-indexed line; when present, drives the gutter marker position. */
+  line?: number;
+  /** 1-indexed column; optional — when absent, the marker spans the line. */
+  column?: number;
+  code?: string;
+  path?: string;
+}
+
+/**
+ * State effect + field used to push lint diagnostics into the editor
+ * imperatively. CodeMirror's `linter()` is normally for async
+ * source-based lint passes; since our diagnostics come from a
+ * debounced server-side `/recipes/lint` fetch upstream, we shove them
+ * in via a StateField + effect instead.
+ */
+const setLintDiagnostics = StateEffect.define<readonly Diagnostic[]>();
+const lintDiagnosticsField = StateField.define<readonly Diagnostic[]>({
+  create: () => [],
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setLintDiagnostics)) return effect.value;
+    }
+    return value;
+  },
+});
 
 // Minimal theme matching patchwork design tokens (both light/dark via CSS vars).
 // CM themes use static strings, so we inject a <style> for var() mappings.
@@ -74,6 +110,12 @@ function makeExtensions(onSave: () => void): Extension[] {
     crosshairCursor(),
     highlightActiveLine(),
     yaml(),
+    // Phase 1B: lint extension reads diagnostics from a StateField
+    // populated imperatively by the parent component when `/recipes/lint`
+    // returns structured `LintIssue[]`. The linter() call provides the
+    // gutter markers, hover messages, and inline squiggles for free.
+    lintDiagnosticsField,
+    linter((view) => Array.from(view.state.field(lintDiagnosticsField))),
     keymap.of([
       ...defaultKeymap,
       ...historyKeymap,
@@ -91,6 +133,7 @@ export default function YamlEditor({
   onSave,
   minHeight = 400,
   highlightLine,
+  lintIssues,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -102,6 +145,14 @@ export default function YamlEditor({
    * exact step that broke.
    */
   highlightLine?: number;
+  /**
+   * Phase 1B: structured lint issues to render as inline gutter
+   * diagnostics + squiggles. The route page fetches `/recipes/lint` and
+   * forwards the response; issues without a `line` field are dropped
+   * here (no gutter marker possible without a position — the lint
+   * banner still shows them as text).
+   */
+  lintIssues?: YamlLintIssue[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -150,6 +201,33 @@ export default function YamlEditor({
       });
     }
   }, [value]);
+
+  // Phase 1B: sync lint issues → CodeMirror diagnostics. Re-fires when
+  // the parent fetches a new lint result. Issues without a `line` field
+  // are dropped (no source position → can't render a gutter marker —
+  // the route-level banner still shows them as text). One line per
+  // issue: span the whole line so the gutter marker + hover are
+  // unambiguous, even when `column` is set.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const issues = lintIssues ?? [];
+    const doc = view.state.doc;
+    const diagnostics: Diagnostic[] = [];
+    for (const issue of issues) {
+      if (typeof issue.line !== "number") continue;
+      const lineNum = Math.max(1, Math.min(issue.line, doc.lines));
+      const line = doc.line(lineNum);
+      diagnostics.push({
+        from: line.from,
+        to: line.to,
+        severity: issue.level === "error" ? "error" : "warning",
+        message: issue.message,
+        source: issue.code,
+      });
+    }
+    view.dispatch({ effects: setLintDiagnostics.of(diagnostics) });
+  }, [lintIssues]);
 
   // Scroll-to-line for the failed-run → YAML deep-link. Re-fires whenever
   // `highlightLine` or `value` changes — covers both the "land here on

@@ -27,6 +27,7 @@ import {
   type LintIssue,
   validateRecipeDefinition,
 } from "./recipes/validation.js";
+import { enrichIssuesWithPositions } from "./recipes/yamlPositions.js";
 
 /**
  * Returns true unless `filePath` lives inside an install dir whose
@@ -936,9 +937,17 @@ export function lintRecipeContent(content: string): {
   }
 
   const validation = validateRecipeDefinition(parsed);
+  // Phase 1B: enrich with source positions. The validator operates on
+  // the parsed JS object and has no line/column info; this pass
+  // re-parses the YAML AST to map logical paths (`steps.0.prompt`,
+  // `trigger.at`, "Step 3:" prefixes) → 1-indexed line/column. The
+  // CodeMirror linter extension in the editor keys off these to render
+  // inline gutter diagnostics. Issues whose path doesn't match anything
+  // in the index pass through unannotated.
+  const enriched = enrichIssuesWithPositions(content, validation.issues);
   const errors: LintIssue[] = [];
   const warnings: LintIssue[] = [];
-  for (const issue of validation.issues) {
+  for (const issue of enriched) {
     if (issue.level === "error") errors.push(issue);
     else warnings.push(issue);
   }
