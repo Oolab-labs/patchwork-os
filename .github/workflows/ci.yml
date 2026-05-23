@@ -356,6 +356,7 @@ jobs:
             patchwork-smoke \
             --workspace /workspace \
             --bind 0.0.0.0 \
+            --port 18765 \
             --fixed-token 00000000-0000-0000-0000-000000000001
       - name: Wait for healthy
         run: |
