@@ -55,8 +55,9 @@ describe("pendingLines overflow", () => {
     for (let i = 0; i < 1001; i++) {
       proc.stdin?.write(`${msg}\n`);
     }
-    // Flush and give the shim a moment to process
-    await new Promise((r) => setTimeout(r, 300));
+    // 1500ms (was 300ms): Windows CI runners take >300ms for subprocess start +
+    // stdin drain + overflow stderr flush before this assertion lands.
+    await new Promise((r) => setTimeout(r, 1500));
 
     const stderrAll = stderrChunks.join("");
 

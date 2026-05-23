@@ -94,7 +94,11 @@ function makeProc(workspace: string, timeoutMs = 500) {
 describe("BridgeProcess", () => {
   it("fires onStarted when lock file appears for the workspace", async () => {
     const ws = "/home/user/project";
-    const proc = makeProc(ws);
+    // 1500ms (was default 500ms): Windows CI runners can take >250ms inside
+    // spawn() (real file-system sentinel ops + mock Promise chain) before
+    // waitForLockFile() starts. If setup time > poll-timeout the deadline fires
+    // before the first 250ms poll tick finds the file. 1.5s gives ample slack.
+    const proc = makeProc(ws, 1500);
     const startedEvents: Array<{ port: number; authToken: string }> = [];
     proc.onStarted = (e) => startedEvents.push(e);
 
@@ -229,7 +233,9 @@ describe("BridgeProcess", () => {
 
   it("takes over a sentinel that has exceeded TTL regardless of PID", async () => {
     const ws = "/home/user/project-ttl";
-    const proc = makeProc(ws, 600);
+    // 1500ms (was 600ms): sentinel unlink + O_EXCL retry adds extra async file-op
+    // latency on Windows CI; same Windows-timing fix as "fires onStarted" above.
+    const proc = makeProc(ws, 1500);
 
     const { createHash } = await import("node:crypto");
     const hash = createHash("sha1").update(ws).digest("hex").slice(0, 12);
