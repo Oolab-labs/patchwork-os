@@ -41,6 +41,7 @@ import {
 } from "./fp/tokenBucket.js";
 import { respondIfUnknownBodyKeys } from "./httpBodyValidation.js";
 import { respond500 } from "./httpErrorResponse.js";
+import type { LintIssue } from "./recipes/validation.js";
 import type { RecipeDraft } from "./recipesHttp.js";
 import { validateSafeUrl } from "./ssrfGuard.js";
 
@@ -370,8 +371,8 @@ export interface RecipeRouteDeps {
   lintRecipeContentFn:
     | ((content: string) => {
         ok: boolean;
-        errors: string[];
-        warnings: string[];
+        errors: LintIssue[];
+        warnings: LintIssue[];
       })
     | null;
   saveRecipeFn:

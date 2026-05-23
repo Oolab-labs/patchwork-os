@@ -673,14 +673,21 @@ export class RecipeOrchestration {
       const toolIdWarnings = collectUnknownToolIds(normalizedYaml);
 
       const lint = lintRecipeContent(normalizedYaml);
+      // recipeOrchestration's /recipes/generate response shape is
+      // `warnings: string[]` — flatten LintIssue[] back to messages
+      // here. Editor + marketplace consumers of /recipes/lint get the
+      // structured shape via that separate route; this one is for the AI
+      // generation flow where the dashboard renders strings.
+      const lintErrorStrings = lint.errors.map((i) => i.message);
+      const lintWarningStrings = lint.warnings.map((i) => i.message);
       if (!lint.ok) {
         return {
           ok: false,
           yaml: normalizedYaml,
           warnings: [
             ...truncationWarnings,
-            ...lint.errors,
-            ...lint.warnings,
+            ...lintErrorStrings,
+            ...lintWarningStrings,
             ...toolIdWarnings,
           ],
           error: "invalid_yaml_generated",
@@ -690,7 +697,11 @@ export class RecipeOrchestration {
       return {
         ok: true,
         yaml: normalizedYaml,
-        warnings: [...truncationWarnings, ...lint.warnings, ...toolIdWarnings],
+        warnings: [
+          ...truncationWarnings,
+          ...lintWarningStrings,
+          ...toolIdWarnings,
+        ],
       };
     };
   }

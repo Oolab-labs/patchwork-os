@@ -336,8 +336,10 @@ describe("lintRecipeContent", () => {
 
     expect(lintRecipeContent(content)).toEqual({
       ok: false,
-      errors: ["Step 1: Agent step missing 'prompt'"],
-      warnings: ["Missing 'description' field"],
+      errors: [
+        { level: "error", message: "Step 1: Agent step missing 'prompt'" },
+      ],
+      warnings: [{ level: "warning", message: "Missing 'description' field" }],
     });
   });
 
@@ -356,6 +358,7 @@ describe("lintRecipeContent", () => {
 
     expect(lintRecipeContent(content)).toEqual({
       ok: true,
+      // LintIssue[] passthrough — no flattening to string[].
       errors: [],
       warnings: [],
     });
@@ -365,7 +368,7 @@ describe("lintRecipeContent", () => {
     const { lintRecipeContent } = await import("../recipesHttp.js");
     expect(lintRecipeContent("   ")).toEqual({
       ok: false,
-      errors: ["Recipe content is required"],
+      errors: [{ level: "error", message: "Recipe content is required" }],
       warnings: [],
     });
   });

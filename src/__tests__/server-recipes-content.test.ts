@@ -133,8 +133,12 @@ describe("Server recipe content routes", () => {
   it("returns errors+warnings for POST /recipes/lint", async () => {
     server!.lintRecipeContentFn = (content: string) => ({
       ok: false,
-      errors: [`parsed:${content.length}`],
-      warnings: ["Missing 'description' field"],
+      errors: [
+        { level: "error" as const, message: `parsed:${content.length}` },
+      ],
+      warnings: [
+        { level: "warning" as const, message: "Missing 'description' field" },
+      ],
     });
 
     const { status, body } = await makeRequest(
@@ -152,8 +156,8 @@ describe("Server recipe content routes", () => {
     expect(status).toBe(200);
     expect(JSON.parse(body)).toEqual({
       ok: false,
-      errors: ["parsed:3"],
-      warnings: ["Missing 'description' field"],
+      errors: [{ level: "error", message: "parsed:3" }],
+      warnings: [{ level: "warning", message: "Missing 'description' field" }],
     });
   });
 

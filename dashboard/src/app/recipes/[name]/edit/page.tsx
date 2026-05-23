@@ -1,11 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 // BackLink and RelationStrip are rendered by the shared recipes/[name]/layout.tsx
 import { useToast } from "@/components/Toast";
+import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { ConnectorChip } from "@/components/patchwork";
+import { canonicalRecipeKey } from "@/lib/entityKey";
+import { detectConnectorsForRecipe } from "../layout";
 import dynamic from "next/dynamic";
+
+/** Minimal shape we need from `/api/bridge/recipes` to call detectConnectorsForRecipe. */
+interface RecipeSummaryLite {
+  name: string;
+  description?: string;
+}
+interface ConnectorStatusLite {
+  id: string;
+  healthy?: boolean;
+}
 
 const YamlEditor = dynamic(() => import("./_components/YamlEditor"), {
   ssr: false,
@@ -41,6 +55,64 @@ export default function RecipeEditPage({
   const [lintWarnings, setLintWarnings] = useState<string[]>([]);
   const [linting, setLinting] = useState(false);
   const toast = useToast();
+
+  // Connector preflight surfaced on the edit page (Phase 1A item 5).
+  // Pre-existing connector detection lived only on the detail/overview
+  // page — surfacing it here lets the user notice "recipe needs Gmail
+  // but Gmail isn't connected" while still in the editor.
+  const { data: recipesForConnectors } = useBridgeFetch<RecipeSummaryLite[]>(
+    "/api/bridge/recipes",
+    {
+      intervalMs: 60_000,
+      transform: (raw) => {
+        if (Array.isArray(raw)) return raw as RecipeSummaryLite[];
+        const obj = raw as { recipes?: RecipeSummaryLite[] };
+        return obj?.recipes ?? [];
+      },
+    },
+  );
+  const { data: connectorStatuses } = useBridgeFetch<ConnectorStatusLite[]>(
+    "/api/bridge/connectors/status",
+    {
+      intervalMs: 60_000,
+      transform: (raw) => {
+        if (Array.isArray(raw)) return raw as ConnectorStatusLite[];
+        const obj = raw as { connectors?: ConnectorStatusLite[] };
+        return obj?.connectors ?? [];
+      },
+    },
+  );
+  const recipeSummary = useMemo(
+    () =>
+      recipesForConnectors?.find(
+        (r) => canonicalRecipeKey(r.name) === name,
+      ) ?? null,
+    [recipesForConnectors, name],
+  );
+  const requiredConnectors = useMemo(
+    () =>
+      recipeSummary
+        ? detectConnectorsForRecipe(
+            // detectConnectorsForRecipe accepts a RecipeSummary; the lite
+            // shape we fetched is a structural subset that satisfies it.
+            recipeSummary as Parameters<typeof detectConnectorsForRecipe>[0],
+          )
+        : [],
+    [recipeSummary],
+  );
+  const connectorHealthMap = useMemo(() => {
+    const m = new Map<string, boolean | undefined>();
+    for (const c of connectorStatuses ?? []) m.set(c.id, c.healthy);
+    return m;
+  }, [connectorStatuses]);
+  const unhealthyConnectors = useMemo(
+    () =>
+      requiredConnectors.filter(
+        (id) => connectorHealthMap.get(id) !== true,
+      ),
+    [requiredConnectors, connectorHealthMap],
+  );
+
   const lintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lintReqIdRef = useRef(0);
   // Step-anchor scroll target, derived from `window.location.hash` of the
@@ -182,15 +254,32 @@ export default function RecipeEditPage({
         .then((res) => res.json().catch(() => ({}) as Record<string, unknown>))
         .then((data) => {
           if (reqId !== lintReqIdRef.current) return;
+          // `/recipes/lint` returns LintIssue[] objects (level, message,
+          // path?, code?). The page currently renders messages only; the
+          // structured fields will be consumed by the CodeMirror linter
+          // extension in Phase 1B.
+          const toMessage = (raw: unknown): string | null => {
+            if (typeof raw === "string") return raw; // legacy bridge
+            if (
+              raw &&
+              typeof raw === "object" &&
+              typeof (raw as { message?: unknown }).message === "string"
+            ) {
+              return (raw as { message: string }).message;
+            }
+            return null;
+          };
           const errors = Array.isArray((data as { errors?: unknown }).errors)
-            ? (data as { errors: string[] }).errors.filter(
-                (m): m is string => typeof m === "string",
-              )
+            ? ((data as { errors: unknown[] }).errors
+                .map(toMessage)
+                .filter((m): m is string => m !== null))
             : [];
-          const warnings = Array.isArray((data as { warnings?: unknown }).warnings)
-            ? (data as { warnings: string[] }).warnings.filter(
-                (m): m is string => typeof m === "string",
-              )
+          const warnings = Array.isArray(
+            (data as { warnings?: unknown }).warnings,
+          )
+            ? ((data as { warnings: unknown[] }).warnings
+                .map(toMessage)
+                .filter((m): m is string => m !== null))
             : [];
           setLintErrors(errors);
           setLintWarnings(warnings);
@@ -470,6 +559,56 @@ export default function RecipeEditPage({
               <li key={`lint-warn-${idx}`}>{msg}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Connectors required (Phase 1A item 5) — same chip strip as the
+          overview page, surfaced here so authoring isn't blind to "this
+          recipe needs Gmail and Gmail isn't connected". Clicking a chip
+          deep-links to /connections#<id>. */}
+      {requiredConnectors.length > 0 && (
+        <div
+          style={{
+            marginBottom: "var(--s-3)",
+            padding: "var(--s-3) var(--s-4)",
+            borderRadius: "var(--r-2)",
+            background: "var(--recess)",
+            border: "1px solid var(--line-2)",
+            fontSize: "var(--fs-m)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: "var(--s-2)",
+              gap: "var(--s-3)",
+            }}
+          >
+            <strong>Connectors required</strong>
+            {unhealthyConnectors.length > 0 && (
+              <Link
+                href="/connections"
+                style={{
+                  fontSize: "var(--fs-s)",
+                  color: "var(--info)",
+                  textDecoration: "none",
+                }}
+              >
+                Connect {unhealthyConnectors.length === 1 ? "it" : "them"} →
+              </Link>
+            )}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {requiredConnectors.map((id) => (
+              <ConnectorChip
+                key={id}
+                id={id}
+                healthy={connectorHealthMap.get(id)}
+              />
+            ))}
+          </div>
         </div>
       )}
 

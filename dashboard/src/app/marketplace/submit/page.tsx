@@ -433,11 +433,24 @@ export default function MarketplaceSubmitPage() {
         errors?: unknown;
         warnings?: unknown;
       };
+      // `/recipes/lint` now returns LintIssue[]. Accept both shapes during
+      // the transition so submit page doesn't break against an older bridge.
+      const toMessage = (raw: unknown): string | null => {
+        if (typeof raw === "string") return raw;
+        if (
+          raw &&
+          typeof raw === "object" &&
+          typeof (raw as { message?: unknown }).message === "string"
+        ) {
+          return (raw as { message: string }).message;
+        }
+        return null;
+      };
       const errors = Array.isArray(data.errors)
-        ? data.errors.filter((e): e is string => typeof e === "string")
+        ? data.errors.map(toMessage).filter((m): m is string => m !== null)
         : [];
       const warnings = Array.isArray(data.warnings)
-        ? data.warnings.filter((w): w is string => typeof w === "string")
+        ? data.warnings.map(toMessage).filter((m): m is string => m !== null)
         : [];
       setLintResult({ forContent: yaml, errors, warnings });
       if (errors.length === 0 && warnings.length === 0) {

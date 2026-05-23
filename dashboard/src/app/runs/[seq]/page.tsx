@@ -961,6 +961,16 @@ export default function RunDetailPage() {
   >("idle");
   const [replayMessage, setReplayMessage] = useState<string>();
 
+  // Phase 1A item 8 — surface prior fix decisions for this recipe.
+  // `ctxQueryTraces({traceType:"decision", key:recipeName})` is what powers
+  // the /decisions and /traces pages; we read the same /api/bridge/traces
+  // endpoint here so a failed run can show "you (or a teammate) recorded
+  // a fix for this recipe before". Only fetched when the run actually
+  // failed — successful runs don't need to nag.
+  const [priorFixes, setPriorFixes] = useState<
+    Array<{ ts: number; summary: string; tags?: string[] }>
+  >([]);
+
   const handleReplay = async () => {
     if (!seq) return;
     setReplayState("running");
@@ -1114,6 +1124,67 @@ export default function RunDetailPage() {
   useBridgeStream("/api/bridge/stream", onStreamEvent, {
     enabled: run?.status === "running",
   });
+
+  // Phase 1A item 8 — fetch prior fix decisions for this recipe when the
+  // current run failed. Decision traces are the persisted output of
+  // ctxSaveTrace; users record "I fixed recipe X by Y" entries that ought
+  // to be visible exactly when someone is staring at a new failure for
+  // the same recipe.
+  const recipeNameForTraces = run?.recipeName ?? null;
+  const runFailed = run?.status === "error";
+  useEffect(() => {
+    if (!runFailed || !recipeNameForTraces) {
+      setPriorFixes([]);
+      return;
+    }
+    const controller = new AbortController();
+    const qs = new URLSearchParams({
+      key: recipeNameForTraces,
+      limit: "5",
+    }).toString();
+    fetch(apiPath(`/api/bridge/traces?${qs}`), {
+      signal: controller.signal,
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data || !Array.isArray((data as { traces?: unknown }).traces)) {
+          setPriorFixes([]);
+          return;
+        }
+        type RawTrace = {
+          ts?: number;
+          summary?: string;
+          tags?: unknown;
+          traceType?: string;
+        };
+        const traces = (data as { traces: RawTrace[] }).traces;
+        const fixes = traces
+          .filter(
+            (t) =>
+              typeof t.ts === "number" &&
+              typeof t.summary === "string" &&
+              // Only the trace types a human or recipe runner would write
+              // as a remembered fix. Approval / enrichment traces are
+              // structural plumbing, not fix decisions.
+              (t.traceType === "decision" || t.traceType === "recipe_run"),
+          )
+          .slice(0, 3)
+          .map((t) => ({
+            ts: t.ts as number,
+            summary: t.summary as string,
+            tags: Array.isArray(t.tags)
+              ? (t.tags as unknown[]).filter(
+                  (x): x is string => typeof x === "string",
+                )
+              : undefined,
+          }));
+        setPriorFixes(fixes);
+      })
+      .catch(() => {
+        setPriorFixes([]);
+      });
+    return () => controller.abort();
+  }, [runFailed, recipeNameForTraces]);
 
   // Load plan lazily when tab is switched to "plan"
   useEffect(() => {
@@ -1740,6 +1811,66 @@ export default function RunDetailPage() {
               <div style={{ marginTop: 12 }}>
                 <div style={{ fontSize: "var(--fs-2xs)", color: "var(--err)", marginBottom: 4 }}>ERROR</div>
                 <TruncatablePre text={run.errorMessage} color="var(--err)" />
+              </div>
+            )}
+            {/* Phase 1A item 8 — prior fix decisions for this recipe. */}
+            {priorFixes.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div
+                  style={{
+                    fontSize: "var(--fs-2xs)",
+                    color: "var(--fg-2)",
+                    marginBottom: 4,
+                  }}
+                >
+                  PRIOR FIXES FOR {run.recipeName.toUpperCase()}{" "}
+                  <Link
+                    href={`/traces?recipe=${encodeURIComponent(run.recipeName)}`}
+                    style={{
+                      color: "var(--info)",
+                      textDecoration: "none",
+                      marginLeft: 6,
+                    }}
+                  >
+                    see all →
+                  </Link>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    fontSize: "var(--fs-s)",
+                  }}
+                >
+                  {priorFixes.map((fix, i) => (
+                    <div
+                      key={`fix-${fix.ts}-${i}`}
+                      style={{
+                        padding: "var(--s-2) var(--s-3)",
+                        background: "var(--recess)",
+                        border: "1px solid var(--line-2)",
+                        borderRadius: "var(--r-2)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "var(--fs-2xs)",
+                          color: "var(--fg-2)",
+                          marginBottom: 2,
+                        }}
+                      >
+                        {new Date(fix.ts).toLocaleString()}
+                        {fix.tags && fix.tags.length > 0 && (
+                          <span style={{ marginLeft: 8 }}>
+                            {fix.tags.map((t) => `#${t}`).join(" ")}
+                          </span>
+                        )}
+                      </div>
+                      <div>{fix.summary}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             {run.outputTail && (
