@@ -182,6 +182,23 @@ export class Server extends EventEmitter<ServerEvents> {
         unavailable?: boolean;
       }>)
     | null = null;
+  /**
+   * Patchwork Phase 2A: repair a broken recipe YAML given the current
+   * content + structured LintIssue[] context. Driven by the same
+   * Claude-orchestrator infrastructure as `generateRecipeFn` (system
+   * prompt + sanitized user-tag wrapper + post-lint), but the user
+   * input is the user's CURRENT recipe rather than free-text — gated
+   * behind the `recipe.repair-ai` feature flag.
+   */
+  public repairRecipeFn:
+    | ((args: { currentYaml: string; lintIssues: LintIssue[] }) => Promise<{
+        ok: boolean;
+        yaml?: string;
+        warnings?: string[];
+        error?: string;
+        unavailable?: boolean;
+      }>)
+    | null = null;
   /** Patchwork: set by bridge to list installed recipes for the dashboard. */
   public recipesFn: (() => Record<string, unknown>) | null = null;
   /** Patchwork: set by bridge to load raw recipe source content by name. */
@@ -1495,6 +1512,7 @@ export class Server extends EventEmitter<ServerEvents> {
         tryHandleRecipeRoute(req, res, parsedUrl, {
           setRecipeTrustFn: this.setRecipeTrustFn,
           generateRecipeFn: this.generateRecipeFn,
+          repairRecipeFn: this.repairRecipeFn,
           recipesFn: this.recipesFn,
           loadRecipeContentFn: this.loadRecipeContentFn,
           saveRecipeContentFn: this.saveRecipeContentFn,

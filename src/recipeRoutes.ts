@@ -96,6 +96,27 @@ export function _resetGenerateRateLimitForTests(): void {
   };
 }
 
+/**
+ * Phase 2A: separate cooldown bucket for `/recipes/repair`. Repair
+ * costs the same per-call tokens as generate but a user dogfooding the
+ * "Fix with AI" button may legitimately click it 2-3× back-to-back
+ * (preview a fix, discard, ask again). Giving repair its own 10/min
+ * bucket avoids starving generate when a user is iterating on repair,
+ * and the loop-hazard cap I flagged in plan-review applies here
+ * separately.
+ */
+const RECIPE_REPAIR_LIMIT_PER_MIN = 10;
+let recipeRepairBucket: TokenBucketState = {
+  tokens: RECIPE_REPAIR_LIMIT_PER_MIN,
+  lastRefill: 0,
+};
+export function _resetRepairRateLimitForTests(): void {
+  recipeRepairBucket = {
+    tokens: RECIPE_REPAIR_LIMIT_PER_MIN,
+    lastRefill: 0,
+  };
+}
+
 // G-security R2 C-3 / I-3 / F-02: HTTP `vars` validation.
 //
 // The post-render path jail in `src/recipes/resolveRecipePath.ts` is the
@@ -183,6 +204,12 @@ export const RECIPE_ROUTE_BODY_CAPS = {
   run: 32 * 1024,
   /** /recipes (POST), PUT/PATCH /recipes/:name, /recipes/lint — yaml content. */
   content: 256 * 1024,
+  /**
+   * /recipes/repair — `{ currentYaml: string, lintIssues: LintIssue[] }`.
+   * Cap matches `content` since the body carries the full recipe YAML
+   * (256 KB matches the existing PUT/POST/lint caps).
+   */
+  repair: 256 * 1024,
 } as const;
 
 /**
@@ -321,6 +348,16 @@ export interface RecipeRouteDeps {
     | null;
   generateRecipeFn:
     | ((prompt: string) => Promise<{
+        ok: boolean;
+        yaml?: string;
+        warnings?: string[];
+        error?: string;
+        unavailable?: boolean;
+      }>)
+    | null;
+  /** Phase 2A — sibling of generateRecipeFn for the repair endpoint. */
+  repairRecipeFn:
+    | ((args: { currentYaml: string; lintIssues: LintIssue[] }) => Promise<{
         ok: boolean;
         yaml?: string;
         warnings?: string[];
@@ -876,6 +913,147 @@ export function tryHandleRecipeRoute(
         res.end(JSON.stringify(result));
       } catch (err) {
         console.error(`[recipes/generate] internal error:`, err);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: "Internal server error",
+          }),
+        );
+      }
+    })();
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/recipes/repair" && req.method === "POST") {
+    // Phase 2A: LLM-driven repair of a broken recipe. Gated behind
+    // the `recipe.repair-ai` feature flag (default off) — the input
+    // body carries arbitrary YAML which may have been marketplace-
+    // installed (= untrusted), and the orchestrator-bound prompt
+    // costs API tokens per call. Same shape as /recipes/generate
+    // (rate limit + body cap + sanitization + post-lint) but a
+    // distinct token bucket so back-to-back repair clicks don't
+    // starve generate.
+    void (async () => {
+      // Flag gate first — fail fast before consuming a bucket token.
+      const { isEnabled, FLAG_REPAIR_AI } = await import("./featureFlags.js");
+      if (!isEnabled(FLAG_REPAIR_AI)) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            code: "feature_disabled",
+            error:
+              "Recipe repair is gated behind the `recipe.repair-ai` feature flag (default off). Enable via the dashboard Settings → Feature flags or POST /feature-flags.",
+            unavailable: true,
+          }),
+        );
+        return;
+      }
+
+      const now = Date.now();
+      const refilled = refillBucket(
+        recipeRepairBucket,
+        now,
+        RECIPE_REPAIR_LIMIT_PER_MIN,
+      );
+      const consumed = consumeToken(refilled);
+      recipeRepairBucket = consumed.nextState;
+      if (!consumed.allowed) {
+        const secondsToOneToken = Math.ceil(
+          ((1 - consumed.nextState.tokens) / RECIPE_REPAIR_LIMIT_PER_MIN) * 60,
+        );
+        res.writeHead(429, {
+          "Content-Type": "application/json",
+          "Retry-After": String(Math.max(1, secondsToOneToken)),
+        });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: `Rate limit exceeded — max ${RECIPE_REPAIR_LIMIT_PER_MIN} repair calls per minute`,
+            retryAfterSeconds: Math.max(1, secondsToOneToken),
+          }),
+        );
+        return;
+      }
+
+      const parsedBody = await readJsonBody<{
+        currentYaml?: unknown;
+        lintIssues?: unknown;
+      }>(req, RECIPE_ROUTE_BODY_CAPS.repair);
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.repair);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
+      const body = parsedBody.value as
+        | {
+            currentYaml?: unknown;
+            lintIssues?: unknown;
+          }
+        | undefined;
+      const currentYaml = body?.currentYaml;
+      if (typeof currentYaml !== "string" || !currentYaml.trim()) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: "currentYaml must be a non-empty string",
+          }),
+        );
+        return;
+      }
+      // Coarse shape guard on lintIssues — accept array or default to
+      // empty. Each item is structurally checked (level + message
+      // strings); unknown extras are stripped to keep the prompt
+      // surface small.
+      const rawIssues = Array.isArray(body?.lintIssues) ? body.lintIssues : [];
+      const lintIssues: LintIssue[] = [];
+      for (const raw of rawIssues) {
+        if (
+          raw &&
+          typeof raw === "object" &&
+          typeof (raw as { message?: unknown }).message === "string" &&
+          ((raw as { level?: unknown }).level === "error" ||
+            (raw as { level?: unknown }).level === "warning")
+        ) {
+          const r = raw as Partial<LintIssue>;
+          lintIssues.push({
+            level: r.level as "error" | "warning",
+            message: r.message as string,
+            ...(typeof r.line === "number" && { line: r.line }),
+            ...(typeof r.column === "number" && { column: r.column }),
+            ...(typeof r.code === "string" && { code: r.code }),
+            ...(typeof r.path === "string" && { path: r.path }),
+          });
+        }
+      }
+
+      if (!deps.repairRecipeFn) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: "Recipe repair unavailable — requires --driver subprocess",
+            unavailable: true,
+          }),
+        );
+        return;
+      }
+
+      try {
+        const result = await deps.repairRecipeFn({
+          currentYaml: currentYaml.trim(),
+          lintIssues,
+        });
+        const status = result.ok ? 200 : result.unavailable ? 503 : 422;
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        console.error(`[recipes/repair] internal error:`, err);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({

@@ -291,6 +291,17 @@ export const KILL_SWITCH_WRITES = "kill-switch.writes";
 /** Enable recipe lint with schema validation (A1) */
 export const FLAG_SCHEMA_LINT = "ui.schema-lint";
 
+/**
+ * Phase 2A: gate the `/recipes/repair` LLM-driven fix endpoint.
+ * Default OFF — repair invokes the Claude orchestrator with a
+ * sanitized prompt built from the broken YAML + lint issues. While the
+ * prompt-injection sanitization is the same shape as `/recipes/generate`
+ * uses, the input here is the user's CURRENT recipe (potentially
+ * marketplace-installed = untrusted content), so we gate behind an
+ * explicit opt-in.
+ */
+export const FLAG_REPAIR_AI = "recipe.repair-ai";
+
 // Register built-in flags
 registerFlag({
   id: KILL_SWITCH_WRITES,
@@ -305,6 +316,15 @@ registerFlag({
 registerFlag({
   id: FLAG_SCHEMA_LINT,
   description: "Recipe linting with JSON Schema validation",
+  defaultValue: false,
+  category: "ui",
+  requiresOptIn: true,
+});
+
+registerFlag({
+  id: FLAG_REPAIR_AI,
+  description:
+    "Phase 2A: enable the /recipes/repair LLM-driven fix endpoint. Costs API tokens per call; gated by a per-session token bucket and prompt-injection sanitization.",
   defaultValue: false,
   category: "ui",
   requiresOptIn: true,
