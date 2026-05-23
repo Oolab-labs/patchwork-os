@@ -58,6 +58,8 @@ export interface PatchworkConfig {
   managedSettingsPath?: string;
   recipes?: {
     disabled?: string[];
+    /** IANA timezone name for cron schedules, e.g. "America/New_York". Defaults to "UTC". */
+    timezone?: string;
   };
   /** AI driver mode — persisted so dashboard changes survive restart. */
   driver?: Driver;

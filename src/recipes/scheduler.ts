@@ -55,6 +55,12 @@ export interface SchedulerOptions {
    * silently make the scheduler skip a freshly-fixtured recipe.
    */
   disabledRecipes?: ReadonlyArray<string>;
+  /**
+   * IANA timezone for cron expressions, e.g. "America/New_York". Defaults to
+   * `loadConfig().recipes?.timezone ?? "UTC"` at start time. Tests can inject
+   * this to avoid depending on the dev machine's config.
+   */
+  timezone?: string;
 }
 
 export class RecipeScheduler {
@@ -254,9 +260,15 @@ export class RecipeScheduler {
           );
         } else {
           // cron5
-          const cronJob = cron.schedule(parsed2.expression, () => {
-            this.fire(name);
-          });
+          const timezone =
+            this.opts.timezone ?? loadConfig().recipes?.timezone ?? "UTC";
+          const cronJob = cron.schedule(
+            parsed2.expression,
+            () => {
+              this.fire(name);
+            },
+            { timezone },
+          );
           // Store a sentinel timer so the ScheduledRecipe shape stays stable
           const dummyTimer = this.setIntervalFn(() => {}, 2_147_483_647);
           if (typeof dummyTimer === "object" && "unref" in dummyTimer)

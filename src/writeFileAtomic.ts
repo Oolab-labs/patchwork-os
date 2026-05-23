@@ -71,7 +71,21 @@ export function writeFileAtomicSync(
     } else {
       fs.writeFileSync(tmp, data, { mode });
     }
-    fs.renameSync(tmp, target);
+    try {
+      fs.renameSync(tmp, target);
+    } catch (renameErr) {
+      // On Windows, renameSync throws EEXIST when the target already exists
+      // (unlike POSIX which atomically replaces). Unlink the target and retry.
+      if (
+        process.platform === "win32" &&
+        (renameErr as NodeJS.ErrnoException).code === "EEXIST"
+      ) {
+        fs.unlinkSync(target);
+        fs.renameSync(tmp, target);
+      } else {
+        throw renameErr;
+      }
+    }
   } catch (err) {
     try {
       fs.unlinkSync(tmp);
@@ -103,7 +117,20 @@ export async function writeFileAtomic(
     } else {
       await fs.promises.writeFile(tmp, data, { mode, signal: opts.signal });
     }
-    await fs.promises.rename(tmp, target);
+    try {
+      await fs.promises.rename(tmp, target);
+    } catch (renameErr) {
+      // Windows: rename throws EEXIST when target exists (unlike POSIX atomic replace).
+      if (
+        process.platform === "win32" &&
+        (renameErr as NodeJS.ErrnoException).code === "EEXIST"
+      ) {
+        await fs.promises.unlink(target);
+        await fs.promises.rename(tmp, target);
+      } else {
+        throw renameErr;
+      }
+    }
   } catch (err) {
     try {
       await fs.promises.unlink(tmp);
