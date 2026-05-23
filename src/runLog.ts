@@ -361,11 +361,12 @@ export class RecipeRunLog {
 
   /**
    * Begin a run. Allocates a monotonic seq, adds an in-memory entry with
-   * `status: "running"`, and returns the seq so the caller can correlate
-   * step events. The entry is NOT persisted to disk — running runs are
-   * ephemeral and don't survive a bridge restart (recipes-in-flight don't
-   * survive restart anyway). Use `completeRun(seq, …)` when the run finishes
-   * to upgrade the entry to a terminal status and persist it.
+   * `status: "running"`, persists it to disk immediately, and returns the seq
+   * so the caller can correlate step events. Persisting on start (rather than
+   * only on completion) means a bridge restart leaves a recoverable
+   * `status: "interrupted"` record instead of silently vanishing the run.
+   * Use `completeRun(seq, …)` when the run finishes to append the terminal
+   * record; `loadExisting()` sweeps any leftover `"running"` rows on startup.
    */
   startRun(opts: {
     taskId: string;
@@ -397,6 +398,7 @@ export class RecipeRunLog {
     };
     this.runs.push(run);
     if (this.runs.length > this.memoryCap) this.runs.shift();
+    this.append(run);
     return seq;
   }
 
@@ -598,6 +600,23 @@ export class RecipeRunLog {
     }
     if (this.runs.length > this.memoryCap) {
       this.runs.splice(0, this.runs.length - this.memoryCap);
+    }
+    // Sweep: any run that is still `status:"running"` after loading was
+    // interrupted by a bridge restart. Flip in memory and append the
+    // corrected terminal record so future reads see "interrupted" instead
+    // of a permanently-stuck running entry.
+    const now = this.now();
+    for (let i = 0; i < this.runs.length; i++) {
+      const run = this.runs[i];
+      if (!run || run.status !== "running") continue;
+      const interrupted: RecipeRun = {
+        ...run,
+        status: "interrupted",
+        doneAt: now,
+        durationMs: now - run.createdAt,
+      };
+      this.runs[i] = interrupted;
+      this.append(interrupted);
     }
   }
 }

@@ -111,5 +111,6 @@ export async function bridgeFetch(
   const url = resolveBridgeUrl(lock, pathname);
   const headers = new Headers(init?.headers);
   headers.set("Authorization", `Bearer ${lock.authToken}`);
-  return fetch(url, { ...init, headers, cache: "no-store" });
+  const signal = init?.signal ?? AbortSignal.timeout(8_000);
+  return fetch(url, { ...init, headers, cache: "no-store", signal });
 }

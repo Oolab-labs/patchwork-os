@@ -800,12 +800,14 @@ export class Server extends EventEmitter<ServerEvents> {
         !isStaticToken && this.oauthServer
           ? this.oauthServer.resolveBearerToken(bearer)
           : null;
-      // Phone-path: approve/reject with x-approval-token bypass bearer check.
+      // Phone-path: approve/reject with x-approval-token header or ?token= query param bypass bearer check.
       // The token itself is validated inside routeApprovalRequest via queue.validateToken.
       const isPhoneApprovalPath =
         req.method === "POST" &&
         /^\/(approve|reject)\/[A-Za-z0-9-]+$/.test(parsedUrl.pathname) &&
-        !!req.headers["x-approval-token"];
+        !!(
+          req.headers["x-approval-token"] || parsedUrl.searchParams.get("token")
+        );
       // GitHub-style webhook bypass: when --webhook-secret is configured,
       // POST /hooks/* requests carrying X-Hub-Signature-256 bypass the
       // bearer-token gate. Signature itself is verified inside the
@@ -2598,9 +2600,10 @@ export class Server extends EventEmitter<ServerEvents> {
               path: parsedUrl.pathname,
               body: parsedBody,
               query: parsedUrl.searchParams,
-              approvalToken: req.headers["x-approval-token"] as
-                | string
-                | undefined,
+              approvalToken:
+                (req.headers["x-approval-token"] as string | undefined) ??
+                parsedUrl.searchParams.get("token") ??
+                undefined,
             },
             {
               queue: getApprovalQueue(),

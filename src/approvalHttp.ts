@@ -531,10 +531,10 @@ async function dispatchNtfyApproval(
   }
 
   const callbackBase = payload.bridgeCallbackBase.replace(/\/+$/, "");
-  const headerSet = {
-    "x-approval-token": payload.approvalToken,
-    "Content-Type": "application/json",
-  };
+  // Token is embedded in the URL query param — not in ntfy action headers — so the
+  // raw approvalToken is never stored as a named credential on the ntfy server.
+  const approveUrl = `${callbackBase}/approve/${payload.callId}?token=${encodeURIComponent(payload.approvalToken)}`;
+  const rejectUrl = `${callbackBase}/reject/${payload.callId}?token=${encodeURIComponent(payload.approvalToken)}`;
   const body = JSON.stringify({
     topic: payload.topic,
     title: `Approve ${payload.toolName}? (${payload.tier})`,
@@ -546,16 +546,16 @@ async function dispatchNtfyApproval(
         action: "http",
         label: "Approve",
         method: "POST",
-        url: `${callbackBase}/approve/${payload.callId}`,
-        headers: headerSet,
+        url: approveUrl,
+        headers: { "Content-Type": "application/json" },
         clear: true,
       },
       {
         action: "http",
         label: "Reject",
         method: "POST",
-        url: `${callbackBase}/reject/${payload.callId}`,
-        headers: headerSet,
+        url: rejectUrl,
+        headers: { "Content-Type": "application/json" },
         clear: true,
       },
     ],
@@ -564,7 +564,7 @@ async function dispatchNtfyApproval(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5_000);
   try {
-    const res = await fetch(ntfyServer.replace(/\/+$/, "") + "/", {
+    const res = await fetch(`${ntfyServer.replace(/\/+$/, "")}/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
@@ -622,7 +622,7 @@ async function dispatchNtfyConfirmation(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5_000);
   try {
-    await fetch(ntfyServer.replace(/\/+$/, "") + "/", {
+    await fetch(`${ntfyServer.replace(/\/+$/, "")}/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,

@@ -116,6 +116,6 @@ export const config = {
     // matcher below doesn't reliably catch `/` alone in Next.js, which
     // means the dashboard's overview page would otherwise be unprotected.
     "/",
-    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace|api/login|api/relay/push|sw\\.js|icons/|api/push/vapid-key).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace|api/login|api/relay/push|api/relay/halt|sw\\.js|icons/|api/push/vapid-key).*)",
   ],
 };

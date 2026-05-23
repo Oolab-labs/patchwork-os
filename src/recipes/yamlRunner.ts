@@ -1498,15 +1498,15 @@ export async function runYamlRecipe(
     }
   }
 
-  // Notify via Slack if any step failed
-  if (runError && !stepDeps.testMode) {
+  // Notify via Slack if any step failed and on_error.notify is not explicitly disabled
+  if (runError && !stepDeps.testMode && recipe.on_error?.notify !== false) {
     try {
       const { isConnected, postMessage } = await import(
         "../connectors/slack.js"
       );
       if (isConnected()) {
-        // Read notification channel from ~/.patchwork/config.json, fallback to first available
-        let notifyChannel = "all-massappealdesigns";
+        // Read notification channel from ~/.patchwork/config.json
+        let notifyChannel = "";
         try {
           const cfgPath = path.join(os.homedir(), ".patchwork", "config.json");
           const cfg = JSON.parse(readFileSync(cfgPath, "utf-8")) as Record<
@@ -1520,16 +1520,18 @@ export async function runYamlRecipe(
             notifyChannel = notifications.slackChannel;
           }
         } catch {
-          /* use default */
+          /* config unreadable — skip notification */
         }
-        const failedSteps = stepResults
-          .filter((s) => s.status === "error")
-          .map((s) => `• ${s.tool ?? s.id}: ${s.error ?? "unknown error"}`)
-          .join("\n");
-        await postMessage(
-          notifyChannel,
-          `⚠️ *Recipe failed: ${recipe.name}*\n\n${failedSteps}\n\n_${new Date().toISOString()}_`,
-        );
+        if (notifyChannel) {
+          const failedSteps = stepResults
+            .filter((s) => s.status === "error")
+            .map((s) => `• ${s.tool ?? s.id}: ${s.error ?? "unknown error"}`)
+            .join("\n");
+          await postMessage(
+            notifyChannel,
+            `⚠️ *Recipe failed: ${recipe.name}*\n\n${failedSteps}\n\n_${new Date().toISOString()}_`,
+          );
+        }
       }
     } catch {
       // Non-fatal — notification failure should never mask the original error

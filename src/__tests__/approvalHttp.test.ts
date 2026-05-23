@@ -1144,16 +1144,20 @@ describe("push notification dispatch", () => {
       expect(reject).toBeDefined();
       expect(approve!.action).toBe("http");
       expect(approve!.method).toBe("POST");
-      expect(approve!.url).toBe(
-        `https://bridge.example.com/approve/${item.callId}`,
+      // Token is embedded as ?token= query param in the URL rather than in action headers
+      // so the raw token is not stored as a named credential on the ntfy server.
+      expect(approve!.url).toMatch(
+        new RegExp(
+          `^https://bridge\\.example\\.com/approve/${item.callId}\\?token=.+$`,
+        ),
       );
-      expect(reject!.url).toBe(
-        `https://bridge.example.com/reject/${item.callId}`,
+      expect(reject!.url).toMatch(
+        new RegExp(
+          `^https://bridge\\.example\\.com/reject/${item.callId}\\?token=.+$`,
+        ),
       );
-      // Single-use approval token must be in the header set, not the URL.
-      expect(typeof approve!.headers["x-approval-token"]).toBe("string");
-      expect(approve!.headers["x-approval-token"].length).toBeGreaterThan(16);
-      expect(approve!.url).not.toContain(approve!.headers["x-approval-token"]);
+      // x-approval-token must NOT appear in ntfy action headers.
+      expect(approve!.headers["x-approval-token"]).toBeUndefined();
     } finally {
       globalThis.fetch = originalFetch;
     }
