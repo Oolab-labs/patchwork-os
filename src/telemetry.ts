@@ -26,33 +26,49 @@ export function initTelemetry(): void {
     return; // no-op mode
   }
 
-  // Dynamic import to avoid loading SDK when not needed
+  // Dynamic import to avoid loading SDK when not needed.
+  // Uses sdk-trace-node + resources instead of sdk-node — the latter is a
+  // kitchen-sink that transitively pulls in grpc/proto/metrics/logs exporter
+  // variants we never use (~170 MB extra on disk).
   _initPromise = Promise.all([
-    import("@opentelemetry/sdk-node"),
+    import("@opentelemetry/sdk-trace-node"),
+    import("@opentelemetry/resources"),
     import("@opentelemetry/exporter-trace-otlp-http"),
   ])
-    .then(([{ NodeSDK }, { OTLPTraceExporter }]) => {
-      const sdk = new NodeSDK({
-        traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
-        serviceName: process.env.OTEL_SERVICE_NAME ?? "claude-ide-bridge",
-      });
-      sdk.start();
-      // Flush spans on process exit. We hook `beforeExit` / `exit` rather than
-      // SIGTERM/SIGINT to avoid racing with the bridge.ts signal handlers that
-      // also call process.exit(). Using `exit` (synchronous) is not ideal for async
-      // flush, but `beforeExit` fires before the bridge's signal handler calls
-      // process.exit(0), giving the SDK a chance to flush in-flight spans.
-      // If OTEL_EXPORTER_OTLP_ENDPOINT is set, the bridge's own SIGTERM handler
-      // should await sdk.shutdown() via the exported `shutdownTelemetry` function.
-      let _sdk: typeof sdk | null = sdk;
-      (globalThis as Record<string, unknown>).__otelSdk = sdk;
-      process.once("beforeExit", () => {
-        if (_sdk) {
-          _sdk.shutdown().catch(() => {});
-          _sdk = null;
-        }
-      });
-    })
+    .then(
+      ([
+        { NodeTracerProvider, SimpleSpanProcessor },
+        { resourceFromAttributes },
+        { OTLPTraceExporter },
+      ]) => {
+        const serviceName =
+          process.env.OTEL_SERVICE_NAME ?? "claude-ide-bridge";
+        const provider = new NodeTracerProvider({
+          resource: resourceFromAttributes({ "service.name": serviceName }),
+          spanProcessors: [
+            new SimpleSpanProcessor(
+              new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
+            ),
+          ],
+        });
+        provider.register();
+        // Flush spans on process exit. We hook `beforeExit` / `exit` rather than
+        // SIGTERM/SIGINT to avoid racing with the bridge.ts signal handlers that
+        // also call process.exit(). Using `exit` (synchronous) is not ideal for async
+        // flush, but `beforeExit` fires before the bridge's signal handler calls
+        // process.exit(0), giving the SDK a chance to flush in-flight spans.
+        // If OTEL_EXPORTER_OTLP_ENDPOINT is set, the bridge's own SIGTERM handler
+        // should await sdk.shutdown() via the exported `shutdownTelemetry` function.
+        let _provider: typeof provider | null = provider;
+        (globalThis as Record<string, unknown>).__otelSdk = provider;
+        process.once("beforeExit", () => {
+          if (_provider) {
+            _provider.shutdown().catch(() => {});
+            _provider = null;
+          }
+        });
+      },
+    )
     .catch(() => {
       // OTEL init failure is non-fatal
     });
