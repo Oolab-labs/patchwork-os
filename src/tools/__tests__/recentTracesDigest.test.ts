@@ -332,7 +332,9 @@ describe("buildRecentTracesDigest — decision formatting", () => {
       expect(haltLine).toBeDefined();
       expect(haltLine).toContain("HALTS (last 12h): 2");
       expect(haltLine).toContain("tool_threw·1");
-      expect(haltLine).toContain("tool_error·1");
+      // "401" in the wrapped envelope now categorises as auth_failure
+      // (PR #789 — sub-category split out of tool_error/tool_threw).
+      expect(haltLine).toContain("auth_failure·1");
     });
 
     it("emits halt summary even when there are no decision traces (halts alone are signal)", async () => {
