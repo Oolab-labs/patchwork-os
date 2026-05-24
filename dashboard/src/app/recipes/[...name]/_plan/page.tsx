@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 
 interface PlanStep {
@@ -116,15 +116,7 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
-export default function RecipePlanPage({
-  params,
-}: {
-  // Next 15: dynamic route params are Promise-typed; client components
-  // unwrap with React.use().
-  params: Promise<{ name: string[] }>;
-}) {
-  const { name: rawNameParts } = use(params);
-  const name = decodeURIComponent(rawNameParts.join("/"));
+export default function RecipePlanPage({ name }: { name: string }) {
   const [plan, setPlan] = useState<DryRunPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

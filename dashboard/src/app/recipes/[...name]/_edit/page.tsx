@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 // BackLink and RelationStrip are rendered by the shared recipes/[name]/layout.tsx
 import { useToast } from "@/components/Toast";
@@ -34,15 +34,7 @@ const YamlEditor = dynamic(() => import("./_components/YamlEditor"), {
 });
 
 
-export default function RecipeEditPage({
-  params,
-}: {
-  // Next 15: dynamic route params are Promise-typed; client components
-  // unwrap with React.use().
-  params: Promise<{ name: string[] }>;
-}) {
-  const { name: rawNameParts } = use(params);
-  const name = decodeURIComponent(rawNameParts.join("/"));
+export default function RecipeEditPage({ name }: { name: string }) {
   const [content, setContent] = useState<string>("");
   const [savedContent, setSavedContent] = useState<string>("");
   const [loading, setLoading] = useState(true);

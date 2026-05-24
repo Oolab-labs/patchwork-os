@@ -17,6 +17,8 @@
 
 import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import RecipeEditPage from "./_edit/page";
+import RecipePlanPage from "./_plan/page";
 import { useRouter } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { canonicalRecipeKey, inboxItemKey } from "@/lib/entityKey";
@@ -272,13 +274,7 @@ function RunModal({
   );
 }
 
-export default function RecipeHubOverviewPage({
-  params,
-}: {
-  params: Promise<{ name: string[] }>;
-}) {
-  const { name: rawNameParts } = use(params);
-  const name = canonicalRecipeKey(decodeURIComponent(rawNameParts.join("/")));
+function RecipeHubOverviewPage({ name }: { name: string }) {
   const toast = useToast();
   const router = useRouter();
 
@@ -889,4 +885,25 @@ export default function RecipeHubOverviewPage({
       </aside>
     </div>
   );
+}
+
+export default function RecipePage({
+  params,
+}: {
+  params: Promise<{ name: string[] }>;
+}) {
+  const { name: rawNameParts } = use(params);
+  const last = rawNameParts[rawNameParts.length - 1];
+
+  if (last === "edit") {
+    const recipeName = decodeURIComponent(rawNameParts.slice(0, -1).join("/"));
+    return <RecipeEditPage name={recipeName} />;
+  }
+  if (last === "plan") {
+    const recipeName = decodeURIComponent(rawNameParts.slice(0, -1).join("/"));
+    return <RecipePlanPage name={recipeName} />;
+  }
+
+  const recipeName = canonicalRecipeKey(decodeURIComponent(rawNameParts.join("/")));
+  return <RecipeHubOverviewPage name={recipeName} />;
 }
