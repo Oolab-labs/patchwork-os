@@ -55,15 +55,18 @@ function verifyBearer(req: Request): boolean {
   const header = req.headers.get("authorization") ?? "";
   if (!header.startsWith("Bearer ")) return false;
   const presented = header.slice(7);
-  if (presented.length !== expected.length) return false;
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(presented, "utf8"),
-      Buffer.from(expected, "utf8"),
-    );
-  } catch {
-    return false;
-  }
+  // Pad BOTH to a fixed-size buffer so timingSafeEqual loop cost is
+  // identical regardless of token length — length-equality check runs AFTER
+  // (not before) to avoid leaking the expected token length via timing.
+  // Mirrors the PAD=256 pattern in /api/login/route.ts (PR #600).
+  const PAD = 256;
+  const a = Buffer.from(presented, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  const pa = Buffer.alloc(PAD);
+  const pb = Buffer.alloc(PAD);
+  if (a.length <= PAD) a.copy(pa);
+  if (b.length <= PAD) b.copy(pb);
+  return crypto.timingSafeEqual(pa, pb) && a.length === b.length;
 }
 
 export async function POST(req: Request) {
