@@ -924,6 +924,8 @@ function ApprovalsContent() {
       if (failedIds.length > 0) {
         setBatchErr(`${decision} failed for: ${failedIds.join(", ")}`);
       }
+    } catch (e) {
+      setBatchErr(e instanceof Error ? e.message : `${decision} request failed`);
     } finally {
       setBatchApproving(false);
       setBatchRejecting(false);

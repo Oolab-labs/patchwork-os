@@ -1665,7 +1665,7 @@ function CopyableBlock({
       .then(() => {
         setCopied(true);
         clearTimeout(copyTimerRef.current);
-        copyTimerRef.current = window.setTimeout(() => setCopied(false), 1800);
+        copyTimerRef.current = setTimeout(() => setCopied(false), 1800);
       })
       .catch((err: unknown) => {
         // Permission denied / insecure context — clipboard is gated on https.
