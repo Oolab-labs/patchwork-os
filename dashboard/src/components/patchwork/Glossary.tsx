@@ -144,10 +144,8 @@ export function Glossary({ term, children, style }: GlossaryProps) {
             style={{
               display: "block",
               fontSize: "var(--fs-xs)",
-              fontWeight: 700,
+              fontWeight: 600,
               color: "var(--accent)",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
               marginBottom: 4,
             }}
           >

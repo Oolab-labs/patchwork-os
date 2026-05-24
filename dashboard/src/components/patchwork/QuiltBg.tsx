@@ -154,12 +154,6 @@ export function QuiltBg({
           />
         ))}
         <rect width={cols * size} height={rows * size} fill="url(#stitchPat)" />
-        <style>{`
-          @keyframes quilt-in {
-            0%   { opacity: 0; transform: scale(0.4); transform-box: fill-box; transform-origin: center; }
-            100% { opacity: 1; transform: scale(1); transform-box: fill-box; transform-origin: center; }
-          }
-        `}</style>
       </svg>
     </div>
   );

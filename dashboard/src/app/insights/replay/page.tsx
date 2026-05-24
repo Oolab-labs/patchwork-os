@@ -83,7 +83,7 @@ export default function ReplayPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <label htmlFor="since-days" style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
+          <label htmlFor="since-days" style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
             Lookback
           </label>
           <select
@@ -94,7 +94,7 @@ export default function ReplayPage() {
               background: "var(--bg-2)",
               border: "1px solid var(--border-default)",
               borderRadius: "var(--r-2)",
-              color: "var(--fg-0)",
+              color: "var(--ink-0)",
               fontSize: "var(--fs-s)",
               padding: "4px 8px",
               outline: "none",
@@ -165,7 +165,7 @@ export default function ReplayPage() {
                   alignItems: "center",
                   gap: 6,
                   fontSize: "var(--fs-s)",
-                  color: "var(--fg-2)",
+                  color: "var(--ink-2)",
                   cursor: "pointer",
                 }}
               >
@@ -179,7 +179,7 @@ export default function ReplayPage() {
             </div>
 
             {visible.length === 0 && !showUnchanged && (
-              <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: "12px 0" }}>
+              <p style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)", margin: "12px 0" }}>
                 No changed decisions in this window. Toggle &quot;Show unchanged&quot; to
                 see all rows.
               </p>
@@ -189,11 +189,11 @@ export default function ReplayPage() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-m)" }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border-default)" }}>
-                    <th style={{ textAlign: "left", padding: "6px 0", fontWeight: 500, color: "var(--fg-2)", fontSize: "var(--fs-xs)" }}>Tool</th>
-                    <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 500, color: "var(--fg-2)", fontSize: "var(--fs-xs)" }}>Was</th>
-                    <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 500, color: "var(--fg-2)", fontSize: "var(--fs-xs)" }}>Would be</th>
-                    <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 500, color: "var(--fg-2)", fontSize: "var(--fs-xs)" }}>Change</th>
-                    <th style={{ textAlign: "right", padding: "6px 0", fontWeight: 500, color: "var(--fg-2)", fontSize: "var(--fs-xs)" }}>When</th>
+                    <th style={{ textAlign: "left", padding: "6px 0", fontWeight: 500, color: "var(--ink-2)", fontSize: "var(--fs-xs)" }}>Tool</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 500, color: "var(--ink-2)", fontSize: "var(--fs-xs)" }}>Was</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 500, color: "var(--ink-2)", fontSize: "var(--fs-xs)" }}>Would be</th>
+                    <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 500, color: "var(--ink-2)", fontSize: "var(--fs-xs)" }}>Change</th>
+                    <th style={{ textAlign: "right", padding: "6px 0", fontWeight: 500, color: "var(--ink-2)", fontSize: "var(--fs-xs)" }}>When</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -212,7 +212,7 @@ export default function ReplayPage() {
                             <div
                               style={{
                                 fontSize: "var(--fs-2xs)",
-                                color: "var(--fg-3)",
+                                color: "var(--ink-3)",
                                 marginTop: 2,
                                 maxWidth: 260,
                                 overflow: "hidden",
@@ -260,14 +260,14 @@ export default function ReplayPage() {
                             {CHANGE_LABEL[row.changeKind]}
                           </span>
                         ) : (
-                          <span style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>—</span>
+                          <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>—</span>
                         )}
                       </td>
                       <td
                         style={{
                           padding: "9px 0",
                           textAlign: "right",
-                          color: "var(--fg-3)",
+                          color: "var(--ink-3)",
                           verticalAlign: "middle",
                           whiteSpace: "nowrap",
                           fontSize: "var(--fs-xs)",
@@ -283,7 +283,7 @@ export default function ReplayPage() {
           </div>
 
           {data.workspace && (
-            <p style={{ fontSize: "var(--fs-xs)", color: "var(--fg-2)", marginTop: "var(--s-5)" }}>
+            <p style={{ fontSize: "var(--fs-xs)", color: "var(--ink-2)", marginTop: "var(--s-5)" }}>
               Rules loaded from workspace:{" "}
               <code style={{ fontSize: "var(--fs-2xs)" }}>{data.workspace}</code>.
               Generated at {new Date(data.generatedAt).toLocaleTimeString()}.

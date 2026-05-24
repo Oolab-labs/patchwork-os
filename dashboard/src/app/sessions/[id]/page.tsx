@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { BackLink, RelationStrip } from "@/components/patchwork";
+import { SkeletonList } from "@/components/Skeleton";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { ACTIVITY_NOISE_EVENTS } from "@/lib/activityNoise";
@@ -74,7 +75,7 @@ const detailMarkdownComponents = {
     </a>
   ),
   strong: ({ children }: { children?: React.ReactNode }) => (
-    <strong style={{ color: "var(--fg-0)" }}>{children}</strong>
+    <strong style={{ color: "var(--ink-0)" }}>{children}</strong>
   ),
 };
 
@@ -158,6 +159,8 @@ const validateDetail: ShapeCheck<DetailResponse> = shape(
 
 const NOISE_EVENTS = ACTIVITY_NOISE_EVENTS;
 
+// CSS for this page has been moved to globals.css (sd/* namespace).
+
 export default function SessionDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -200,10 +203,8 @@ export default function SessionDetailPage() {
       <div className="page-head">
         <div>
           <BackLink href="/sessions" label="Sessions" />
-          <h1>
-            <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-3xl)" }}>
-              {id.slice(0, 8)}
-            </code>
+          <h1 className="editorial-h1">
+            <code>{id.slice(0, 8)}</code>
           </h1>
           <div
             className="page-head-sub"
@@ -269,9 +270,7 @@ export default function SessionDetailPage() {
         </div>
       )}
       {loading && !data && !error && (
-        <div className="empty-state" role="status" aria-live="polite">
-          <p>Loading session…</p>
-        </div>
+        <SkeletonList rows={6} columns={4} />
       )}
       {!loading && !data && status === 404 && (
         <div className="empty-state">
@@ -299,9 +298,7 @@ export default function SessionDetailPage() {
               style={{
                 fontSize: "var(--fs-2xs)",
                 color: "var(--ink-2)",
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
+                fontWeight: 500,
                 marginBottom: 4,
               }}
             >
@@ -319,9 +316,7 @@ export default function SessionDetailPage() {
               style={{
                 fontSize: "var(--fs-2xs)",
                 color: "var(--ink-2)",
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
+                fontWeight: 500,
                 marginBottom: 4,
               }}
             >
@@ -343,9 +338,7 @@ export default function SessionDetailPage() {
               style={{
                 fontSize: "var(--fs-2xs)",
                 color: "var(--ink-2)",
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
+                fontWeight: 500,
                 marginBottom: 4,
               }}
             >
@@ -370,9 +363,7 @@ export default function SessionDetailPage() {
               style={{
                 fontSize: "var(--fs-2xs)",
                 color: "var(--ink-2)",
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
+                fontWeight: 500,
                 marginBottom: 4,
               }}
             >
@@ -426,7 +417,7 @@ export default function SessionDetailPage() {
                 <span
                   style={{
                     flex: 1,
-                    color: "var(--fg-2)",
+                    color: "var(--ink-2)",
                     fontSize: "var(--fs-m)",
                     whiteSpace: "nowrap",
                     overflow: "hidden",
@@ -435,7 +426,7 @@ export default function SessionDetailPage() {
                 >
                   {a.summary ?? "—"}
                 </span>
-                <span style={{ color: "var(--fg-3)", fontSize: "var(--fs-s)" }}>
+                <span style={{ color: "var(--ink-3)", fontSize: "var(--fs-s)" }}>
                   {relTime(a.requestedAt)}
                 </span>
               </Link>
@@ -483,7 +474,7 @@ export default function SessionDetailPage() {
                     style={{
                       flex: 1,
                       fontSize: "var(--fs-m)",
-                      color: "var(--fg-1)",
+                      color: "var(--ink-1)",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -496,17 +487,17 @@ export default function SessionDetailPage() {
                       style={{
                         fontSize: "var(--fs-xs)",
                         fontFamily: "var(--font-mono)",
-                        color: "var(--fg-3)",
+                        color: "var(--ink-3)",
                         flexShrink: 0,
                       }}
                     >
-                      {tags.join(",")}
+                      {tags.join(", ")}
                     </span>
                   )}
                   <span
                     style={{
                       fontSize: "var(--fs-s)",
-                      color: "var(--fg-3)",
+                      color: "var(--ink-3)",
                       flexShrink: 0,
                     }}
                   >
@@ -529,19 +520,11 @@ export default function SessionDetailPage() {
                 alignItems: "center",
                 gap: 5,
                 fontSize: "var(--fs-xs)",
-                color: "var(--green)",
+                color: "var(--ok)",
                 fontWeight: 600,
               }}
             >
-              <span
-                aria-hidden
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background: "var(--green)",
-                }}
-              />
+              <span className="sd-live-dot" aria-hidden />
               live
             </span>
             <span className="pill muted">{stream.length}</span>
@@ -568,11 +551,16 @@ export default function SessionDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {stream.map((row) => {
+                {stream.map((row, rowIdx) => {
                   if (row.kind === "tool") {
                     const t = row.entry;
+                    const isErr = t.status === "error";
                     return (
-                      <tr key={`t-${t.id}`}>
+                      <tr
+                        key={`t-${t.id}`}
+                        className={`sd-stream-row sd-stream-stagger${isErr ? " sd-tool-error" : ""}`}
+                        style={{ animationDelay: `${Math.min(rowIdx * 20, 500)}ms` }}
+                      >
                         <td className="muted" title={t.timestamp}>
                           {relTime(Date.parse(t.timestamp))}
                         </td>
@@ -583,7 +571,7 @@ export default function SessionDetailPage() {
                             {t.tool}
                           </span>
                         </td>
-                        <td style={{ fontSize: "var(--fs-m)" }}>
+                        <td style={{ fontSize: "var(--fs-m)", color: isErr ? "var(--err)" : undefined }}>
                           {t.status === "error" && t.errorMessage ? (
                             <MessageMarkdown
                               content={t.errorMessage}
@@ -606,7 +594,11 @@ export default function SessionDetailPage() {
                       ? meta.summary
                       : "—";
                   return (
-                    <tr key={`l-${e.id}`}>
+                    <tr
+                      key={`l-${e.id}`}
+                      className={`sd-stream-row sd-stream-stagger`}
+                      style={{ animationDelay: `${Math.min(rowIdx * 20, 500)}ms` }}
+                    >
                       <td className="muted" title={e.timestamp}>
                         {relTime(Date.parse(e.timestamp))}
                       </td>

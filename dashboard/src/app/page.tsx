@@ -31,6 +31,11 @@ import { LiveWire } from "@/components/LiveWire";
 import { FeaturedRecipeAside } from "@/components/FeaturedRecipeAside";
 
 // ---------------------------------------------------------------------------
+// Keyframe injection — scoped to this page, no globals.css edits needed.
+// ---------------------------------------------------------------------------
+
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -122,7 +127,7 @@ function ToolCallsWidget({
   bridgeOk: boolean;
 }): React.JSX.Element {
   const total = series.reduce((a, b) => a + b, 0);
-  const hasActivity = peak > 0 || total > 0 || toolCallTotal > 0;
+  const hasActivity = peak > 0 || total > 0;
   return (
     <div className="card tool-calls-card">
       <div className="tcw-header">
@@ -130,15 +135,25 @@ function ToolCallsWidget({
           <TileIconShell />
         </span>
         <span className="card-h2">Tool calls — last 24 hours</span>
+        {hasActivity && (
+          <span
+            className="pw-live-dot"
+            aria-label="Live"
+            title="Live data"
+            style={{ marginRight: 4 }}
+          />
+        )}
         <LivePill connection={hasActivity ? "live" : "offline"} />
       </div>
       <div className="tcw-meta">
-        peak {peak}/hour · {uniqueTools} unique tools · {activeRecipesCount}{" "}
-        active recipes
+        {hasActivity
+          ? <>peak {peak}/hour · {uniqueTools} unique tool{uniqueTools !== 1 ? "s" : ""} · {activeRecipesCount} recipe{activeRecipesCount !== 1 ? "s" : ""}</>
+          : <>{activeRecipesCount} recipe{activeRecipesCount !== 1 ? "s" : ""} · no calls in 24h</>
+        }
       </div>
       {hasActivity ? (
         <AreaChart
-          series={[{ values: series, color: "var(--orange)" }]}
+          series={[{ values: series, color: "var(--info)" }]}
           height={120}
           minimal
         />
@@ -173,6 +188,12 @@ function activityKind(e: ActivityEvent): string {
   if (e.kind === "tool" && e.tool) {
     const ns = e.tool.split(".")[0];
     return ns ?? "tool";
+  }
+  if (e.kind === "lifecycle" && e.event) {
+    if (/approval/i.test(e.event)) return "approval";
+    if (/session/i.test(e.event)) return "session";
+    if (/step/i.test(e.event)) return "step";
+    if (/recipe/i.test(e.event)) return "recipe";
   }
   return e.kind ?? "event";
 }
@@ -406,12 +427,27 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
       </div>
 
       {events.length === 0 ? (
-        <div className="atd-empty">
+        <div className="atd-empty" style={{ animation: "pw-fade-in 0.3s ease both" }}>
+          <div style={{ fontSize: 28, marginBottom: 6, opacity: 0.35 }} aria-hidden="true">⚡</div>
           <div className="atd-empty-title">No recent events.</div>
           <div className="atd-empty-body">
             Tool calls and lifecycle events from connected agents will
             appear here in real time.
           </div>
+          <Link
+            href="/activity"
+            style={{
+              display: "inline-block",
+              marginTop: 10,
+              fontSize: "var(--fs-xs)",
+              color: "var(--accent)",
+              textDecoration: "none",
+              fontWeight: 500,
+              transition: "opacity 0.15s ease",
+            }}
+          >
+            View full activity log →
+          </Link>
         </div>
       ) : (
         <div className="atd-stream">
@@ -423,24 +459,43 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
             const kind = activityKind(e);
             const recipe = activityRecipe(e);
             const isErr = e.status === "error";
-            const dur =
-              typeof e.durationMs === "number" ? `${e.durationMs}ms` : null;
+            const rawDurMs = e.durationMs;
+            const dur = typeof rawDurMs === "number"
+              ? rawDurMs >= 1000
+                ? `${(rawDurMs / 1000).toFixed(1)}s`
+                : `${rawDurMs}ms`
+              : null;
             const rawCount = (e as Record<string, unknown>)._count;
             const repeatCount = typeof rawCount === "number" ? rawCount : 0;
             const eventKey = (e.id ?? `${e.kind}-${e.at ?? 0}-${e.tool ?? e.event ?? ""}`) as
               | string
               | number;
             const isFresh = freshKeys.has(eventKey);
+            const kindPillClass = e.kind === "lifecycle"
+              ? /rejected|error|halt/i.test(e.event ?? "") ? "err"
+                : /done|success|complet/i.test(e.event ?? "") ? "ok"
+                : /start|session/i.test(e.event ?? "") ? "info"
+                : "muted"
+              : "muted";
             return (
               <div
                 // biome-ignore lint/suspicious/noArrayIndexKey: stable list
                 key={e.id ?? i}
                 className={`activity-row${isFresh ? " is-fresh" : ""}${isErr ? " is-err" : ""}`}
+                style={{
+                  animation: "pw-slide-up 0.25s ease both",
+                  animationDelay: `${Math.min(i * 35, 350)}ms`,
+                }}
               >
                 <span
                   aria-hidden="true"
                   className="activity-dot"
                   data-err={isErr ? "true" : undefined}
+                  data-tone={
+                    e.kind === "lifecycle" && !isErr && kindPillClass !== "muted"
+                      ? kindPillClass
+                      : undefined
+                  }
                 />
                 <span className="activity-ts">{relTime(ts)}</span>
                 <span className="activity-content">
@@ -467,11 +522,13 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                     </span>
                   )}
                 </span>
-                <span className="pill muted xs">{kind}</span>
+                <span className={`pill ${kindPillClass} xs`}>{kind}</span>
                 {dur && <span className="activity-dur">{dur}</span>}
-                <span className={`pill ${isErr ? "err" : "ok"} xs`}>
-                  {isErr ? "err" : "ok"}
-                </span>
+                {(e.kind === "tool" || isErr) && (
+                  <span className={`pill ${isErr ? "err" : "ok"} xs`}>
+                    {isErr ? "err" : "ok"}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -567,8 +624,13 @@ function NeedsAttentionBand({
         <div className="attention-clear-ring" aria-hidden="true">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
         </div>
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span className="attention-clear-ok">All clear</span>
+          <span
+            className="pw-live-dot"
+            aria-label="All systems healthy"
+            title="No issues detected"
+          />
           <span className="attention-clear-sub">
             No approvals pending · no halts · no failures
           </span>
@@ -686,7 +748,7 @@ function RecipesAtAGlance({ runs }: { runs: LiveRun[] }) {
   const recipeMap = new Map<string, { count: number; lastAt: number; hasHalt: boolean }>();
   for (const r of runs) {
     if (!r.recipeName) continue;
-    const key = r.recipeName;
+    const key = canonicalRecipeKey(r.recipeName);
     const existing = recipeMap.get(key) ?? { count: 0, lastAt: 0, hasHalt: false };
     recipeMap.set(key, {
       count: existing.count + 1,
@@ -696,7 +758,7 @@ function RecipesAtAGlance({ runs }: { runs: LiveRun[] }) {
   }
   const sorted = Array.from(recipeMap.entries())
     .filter(([, v]) => Date.now() - v.lastAt < 7 * dayMs)
-    .sort(([, a], [, b]) => b.count - a.count)
+    .sort(([, a], [, b]) => b.lastAt - a.lastAt)
     .slice(0, 6);
 
   if (sorted.length === 0) return null;
@@ -704,30 +766,24 @@ function RecipesAtAGlance({ runs }: { runs: LiveRun[] }) {
   return (
     <div className="card card--pg mb-5">
       <div className="card-hd">
-        <h2 className="card-h2">Recipes · 7d</h2>
+        <h2 className="card-h2">Recent recipes</h2>
         <ActionPill href="/recipes" ariaLabel="View all recipes">
           view all →
         </ActionPill>
       </div>
       <div className="rag-list">
-        {sorted.map(([name, stats], i) => {
-          const recipeKey = canonicalRecipeKey(name);
+        {sorted.map(([name, stats], idx) => {
           return (
             <Link
               key={name}
-              href={`/runs?recipe=${encodeURIComponent(recipeKey)}`}
+              href={`/runs?recipe=${encodeURIComponent(name)}`}
               className="rag-row row-hover"
+              style={{ animationDelay: `${idx * 50}ms` }}
             >
-              <span
-                className={`recipe-rank${i < 3 ? ` recipe-rank--${i + 1}` : ""}`}
-                aria-label={`Rank ${i + 1}`}
-              >
-                {i + 1}
-              </span>
-              <span className="rag-name">{recipeKey}</span>
-              <span className="rag-count">
-                {stats.count} run{stats.count !== 1 ? "s" : ""}
-              </span>
+              <span className="rag-name">{name}</span>
+              <span className="rag-count rag-time">{relTime(stats.lastAt)}</span>
+              <span aria-hidden="true" className="rag-sep">·</span>
+              <span className="rag-count">{stats.count} run{stats.count !== 1 ? "s" : ""}</span>
               {stats.hasHalt && (
                 <span className="pill err xs">halted</span>
               )}
@@ -951,12 +1007,30 @@ export default function HomePage() {
     (e) => e.kind === "recipe" || e.kind === "tool",
   ).length;
   const headline = bridgeStatus.ok ? (
-    patchesStitched > 0 || pendingCount > 0 ? (
+    patchesStitched > 0 && pendingCount > 0 ? (
       <>
-        Your agents stitched <span className="num">{patchesStitched.toLocaleString()}</span> patches overnight,
-        drafted <span className="num">{pendingCount}</span>{" "}
-        <span className="accent">{pendingCount === 1 ? "thing that needs a nod" : "things that need a nod"}</span>
-        {pendingCount === 0 ? ", and woke up clean." : "."}
+        Your agents stitched{" "}
+        <span className="num">{patchesStitched.toLocaleString()}</span>{" "}
+        {patchesStitched === 1 ? "patch" : "patches"} overnight, drafted{" "}
+        <span className="num">{pendingCount}</span>{" "}
+        <span className="accent">
+          {pendingCount === 1 ? "thing that needs a nod." : "things that need a nod."}
+        </span>
+      </>
+    ) : patchesStitched > 0 ? (
+      <>
+        Your agents stitched{" "}
+        <span className="num">{patchesStitched.toLocaleString()}</span>{" "}
+        {patchesStitched === 1 ? "patch" : "patches"} overnight,{" "}
+        <span className="accent">and woke up clean.</span>
+      </>
+    ) : pendingCount > 0 ? (
+      <>
+        Your agents drafted{" "}
+        <span className="num">{pendingCount}</span>{" "}
+        <span className="accent">
+          {pendingCount === 1 ? "thing that needs a nod." : "things that need a nod."}
+        </span>
       </>
     ) : (
       <>Your agents are quiet. <span className="accent">No activity overnight, no approvals pending.</span></>
@@ -965,9 +1039,13 @@ export default function HomePage() {
     <>Bridge offline — start it to see live agent activity here.</>
   );
 
-  const summary = bridgeStatus.ok
-    ? "Bridge connected. Recipes ran on schedule. Nothing left your machine without permission."
-    : "Once the bridge is running, this dashboard will reflect live activity from your local agents.";
+  const summary = !bridgeStatus.ok
+    ? "Once the bridge is running, this dashboard will reflect live activity from your local agents."
+    : runsCount24h === 0
+      ? "Bridge connected. No recipe runs in the last 24h."
+      : haltCount24h > 0
+        ? `Bridge connected. ${runsCount24h} run${runsCount24h !== 1 ? "s" : ""} in 24h — ${haltCount24h} halted.`
+        : `Bridge connected. ${runsCount24h} run${runsCount24h !== 1 ? "s" : ""} ran clean in the last 24h.`;
 
   // Tool-calls 24h curve — bucketed from activity-event timestamps so
   // historical activity is visible immediately on page load (not only what
@@ -1089,8 +1167,28 @@ export default function HomePage() {
       {/* ------------------------------------------------------------------ */}
       {/* TELEMETRY eyebrow                                                    */}
       {/* ------------------------------------------------------------------ */}
-      <div className="pg-section-head">
-        <span className="pg-section-head-label">Telemetry</span>
+      <div className="pg-section-head" style={{ animation: "pw-fade-in 0.4s ease both" }}>
+        <span
+          className="pg-section-head-label"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              display: "inline-block",
+              width: 3,
+              height: 14,
+              borderRadius: 2,
+              background: "var(--accent)",
+              flexShrink: 0,
+            }}
+          />
+          Telemetry
+        </span>
         <div className="pg-section-head-rule" aria-hidden="true" />
         <button
           type="button"
@@ -1127,68 +1225,95 @@ export default function HomePage() {
           </>
         ) : (
           <>
-            <StatCard
-              label="Runs · 24h"
-              className="stat-card--runs"
-              icon={<span className="stat-tile-icon stat-tile-icon--runs"><TileIconLines /></span>}
-              value={<AnimatedNumber value={runsCount24h} />}
-              foot={
-                <div>
-                  <div>{runsFootLabel}</div>
-                  {runs7dSeries.some((v) => v > 0) && (
-                    <div className="mt-1">
-                      <Sparkline
-                        values={runs7dSeries}
-                        color="var(--accent)"
-                        height={22}
-                        labels={days7dLabels}
-                        unit="runs"
-                      />
+            <div className="stat-card-wrap" style={{ animationDelay: "0ms", animation: "pw-slide-up 0.3s ease both" }}>
+              <StatCard
+                label="Runs · 24h"
+                className="stat-card--runs"
+                icon={<span className="stat-tile-icon stat-tile-icon--runs"><TileIconLines /></span>}
+                value={<AnimatedNumber value={runsCount24h} />}
+                foot={
+                  <div>
+                    <div>{runsFootLabel}</div>
+                    {runs7dSeries.some((v) => v > 0) && (
+                      <div className="mt-1">
+                        <Sparkline
+                          values={runs7dSeries}
+                          color="var(--accent)"
+                          height={22}
+                          labels={days7dLabels}
+                          unit="runs"
+                        />
+                      </div>
+                    )}
+                  </div>
+                }
+                href="/runs?window=24h"
+              />
+            </div>
+            <div className="stat-card-wrap" style={{ animationDelay: "60ms", animation: "pw-slide-up 0.3s ease both" }}>
+              <StatCard
+                label="Pending approvals"
+                className="stat-card--approvals"
+                icon={<span className="stat-tile-icon stat-tile-icon--approvals"><TileIconLock /></span>}
+                value={<AnimatedNumber value={pendingCount} />}
+                foot={
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {pendingCount > 0 && (
+                      <span className="pw-live-dot pw-live-dot--warn" aria-label="Pending approvals" />
+                    )}
+                    {oldestApprovalLabel}
+                  </div>
+                }
+                href="/approvals"
+              />
+            </div>
+            <div className="stat-card-wrap" style={{ animationDelay: "120ms", animation: "pw-slide-up 0.3s ease both" }}>
+              <StatCard
+                label="Halts · 24h"
+                className="stat-card--halts"
+                icon={<span className="stat-tile-icon stat-tile-icon--halts"><TileIconSun /></span>}
+                value={<AnimatedNumber value={haltCount24h} />}
+                foot={
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {haltCount24h > 0 && (
+                        <span className="pw-live-dot pw-live-dot--err" aria-label="Halts detected" />
+                      )}
+                      {haltsFootLabel}
                     </div>
-                  )}
-                </div>
-              }
-              href="/runs?window=24h"
-            />
-            <StatCard
-              label="Pending approvals"
-              className="stat-card--approvals"
-              icon={<span className="stat-tile-icon stat-tile-icon--approvals"><TileIconLock /></span>}
-              value={<AnimatedNumber value={pendingCount} />}
-              foot={oldestApprovalLabel}
-              href="/approvals"
-            />
-            <StatCard
-              label="Halts · 24h"
-              className="stat-card--halts"
-              icon={<span className="stat-tile-icon stat-tile-icon--halts"><TileIconSun /></span>}
-              value={<AnimatedNumber value={haltCount24h} />}
-              foot={
-                <div>
-                  <div>{haltsFootLabel}</div>
-                  {halts7dSeries.some((v) => v > 0) && (
-                    <div className="mt-1">
-                      <Sparkline
-                        values={halts7dSeries}
-                        color="var(--err)"
-                        height={22}
-                        labels={days7dLabels}
-                        unit="halts"
-                      />
-                    </div>
-                  )}
-                </div>
-              }
-              href="/runs?halt=1"
-            />
-            <StatCard
-              label="Tools called today"
-              className="stat-card--tools"
-              icon={<span className="stat-tile-icon stat-tile-icon--tools"><TileIconShell /></span>}
-              value={<AnimatedNumber value={toolsToday} />}
-              foot={toolsTrendLabel}
-              href="/activity"
-            />
+                    {halts7dSeries.some((v) => v > 0) && (
+                      <div className="mt-1">
+                        <Sparkline
+                          values={halts7dSeries}
+                          color="var(--err)"
+                          height={22}
+                          labels={days7dLabels}
+                          unit="halts"
+                        />
+                      </div>
+                    )}
+                  </div>
+                }
+                href="/runs?halt=1"
+              />
+            </div>
+            <div className="stat-card-wrap" style={{ animationDelay: "180ms", animation: "pw-slide-up 0.3s ease both" }}>
+              <StatCard
+                label="Tools called today"
+                className="stat-card--tools"
+                icon={<span className="stat-tile-icon stat-tile-icon--tools"><TileIconShell /></span>}
+                value={<AnimatedNumber value={toolsToday} />}
+                foot={
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {toolsToday > 0 && (
+                      <span className="pw-live-dot" aria-label="Active today" />
+                    )}
+                    {toolsTrendLabel}
+                  </div>
+                }
+                href="/activity"
+              />
+            </div>
           </>
         )}
       </div>
@@ -1208,9 +1333,26 @@ export default function HomePage() {
       {/* ------------------------------------------------------------------ */}
       {/* Activity thread + Recipes at a glance                               */}
       {/* ------------------------------------------------------------------ */}
-      <div className="pg-section-head">
-        <span className="pg-section-head-label">Activity</span>
+      <div className="pg-section-head" style={{ animation: "pw-fade-in 0.4s ease both" }}>
+        <span
+          className="pg-section-head-label"
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              display: "inline-block",
+              width: 3,
+              height: 14,
+              borderRadius: 2,
+              background: "var(--accent)",
+              flexShrink: 0,
+            }}
+          />
+          Activity
+        </span>
         <div className="pg-section-head-rule" aria-hidden="true" />
+        <Link href="/activity" className="btn sm ghost">view all →</Link>
       </div>
       <div className="grid-2 mb-5">
         {/* Left col: unified entity timeline (runs + approvals) */}
@@ -1240,9 +1382,26 @@ export default function HomePage() {
       {/* Recipes at a glance — top 6 by run count over last 7 days           */}
       {/* Each row links to /runs?recipe=<name> (param honored by runs/page) */}
       {/* ------------------------------------------------------------------ */}
-      <div className="pg-section-head">
-        <span className="pg-section-head-label">Recipes</span>
+      <div className="pg-section-head" style={{ animation: "pw-fade-in 0.4s ease both" }}>
+        <span
+          className="pg-section-head-label"
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              display: "inline-block",
+              width: 3,
+              height: 14,
+              borderRadius: 2,
+              background: "var(--accent)",
+              flexShrink: 0,
+            }}
+          />
+          Recipes
+        </span>
         <div className="pg-section-head-rule" aria-hidden="true" />
+        <Link href="/recipes" className="btn sm ghost">view all →</Link>
       </div>
       <RecipesAtAGlance runs={runs} />
 

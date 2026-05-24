@@ -103,6 +103,7 @@ export default function TransactionsPage() {
     { intervalMs: 3000 },
   );
   const [busy, setBusy] = useState<Record<string, "rolling-back" | string>>({});
+  const [confirmingExpired, setConfirmingExpired] = useState(false);
   const transactions = data?.transactions ?? [];
   const toast = useToast();
 
@@ -137,13 +138,17 @@ export default function TransactionsPage() {
     [transactions],
   );
 
+  useEffect(() => {
+    if (expiredIds.length === 0) setConfirmingExpired(false);
+  }, [expiredIds.length]);
+
   async function discardAllExpired() {
     if (expiredIds.length === 0) return;
-    if (
-      !window.confirm(
-        `Discard ${expiredIds.length} expired transaction${expiredIds.length === 1 ? "" : "s"}?`,
-      )
-    ) return;
+    if (!confirmingExpired) {
+      setConfirmingExpired(true);
+      return;
+    }
+    setConfirmingExpired(false);
     // Serial to keep rate-limiting predictable and to make the UI state
     // changes visible row-by-row rather than as one giant flicker.
     for (const id of expiredIds) {
@@ -203,7 +208,7 @@ export default function TransactionsPage() {
           />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {expiredIds.length > 0 && (
+          {expiredIds.length > 0 && !confirmingExpired && (
             <button
               type="button"
               className="btn sm"
@@ -212,6 +217,27 @@ export default function TransactionsPage() {
             >
               Discard expired ({expiredIds.length})
             </button>
+          )}
+          {confirmingExpired && (
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
+                Discard {expiredIds.length} expired?
+              </span>
+              <button
+                type="button"
+                className="btn sm danger"
+                onClick={() => void discardAllExpired()}
+              >
+                Confirm
+              </button>
+              <button
+                type="button"
+                className="btn sm ghost"
+                onClick={() => setConfirmingExpired(false)}
+              >
+                Cancel
+              </button>
+            </span>
           )}
           <span className="pill muted">
             {transactions.length} active
@@ -240,22 +266,21 @@ export default function TransactionsPage() {
           title="No active transactions"
           description={
             <>
-              When an agent calls <code>beginTransaction</code> +{" "}
-              <code>stageEdit</code>, the staged edits appear here. Until{" "}
-              <code>commitTransaction</code> fires, nothing has touched disk.
+              Transactions are staged multi-file edits waiting for a commit. When an agent calls <code>beginTransaction</code> + <code>stageEdit</code>, the edits appear here. Nothing touches disk until <code>commitTransaction</code> fires — so it&apos;s always safe to discard.
             </>
           }
         />
       )}
 
-      {transactions.map((tx) => {
+      {transactions.map((tx, txIdx) => {
         const totalDelta = tx.edits.reduce((s, e) => s + e.lineDelta, 0);
         const state = busy[tx.id];
+        const isExpired = tx.expiresAt <= Date.now();
         return (
           <div
             key={tx.id}
-            className="card"
-            style={{ marginTop: "var(--s-4)" }}
+            className="card tx-card"
+            style={{ marginTop: "var(--s-4)", animationDelay: `${txIdx * 60}ms`, borderLeft: isExpired ? "3px solid var(--err)" : "3px solid var(--ok)" }}
           >
             <div className="card-head">
               <h2>
@@ -289,19 +314,19 @@ export default function TransactionsPage() {
                 </thead>
                 <tbody>
                   {tx.edits.map((e) => (
-                    <tr key={e.filePath}>
+                    <tr key={e.filePath} className="tx-table-row">
                       <td className="mono">{e.filePath}</td>
-                      <td className="mono muted">{formatBytes(e.sizeBefore)}</td>
-                      <td className="mono">{formatBytes(e.sizeAfter)}</td>
+                      <td className="mono muted" style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}>{formatBytes(e.sizeBefore)}</td>
+                      <td className="mono tx-amount">{formatBytes(e.sizeAfter)}</td>
                       <td
-                        className="mono"
+                        className="mono tx-amount"
                         style={{
                           color:
                             e.lineDelta > 0
                               ? "var(--ok)"
                               : e.lineDelta < 0
                                 ? "var(--err)"
-                                : "var(--fg-2)",
+                                : "var(--ink-2)",
                         }}
                       >
                         {e.lineDelta > 0 ? "+" : ""}{e.lineDelta}
@@ -328,7 +353,7 @@ export default function TransactionsPage() {
               >
                 {state === "rolling-back" ? "Discarding…" : "Discard"}
               </button>
-              <span style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
+              <span style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
                 Commit happens from the agent — call{" "}
                 <code>commitTransaction</code> with this ID. Discard is safe;
                 nothing has touched disk.

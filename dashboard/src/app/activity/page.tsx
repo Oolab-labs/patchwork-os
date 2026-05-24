@@ -22,9 +22,96 @@ import {
   SessionChip,
   ToolChip,
 } from "@/components/patchwork/entity";
-import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { RecentHaltsPanel } from "@/components/RecentHaltsPanel";
+
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Helper: format duration ms → human-readable
+// ---------------------------------------------------------------------------
+
+function formatDuration(ms: number): string {
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.round(ms)}ms`;
+}
+
+// ---------------------------------------------------------------------------
+// Skeleton loading rows
+// ---------------------------------------------------------------------------
+
+function ActivitySkeletonRows({ count = 6 }: { count?: number }) {
+  return (
+    <div style={{ padding: "0 0 8px" }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton
+          key={i}
+          className="act-skeleton-row"
+          style={{ animationDelay: `${i * 60}ms` }}
+        >
+          <div className="act-skeleton-cell" style={{ width: 80, flexShrink: 0 }} />
+          <div className="act-skeleton-cell" style={{ width: 110, flexShrink: 0 }} />
+          <div className="act-skeleton-cell" style={{ flex: 1 }} />
+          <div className="act-skeleton-cell" style={{ width: 70, flexShrink: 0 }} />
+          <div className="act-skeleton-cell" style={{ width: 90, flexShrink: 0 }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Stream status banner
+// ---------------------------------------------------------------------------
+
+function StreamStatusBanner({
+  connection,
+  message,
+}: {
+  connection: "live" | "reconnecting" | "offline";
+  message: string;
+}) {
+  const dotClass = connection === "live"
+    ? "act-status-dot act-status-dot--live"
+    : connection === "reconnecting"
+      ? "act-status-dot act-status-dot--reconnecting"
+      : "act-status-dot act-status-dot--offline";
+  const bannerStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "8px 14px",
+    borderRadius: "var(--radius)",
+    fontSize: "var(--fs-s)",
+    marginBottom: 12,
+    border: "1px solid",
+    animation: "act-fade-in 0.25s ease both",
+    ...(connection === "live"
+      ? {
+          background: "color-mix(in srgb, var(--ok) 8%, var(--card-bg) 92%)",
+          borderColor: "color-mix(in srgb, var(--ok) 30%, var(--line-2) 70%)",
+          color: "var(--ok)",
+        }
+      : connection === "reconnecting"
+        ? {
+            background: "color-mix(in srgb, var(--warn) 8%, var(--card-bg) 92%)",
+            borderColor: "color-mix(in srgb, var(--warn) 30%, var(--line-2) 70%)",
+            color: "var(--warn)",
+          }
+        : {
+            background: "color-mix(in srgb, var(--err) 8%, var(--card-bg) 92%)",
+            borderColor: "color-mix(in srgb, var(--err) 30%, var(--line-2) 70%)",
+            color: "var(--err)",
+          }),
+  };
+  return (
+    <div style={bannerStyle} role="status" aria-live="polite">
+      <span className={dotClass} aria-hidden="true" />
+      <span>{message}</span>
+    </div>
+  );
+}
 
 const TABS: readonly Tab[] = ["all", "tools", "recipe_start", "recipe_end"];
 function isTab(v: string | null): v is Tab {
@@ -113,6 +200,10 @@ export default function ActivityPage() {
   // in between (the bridge is gone, not just blipping).
   const [connection, setConnection] = useState<LivePillConnection>("reconnecting");
   const [err, setErr] = useState<string>();
+  // Track whether we ever achieved a live connection this session.
+  // Lets the liveness callback distinguish "never connected" (no error banner)
+  // from "dropped connection" (show reconnecting/offline banner).
+  const hasBeenLiveRef = useRef(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabFromUrl = searchParams?.get("tab");
@@ -205,13 +296,24 @@ export default function ActivityPage() {
         offlineTimer = null;
       }
       if (live) {
+        hasBeenLiveRef.current = true;
         setConnection("live");
         setErr(undefined);
       } else {
         setConnection("reconnecting");
-        setErr("Disconnected — reconnecting…");
+        // Only show the error banner if we previously had a live connection —
+        // avoids a misleading "Disconnected" flash during the initial connect
+        // window when the stream simply hasn't opened yet.
+        if (hasBeenLiveRef.current) {
+          setErr("Disconnected — reconnecting…");
+        }
         offlineTimer = setTimeout(() => {
           setConnection("offline");
+          setErr(
+            hasBeenLiveRef.current
+              ? "Bridge offline — events shown are from history."
+              : "Bridge unreachable — check that the bridge is running.",
+          );
         }, OFFLINE_AFTER_MS);
       }
     });
@@ -438,9 +540,7 @@ export default function ActivityPage() {
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: "var(--fs-2xs)",
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
+              fontWeight: 500,
               color: "var(--ink-3)",
               marginBottom: 10,
             }}
@@ -455,9 +555,7 @@ export default function ActivityPage() {
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: "var(--fs-2xs)",
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
+                fontWeight: 500,
                 color: "var(--ink-3)",
                 marginBottom: 10,
               }}
@@ -496,32 +594,37 @@ export default function ActivityPage() {
                 : t === "recipe_end"
                   ? stats.recipeEnds
                   : stats.allCount;
+          const isActive = tab === t;
           return (
             <button
               key={t}
               type="button"
-              aria-pressed={tab === t}
+              aria-pressed={isActive}
               onClick={() => setTab(t)}
+              className="act-tab-btn"
               style={{
-                padding: "6px 16px",
+                padding: "7px 16px",
                 fontSize: "var(--fs-s)",
-                fontWeight: 500,
+                fontWeight: isActive ? 600 : 500,
                 cursor: "pointer",
-                color: tab === t ? "var(--fg-0)" : "var(--fg-2)",
-                background: "none",
+                color: isActive ? "var(--ink-0)" : "var(--ink-2)",
+                background: isActive
+                  ? "color-mix(in srgb, var(--accent) 8%, transparent 92%)"
+                  : "none",
                 border: "none",
-                borderBottom:
-                  tab === t
-                    ? "2px solid var(--accent)"
-                    : "2px solid transparent",
+                borderBottom: isActive
+                  ? "2px solid var(--accent)"
+                  : "2px solid transparent",
+                borderRadius: isActive ? "4px 4px 0 0" : "4px 4px 0 0",
               }}
             >
               {labels[t]}{" "}
               <span
                 style={{
                   fontSize: "var(--fs-xs)",
-                  color: tab === t ? "var(--accent)" : "var(--fg-3)",
+                  color: isActive ? "var(--accent)" : "var(--ink-3)",
                   fontFamily: "var(--font-mono)",
+                  transition: "color 0.15s ease",
                 }}
               >
                 {count}
@@ -531,7 +634,42 @@ export default function ActivityPage() {
         })}
       </div>
 
-      {err && connection !== "live" && <div className="alert-err">{err}</div>}
+      {err && connection !== "live" && (
+        <StreamStatusBanner connection={connection} message={err} />
+      )}
+
+      {paused && (
+        <div
+          className="alert-warn"
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+        >
+          <span>
+            <strong>Paused</strong>
+            {pendingCount > 0 && ` — ${pendingCount} event${pendingCount === 1 ? "" : "s"} buffered`}
+          </span>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => {
+              const buf = pendingBufRef.current;
+              pendingBufRef.current = [];
+              setPendingCount(0);
+              setEvents((prev) => {
+                const seen = new Set(
+                  prev.filter((p) => p.id !== undefined).map((p) => `${p.id}|${p.kind ?? ""}`),
+                );
+                const fresh = buf.filter(
+                  (e) => e.id === undefined || !seen.has(`${e.id}|${e.kind ?? ""}`),
+                );
+                return [...fresh, ...prev].slice(0, MAX_EVENTS);
+              });
+              setPaused(false);
+            }}
+          >
+            Resume
+          </button>
+        </div>
+      )}
 
       {events.length === 0 ? (
         seeded ? (
@@ -554,7 +692,25 @@ export default function ActivityPage() {
             }
           />
         ) : (
-          <SkeletonList rows={5} columns={4} />
+          <div
+            className="table-wrap"
+            style={{ animation: "act-fade-in 0.2s ease both" }}
+            aria-busy="true"
+            aria-label="Loading activity events"
+          >
+            <table className="table" style={{ tableLayout: "fixed" }}>
+              <thead>
+                <tr>
+                  <th style={{ width: 120 }}>Time</th>
+                  <th style={{ width: 140 }}>Kind</th>
+                  <th>Tool / Event</th>
+                  <th style={{ width: 100 }}>Duration</th>
+                  <th style={{ width: 150 }}>Status</th>
+                </tr>
+              </thead>
+            </table>
+            <ActivitySkeletonRows count={6} />
+          </div>
         )
       ) : filtered.length === 0 ? (
         <EmptyState
@@ -573,16 +729,43 @@ export default function ActivityPage() {
           }
         />
       ) : (
-        <div className="table-wrap">
+        <div className="table-wrap" style={{ animation: "act-fade-in 0.25s ease both" }}>
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: 140 }}>Time</th>
-                <th style={{ width: 110 }}>Kind</th>
-                <th style={{ width: 160 }}>Recipe</th>
-                <th>Tool / Event</th>
-                <th style={{ width: 110 }}>Duration</th>
-                <th style={{ width: 130 }}>Status / Decision</th>
+                <th
+                  className="act-th"
+                  style={{ width: 120, color: "var(--ink-2)", fontSize: "var(--fs-xs)", fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}
+                  title="Timestamp (not sortable yet)"
+                >
+                  Time
+                </th>
+                <th
+                  className="act-th"
+                  style={{ width: 140, color: "var(--ink-2)", fontSize: "var(--fs-xs)", fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}
+                  title="Event kind"
+                >
+                  Kind
+                </th>
+                <th
+                  className="act-th"
+                  style={{ color: "var(--ink-2)", fontSize: "var(--fs-xs)", fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}
+                >
+                  Tool / Event
+                </th>
+                <th
+                  className="act-th"
+                  style={{ width: 100, color: "var(--ink-2)", fontSize: "var(--fs-xs)", fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}
+                  title="Duration or reason"
+                >
+                  Duration
+                </th>
+                <th
+                  className="act-th"
+                  style={{ width: 150, color: "var(--ink-2)", fontSize: "var(--fs-xs)", fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}
+                >
+                  Status / Decision
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -603,7 +786,13 @@ export default function ActivityPage() {
                     ? e.status === "error"
                       ? "err"
                       : "ok"
-                    : "muted";
+                    : RECIPE_END_EVENTS.has(kindLabel ?? "")
+                      ? "ok"
+                      : RECIPE_START_EVENTS.has(kindLabel ?? "")
+                        ? "info"
+                        : /rejected|errored?|halted?/i.test(kindLabel ?? "")
+                          ? "err"
+                          : "muted";
 
                 // Tool / Event cell — for lifecycle rows with just a
                 // session id, show the session id alone instead of "— (…)".
@@ -617,10 +806,10 @@ export default function ActivityPage() {
                 const subLabel =
                   isApproval && meta.specifier ? ` (${meta.specifier})` : "";
 
-                // Duration / reason cell
+                // Duration / reason cell — formatted as "1.2s" or "340ms"
                 const durationCell =
                   typeof e.durationMs === "number"
-                    ? `${e.durationMs}ms`
+                    ? formatDuration(e.durationMs)
                     : isApproval && meta.reason
                       ? meta.reason
                       : meta.summary
@@ -633,14 +822,11 @@ export default function ActivityPage() {
                 return (
                   <tr
                     key={`${e.kind}-${e.id ?? i}-${i}`}
-                    className={
-                      isFresh
-                        ? `activity-row is-fresh${isErr ? " is-err" : ""}`
-                        : "activity-row"
-                    }
-                    /* Row had cursor:pointer but no onClick — deceptive
-                       affordance. Chips inside the row are now the real
-                       click targets. */
+                    className={`act-tr${isFresh ? ` activity-table-row is-fresh${isErr ? " is-err" : ""}` : " activity-table-row"}`}
+                    style={{
+                      animation: "act-slide-in 0.2s ease both",
+                      animationDelay: `${Math.min(i * 20, 300)}ms`,
+                    }}
                   >
                     <td
                       className="muted"
@@ -651,42 +837,49 @@ export default function ActivityPage() {
                     <td>
                       <span className={`pill ${kindClass}`}>{kindLabel}</span>
                     </td>
-                    <td className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>
-                      {meta.recipeName ? (
-                        <RecipeChip
-                          name={meta.recipeName}
-                          variant="row"
-                        />
-                      ) : (
-                        <span className="muted">—</span>
+                    <td className="mono">
+                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {isTool && e.tool ? (
+                          <ToolChip name={e.tool} variant="row" />
+                        ) : isApproval && meta.callId ? (
+                          <ApprovalChip
+                            callId={meta.callId}
+                            tier={meta.toolName}
+                            decision={
+                              meta.decision === "allow"
+                                ? "approved"
+                                : meta.decision === "deny"
+                                  ? "rejected"
+                                  : undefined
+                            }
+                            variant="row"
+                          />
+                        ) : isLifecycle && meta.fullSessionId ? (
+                          <SessionChip id={meta.fullSessionId} variant="row" />
+                        ) : meta.recipeName ? (
+                          <RecipeChip name={meta.recipeName} variant="row" />
+                        ) : (
+                          <>
+                            {mainLabel}
+                            {subLabel && <span className="muted">{subLabel}</span>}
+                          </>
+                        )}
+                      </div>
+                      {meta.recipeName && (isTool || (isApproval && meta.callId) || (isLifecycle && meta.fullSessionId)) && (
+                        <div style={{ marginTop: 2 }}>
+                          <RecipeChip name={meta.recipeName} variant="row" />
+                        </div>
                       )}
                     </td>
-                    <td className="mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 300 }}>
-                      {isTool && e.tool ? (
-                        <ToolChip name={e.tool} variant="row" />
-                      ) : isApproval && meta.callId ? (
-                        <ApprovalChip
-                          callId={meta.callId}
-                          tier={meta.toolName}
-                          decision={
-                            meta.decision === "allow"
-                              ? "approved"
-                              : meta.decision === "deny"
-                                ? "rejected"
-                                : undefined
-                          }
-                          variant="row"
-                        />
-                      ) : isLifecycle && meta.fullSessionId ? (
-                        <SessionChip id={meta.fullSessionId} variant="row" />
-                      ) : (
-                        <>
-                          {mainLabel}
-                          {subLabel && <span className="muted">{subLabel}</span>}
-                        </>
-                      )}
+                    <td
+                      className="mono muted"
+                      style={{
+                        fontVariantNumeric: "tabular-nums",
+                        letterSpacing: typeof e.durationMs === "number" ? "0.01em" : undefined,
+                      }}
+                    >
+                      {durationCell}
                     </td>
-                    <td className="mono muted">{durationCell}</td>
                     <td>
                       {isApproval ? (
                         <span

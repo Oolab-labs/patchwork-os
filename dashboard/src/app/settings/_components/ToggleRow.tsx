@@ -29,7 +29,8 @@ export function ToggleRow({
 }) {
   return (
     <div
-      style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+      className="toggle-row"
+      data-disabled={String(!!disabled)}
       title={disabled ? disabledReason : undefined}
     >
       <input
@@ -38,41 +39,13 @@ export function ToggleRow({
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
-        style={{ marginTop: 2, cursor: disabled ? "not-allowed" : undefined }}
       />
-      <label
-        htmlFor={id}
-        style={{ flex: 1, cursor: disabled ? "not-allowed" : "pointer" }}
-      >
-        <div
-          style={{
-            fontSize: "var(--fs-m)",
-            fontWeight: 500,
-            color: disabled ? "var(--fg-2)" : "var(--fg-0)",
-          }}
-        >
-          {label}
-        </div>
-        <div
-          style={{
-            fontSize: "var(--fs-s)",
-            color: "var(--fg-2)",
-            marginTop: 2,
-            lineHeight: 1.5,
-          }}
-        >
+      <label htmlFor={id} className="toggle-row-body">
+        <div className="toggle-row-label">{label}</div>
+        <div className="toggle-row-help">
           {help}
           {disabled && disabledReason ? (
-            <div
-              style={{
-                marginTop: 4,
-                fontSize: "var(--fs-xs)",
-                color: "var(--fg-3)",
-                fontStyle: "italic",
-              }}
-            >
-              ⓘ {disabledReason}
-            </div>
+            <div className="toggle-row-reason">ⓘ {disabledReason}</div>
           ) : null}
         </div>
       </label>

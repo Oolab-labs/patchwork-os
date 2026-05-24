@@ -126,7 +126,6 @@ export function Sparkline({
             />
           </>
         )}
-        <style>{"@keyframes spark-draw { to { stroke-dashoffset: 0; } }"}</style>
       </svg>
       {interactive && hoverIdx != null && labels && (
         <div

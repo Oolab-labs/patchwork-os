@@ -216,7 +216,12 @@ export default function ApprovalDetailPage() {
     <section>
       <div className="page-head">
         <div>
-          <BackLink href="/approvals" label="Approvals" />
+          <div className="breadcrumb-row">
+            <Link href="/approvals">Approvals</Link>
+            <span className="breadcrumb-sep" aria-hidden="true">/</span>
+            <span style={{ color: "var(--ink-1)", fontFamily: "var(--font-mono)" }}>{callId.slice(0, 12)}…</span>
+          </div>
+          <BackLink href="/approvals" label="Back to queue" />
           <h1>{toolName}</h1>
           <div className="page-head-sub">
             <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}>
@@ -331,7 +336,7 @@ export default function ApprovalDetailPage() {
           <p
             style={{
               fontSize: "var(--fs-m)",
-              color: "var(--fg-1)",
+              color: "var(--ink-1)",
               marginTop: 10,
               lineHeight: 1.5,
             }}
@@ -361,24 +366,40 @@ export default function ApprovalDetailPage() {
           <p style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)", marginBottom: "var(--s-3)" }}>
             Still in the queue. Approve or reject to unblock the caller.
           </p>
-          <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap", alignItems: "center" }}>
             <button
               type="button"
-              className="btn success"
+              className="btn success detail-approve-cta detail-animate"
               onClick={() => decide("approve")}
               disabled={deciding !== null}
               aria-busy={deciding === "approve"}
+              style={{ minWidth: 120, fontSize: "var(--fs-base)", padding: "10px 20px" }}
             >
-              {deciding === "approve" ? "Approving…" : "Approve"}
+              {deciding === "approve" ? (
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid currentColor", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} aria-hidden="true" />
+                  Approving…
+                </span>
+              ) : (
+                <span>✓ Approve</span>
+              )}
             </button>
             <button
               type="button"
-              className="btn danger"
+              className="btn danger detail-deny-cta detail-animate"
               onClick={() => decide("reject")}
               disabled={deciding !== null}
               aria-busy={deciding === "reject"}
+              style={{ minWidth: 120, fontSize: "var(--fs-base)", padding: "10px 20px" }}
             >
-              {deciding === "reject" ? "Rejecting…" : "Reject"}
+              {deciding === "reject" ? (
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid currentColor", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} aria-hidden="true" />
+                  Rejecting…
+                </span>
+              ) : (
+                <span>✗ Reject</span>
+              )}
             </button>
             <span className="approval-spacer" />
             <Link href="/approvals" className="btn sm ghost" style={{ textDecoration: "none" }}>
@@ -483,10 +504,12 @@ export default function ApprovalDetailPage() {
         <div className="card" style={{ marginTop: "var(--s-4)" }}>
           <div className="card-head">
             <h2>Parameters</h2>
+            <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }}>JSON</span>
           </div>
-          <pre className="approval-params-json">
-            {JSON.stringify(pending.params, null, 2)}
-          </pre>
+          <pre
+            className="detail-json-block"
+            dangerouslySetInnerHTML={{ __html: syntaxHighlightJson(JSON.stringify(pending.params, null, 2)) }}
+          />
         </div>
       )}
 
@@ -573,10 +596,10 @@ function Row({
         fontSize: "var(--fs-m)",
       }}
     >
-      <span style={{ color: "var(--fg-2)" }}>{label}</span>
+      <span style={{ color: "var(--ink-2)" }}>{label}</span>
       <span
         className={mono ? "mono" : undefined}
-        style={{ color: "var(--fg-0)", textAlign: "right" }}
+        style={{ color: "var(--ink-0)", textAlign: "right" }}
       >
         {value}
       </span>
@@ -586,4 +609,29 @@ function Row({
 
 function tierClass(t: string): string {
   return t === "high" ? "err" : t === "medium" ? "warn" : "ok";
+}
+
+/** Tokenise a JSON string into HTML spans with colour classes.
+ *  Runs only in-browser on human-reviewed agent params — no XSS risk
+ *  beyond what JSON.stringify already guarantees (no raw HTML in values).
+ *  We escape angle brackets just in case. */
+function syntaxHighlightJson(json: string): string {
+  return json
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(
+      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
+      (match) => {
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            return `<span class="json-key">${match}</span>`;
+          }
+          return `<span class="json-str">${match}</span>`;
+        }
+        if (/true|false/.test(match)) return `<span class="json-bool">${match}</span>`;
+        if (/null/.test(match)) return `<span class="json-null">${match}</span>`;
+        return `<span class="json-num">${match}</span>`;
+      },
+    );
 }

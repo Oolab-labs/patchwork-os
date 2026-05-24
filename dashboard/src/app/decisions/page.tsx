@@ -194,7 +194,7 @@ function DecisionsContent() {
           />
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <label className="decisions-input-focus" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             <span className="visually-hidden" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)" }}>
               Search decisions
             </span>
@@ -206,10 +206,10 @@ function DecisionsContent() {
               placeholder="Search problems & solutions…"
               className="input"
               aria-label="Search decisions (press / to focus)"
-              style={{ minWidth: "min(240px, 100%)", width: 280, maxWidth: "100%" }}
+              style={{ minWidth: "min(240px, 100%)", width: 280, maxWidth: "100%", transition: "border-color 0.15s ease" }}
             />
           </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <label className="decisions-input-focus" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             <input
               type="text"
               value={keyQuery}
@@ -217,7 +217,7 @@ function DecisionsContent() {
               placeholder="Filter by ref (e.g. PR-42)"
               className="input"
               aria-label="Filter by ref"
-              style={{ minWidth: 160, width: 180, fontFamily: "var(--font-mono)" }}
+              style={{ minWidth: 160, width: 180, fontFamily: "var(--font-mono)", transition: "border-color 0.15s ease" }}
             />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -248,11 +248,11 @@ function DecisionsContent() {
             flexWrap: "wrap",
             marginBottom: "var(--s-3)",
             fontSize: "var(--fs-s)",
-            color: "var(--fg-3)",
+            color: "var(--ink-3)",
             alignItems: "center",
           }}
         >
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 500, color: "var(--ink-3)" }}>
             Tags
           </span>
           {(showAllTags ? allTags : allTags.slice(0, 20)).map((t) => (
@@ -305,13 +305,13 @@ function DecisionsContent() {
         <EmptyState
           title={
             !tag && !keyQuery && !textQuery
-              ? "No decisions yet"
+              ? "No decisions recorded yet"
               : "No matching decisions"
           }
           description={
             !tag && !keyQuery && !textQuery
-              ? "When an agent resolves a task it can save a short problem/solution note here. New decisions also show up in the next session's start-of-task digest, so the next agent starts with the context."
-              : `No decisions${tag ? ` tagged "${tag}"` : ""}${keyQuery ? ` with ref matching "${keyQuery}"` : ""}${textQuery ? ` containing "${textQuery}"` : ""}.`
+              ? "When an agent resolves a task it saves a short problem/solution note here. New decisions surface in the next session's start-of-task digest — so the next agent starts with full context."
+              : `No decisions${tag ? ` tagged "${tag}"` : ""}${keyQuery ? ` with ref matching "${keyQuery}"` : ""}${textQuery ? ` containing "${textQuery}"` : ""}. Try broadening your filters.`
           }
           action={
             (tag || keyQuery || textQuery) ? (
@@ -345,7 +345,7 @@ function DecisionsContent() {
               <div
                 key={rowKey}
                 className={`decision-row decision-row-${variant}`}
-                style={{ padding: "12px 16px", cursor: "default", display: "flex", flexDirection: "column", gap: 0 }}
+                style={{ padding: "12px 16px", cursor: "default", display: "flex", flexDirection: "column", gap: 0, animationDelay: `${Math.min(idx * 30, 200)}ms` }}
               >
                 {/* header row: ref + meta */}
                 <div
@@ -360,7 +360,7 @@ function DecisionsContent() {
                     className={`chip chip-${
                       variant === "err" ? "red" : variant === "warn" ? "amber" : variant === "info" ? "blue" : "accent"
                     }`}
-                    style={{ textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)" }}
+                    style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)" }}
                   >
                     {variant === "err" ? "bug" : variant === "warn" ? "risk" : variant === "info" ? "decision" : "feature"}
                   </span>
@@ -418,8 +418,8 @@ function DecisionsContent() {
                           border: "1px solid var(--orange-tint)",
                         }}
                       >
-                        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 700, color: "var(--orange)", letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase" }}>
-                          ✻ Problem
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 600, color: "var(--orange)", marginBottom: 6 }}>
+                          <span aria-hidden="true">✻ </span>Problem
                         </div>
                         <div style={{ fontSize: "var(--fs-m)", color: "var(--ink-1)", lineHeight: 1.55 }}>
                           {b.problem as string}
@@ -435,8 +435,8 @@ function DecisionsContent() {
                           border: "1px solid color-mix(in srgb, var(--green) 30%, transparent)",
                         }}
                       >
-                        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 700, color: "var(--green)", letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase" }}>
-                          ✻ Solution
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 600, color: "var(--green)", marginBottom: 6 }}>
+                          <span aria-hidden="true">✻ </span>Solution
                         </div>
                         <div style={{ fontSize: "var(--fs-m)", color: "var(--ink-0)", lineHeight: 1.55 }}>
                           {b.solution as string}

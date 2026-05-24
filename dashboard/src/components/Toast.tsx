@@ -283,7 +283,6 @@ function ToastViewport({
           </div>
         );
       })}
-      <style>{`@keyframes patchwork-toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }`}</style>
     </div>
   );
 }

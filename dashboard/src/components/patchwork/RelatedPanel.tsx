@@ -139,11 +139,10 @@ export function RelatedPanel({ title = "Related", groups }: RelatedPanelProps) {
       {/* Panel title */}
       <div
         style={{
-          fontSize: "var(--fs-xs)",
-          fontWeight: 700,
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-          color: "var(--ink-3)",
+          fontSize: "var(--fs-s)",
+          fontWeight: 600,
+          color: "var(--ink-2)",
+          letterSpacing: "0.01em",
         }}
       >
         {title}
@@ -157,11 +156,10 @@ export function RelatedPanel({ title = "Related", groups }: RelatedPanelProps) {
           {/* Group label */}
           <div
             style={{
-              fontSize: "var(--fs-2xs)",
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
+              fontSize: "var(--fs-xs)",
+              fontWeight: 500,
               color: "var(--ink-3)",
+              letterSpacing: "0.01em",
             }}
           >
             {group.label}

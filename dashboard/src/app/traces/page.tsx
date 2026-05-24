@@ -135,21 +135,11 @@ function TraceActions({
   if (traceType !== "recipe_run" && !cliCmd) return null;
 
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--s-2)",
-        padding: "8px 12px",
-        borderTop: "1px solid var(--line-2)",
-        background: "var(--recess)",
-      }}
-    >
+    <div className="traces-actions-bar">
       {traceType === "recipe_run" && recipeName && (
         <button
           type="button"
-          className="btn sm primary"
-          style={{ fontSize: "var(--fs-xs)", background: "var(--orange)", border: "none" }}
+          className="btn sm primary traces-replay-btn"
           disabled={replaying}
           onClick={() => void handleReplay()}
         >
@@ -159,21 +149,14 @@ function TraceActions({
       {cliCmd && (
         <button
           type="button"
-          className="btn sm ghost"
-          style={{ fontSize: "var(--fs-xs)", fontFamily: "var(--font-mono)" }}
+          className="btn sm ghost traces-cli-btn"
           onClick={handleCopyCli}
         >
           {copied ? "Copied ✓" : "⌗ Open in CLI"}
         </button>
       )}
       {replayMsg && (
-        <span
-          style={{
-            fontSize: "var(--fs-xs)",
-            color: replayMsg.ok ? "var(--ok)" : "var(--err)",
-            fontFamily: "var(--font-mono)",
-          }}
-        >
+        <span className="traces-replay-msg" data-ok={String(replayMsg.ok)}>
           {replayMsg.text}
         </span>
       )}
@@ -208,49 +191,22 @@ function TraceDetail({
   });
 
   return (
-    <div
-      style={{
-        margin: "0 16px 14px 36px",
-        borderRadius: "var(--r-s)",
-        border: "1px solid var(--line-2)",
-        overflow: "hidden",
-        fontSize: "var(--fs-s)",
-      }}
-    >
+    <div className="traces-detail">
       {/* scalar fields as key/value grid */}
       {scalars.length > 0 && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "max-content 1fr",
-            background: "var(--recess)",
-          }}
-        >
+        <div className="traces-detail-scalars">
           {scalars.map(([k, v], i) => (
             <Fragment key={k}>
               <div
-                style={{
-                  padding: "5px 12px",
-                  fontFamily: "var(--font-mono)",
-                  color: theme.fg,
-                  fontWeight: 600,
-                  fontSize: "var(--fs-xs)",
-                  background: i % 2 === 0 ? "var(--recess)" : "transparent",
-                  borderRight: "1px solid var(--line-2)",
-                  whiteSpace: "nowrap",
-                }}
+                className="traces-detail-key"
+                data-odd={String(i % 2 === 1)}
+                style={{ color: theme.fg }}
               >
                 {k}
               </div>
               <div
-                style={{
-                  padding: "5px 12px",
-                  fontFamily: "var(--font-mono)",
-                  color: "var(--ink-1)",
-                  fontSize: "var(--fs-xs)",
-                  background: i % 2 === 0 ? "var(--recess)" : "transparent",
-                  wordBreak: "break-all",
-                }}
+                className="traces-detail-val"
+                data-odd={String(i % 2 === 1)}
               >
                 {String(v)}
               </div>
@@ -260,43 +216,15 @@ function TraceDetail({
       )}
       {/* complex fields as collapsible JSON */}
       {objects.map(([k, v]) => (
-        <details key={k} style={{ borderTop: "1px solid var(--line-2)" }}>
-          <summary
-            style={{
-              padding: "5px 12px",
-              fontFamily: "var(--font-mono)",
-              fontSize: "var(--fs-xs)",
-              fontWeight: 600,
-              color: theme.fg,
-              cursor: "pointer",
-              background: "var(--recess)",
-              listStyle: "none",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <span style={{ color: "var(--ink-3)", fontSize: "var(--fs-3xs)" }}>▸</span>
+        <details key={k} className="traces-detail-object">
+          <summary className="traces-detail-summary" style={{ color: theme.fg }}>
+            <span className="traces-detail-arrow">▸</span>
             {k}
             {Array.isArray(v) && (
-              <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>
-                [{(v as unknown[]).length}]
-              </span>
+              <span className="traces-detail-count">[{(v as unknown[]).length}]</span>
             )}
           </summary>
-          <pre
-            style={{
-              margin: 0,
-              padding: "8px 12px 10px 24px",
-              background: "var(--bg-0)",
-              fontSize: "var(--fs-xs)",
-              fontFamily: "var(--font-mono)",
-              overflow: "auto",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              color: "var(--ink-2)",
-            }}
-          >
+          <pre className="traces-detail-pre">
             {JSON.stringify(v, null, 2)}
           </pre>
         </details>
@@ -386,10 +314,9 @@ function SpanBar({
   const range = groupEndMs - groupStartMs;
 
   if (range <= 0) {
-    // Full-width bar
     return (
-      <div style={{ position: "relative", width: "100%", height: 4, background: "var(--line-3)", borderRadius: 2 }}>
-        <div style={{ position: "absolute", inset: 0, background: color, borderRadius: 2 }} />
+      <div className="traces-span-track">
+        <div className="traces-span-fill" style={{ inset: 0, background: color }} />
       </div>
     );
   }
@@ -397,19 +324,11 @@ function SpanBar({
   const leftPct = ((startMs - groupStartMs) / range) * 100;
 
   if (durationMs <= 0) {
-    // Tick mark
     return (
-      <div style={{ position: "relative", width: "100%", height: 4, background: "var(--line-3)", borderRadius: 2 }}>
+      <div className="traces-span-track">
         <div
-          style={{
-            position: "absolute",
-            left: `${Math.min(leftPct, 98)}%`,
-            top: -2,
-            width: 2,
-            height: 8,
-            background: color,
-            borderRadius: 1,
-          }}
+          className="traces-span-tick"
+          style={{ left: `${Math.min(leftPct, 98)}%`, background: color }}
         />
       </div>
     );
@@ -418,15 +337,14 @@ function SpanBar({
   const widthPct = Math.max(2, (durationMs / range) * 100);
 
   return (
-    <div style={{ position: "relative", width: "100%", height: 4, background: "var(--line-3)", borderRadius: 2 }}>
+    <div className="traces-span-track">
       <div
+        className="traces-span-fill"
         style={{
-          position: "absolute",
           left: `${Math.min(leftPct, 96)}%`,
           width: `${Math.min(widthPct, 100 - Math.min(leftPct, 96))}%`,
           height: "100%",
           background: color,
-          borderRadius: 2,
         }}
       />
     </div>
@@ -502,7 +420,7 @@ function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
   }
 
   return (
-    <div ref={wrapRef} style={{ position: "relative" }}>
+    <div ref={wrapRef} className="traces-export-wrap">
       <button
         type="button"
         className="btn sm"
@@ -510,26 +428,13 @@ function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
         disabled={outerDisabled}
         aria-expanded={open}
         aria-haspopup="dialog"
-        style={{ opacity: outerDisabled ? 0.4 : 1 }}
+        {...(outerDisabled ? { "data-disabled": "" } : {})}
       >
         Export
       </button>
       {open && (
-        <div
-          style={{
-            position: "absolute",
-            right: 0,
-            top: "calc(100% + 6px)",
-            background: "var(--bg-2)",
-            border: "1px solid var(--border-default)",
-            borderRadius: 8,
-            padding: "var(--s-4)",
-            minWidth: "min(280px, 100%)",
-            zIndex: 10,
-            boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-          }}
-        >
-          <p style={{ margin: "0 0 var(--s-3)", fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
+        <div className="traces-export-panel">
+          <p className="traces-export-hint">
             Optional: encrypt with a passphrase (AES-256-GCM). Leave blank for a
             plain <code>.jsonl.gz</code>.
           </p>
@@ -539,25 +444,11 @@ function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
             value={passphrase}
             onChange={(e) => setPassphrase(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleDownload(); }}
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              marginBottom: "var(--s-3)",
-              padding: "6px 10px",
-              background: "var(--bg-3)",
-              border: "1px solid var(--border-default)",
-              borderRadius: 6,
-              color: "var(--fg-1)",
-              fontSize: "var(--fs-m)",
-            }}
+            className="traces-export-input"
             autoFocus
           />
-          {error && (
-            <p style={{ margin: "0 0 var(--s-3)", fontSize: "var(--fs-s)", color: "var(--red)" }}>
-              {error}
-            </p>
-          )}
-          <div style={{ display: "flex", gap: "var(--s-3)", justifyContent: "flex-end" }}>
+          {error && <p className="traces-export-err">{error}</p>}
+          <div className="traces-export-actions">
             <button type="button" className="btn sm" onClick={() => { setOpen(false); setPassphrase(""); setError(null); }}>
               Cancel
             </button>
@@ -566,7 +457,7 @@ function ExportButton({ disabled: outerDisabled }: { disabled?: boolean }) {
             </button>
           </div>
           {passphrase.trim() && (
-            <p style={{ margin: "var(--s-3) 0 0", fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>
+            <p className="traces-export-note">
               Import: <code>patchwork traces import bundle.enc --passphrase …</code>
             </p>
           )}
@@ -693,18 +584,20 @@ export default function TracesPage() {
     });
   };
 
+  const isSearching = searchQuery !== debouncedSearch;
+
   return (
     <section>
       <ActivityTabs />
       <div className="page-head">
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <h1 className="editorial-h1" style={{ margin: 0 }}>
-              Traces — <em className="accent" style={{ fontStyle: "italic" }}>recipe runs and their decision logs.</em>
+          <div className="page-head-title-row">
+            <h1 className="editorial-h1">
+              Traces — <em className="accent traces-heading-em">recipe runs and their decision logs.</em>
             </h1>
             <HintCard.Toggle id="traces" />
           </div>
-          <div className="editorial-sub" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div className="editorial-sub traces-sub">
             <span>
               {traces.length} traces · {doneCount} done · {errorCount} error{errorCount === 1 ? "" : "s"}
               {runningCount > 0 ? ` · ${runningCount} running` : ""} ·{" "}
@@ -721,23 +614,20 @@ export default function TracesPage() {
             ]}
           />
         </div>
-        <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter recipe or trace id…"
-            style={{
-              minWidth: "min(260px, 100%)",
-              padding: "6px 10px",
-              fontSize: "var(--fs-m)",
-              fontFamily: "var(--font-mono)",
-              background: "var(--recess)",
-              border: "1px solid var(--line-2)",
-              borderRadius: "var(--r-s)",
-              color: "var(--ink-0)",
-            }}
-          />
+        <div className="traces-toolbar" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Filter traces"
+              placeholder="Filter recipe or trace id…"
+              className="traces-search-input"
+            />
+            {isSearching && (
+              <span className="traces-search-loading" aria-label="Searching…" title="Searching…" />
+            )}
+          </div>
           <ExportButton disabled={traces.length === 0} />
         </div>
       </div>
@@ -745,55 +635,24 @@ export default function TracesPage() {
       <HintCard id="traces" />
 
       {recipeFilter && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            marginBottom: "var(--s-3)",
-            padding: "6px 10px",
-            border: "1px solid var(--border-subtle)",
-            borderRadius: 6,
-            background: "var(--bg-0)",
-            fontSize: "var(--fs-s)",
-          }}
-        >
-          <span style={{ color: "var(--ink-2)" }}>Filtered by recipe:</span>
-          <span
-            className="mono"
-            style={{ color: "var(--ink-0)", fontWeight: 600 }}
-          >
-            {recipeFilter}
-          </span>
-          <button
-            type="button"
-            className="btn sm ghost"
-            onClick={clearRecipeFilter}
-            style={{ marginLeft: "auto" }}
-          >
+        <div className="traces-recipe-filter">
+          <span className="traces-recipe-filter-label">Filtered by recipe:</span>
+          <span className="mono traces-recipe-filter-name">{recipeFilter}</span>
+          <button type="button" className="btn sm ghost traces-recipe-filter-clear" onClick={clearRecipeFilter}>
             Clear
           </button>
         </div>
       )}
 
       {/* filter bar */}
-      <div
-        style={{
-          display: "flex",
-          gap: "var(--s-3)",
-          marginBottom: "var(--s-4)",
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        <div className="filter-chips" style={{ marginBottom: 0 }}>
+      <div className="traces-filter-bar">
+        <div className="filter-chips traces-filter-chips">
           {(["all", "done", "errors"] as const).map(k => (
             <button
               key={k}
               type="button"
               onClick={() => setStatusFilter(k)}
-              className={statusFilter === k ? "pill accent" : "pill muted"}
-              style={{ cursor: "pointer", border: "none", fontSize: "var(--fs-s)" }}
+              className={statusFilter === k ? "pill accent traces-filter-pill" : "pill muted traces-filter-pill"}
             >
               {k === "all" ? `All (${traces.length})` : k === "done" ? `Done (${doneCount})` : `Errors (${errorCount})`}
             </button>
@@ -801,49 +660,31 @@ export default function TracesPage() {
           <button
             type="button"
             onClick={() => setKsOnly((v) => !v)}
-            className={ksOnly ? "pill accent" : "pill muted"}
-            style={{
-              cursor: "pointer",
-              border: "none",
-              fontSize: "var(--fs-s)",
-              ...(ksOnly
-                ? { background: "var(--err-soft)", color: "var(--err)" }
-                : {}),
-            }}
+            className={ksOnly ? "pill accent traces-filter-pill traces-ks-pill" : "pill muted traces-filter-pill"}
           >
             Kill-switch
           </button>
         </div>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
+        <label className="traces-since-label">
           <span>since</span>
           <select
             value={since}
             onChange={(e) => setSince(e.target.value as SinceFilter)}
-            style={{
-              fontSize: "var(--fs-s)",
-              fontFamily: "var(--font-mono)",
-              background: "var(--recess)",
-              border: "1px solid var(--line-2)",
-              borderRadius: "var(--r-s)",
-              color: "var(--ink-0)",
-              padding: "4px 8px",
-              cursor: "pointer",
-            }}
+            className="traces-since-select"
           >
             {SINCE_OPTIONS.map((o) => (
               <option key={o.k} value={o.k}>{o.label}</option>
             ))}
           </select>
         </label>
-        <div className="filter-chips" style={{ marginBottom: 0 }}>
-          <span style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginRight: 2 }}>View:</span>
+        <div className="filter-chips traces-filter-chips">
+          <span className="traces-view-label">View:</span>
           {(["flat", "tree"] as const).map((v) => (
             <button
               key={v}
               type="button"
               onClick={() => setView(v)}
-              className={view === v ? "pill accent" : "pill muted"}
-              style={{ cursor: "pointer", border: "none", fontSize: "var(--fs-s)", textTransform: "capitalize" }}
+              className={view === v ? "pill accent traces-filter-pill traces-view-pill" : "pill muted traces-filter-pill traces-view-pill"}
             >
               {v}
             </button>
@@ -892,165 +733,67 @@ export default function TracesPage() {
         // viewport. Each row keeps its columnar layout (the alternative
         // — stacking cells vertically per row — destroys the table
         // affordance, which is the whole point of this view).
-        <div className="card" style={{ padding: 0, overflowX: "auto", overflowY: "hidden", marginBottom: "var(--s-5)" }}>
-          {visible.map(t => {
+        <div className="card traces-card">
+          {visible.map((t, rowIdx) => {
             const rowKey = `${t.traceType}:${t.ts}:${t.key}`;
             const isOpen = expanded.has(rowKey);
             const status = traceStatus(t);
             const theme = TYPE_THEME[t.traceType];
-            const statusColor = status === "done" ? "var(--ok)" : status === "error" ? "var(--err)" : "var(--ink-3)";
-            const statusBg = status === "done" ? "var(--ok-soft)" : status === "error" ? "var(--err-soft)" : "var(--recess)";
-            const statusLabel = status === "done" ? "done" : status === "error" ? "error" : "running";
             const isKillSwitch = Array.isArray(t.tags) && t.tags.includes("kill-switch");
             return (
               <div
                 key={rowKey}
-                style={{
-                  borderBottom: "1px solid var(--line-3)",
-                  ...(isKillSwitch
-                    ? { borderLeft: "3px solid var(--err)" }
-                    : {}),
-                }}
+                className={`traces-row traces-row--${t.traceType}`}
+                style={{ animationDelay: `${Math.min(rowIdx * 20, 200)}ms` }}
+                {...(isKillSwitch ? { "data-ks": "" } : {})}
               >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "20px 18px minmax(280px, auto) 1fr 100px 80px 28px",
-                    alignItems: "center",
-                    gap: "var(--s-3)",
-                    width: "100%",
-                    padding: "10px 16px",
-                    minHeight: 44,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggle(rowKey)}
-                    aria-label={isOpen ? "Collapse" : "Expand"}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "var(--ink-3)",
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "var(--fs-s)",
-                      padding: 0,
-                      textAlign: "left",
-                    }}
-                  >
+                <div className="traces-row-grid">
+                  <button type="button" onClick={() => toggle(rowKey)} aria-label={isOpen ? "Collapse" : "Expand"} className="traces-expand-btn">
                     {isOpen ? "v" : ">"}
                   </button>
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: 3,
-                      background: theme.bg,
-                      border: `1px solid ${theme.fg}`,
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => toggle(rowKey)}
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "var(--fs-xs)",
-                      color: theme.fg,
-                      background: "transparent",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      textAlign: "left",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
+                  <span aria-hidden="true" className="traces-type-icon" style={{ background: theme.bg, border: `1px solid ${theme.fg}` }} />
+                  <button type="button" onClick={() => toggle(rowKey)} className="traces-key-btn" style={{ color: theme.fg }}>
                     {t.key}
                   </button>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      minWidth: 0,
-                      overflow: "hidden",
-                    }}
-                  >
+                  <div className="traces-recipe-col">
                     <button
                       type="button"
                       onClick={() => toggle(rowKey)}
                       aria-label={isOpen ? "Collapse details" : "Expand details"}
-                      style={{
-                        fontSize: "var(--fs-m)",
-                        color:
-                          typeof t.body?.recipeName === "string"
-                            ? "var(--ink-1)"
-                            : "var(--ink-3)",
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        cursor: "pointer",
-                        textAlign: "left",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
+                      className="traces-recipe-btn"
+                      data-has-recipe={String(typeof t.body?.recipeName === "string")}
                     >
                       {typeof t.body?.recipeName === "string" ? t.body.recipeName : "—"}
                     </button>
                     {typeof t.body?.recipeName === "string" && (
-                      <RecipeChip
-                        name={t.body.recipeName}
-                        variant="link"
-                      />
+                      <RecipeChip name={t.body.recipeName} variant="link" />
                     )}
-                    {t.traceType === "approval" &&
-                      typeof t.body?.callId === "string" && (
-                        <ApprovalChip
-                          callId={t.body.callId}
-                          variant="link"
-                        />
-                      )}
+                    {t.traceType === "approval" && typeof t.body?.callId === "string" && (
+                      <ApprovalChip callId={t.body.callId} variant="link" />
+                    )}
                   </div>
-                  <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", textAlign: "right" }}>
-                    {relTime(t.ts)}
-                  </span>
-                  <span style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <span className="pill" style={{ background: statusBg, color: statusColor, fontSize: "var(--fs-2xs)", fontWeight: 700 }}>
-                      {statusLabel}
+                  <span className="traces-ts">{relTime(t.ts)}</span>
+                  <span className="traces-pill-wrap">
+                    <span className="pill traces-status-pill" data-status={status}>
+                      {status === "done" ? "done" : status === "error" ? "error" : "running"}
                     </span>
                   </span>
                   <button
                     type="button"
                     aria-label="Copy trace id"
                     onClick={() => { void navigator.clipboard.writeText(t.key); }}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "var(--ink-3)",
-                      padding: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "flex-end",
-                    }}
+                    className="traces-copy-btn"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2v1" />
                     </svg>
                   </button>
                 </div>
                 {isOpen && (
-                  <div style={{ padding: "0 16px 12px 16px", borderTop: "1px solid var(--line-3)", background: "var(--recess)" }}>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: "var(--ink-2)", margin: "8px 0 4px", wordBreak: "break-all" }}>
-                      {t.key}
-                    </div>
-                    {t.summary && (
-                      <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-1)", marginBottom: 8 }}>{t.summary}</div>
-                    )}
+                  <div className="traces-detail-panel">
+                    <div className="traces-detail-key-text">{t.key}</div>
+                    {t.summary && <div className="traces-detail-summary-text">{t.summary}</div>}
                     <TraceActions traceType={t.traceType} body={t.body} />
                     <TraceDetail body={t.body} theme={theme} traceType={t.traceType} />
                   </div>
@@ -1062,18 +805,14 @@ export default function TracesPage() {
       ) : (
         // Tree view
         // #600: same overflow-x: auto pattern as the flat view above.
-        <div className="card" style={{ padding: 0, overflowX: "auto", overflowY: "hidden", marginBottom: "var(--s-5)" }}>
+        <div className="card traces-card">
           {buildSpanGroups(visible).map((group) => {
             const { root, children } = group;
             const rootKey = `${root.traceType}:${root.ts}:${root.key}`;
             const isOpen = expanded.has(rootKey);
             const rootStatus = traceStatus(root);
             const rootTheme = TYPE_THEME[root.traceType];
-            const rootStatusColor = rootStatus === "done" ? "var(--ok)" : rootStatus === "error" ? "var(--err)" : "var(--ink-3)";
-            const rootStatusBg = rootStatus === "done" ? "var(--ok-soft)" : rootStatus === "error" ? "var(--err-soft)" : "var(--recess)";
-            const rootStatusLabel = rootStatus === "done" ? "done" : rootStatus === "error" ? "error" : "running";
 
-            // Compute group time range for waterfall
             const rootDuration = typeof root.body.durationMs === "number" ? root.body.durationMs : 0;
             const childrenEnd = children.reduce((max, c) => {
               const cd = typeof c.body.durationMs === "number" ? c.body.durationMs : 0;
@@ -1083,126 +822,53 @@ export default function TracesPage() {
             const groupEndMs = rootDuration > 0 ? root.ts + rootDuration : childrenEnd;
 
             return (
-              <div key={rootKey} style={{ borderBottom: "1px solid var(--line-3)" }}>
+              <div key={rootKey} className={`traces-row traces-row--${root.traceType}`}>
                 {/* Root row */}
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "20px 18px minmax(280px, auto) 1fr 100px 80px",
-                    alignItems: "center",
-                    gap: "var(--s-3)",
-                    width: "100%",
-                    padding: "10px 16px 6px 16px",
-                    minHeight: 44,
-                    boxSizing: "border-box",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggle(rootKey)}
-                    aria-label={isOpen ? "Collapse" : "Expand"}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "var(--ink-3)",
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "var(--fs-s)",
-                      padding: 0,
-                      textAlign: "left",
-                    }}
-                  >
+                <div className="traces-root-grid">
+                  <button type="button" onClick={() => toggle(rootKey)} aria-label={isOpen ? "Collapse" : "Expand"} className="traces-expand-btn">
                     {isOpen ? "v" : ">"}
                   </button>
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: 3,
-                      background: rootTheme.bg,
-                      border: `1px solid ${rootTheme.fg}`,
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => toggle(rootKey)}
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "var(--fs-xs)",
-                      color: rootTheme.fg,
-                      background: "transparent",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      textAlign: "left",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
+                  <span aria-hidden="true" className="traces-type-icon" style={{ background: rootTheme.bg, border: `1px solid ${rootTheme.fg}` }} />
+                  <button type="button" onClick={() => toggle(rootKey)} className="traces-key-btn" style={{ color: rootTheme.fg }}>
                     {root.key}
                   </button>
                   <button
                     type="button"
                     onClick={() => toggle(rootKey)}
-                    style={{
-                      fontSize: "var(--fs-m)",
-                      color:
-                        typeof root.body?.recipeName === "string"
-                          ? "var(--ink-1)"
-                          : "var(--ink-3)",
-                      background: "transparent",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      textAlign: "left",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
+                    className="traces-recipe-btn"
+                    data-has-recipe={String(typeof root.body?.recipeName === "string")}
                   >
                     {typeof root.body?.recipeName === "string" ? root.body.recipeName : "—"}
                   </button>
-                  <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", textAlign: "right" }}>
-                    {relTime(root.ts)}
-                  </span>
-                  <span style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <span className="pill" style={{ background: rootStatusBg, color: rootStatusColor, fontSize: "var(--fs-2xs)", fontWeight: 700 }}>
-                      {rootStatusLabel}
+                  <span className="traces-ts">{relTime(root.ts)}</span>
+                  <span className="traces-pill-wrap">
+                    <span className="pill traces-status-pill" data-status={rootStatus}>
+                      {rootStatus === "done" ? "done" : rootStatus === "error" ? "error" : "running"}
                     </span>
                   </span>
                 </div>
                 {/* Waterfall bar row for root */}
-                <div style={{ padding: "0 16px 8px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ flex: 1 }}>
-                      <SpanBar
-                        startMs={groupStartMs}
-                        durationMs={rootDuration}
-                        groupStartMs={groupStartMs}
-                        groupEndMs={groupEndMs}
-                        color={rootTheme.fg}
-                        label={rootDuration > 0 ? `${rootDuration}ms` : undefined}
-                      />
-                    </div>
-                    {rootDuration > 0 && (
-                      <span style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-3)", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>
-                        {rootDuration}ms
-                      </span>
-                    )}
+                <div className="traces-waterfall">
+                  <div className="traces-span-bar-wrap">
+                    <SpanBar
+                      startMs={groupStartMs}
+                      durationMs={rootDuration}
+                      groupStartMs={groupStartMs}
+                      groupEndMs={groupEndMs}
+                      color={rootTheme.fg}
+                      label={rootDuration > 0 ? `${rootDuration}ms` : undefined}
+                    />
                   </div>
+                  {rootDuration > 0 && (
+                    <span className="traces-duration">{rootDuration}ms</span>
+                  )}
                 </div>
                 {/* Expanded detail for root */}
                 {isOpen && (
                   <>
-                    <div style={{ padding: "0 16px 12px 16px", borderTop: "1px solid var(--line-3)", background: "var(--recess)" }}>
-                      <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: "var(--ink-2)", margin: "8px 0 4px", wordBreak: "break-all" }}>
-                        {root.key}
-                      </div>
-                      {root.summary && (
-                        <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-1)", marginBottom: 8 }}>{root.summary}</div>
-                      )}
+                    <div className="traces-detail-panel">
+                      <div className="traces-detail-key-text">{root.key}</div>
+                      {root.summary && <div className="traces-detail-summary-text">{root.summary}</div>}
                       <TraceActions traceType={root.traceType} body={root.body} />
                       <TraceDetail body={root.body} theme={rootTheme} traceType={root.traceType} />
                     </div>
@@ -1210,92 +876,39 @@ export default function TracesPage() {
                     {children.map((child) => {
                       const childStatus = traceStatus(child);
                       const childTheme = TYPE_THEME[child.traceType];
-                      const childStatusColor = childStatus === "done" ? "var(--ok)" : childStatus === "error" ? "var(--err)" : "var(--ink-3)";
-                      const childStatusBg = childStatus === "done" ? "var(--ok-soft)" : childStatus === "error" ? "var(--err-soft)" : "var(--recess)";
-                      const childStatusLabel = childStatus === "done" ? "done" : childStatus === "error" ? "error" : "running";
                       const childDuration = typeof child.body.durationMs === "number" ? child.body.durationMs : 0;
                       return (
-                        <div
-                          key={`${child.traceType}:${child.ts}:${child.key}`}
-                          style={{ borderTop: "1px solid var(--line-3)", background: "var(--recess)", paddingLeft: 24 }}
-                        >
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "18px minmax(200px, auto) 1fr 100px 80px",
-                              alignItems: "center",
-                              gap: "var(--s-3)",
-                              padding: "6px 16px 4px 0",
-                              minHeight: 34,
-                              boxSizing: "border-box",
-                            }}
-                          >
+                        <div key={`${child.traceType}:${child.ts}:${child.key}`} className="traces-child-row">
+                          <div className="traces-child-grid">
+                            <span aria-hidden="true" className="traces-type-icon-sm" style={{ background: childTheme.bg, border: `1px solid ${childTheme.fg}` }} />
+                            <span className="traces-child-key" style={{ color: childTheme.fg }}>{child.key}</span>
                             <span
-                              aria-hidden="true"
-                              style={{
-                                width: 12,
-                                height: 12,
-                                borderRadius: 2,
-                                background: childTheme.bg,
-                                border: `1px solid ${childTheme.fg}`,
-                                flexShrink: 0,
-                              }}
-                            />
-                            <span
-                              style={{
-                                fontFamily: "var(--font-mono)",
-                                fontSize: "var(--fs-xs)",
-                                color: childTheme.fg,
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
+                              className="traces-child-recipe"
+                              data-has-recipe={String(typeof child.body?.recipeName === "string")}
                             >
-                              {child.key}
+                              {typeof child.body?.recipeName === "string" ? child.body.recipeName : "—"}
                             </span>
-                            <span
-                              style={{
-                                fontSize: "var(--fs-xs)",
-                                color:
-                                  typeof child.body?.recipeName === "string"
-                                    ? "var(--ink-2)"
-                                    : "var(--ink-3)",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {typeof child.body?.recipeName === "string"
-                                ? child.body.recipeName
-                                : "—"}
-                            </span>
-                            <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", textAlign: "right" }}>
-                              {relTime(child.ts)}
-                            </span>
-                            <span style={{ display: "flex", justifyContent: "flex-end" }}>
-                              <span className="pill" style={{ background: childStatusBg, color: childStatusColor, fontSize: "var(--fs-2xs)", fontWeight: 700 }}>
-                                {childStatusLabel}
+                            <span className="traces-ts">{relTime(child.ts)}</span>
+                            <span className="traces-pill-wrap">
+                              <span className="pill traces-status-pill" data-status={childStatus}>
+                                {childStatus === "done" ? "done" : childStatus === "error" ? "error" : "running"}
                               </span>
                             </span>
                           </div>
                           {/* Waterfall bar for child */}
-                          <div style={{ padding: "0 16px 6px 0" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <div style={{ flex: 1 }}>
-                                <SpanBar
-                                  startMs={child.ts}
-                                  durationMs={childDuration}
-                                  groupStartMs={groupStartMs}
-                                  groupEndMs={groupEndMs}
-                                  color={childTheme.fg}
-                                />
-                              </div>
-                              {childDuration > 0 && (
-                                <span style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-3)", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>
-                                  {childDuration}ms
-                                </span>
-                              )}
+                          <div className="traces-waterfall traces-waterfall--child">
+                            <div className="traces-span-bar-wrap">
+                              <SpanBar
+                                startMs={child.ts}
+                                durationMs={childDuration}
+                                groupStartMs={groupStartMs}
+                                groupEndMs={groupEndMs}
+                                color={childTheme.fg}
+                              />
                             </div>
+                            {childDuration > 0 && (
+                              <span className="traces-duration">{childDuration}ms</span>
+                            )}
                           </div>
                         </div>
                       );

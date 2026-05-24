@@ -240,9 +240,8 @@ export function EntityTimeline({
                   className="mono"
                   style={{
                     fontSize: "var(--fs-2xs)",
-                    color: "var(--ink-3)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
+                    color: dotColor,
+                    opacity: 0.85,
                   }}
                 >
                   {event.kind}

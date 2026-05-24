@@ -7,7 +7,6 @@ import { EmptyState, StatusPill } from "@/components/patchwork";
 import { ConfigFileCard } from "./_components/ConfigFileCard";
 import { MobileSection } from "./_components/MobileSection";
 import { PermColumn } from "./_components/PermColumn";
-import { helpStyle, inputStyle, labelStyle } from "./_components/styles";
 import { TelemetrySection } from "./_components/TelemetrySection";
 import { ToggleRow } from "./_components/ToggleRow";
 
@@ -613,10 +612,7 @@ export default function SettingsPage() {
 
   return (
     <section>
-      <div
-        className="page-head"
-        style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}
-      >
+      <div className="page-head stg-page-head">
         <div>
           <h1 className="editorial-h1">
             Settings — <span className="accent">config that lives in plaintext.</span>
@@ -626,23 +622,16 @@ export default function SettingsPage() {
         <div
           aria-live="polite"
           aria-atomic="true"
-          style={{
-            fontSize: "var(--fs-s)",
-            color: saveState === "saved" ? "var(--ok)" : "var(--fg-2)",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            paddingTop: 8,
-            minHeight: 16,
-            transition: "color 0.2s, opacity 0.2s",
-            opacity: saveState === "idle" ? 0 : 1,
-          }}
+          className="stg-save-indicator"
+          data-state={saveState}
         >
           {saveState !== "idle" && (
             <>
-              <span aria-hidden style={{ fontSize: "var(--fs-m)" }}>
-                {saveState === "saved" ? "✓" : "…"}
-              </span>
+              {saveState === "saved" ? (
+                <span aria-hidden className="stg-save-icon stg-save-icon-check">✓</span>
+              ) : (
+                <span aria-hidden className="stg-save-icon">…</span>
+              )}
               {saveState === "saved" ? "Saved" : "Saving…"}
             </>
           )}
@@ -672,29 +661,20 @@ export default function SettingsPage() {
         // notifications.
         <div className="settings-grid">
           {/* Sticky inner left nav */}
-          <nav
-            style={{
-              position: "sticky",
-              top: 24,
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-              minHeight: "60vh",
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
+          <nav className="stg-nav">
+            <div className="stg-nav-list">
               <SettingsNavList active={active} onSelect={setActive} />
             </div>
             <ConfigFileCard path={configPath} />
           </nav>
 
-          <div>
+          <div className="stg-main-col">
             {/* Bridge */}
             <div id="s-bridge" className="card">
               <div className="card-head">
                 <div>
-                  <h2 style={{ margin: 0 }}>Bridge</h2>
-                  <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginTop: 2 }}>
+                  <h2 className="stg-card-h2">Bridge</h2>
+                  <div className="stg-card-subtitle">
                     Runtime ports, workspace binding, inbox path
                   </div>
                 </div>
@@ -703,9 +683,9 @@ export default function SettingsPage() {
                 </StatusPill>
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "16px 0 8px" }}>
+              <div className="stg-form-fields">
                 <div>
-                  <label htmlFor="bridge-workspace" style={labelStyle}>
+                  <label htmlFor="bridge-workspace" className="stg-label">
                     Workspace path
                   </label>
                   <input
@@ -714,15 +694,15 @@ export default function SettingsPage() {
                     value={workspacePath}
                     readOnly
                     placeholder="/Users/you/Projects/your-repo"
-                    style={{ ...inputStyle, background: "var(--bg-2)", cursor: "not-allowed" }}
+                    className="stg-input stg-input-readonly"
                   />
-                  <p style={helpStyle}>
+                  <p className="stg-help">
                     Absolute path to the project Patchwork operates in. Tools resolve paths relative to this root.
                   </p>
                 </div>
 
                 <div>
-                  <label htmlFor="bridge-inbox" style={labelStyle}>
+                  <label htmlFor="bridge-inbox" className="stg-label">
                     Inbox directory
                   </label>
                   <input
@@ -731,15 +711,15 @@ export default function SettingsPage() {
                     value={inboxDir}
                     readOnly
                     placeholder="~/.patchwork/inbox"
-                    style={{ ...inputStyle, background: "var(--bg-2)", cursor: "not-allowed" }}
+                    className="stg-input stg-input-readonly"
                   />
-                  <p style={helpStyle}>
+                  <p className="stg-help">
                     Where queued tasks, drafts, and pending approvals live on disk.
                   </p>
                 </div>
 
                 <div>
-                  <label htmlFor="bridge-port" style={labelStyle}>
+                  <label htmlFor="bridge-port" className="stg-label">
                     Bridge port
                   </label>
                   <input
@@ -748,37 +728,37 @@ export default function SettingsPage() {
                     value={httpPort}
                     readOnly
                     placeholder="3101"
-                    style={{ ...inputStyle, background: "var(--bg-2)", cursor: "not-allowed" }}
+                    className="stg-input stg-input-readonly"
                   />
-                  <p style={helpStyle}>
+                  <p className="stg-help">
                     REST API, dashboard, and Claude Code WebSocket transport all share this port.
                   </p>
                 </div>
 
-                <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)" }}>
+                <div className="stg-readonly-note">
                   Read-only — edit the config file directly and restart the bridge.
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: 16, paddingTop: 12, borderTop: "1px solid var(--border-subtle)", fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
-                <span>Mode: <span style={{ color: "var(--fg-0)" }}>{settings?.patchwork?.fullMode === false ? "slim" : "full"}</span></span>
-                <span>Sessions: <span className="mono" style={{ color: "var(--fg-0)" }}>{settings?.activeSessions ?? 0}</span></span>
-                <span>Uptime: <span className="mono" style={{ color: "var(--fg-0)" }}>{settings?.uptimeMs != null ? fmtDuration(settings.uptimeMs) : "—"}</span></span>
+              <div className="stg-stats-bar">
+                <span>Mode: <span className="stg-stat-val">{settings?.patchwork?.fullMode === false ? "slim" : "full"}</span></span>
+                <span>Sessions: <span className="mono stg-stat-val">{settings?.activeSessions ?? 0}</span></span>
+                <span>Uptime: <span className="mono stg-stat-val">{settings?.uptimeMs != null ? fmtDuration(settings.uptimeMs) : "—"}</span></span>
               </div>
             </div>
 
             {/* AI drivers */}
-            <div id="s-ai" className="card" style={{ marginTop: 16 }}>
+            <div id="s-ai" className="card">
               <div className="card-head">
                 <div>
-                  <h2 style={{ margin: 0 }}>AI drivers</h2>
-                  <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginTop: 2 }}>
+                  <h2 className="stg-card-h2">AI drivers</h2>
+                  <div className="stg-card-subtitle">
                     Configure the models available for recipes and orchestrated tasks.
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "16px 0 4px" }}>
+              <div className="stg-driver-list">
                 {DRIVER_ROWS.map((row) => {
                   const isPrimary = primaryDriver === row.id;
                   const activeDriver = settings?.patchwork?.driver === row.driverValue;
@@ -793,20 +773,13 @@ export default function SettingsPage() {
                   return (
                     <div
                       key={row.id}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 10,
-                        padding: "12px 14px",
-                        background: isPrimary ? "var(--bg-3)" : "var(--bg-2)",
-                        border: isPrimary ? "1px solid var(--line-1)" : "1px solid var(--border-default)",
-                        borderRadius: "var(--r-2)",
-                      }}
+                      className="stg-driver-row"
+                      data-primary={String(isPrimary)}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                            <span style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-0)" }}>{row.name}</span>
+                      <div className="stg-driver-row-header">
+                        <div className="stg-driver-meta">
+                          <div className="stg-driver-name-row">
+                            <span className="stg-driver-name">{row.name}</span>
                             {isPrimary && <StatusPill tone="ok">primary</StatusPill>}
                             {pendingRestart ? (
                               <StatusPill tone="warn">pending restart</StatusPill>
@@ -819,9 +792,9 @@ export default function SettingsPage() {
                               <StatusPill tone="ok">key set</StatusPill>
                             )}
                           </div>
-                          <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", marginTop: 2 }}>{row.detail}</div>
+                          <div className="stg-driver-detail">{row.detail}</div>
                           {DRIVER_DEFAULT_MODEL[row.id] && (
-                            <div className="mono" style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)", marginTop: 2 }}>
+                            <div className="mono stg-driver-model">
                               Default model: {DRIVER_DEFAULT_MODEL[row.id]}
                             </div>
                           )}
@@ -856,16 +829,8 @@ export default function SettingsPage() {
                                   : undefined
                               }
                               aria-label={`Set ${row.name} as primary driver`}
-                              style={{
-                                background: "transparent",
-                                color: "var(--fg-1)",
-                                border: "1px solid var(--border-default)",
-                                borderRadius: "var(--r-2)",
-                                padding: "5px 10px",
-                                fontSize: "var(--fs-s)",
-                                cursor: disabled ? "default" : "pointer",
-                                opacity: disabled ? 0.5 : 1,
-                              }}
+                              className="stg-action-btn"
+                              data-disabled={String(disabled)}
                             >
                               {driverSaving === row.id ? "Saving…" : "Set primary"}
                             </button>
@@ -873,7 +838,7 @@ export default function SettingsPage() {
                         })()}
                       </div>
                       {provider && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <div className="stg-key-row">
                           <input
                             id={`api-key-${provider}`}
                             type="password"
@@ -881,22 +846,14 @@ export default function SettingsPage() {
                             autoComplete="off"
                             value={keyDrafts[provider]}
                             onChange={(e) => setKeyDrafts((d) => ({ ...d, [provider]: e.target.value }))}
-                            style={{ ...inputStyle, flex: 1, minWidth: 200, maxWidth: 480 }}
+                            className="stg-input stg-input-key"
                           />
                           <button
                             type="button"
                             onClick={() => saveApiKey(provider)}
                             disabled={keySaving === provider || keyDrafts[provider].length === 0}
-                            style={{
-                              background: "transparent",
-                              color: "var(--fg-1)",
-                              border: "1px solid var(--border-default)",
-                              borderRadius: "var(--r-2)",
-                              padding: "5px 10px",
-                              fontSize: "var(--fs-s)",
-                              cursor: keyDrafts[provider].length === 0 ? "default" : "pointer",
-                              opacity: keyDrafts[provider].length === 0 ? 0.5 : 1,
-                            }}
+                            className="stg-action-btn"
+                            data-disabled={String(keySaving === provider || keyDrafts[provider].length === 0)}
                           >
                             {keySaving === provider ? "Saving…" : "Save"}
                           </button>
@@ -912,29 +869,22 @@ export default function SettingsPage() {
                               }}
                               disabled={keySaving === provider}
                               title="Remove the stored key from the secure store"
-                              style={{
-                                background: "transparent",
-                                color: "var(--fg-2)",
-                                border: "1px solid var(--border-default)",
-                                borderRadius: "var(--r-2)",
-                                padding: "5px 10px",
-                                fontSize: "var(--fs-s)",
-                                cursor: "pointer",
-                              }}
+                              className="stg-action-btn"
+                              data-disabled={String(keySaving === provider)}
                             >
                               Clear
                             </button>
                           )}
                           {keyMsg && keyMsg.provider === provider && (
-                            <span style={{ fontSize: "var(--fs-s)", color: keyMsg.ok ? "var(--ok)" : "var(--err)" }}>
+                            <span className="stg-msg" data-ok={String(keyMsg.ok)}>
                               {keyMsg.text}
                             </span>
                           )}
                         </div>
                       )}
                       {row.id === "local" && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <div className="stg-local-fields">
+                          <div className="stg-local-row">
                             <input
                               id="local-endpoint"
                               type="text"
@@ -944,11 +894,11 @@ export default function SettingsPage() {
                                 localDirtyRef.current = true;
                                 setLocalEndpoint(e.target.value);
                               }}
-                              style={{ ...inputStyle, flex: 1, minWidth: 280 }}
+                              className="stg-input stg-input-local"
                               aria-label="Local LLM endpoint URL"
                             />
                           </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <div className="stg-local-row">
                             <input
                               id="local-model"
                               type="text"
@@ -958,28 +908,20 @@ export default function SettingsPage() {
                                 localDirtyRef.current = true;
                                 setLocalModel(e.target.value);
                               }}
-                              style={{ ...inputStyle, flex: 1, minWidth: 280 }}
+                              className="stg-input stg-input-local"
                               aria-label="Local LLM default model"
                             />
                             <button
                               type="button"
                               onClick={saveLocalConfig}
                               disabled={localSaving || !localEndpoint.trim()}
-                              style={{
-                                background: "transparent",
-                                color: "var(--fg-1)",
-                                border: "1px solid var(--border-default)",
-                                borderRadius: "var(--r-2)",
-                                padding: "5px 10px",
-                                fontSize: "var(--fs-s)",
-                                cursor: !localEndpoint.trim() ? "default" : "pointer",
-                                opacity: !localEndpoint.trim() ? 0.5 : 1,
-                              }}
+                              className="stg-action-btn"
+                              data-disabled={String(localSaving || !localEndpoint.trim())}
                             >
                               {localSaving ? "Saving…" : "Save"}
                             </button>
                             {localMsg && (
-                              <span style={{ fontSize: "var(--fs-s)", color: localMsg.ok ? "var(--ok)" : "var(--err)" }}>
+                              <span className="stg-msg" data-ok={String(localMsg.ok)}>
                                 {localMsg.text}
                               </span>
                             )}
@@ -990,18 +932,18 @@ export default function SettingsPage() {
                   );
                 })}
                 {driverMsg && (
-                  <p style={{ fontSize: "var(--fs-s)", marginTop: 4, color: driverMsg.ok ? "var(--ok)" : "var(--err)" }}>
+                  <p className="stg-msg stg-msg-p" data-ok={String(driverMsg.ok)}>
                     {driverMsg.text}
                   </p>
                 )}
                 {restartPending && (
-                  <div style={{ marginTop: 12, padding: "12px 14px", background: "var(--bg-3)", border: "1px solid var(--line-1)", borderRadius: "var(--r-2)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                      <div style={{ flex: 1, minWidth: 200 }}>
-                        <div style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-0)", marginBottom: 4 }}>
+                  <div className="stg-restart-card">
+                    <div className="stg-restart-header">
+                      <div className="stg-restart-meta">
+                        <div className="stg-restart-title">
                           Restart Required
                         </div>
-                        <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
+                        <div className="stg-restart-desc">
                           The bridge needs to restart to apply the new driver configuration.
                         </div>
                       </div>
@@ -1009,23 +951,14 @@ export default function SettingsPage() {
                         type="button"
                         onClick={restartBridge}
                         disabled={restartBusy}
-                        style={{
-                          background: "var(--accent)",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "var(--r-2)",
-                          padding: "8px 16px",
-                          fontSize: "var(--fs-m)",
-                          fontWeight: 600,
-                          cursor: restartBusy ? "default" : "pointer",
-                          opacity: restartBusy ? 0.6 : 1,
-                        }}
+                        className="stg-restart-btn"
+                        data-busy={String(restartBusy)}
                       >
                         {restartBusy ? "Restarting..." : "Restart Bridge"}
                       </button>
                     </div>
                     {restartMsg && (
-                      <p style={{ fontSize: "var(--fs-s)", marginTop: 8, color: restartMsg.ok ? "var(--ok)" : "var(--err)", whiteSpace: "pre-wrap" }}>
+                      <p className="stg-msg stg-msg-restart" data-ok={String(restartMsg.ok)}>
                         {restartMsg.text}
                       </p>
                     )}
@@ -1035,25 +968,25 @@ export default function SettingsPage() {
             </div>
 
             {/* Approval policy */}
-            <div id="s-approval" className="card" style={{ marginTop: 16 }}>
+            <div id="s-approval" className="card">
               <div className="card-head">
                 <div>
-                  <h2 style={{ margin: 0 }}>Approval policy</h2>
-                  <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginTop: 2 }}>
+                  <h2 className="stg-card-h2">Approval policy</h2>
+                  <div className="stg-card-subtitle">
                     Autopilot rules and Claude Code permission tiers.
                   </div>
                 </div>
               </div>
 
-              <div style={{ padding: "16px 0", borderBottom: "1px solid var(--border-subtle)" }}>
-                <label htmlFor="delegation-policy" style={labelStyle}>
+              <div className="stg-section-padded">
+                <label htmlFor="delegation-policy" className="stg-label">
                   Delegation policy
                 </label>
-                <p style={helpStyle}>
+                <p className="stg-help">
                   Hold high-risk or all tool calls for review before execution. Takes effect for new sessions
                   immediately.
                 </p>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
+                <div className="stg-gate-row">
                   <select
                     id="delegation-policy"
                     value={gatePending}
@@ -1066,7 +999,7 @@ export default function SettingsPage() {
                         setGatePending(v);
                       }
                     }}
-                    style={{ ...inputStyle, width: "auto", fontFamily: "inherit", cursor: "pointer" }}
+                    className="stg-input stg-select"
                   >
                     <option value="off">off — no gating</option>
                     <option value="high">high — gate high-risk tools</option>
@@ -1076,32 +1009,23 @@ export default function SettingsPage() {
                     type="button"
                     disabled={gateSaving || gatePending === gateValue}
                     onClick={() => saveGate(gatePending)}
-                    style={{
-                      fontSize: "var(--fs-s)",
-                      fontWeight: 600,
-                      padding: "6px 12px",
-                      borderRadius: "var(--r-2)",
-                      border: "none",
-                      background: "var(--accent)",
-                      color: "var(--on-orange)",
-                      cursor: gateSaving || gatePending === gateValue ? "default" : "pointer",
-                      opacity: gateSaving || gatePending === gateValue ? 0.5 : 1,
-                    }}
+                    className="stg-save-btn"
+                    data-disabled={String(gateSaving || gatePending === gateValue)}
                   >
                     {gateSaving ? "Saving…" : "Save"}
                   </button>
                   {gateSaveMsg && (
-                    <span style={{ fontSize: "var(--fs-s)", color: gateSaveMsg.ok ? "var(--ok)" : "var(--err)" }}>
+                    <span className="stg-msg" data-ok={String(gateSaveMsg.ok)}>
                       {gateSaveMsg.text}
                     </span>
                   )}
                 </div>
               </div>
 
-              <div style={{ padding: "16px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+              <div className="stg-section-padded">
                 <label
                   htmlFor="time-of-day-anomaly"
-                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-m)", fontWeight: 500, cursor: "pointer" }}
+                  className="stg-checkbox-label"
                 >
                   <input
                     id="time-of-day-anomaly"
@@ -1112,45 +1036,61 @@ export default function SettingsPage() {
                   />
                   Time-of-day anomaly signal
                 </label>
-                <p style={{ ...helpStyle, marginLeft: 24 }}>
+                <p className="stg-help stg-help-indent">
                   Surfaces a chip on approvals when a tool runs outside your usual hours.
                 </p>
                 {todayAnomalyErr && (
-                  <p style={{ ...helpStyle, marginLeft: 24, color: "var(--err)" }}>
+                  <p className="stg-help stg-help-indent stg-help-err">
                     {todayAnomalyErr}
                   </p>
                 )}
               </div>
 
-              <div style={{ padding: "16px 0" }}>
-                <div style={labelStyle}>Claude Code permission rules</div>
-                <p style={helpStyle}>
+              <div className="stg-section-solo">
+                <div className="stg-label">Claude Code permission rules</div>
+                <p className="stg-help">
                   Mirrored from <code>~/.claude/settings.json</code>. Edit there to change.
                 </p>
                 {permRules ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 12 }}>
+                  <div className="stg-perm-grid">
                     <PermColumn tone="ok" title="Allow" rules={permRules.allow} />
                     <PermColumn tone="warn" title="Ask" rules={permRules.ask} />
                     <PermColumn tone="err" title="Deny" rules={permRules.deny} />
                   </div>
                 ) : (
-                  <p style={{ ...helpStyle, marginTop: 10 }}>No permission data available.</p>
+                  <p className="stg-help stg-help-mt">No permission data available.</p>
                 )}
               </div>
             </div>
 
             {/* Safety — kill-switch (#422) */}
-            <div id="s-safety" className="card" style={{ marginTop: 16 }}>
+            <div
+              id="s-safety"
+              className="card"
+              style={{
+                borderColor: ksEngaged ? "var(--err)" : undefined,
+                background: ksEngaged
+                  ? "color-mix(in srgb, var(--err) 4%, var(--card-bg, var(--surface)))"
+                  : undefined,
+                transition: "border-color 0.3s ease, background 0.3s ease",
+              }}
+            >
               <div className="card-head">
                 <div>
-                  <h2 style={{ margin: 0 }}>Safety</h2>
-                  <div
-                    style={{
-                      fontSize: "var(--fs-s)",
-                      color: "var(--ink-2)",
-                      marginTop: 2,
-                    }}
-                  >
+                  <h2 className="stg-card-h2" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        fontSize: "var(--fs-base)",
+                        opacity: ksEngaged ? 1 : 0.4,
+                        transition: "opacity 0.3s ease",
+                      }}
+                    >
+                      ⚠️
+                    </span>
+                    Safety
+                  </h2>
+                  <div className="stg-card-subtitle">
                     Global write-tier kill switch. When engaged, every
                     recipe step + connector tool tagged write-tier
                     refuses to run on every running bridge. Use during
@@ -1158,7 +1098,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
-              <div style={{ padding: "16px 0" }}>
+              <div className="stg-section-solo">
                 <ToggleRow
                   id="kill-switch-toggle"
                   label={
@@ -1228,13 +1168,7 @@ export default function SettingsPage() {
                   }}
                 />
                 {ksMsg && (
-                  <p
-                    style={{
-                      fontSize: "var(--fs-s)",
-                      marginTop: 8,
-                      color: ksMsg.ok ? "var(--ok)" : "var(--err)",
-                    }}
-                  >
+                  <p className="stg-msg stg-msg-p stg-msg-ks" data-ok={String(ksMsg.ok)}>
                     {ksMsg.text}
                   </p>
                 )}
@@ -1276,19 +1210,8 @@ const SettingsNavList = memo(function SettingsNavList({
             key={id}
             href={`#${id}`}
             onClick={() => onSelect(id)}
-            style={{
-              fontSize: "var(--fs-m)",
-              fontWeight: isActive ? 600 : 500,
-              color: isActive ? "var(--ink-0)" : "var(--ink-2)",
-              background: isActive ? "var(--bg-2)" : "transparent",
-              textDecoration: "none",
-              padding: "6px 10px",
-              borderRadius: "var(--r-s)",
-              borderLeft: isActive
-                ? "2px solid var(--accent)"
-                : "2px solid transparent",
-              transition: "background 0.12s, color 0.12s",
-            }}
+            className="stg-nav-link"
+            data-active={String(isActive)}
           >
             {label}
           </a>

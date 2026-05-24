@@ -114,20 +114,7 @@ function SenderAvatar({ name, size = 40 }: { name: string; size?: number }) {
     <span
       aria-hidden="true"
       className="inbox-avatar"
-      style={{
-        width: size,
-        height: size,
-        borderRadius: "50%",
-        background: bg,
-        color: "#fff",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: Math.round(size * 0.42),
-        fontWeight: 700,
-        flexShrink: 0,
-        lineHeight: 1,
-      }}
+      style={{ width: size, height: size, background: bg, fontSize: Math.round(size * 0.42) }}
     >
       {avatarInitial(title)}
     </span>
@@ -206,21 +193,8 @@ function H2WithCopy({ children }: { children?: React.ReactNode }) {
     });
   }, []);
   return (
-    <h2
-      ref={headingRef}
-      style={{
-        fontSize: "var(--fs-l)",
-        fontWeight: 600,
-        margin: "24px 0 8px",
-        color: "var(--ink-0)",
-        paddingBottom: 6,
-        borderBottom: "1px solid var(--line-2)",
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-      }}
-    >
-      <span style={{ flex: 1 }}>{children}</span>
+    <h2 ref={headingRef} className="inbox-md-h2">
+      <span className="inbox-md-h2-text">{children}</span>
       <button
         type="button"
         onClick={onCopy}
@@ -235,118 +209,34 @@ function H2WithCopy({ children }: { children?: React.ReactNode }) {
 
 const markdownComponents = {
   h1: ({ children }: { children?: React.ReactNode }) => (
-    <h1
-      style={{
-        fontSize: 21,
-        fontWeight: 700,
-        margin: "0 0 4px",
-        color: "var(--ink-0)",
-      }}
-    >
-      {children}
-    </h1>
+    <h1 className="inbox-md-h1">{children}</h1>
   ),
   h2: ({ children }: { children?: React.ReactNode }) => <H2WithCopy>{children}</H2WithCopy>,
   h3: ({ children }: { children?: React.ReactNode }) => (
-    <h3
-      style={{
-        fontSize: "var(--fs-s)",
-        fontWeight: 700,
-        margin: "16px 0 4px",
-        color: "var(--ink-3)",
-        letterSpacing: "0.06em",
-        textTransform: "uppercase",
-      }}
-    >
-      {children}
-    </h3>
+    <h3 className="inbox-md-h3">{children}</h3>
   ),
   p: ({ children }: { children?: React.ReactNode }) => (
-    <p
-      style={{
-        fontSize: "var(--fs-base)",
-        lineHeight: 1.75,
-        margin: "0 0 10px",
-        color: "var(--ink-1)",
-      }}
-    >
-      {children}
-    </p>
+    <p className="inbox-md-p">{children}</p>
   ),
   ul: ({ children }: { children?: React.ReactNode }) => (
-    <ul
-      style={{
-        margin: "4px 0 12px 0",
-        paddingLeft: 16,
-        listStyle: "disc",
-      }}
-    >
-      {children}
-    </ul>
+    <ul className="inbox-md-ul">{children}</ul>
   ),
-  hr: () => (
-    <hr
-      style={{
-        border: "none",
-        borderTop: "1px solid var(--line-2)",
-        margin: "20px 0",
-      }}
-    />
-  ),
+  hr: () => <hr className="inbox-md-hr" />,
   strong: ({ children }: { children?: React.ReactNode }) => (
-    <strong style={{ color: "var(--fg-0)" }}>{children}</strong>
+    <strong className="inbox-md-strong">{children}</strong>
   ),
   li: ({ children }: { children?: React.ReactNode }) => (
-    <li
-      style={{
-        fontSize: 13.5,
-        lineHeight: 1.65,
-        marginBottom: 4,
-        color: "var(--ink-1)",
-        overflowWrap: "break-word",
-        wordBreak: "break-word",
-      }}
-    >
-      {children}
-    </li>
+    <li className="inbox-md-li">{children}</li>
   ),
   pre: ({ children }: { children?: React.ReactNode }) => (
-    <pre
-      style={{
-        background: "var(--recess)",
-        border: "1px solid var(--line-2)",
-        borderRadius: "var(--r-s)",
-        padding: "10px 14px",
-        margin: "8px 0 12px",
-        fontSize: "var(--fs-xs)",
-        fontFamily: "var(--font-mono)",
-        lineHeight: 1.6,
-        overflowX: "auto",
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-all",
-      }}
-    >
-      {children}
-    </pre>
+    <pre className="inbox-md-pre">{children}</pre>
   ),
   code: ({ children, className }: { children?: React.ReactNode; className?: string }) => {
     const isBlock = !!className;
     return isBlock ? (
-      <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)" }}>{children}</code>
+      <code className="inbox-md-code-block">{children}</code>
     ) : (
-      <code
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "0.875em",
-          background: "var(--recess)",
-          border: "1px solid var(--line-1)",
-          borderRadius: 4,
-          padding: "1px 5px",
-          wordBreak: "break-all",
-        }}
-      >
-        {children}
-      </code>
+      <code className="inbox-md-code-inline">{children}</code>
     );
   },
 };
@@ -387,15 +277,8 @@ function Spinner({ size = 18 }: { size?: number }) {
     <div
       role="status"
       aria-label="Loading"
-      style={{
-        width: size,
-        height: size,
-        border: "2px solid var(--line-2)",
-        borderTopColor: "var(--ink-2)",
-        borderRadius: "50%",
-        animation: "inbox-spin 0.7s linear infinite",
-        flexShrink: 0,
-      }}
+      className="inbox-spinner"
+      style={{ width: size, height: size }}
     />
   );
 }
@@ -412,6 +295,8 @@ function categoryForItem(name: string): Exclude<FilterCategory, "All"> {
 }
 
 // ------------------------------------------------------------------ page
+
+// CSS for this page has been moved to globals.css (inbox/* namespace).
 
 export default function InboxPage() {
   const [selected, setSelected] = useState<InboxDetail | null>(null);
@@ -563,617 +448,475 @@ const filteredItems = items.filter((item) => {
   const unseen = items.filter((i) => !seenNames.has(i.name)).length;
 
   return (
-    <>
-      <style>{`
-        @keyframes inbox-spin { to { transform: rotate(360deg); } }
-        .inbox-item:hover { background: var(--recess) !important; }
-        .inbox-item-active { background: rgba(99,102,241,0.07) !important; border-left-color: var(--accent) !important; }
-        .copy-section-btn {
-          margin-left: 10px;
-          padding: 2px 8px;
-          font-size: 10px;
-          font-weight: 600;
-          border-radius: var(--r-full);
-          border: 1px solid var(--line-2);
-          background: var(--recess);
-          color: var(--ink-3);
-          cursor: pointer;
-          vertical-align: middle;
-          transition: background 120ms, color 120ms;
-        }
-        .copy-section-btn:hover { background: var(--surface); color: var(--ink-1); }
-        .copy-section-btn.copied { background: var(--green-soft); color: var(--green); border-color: transparent; }
-      `}</style>
-
-      <section style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 120px)", minHeight: 500 }}>
-        {/* Page header */}
-        <div className="page-head" style={{ marginBottom: 16 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <h1 className="editorial-h1" style={{ margin: 0 }}>
-                Inbox — <span className="accent">what your agents wrote you.</span>
-              </h1>
-              <HintCard.Toggle id="inbox" />
-            </div>
-            <div className="editorial-sub">~/.patchwork/inbox · briefs · summaries · agent reports</div>
-            <RelationStrip
-              items={[
-                { label: "Recipes", href: "/recipes", title: "Recipes that produce inbox items" },
-                { label: "Runs", href: "/runs", title: "Runs that generated these messages" },
-                { label: "Traces", href: "/traces", title: "Decisions tied to these outputs" },
-                { label: "Connections", href: "/connections", title: "Connectors used to source content" },
-              ]}
-            />
+    <section className="inbox-page-section">
+      {/* Page header */}
+      <div className="page-head inbox-page-head">
+        <div>
+          <div className="page-head-title-row">
+            <h1 className="editorial-h1 inbox-h1">
+              Inbox — <span className="accent">what your agents wrote you.</span>
+            </h1>
+            <HintCard.Toggle id="inbox" />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {unseen > 0 && (
-              <span className="pill info" style={{ fontSize: "var(--fs-xs)" }}>
-                {unseen} new
-              </span>
-            )}
-            <span className="pill muted" style={{ fontSize: "var(--fs-xs)" }}>
-              {items.length} item{items.length !== 1 ? "s" : ""}
-            </span>
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={loading}
-              title="Refresh"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 5,
-                // 32px min hit target meets WCAG 2.5.5 (24×24); 9px vertical
-                // padding around the 12px icon lands at exactly 32 + border.
-                padding: "9px 14px",
-                minHeight: 32,
-                borderRadius: "var(--r-full)",
-                border: "1px solid var(--line-2)",
-                background: "transparent",
-                color: "var(--ink-2)",
-                fontSize: "var(--fs-s)",
-                fontWeight: 600,
-                cursor: loading ? "default" : "pointer",
-                opacity: loading ? 0.6 : 1,
-                transition: "opacity 150ms",
-              }}
-            >
-              {loading ? (
-                <Spinner size={12} />
-              ) : (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M23 4v6h-6M1 20v-6h6" />
-                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                </svg>
-              )}
-              Refresh
-            </button>
-          </div>
+          <div className="editorial-sub">~/.patchwork/inbox · briefs · summaries · agent reports</div>
+          <RelationStrip
+            items={[
+              { label: "Recipes", href: "/recipes", title: "Recipes that produce inbox items" },
+              { label: "Runs", href: "/runs", title: "Runs that generated these messages" },
+              { label: "Traces", href: "/traces", title: "Decisions tied to these outputs" },
+              { label: "Connections", href: "/connections", title: "Connectors used to source content" },
+            ]}
+          />
         </div>
+        <div className="inbox-head-actions">
+          {unseen > 0 && (
+            <span className="pill info inbox-head-pill">
+              {unseen} new
+            </span>
+          )}
+          <span className="pill muted inbox-head-pill">
+            {items.length} item{items.length !== 1 ? "s" : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            disabled={loading}
+            title="Refresh"
+            className="inbox-refresh-btn"
+          >
+            {loading ? (
+              <Spinner size={12} />
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M23 4v6h-6M1 20v-6h6" />
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+              </svg>
+            )}
+            Refresh
+          </button>
+        </div>
+      </div>
 
-        <HintCard id="inbox" />
+      <HintCard id="inbox" />
 
-        {recipeFromUrl && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "var(--s-2) var(--s-3)",
-              marginBottom: "var(--s-3)",
-              background: "var(--bg-2)",
-              border: "1px solid var(--line-2)",
-              borderRadius: "var(--r-2)",
-              fontSize: "var(--fs-s)",
+      {recipeFromUrl && (
+        <div className="inbox-recipe-filter">
+          <span className="inbox-recipe-filter-label">Filtered by recipe:</span>
+          <code>{recipeFromUrl}</code>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => {
+              const params = new URLSearchParams(searchParams?.toString() ?? "");
+              params.delete("recipe");
+              const qs = params.toString();
+              router.replace(qs ? `?${qs}` : "/inbox", { scroll: false });
             }}
           >
-            <span style={{ color: "var(--ink-2)" }}>Filtered by recipe:</span>
-            <code>{recipeFromUrl}</code>
-            <button
-              type="button"
-              className="btn sm ghost"
-              onClick={() => {
-                const params = new URLSearchParams(searchParams?.toString() ?? "");
-                params.delete("recipe");
-                const qs = params.toString();
-                router.replace(qs ? `?${qs}` : "/inbox", { scroll: false });
-              }}
-            >
-              Clear
-            </button>
-          </div>
-        )}
+            Clear
+          </button>
+        </div>
+      )}
 
-        {/*
-          Discovery card for the "deliver to phone" capability. Lives
-          above the items list so it surfaces to every user who hasn't
-          dismissed it — the people who already use /inbox in a browser
-          are exactly the audience for "stop coming here, get pushed".
-        */}
-        <InboxDeliveryCard />
+      {/*
+        Discovery card for the "deliver to phone" capability. Lives
+        above the items list so it surfaces to every user who hasn't
+        dismissed it — the people who already use /inbox in a browser
+        are exactly the audience for "stop coming here, get pushed".
+      */}
+      <InboxDeliveryCard />
 
-        {/* Stale-data refresh error: list still has items, but the last
-            poll failed. Inline banner only — the populated list stays
-            visible below. The empty-on-error case is handled by the
-            ErrorState in the block further down. */}
-        {listError && items.length > 0 && (
-          <div className="alert-err" role="alert" style={{ marginBottom: 12 }}>
-            Refresh failed — {listError}
-          </div>
-        )}
+      {/* Stale-data refresh error: list still has items, but the last
+          poll failed. Inline banner only — the populated list stays
+          visible below. The empty-on-error case is handled by the
+          ErrorState in the block further down. */}
+      {listError && items.length > 0 && (
+        <div className="alert-err mb-3" role="alert">
+          Refresh failed — {listError}
+        </div>
+      )}
 
-        {loading && items.length === 0 ? (
-          <SkeletonList rows={5} columns={2} />
-        ) : listError && items.length === 0 ? (
-          <ErrorState
-            title="Couldn't load inbox"
-            description="The bridge isn't responding. The inbox will reload on its next tick."
-            error={listError}
-            onRetry={refetch}
-          />
-        ) : items.length === 0 ? (
-          <EmptyState
-            icon={
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="2" y="4" width="20" height="16" rx="2" />
-                <path d="M2 7l10 7 10-7" />
-              </svg>
-            }
-            title="No items yet"
-            description={
-              <>
-                Run a recipe to generate your first brief.
-                {/*
-                  Empty-state variant of the delivery card — reframes "no
-                  items here" as "set up phone delivery so you don't have
-                  to come back". Single-line, no dismissal needed.
-                */}
-                <div>
-                  <InboxDeliveryCard variant="empty" />
-                </div>
-              </>
-            }
-            action={
-              <Link href="/recipes" className="btn sm" style={{ textDecoration: "none" }}>
-                Run a recipe →
-              </Link>
-            }
-          />
-        ) : (
+      {loading && items.length === 0 ? (
+        <SkeletonList rows={5} columns={2} />
+      ) : listError && items.length === 0 ? (
+        <ErrorState
+          title="Couldn't load inbox"
+          description="The bridge isn't responding. The inbox will reload on its next tick."
+          error={listError}
+          onRetry={refetch}
+        />
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <path d="M2 7l10 7 10-7" />
+            </svg>
+          }
+          title="Your inbox is empty"
+          description={
+            <>
+              <span>Inbox items are created by recipes — morning briefs, health checks, agent reports, and summaries all land here. Run your first recipe to see an output.</span>
+              <div>
+                <InboxDeliveryCard variant="empty" />
+              </div>
+            </>
+          }
+          action={
+            <Link href="/recipes" className="btn sm">
+              Run a recipe →
+            </Link>
+          }
+        />
+      ) : (
+        <div
+          className={`inbox-twopane${selected ? " inbox-twopane--reader" : " inbox-twopane--list"}`}
+        >
+
+          {/* ── Left sidebar (list) ── */}
           <div
-            className={`inbox-twopane${selected ? " inbox-twopane--reader" : " inbox-twopane--list"}`}
-            style={{ display: "flex", flex: 1, minHeight: 0, border: "1px solid var(--line-1)", borderRadius: "var(--r-l)", overflow: "hidden", background: "var(--surface)" }}
+            className="inbox-list-pane"
+            data-open={String(sidebarOpen)}
           >
 
-            {/* ── Left sidebar (list) ── */}
-            <div
-              className="inbox-list-pane"
-              style={{ width: sidebarOpen ? 300 : 48, flexShrink: 0, borderRight: "1px solid var(--line-1)", display: "flex", flexDirection: "column", transition: "width 200ms ease", overflow: "hidden" }}
-            >
-
-              {/* Sidebar header */}
-              <div className="inbox-sidebar-header" style={{ padding: "10px 10px 10px 14px", borderBottom: "1px solid var(--line-1)", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                {sidebarOpen ? (
-                  <>
-                    <span style={{ fontSize: "var(--fs-xs)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ink-3)", flex: 1 }}>
-                      Messages
-                    </span>
-                    {unseen > 0 && (
-                      <span className="pill info" style={{ fontSize: "var(--fs-2xs)", padding: "2px 7px" }}>{unseen} new</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setSidebarOpen(false)}
-                      title="Collapse sidebar"
-                      aria-label="Collapse message sidebar"
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", padding: "8px 10px", minWidth: 32, minHeight: 32, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--r-s)", fontSize: "var(--fs-xs)", lineHeight: 1 }}
-                    >
-                      <span aria-hidden="true">◀</span>
-                    </button>
-                  </>
-                ) : (
+            {/* Sidebar header */}
+            <div className="inbox-sidebar-header">
+              {sidebarOpen ? (
+                <>
+                  <span className="inbox-sidebar-label">Messages</span>
+                  {unseen > 0 && (
+                    <span className="pill info inbox-sidebar-new-pill">{unseen} new</span>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setSidebarOpen(true)}
-                    title="Expand sidebar"
-                    aria-label="Expand message sidebar"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)", padding: "3px 5px", borderRadius: "var(--r-s)", fontSize: "var(--fs-xs)", lineHeight: 1, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
+                    onClick={() => setSidebarOpen(false)}
+                    title="Collapse sidebar"
+                    aria-label="Collapse message sidebar"
+                    className="inbox-sidebar-collapse-btn"
                   >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <rect x="2" y="4" width="20" height="16" rx="2"/>
-                      <path d="M2 7l10 7 10-7"/>
-                    </svg>
-                    {unseen > 0 && (
-                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--accent)", display: "block" }} />
-                    )}
+                    <span aria-hidden="true">◀</span>
                   </button>
-                )}
-              </div>
-
-              {sidebarOpen && (
-                <>
-                  {/* Search */}
-                  <div style={{ padding: "10px 12px 8px" }}>
-                    <input
-                      ref={searchInputRef}
-                      type="search"
-                      className="input"
-                      placeholder="Search… ( / )"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      aria-label="Search inbox (shortcut: /)"
-                      style={{ width: "100%", fontSize: "var(--fs-s)" }}
-                    />
-                  </div>
-
-                  {/* Category filter chips */}
-                  <div style={{ padding: "0 12px 8px", display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {FILTER_CATEGORIES.map((cat) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setActiveFilter(cat)}
-                        style={{
-                          padding: "3px 10px",
-                          borderRadius: "var(--r-full)",
-                          fontSize: "var(--fs-xs)",
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          border: "1px solid",
-                          borderColor: activeFilter === cat ? "var(--accent)" : "var(--line-2)",
-                          background: activeFilter === cat ? "var(--accent-soft)" : "transparent",
-                          color: activeFilter === cat ? "var(--accent-strong)" : "var(--ink-3)",
-                          transition: "all 120ms",
-                          whiteSpace: "nowrap",
-                        }}
-                        aria-pressed={activeFilter === cat}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Item list */}
-                  <div style={{ overflowY: "auto", flex: 1 }}>
-                    {filteredItems.length === 0 ? (
-                      <div style={{ padding: "20px 16px", textAlign: "center", color: "var(--ink-3)", fontSize: "var(--fs-s)" }}>
-                        No items match
-                      </div>
-                    ) : (
-                      filteredItems.map((item) => {
-                        const isActive = selected?.name === item.name;
-                        const isNew = !seenNames.has(item.name);
-                        const title = slugToTitle(item.name);
-                        const plainPreview = stripMarkdown(item.preview);
-                        return (
-                          <button
-                            key={item.name}
-                            type="button"
-                            className={`inbox-item${isActive ? " inbox-item-active" : ""}${isNew ? " inbox-item-new" : ""}`}
-                            onClick={() => selectItem(item.name)}
-                            style={{
-                              display: "flex",
-                              alignItems: "flex-start",
-                              gap: 12,
-                              width: "100%",
-                              textAlign: "left",
-                              padding: "12px 14px",
-                              background: isActive ? undefined : "transparent",
-                              borderLeft: `3px solid ${isActive ? "var(--accent)" : "transparent"}`,
-                              borderTop: "none",
-                              borderRight: "none",
-                              borderBottom: "1px solid var(--line-1)",
-                              cursor: "pointer",
-                              color: "var(--fg-0)",
-                            }}
-                            aria-pressed={isActive}
-                          >
-                            <SenderAvatar name={item.name} size={40} />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              {/* Row 1: title + time */}
-                              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 2 }}>
-                                <span style={{ flex: 1, fontWeight: isNew ? 700 : 500, fontSize: "var(--fs-m)", color: "var(--ink-0)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                  {title}
-                                </span>
-                                <span style={{ fontSize: "var(--fs-xs)", color: isNew ? "var(--accent-strong)" : "var(--ink-3)", fontWeight: isNew ? 600 : 400, flexShrink: 0 }}>
-                                  <RelativeTime iso={item.modifiedAt} />
-                                </span>
-                              </div>
-                              {/* Row 2: preview snippet (Gmail-style, 1 line on mobile) */}
-                              {plainPreview && (
-                                <div
-                                  className="inbox-item-preview"
-                                  style={{
-                                    fontSize: "var(--fs-s)",
-                                    color: "var(--ink-2)",
-                                    lineHeight: 1.4,
-                                    // Clamp to 2 lines with an ellipsis so the
-                                    // snippet never cuts off mid-word. The
-                                    // .inbox-item-preview class only clamps
-                                    // inside the mobile media query — desktop
-                                    // had no clamp at all.
-                                    display: "-webkit-box",
-                                    WebkitLineClamp: 2,
-                                    WebkitBoxOrient: "vertical",
-                                    overflow: "hidden",
-                                    overflowWrap: "anywhere",
-                                  }}
-                                >
-                                  {plainPreview}
-                                </div>
-                              )}
-                            </div>
-                            {isNew && (
-                              <span aria-label="unread" className="inbox-unread-dot" style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", flexShrink: 0, marginTop: 8 }} />
-                            )}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
                 </>
-              )}
-            </div>
-
-            {/* ── Right content panel (reader) ── */}
-            <div className="inbox-reader-pane" style={{ flex: 1, overflowY: "auto", minWidth: 0 }}>
-              {detailLoading ? (
-                <div
-                  role="status"
-                  aria-busy="true"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexDirection: "column",
-                    gap: 10,
-                    minHeight: 320,
-                    padding: "40px",
-                  }}
-                >
-                  <Spinner />
-                  <span style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)" }}>Loading message…</span>
-                </div>
-              ) : detailErr ? (
-                <div style={{ padding: "40px" }}>
-                  <ErrorState
-                    title="Couldn't open this message"
-                    description="The bridge couldn't return this message body. Try selecting it again."
-                    error={detailErr}
-                  />
-                </div>
-              ) : selected ? (
-                <div className="inbox-reader-body" style={{ padding: "28px 40px 48px", maxWidth: 700 }}>
-                  {/* Mobile-only Gmail-style top app bar: back arrow + title.
-                      Hidden on desktop where the list is always visible. */}
-                  <div className="inbox-mobile-appbar">
-                    <button
-                      type="button"
-                      className="inbox-appbar-back"
-                      onClick={() => setSelected(null)}
-                      aria-label="Back to message list"
-                    >
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M19 12H5M12 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                    <span className="inbox-appbar-spacer" />
-                  </div>
-
-                  {/* Large subject (Gmail message screen) */}
-                  <h2 className="inbox-reader-subject" style={{ fontWeight: 600, color: "var(--ink-0)", margin: "0 0 14px", lineHeight: 1.3 }}>
-                    {slugToTitle(selected.name)}
-                  </h2>
-
-                  {/* Sender row: avatar + provenance (when present) + time.
-                      With provenance frontmatter (PR #742) we render a
-                      truthful "Produced by <recipe> · run <#seq>" strip.
-                      Without it we suppress the legacy "Local agent" guess
-                      — silence is more honest than a generic label. */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, paddingBottom: 14, borderBottom: "1px solid var(--line-1)" }}>
-                    <SenderAvatar name={selected.name} size={40} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {selected.provenance?.recipe && (
-                        <div
-                          style={{
-                            fontSize: "var(--fs-m)",
-                            color: "var(--ink-0)",
-                            display: "flex",
-                            alignItems: "center",
-                            flexWrap: "wrap",
-                            gap: 6,
-                          }}
-                        >
-                          <span style={{ color: "var(--ink-3)" }}>Produced by</span>
-                          <RecipeChip
-                            name={selected.provenance.recipe}
-                            trigger={selected.provenance.trigger}
-                            variant="link"
-                          />
-                          {selected.provenance.runSeq !== undefined && (
-                            <>
-                              <span style={{ color: "var(--ink-3)" }}>· run</span>
-                              <RunChip
-                                seq={selected.provenance.runSeq}
-                                recipeName={selected.provenance.recipe}
-                                variant="link"
-                              />
-                            </>
-                          )}
-                        </div>
-                      )}
-                      <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 2 }}>
-                        {new Date(selected.modifiedAt).toLocaleString()}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelected(null)}
-                      title="Close"
-                      aria-label="Close detail"
-                      className="inbox-reader-close-desktop"
-                      style={{ background: "none", border: "1px solid var(--line-2)", cursor: "pointer", color: "var(--ink-3)", fontSize: "var(--fs-m)", lineHeight: 1, padding: "4px 8px", borderRadius: "var(--r-s)", flexShrink: 0, transition: "background 120ms" }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  {/* Rendered content */}
-                  <div
-                    ref={detailRef}
-                    tabIndex={-1}
-                    aria-label={`Message: ${slugToTitle(selected.name)}`}
-                    style={{ fontSize: "var(--fs-base)", lineHeight: 1.7, color: "var(--ink-1)", outline: "none", overflowWrap: "break-word", wordBreak: "break-word" }}
-                  >
-                    <MessageMarkdown
-                      content={selected.content}
-                      components={markdownComponents}
-                    />
-                  </div>
-
-                  {/* Italic byline */}
-                  <p
-                    style={{
-                      fontStyle: "italic",
-                      fontSize: "var(--fs-s)",
-                      color: "var(--ink-3)",
-                      marginTop: 24,
-                      marginBottom: 20,
-                    }}
-                  >
-                    — written by your local agent. nothing left this machine.
-                  </p>
-
-                  {/* Action buttons (bottom) */}
-                  {(() => {
-                    // Prefer provenance.recipe (PR #742 frontmatter) over
-                    // a filename-regex guess. Older files without
-                    // provenance fall back to the .md-stripped filename
-                    // — the recipes page no-ops gracefully on a miss.
-                    const recipeNameForSelected =
-                      selected.provenance?.recipe ?? inboxItemKey(selected.name);
-                    return (
-                      <>
-                      <div className="inbox-reader-actions" style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--line-1)" }}>
-                        <button
-                          type="button"
-                          className="btn sm primary"
-                          style={{ background: "var(--orange)", border: "none", fontSize: "var(--fs-xs)" }}
-                          // #600: route to /recipes?run=<name> so the user
-                          // lands on the recipe with its vars-input modal
-                          // already open. Previously this POSTed directly
-                          // and silently 400'd on any recipe with required
-                          // vars (which is most of them). Deep-link is
-                          // consumed by the recipes page useEffect on load.
-                          onClick={() => {
-                            router.push(
-                              `/recipes?run=${encodeURIComponent(recipeNameForSelected)}`,
-                            );
-                          }}
-                        >
-                          Replay recipe
-                        </button>
-                        <Link
-                          // next/link applies the `/dashboard` basePath
-                          // automatically — a raw <a href="/traces"> 404s
-                          // because it skips the prefix.
-                          href={`/traces?q=${encodeURIComponent(recipeNameForSelected)}`}
-                          className="btn sm ghost"
-                          style={{ fontSize: "var(--fs-xs)", textDecoration: "none" }}
-                        >
-                          View trace
-                        </Link>
-                        <button
-                          type="button"
-                          className="btn sm ghost"
-                          style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}
-                          onClick={async () => {
-                            const proceed = window.confirm(
-                              `Archive "${selected.name}"? It will be moved to ~/.patchwork/inbox/.archive and hidden from the list.`,
-                            );
-                            if (!proceed) return;
-                            try {
-                              const res = await fetch(
-                                apiPath(
-                                  `/api/bridge/inbox/${encodeURIComponent(selected.name)}/archive`,
-                                ),
-                                { method: "POST" },
-                              );
-                              if (!res.ok) {
-                                const text = await res.text().catch(() => res.statusText);
-                                toast.error(`Archive failed: ${text || res.status}`);
-                                return;
-                              }
-                              toast.success(`Archived “${selected.name}”`);
-                              refetch();
-                              setSelected(null);
-                            } catch (e) {
-                              toast.error(
-                                e instanceof Error ? e.message : String(e),
-                              );
-                            }
-                          }}
-                        >
-                          Archive
-                        </button>
-                        <button
-                          type="button"
-                          className="btn sm ghost"
-                          style={{ fontSize: "var(--fs-xs)", color: "var(--err)" }}
-                          onClick={async () => {
-                            const proceed = window.confirm(
-                              `Permanently delete "${selected.name}"? This cannot be undone.`,
-                            );
-                            if (!proceed) return;
-                            try {
-                              const res = await fetch(
-                                apiPath(`/api/bridge/inbox/${encodeURIComponent(selected.name)}`),
-                                { method: "DELETE" },
-                              );
-                              if (!res.ok) {
-                                const text = await res.text().catch(() => res.statusText);
-                                toast.error(`Delete failed: ${text || res.status}`);
-                                return;
-                              }
-                              toast.success(`Deleted “${selected.name}”`);
-                              refetch();
-                              setSelected(null);
-                            } catch (e) {
-                              toast.error(
-                                e instanceof Error ? e.message : String(e),
-                              );
-                            }
-                          }}
-                        >
-                          Delete permanently
-                        </button>
-                      </div>
-                    </>
-                    );
-                  })()}
-                </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 10, color: "var(--ink-3)" }}>
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(true)}
+                  title="Expand sidebar"
+                  aria-label="Expand message sidebar"
+                  className="inbox-sidebar-expand-btn"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <rect x="2" y="4" width="20" height="16" rx="2"/>
                     <path d="M2 7l10 7 10-7"/>
                   </svg>
-                  <p style={{ fontSize: "var(--fs-m)", color: "var(--ink-2)", margin: 0, fontWeight: 500 }}>
-                    Select a message to read it
-                  </p>
-                  {filteredItems.length > 0 && (
-                    <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", margin: 0 }}>
-                      {filteredItems.length} message{filteredItems.length !== 1 ? "s" : ""} in this view
-                    </p>
+                  {unseen > 0 && (
+                    <span className="inbox-expand-dot" />
                   )}
-                </div>
+                </button>
               )}
             </div>
 
+            {sidebarOpen && (
+              <>
+                {/* Search */}
+                <div className="inbox-search-wrap">
+                  <input
+                    ref={searchInputRef}
+                    type="search"
+                    className="input inbox-search-input"
+                    placeholder="Search… ( / )"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    aria-label="Search inbox (shortcut: /)"
+                  />
+                </div>
+
+                {/* Category filter chips */}
+                <div className="inbox-cat-chips">
+                  {FILTER_CATEGORIES.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setActiveFilter(cat)}
+                      className="inbox-cat-btn"
+                      data-active={String(activeFilter === cat)}
+                      aria-pressed={activeFilter === cat}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Item list */}
+                <div className="inbox-list-scroll">
+                  {filteredItems.length === 0 ? (
+                    <div className="inbox-list-empty">No items match</div>
+                  ) : (
+                    filteredItems.map((item, idx) => {
+                      const isActive = selected?.name === item.name;
+                      const isNew = !seenNames.has(item.name);
+                      const title = slugToTitle(item.name);
+                      const plainPreview = stripMarkdown(item.preview);
+                      return (
+                        <button
+                          key={item.name}
+                          type="button"
+                          className={`inbox-item${isActive ? " inbox-item-active" : ""}${isNew ? " inbox-item-new" : ""}`}
+                          onClick={() => selectItem(item.name)}
+                          aria-pressed={isActive}
+                          style={{ animationDelay: `${Math.min(idx * 25, 160)}ms` }}
+                        >
+                          <SenderAvatar name={item.name} size={40} />
+                          <div className="inbox-item-content">
+                            {/* Row 1: title + time */}
+                            <div className="inbox-item-title-row">
+                              <span className="inbox-item-title" data-new={String(isNew)}>
+                                {title}
+                              </span>
+                              <span className="inbox-item-time" data-new={String(isNew)}>
+                                <RelativeTime iso={item.modifiedAt} />
+                              </span>
+                            </div>
+                            {/* Row 2: preview snippet (Gmail-style, 2 lines) */}
+                            {plainPreview && (
+                              <div className="inbox-item-preview">{plainPreview}</div>
+                            )}
+                          </div>
+                          {isNew && (
+                            <span aria-label="unread" className="inbox-unread-dot" />
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            )}
           </div>
-        )}
-      </section>
-    </>
+
+          {/* ── Right content panel (reader) ── */}
+          <div className="inbox-reader-pane">
+            {detailLoading ? (
+              <div role="status" aria-busy="true" className="inbox-reader-loading">
+                <Spinner />
+                <span className="inbox-reader-loading-text">Loading message…</span>
+              </div>
+            ) : detailErr ? (
+              <div className="inbox-reader-error-wrap">
+                <ErrorState
+                  title="Couldn't open this message"
+                  description="The bridge couldn't return this message body. Try selecting it again."
+                  error={detailErr}
+                />
+              </div>
+            ) : selected ? (
+              <div className="inbox-reader-body">
+                {/* Mobile-only Gmail-style top app bar: back arrow + title.
+                    Hidden on desktop where the list is always visible. */}
+                <div className="inbox-mobile-appbar">
+                  <button
+                    type="button"
+                    className="inbox-appbar-back"
+                    onClick={() => setSelected(null)}
+                    aria-label="Back to message list"
+                  >
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <span className="inbox-appbar-spacer" />
+                </div>
+
+                {/* Large subject (Gmail message screen) */}
+                <h2 className="inbox-reader-subject">
+                  {slugToTitle(selected.name)}
+                </h2>
+
+                {/* Sender row: avatar + provenance (when present) + time.
+                    With provenance frontmatter (PR #742) we render a
+                    truthful "Produced by <recipe> · run <#seq>" strip.
+                    Without it we suppress the legacy "Local agent" guess
+                    — silence is more honest than a generic label. */}
+                <div className="inbox-sender-row">
+                  <SenderAvatar name={selected.name} size={40} />
+                  <div className="inbox-sender-meta">
+                    {selected.provenance?.recipe && (
+                      <div className="inbox-provenance-row">
+                        <span className="inbox-provenance-label">Produced by</span>
+                        <RecipeChip
+                          name={selected.provenance.recipe}
+                          trigger={selected.provenance.trigger}
+                          variant="link"
+                        />
+                        {selected.provenance.runSeq !== undefined && (
+                          <>
+                            <span className="inbox-provenance-label">· run</span>
+                            <RunChip
+                              seq={selected.provenance.runSeq}
+                              recipeName={selected.provenance.recipe}
+                              variant="link"
+                            />
+                          </>
+                        )}
+                      </div>
+                    )}
+                    <div className="inbox-sender-date">
+                      {new Date(selected.modifiedAt).toLocaleString()}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(null)}
+                    title="Close"
+                    aria-label="Close detail"
+                    className="inbox-reader-close-desktop"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Rendered content */}
+                <div
+                  ref={detailRef}
+                  tabIndex={-1}
+                  aria-label={`Message: ${slugToTitle(selected.name)}`}
+                  className="inbox-reader-content"
+                >
+                  <MessageMarkdown
+                    content={selected.content}
+                    components={markdownComponents}
+                  />
+                </div>
+
+                {/* Italic byline */}
+                <p className="inbox-reader-byline">
+                  — written by your local agent. nothing left this machine.
+                </p>
+
+                {/* Action buttons (bottom) */}
+                {(() => {
+                  // Prefer provenance.recipe (PR #742 frontmatter) over
+                  // a filename-regex guess. Older files without
+                  // provenance fall back to the .md-stripped filename
+                  // — the recipes page no-ops gracefully on a miss.
+                  const recipeNameForSelected =
+                    selected.provenance?.recipe ?? inboxItemKey(selected.name);
+                  return (
+                    <>
+                    <div className="inbox-reader-actions">
+                      <button
+                        type="button"
+                        className="btn sm primary inbox-action-btn"
+                        // #600: route to /recipes?run=<name> so the user
+                        // lands on the recipe with its vars-input modal
+                        // already open. Previously this POSTed directly
+                        // and silently 400'd on any recipe with required
+                        // vars (which is most of them). Deep-link is
+                        // consumed by the recipes page useEffect on load.
+                        onClick={() => {
+                          router.push(
+                            `/recipes?run=${encodeURIComponent(recipeNameForSelected)}`,
+                          );
+                        }}
+                      >
+                        Replay recipe
+                      </button>
+                      <Link
+                        // next/link applies the `/dashboard` basePath
+                        // automatically — a raw <a href="/traces"> 404s
+                        // because it skips the prefix.
+                        href={`/traces?q=${encodeURIComponent(recipeNameForSelected)}`}
+                        className="btn sm ghost inbox-action-btn"
+                      >
+                        View trace
+                      </Link>
+                      <button
+                        type="button"
+                        className="btn sm ghost inbox-action-btn inbox-action-muted"
+                        onClick={async () => {
+                          const proceed = window.confirm(
+                            `Archive "${selected.name}"? It will be moved to ~/.patchwork/inbox/.archive and hidden from the list.`,
+                          );
+                          if (!proceed) return;
+                          try {
+                            const res = await fetch(
+                              apiPath(
+                                `/api/bridge/inbox/${encodeURIComponent(selected.name)}/archive`,
+                              ),
+                              { method: "POST" },
+                            );
+                            if (!res.ok) {
+                              const text = await res.text().catch(() => res.statusText);
+                              toast.error(`Archive failed: ${text || res.status}`);
+                              return;
+                            }
+                            toast.success(`Archived "${selected.name}"`);
+                            refetch();
+                            setSelected(null);
+                          } catch (e) {
+                            toast.error(
+                              e instanceof Error ? e.message : String(e),
+                            );
+                          }
+                        }}
+                      >
+                        Archive
+                      </button>
+                      <button
+                        type="button"
+                        className="btn sm ghost inbox-action-btn inbox-action-danger"
+                        onClick={async () => {
+                          const proceed = window.confirm(
+                            `Permanently delete "${selected.name}"? This cannot be undone.`,
+                          );
+                          if (!proceed) return;
+                          try {
+                            const res = await fetch(
+                              apiPath(`/api/bridge/inbox/${encodeURIComponent(selected.name)}`),
+                              { method: "DELETE" },
+                            );
+                            if (!res.ok) {
+                              const text = await res.text().catch(() => res.statusText);
+                              toast.error(`Delete failed: ${text || res.status}`);
+                              return;
+                            }
+                            toast.success(`Deleted "${selected.name}"`);
+                            refetch();
+                            setSelected(null);
+                          } catch (e) {
+                            toast.error(
+                              e instanceof Error ? e.message : String(e),
+                            );
+                          }
+                        }}
+                      >
+                        Delete permanently
+                      </button>
+                    </div>
+                  </>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div className="inbox-reader-empty">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="2" y="4" width="20" height="16" rx="2"/>
+                  <path d="M2 7l10 7 10-7"/>
+                </svg>
+                <p className="inbox-reader-empty-title">
+                  Select a message to read it
+                </p>
+                {filteredItems.length > 0 && (
+                  <p className="inbox-reader-empty-count">
+                    {filteredItems.length} message{filteredItems.length !== 1 ? "s" : ""} in this view
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+    </section>
   );
 }

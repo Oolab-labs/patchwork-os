@@ -41,7 +41,19 @@ function normaliseTrigger(t: string): string {
   if (t.startsWith("cron") || t.startsWith("@")) return "cron";
   if (t.startsWith("webhook") || t.startsWith("yaml-webhook")) return "webhook";
   if (t.startsWith("git_hook")) return "git_hook";
+  if (t.startsWith("file_watch") || t.startsWith("on_file_save")) return "file_watch";
+  if (t.startsWith("on_test_run") || t.startsWith("test_run")) return "on_test_run";
   return "manual";
+}
+
+function triggerPillClass(t: string): string {
+  const norm = normaliseTrigger(t);
+  if (norm === "cron") return "accent";
+  if (norm === "webhook") return "info";
+  if (norm === "git_hook") return "ok";
+  if (norm === "file_watch") return "warn";
+  if (norm === "on_test_run") return "purp";
+  return "muted";
 }
 
 interface Run {
@@ -85,8 +97,14 @@ function fmtWhen(ms: number): string {
 
 function fmtDur(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${(ms / 60_000).toFixed(1)}m`;
+  if (ms < 60_000) {
+    const s = Math.floor(ms / 1000);
+    const rem = ms % 1000;
+    return rem === 0 ? `${s}s` : `${s}.${String(Math.floor(rem / 100))}s`;
+  }
+  const m = Math.floor(ms / 60_000);
+  const s = Math.floor((ms % 60_000) / 1000);
+  return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
 
 function statusPill(r: Run): "ok" | "err" | "warn" | "muted" | "running" {
@@ -578,7 +596,7 @@ export default function RunsPage() {
               <button
                 key={cat}
                 type="button"
-                className="pill runs-halt-pill"
+                className="pill runs-halt-pill runs-filter-chip-btn"
                 data-cat={cat}
                 onClick={() => setStatus("error")}
                 aria-label={`Filter to errored runs (${HALT_CATEGORY_LABEL[cat]} · ${count}) — ${HALT_CATEGORY_HINT[cat]}`}
@@ -681,7 +699,7 @@ export default function RunsPage() {
           sessionFilter) && (
           <button
             type="button"
-            className="btn sm ghost"
+            className="btn sm ghost runs-filter-chip-btn"
             onClick={() => {
               setRecipeQuery("");
               setTrigger("all");
@@ -726,7 +744,7 @@ export default function RunsPage() {
         >
           <div className="runs-stat-label">All runs</div>
           <div className="runs-stat-value"><AnimatedNumber value={stats.total} /></div>
-          <div className="runs-stat-foot">Last 24h</div>
+          <div className="runs-stat-foot">{TIME_WINDOW_LABEL[window]}</div>
         </button>
         <button
           type="button"
@@ -811,7 +829,7 @@ export default function RunsPage() {
                   </>
                 ) : (
                   <>
-                    No runs in “{TIME_WINDOW_LABEL[window]}”. Try widening
+                    No runs in &ldquo;{TIME_WINDOW_LABEL[window]}&rdquo;. Try widening
                     the window.
                   </>
                 )
@@ -856,7 +874,7 @@ export default function RunsPage() {
               </tr>
             </thead>
             <tbody>
-              {windowedRuns.map((r) => {
+              {windowedRuns.map((r, rowIdx) => {
                 const key = `${r.taskId}-${r.seq}`;
                 const isExpanded = expanded === key;
                 const pct = Math.max(
@@ -870,12 +888,14 @@ export default function RunsPage() {
                     : sClass === "err"
                       ? "var(--red)"
                       : "var(--amber)";
+                const isFailure = r.status === "error" || (r.assertionFailures && r.assertionFailures.length > 0);
                 return (
                   <React.Fragment key={key}>
                     <tr
                       data-run-row={key}
                       data-status={r.status}
-                      className="runs-tr"
+                      className={`runs-tr runs-stagger-row${isFailure ? " runs-tr--failure" : ""}`}
+                      style={{ animationDelay: `${Math.min(rowIdx * 30, 400)}ms` }}
                       onClick={() => setExpanded(isExpanded ? null : key)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
@@ -912,7 +932,7 @@ export default function RunsPage() {
                         </span>
                       </td>
                       <td>
-                        <span className="pill muted">{normaliseTrigger(r.trigger)}</span>
+                        <span className={`pill ${triggerPillClass(r.trigger)}`}>{normaliseTrigger(r.trigger)}</span>
                         {r.manualRunId && (
                           <Link
                             href={`/runs?attempt=${encodeURIComponent(r.manualRunId)}`}
@@ -926,7 +946,20 @@ export default function RunsPage() {
                       </td>
                       <td>
                         <span className={`pill ${sClass} runs-status-pill`}>
-                          {sClass !== "running" && (
+                          {sClass === "running" ? (
+                            <span
+                              style={{
+                                display: "inline-block",
+                                width: 7,
+                                height: 7,
+                                borderRadius: "50%",
+                                background: "var(--accent)",
+                                marginRight: 5,
+                                animation: "runs-pulse 1.4s ease-in-out infinite",
+                                verticalAlign: "middle",
+                              }}
+                            />
+                          ) : (
                             <span className="pill-dot" />
                           )}
                           {statusLabel(r)}
@@ -977,9 +1010,18 @@ export default function RunsPage() {
                               </span>
                             </div>
                             {r.errorMessage && (
-                              <div>
-                                <div className="run-expand-section-label run-expand-section-label--err">
-                                  Error
+                              <div
+                                style={{
+                                  borderLeft: "3px solid var(--err)",
+                                  paddingLeft: 12,
+                                  borderRadius: "0 var(--radius) var(--radius) 0",
+                                  background: "color-mix(in oklch, var(--err) 6%, var(--card-bg))",
+                                  padding: "10px 12px",
+                                  marginBottom: 8,
+                                }}
+                              >
+                                <div className="run-expand-section-label run-expand-section-label--err" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{ fontSize: "1.1em" }}>⚠</span> Error
                                 </div>
                                 <pre className="task-output task-output--err">
                                   {r.errorMessage}
@@ -1060,7 +1102,7 @@ export default function RunsPage() {
             unreadable crammed into a phone viewport, so each run becomes
             a tappable card. Shown only ≤768px via .runs-card-list CSS. */}
         <div className="runs-card-list">
-          {windowedRuns.map((r) => {
+          {windowedRuns.map((r, rowIdx) => {
             const key = `${r.taskId}-${r.seq}`;
             const isExpanded = expanded === key;
             const sClass = statusPill(r);
@@ -1068,8 +1110,9 @@ export default function RunsPage() {
               <div
                 key={key}
                 data-run-row={key}
-                className="run-card"
+                className="run-card runs-stagger-row"
                 data-status={r.status}
+                style={{ animationDelay: `${Math.min(rowIdx * 30, 400)}ms` }}
                 onClick={() => setExpanded(isExpanded ? null : key)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -1094,7 +1137,22 @@ export default function RunsPage() {
                     />
                   </span>
                   <span className={`pill ${sClass} xs`}>
-                    {sClass !== "running" && <span className="pill-dot" />}
+                    {sClass === "running" ? (
+                      <span
+                        style={{
+                          display: "inline-block",
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: "currentColor",
+                          marginRight: 4,
+                          animation: "runs-pulse 1.4s ease-in-out infinite",
+                          verticalAlign: "middle",
+                        }}
+                      />
+                    ) : (
+                      <span className="pill-dot" />
+                    )}
                     {statusLabel(r)}
                     {r.assertionFailures &&
                       r.assertionFailures.length > 0 &&
@@ -1102,7 +1160,7 @@ export default function RunsPage() {
                   </span>
                 </div>
                 <div className="run-card-meta">
-                  <span className="pill muted xs">
+                  <span className={`pill ${triggerPillClass(r.trigger)} xs`}>
                     {normaliseTrigger(r.trigger)}
                   </span>
                   <span className="mono muted">

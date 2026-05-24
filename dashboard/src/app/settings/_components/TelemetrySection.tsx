@@ -160,31 +160,18 @@ export function TelemetrySection({ flashSaved }: { flashSaved: () => void }) {
   }
 
   return (
-    <div id="s-telemetry" className="card" style={{ marginTop: 16 }}>
+    <div id="s-telemetry" className="card">
       <div className="card-head">
         <div>
-          <h2 style={{ margin: 0 }}>Telemetry</h2>
-          <div
-            style={{
-              fontSize: "var(--fs-s)",
-              color: "var(--ink-2)",
-              marginTop: 2,
-            }}
-          >
+          <h2 className="stg-card-h2">Telemetry</h2>
+          <div className="stg-card-subtitle">
             Opt-in. Everything off by default. Local-only until you flip a
             switch.
           </div>
         </div>
       </div>
 
-      <div
-        style={{
-          padding: "16px 0",
-          display: "flex",
-          flexDirection: "column",
-          gap: 14,
-        }}
-      >
+      <div className="stg-tel-list">
         <ToggleRow
           id="tel-crash"
           label="Crash reports"
@@ -216,13 +203,7 @@ export function TelemetrySection({ flashSaved }: { flashSaved: () => void }) {
           }}
         />
         {telLastSentAt && (
-          <div
-            style={{
-              fontSize: "var(--fs-s)",
-              color: "var(--ink-2)",
-              paddingTop: 4,
-            }}
-          >
+          <div className="stg-tel-meta">
             Last sent:{" "}
             {new Date(telLastSentAt).toLocaleDateString(undefined, {
               year: "numeric",
@@ -234,61 +215,34 @@ export function TelemetrySection({ flashSaved }: { flashSaved: () => void }) {
           </div>
         )}
         {telEndpoint && (
-          <div
-            style={{
-              fontSize: "var(--fs-s)",
-              color: "var(--ink-2)",
-              paddingTop: 4,
-            }}
-            aria-label="Telemetry destination"
-          >
+          <div className="stg-tel-meta" aria-label="Telemetry destination">
             Sending to <span className="mono">{telEndpoint}</span>
             {telEndpointSource && (
-              <span style={{ color: "var(--ink-3)" }}>
+              <span className="stg-tel-reset-note">
                 {" "}
                 (source: {telEndpointSource})
               </span>
             )}
           </div>
         )}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            flexWrap: "wrap",
-            paddingTop: 8,
-            borderTop: "1px solid var(--border-default)",
-            marginTop: 4,
-          }}
-        >
+        <div className="stg-tel-footer">
           <button
             type="button"
             onClick={() => void resetTelemetryData()}
             disabled={telResetBusy}
             aria-label="Delete local telemetry data"
-            style={{
-              background: "transparent",
-              color: "var(--fg-2)",
-              border: "1px solid var(--border-default)",
-              borderRadius: "var(--r-2)",
-              padding: "5px 10px",
-              fontSize: "var(--fs-s)",
-              cursor: telResetBusy ? "default" : "pointer",
-              opacity: telResetBusy ? 0.5 : 1,
-            }}
+            className="stg-tel-reset-btn"
+            data-busy={String(telResetBusy)}
           >
             {telResetBusy ? "Clearing…" : "Delete local telemetry data"}
           </button>
-          <span style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)" }}>
+          <span className="stg-tel-reset-note">
             Clears prefs, endpoint config, and the install salt.
           </span>
           {telResetMsg && (
             <span
-              style={{
-                fontSize: "var(--fs-s)",
-                color: telResetMsg.ok ? "var(--ok)" : "var(--err)",
-              }}
+              className="stg-tel-reset-msg"
+              data-ok={String(telResetMsg.ok)}
             >
               {telResetMsg.text}
             </span>

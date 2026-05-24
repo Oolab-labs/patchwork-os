@@ -156,7 +156,7 @@ export default function InboxDeliveryPage() {
       <div className="page-head">
         <div>
           <BackLink href="/settings" label="Settings" />
-          <h1 className="editorial-h1" style={{ margin: 0 }}>
+          <h1 className="editorial-h1 m-0">
             Inbox delivery —{" "}
             <span className="accent">
               push briefs to where you actually are.
@@ -169,19 +169,8 @@ export default function InboxDeliveryPage() {
         </div>
       </div>
 
-      <aside
-        style={{
-          marginBottom: 18,
-          padding: "12px 16px",
-          background: "color-mix(in srgb, var(--dot-muted) 8%, var(--surface))",
-          border: "1px solid var(--line-2)",
-          borderRadius: "var(--r-2)",
-          fontSize: "var(--fs-s)",
-          color: "var(--ink-2)",
-          lineHeight: 1.5,
-        }}
-      >
-        <strong style={{ color: "var(--ink-1)" }}>Instructional for now.</strong>{" "}
+      <aside className="idl-note">
+        <strong className="idl-note-strong">Instructional for now.</strong>{" "}
         Patchwork ships with the delivery tools below (
         <code>http.post</code>, <code>im_send</code>, <code>email.send</code>) but
         does not yet expose a configure-and-test panel. Wire one channel via the
@@ -189,13 +178,7 @@ export default function InboxDeliveryPage() {
         them in-app.
       </aside>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-          gap: 14,
-        }}
-      >
+      <div className="idl-channel-grid">
         {CHANNELS.map((c) => {
           const open = openId === c.id;
           return (
@@ -205,57 +188,31 @@ export default function InboxDeliveryPage() {
               onClick={() => setOpenId(open ? null : c.id)}
               aria-expanded={open}
               aria-controls="inbox-delivery-setup-panel"
+              className="idl-channel-btn"
               style={{
-                textAlign: "left",
-                padding: "14px 16px",
-                borderRadius: "var(--r-3)",
                 border: open
                   ? `1px solid ${toneText(c.tone)}`
                   : "1px solid var(--line-2)",
-                background: open
-                  ? toneBg(c.tone)
-                  : "var(--surface)",
-                cursor: "pointer",
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-                color: "inherit",
-                transition: "background 120ms ease, border-color 120ms ease",
+                background: open ? toneBg(c.tone) : "var(--surface)",
               }}
             >
               <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontWeight: 700,
-                  fontFamily: "var(--font-mono)",
-                  color: toneText(c.tone),
-                }}
+                className="idl-channel-name"
+                style={{ color: toneText(c.tone) }}
               >
                 <span
                   aria-hidden="true"
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: toneText(c.tone),
-                  }}
+                  className="idl-channel-dot"
+                  style={{ background: toneText(c.tone) }}
                 />
                 {c.name}
               </div>
-              <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-1)" }}>
-                {c.tagline}
-              </div>
-              <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>
+              <div className="idl-channel-tagline">{c.tagline}</div>
+              <div className="idl-channel-toggle">
                 {open ? (
-                  <>
-                    Hide setup<span aria-hidden="true"> ▴</span>
-                  </>
+                  <>Hide setup<span aria-hidden="true"> ▴</span></>
                 ) : (
-                  <>
-                    Show setup<span aria-hidden="true"> ▾</span>
-                  </>
+                  <>Show setup<span aria-hidden="true"> ▾</span></>
                 )}
               </div>
             </button>
@@ -271,58 +228,26 @@ export default function InboxDeliveryPage() {
             id="inbox-delivery-setup-panel"
             role="region"
             aria-label={`${channel.name} setup`}
-            style={{
-              marginTop: 18,
-              padding: "16px 18px",
-              border: "1px solid var(--line-2)",
-              borderRadius: "var(--r-3)",
-              background: "var(--surface)",
-            }}
+            className="idl-setup-panel"
           >
-            <div
-              style={{
-                fontSize: "var(--fs-m)",
-                fontWeight: 700,
-                color: "var(--ink-0)",
-                marginBottom: 4,
-              }}
-            >
-              {channel.name} setup
-            </div>
-            <div
-              style={{
-                fontSize: "var(--fs-s)",
-                color: "var(--ink-2)",
-                marginBottom: 12,
-              }}
-            >
-              {channel.whenToPick}
-            </div>
-            <div style={{ marginBottom: 12 }}>
+            <div className="idl-setup-title">{channel.name} setup</div>
+            <div className="idl-setup-desc">{channel.whenToPick}</div>
+            <div className="idl-setup-snippet">
               <CodeBlock>{highlightYaml(channel.recipeSnippet)}</CodeBlock>
             </div>
             {channel.caveat && (
-              <div
-                style={{
-                  fontSize: "var(--fs-xs)",
-                  color: "var(--amber, var(--warn))",
-                  background: "color-mix(in srgb, var(--amber, var(--warn)) 8%, transparent)",
-                  padding: "8px 10px",
-                  borderRadius: "var(--r-2)",
-                  marginBottom: channel.docs ? 10 : 0,
-                }}
-              >
+              <div className={`idl-setup-caveat${channel.docs ? " idl-setup-caveat-mb" : ""}`}>
                 <span aria-hidden="true">⚠ </span>
                 {channel.caveat}
               </div>
             )}
             {channel.docs && (
-              <div style={{ fontSize: "var(--fs-s)" }}>
+              <div className="idl-setup-docs">
                 <a
                   href={channel.docs.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}
+                  className="idl-setup-docs-link"
                 >
                   {channel.docs.label} ↗
                 </a>
@@ -332,21 +257,9 @@ export default function InboxDeliveryPage() {
         );
       })()}
 
-      <div
-        style={{
-          marginTop: 22,
-          padding: "14px 16px",
-          borderRadius: "var(--r-2)",
-          border: "1px dashed var(--line-2)",
-          fontSize: "var(--fs-s)",
-          color: "var(--ink-2)",
-        }}
-      >
+      <div className="idl-back-note">
         Already wired a channel?{" "}
-        <Link
-          href="/inbox"
-          style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}
-        >
+        <Link href="/inbox" className="idl-back-link">
           Go back to your inbox →
         </Link>
       </div>

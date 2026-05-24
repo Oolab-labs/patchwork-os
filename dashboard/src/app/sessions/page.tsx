@@ -31,8 +31,8 @@ function activityState(
 ): { color: string; label: string } {
   if (!lastAt) return { color: "var(--ink-3)", label: "idle" };
   const diff = Date.now() - lastAt;
-  if (diff < 30_000) return { color: "var(--green)", label: "live" };
-  if (diff < 5 * 60_000) return { color: "var(--amber)", label: "recent" };
+  if (diff < 30_000) return { color: "var(--ok)", label: "live" };
+  if (diff < 5 * 60_000) return { color: "var(--warn)", label: "recent" };
   return { color: "var(--ink-3)", label: "idle" };
 }
 
@@ -114,6 +114,8 @@ function SessionSummaryPanel({
   );
 }
 
+// CSS for this page has been moved to globals.css (sess/* namespace).
+
 // ----------------------------------------------------------- page
 
 export default function SessionsPage() {
@@ -190,15 +192,17 @@ export default function SessionsPage() {
           title="No active sessions"
           description={
             <>
-              No Claude Code agents are currently connected to the bridge. Connect
-              one to see live activity here.{" "}
+              Sessions are live Claude Code agent connections. Each agent that
+              connects to the bridge appears here with its tool call history,
+              open files, and pending approvals. No agents are currently
+              connected.{" "}
               <a
                 href="https://docs.anthropic.com/claude-code"
                 target="_blank"
                 rel="noreferrer"
                 style={{ color: "var(--accent)" }}
               >
-                Learn more →
+                Learn how to connect →
               </a>
             </>
           }
@@ -242,7 +246,7 @@ export default function SessionsPage() {
                       setSelectedId(isSelected ? null : s.id);
                     }
                   }}
-                  className="glass-card glass-card--hover"
+                  className="glass-card glass-card--hover sess-card"
                   style={{
                     textAlign: "left",
                     textDecoration: "none",
@@ -253,9 +257,12 @@ export default function SessionsPage() {
                     gap: "var(--s-3)",
                     borderLeft: isSelected
                       ? "3px solid var(--orange)"
-                      : "3px solid transparent",
+                      : act.label === "live"
+                        ? "3px solid var(--ok)"
+                        : "3px solid transparent",
                     cursor: "pointer",
                     background: isSelected ? "var(--recess)" : undefined,
+                    animationDelay: `${idx * 50}ms`,
                   }}
                 >
                   {/* header */}
@@ -278,7 +285,7 @@ export default function SessionsPage() {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        s{idx + 1}
+                        {s.id.slice(0, 8)}
                       </div>
                     </div>
                     <span
@@ -291,13 +298,11 @@ export default function SessionsPage() {
                       }`}
                       style={{
                         flexShrink: 0,
-                        textTransform: "uppercase",
                         fontFamily: "var(--font-mono)",
                         fontSize: "var(--fs-2xs)",
-                        letterSpacing: "0.06em",
                       }}
                     >
-                      {act.label === "live" && <span className="dot-live" aria-hidden />}
+                      {act.label === "live" && <span className="sess-live-dot" aria-hidden />}
                       {act.label}
                     </span>
                   </div>
@@ -356,9 +361,7 @@ export default function SessionsPage() {
                           fontSize: "var(--fs-2xs)",
                           color: "var(--ink-2)",
                           marginTop: 3,
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.06em",
+                          fontWeight: 500,
                         }}
                       >
                         Tools
@@ -386,9 +389,7 @@ export default function SessionsPage() {
                           fontSize: "var(--fs-2xs)",
                           color: "var(--ink-2)",
                           marginTop: 3,
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.06em",
+                          fontWeight: 500,
                         }}
                       >
                         Files
@@ -417,12 +418,10 @@ export default function SessionsPage() {
                           fontSize: "var(--fs-2xs)",
                           color: "var(--ink-2)",
                           marginTop: 3,
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.06em",
+                          fontWeight: 500,
                         }}
                       >
-                        Pending
+                        Approvals
                       </div>
                     </Link>
                   </div>

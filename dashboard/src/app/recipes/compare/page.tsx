@@ -33,16 +33,48 @@ const RISK_PILL: Record<string, string> = {
   high: "err",
 };
 
-function StepRow({ step, highlight }: { step: PlanStep; highlight?: boolean }) {
+function StepRow({ step, highlight, isRemoved }: { step: PlanStep; highlight?: boolean; isRemoved?: boolean }) {
   return (
     <tr
       style={{
         borderBottom: "1px solid var(--border-subtle)",
-        background: highlight ? "color-mix(in srgb, var(--warn) 8%, transparent)" : undefined,
+        background: isRemoved
+          ? "color-mix(in srgb, var(--err) 6%, transparent)"
+          : highlight
+            ? "color-mix(in srgb, var(--ok) 8%, transparent)"
+            : undefined,
+        transition: "background 120ms",
+        opacity: isRemoved ? 0.6 : 1,
       }}
     >
       <td style={{ padding: "8px 0", fontSize: "var(--fs-s)", fontFamily: "var(--font-mono)" }}>
-        {step.tool ?? step.type}
+        <span style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+        }}>
+          {highlight && !isRemoved && (
+            <span style={{
+              display: "inline-block",
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "var(--ok)",
+              flexShrink: 0,
+            }} aria-label="new step" />
+          )}
+          {isRemoved && (
+            <span style={{
+              display: "inline-block",
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "var(--err)",
+              flexShrink: 0,
+            }} aria-label="removed step" />
+          )}
+          {step.tool ?? step.type}
+        </span>
       </td>
       <td style={{ padding: "8px 6px", textAlign: "center" }}>
         {step.risk && (
@@ -51,7 +83,7 @@ function StepRow({ step, highlight }: { step: PlanStep; highlight?: boolean }) {
           </span>
         )}
       </td>
-      <td style={{ padding: "8px 6px", textAlign: "center", fontSize: "var(--fs-xs)", color: "var(--fg-2)" }}>
+      <td style={{ padding: "8px 6px", textAlign: "center", fontSize: "var(--fs-xs)", color: step.isWrite ? "var(--warn)" : "var(--ink-2)", fontWeight: step.isWrite ? 600 : 400 }}>
         {step.isWrite ? "write" : "read"}
       </td>
       <td style={{ padding: "8px 0", textAlign: "center" }}>
@@ -88,12 +120,16 @@ function PlanColumn({
 
   return (
     <div
+      className="compare-panel"
       style={{
         flex: 1,
         minWidth: 0,
         border: "1px solid var(--border-default)",
         borderRadius: "var(--r-3)",
         overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        transition: "box-shadow 150ms",
       }}
     >
       <div
@@ -135,8 +171,21 @@ function PlanColumn({
         </button>
       </div>
 
-      <div style={{ padding: "12px 16px" }}>
-        {loading && <p style={{ color: "var(--fg-2)", fontSize: "var(--fs-m)" }}>Loading plan…</p>}
+      <div style={{ padding: "12px 16px", flex: 1 }}>
+        {loading && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {[1, 2, 3].map((n) => (
+              <div key={n} style={{
+                height: 32,
+                borderRadius: 6,
+                background: "var(--line-2)",
+                opacity: 0.5 + n * 0.1,
+                animation: "compareSkelPulse 1.4s ease-in-out infinite",
+                animationDelay: `${n * 120}ms`,
+              }} />
+            ))}
+          </div>
+        )}
         {error && <div className="alert-err" style={{ fontSize: "var(--fs-s)" }}>{error}</div>}
 
         {plan && (
@@ -154,7 +203,7 @@ function PlanColumn({
                   borderRadius: "var(--r-2)",
                   padding: "6px 10px",
                   fontSize: "var(--fs-xs)",
-                  color: "var(--fg-1)",
+                  color: "var(--ink-1)",
                   marginBottom: 8,
                 }}
               >
@@ -164,10 +213,10 @@ function PlanColumn({
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border-default)" }}>
-                  <th style={{ textAlign: "left", fontSize: "var(--fs-2xs)", color: "var(--fg-2)", fontWeight: 500, padding: "4px 0" }}>Step</th>
-                  <th style={{ textAlign: "center", fontSize: "var(--fs-2xs)", color: "var(--fg-2)", fontWeight: 500, padding: "4px 6px" }}>Risk</th>
-                  <th style={{ textAlign: "center", fontSize: "var(--fs-2xs)", color: "var(--fg-2)", fontWeight: 500, padding: "4px 6px" }}>Mode</th>
-                  <th style={{ textAlign: "center", fontSize: "var(--fs-2xs)", color: "var(--fg-2)", fontWeight: 500, padding: "4px 0" }} />
+                  <th style={{ textAlign: "left", fontSize: "var(--fs-2xs)", color: "var(--ink-2)", fontWeight: 500, padding: "4px 0" }}>Step</th>
+                  <th style={{ textAlign: "center", fontSize: "var(--fs-2xs)", color: "var(--ink-2)", fontWeight: 500, padding: "4px 6px" }}>Risk</th>
+                  <th style={{ textAlign: "center", fontSize: "var(--fs-2xs)", color: "var(--ink-2)", fontWeight: 500, padding: "4px 6px" }}>Mode</th>
+                  <th style={{ textAlign: "center", fontSize: "var(--fs-2xs)", color: "var(--ink-2)", fontWeight: 500, padding: "4px 0" }} />
                 </tr>
               </thead>
               <tbody>
@@ -178,10 +227,17 @@ function PlanColumn({
                     highlight={!otherStepIds.has(step.id)}
                   />
                 ))}
+                {[...otherStepIds].filter((id) => !stepIds.has(id)).map((id) => (
+                  <StepRow
+                    key={`removed-${id}`}
+                    step={{ id, type: "agent" }}
+                    isRemoved
+                  />
+                ))}
               </tbody>
             </table>
             {plan.connectorNamespaces && plan.connectorNamespaces.length > 0 && (
-              <p style={{ fontSize: "var(--fs-xs)", color: "var(--fg-2)", marginTop: 8 }}>
+              <p style={{ fontSize: "var(--fs-xs)", color: "var(--ink-2)", marginTop: 8 }}>
                 Connectors: {plan.connectorNamespaces.join(", ")}
               </p>
             )}
@@ -313,13 +369,12 @@ function CompareInner() {
 
   return (
     <section>
-      <div className="page-head">
+      <div className="page-head" style={{ animation: "compareIn 180ms ease both" }}>
         <div>
           <BackLink href="/recipes" label="Recipes" />
           <h1 style={{ marginTop: 4 }}>Compare variants</h1>
           <div className="page-head-sub">
-            Dry-run plan diff — highlighted rows are steps unique to each
-            variant. Promote to replace the base recipe with this variant.
+            Dry-run plan diff — green rows are steps unique to this variant, red rows are removed. Promote to replace the base recipe.
           </div>
         </div>
       </div>
@@ -335,6 +390,7 @@ function CompareInner() {
               promoteResultKind === "ok" ? "var(--ok-soft)" : "var(--err-soft)",
             border: `1px solid ${promoteResultKind === "ok" ? "var(--ok)" : "var(--err)"}`,
             fontSize: "var(--fs-m)",
+            animation: "promoteResultIn 200ms ease both",
           }}
         >
           <span aria-hidden="true">
@@ -352,7 +408,18 @@ function CompareInner() {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+      <div className="compare-legend">
+        <div className="compare-legend-item">
+          <div className="compare-legend-dot" style={{ background: "var(--ok)" }} />
+          <span>new step (unique to this variant)</span>
+        </div>
+        <div className="compare-legend-item">
+          <div className="compare-legend-dot" style={{ background: "var(--err)" }} />
+          <span>removed step (in other variant only)</span>
+        </div>
+      </div>
+
+      <div className="compare-columns">
         <PlanColumn
           name={nameA}
           plan={planA}
@@ -433,7 +500,7 @@ function CompareInner() {
 
 export default function ComparePage() {
   return (
-    <Suspense fallback={<p style={{ color: "var(--fg-2)" }}>Loading…</p>}>
+    <Suspense fallback={<p style={{ color: "var(--ink-2)" }}>Loading…</p>}>
       <CompareInner />
     </Suspense>
   );

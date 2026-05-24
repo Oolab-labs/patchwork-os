@@ -332,7 +332,7 @@ function verdictPalette(
   }
   return {
     bg: "var(--bg-2)",
-    fg: "var(--fg-2)",
+    fg: "var(--ink-2)",
     label: "unparseable",
   };
 }
@@ -464,14 +464,18 @@ function StepRow({
       // a haltReason that names a stepId, links can land on
       // /runs/:seq#step-<id> and scroll the failing row into view.
       id={`step-${step.id}`}
+      className="rd-step-row rd-step-stagger"
       style={{
         position: "relative",
         borderBottom: "1px solid var(--border-subtle)",
         borderLeft: step.status === "running"
-          ? "3px solid var(--blue)"
-          : "3px solid transparent",
+          ? "3px solid var(--accent)"
+          : step.status === "error"
+            ? "3px solid var(--err)"
+            : "3px solid transparent",
         scrollMarginTop: 80,
         cursor: step.error ? "pointer" : "default",
+        animationDelay: `${Math.min(index * 40, 600)}ms`,
       }}
       onClick={() => step.error && toggleOpen()}
       onMouseEnter={onEnter}
@@ -551,7 +555,7 @@ function StepRow({
                   step.status === "error"
                     ? "var(--err)"
                     : step.status === "skipped"
-                      ? "var(--fg-2)"
+                      ? "var(--ink-2)"
                       : "var(--ok)",
               }}
             />
@@ -563,8 +567,11 @@ function StepRow({
           )}
           <span
             className={`pill ${stepStatusClass(step.status)}`}
-            style={{ fontSize: "var(--fs-2xs)" }}
+            style={{ fontSize: "var(--fs-2xs)", display: "inline-flex", alignItems: "center", gap: 4 }}
           >
+            {step.status === "running" && (
+              <span className="rd-step-running-indicator" style={{ width: 8, height: 8, borderWidth: 1.5 }} />
+            )}
             {stepStatusLabel(step.status)}
           </span>
         </div>
@@ -947,6 +954,8 @@ function ReplayPreflight({ stepResults }: { stepResults: StepResult[] }) {
 
 // ------------------------------------------------------------------ page
 
+// CSS for this page has been moved to globals.css (rd/* namespace).
+
 export default function RunDetailPage() {
   const params = useParams();
   const seq = params.seq as string;
@@ -1239,10 +1248,11 @@ export default function RunDetailPage() {
     fontSize: "var(--fs-s)",
     fontWeight: 500,
     cursor: "pointer",
-    color: tab === t ? "var(--fg-1)" : "var(--fg-2)",
+    color: tab === t ? "var(--ink-1)" : "var(--ink-2)",
     background: "none",
     border: "none",
-    borderBottom: tab === t ? "2px solid var(--fg-1)" : "2px solid transparent",
+    borderBottom: tab === t ? "2px solid var(--accent)" : "2px solid transparent",
+    transition: "color 0.12s, border-bottom-color 0.12s",
   });
 
   return (
@@ -1263,10 +1273,12 @@ export default function RunDetailPage() {
         }}
       >
         <div style={{ flex: 1, minWidth: "min(200px, 100%)" }}>
-          <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginBottom: 2 }}>
-            <Link href="/runs" style={{ color: "var(--ink-2)" }}>Runs</Link>
+          <div style={{ fontSize: "var(--fs-s)", marginBottom: 2 }}>
+            <Link href="/runs" className="rd-breadcrumb-back">
+              ← Runs
+            </Link>
             {" / "}
-            <span className="mono">#{seq}</span>
+            <span className="mono" style={{ color: "var(--ink-2)" }}>#{seq}</span>
           </div>
           <h1 style={{ margin: 0, fontSize: 22 }}>
             {run ? (
@@ -1344,14 +1356,18 @@ export default function RunDetailPage() {
               return (
                 <span
                   className={`pill ${cls}`}
-                  style={{ fontSize: "var(--fs-xs)" }}
+                  style={{ fontSize: "var(--fs-xs)", display: "inline-flex", alignItems: "center", gap: 5 }}
                   title={
                     partialFail
                       ? "Run finished but one or more steps errored"
                       : undefined
                   }
                 >
-                  {run.status !== "running" && <span className="pill-dot" />}
+                  {run.status === "running" ? (
+                    <span className="rd-step-running-indicator" style={{ width: 9, height: 9, borderWidth: 1.5 }} />
+                  ) : (
+                    <span className="pill-dot" />
+                  )}
                   {partialFail ? "completed with errors" : run.status}
                 </span>
               );
@@ -1633,9 +1649,7 @@ export default function RunDetailPage() {
                     style={{
                       fontSize: "var(--fs-xs)",
                       color: "var(--ink-3)",
-                      fontWeight: 600,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
+                      fontWeight: 500,
                     }}
                   >
                     Delivered to inbox
@@ -1757,7 +1771,7 @@ export default function RunDetailPage() {
                 </span>
               </div>
               {planLoading && (
-                <div style={{ padding: 20, color: "var(--fg-2)", fontSize: "var(--fs-m)" }}>Generating…</div>
+                <div style={{ padding: 20, color: "var(--ink-2)", fontSize: "var(--fs-m)" }}>Generating…</div>
               )}
               {planErr && (
                 <div className="alert-err" style={{ margin: 16 }}>
@@ -1780,28 +1794,28 @@ export default function RunDetailPage() {
               }}
             >
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>TASK ID</div>
+                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-2)", marginBottom: 2 }}>TASK ID</div>
                 <CopyableMono value={run.taskId} ariaLabel="Copy task id" />
               </div>
               <div>
-                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>STARTED</div>
+                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-2)", marginBottom: 2 }}>STARTED</div>
                 <span className="mono" style={{ fontSize: "var(--fs-s)" }}>
                   {run.startedAt ? fmtTs(run.startedAt) : "—"}
                 </span>
               </div>
               <div>
-                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>FINISHED</div>
+                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-2)", marginBottom: 2 }}>FINISHED</div>
                 <span className="mono" style={{ fontSize: "var(--fs-s)" }}>{fmtTs(run.doneAt)}</span>
               </div>
               {run.model && (
                 <div>
-                  <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>MODEL</div>
+                  <div style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-2)", marginBottom: 2 }}>MODEL</div>
                   <span className="mono" style={{ fontSize: "var(--fs-s)" }}>{run.model}</span>
                 </div>
               )}
               {run.manualRunId && (
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 2 }}>ATTEMPT</div>
+                  <div style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-2)", marginBottom: 2 }}>ATTEMPT</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <CopyableMono value={run.manualRunId} ariaLabel="Copy attempt id" />
                     <Link
@@ -1826,8 +1840,26 @@ export default function RunDetailPage() {
               )}
             </div>
             {run.errorMessage && (
-              <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--err)", marginBottom: 4 }}>ERROR</div>
+              <div
+                className="rd-error-card"
+                style={{
+                  marginTop: 12,
+                  padding: "12px 14px",
+                  borderRadius: "var(--radius)",
+                  borderLeft: "4px solid var(--err) !important",
+                }}
+              >
+                <div style={{
+                  fontSize: "var(--fs-xs)",
+                  color: "var(--err)",
+                  fontWeight: 600,
+                  marginBottom: 6,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}>
+                  <span style={{ fontSize: "1em" }}>⚠</span> ERROR
+                </div>
                 <TruncatablePre text={run.errorMessage} color="var(--err)" />
               </div>
             )}
@@ -1837,7 +1869,7 @@ export default function RunDetailPage() {
                 <div
                   style={{
                     fontSize: "var(--fs-2xs)",
-                    color: "var(--fg-2)",
+                    color: "var(--ink-2)",
                     marginBottom: 4,
                   }}
                 >
@@ -1874,7 +1906,7 @@ export default function RunDetailPage() {
                       <div
                         style={{
                           fontSize: "var(--fs-2xs)",
-                          color: "var(--fg-2)",
+                          color: "var(--ink-2)",
                           marginBottom: 2,
                         }}
                       >
@@ -1893,7 +1925,7 @@ export default function RunDetailPage() {
             )}
             {run.outputTail && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--fg-2)", marginBottom: 4 }}>OUTPUT TAIL</div>
+                <div style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-2)", marginBottom: 4 }}>OUTPUT TAIL</div>
                 <TruncatablePre text={run.outputTail} className="task-output" maxLines={20} />
               </div>
             )}

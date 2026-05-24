@@ -222,6 +222,7 @@ function RecipeCard({
   const [err, setErr] = useState<string | null>(null);
   const [justInstalled, setJustInstalled] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [installSuccess, setInstallSuccess] = useState(false);
 
   const isInstalled = installed || justInstalled;
 
@@ -241,6 +242,8 @@ function RecipeCard({
     try {
       await onInstall(recipe);
       setJustInstalled(true);
+      setInstallSuccess(true);
+      setTimeout(() => setInstallSuccess(false), 2000);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -257,7 +260,8 @@ function RecipeCard({
   }
 
   return (
-    <div className="template-card glass-card">
+    <>
+    <div className="template-card glass-card mkt-recipe-card">
       {/* top: name + maintainer attribution */}
       <div style={{ marginBottom: "var(--s-2)" }}>
         <Link
@@ -265,7 +269,7 @@ function RecipeCard({
           style={{
             fontWeight: 600,
             fontSize: "var(--fs-base)",
-            color: "var(--fg-0)",
+            color: "var(--ink-0)",
             wordBreak: "break-word",
             lineHeight: 1.4,
             textDecoration: "none",
@@ -291,7 +295,7 @@ function RecipeCard({
       <p
         style={{
           fontSize: "var(--fs-s)",
-          color: "var(--fg-2)",
+          color: "var(--ink-2)",
           lineHeight: 1.55,
           flex: 1,
           overflow: "hidden",
@@ -387,7 +391,7 @@ function RecipeCard({
           {isInstalled ? (
             <Link
               href={`/recipes/${canonicalRecipeKey(recipe.name)}`}
-              className="pill"
+              className={`pill mkt-installed-pill`}
               style={{
                 background: "var(--ok-soft)",
                 color: "var(--ok)",
@@ -402,12 +406,19 @@ function RecipeCard({
           ) : bridgeStatus === "online" ? (
             <button
               type="button"
-              className="btn sm primary"
+              className="btn sm primary mkt-install-btn"
               onClick={handleInstall}
               disabled={loading}
               aria-label={`Install ${shortName(recipe.name)}`}
             >
-              {loading ? "Installing…" : "Install"}
+              {loading ? (
+                <>
+                  <span className="mkt-spinner-icon" aria-hidden="true" />
+                  Installing…
+                </>
+              ) : installSuccess ? (
+                "✓ Done!"
+              ) : "Install"}
             </button>
           ) : bridgeStatus === "unauth" ? (
             <Link
@@ -472,6 +483,7 @@ function RecipeCard({
         fileAccess={recipe.file_access}
       />
     </div>
+    </>
   );
 }
 
@@ -483,7 +495,7 @@ function BundleCard({ bundle }: { bundle: RegistryBundle }) {
     <Link
       href={href}
       style={{ textDecoration: "none" }}
-      className="template-card glass-card"
+      className="template-card glass-card mkt-bundle-card"
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "18px 18px 16px", height: "100%" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
@@ -813,7 +825,7 @@ export default function MarketplacePage() {
             fontSize: "var(--fs-m)",
           }}
         >
-          <span style={{ color: "var(--fg-2)" }}>
+          <span style={{ color: "var(--ink-2)" }}>
             {bridgeStatus === "unauth"
               ? "Browsing as a guest — log in to install recipes directly."
               : "Browsing in preview mode — bridge not connected. Install Patchwork OS to install recipes directly."}
@@ -913,14 +925,30 @@ export default function MarketplacePage() {
         <div style={{ marginBottom: "var(--s-6)" }}>
           <input
             type="search"
-            className="input"
+            className="input mkt-search-input"
             placeholder="Search by name, tags, connectors…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ maxWidth: 360 }}
+            style={{
+              maxWidth: 360,
+              transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+            }}
             aria-label="Search marketplace"
             autoFocus
           />
+          {search.trim() && (
+            <div
+              style={{
+                fontSize: "var(--fs-xs)",
+                color: "var(--ink-3)",
+                marginTop: 6,
+              }}
+            >
+              {filtered.length === 0
+                ? "No recipes match — try different terms"
+                : `${filtered.length} result${filtered.length === 1 ? "" : "s"}`}
+            </div>
+          )}
         </div>
       )}
 
@@ -950,14 +978,18 @@ export default function MarketplacePage() {
         </div>
       ) : totalVisible === 0 ? (
         <EmptyState
-          title="No results found"
-          description="Try a different search term or category."
+          title={isSearching ? `No recipes match "${search}"` : "No recipes available"}
+          description={
+            isSearching
+              ? "Try a different search term — search by name, connector, or tag."
+              : "The registry appears empty. Check your connection or try again later."
+          }
         />
       ) : (
         <>
           {bundles.length > 0 && (
             <>
-              <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
+              <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--ink-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
                 Capability bundles
               </h2>
               <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginBottom: "var(--s-4)", marginTop: "calc(-1 * var(--s-2))" }}>
@@ -971,7 +1003,7 @@ export default function MarketplacePage() {
 
           {featured && (
             <>
-              <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
+              <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--ink-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
                 Featured this week
               </h2>
               <div
@@ -999,13 +1031,12 @@ export default function MarketplacePage() {
                       zIndex: 2,
                       fontSize: "var(--fs-2xs)",
                       fontFamily: "var(--font-mono)",
-                      letterSpacing: "0.06em",
                       background: "var(--accent-soft)",
                       color: "var(--accent)",
                       border: "1px solid var(--accent-tint)",
                     }}
                   >
-                    ★ FEATURED
+                    ★ Featured
                   </span>
                   <RecipeCard
                     key={featured.name}
@@ -1021,18 +1052,25 @@ export default function MarketplacePage() {
 
           {rest.length > 0 && (
             <>
-              <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
+              <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--ink-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
                 All recipes
               </h2>
               <div className="marketplace-grid">
-                {rest.map((recipe) => (
-                  <RecipeCard
+                {rest.map((recipe, idx) => (
+                  <div
                     key={recipe.name}
-                    recipe={recipe}
-                    installed={installedNames.has(shortName(recipe.name))}
-                    bridgeStatus={bridgeStatus}
-                    onInstall={handleInstall}
-                  />
+                    style={{
+                      animation: "mkt-card-in 0.3s ease both",
+                      animationDelay: `${Math.min(idx * 40, 400)}ms`,
+                    }}
+                  >
+                    <RecipeCard
+                      recipe={recipe}
+                      installed={installedNames.has(shortName(recipe.name))}
+                      bridgeStatus={bridgeStatus}
+                      onInstall={handleInstall}
+                    />
+                  </div>
                 ))}
               </div>
             </>

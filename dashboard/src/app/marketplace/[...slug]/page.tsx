@@ -413,7 +413,7 @@ function RegistryUnreachable({ fullName }: { fullName: string }) {
           <code style={{ fontSize: "var(--fs-xs)" }}>{fullName}</code> may or
           may not exist — we can&apos;t tell without the registry.
         </p>
-        <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--fg-2)", lineHeight: 1.55 }}>
+        <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--ink-2)", lineHeight: 1.55 }}>
           Refresh the page in a minute, or use the CLI directly:
         </p>
         <code

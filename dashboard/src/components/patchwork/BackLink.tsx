@@ -36,7 +36,7 @@ export function BackLink({ href, label, style }: BackLinkProps) {
     >
       <Link
         href={href}
-        style={{ color: "var(--fg-2)", textDecoration: "none" }}
+        style={{ color: "var(--ink-2)", textDecoration: "none" }}
       >
         ← {label}
       </Link>

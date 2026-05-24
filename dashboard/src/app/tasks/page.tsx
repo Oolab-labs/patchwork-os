@@ -148,9 +148,7 @@ function TaskDetail({ task, onCancel, cancelling }: {
           style={{
             fontSize: "var(--fs-2xs)",
             color: "var(--ink-2)",
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.07em",
+            fontWeight: 500,
             marginBottom: 6,
           }}
         >
@@ -190,13 +188,11 @@ function TaskDetail({ task, onCancel, cancelling }: {
             style={{
               fontSize: "var(--fs-2xs)",
               color: "var(--ink-2)",
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.07em",
+              fontWeight: 500,
               marginBottom: 6,
             }}
           >
-            Files Referenced
+            Files referenced
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {files.map((f) => (
@@ -257,18 +253,26 @@ function TaskDetail({ task, onCancel, cancelling }: {
         {isLive && (
           <button
             type="button"
-            className="btn sm ghost"
-            style={{ fontSize: "var(--fs-s)", color: "var(--red)", marginLeft: "auto" }}
+            className="btn sm danger tasks-cancel-btn"
+            style={{ fontSize: "var(--fs-s)", marginLeft: "auto" }}
             disabled={!!cancelling[task.taskId]}
             onClick={() => onCancel(task.taskId)}
+            title="Cancel this running task"
           >
-            {cancelling[task.taskId] ? "Cancelling…" : "Cancel"}
+            {cancelling[task.taskId] ? (
+              <>
+                <span className="tasks-running-spinner" style={{ borderColor: "currentColor", borderTopColor: "transparent" }} />
+                Cancelling…
+              </>
+            ) : "Cancel"}
           </button>
         )}
       </div>
     </div>
   );
 }
+
+// CSS for this page has been moved to globals.css (tasks/* namespace).
 
 // ----------------------------------------------------------- page
 
@@ -661,11 +665,28 @@ function TasksContent() {
             style={{ display: "flex", flexDirection: "column", gap: 4 }}
           >
             {filteredTasks.length === 0 && (
-              <div style={{ padding: "var(--s-4)", color: "var(--ink-3)", fontSize: "var(--fs-m)" }}>
-                No tasks match this filter.
+              <div
+                style={{
+                  padding: "var(--s-4) var(--s-6, 24px)",
+                  color: "var(--ink-3)",
+                  fontSize: "var(--fs-m)",
+                  textAlign: "center",
+                  background: "var(--card-bg)",
+                  borderRadius: "var(--radius)",
+                  border: "1px dashed var(--line-2)",
+                  margin: "8px 0",
+                }}
+              >
+                {statusFilter === "live"
+                  ? "No running or pending tasks right now."
+                  : statusFilter === "done"
+                    ? "No completed tasks match this search."
+                    : statusFilter === "error"
+                      ? "No failed tasks — great news."
+                      : "No tasks match this filter."}
               </div>
             )}
-            {filteredTasks.slice(0, visibleCount).map((t) => {
+            {filteredTasks.slice(0, visibleCount).map((t, taskRowIdx) => {
               const dur =
                 t.startedAt && t.doneAt
                   ? fmtDuration(t.doneAt - t.startedAt)
@@ -686,8 +707,21 @@ function TasksContent() {
                 t.status === "error"
                   ? "var(--err)"
                   : t.status === "running" || t.status === "pending"
-                    ? "var(--blue)"
-                    : "var(--ok)";
+                    ? "var(--accent)"
+                    : t.status === "cancelled" || t.status === "interrupted"
+                      ? "var(--warn)"
+                      : "var(--ok)";
+              const borderColor =
+                t.status === "error"
+                  ? "var(--err)"
+                  : t.status === "running" || t.status === "pending"
+                    ? "var(--accent)"
+                    : t.status === "done"
+                      ? "var(--ok)"
+                      : t.status === "cancelled" || t.status === "interrupted"
+                        ? "var(--warn)"
+                        : "var(--ink-3)";
+
               return (
                 <button
                   key={t.taskId}
@@ -696,6 +730,7 @@ function TasksContent() {
                   onClick={() => setSelectedTaskId(t.taskId)}
                   aria-pressed={isSelected}
                   aria-label={`Task ${t.taskId.slice(0, 8)}, ${t.status}${t.driver ? ` (${t.driver})` : ""}`}
+                  className={`tasks-row-btn tasks-row-stagger${isLive ? " tasks-row-btn--running" : ""}`}
                   style={{
                     position: "relative",
                     textAlign: "left",
@@ -705,17 +740,19 @@ function TasksContent() {
                     paddingBottom: 11,
                     background: isSelected ? "var(--recess)" : "transparent",
                     border: "1px solid",
+                    borderLeft: `3px solid ${borderColor}`,
                     borderColor: isSelected ? "var(--line-3)" : "transparent",
                     borderRadius: 8,
                     cursor: "pointer",
                     display: "block",
                     width: "100%",
-                    transition: "background 0.15s, border-color 0.15s",
+                    animationDelay: `${Math.min(taskRowIdx * 25, 500)}ms`,
                   }}
                 >
                   {/* Timeline dot */}
                   <span
                     aria-hidden="true"
+                    className="tasks-timeline-dot"
                     style={{
                       position: "absolute",
                       left: 16,
@@ -738,28 +775,34 @@ function TasksContent() {
                     <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
                       {/* Duration intensity bar */}
                       <span
+                        className="tasks-progress-bar-track"
                         style={{
                           width: 32,
                           height: 3,
-                          background: "var(--line-3)",
-                          borderRadius: 1,
-                          position: "relative",
-                          overflow: "hidden",
                           display: "inline-block",
                         }}
                       >
-                        <span
-                          style={{
-                            position: "absolute",
-                            inset: 0,
-                            width: `${intensity * 100}%`,
-                            background: intensity > 0.7 ? "var(--orange, var(--accent))" : "var(--ok)",
-                          }}
-                        />
+                        {isLive ? (
+                          <span className="tasks-progress-bar-indeterminate" />
+                        ) : (
+                          <span
+                            style={{
+                              position: "absolute",
+                              inset: 0,
+                              width: `${intensity * 100}%`,
+                              background: intensity > 0.7 ? "var(--orange, var(--accent))" : "var(--ok)",
+                              borderRadius: 2,
+                            }}
+                          />
+                        )}
                       </span>
                       <DriverBadge name={driver} />
-                      <span className={`pill ${statusClass(t.status)}`} style={{ fontSize: "var(--fs-2xs)" }}>
-                        <span className="pill-dot" />
+                      <span className={`pill ${statusClass(t.status)}`} style={{ fontSize: "var(--fs-2xs)", display: "inline-flex", alignItems: "center", gap: 3 }}>
+                        {isLive ? (
+                          <span className="tasks-running-spinner" />
+                        ) : (
+                          <span className="pill-dot" />
+                        )}
                         {t.status}
                       </span>
                     </span>

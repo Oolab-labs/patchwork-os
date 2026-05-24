@@ -112,7 +112,7 @@ export default function AddConnectionModal({
             background: "none",
             border: "none",
             cursor: "pointer",
-            color: "var(--fg-2)",
+            color: "var(--ink-2)",
             fontSize: "var(--fs-3xl)",
             lineHeight: 1,
             padding: "4px 6px",
@@ -152,7 +152,7 @@ export default function AddConnectionModal({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  color: "var(--fg-1)",
+                  color: "var(--ink-1)",
                   flexShrink: 0,
                 }}
               >
@@ -168,7 +168,7 @@ export default function AddConnectionModal({
                     marginBottom: 2,
                   }}
                 >
-                  <span style={{ fontWeight: 600, fontSize: "var(--fs-m)", color: "var(--fg-0)" }}>
+                  <span style={{ fontWeight: 600, fontSize: "var(--fs-m)", color: "var(--ink-0)" }}>
                     {name}
                   </span>
                   <span
@@ -204,7 +204,7 @@ export default function AddConnectionModal({
                   title={description}
                   style={{
                     fontSize: "var(--fs-s)",
-                    color: "var(--fg-2)",
+                    color: "var(--ink-2)",
                     lineHeight: 1.4,
                     whiteSpace: "nowrap",
                     overflow: "hidden",
@@ -267,7 +267,7 @@ export default function AddConnectionModal({
               padding: 0,
               cursor: "pointer",
               fontSize: "var(--fs-s)",
-              color: "var(--fg-2)",
+              color: "var(--ink-2)",
               textDecoration: "underline",
             }}
           >
@@ -302,7 +302,7 @@ export default function AddConnectionModal({
                 background: "var(--bg-1)",
                 border: "1px solid var(--line-2)",
                 borderRadius: "var(--r-2)",
-                color: "var(--fg-0)",
+                color: "var(--ink-0)",
                 boxSizing: "border-box",
               }}
             />
@@ -320,7 +320,7 @@ export default function AddConnectionModal({
                 background: "var(--bg-1)",
                 border: "1px solid var(--line-2)",
                 borderRadius: "var(--r-2)",
-                color: "var(--fg-0)",
+                color: "var(--ink-0)",
                 resize: "vertical",
                 boxSizing: "border-box",
               }}
@@ -347,7 +347,7 @@ export default function AddConnectionModal({
                   padding: 0,
                   cursor: "pointer",
                   fontSize: "var(--fs-s)",
-                  color: "var(--fg-2)",
+                  color: "var(--ink-2)",
                   textDecoration: "underline",
                 }}
               >

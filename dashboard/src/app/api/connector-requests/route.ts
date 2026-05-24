@@ -165,7 +165,20 @@ export async function POST(req: Request): Promise<Response> {
           // array and lose one push to last-writer-wins.
           const tmp = `${file}.tmp.${process.pid}.${Date.now()}`;
           fs.writeFileSync(tmp, JSON.stringify(existing, null, 2), "utf8");
-          fs.renameSync(tmp, file);
+          // On Windows, renameSync throws EEXIST when target exists; POSIX replaces atomically.
+          try {
+            fs.renameSync(tmp, file);
+          } catch (renameErr) {
+            if (
+              process.platform === "win32" &&
+              (renameErr as NodeJS.ErrnoException).code === "EEXIST"
+            ) {
+              fs.unlinkSync(file);
+              fs.renameSync(tmp, file);
+            } else {
+              throw renameErr;
+            }
+          }
           resolve(null);
         } catch (e) {
           console.error("[connector-requests] write error", e);

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 
@@ -47,7 +46,7 @@ function RiskBadge({ risk }: { risk?: string }) {
         background: `color-mix(in srgb, ${RISK_COLORS[risk] ?? "var(--dot-muted)"} 15%, transparent)`,
         border: `1px solid ${RISK_COLORS[risk] ?? "var(--border-default)"}`,
         borderRadius: 4,
-        color: RISK_COLORS[risk] ?? "var(--fg-3)",
+        color: RISK_COLORS[risk] ?? "var(--ink-3)",
         fontSize: "var(--fs-xs)",
         fontWeight: 600,
         letterSpacing: "0.04em",
@@ -97,7 +96,7 @@ function TypeBadge({ type }: { type: string }) {
     agent: "var(--purple)",
     recipe: "var(--blue)",
   };
-  const color = colors[type] ?? "var(--fg-3)";
+  const color = colors[type] ?? "var(--ink-3)";
   return (
     <span
       style={{
@@ -166,53 +165,18 @@ export default function RecipePlanPage({ name }: { name: string }) {
 
   return (
     <section>
-      <div className="page-head">
-        <div>
-          <div style={{ marginBottom: "var(--s-1)" }}>
-            <Link
-              href={`/recipes/${encodeURIComponent(name)}/edit`}
-              style={{
-                color: "var(--fg-3)",
-                fontSize: "var(--fs-m)",
-                textDecoration: "none",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-              }}
-            >
-              &#8592; Edit {name}
-            </Link>
-          </div>
-          <h1 style={{ marginTop: 0 }}>
-            Dry-run plan:{" "}
-            <code
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: "0.85em",
-                background: "var(--bg-2)",
-                padding: "2px 8px",
-                borderRadius: "var(--r-1)",
-              }}
-            >
-              {name}
-            </code>
-          </h1>
-          <div className="page-head-sub">
-            Static analysis of what this recipe will do — no execution.
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}>
-          <Link
-            href={`/recipes/${encodeURIComponent(name)}/edit`}
-            className="btn"
-          >
-            Edit
-          </Link>
-        </div>
-      </div>
+      <p
+        style={{
+          margin: "0 0 var(--s-4)",
+          color: "var(--ink-2)",
+          fontSize: "var(--fs-s)",
+        }}
+      >
+        Static analysis of what this recipe will do — no execution.
+      </p>
 
       {loading && (
-        <p style={{ color: "var(--fg-3)", fontSize: "var(--fs-base)" }}>Loading plan…</p>
+        <p style={{ color: "var(--ink-3)", fontSize: "var(--fs-m)" }}>Loading plan…</p>
       )}
 
       {error && (
@@ -244,20 +208,24 @@ export default function RecipePlanPage({ name }: { name: string }) {
             style={{
               display: "flex",
               flexWrap: "wrap",
-              gap: "var(--s-4)",
-              fontSize: "var(--fs-m)",
-              color: "var(--fg-2)",
+              gap: "var(--s-3) var(--s-5)",
+              fontSize: "var(--fs-s)",
+              color: "var(--ink-2)",
+              padding: "var(--s-3) var(--s-4)",
+              background: "var(--bg-2)",
+              border: "1px solid var(--line-1)",
+              borderRadius: "var(--r-2)",
             }}
           >
             <span>
               Trigger:{" "}
-              <strong style={{ color: "var(--fg-0)" }}>
+              <strong style={{ color: "var(--ink-0)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)" }}>
                 {plan.triggerType}
               </strong>
             </span>
             <span>
               Steps:{" "}
-              <strong style={{ color: "var(--fg-0)" }}>
+              <strong style={{ color: "var(--ink-0)" }}>
                 {plan.steps.length}
               </strong>
             </span>
@@ -265,7 +233,7 @@ export default function RecipePlanPage({ name }: { name: string }) {
               title={`Est. ${totalTokens.toLocaleString()} input tokens (≈4 chars/token, +${TOOL_STEP_BASELINE_TOKENS} baseline per tool-only step). Output tokens not counted.`}
             >
               Est. tokens:{" "}
-              <strong style={{ color: "var(--fg-0)" }}>
+              <strong style={{ color: "var(--ink-0)" }}>
                 ~{formatTokens(totalTokens)}
               </strong>
             </span>
@@ -273,24 +241,24 @@ export default function RecipePlanPage({ name }: { name: string }) {
               title="Lower-bound input-only cost @ $3/M (Sonnet pricing). Output tokens & cache effects not modelled — actual bill will be higher."
             >
               Min. cost:{" "}
-              <strong style={{ color: "var(--fg-0)" }}>
+              <strong style={{ color: "var(--ink-0)" }}>
                 ≥ {formatCost(totalTokens)}
               </strong>
             </span>
             {plan.hasWriteSteps && (
-              <span style={{ color: "var(--warn)" }}>
+              <span style={{ color: "var(--warn)", fontWeight: 500 }}>
                 ⚠ Has write steps
               </span>
             )}
             {plan.connectorNamespaces && plan.connectorNamespaces.length > 0 && (
               <span>
                 Connectors:{" "}
-                <strong style={{ color: "var(--fg-0)" }}>
+                <strong style={{ color: "var(--ink-0)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)" }}>
                   {plan.connectorNamespaces.join(", ")}
                 </strong>
               </span>
             )}
-            <span style={{ marginLeft: "auto", color: "var(--fg-3)" }}>
+            <span style={{ marginLeft: "auto", color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>
               Generated {new Date(plan.generatedAt).toLocaleTimeString()}
             </span>
           </div>
@@ -341,7 +309,7 @@ export default function RecipePlanPage({ name }: { name: string }) {
           {/* Steps table */}
           <div
             style={{
-              border: "1px solid var(--border-default)",
+              border: "1px solid var(--line-1)",
               borderRadius: "var(--r-2)",
               overflow: "hidden",
             }}
@@ -349,7 +317,7 @@ export default function RecipePlanPage({ name }: { name: string }) {
             <table
               style={{
                 borderCollapse: "collapse",
-                fontSize: "var(--fs-m)",
+                fontSize: "var(--fs-s)",
                 width: "100%",
               }}
             >
@@ -357,21 +325,20 @@ export default function RecipePlanPage({ name }: { name: string }) {
                 <tr
                   style={{
                     background: "var(--bg-2)",
-                    borderBottom: "1px solid var(--border-default)",
+                    borderBottom: "1px solid var(--line-1)",
                   }}
                 >
-                  {["#", "ID", "Type", "Tool / Prompt", "Output", "Risk", "Flags"].map(
+                  {["#", "ID", "Type", "Tool / prompt", "Output", "Risk", "Flags"].map(
                     (h) => (
                       <th
                         key={h}
                         style={{
-                          color: "var(--fg-2)",
-                          fontWeight: 600,
+                          color: "var(--ink-2)",
+                          fontWeight: 500,
                           fontSize: "var(--fs-xs)",
-                          letterSpacing: "0.04em",
-                          padding: "var(--s-2) var(--s-3)",
+                          letterSpacing: "0.01em",
+                          padding: "10px var(--s-3)",
                           textAlign: "left",
-                          textTransform: "uppercase",
                           whiteSpace: "nowrap",
                         }}
                       >
@@ -388,19 +355,20 @@ export default function RecipePlanPage({ name }: { name: string }) {
                     style={{
                       borderBottom:
                         i < plan.steps.length - 1
-                          ? "1px solid var(--border-default)"
+                          ? "1px solid var(--line-1)"
                           : "none",
                       background:
                         step.resolved === false
-                          ? "color-mix(in srgb, var(--err) 6%, transparent)"
+                          ? "color-mix(in srgb, var(--err) 5%, transparent)"
                           : "transparent",
                     }}
                   >
                     <td
                       style={{
-                        color: "var(--fg-3)",
-                        padding: "var(--s-2) var(--s-3)",
+                        color: "var(--ink-3)",
+                        padding: "10px var(--s-3)",
                         fontVariantNumeric: "tabular-nums",
+                        fontSize: "var(--fs-xs)",
                       }}
                     >
                       {i + 1}
@@ -408,25 +376,25 @@ export default function RecipePlanPage({ name }: { name: string }) {
                     <td
                       style={{
                         fontFamily: "var(--font-mono)",
-                        fontSize: "var(--fs-s)",
-                        padding: "var(--s-2) var(--s-3)",
-                        color: "var(--fg-0)",
+                        fontSize: "var(--fs-xs)",
+                        padding: "10px var(--s-3)",
+                        color: "var(--ink-0)",
                       }}
                     >
                       {step.id}
                       {step.optional && (
                         <span
                           style={{
-                            color: "var(--fg-3)",
-                            fontSize: "var(--fs-xs)",
+                            color: "var(--ink-3)",
+                            fontSize: "var(--fs-2xs)",
                             marginLeft: 4,
                           }}
                         >
-                          (optional)
+                          optional
                         </span>
                       )}
                     </td>
-                    <td style={{ padding: "var(--s-2) var(--s-3)" }}>
+                    <td style={{ padding: "10px var(--s-3)" }}>
                       <TypeBadge type={step.type} />
                     </td>
                     <td
@@ -434,11 +402,11 @@ export default function RecipePlanPage({ name }: { name: string }) {
                         color:
                           step.resolved === false
                             ? "var(--err)"
-                            : "var(--fg-1)",
+                            : "var(--ink-1)",
                         fontFamily: step.tool ? "var(--font-mono)" : undefined,
-                        fontSize: step.tool ? 12 : 13,
+                        fontSize: "var(--fs-xs)",
                         maxWidth: 360,
-                        padding: "var(--s-2) var(--s-3)",
+                        padding: "10px var(--s-3)",
                       }}
                     >
                       {step.tool ? (
@@ -448,7 +416,7 @@ export default function RecipePlanPage({ name }: { name: string }) {
                             <span
                               style={{
                                 color: "var(--err)",
-                                fontSize: "var(--fs-xs)",
+                                fontSize: "var(--fs-2xs)",
                                 marginLeft: 6,
                               }}
                             >
@@ -457,7 +425,7 @@ export default function RecipePlanPage({ name }: { name: string }) {
                           )}
                         </>
                       ) : step.recipe ? (
-                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-s)" }}>
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)" }}>
                           recipe: {step.recipe}
                         </span>
                       ) : step.prompt ? (
@@ -467,34 +435,35 @@ export default function RecipePlanPage({ name }: { name: string }) {
                             WebkitLineClamp: 2,
                             WebkitBoxOrient: "vertical",
                             overflow: "hidden",
+                            fontSize: "var(--fs-s)",
                           }}
                           title={step.prompt}
                         >
                           {step.prompt}
                         </span>
                       ) : (
-                        <span style={{ color: "var(--fg-3)" }}>—</span>
+                        <span style={{ color: "var(--ink-3)" }}>—</span>
                       )}
                     </td>
                     <td
                       style={{
-                        color: "var(--fg-3)",
+                        color: "var(--ink-3)",
                         fontFamily: "var(--font-mono)",
-                        fontSize: "var(--fs-xs)",
-                        padding: "var(--s-2) var(--s-3)",
+                        fontSize: "var(--fs-2xs)",
+                        padding: "10px var(--s-3)",
                         whiteSpace: "nowrap",
                       }}
                     >
                       {step.into ?? "—"}
                     </td>
-                    <td style={{ padding: "var(--s-2) var(--s-3)" }}>
+                    <td style={{ padding: "10px var(--s-3)" }}>
                       <RiskBadge risk={step.risk} />
                     </td>
                     <td
                       style={{
-                        color: "var(--fg-3)",
-                        fontSize: "var(--fs-s)",
-                        padding: "var(--s-2) var(--s-3)",
+                        color: "var(--ink-3)",
+                        fontSize: "var(--fs-xs)",
+                        padding: "10px var(--s-3)",
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -517,10 +486,11 @@ export default function RecipePlanPage({ name }: { name: string }) {
             <div>
               <h3
                 style={{
-                  color: "var(--fg-1)",
-                  fontSize: "var(--fs-m)",
+                  color: "var(--ink-2)",
+                  fontSize: "var(--fs-s)",
                   fontWeight: 600,
                   margin: "0 0 var(--s-2) 0",
+                  letterSpacing: "0.01em",
                 }}
               >
                 Parallel groups
@@ -537,10 +507,11 @@ export default function RecipePlanPage({ name }: { name: string }) {
                     key={i}
                     style={{
                       background: "var(--bg-2)",
-                      border: "1px solid var(--border-default)",
+                      border: "1px solid var(--line-1)",
                       borderRadius: "var(--r-2)",
-                      fontSize: "var(--fs-s)",
+                      fontSize: "var(--fs-xs)",
                       fontFamily: "var(--font-mono)",
+                      color: "var(--ink-1)",
                       padding: "var(--s-1) var(--s-3)",
                     }}
                   >

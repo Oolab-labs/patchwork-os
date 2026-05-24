@@ -134,8 +134,8 @@ function BundleHeader({
   return (
     <div className="page-head">
       <div>
-        <div style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-          Capability Bundle
+        <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginBottom: 4 }}>
+          Capability bundle
         </div>
         <h1 style={{ fontFamily: "var(--font-mono, ui-monospace, monospace)", letterSpacing: "-0.01em" }}>
           {shortName(bundle.name)}
@@ -184,12 +184,12 @@ function WhatIsIncluded({
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)" }}>
         {recipes.length > 0 && (
           <div>
-            <div style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "var(--s-1)" }}>
+            <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginBottom: "var(--s-1)" }}>
               Recipes ({recipes.length})
             </div>
             <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 4 }}>
               {recipes.map((r) => (
-                <li key={r} style={{ fontSize: "var(--fs-s)", fontFamily: "var(--font-mono)", color: "var(--fg-1)" }}>
+                <li key={r} style={{ fontSize: "var(--fs-s)", fontFamily: "var(--font-mono)", color: "var(--ink-1)" }}>
                   <Link
                     href={`/marketplace/${r.split("/").map(encodeURIComponent).join("/")}`}
                     style={{ color: "inherit", textDecoration: "underline", textDecorationColor: "var(--line-2)" }}
@@ -203,18 +203,18 @@ function WhatIsIncluded({
         )}
 
         {recipes.length === 0 && bundle.recipe_count != null && bundle.recipe_count > 0 && (
-          <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
+          <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
             {bundle.recipe_count} recipe{bundle.recipe_count !== 1 ? "s" : ""} included
           </div>
         )}
 
         {plugin && (
           <div>
-            <div style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "var(--s-1)" }}>
+            <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginBottom: "var(--s-1)" }}>
               Plugin
             </div>
             <code style={{ fontSize: "var(--fs-s)" }}>{plugin}</code>
-            <p style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)", marginTop: 4 }}>
+            <p style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 4 }}>
               Installed via <code>npm install -g {plugin}</code> during bundle setup.
             </p>
           </div>
@@ -222,10 +222,10 @@ function WhatIsIncluded({
 
         {hasPolicy && (
           <div>
-            <div style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "var(--s-1)" }}>
+            <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginBottom: "var(--s-1)" }}>
               Policy template
             </div>
-            <p style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", margin: 0 }}>
+            <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", margin: 0 }}>
               A delegation policy fragment is included. It will be shown for your review and requires explicit approval before being applied — never applied silently.
             </p>
           </div>
@@ -278,7 +278,7 @@ function RequiredEnvCard({ vars }: { vars: string[] }) {
   return (
     <div className="glass-card" style={{ padding: "var(--s-5)" }}>
       <h3 style={{ fontSize: "var(--fs-m)", marginTop: 0, marginBottom: "var(--s-3)" }}>Required environment variables</h3>
-      <p style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", marginTop: 0, marginBottom: "var(--s-3)" }}>
+      <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginTop: 0, marginBottom: "var(--s-3)" }}>
         Set these in your bridge environment before activating the bundle:
       </p>
       <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -326,7 +326,7 @@ function RegistryUnreachable({ fullName }: { fullName: string }) {
           <code style={{ fontSize: "var(--fs-xs)" }}>{fullName}</code> may or
           may not exist — we can&apos;t tell without the registry.
         </p>
-        <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--fg-2)", lineHeight: 1.55 }}>
+        <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--ink-2)", lineHeight: 1.55 }}>
           Refresh in a minute, or install via CLI:
         </p>
         <code
