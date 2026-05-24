@@ -142,7 +142,9 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
     "content-type": req.headers.get("content-type") ?? "",
   };
   const tracePassphrase = req.headers.get("x-trace-passphrase");
-  if (tracePassphrase) forwardHeaders["x-trace-passphrase"] = tracePassphrase;
+  if (tracePassphrase && tracePassphrase.length <= 512) {
+    forwardHeaders["x-trace-passphrase"] = tracePassphrase;
+  }
   let res: Response;
   try {
     res = await bridgeFetch(target, {

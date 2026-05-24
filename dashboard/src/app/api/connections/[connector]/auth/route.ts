@@ -25,7 +25,25 @@ export async function GET(
     });
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get("location");
-      if (location) return Response.redirect(location, 302);
+      if (location) {
+        // Validate that the bridge-supplied URL is HTTPS before forwarding.
+        // Prevents an open-redirect exploit if the bridge ever returns a
+        // non-HTTPS (or javascript:) Location header.
+        let parsed: URL;
+        try {
+          parsed = new URL(location);
+        } catch {
+          return new Response(JSON.stringify({ error: "Bridge returned invalid redirect URL" }), {
+            status: 502, headers: { "content-type": "application/json" },
+          });
+        }
+        if (parsed.protocol !== "https:") {
+          return new Response(JSON.stringify({ error: "Bridge redirect must use HTTPS" }), {
+            status: 502, headers: { "content-type": "application/json" },
+          });
+        }
+        return Response.redirect(location, 302);
+      }
       return new Response(JSON.stringify({ error: "Bridge returned redirect without Location header" }), {
         status: 502, headers: { "content-type": "application/json" },
       });

@@ -708,7 +708,7 @@ function NeedsAttentionBand({
     failingCount24h > 0 && {
       count: failingCount24h,
       label: failingCount24h === 1 ? "run failed · 24h" : "runs failed · 24h",
-      href: "/runs",
+      href: "/runs?window=24h",
       urgent: false,
     },
   ].filter(Boolean) as Array<{ count: number; label: string; href: string; urgent: boolean }>;
@@ -1427,7 +1427,7 @@ export default function HomePage() {
                   )}
                 </div>
               }
-              href="/runs"
+              href="/runs?window=24h"
             />
             <StatCard
               label="Pending approvals"

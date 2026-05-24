@@ -9,6 +9,9 @@ export async function GET(
   { params }: { params: Promise<{ filename: string }> },
 ) {
   const { filename } = await params;
+  if (!filename || filename.includes("..") || /[/\\]/.test(filename)) {
+    return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
+  }
   try {
     const res = await bridgeFetch(`/inbox/${encodeURIComponent(filename)}`);
     return await forwardOrGeneric(res, `inbox/${filename} GET`);
