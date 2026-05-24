@@ -34,7 +34,12 @@ export function lockExists(port) {
 }
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
-export function httpGet(url, headers = {}) {
+// Windows CI runners are significantly slower than Linux — 5s is too tight for
+// some auth-gated endpoints under load. Use a platform-aware default so the
+// same harness works reliably on both without inflating Linux test duration.
+const HTTP_TIMEOUT_MS = process.platform === "win32" ? 15000 : 5000;
+
+export function httpGet(url, headers = {}, timeoutMs = HTTP_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const req = http.get(url, { headers }, (res) => {
       let body = "";
@@ -44,14 +49,14 @@ export function httpGet(url, headers = {}) {
       );
     });
     req.on("error", reject);
-    req.setTimeout(5000, () => {
+    req.setTimeout(timeoutMs, () => {
       req.destroy();
       reject(new Error("timeout"));
     });
   });
 }
 
-export function httpPost(url, data, headers = {}) {
+export function httpPost(url, data, headers = {}, timeoutMs = HTTP_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const body = typeof data === "string" ? data : JSON.stringify(data);
     const contentType = headers["Content-Type"] ?? "application/json";
@@ -77,7 +82,7 @@ export function httpPost(url, data, headers = {}) {
       },
     );
     req.on("error", reject);
-    req.setTimeout(5000, () => {
+    req.setTimeout(timeoutMs, () => {
       req.destroy();
       reject(new Error("timeout"));
     });
@@ -86,7 +91,7 @@ export function httpPost(url, data, headers = {}) {
   });
 }
 
-export function httpDelete(url, headers = {}) {
+export function httpDelete(url, headers = {}, timeoutMs = HTTP_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const opts = new URL(url);
     const req = http.request(
@@ -106,7 +111,7 @@ export function httpDelete(url, headers = {}) {
       },
     );
     req.on("error", reject);
-    req.setTimeout(5000, () => {
+    req.setTimeout(timeoutMs, () => {
       req.destroy();
       reject(new Error("timeout"));
     });
