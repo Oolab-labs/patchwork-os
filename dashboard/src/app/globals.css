@@ -1040,7 +1040,10 @@ button.topbar-search {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
+  text-decoration: none;
 }
+/* All anchor-buttons should suppress underline decoration */
+a.btn { text-decoration: none; }
 .btn.ghost:hover {
   background: var(--recess);
   border-color: var(--line-1);
@@ -1710,6 +1713,188 @@ button.topbar-search {
 }
 .status-cell.ok  { color: var(--green); }
 .status-cell.err { color: var(--red); }
+
+/* ── Runs page ───────────────────────────────────────────────────────── */
+
+/* Transparent inline-text button (inline filter links in editorial-sub) */
+.btn-inline {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+/* Halt / judge summary bands above the filter bar */
+.runs-summary-band {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: var(--s-4);
+  padding: 8px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-1);
+  background: var(--bg-0);
+}
+.runs-summary-band-label { font-size: var(--fs-xs); }
+
+/* Halt category pill button inside summary band */
+.runs-halt-pill {
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+  font: inherit;
+  min-height: 24px;
+  color: var(--err);
+}
+.runs-halt-pill[data-cat="unknown"] {
+  color: var(--ink-3);
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+}
+
+/* Judge verdict pill */
+.runs-judge-pill { font-size: var(--fs-2xs); }
+.runs-judge-pill[data-verdict="approve"] { color: var(--ok); }
+.runs-judge-pill[data-verdict="request_changes"] { color: var(--warn, #d49a3a); }
+.runs-judge-pill[data-verdict="unparseable"] {
+  color: var(--ink-3);
+  border: 1px solid var(--line-2);
+  background: var(--bg-1);
+}
+
+/* Filter bar */
+.runs-filter-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: var(--s-4);
+}
+.runs-search-input { min-width: min(200px, 100%); width: 240px; max-width: 100%; }
+.runs-select { width: auto; cursor: pointer; }
+
+/* Stat cards grid */
+.runs-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--s-4);
+  margin-bottom: var(--s-5);
+}
+.runs-stat-card {
+  text-align: left;
+  padding: 20px 24px;
+  cursor: pointer;
+  background: transparent;
+  border-left: 3px solid var(--line-2);
+  transition: border-color 150ms ease;
+}
+.runs-stat-card[data-variant="all"][data-active="true"]  { border-left-color: var(--orange); }
+.runs-stat-card[data-variant="done"][data-active="true"] { border-left-color: var(--ok); }
+.runs-stat-card[data-variant="error"][data-active="true"]{ border-left-color: var(--err); }
+.runs-stat-label {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  margin-bottom: 8px;
+}
+.runs-stat-label--ok  { color: var(--ok); }
+.runs-stat-label--err { color: var(--err); }
+.runs-stat-value {
+  font-family: var(--font-mono);
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--ink-0);
+  line-height: 1;
+}
+.runs-stat-value--err { color: var(--err); }
+.runs-stat-foot { font-size: var(--fs-xs); color: var(--ink-3); margin-top: 4px; }
+
+/* Table row: running rows get a left accent bar */
+.runs-tr { cursor: pointer; }
+.runs-tr[data-status="running"] { box-shadow: inset 3px 0 0 var(--blue); }
+
+/* RecipeChip wrapper — prevents chip click from toggling row expand */
+.runs-chip-wrap { display: inline-flex; }
+.runs-chip-wrap-mobile { display: inline-flex; min-width: 0; }
+
+/* Attempt-link pill next to trigger */
+.runs-attempt-pill {
+  margin-left: 6px;
+  font-size: var(--fs-2xs);
+  text-decoration: none;
+}
+
+/* Status pill in table rows — slightly larger than xs */
+.runs-status-pill { font-size: var(--fs-xs); }
+
+/* Duration cell: bar + text */
+.runs-dur-cell { display: flex; align-items: center; gap: 8px; }
+.runs-dur-bar { flex: 1; height: 6px; }
+.runs-dur-text {
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  min-width: 42px;
+  text-align: right;
+}
+
+/* Expanded row detail panel */
+.run-expand-body {
+  padding: 12px 14px;
+  font-size: var(--fs-s);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.run-expand-meta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: var(--ink-2);
+}
+.run-expand-mono { color: var(--ink-0); }
+.run-expand-section-label {
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+.run-expand-section-label--err { color: var(--red); }
+.run-expand-section-label--out { color: var(--ink-2); }
+.run-expand-assertions {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.run-expand-assertion { font-size: var(--fs-s); color: var(--red); }
+.run-expand-assertion-key { font-weight: 600; }
+.task-output--err { color: var(--red); }
+
+/* "Load more" button centering container */
+.runs-load-more {
+  display: flex;
+  justify-content: center;
+  padding: var(--s-4) 0;
+}
+/* Mobile card-list "Load more" — self-centering in the flex column */
+.runs-card-load-more {
+  align-self: center;
+  margin-top: var(--s-3);
+}
+
+/* Column widths for the runs table — avoids per-cell inline styles */
+.runs-table-desktop .table th:nth-child(1) { width: 120px; } /* When */
+.runs-table-desktop .table th:nth-child(3) { width: 90px; }  /* Trigger */
+.runs-table-desktop .table th:nth-child(4) { width: 110px; } /* Status */
+.runs-table-desktop .table th:nth-child(5) { width: 200px; text-align: right; } /* Duration */
+.runs-table-desktop .table th:nth-child(6) { width: 80px; }  /* Task */
 
 /* ---- Tasks ---- */
 
