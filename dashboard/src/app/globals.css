@@ -2388,17 +2388,24 @@ button.topbar-search {
   position: relative;
   z-index: 2;
   align-self: stretch;
-  width: 280px;
-  padding: 22px 24px;
+  width: 288px;
+  padding: 20px 22px;
   border-left: 1px solid var(--line-2);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(6px) saturate(115%);
   -webkit-backdrop-filter: blur(6px) saturate(115%);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
   justify-content: center;
   box-shadow: inset 1px 0 0 color-mix(in srgb, var(--ink-0) 4%, transparent);
+}
+.quilt-aside-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 1px;
 }
 .quilt-aside-eyebrow {
   display: inline-flex;
@@ -2449,18 +2456,18 @@ button.topbar-search {
 .quilt-aside-featured[data-mode="needs-retry"] .quilt-aside-eyebrow { color: var(--err); }
 .quilt-aside-name {
   font-family: var(--font-mono);
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 700;
   color: var(--ink-0);
   text-decoration: none;
   line-height: 1.2;
-  /* Long recipe names need to wrap at the dash glyph, not mid-char.
-     `break-word` keeps "apple-watch-health-log" intact and breaks at
-     the next dash if it has to; `break-all` hyphenated mid-word. */
+  /* Long recipe names wrap at dashes, not mid-char. */
   overflow-wrap: break-word;
   word-break: normal;
   hyphens: none;
   transition: color 120ms ease;
+  flex: 1;
+  min-width: 0;
 }
 .quilt-aside-name:hover { color: var(--accent); }
 .quilt-aside-meta {
@@ -2468,7 +2475,11 @@ button.topbar-search {
   color: var(--ink-2);
 }
 .quilt-aside-spark {
-  margin: 4px 0 6px;
+  margin: 8px 0 10px;
+}
+.quilt-aside-spark svg {
+  width: 100%;
+  height: auto;
 }
 .quilt-aside-run {
   align-self: stretch;

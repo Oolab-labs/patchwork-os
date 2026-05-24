@@ -217,27 +217,27 @@ export function FeaturedRecipeAside({
       <div className="quilt-aside-eyebrow">
         {eyebrow}
       </div>
-      <Link
-        href={`/recipes/${encodeURIComponent(pick.name)}/edit`}
-        className="quilt-aside-name"
-        title={`Edit ${pick.name}`}
-      >
-        {pick.name}
-      </Link>
+      <div className="quilt-aside-hero">
+        <Link
+          href={`/recipes/${encodeURIComponent(pick.name)}/edit`}
+          className="quilt-aside-name"
+          title={`Edit ${pick.name}`}
+        >
+          {pick.name}
+        </Link>
+        <SuccessRing pct={pick.okRate} size={28} stroke={3.5} />
+      </div>
       <div className="quilt-aside-meta">
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          {pick.mode === "running" ? (
-            <>Started {relTime(pick.lastRun.startedAt)} · {pick.total - 1} other{pick.total - 1 === 1 ? "" : "s"} today</>
-          ) : pick.mode === "needs-retry" ? (
-            <>Last run halted · {pick.total} run{pick.total === 1 ? "" : "s"} today</>
-          ) : (
-            <>Last {relTime(pick.lastRun.startedAt)} · {Math.round(pick.okRate)}% ok</>
-          )}
-          <SuccessRing pct={pick.okRate} size={16} stroke={2.5} />
-        </span>
+        {pick.mode === "running" ? (
+          <>Started {relTime(pick.lastRun.startedAt)} · {pick.total - 1} other{pick.total - 1 === 1 ? "" : "s"} today</>
+        ) : pick.mode === "needs-retry" ? (
+          <>Last run halted · {pick.total} run{pick.total === 1 ? "" : "s"} today</>
+        ) : (
+          <>Last {relTime(pick.lastRun.startedAt)} · {Math.round(pick.okRate)}% ok</>
+        )}
       </div>
       <div className="quilt-aside-spark">
-        <RunSparkBars runs={pick.recent} slots={10} width={180} height={20} />
+        <RunSparkBars runs={pick.recent} slots={10} width={180} height={22} />
       </div>
       {ctaHref ? (
         <Link
