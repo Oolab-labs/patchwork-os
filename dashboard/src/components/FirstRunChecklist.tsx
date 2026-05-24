@@ -134,8 +134,7 @@ export function FirstRunChecklist() {
     const controller = new AbortController();
     void probe(controller.signal);
     const id = setInterval(() => {
-      const tickCtrl = new AbortController();
-      void probe(tickCtrl.signal);
+      void probe(controller.signal);
     }, 30_000);
     return () => {
       clearInterval(id);

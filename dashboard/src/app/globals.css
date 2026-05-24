@@ -199,6 +199,23 @@
   --s-1: 4px;  --s-2: 8px;   --s-3: 12px; --s-4: 16px;
   --s-5: 20px; --s-6: 24px;  --s-8: 32px; --s-10: 40px;
   --s-12: 48px; --s-16: 64px;
+
+  /* motion tokens — duration scale */
+  --dur-instant:  80ms;
+  --dur-fast:    200ms;
+  --dur-medium:  360ms;
+  --dur-slow:    600ms;
+  --dur-crawl:  1600ms;
+
+  /* motion tokens — easing */
+  --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring:   cubic-bezier(0.18, 0.7,  0.2, 1);
+  --ease-decel:    cubic-bezier(0.0,  0.0,  0.2, 1);
+
+  /* pw-pulse customisation — override per-element to change color/radius */
+  --pulse-color:        var(--ok);
+  --pulse-radius-inner: 2px;
+  --pulse-radius-outer: 8px;
 }
 
 /* ---- Accent swap ---- */
@@ -2307,6 +2324,36 @@ button.topbar-search {
 }
 @media (prefers-reduced-motion: reduce) {
   .leaderboard-live-dot { animation: none; }
+}
+
+/* ---- Unified live-dot pulse -----------------------------------------------
+   Single keyframe that replaces the 5 near-identical pulse animations:
+   nav-badge-live-pulse, pill-pulse, live-wire-pulse, leaderboard-live-pulse,
+   aside-eyebrow-pulse.  Customize per element via CSS custom properties:
+     --pulse-color        (default: var(--ok) green)
+     --pulse-radius-inner (default: 2px)
+     --pulse-radius-outer (default: 8px)
+
+   Migration: new live-dots use .pw-pulse-dot. The existing duplicate
+   keyframes are preserved for backwards compatibility — migrate to pw-pulse
+   incrementally. */
+.pw-pulse-dot {
+  animation: pw-pulse var(--dur-crawl) ease-in-out infinite;
+}
+@keyframes pw-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 var(--pulse-radius-inner) color-mix(in srgb, var(--pulse-color) 30%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--pulse-color) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 var(--pulse-radius-inner) color-mix(in srgb, var(--pulse-color) 30%, transparent),
+      0 0 0 var(--pulse-radius-outer) color-mix(in srgb, var(--pulse-color) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pw-pulse-dot { animation: none; }
 }
 
 /* ---- Recipe leaderboard focal-card treatment ----

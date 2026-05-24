@@ -4,3 +4,6 @@ out/
 dist/
 *.log
 .env.local
+.env*.bak
+.env.local.*
+*.bak

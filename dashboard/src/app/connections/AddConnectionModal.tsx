@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { Dialog } from "@/components/Dialog";
 import type { ConnectorStatus } from "./types";
@@ -34,6 +34,8 @@ export default function AddConnectionModal({
   const [reqSubmitting, setReqSubmitting] = useState(false);
   const [reqSuccess, setReqSuccess] = useState(false);
   const [reqError, setReqError] = useState<string | null>(null);
+  const reqSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(reqSuccessTimerRef.current); }, []);
 
   function resetReqForm() {
     setReqOpen(false);
@@ -62,7 +64,8 @@ export default function AddConnectionModal({
       setReqSuccess(true);
       setReqName("");
       setReqNotes("");
-      setTimeout(() => {
+      clearTimeout(reqSuccessTimerRef.current);
+      reqSuccessTimerRef.current = setTimeout(() => {
         setReqSuccess(false);
         setReqOpen(false);
       }, 4000);

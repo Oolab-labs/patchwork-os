@@ -35,6 +35,7 @@ import {
 } from "@/components/patchwork";
 import type { TimelineEvent, RelatedGroup } from "@/components/patchwork";
 import { detectConnectorsForRecipe } from "./layout";
+import { fmtDuration } from "@/components/time";
 
 interface RecipeVar {
   name: string;
@@ -150,12 +151,8 @@ function relTime(ms: number): string {
 }
 
 function formatDuration(ms: number | undefined): string {
-  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return "—";
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  const m = Math.floor(ms / 60_000);
-  const s = Math.round((ms % 60_000) / 1000);
-  return `${m}m ${s}s`;
+  if (typeof ms !== "number" || ms <= 0) return "—";
+  return fmtDuration(ms);
 }
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
@@ -529,16 +526,21 @@ export default function RecipeHubOverviewPage({
 
   const lastRunDerived = useMemo(() => {
     if (!lastRun) return null;
-    const ok = lastRun.status === "done" || lastRun.status === "success";
+    const finished = lastRun.status === "done" || lastRun.status === "success";
+    const partialFail = finished && lastRun.hadStepErrors;
+    const ok = finished && !lastRun.hadStepErrors;
     const fail = lastRun.status === "error" || lastRun.status === "failed";
     const tone: "ok" | "warn" | "err" | "info" | "muted" = ok
       ? "ok"
-      : fail
-        ? "err"
-        : lastRun.status === "running"
-          ? "info"
-          : "warn";
-    return { tone, label: lastRun.status, when: relTime(lastRun.startedAt) };
+      : partialFail
+        ? "warn"
+        : fail
+          ? "err"
+          : lastRun.status === "running"
+            ? "info"
+            : "warn";
+    const label = partialFail ? "completed with errors" : lastRun.status;
+    return { tone, label, when: relTime(lastRun.startedAt) };
   }, [lastRun]);
 
   if (recipes && !recipe) {

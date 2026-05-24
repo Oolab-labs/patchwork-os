@@ -65,7 +65,25 @@ export async function GET(req: Request): Promise<Response> {
     );
   }
 
-  return new Response(upstream.body, {
+  if (!upstream.body) {
+    return new Response(
+      `event: bridge-error\ndata: {"error":"upstream ${upstream.status}"}\n\n: retry\n\n`,
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      },
+    );
+  }
+
+  // Pipe through a passthrough TransformStream so that when the client
+  // disconnects and cancels the response ReadableStream, the cancellation
+  // propagates back upstream and closes the bridge SSE subscriber.
+  // Without this, the upstream fetch stays open even after the tab closes.
+  return new Response(upstream.body.pipeThrough(new TransformStream()), {
     status: upstream.status,
     headers: {
       "Content-Type": "text/event-stream",

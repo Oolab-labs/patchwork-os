@@ -10,6 +10,19 @@ interface BridgeLock {
   isBridge?: boolean;
 }
 
+// 1-second TTL cache for lock-file discovery. The lock file changes only when
+// the bridge restarts (new port, new token) — scanning ~/.claude/ide/ on every
+// proxied request added readdirSync + statSync + readFileSync + kill(pid,0) per
+// call, ~5-10 syscalls each, amplified on every SSE tick. Stale entries expire
+// within 1s; a bridge restart triggers re-discovery on the next cache miss.
+let _cache: { lock: BridgeLock | null; expires: number } | null = null;
+const CACHE_TTL_MS = 1_000;
+
+/** Exported for tests only — clears the lock-discovery cache between cases. */
+export function _clearBridgeCache(): void {
+  _cache = null;
+}
+
 /**
  * Locate a running Patchwork/bridge instance by scanning lock files under
  * ~/.claude/ide/. Prefers locks with isBridge:true whose PID is alive.
@@ -32,6 +45,13 @@ export function findBridge(): BridgeLock | null {
     };
   }
 
+  if (_cache && Date.now() < _cache.expires) return _cache.lock;
+  const lock = _scanLockFiles();
+  _cache = { lock, expires: Date.now() + CACHE_TTL_MS };
+  return lock;
+}
+
+function _scanLockFiles(): BridgeLock | null {
   const dir = path.join(os.homedir(), ".claude", "ide");
   if (!fs.existsSync(dir)) return null;
   const pinned = process.env.PATCHWORK_BRIDGE_PORT;

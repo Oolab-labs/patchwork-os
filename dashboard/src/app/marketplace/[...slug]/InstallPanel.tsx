@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import {
   assertValidInstallSource,
@@ -54,6 +54,8 @@ export default function InstallPanel({
   const [done, setDone] = useState(false);
   const [copied, setCopied] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(copyTimerRef.current); }, []);
   // Bridge ships `missingConnectors[]` on the install response when the
   // recipe uses connectors that haven't been authorised yet (see
   // connectorPreflight). Surfacing this on the detail panel matters more
@@ -176,7 +178,8 @@ export default function InstallPanel({
     try {
       await navigator.clipboard.writeText(cliCmd);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       // clipboard unavailable
     }

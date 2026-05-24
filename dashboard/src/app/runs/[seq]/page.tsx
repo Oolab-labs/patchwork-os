@@ -122,10 +122,13 @@ function fmtTs(ms: number): string {
 /** Inline mono value with a Copy button. 28pt min-height tap target. */
 function CopyableMono({ value, ariaLabel }: { value: string; ariaLabel?: string }) {
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(copyTimerRef.current); }, []);
   const copy = () => {
     void navigator.clipboard.writeText(value).then(() => {
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     });
   };
   return (
@@ -179,13 +182,16 @@ function TruncatablePre({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const truncCopyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(truncCopyTimerRef.current); }, []);
   const lines = text.split("\n");
   const truncated = lines.length > maxLines && !expanded;
   const shown = truncated ? lines.slice(0, maxLines).join("\n") : text;
   const copy = () => {
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      clearTimeout(truncCopyTimerRef.current);
+      truncCopyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     });
   };
   return (
@@ -960,6 +966,7 @@ export default function RunDetailPage() {
     "idle" | "confirming" | "running" | "done" | "error"
   >("idle");
   const [replayMessage, setReplayMessage] = useState<string>();
+  const replayTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Phase 1A item 8 — surface prior fix decisions for this recipe.
   // `ctxQueryTraces({traceType:"decision", key:recipeName})` is what powers
@@ -1005,18 +1012,23 @@ export default function RunDetailPage() {
     } finally {
       // Return to idle after a beat so the user can re-trigger if they want
       // to replay a second time without staring at a stale "done" banner.
-      setTimeout(() => {
+      clearTimeout(replayTimeoutRef.current);
+      replayTimeoutRef.current = setTimeout(() => {
         setReplayState((cur) => (cur === "done" || cur === "error" ? "idle" : cur));
       }, 4000);
     }
   };
 
+  useEffect(() => () => { clearTimeout(replayTimeoutRef.current); }, []);
+
   useEffect(() => {
     if (!seqIsValid) return;
     let intervalId: ReturnType<typeof setInterval> | undefined;
+    const controller = new AbortController();
+    const { signal } = controller;
 
     const doFetch = () =>
-      fetch(apiPath(`/api/bridge/runs/${seq}`))
+      fetch(apiPath(`/api/bridge/runs/${seq}`), { signal })
         .then(async (res) => {
           if (!res.ok) throw new Error(`${res.status}`);
           const data = (await res.json()) as { run?: RunDetail };
@@ -1025,6 +1037,7 @@ export default function RunDetailPage() {
           return data.run;
         })
         .catch((e: unknown) => {
+          if (signal.aborted) return null;
           setRunErr(e instanceof Error ? e.message : String(e));
           return null;
         });
@@ -1051,6 +1064,7 @@ export default function RunDetailPage() {
 
     return () => {
       if (intervalId !== undefined) clearInterval(intervalId);
+      controller.abort();
     };
   }, [seq]);
 
@@ -1189,8 +1203,10 @@ export default function RunDetailPage() {
   // Load plan lazily when tab is switched to "plan"
   useEffect(() => {
     if (tab !== "plan" || plan || planErr || !seq) return;
+    const controller = new AbortController();
+    const { signal } = controller;
     setPlanLoading(true);
-    fetch(apiPath(`/api/bridge/runs/${seq}/plan`))
+    fetch(apiPath(`/api/bridge/runs/${seq}/plan`), { signal })
       .then(async (res) => {
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -1209,11 +1225,13 @@ export default function RunDetailPage() {
         setPlan(data.plan);
       })
       .catch((e: unknown) => {
+        if (signal.aborted) return;
         const status = (e as { status?: number } | null)?.status;
         const msg = e instanceof Error ? e.message : String(e);
         setPlanErr(status === 404 ? "__not_found__" : msg);
       })
       .finally(() => setPlanLoading(false));
+    return () => controller.abort();
   }, [tab, plan, planErr, seq]);
 
   const tabStyle = (t: Tab): React.CSSProperties => ({

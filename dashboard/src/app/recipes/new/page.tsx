@@ -1,6 +1,6 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { AutoGrowTextarea } from "@/components/AutoGrowTextarea";
 import { highlightYaml } from "@/components/patchwork";
@@ -292,10 +292,13 @@ const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 function CopyYamlButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(copyTimerRef.current); }, []);
   const onCopy = useCallback(() => {
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1800);
     });
   }, [text]);
   return (

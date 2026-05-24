@@ -186,7 +186,9 @@ function stripMarkdown(text: string): string {
 // children, not the content that follows it in the rendered tree.
 function H2WithCopy({ children }: { children?: React.ReactNode }) {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [copied, setCopied] = useState(false);
+  useEffect(() => () => { clearTimeout(copyTimerRef.current); }, []);
   const onCopy = useCallback(() => {
     const el = headingRef.current;
     if (!el) return;
@@ -199,7 +201,8 @@ function H2WithCopy({ children }: { children?: React.ReactNode }) {
     const text = parts.join("\n").trim();
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1800);
     });
   }, []);
   return (

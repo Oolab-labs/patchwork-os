@@ -26,6 +26,7 @@ import {
   SuccessRing,
 } from "@/components/patchwork";
 import { RunChip } from "@/components/patchwork/entity";
+import { fmtDuration } from "@/components/time";
 
 /**
  * Trigger-type → chip tone. Triggers used to all render in the same
@@ -132,12 +133,8 @@ function relTime(ms: number): string {
 }
 
 function formatDuration(ms: number | undefined): string {
-  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return "—";
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  const m = Math.floor(ms / 60_000);
-  const s = Math.round((ms % 60_000) / 1000);
-  return `${m}m ${s}s`;
+  if (typeof ms !== "number" || ms <= 0) return "—";
+  return fmtDuration(ms);
 }
 
 interface RecipeVar {

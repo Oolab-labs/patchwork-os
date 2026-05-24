@@ -79,11 +79,15 @@ export default function RecipeEditPage({
   // toggle + skeleton; PRs B/C add the actual form fields.
   const [editMode, setEditMode] = useState<"yaml" | "form">(() => {
     if (typeof window === "undefined") return "yaml";
-    return (localStorage.getItem("recipe-edit-mode") as "yaml" | "form" | null) ?? "yaml";
+    try {
+      return (localStorage.getItem("recipe-edit-mode") as "yaml" | "form" | null) ?? "yaml";
+    } catch {
+      return "yaml";
+    }
   });
   const switchEditMode = useCallback((mode: "yaml" | "form") => {
     setEditMode(mode);
-    localStorage.setItem("recipe-edit-mode", mode);
+    try { localStorage.setItem("recipe-edit-mode", mode); } catch { /* private mode */ }
   }, []);
   const toast = useToast();
 

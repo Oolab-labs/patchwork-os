@@ -539,7 +539,7 @@ export default function ActivityPage() {
             title="No activity yet"
             description={
               <>
-                Tool calls and bridge events will appear here — most recent first.
+                Tool calls and recipe steps will appear here in real time — most recent first.
                 <span
                   style={{
                     display: "block",
@@ -548,7 +548,7 @@ export default function ActivityPage() {
                     marginTop: "var(--s-3)",
                   }}
                 >
-                  Connect a Claude Code session to the bridge and call any MCP tool to see your first event.
+                  Connect a Claude session and make any request to see your first event appear here.
                 </span>
               </>
             }
@@ -561,8 +561,8 @@ export default function ActivityPage() {
           title="No events match this filter"
           description={
             tab === "all"
-              ? "No bridge activity yet — tool calls, approvals, and recipe steps will stream in here as they happen."
-              : "Try the All tab to see everything, or trigger the type of event you're filtering for."
+              ? "No activity yet — tool calls, approvals, and recipe steps will stream in here as they happen."
+              : "Nothing here yet for this filter. Switch to the All tab or trigger the type of event you want to see."
           }
           action={
             tab !== "all" ? (
@@ -693,7 +693,11 @@ export default function ActivityPage() {
                           className={`status-cell ${meta.decision === "allow" ? "ok" : "err"}`}
                         >
                           <span className="pill-dot" />
-                          {meta.decision ?? "—"}
+                          {meta.decision === "allow"
+                            ? "approved"
+                            : meta.decision === "deny"
+                              ? "rejected"
+                              : meta.decision ?? "—"}
                         </span>
                       ) : e.status ? (
                         <span

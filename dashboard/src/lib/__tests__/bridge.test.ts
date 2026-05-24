@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { findBridge, resolveBridgeUrl } from "@/lib/bridge";
+import { findBridge, resolveBridgeUrl, _clearBridgeCache } from "@/lib/bridge";
 
 // findBridge() reads process.env and ~/.claude/ide synchronously, so we
 // build a real temp dir and point os.homedir() at it. This avoids fs
@@ -25,6 +25,7 @@ let tmpHome: string;
 let ideDir: string;
 
 beforeEach(() => {
+  _clearBridgeCache();
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-test-"));
   ideDir = path.join(tmpHome, ".claude", "ide");
   fs.mkdirSync(ideDir, { recursive: true });

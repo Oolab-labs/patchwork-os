@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Small card showing the bridge config file path with a copy button.
@@ -8,17 +8,21 @@ import { useState } from "react";
  */
 export function ConfigFileCard({ path }: { path: string }) {
   const [state, setState] = useState<"idle" | "copied" | "blocked">("idle");
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(copyTimerRef.current); }, []);
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(path);
       setState("copied");
-      setTimeout(() => setState("idle"), 1500);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setState("idle"), 1500);
     } catch {
       // Clipboard API blocked (insecure context, headless, permission denied).
       // Tell the user instead of silently no-op'ing.
       setState("blocked");
-      setTimeout(() => setState("idle"), 2400);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setState("idle"), 2400);
     }
   }
 

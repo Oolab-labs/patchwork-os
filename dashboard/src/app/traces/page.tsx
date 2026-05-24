@@ -85,6 +85,8 @@ function TraceActions({
   const [replaying, setReplaying] = useState(false);
   const [replayMsg, setReplayMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(copyTimerRef.current); }, []);
 
   const recipeName = typeof body.recipeName === "string" ? body.recipeName : null;
 
@@ -125,7 +127,8 @@ function TraceActions({
     if (!cliCmd) return;
     void navigator.clipboard.writeText(cliCmd).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     });
   }, [cliCmd]);
 
@@ -874,8 +877,8 @@ export default function TracesPage() {
 
       {visible.length === 0 && !loading ? (
         <EmptyState
-          title="No traces yet"
-          description="Decision traces (approvals, enrichment, recipe runs) accumulate here as the bridge operates. Run a recipe or process an approval to start the log."
+          title="No decisions recorded yet"
+          description="Every approval, recipe run, and agent decision is saved here automatically. Run a recipe or approve a tool call to see your first entry."
           action={
             <Link href="/recipes" className="btn sm">
               Browse recipes

@@ -1656,13 +1656,16 @@ function CopyableBlock({
 }) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(copyTimerRef.current); }, []);
   function onCopy() {
     setCopyError(null);
     navigator.clipboard
       .writeText(content)
       .then(() => {
         setCopied(true);
-        window.setTimeout(() => setCopied(false), 1800);
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = setTimeout(() => setCopied(false), 1800);
       })
       .catch((err: unknown) => {
         // Permission denied / insecure context — clipboard is gated on https.

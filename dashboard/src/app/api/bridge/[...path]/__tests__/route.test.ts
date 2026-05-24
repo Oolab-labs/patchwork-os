@@ -233,6 +233,37 @@ describe("catch-all bridge proxy — SSE /stream aborts upstream on disconnect",
   });
 });
 
+describe("catch-all bridge proxy — SSE /stream only matches exact path", () => {
+  it("routes /stream/sub-path through the generic proxy, not the SSE branch", async () => {
+    // segments.length === 1 guard: a path like /api/bridge/stream/webhooks
+    // must NOT enter the SSE branch (which would misroute or bypass CSRF).
+    const ctx = { params: Promise.resolve({ path: ["stream", "webhooks"] }) };
+    const req = new Request("https://dashboard.local/api/bridge/stream/webhooks", {
+      method: "GET",
+      headers: { "sec-fetch-site": "same-origin" },
+    });
+    Object.defineProperty(req, "nextUrl", {
+      value: { search: "" },
+      configurable: true,
+    });
+    const lib = await import("@/lib/bridge");
+    // The generic proxy path calls bridgeFetch; the SSE path calls fetch() directly.
+    const bridgeFetchSpy = vi.mocked(lib.bridgeFetch);
+    bridgeFetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const res = await GET(req as unknown as NextRequest, ctx);
+    // If the SSE branch were hit, bridgeFetch would NOT have been called
+    // (SSE uses fetch() directly). Asserting bridgeFetch was called proves
+    // we went through the generic proxy.
+    expect(bridgeFetchSpy).toHaveBeenCalled();
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("catch-all bridge proxy — error body does not leak internals", () => {
   const ctx = { params: Promise.resolve({ path: ["some", "path"] }) };
 

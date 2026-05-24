@@ -96,9 +96,12 @@ function TaskDetail({ task, onCancel, cancelling }: {
 }) {
   const toast = useToast();
   const [copied, setCopied] = useState<"id" | "term" | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(copyTimerRef.current); }, []);
   function flash(kind: "id" | "term") {
     setCopied(kind);
-    setTimeout(() => setCopied((c) => (c === kind ? null : c)), 1500);
+    clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopied((c) => (c === kind ? null : c)), 1500);
   }
   const isLive = task.status === "running" || task.status === "pending";
   const errText = task.errorMessage ?? task.stderrTail;
@@ -610,9 +613,9 @@ function TasksContent() {
             title="No tasks yet"
             description={
               <>
-                Tasks are background Claude runs spawned by recipes or by the{" "}
-                <code>runClaudeTask</code> tool. Start one from a recipe, or run{" "}
-                <code>patchwork start-task &quot;…&quot;</code> in your terminal.
+                Tasks are background Claude runs triggered by recipes or automation.
+                Enable a recipe with automation to see tasks appear here automatically,
+                or run <code>patchwork start-task &quot;…&quot;</code> to start one manually.
               </>
             }
             action={
