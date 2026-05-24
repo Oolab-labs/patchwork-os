@@ -125,7 +125,7 @@ function ToolCallsWidget({
   const hasActivity = peak > 0 || total > 0 || toolCallTotal > 0;
   return (
     <div
-      className="card"
+      className="card tool-calls-card"
       style={{
         padding: "16px 20px 12px",
         marginBottom: "var(--s-5)",

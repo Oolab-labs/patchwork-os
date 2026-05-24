@@ -4049,6 +4049,9 @@ button.topbar-search {
   font-weight: 600;
 }
 
+/* ── Tool calls chart card ────────────────────────────────────────────── */
+.tool-calls-card { border-top: 2.5px solid var(--info); }
+
 /* ── Leaderboard rows ────────────────────────────────────────────────── */
 .leaderboard-row { transition: background 120ms ease; border-radius: var(--r-sm); }
 .leaderboard-row:hover { background: var(--recess); }
