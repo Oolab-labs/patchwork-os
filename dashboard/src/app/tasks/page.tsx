@@ -610,9 +610,9 @@ function TasksContent() {
             title="No tasks yet"
             description={
               <>
-                Tasks are background Claude runs spawned by recipes or by the{" "}
-                <code>runClaudeTask</code> tool. Start one from a recipe, or run{" "}
-                <code>patchwork start-task &quot;…&quot;</code> in your terminal.
+                Tasks are background Claude runs triggered by recipes or automation.
+                Enable a recipe with automation to see tasks appear here automatically,
+                or run <code>patchwork start-task &quot;…&quot;</code> to start one manually.
               </>
             }
             action={

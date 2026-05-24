@@ -874,8 +874,8 @@ export default function TracesPage() {
 
       {visible.length === 0 && !loading ? (
         <EmptyState
-          title="No traces yet"
-          description="Decision traces (approvals, enrichment, recipe runs) accumulate here as the bridge operates. Run a recipe or process an approval to start the log."
+          title="No decisions recorded yet"
+          description="Every approval, recipe run, and agent decision is saved here automatically. Run a recipe or approve a tool call to see your first entry."
           action={
             <Link href="/recipes" className="btn sm">
               Browse recipes

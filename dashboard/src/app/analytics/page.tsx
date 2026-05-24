@@ -258,8 +258,8 @@ export default function AnalyticsPage() {
             <SkeletonList rows={5} columns={3} />
           ) : topTools.length === 0 ? (
             <EmptyState
-              title="No tool call data yet"
-              description="Analytics data accumulates over time. Make a few tool calls and refresh."
+              title="No data yet"
+              description="Usage data builds up as your agents work. Run a recipe or make a Claude request to see your first stats."
             />
           ) : (
             <div className="card" style={{ padding: "var(--s-5)" }}>
