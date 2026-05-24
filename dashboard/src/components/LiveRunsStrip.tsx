@@ -208,17 +208,8 @@ export function LiveRunsStrip({
                   void run(name);
                 }}
                 disabled={isQueueing}
-                style={{
-                  alignSelf: "flex-start",
-                  fontSize: "var(--fs-xs)",
-                  padding: "3px 9px",
-                  borderRadius: "var(--r-2)",
-                  border: "1px solid var(--line-2)",
-                  background: "var(--surface)",
-                  color: tone === "err" ? "var(--err)" : "var(--accent)",
-                  cursor: isQueueing ? "wait" : "pointer",
-                  fontWeight: 600,
-                }}
+                className="live-run-rerun-btn"
+                data-tone={tone}
                 title={`Run ${name} again`}
               >
                 {isQueueing ? "queueing…" : tone === "err" ? "↻ Retry" : "↻ Run again"}

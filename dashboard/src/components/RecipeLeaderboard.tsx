@@ -158,7 +158,7 @@ export function RecipeLeaderboard({
           </Link>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div className="lbrd-list">
           {agg.map((a) => {
             const tone = statusTone(a.lastRun.status);
             const isQueueing = Boolean(pending[a.name]);
@@ -166,31 +166,11 @@ export function RecipeLeaderboard({
               <div
                 key={a.name}
                 className="leaderboard-row"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "8px 8px",
-                  borderRadius: "var(--r-sm)",
-                  fontSize: "var(--fs-s)",
-                }}
               >
                 <SuccessRing pct={a.okRate} size={26} stroke={3} />
                 <Link
                   href={`/runs?recipe=${encodeURIComponent(a.name)}`}
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    color: "var(--ink-0)",
-                    flex: 1,
-                    minWidth: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    textDecoration: "none",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
+                  className="lbrd-recipe-link"
                   title={a.isLive ? `${a.name} · running now` : `View ${a.name} runs`}
                 >
                   {a.isLive && (

@@ -194,38 +194,11 @@ export function FirstRunChecklist() {
   const nextIdx = steps.findIndex((s) => !s.step.done);
 
   return (
-    <section
-      aria-labelledby="first-run-heading"
-      style={{
-        marginBottom: "var(--s-5)",
-        padding: "16px 20px",
-        borderRadius: "var(--r-3)",
-        border: "1px solid color-mix(in srgb, var(--accent) 22%, transparent)",
-        background: "color-mix(in srgb, var(--accent) 5%, var(--surface))",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <h2
-          id="first-run-heading"
-          style={{
-            margin: 0,
-            fontSize: "var(--fs-m)",
-            fontWeight: 600,
-            color: "var(--ink-1)",
-          }}
-        >
+    <section aria-labelledby="first-run-heading" className="first-run-checklist">
+      <div className="first-run-heading">
+        <h2 id="first-run-heading" className="first-run-title">
           Get started{" "}
-          <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>
-            · {doneCount} of 4 done
-          </span>
+          <span className="first-run-title-sub">· {doneCount} of 4 done</span>
         </h2>
         <button
           type="button"
@@ -234,135 +207,40 @@ export function FirstRunChecklist() {
             setDismissed(true);
           }}
           aria-label="Dismiss first-run checklist"
-          style={{
-            background: "transparent",
-            border: "1px solid var(--line-2)",
-            color: "var(--ink-3)",
-            padding: "3px 10px",
-            borderRadius: "var(--r-2)",
-            fontSize: "var(--fs-xs)",
-            cursor: "pointer",
-          }}
+          className="btn sm ghost"
         >
           Dismiss
         </button>
       </div>
 
-      <ol
-        style={{
-          listStyle: "none",
-          padding: 0,
-          margin: "12px 0 0",
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-        }}
-      >
+      <ol className="first-run-steps">
         {steps.map((s, idx) => {
           const isNext = idx === nextIdx;
+          const state = s.step.done ? "done" : isNext ? "next" : "pending";
           return (
             <li
               key={s.n}
-              data-next={isNext ? "true" : undefined}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "8px 12px",
-                borderRadius: "var(--r-2)",
-                background: s.step.done
-                  ? "color-mix(in srgb, var(--green) 7%, transparent)"
-                  : isNext
-                    ? "color-mix(in srgb, var(--accent) 8%, var(--recess))"
-                    : "var(--recess)",
-                opacity: s.step.done ? 0.65 : 1,
-                outline: isNext
-                  ? "1.5px solid color-mix(in srgb, var(--accent) 35%, transparent)"
-                  : "none",
-                transition: "opacity 180ms, background 180ms",
-              }}
+              className="first-run-step"
+              data-state={state}
             >
-              <span
-                aria-hidden="true"
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: "50%",
-                  background: s.step.done
-                    ? "var(--green)"
-                    : isNext
-                      ? "var(--accent)"
-                      : "transparent",
-                  border: s.step.done
-                    ? "1px solid var(--green)"
-                    : isNext
-                      ? "1px solid var(--accent)"
-                      : "1px solid var(--line-2)",
-                  color:
-                    s.step.done || isNext
-                      ? "var(--on-accent, #fff)"
-                      : "var(--ink-3)",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "var(--fs-xs)",
-                  fontWeight: 700,
-                  flexShrink: 0,
-                }}
-              >
+              <span aria-hidden="true" className="first-run-step-num">
                 {s.step.done ? "✓" : s.n}
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: "var(--fs-s)",
-                    fontWeight: isNext ? 600 : 500,
-                    color: "var(--ink-1)",
-                    textDecoration: s.step.done ? "line-through" : "none",
-                  }}
-                >
+                <div className="first-run-step-label">
                   {s.label}
                   {isNext && (
-                    <span
-                      style={{
-                        marginLeft: 8,
-                        fontSize: "var(--fs-xs)",
-                        fontWeight: 600,
-                        color: "var(--accent)",
-                        verticalAlign: "middle",
-                      }}
-                    >
-                      ← next
-                    </span>
+                    <span className="first-run-next-badge">← next</span>
                   )}
                 </div>
                 {(() => {
                   const tip = s.step.done ? s.step.doneHint : s.step.hint;
                   if (!tip) return null;
-                  return (
-                    <div
-                      style={{
-                        fontSize: "var(--fs-xs)",
-                        color: "var(--ink-3)",
-                        marginTop: 2,
-                      }}
-                    >
-                      {tip}
-                    </div>
-                  );
+                  return <div className="first-run-step-tip">{tip}</div>;
                 })()}
               </div>
               {!s.step.done && (
-                <Link
-                  href={s.cta.href}
-                  style={{
-                    fontSize: "var(--fs-xs)",
-                    fontWeight: 600,
-                    color: "var(--accent)",
-                    textDecoration: "none",
-                    flexShrink: 0,
-                  }}
-                >
+                <Link href={s.cta.href} className="first-run-step-cta">
                   {s.cta.label}
                 </Link>
               )}

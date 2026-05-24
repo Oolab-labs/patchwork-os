@@ -4053,8 +4053,149 @@ button.topbar-search {
 .tool-calls-card { border-top: 2.5px solid var(--info); }
 
 /* ── Leaderboard rows ────────────────────────────────────────────────── */
-.leaderboard-row { transition: background 120ms ease; border-radius: var(--r-sm); }
+.lbrd-list { display: flex; flex-direction: column; gap: 4px; }
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-s);
+  transition: background 120ms ease;
+}
 .leaderboard-row:hover { background: var(--recess); }
+.lbrd-recipe-link {
+  font-family: var(--font-mono);
+  color: var(--ink-0);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Live run rerun button ────────────────────────────────────────────── */
+.live-run-rerun-btn {
+  align-self: flex-start;
+  font-size: var(--fs-xs);
+  padding: 3px 9px;
+  border-radius: var(--r-2);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+.live-run-rerun-btn[data-tone="err"] {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 30%, var(--line-2));
+}
+.live-run-rerun-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.live-run-rerun-btn[data-tone="err"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--err) 6%, var(--surface));
+}
+.live-run-rerun-btn:disabled { opacity: 0.5; cursor: wait; }
+
+/* ── First-run checklist ─────────────────────────────────────────────── */
+.first-run-checklist {
+  margin-bottom: var(--s-5);
+  padding: 16px 20px;
+  border-radius: var(--r-3);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+.first-run-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.first-run-title {
+  margin: 0;
+  font-size: var(--fs-m);
+  font-weight: 600;
+  color: var(--ink-1);
+}
+.first-run-title-sub { color: var(--ink-3); font-weight: 400; }
+.first-run-steps {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.first-run-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--r-2);
+  background: var(--recess);
+  transition: opacity 180ms ease, background 180ms ease;
+}
+.first-run-step[data-state="done"] {
+  background: color-mix(in srgb, var(--ok) 7%, transparent);
+  opacity: 0.65;
+}
+.first-run-step[data-state="next"] {
+  background: color-mix(in srgb, var(--accent) 8%, var(--recess));
+  outline: 1.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.first-run-step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.first-run-step[data-state="next"] .first-run-step-num {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent, #fff);
+}
+.first-run-step[data-state="done"] .first-run-step-num {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: var(--on-accent, #fff);
+}
+.first-run-step-label {
+  font-size: var(--fs-s);
+  font-weight: 500;
+  color: var(--ink-1);
+}
+.first-run-step[data-state="done"] .first-run-step-label { text-decoration: line-through; }
+.first-run-step[data-state="next"] .first-run-step-label { font-weight: 600; }
+.first-run-next-badge {
+  margin-left: 8px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--accent);
+  vertical-align: middle;
+}
+.first-run-step-tip { font-size: var(--fs-xs); color: var(--ink-3); margin-top: 2px; }
+.first-run-step-cta {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  flex-shrink: 0;
+}
 
 /* ── Leaderboard run button ───────────────────────────────────────────── */
 .lbrd-run-btn {
