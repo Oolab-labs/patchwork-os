@@ -226,7 +226,7 @@ export function FirstRunChecklist() {
               <span aria-hidden="true" className="first-run-step-num">
                 {s.step.done ? "✓" : s.n}
               </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="first-run-step-body">
                 <div className="first-run-step-label">
                   {s.label}
                   {isNext && (

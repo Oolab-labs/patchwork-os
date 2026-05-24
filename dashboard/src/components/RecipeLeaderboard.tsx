@@ -118,15 +118,8 @@ export function RecipeLeaderboard({
   const agg = aggregateByRecipe(runs, WINDOW_MS[windowKey]).slice(0, limit);
 
   return (
-    <div className="card recipe-leaderboard-card" style={{ padding: "18px 20px" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 14,
-        }}
-      >
+    <div className="card recipe-leaderboard-card">
+      <div className="lbrd-header">
         <h2 className="card-h2">Top recipes</h2>
         <div role="tablist" aria-label="Time window" className="lbrd-tabs">
           {(["1h", "24h", "7d"] as const).map((k) => {
@@ -151,9 +144,9 @@ export function RecipeLeaderboard({
       </div>
 
       {agg.length === 0 ? (
-        <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", padding: "8px 0" }}>
+        <div className="lbrd-empty">
           No runs in the last {windowKey}.{" "}
-          <Link href="/recipes" style={{ color: "var(--accent)" }}>
+          <Link href="/recipes" className="lbrd-empty-link">
             Run a recipe →
           </Link>
         </div>
@@ -179,30 +172,25 @@ export function RecipeLeaderboard({
                       className="leaderboard-live-dot"
                     />
                   )}
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {a.name}
-                  </span>
+                  <span>{a.name}</span>
                 </Link>
                 <RunSparkBars runs={a.runs.slice(0, 8)} slots={8} width={84} height={16} />
                 <span
-                  className="mono muted"
-                  style={{ fontSize: "var(--fs-xs)", minWidth: 56, textAlign: "right" }}
+                  className="mono muted lbrd-count"
                   title={`${a.total} run${a.total === 1 ? "" : "s"}`}
                 >
                   {a.total} run{a.total === 1 ? "" : "s"}
                 </span>
                 {a.halts > 0 && (
                   <span
-                    className="pill warn"
-                    style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
+                    className="pill warn xs"
                     title={`${a.halts} halted run${a.halts === 1 ? "" : "s"}`}
                   >
                     {a.halts} halt{a.halts === 1 ? "" : "s"}
                   </span>
                 )}
                 <span
-                  className={`pill ${tone}`}
-                  style={{ fontSize: "var(--fs-2xs)", flexShrink: 0, minWidth: 72, textAlign: "center" }}
+                  className={`pill ${tone} xs lbrd-status-pill`}
                   title={`Last run ${relTime(a.lastRun.startedAt)} · ${a.lastRun.status}`}
                 >
                   {a.lastRun.status}

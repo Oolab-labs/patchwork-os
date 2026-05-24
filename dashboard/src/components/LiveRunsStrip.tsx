@@ -101,18 +101,6 @@ export function LiveRunsStrip({
             className="live-run-card"
             data-live={isLive ? "1" : "0"}
             data-tone={tone}
-            style={{
-              // Cap at 260px but allow the card to shrink on narrow phones
-              // so it never bleeds past the viewport edge with no scroll cue.
-              flex: "0 0 clamp(220px, 78vw, 260px)",
-              scrollSnapAlign: "start",
-              padding: "10px 12px",
-              borderRadius: "var(--r-2)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-              minWidth: 0,
-            }}
             title={
               r.haltReason
                 ? `Halt: ${r.haltReason}`
