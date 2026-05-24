@@ -155,6 +155,14 @@ const ApprovalCard = memo(function ApprovalCard({
   const [editCopied, setEditCopied] = useState(false);
   const [cliCopied, setCliCopied] = useState(false);
   const [paramsCopied, setParamsCopied] = useState(false);
+  const editCopyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const cliCopyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const paramsCopyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => {
+    clearTimeout(editCopyTimerRef.current);
+    clearTimeout(cliCopyTimerRef.current);
+    clearTimeout(paramsCopyTimerRef.current);
+  }, []);
 
   const expires = p.expiresAt ?? p.requestedAt + DEFAULT_TTL_MS;
   const primary = primaryParam(p.toolName, p.params);
@@ -391,7 +399,8 @@ const ApprovalCard = memo(function ApprovalCard({
                 onClick={() => {
                   navigator.clipboard.writeText(safeStringify(p.params)).then(() => {
                     setParamsCopied(true);
-                    setTimeout(() => setParamsCopied(false), 1400);
+                    clearTimeout(paramsCopyTimerRef.current);
+                    paramsCopyTimerRef.current = setTimeout(() => setParamsCopied(false), 1400);
                   });
                 }}
                 aria-label="Copy params as JSON"
@@ -527,7 +536,8 @@ const ApprovalCard = memo(function ApprovalCard({
           onClick={() => {
             navigator.clipboard.writeText(`patchwork approve --edit ${p.callId}`).then(() => {
               setEditCopied(true);
-              setTimeout(() => setEditCopied(false), 1500);
+              clearTimeout(editCopyTimerRef.current);
+              editCopyTimerRef.current = setTimeout(() => setEditCopied(false), 1500);
             });
           }}
         >
@@ -540,7 +550,8 @@ const ApprovalCard = memo(function ApprovalCard({
           onClick={() => {
             navigator.clipboard.writeText(`patchwork approve ${p.callId}`).then(() => {
               setCliCopied(true);
-              setTimeout(() => setCliCopied(false), 1500);
+              clearTimeout(cliCopyTimerRef.current);
+              cliCopyTimerRef.current = setTimeout(() => setCliCopied(false), 1500);
             });
           }}
         >
@@ -640,6 +651,8 @@ function ApprovalsContent() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
+  const copyRuleTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(copyRuleTimerRef.current); }, []);
   const toast = useToast();
   const riskFromUrl = searchParams.get("risk");
   const [riskFilter, setRiskFilterState] = useState<RiskFilter>(
@@ -1004,7 +1017,8 @@ function ApprovalsContent() {
     const snippet = JSON.stringify({ allow: [toolName] }, null, 2);
     navigator.clipboard.writeText(snippet).then(() => {
       setCopied(toolName);
-      setTimeout(() => setCopied((c) => (c === toolName ? null : c)), 2000);
+      clearTimeout(copyRuleTimerRef.current);
+      copyRuleTimerRef.current = setTimeout(() => setCopied((c) => (c === toolName ? null : c)), 2000);
     });
   }, []);
 

@@ -85,6 +85,8 @@ function TraceActions({
   const [replaying, setReplaying] = useState(false);
   const [replayMsg, setReplayMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(copyTimerRef.current); }, []);
 
   const recipeName = typeof body.recipeName === "string" ? body.recipeName : null;
 
@@ -125,7 +127,8 @@ function TraceActions({
     if (!cliCmd) return;
     void navigator.clipboard.writeText(cliCmd).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     });
   }, [cliCmd]);
 

@@ -122,10 +122,13 @@ function fmtTs(ms: number): string {
 /** Inline mono value with a Copy button. 28pt min-height tap target. */
 function CopyableMono({ value, ariaLabel }: { value: string; ariaLabel?: string }) {
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(copyTimerRef.current); }, []);
   const copy = () => {
     void navigator.clipboard.writeText(value).then(() => {
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     });
   };
   return (
@@ -179,13 +182,16 @@ function TruncatablePre({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const truncCopyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(truncCopyTimerRef.current); }, []);
   const lines = text.split("\n");
   const truncated = lines.length > maxLines && !expanded;
   const shown = truncated ? lines.slice(0, maxLines).join("\n") : text;
   const copy = () => {
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      clearTimeout(truncCopyTimerRef.current);
+      truncCopyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     });
   };
   return (

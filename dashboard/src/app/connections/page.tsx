@@ -797,6 +797,8 @@ interface GridCardProps {
 function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, loading, recipeCount }: GridCardProps) {
   const [testResult, setTestResult] = useState<{ ok: boolean; message?: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const testResultTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(testResultTimerRef.current); }, []);
 
   const isConnected = statusEntry.status === "connected";
   const isDegraded = statusEntry.status === "needs_reauth";
@@ -811,7 +813,8 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
     } finally {
       setTesting(false);
     }
-    setTimeout(() => setTestResult(null), 4000);
+    clearTimeout(testResultTimerRef.current);
+    testResultTimerRef.current = setTimeout(() => setTestResult(null), 4000);
   }
 
   const borderColor = isDegraded
