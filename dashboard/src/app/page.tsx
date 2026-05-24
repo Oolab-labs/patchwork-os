@@ -134,11 +134,14 @@ function ToolCallsWidget({
       <div
         style={{
           display: "flex",
-          alignItems: "baseline",
+          alignItems: "center",
           gap: 10,
           marginBottom: 4,
         }}
       >
+        <span className="stat-tile-icon stat-tile-icon--tools" aria-hidden="true">
+          <TileIconShell />
+        </span>
         <span
           style={{
             fontSize: "var(--fs-m)",
@@ -149,9 +152,6 @@ function ToolCallsWidget({
         >
           Tool calls — last 24 hours
         </span>
-        {/* Live pill matches the wireframe's top-right indicator. The
-            numeric "total" badge it replaced was redundant with the chart
-            area's own visual weight and added noise. */}
         <LivePill connection={hasActivity ? "live" : "offline"} />
       </div>
       <div
@@ -280,15 +280,14 @@ function formatUptime(ms: number): string {
 // >_ tools, ☉ tokens) but rendered as 12×12 inline SVGs at --ink-3 so they
 // read as muted decoration next to the uppercase tile labels.
 const TILE_ICON_PROPS = {
-  width: 12,
-  height: 12,
+  width: 18,
+  height: 18,
   viewBox: "0 0 24 24",
   fill: "none" as const,
   stroke: "currentColor",
   strokeWidth: 1.6,
   strokeLinecap: "round" as const,
   strokeLinejoin: "round" as const,
-  style: { color: "var(--ink-3)" },
 };
 function TileIconLines() {
   return (
@@ -715,83 +714,54 @@ function NeedsAttentionBand({
 
   const allClear = items.length === 0;
 
-  return (
-    <div
-      className="card"
-      style={{
-        padding: "14px 20px",
-        marginBottom: "var(--s-4)",
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        flexWrap: "wrap",
-      }}
-    >
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "var(--fs-2xs)",
-          fontWeight: 700,
-          letterSpacing: "0.1em",
-          textTransform: "uppercase",
-          color: "var(--ink-3)",
-          flexShrink: 0,
-        }}
-      >
-        Needs attention
-      </span>
-
-      {allClear ? (
-        <span
-          style={{
-            fontSize: "var(--fs-s)",
-            color: bridgeOk ? "var(--green, #4caf50)" : "var(--ink-3)",
-            fontWeight: 600,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          {bridgeOk ? (
-            <>
-              <span aria-hidden="true">✓</span>
-              All clear — no approvals pending, no halts, no failures.
-            </>
-          ) : (
-            "Bridge offline — connect to see agent status."
-          )}
+  if (!bridgeOk) {
+    return (
+      <div className="attention-offline">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--err)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>
+          <strong style={{ color: "var(--err)", fontWeight: 700 }}>Bridge offline</strong>
+          {" — connect to see agent status. "}
+          <Link href="/connections" style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}>
+            Check connections →
+          </Link>
         </span>
-      ) : (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "5px 12px",
-                borderRadius: "var(--r-2)",
-                background: item.urgent ? "var(--amber-bg, rgba(212,154,58,0.12))" : "var(--surface-2, var(--line-3))",
-                border: `1px solid ${item.urgent ? "var(--amber, #d49a3a)" : "var(--line-2)"}`,
-                color: item.urgent ? "var(--amber, #d49a3a)" : "var(--ink-1)",
-                fontWeight: 700,
-                fontSize: "var(--fs-s)",
-                textDecoration: "none",
-                transition: "opacity 0.15s",
-              }}
-              aria-label={`${item.count} ${item.label} — view all`}
-            >
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-m)" }}>
-                {item.count}
-              </span>
-              <span style={{ fontWeight: 400, fontSize: "var(--fs-xs)" }}>{item.label}</span>
-              <span aria-hidden="true" style={{ fontSize: "var(--fs-xs)", opacity: 0.6 }}>→</span>
-            </Link>
-          ))}
+      </div>
+    );
+  }
+
+  if (allClear) {
+    return (
+      <div className="attention-clear">
+        <div className="attention-clear-ring" aria-hidden="true">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
         </div>
-      )}
+        <div>
+          <span style={{ color: "var(--ok)", fontWeight: 700, fontSize: "var(--fs-s)" }}>All clear</span>
+          <span style={{ color: "var(--ink-3)", fontSize: "var(--fs-s)", marginLeft: 8 }}>
+            No approvals pending · no halts · no failures
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="attention-band">
+      <span className="attention-band-label">Needs attention</span>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {items.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`attention-chip ${item.urgent ? "attention-chip--urgent" : "attention-chip--warn"}`}
+            aria-label={`${item.count} ${item.label} — view all`}
+          >
+            <span className="attention-chip-count">{item.count}</span>
+            <span className="attention-chip-label">{item.label}</span>
+            <span className="attention-chip-arrow" aria-hidden="true">→</span>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
@@ -920,7 +890,7 @@ function RecipesAtAGlance({ runs }: { runs: LiveRun[] }) {
         </ActionPill>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {sorted.map(([name, stats]) => {
+        {sorted.map(([name, stats], i) => {
           const recipeKey = canonicalRecipeKey(name);
           return (
             <Link
@@ -938,15 +908,11 @@ function RecipesAtAGlance({ runs }: { runs: LiveRun[] }) {
               className="row-hover"
             >
               <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: stats.hasHalt ? "var(--err)" : "var(--green, #4caf50)",
-                  flexShrink: 0,
-                }}
-                aria-hidden="true"
-              />
+                className={`recipe-rank${i < 3 ? ` recipe-rank--${i + 1}` : ""}`}
+                aria-label={`Rank ${i + 1}`}
+              >
+                {i + 1}
+              </span>
               <span
                 style={{
                   flex: 1,
@@ -1333,38 +1299,14 @@ export default function HomePage() {
       {/* ------------------------------------------------------------------ */}
       {/* TELEMETRY eyebrow                                                    */}
       {/* ------------------------------------------------------------------ */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--s-3)",
-          marginTop: "var(--s-2)",
-          marginBottom: "var(--s-3)",
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--fs-2xs)",
-            fontWeight: 700,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--ink-3)",
-            flex: 1,
-          }}
-        >
-          Telemetry
-        </span>
+      <div className="pg-section-head">
+        <span className="pg-section-head-label">Telemetry</span>
+        <div className="pg-section-head-rule" aria-hidden="true" />
         <button
           type="button"
           className="btn sm ghost"
           onClick={() => tickRef.current()}
-          style={{
-            fontSize: "var(--fs-xs)",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-          }}
+          style={{ fontSize: "var(--fs-xs)", display: "inline-flex", alignItems: "center", gap: 6 }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M23 4v6h-6M1 20v-6h6" />
@@ -1375,12 +1317,7 @@ export default function HomePage() {
         <Link
           href="/recipes/new"
           className="btn sm primary"
-          style={{
-            textDecoration: "none",
-            fontSize: "var(--fs-xs)",
-            background: "var(--orange)",
-            border: "none",
-          }}
+          style={{ textDecoration: "none", fontSize: "var(--fs-xs)", background: "var(--orange)", border: "none" }}
         >
           + New recipe
         </Link>
@@ -1409,7 +1346,8 @@ export default function HomePage() {
           <>
             <StatCard
               label="Runs · 24h"
-              icon={<TileIconLines />}
+              className="stat-card--runs"
+              icon={<span className="stat-tile-icon stat-tile-icon--runs"><TileIconLines /></span>}
               value={<AnimatedNumber value={runsCount24h} />}
               foot={
                 <div>
@@ -1431,14 +1369,16 @@ export default function HomePage() {
             />
             <StatCard
               label="Pending approvals"
-              icon={<TileIconLock />}
+              className="stat-card--approvals"
+              icon={<span className="stat-tile-icon stat-tile-icon--approvals"><TileIconLock /></span>}
               value={<AnimatedNumber value={pendingCount} />}
               foot={oldestApprovalLabel}
               href="/approvals"
             />
             <StatCard
               label="Halts · 24h"
-              icon={<TileIconSun />}
+              className="stat-card--halts"
+              icon={<span className="stat-tile-icon stat-tile-icon--halts"><TileIconSun /></span>}
               value={<AnimatedNumber value={haltCount24h} />}
               foot={
                 <div>
@@ -1460,7 +1400,8 @@ export default function HomePage() {
             />
             <StatCard
               label="Tools called today"
-              icon={<TileIconShell />}
+              className="stat-card--tools"
+              icon={<span className="stat-tile-icon stat-tile-icon--tools"><TileIconShell /></span>}
               value={<AnimatedNumber value={toolsToday} />}
               foot={toolsTrendLabel}
               href="/activity"
@@ -1484,10 +1425,10 @@ export default function HomePage() {
       {/* ------------------------------------------------------------------ */}
       {/* Activity thread + Recipes at a glance                               */}
       {/* ------------------------------------------------------------------ */}
-      {/* Use the .grid-2 utility (collapses to a single column at ≤760 px)
-          rather than an inline 2-col grid that ignored viewport. Side-by-
-          side at phone width forced both cards to ~150 px wide and made
-          activity timestamps + recipe slugs collide. */}
+      <div className="pg-section-head">
+        <span className="pg-section-head-label">Activity</span>
+        <div className="pg-section-head-rule" aria-hidden="true" />
+      </div>
       <div className="grid-2" style={{ marginBottom: "var(--s-5)" }}>
         {/* Left col: unified entity timeline (runs + approvals) */}
         <div className="card" style={{ padding: "18px 20px" }}>

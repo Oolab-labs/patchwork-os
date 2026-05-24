@@ -4010,3 +4010,161 @@ button.topbar-search {
     animation: none;
   }
 }
+
+/* ── Overview page UI upgrades ────────────────────────────────────────── */
+
+/* Stat tile colored top-border variants */
+.stat-card.stat-card--runs      { border-top: 2.5px solid var(--accent); }
+.stat-card.stat-card--approvals { border-top: 2.5px solid var(--amber);  }
+.stat-card.stat-card--halts     { border-top: 2.5px solid var(--err);    }
+.stat-card.stat-card--tools     { border-top: 2.5px solid var(--info);   }
+
+/* Icon container pill — sits in the top-right of each stat tile */
+.stat-tile-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-2);
+  flex-shrink: 0;
+}
+.stat-tile-icon--runs      { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
+.stat-tile-icon--approvals { background: color-mix(in srgb, var(--amber)  10%, transparent); color: var(--amber);  }
+.stat-tile-icon--halts     { background: color-mix(in srgb, var(--err)    10%, transparent); color: var(--err);    }
+.stat-tile-icon--tools     { background: color-mix(in srgb, var(--info)   10%, transparent); color: var(--info);   }
+
+/* ── Attention band ──────────────────────────────────────────────────── */
+
+/* all-clear state — green-tinted */
+.attention-clear {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  margin-bottom: var(--s-4);
+  background: color-mix(in srgb, var(--ok) 5%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--ok) 22%, var(--line-1));
+  border-radius: var(--r-l);
+  box-shadow: var(--card-shadow);
+}
+.attention-clear-ring {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* bridge-offline state — red-tinted */
+.attention-offline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  margin-bottom: var(--s-4);
+  background: color-mix(in srgb, var(--err) 4%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--err) 18%, var(--line-1));
+  border-radius: var(--r-l);
+  box-shadow: var(--card-shadow);
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+}
+
+/* items state — neutral band */
+.attention-band {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 14px 20px;
+  margin-bottom: var(--s-4);
+  background: var(--card-bg);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-l);
+  box-shadow: var(--card-shadow);
+  flex-wrap: wrap;
+}
+.attention-band-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  flex-shrink: 0;
+}
+.attention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 10px;
+  border-radius: var(--r-3);
+  text-decoration: none;
+  transition: filter 150ms ease, transform 100ms ease;
+  border: 1px solid;
+}
+.attention-chip:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.attention-chip--urgent {
+  background: color-mix(in srgb, var(--amber) 10%, var(--card-bg));
+  border-color: color-mix(in srgb, var(--amber) 40%, var(--line-1));
+  color: var(--amber);
+}
+.attention-chip--warn {
+  background: color-mix(in srgb, var(--err) 8%, var(--card-bg));
+  border-color: color-mix(in srgb, var(--err) 32%, var(--line-1));
+  color: var(--err);
+}
+.attention-chip-count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  font-weight: 800;
+  line-height: 1;
+}
+.attention-chip-label { font-size: var(--fs-xs); font-weight: 400; }
+.attention-chip-arrow { font-size: var(--fs-xs); opacity: 0.5; }
+
+/* ── Page-level section divider ──────────────────────────────────────── */
+.pg-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-6);
+  margin-bottom: var(--s-4);
+}
+.pg-section-head-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.pg-section-head-rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--line-2) 0%, transparent 100%);
+}
+
+/* ── Recipe rank chip ────────────────────────────────────────────────── */
+.recipe-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  flex-shrink: 0;
+  background: var(--recess);
+  color: var(--ink-2);
+}
+.recipe-rank--1 { background: color-mix(in srgb, var(--accent) 11%, transparent); color: var(--accent); }
+.recipe-rank--2 { background: color-mix(in srgb, var(--amber)  10%, transparent); color: var(--amber);  }
+.recipe-rank--3 { background: color-mix(in srgb, var(--info)   10%, transparent); color: var(--info);   }
