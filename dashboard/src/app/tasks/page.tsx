@@ -581,7 +581,7 @@ function TasksContent() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search id, session, driver, output… ( / )"
             className="input"
-            style={{ flex: "1 1 280px", maxWidth: 360, fontSize: "var(--fs-m)" }}
+            style={{ flex: "1 1 min(280px, 100%)", maxWidth: 360, fontSize: "var(--fs-m)" }}
             aria-label="Filter tasks (shortcut: /)"
           />
           <div style={{ display: "flex", gap: 4 }} role="group" aria-label="Status filter">

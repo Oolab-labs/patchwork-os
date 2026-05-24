@@ -614,7 +614,7 @@ export default function TracesPage() {
             ]}
           />
         </div>
-        <div className="traces-toolbar" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="traces-toolbar" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
             <input
               type="text"
