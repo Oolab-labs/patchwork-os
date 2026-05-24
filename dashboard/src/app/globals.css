@@ -2401,9 +2401,9 @@ button.topbar-search {
   box-shadow: inset 1px 0 0 color-mix(in srgb, var(--ink-0) 4%, transparent);
 }
 .quilt-aside-eyebrow {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
@@ -2471,17 +2471,18 @@ button.topbar-search {
   margin: 4px 0 6px;
 }
 .quilt-aside-run {
-  align-self: flex-start;
+  align-self: stretch;
+  justify-content: center;
   font-size: var(--fs-s);
   font-weight: 600;
-  padding: 7px 14px;
+  padding: 8px 14px;
   border-radius: var(--r-2);
   border: 1px solid var(--accent);
   background: var(--accent);
   color: var(--on-orange, #fff);
   cursor: pointer;
   text-decoration: none;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 4px;
   box-shadow: 0 1px 0 color-mix(in srgb, var(--ink-0) 8%, transparent);

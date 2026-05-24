@@ -215,10 +215,7 @@ export function FeaturedRecipeAside({
       aria-label={`Recipe ${pick.name}`}
     >
       <div className="quilt-aside-eyebrow">
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          {eyebrow}
-        </span>
-        <SuccessRing pct={pick.okRate} size={22} stroke={3} />
+        {eyebrow}
       </div>
       <Link
         href={`/recipes/${encodeURIComponent(pick.name)}/edit`}
@@ -228,13 +225,16 @@ export function FeaturedRecipeAside({
         {pick.name}
       </Link>
       <div className="quilt-aside-meta">
-        {pick.mode === "running" ? (
-          <>Started {relTime(pick.lastRun.startedAt)} · {pick.total - 1} other{pick.total - 1 === 1 ? "" : "s"} today</>
-        ) : pick.mode === "needs-retry" ? (
-          <>Last run halted · {pick.total} run{pick.total === 1 ? "" : "s"} today</>
-        ) : (
-          <>Last {relTime(pick.lastRun.startedAt)} · {Math.round(pick.okRate)}% ok</>
-        )}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          {pick.mode === "running" ? (
+            <>Started {relTime(pick.lastRun.startedAt)} · {pick.total - 1} other{pick.total - 1 === 1 ? "" : "s"} today</>
+          ) : pick.mode === "needs-retry" ? (
+            <>Last run halted · {pick.total} run{pick.total === 1 ? "" : "s"} today</>
+          ) : (
+            <>Last {relTime(pick.lastRun.startedAt)} · {Math.round(pick.okRate)}% ok</>
+          )}
+          <SuccessRing pct={pick.okRate} size={16} stroke={2.5} />
+        </span>
       </div>
       <div className="quilt-aside-spark">
         <RunSparkBars runs={pick.recent} slots={10} width={180} height={20} />
