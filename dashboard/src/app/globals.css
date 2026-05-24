@@ -2391,9 +2391,12 @@ button.topbar-search {
   width: 288px;
   padding: 20px 22px;
   border-left: 1px solid var(--line-2);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  background:
+    radial-gradient(ellipse 80% 120% at 0% 50%, var(--aside-glow, transparent), transparent 60%),
+    color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(6px) saturate(115%);
   -webkit-backdrop-filter: blur(6px) saturate(115%);
+  transition: border-left-color 300ms ease;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -2454,6 +2457,9 @@ button.topbar-search {
 }
 .quilt-aside-featured[data-mode="running"] .quilt-aside-eyebrow { color: var(--ok); }
 .quilt-aside-featured[data-mode="needs-retry"] .quilt-aside-eyebrow { color: var(--err); }
+.quilt-aside-featured[data-mode="top"]         { --aside-glow: color-mix(in srgb, var(--accent) 13%, transparent); border-left-color: color-mix(in srgb, var(--accent) 45%, var(--line-2)); }
+.quilt-aside-featured[data-mode="running"]     { --aside-glow: color-mix(in srgb, var(--ok)     12%, transparent); border-left-color: color-mix(in srgb, var(--ok)     45%, var(--line-2)); }
+.quilt-aside-featured[data-mode="needs-retry"] { --aside-glow: color-mix(in srgb, var(--err)    10%, transparent); border-left-color: color-mix(in srgb, var(--err)     40%, var(--line-2)); }
 .quilt-aside-name {
   font-family: var(--font-mono);
   font-size: 19px;
@@ -2481,12 +2487,31 @@ button.topbar-search {
   width: 100%;
   height: auto;
 }
+@keyframes spark-rise {
+  from { transform: scaleY(0); opacity: 0.3; }
+  to   { transform: scaleY(1); opacity: 1; }
+}
+.quilt-aside-spark svg rect {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: spark-rise 300ms ease-out both;
+}
+.quilt-aside-spark svg rect:nth-child(1)  { animation-delay:   0ms; }
+.quilt-aside-spark svg rect:nth-child(2)  { animation-delay:  28ms; }
+.quilt-aside-spark svg rect:nth-child(3)  { animation-delay:  56ms; }
+.quilt-aside-spark svg rect:nth-child(4)  { animation-delay:  84ms; }
+.quilt-aside-spark svg rect:nth-child(5)  { animation-delay: 112ms; }
+.quilt-aside-spark svg rect:nth-child(6)  { animation-delay: 140ms; }
+.quilt-aside-spark svg rect:nth-child(7)  { animation-delay: 168ms; }
+.quilt-aside-spark svg rect:nth-child(8)  { animation-delay: 196ms; }
+.quilt-aside-spark svg rect:nth-child(9)  { animation-delay: 224ms; }
+.quilt-aside-spark svg rect:nth-child(10) { animation-delay: 252ms; }
 .quilt-aside-run {
   align-self: stretch;
   justify-content: center;
   font-size: var(--fs-s);
   font-weight: 600;
-  padding: 8px 14px;
+  padding: 10px 14px;
   border-radius: var(--r-2);
   border: 1px solid var(--accent);
   background: var(--accent);
@@ -2496,12 +2521,29 @@ button.topbar-search {
   display: flex;
   align-items: center;
   gap: 4px;
+  position: relative;
+  overflow: hidden;
   box-shadow: 0 1px 0 color-mix(in srgb, var(--ink-0) 8%, transparent);
   transition: background 120ms ease, transform 80ms ease, box-shadow 120ms ease, filter 120ms ease;
 }
+@keyframes btn-shine {
+  0%   { transform: translateX(-120%); }
+  22%  { transform: translateX(220%); }
+  100% { transform: translateX(220%); }
+}
+.quilt-aside-run::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, #fff 28%, transparent) 50%, transparent 100%);
+  animation: btn-shine 4s ease-in-out infinite;
+  pointer-events: none;
+}
 .quilt-aside-run:hover:not(:disabled) {
-  filter: brightness(1.06);
-  box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--accent) 60%, transparent);
+  filter: brightness(1.08);
+  box-shadow: 0 4px 16px -2px color-mix(in srgb, var(--accent) 65%, transparent);
 }
 .quilt-aside-run:active:not(:disabled) { transform: translateY(1px); }
 .quilt-aside-run:disabled { cursor: wait; opacity: 0.7; }
@@ -2512,7 +2554,7 @@ button.topbar-search {
 }
 .quilt-aside-run[data-mode="needs-retry"]:hover:not(:disabled) {
   filter: brightness(1.08);
-  box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--err) 60%, transparent);
+  box-shadow: 0 4px 16px -2px color-mix(in srgb, var(--err) 65%, transparent);
 }
 .quilt-aside-run[data-mode="running"] {
   border-color: var(--ok);
@@ -2520,8 +2562,8 @@ button.topbar-search {
   color: var(--on-accent, #fff);
 }
 .quilt-aside-run[data-mode="running"]:hover {
-  filter: brightness(1.06);
-  box-shadow: 0 3px 10px -4px color-mix(in srgb, var(--ok) 60%, transparent);
+  filter: brightness(1.08);
+  box-shadow: 0 4px 16px -2px color-mix(in srgb, var(--ok) 65%, transparent);
 }
 .quilt-aside-empty-label {
   font-family: var(--font-mono);
