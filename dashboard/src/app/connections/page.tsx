@@ -1154,22 +1154,32 @@ export default function ConnectionsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const oauthPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const hasEverLoadedRef = useRef(false);
+
   async function fetchConnectors() {
     try {
       const res = await fetch(apiPath("/api/connections"));
       if (res.status >= 500) {
-        setBridgeOffline(true);
-        setLoading(false);
+        // Only flip to "bridge offline" if we've never loaded data — a
+        // transient 500 mid-poll (e.g., right after OAuth token storage)
+        // should not wipe the connector list the user is looking at.
+        if (!hasEverLoadedRef.current) {
+          setBridgeOffline(true);
+          setLoading(false);
+        }
         return;
       }
       if (!res.ok) throw new Error(`/api/connections ${res.status}`);
       const data = (await res.json()) as { connectors: ConnectorStatus[] };
+      hasEverLoadedRef.current = true;
       setConnectors(data.connectors ?? []);
       setBridgeOffline(false);
       setErr(undefined);
     } catch (e) {
-      setBridgeOffline(true);
-      setErr(e instanceof Error ? e.message : String(e));
+      if (!hasEverLoadedRef.current) {
+        setBridgeOffline(true);
+        setErr(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setLoading(false);
     }
