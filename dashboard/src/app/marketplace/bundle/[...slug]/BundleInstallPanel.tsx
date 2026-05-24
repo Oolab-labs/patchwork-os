@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { type RiskLevel, shortName } from "@/lib/registry";
 import { InstallConfirmDialog } from "../../_components/InstallConfirmDialog";
@@ -76,6 +76,8 @@ export default function BundleInstallPanel({
   const [result, setResult] = useState<BundleInstallResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(copyTimerRef.current); }, []);
 
   const cliCmd = `patchwork recipe install ${installSource}`;
 
@@ -165,7 +167,8 @@ export default function BundleInstallPanel({
     try {
       await navigator.clipboard.writeText(cliCmd);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       // clipboard unavailable
     }
