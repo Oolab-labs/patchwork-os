@@ -96,9 +96,12 @@ function TaskDetail({ task, onCancel, cancelling }: {
 }) {
   const toast = useToast();
   const [copied, setCopied] = useState<"id" | "term" | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { clearTimeout(copyTimerRef.current); }, []);
   function flash(kind: "id" | "term") {
     setCopied(kind);
-    setTimeout(() => setCopied((c) => (c === kind ? null : c)), 1500);
+    clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopied((c) => (c === kind ? null : c)), 1500);
   }
   const isLive = task.status === "running" || task.status === "pending";
   const errText = task.errorMessage ?? task.stderrTail;

@@ -123,9 +123,15 @@ export default function SettingsPage() {
   // have their own cleanup so this only covers user-initiated POSTs.
   const abortRef = useRef<AbortController | null>(null);
   if (abortRef.current === null) abortRef.current = new AbortController();
+  const flashTimer1Ref = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const flashTimer2Ref = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const restartMsgTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      clearTimeout(flashTimer1Ref.current);
+      clearTimeout(flashTimer2Ref.current);
+      clearTimeout(restartMsgTimerRef.current);
     };
   }, []);
   const isAbortError = (e: unknown): boolean =>
@@ -375,8 +381,10 @@ export default function SettingsPage() {
 
   function flashSaved() {
     setSaveState("saving");
-    setTimeout(() => setSaveState("saved"), 600);
-    setTimeout(() => setSaveState("idle"), 2400);
+    clearTimeout(flashTimer1Ref.current);
+    clearTimeout(flashTimer2Ref.current);
+    flashTimer1Ref.current = setTimeout(() => setSaveState("saved"), 600);
+    flashTimer2Ref.current = setTimeout(() => setSaveState("idle"), 2400);
   }
 
   async function saveApiKey(provider: ApiKeyProvider, explicitKey?: string) {
@@ -524,7 +532,8 @@ export default function SettingsPage() {
         setRestartPending(false);
         setRestartMsg({ ok: true, text: body.message ?? "Bridge is restarting..." });
         // Clear the message after a few seconds since the page will reload
-        setTimeout(() => setRestartMsg(null), 3000);
+        clearTimeout(restartMsgTimerRef.current);
+        restartMsgTimerRef.current = setTimeout(() => setRestartMsg(null), 3000);
       } else if (res.status === 409) {
         // Restart blocked due to active work
         const busyDetails = body.busySessions?.length
