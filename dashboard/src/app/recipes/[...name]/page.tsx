@@ -592,14 +592,7 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
   ];
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr) minmax(0, 240px)",
-        gap: "var(--s-4, 16px)",
-        alignItems: "start",
-      }}
-    >
+    <div className="recipe-hub-layout">
       {/* main column */}
       <div className="recipe-hub-main" style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)", minWidth: 0 }}>
       <RunModal
