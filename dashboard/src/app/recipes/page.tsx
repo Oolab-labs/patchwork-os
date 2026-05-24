@@ -42,6 +42,7 @@ function triggerTone(
   if (t === "webhook" || t === "http") return "info";
   if (t === "file_watch" || t === "on_file_save" || t === "fs_watch") return "warn";
   if (t === "channel" || t === "event" || t === "bus") return "purple";
+  if (t === "on_test_run" || t === "test_run") return "purple";
   if (t === "git_hook" || t === "git") return "ok";
   return "muted";
 }
@@ -262,15 +263,8 @@ function RunModal({
     >
       {state && (
         <>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: "var(--s-4)",
-            }}
-          >
-            <h2 id="run-modal-title" style={{ margin: 0, fontSize: "var(--fs-xl)", fontWeight: 600 }}>
+          <div className="run-modal-header">
+            <h2 id="run-modal-title" className="run-modal-title">
               Run <code>{state.recipe.name}</code>
             </h2>
             <button
@@ -289,24 +283,14 @@ function RunModal({
             }}
           >
             {vars.length === 0 && (
-              <div
-                style={{
-                  marginBottom: "var(--s-4)",
-                  padding: "var(--s-3) var(--s-4)",
-                  border: "1px solid var(--line-2)",
-                  borderRadius: "var(--r-1)",
-                  background: "var(--bg-2)",
-                  fontSize: "var(--fs-m)",
-                  color: "var(--fg-2)",
-                }}
-              >
+              <div className="run-modal-confirm-note">
                 Running this recipe will execute its steps immediately and may
                 use API credits or call external services.
                 {state.recipe.trigger && state.recipe.trigger !== "manual" && (
                   <>
                     {" "}
                     Trigger:{" "}
-                    <code style={{ fontFamily: "var(--font-mono)" }}>
+                    <code>
                       {state.recipe.trigger}
                     </code>
                     .
@@ -314,20 +298,15 @@ function RunModal({
                 )}
               </div>
             )}
-            <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
+            <div className="run-modal-vars">
               {vars.map((v) => (
                 <div key={v.name}>
-                  <label
-                    htmlFor={`run-var-${v.name}`}
-                    style={{ display: "block", marginBottom: 4, fontSize: "var(--fs-m)", fontFamily: "var(--font-mono)" }}
-                  >
+                  <label htmlFor={`run-var-${v.name}`} className="run-modal-var-label">
                     {v.name}
-                    {v.required && <span style={{ color: "var(--err)", marginLeft: 4 }}>*</span>}
+                    {v.required && <span className="run-modal-required">*</span>}
                   </label>
                   {v.description && (
-                    <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)", marginBottom: 4 }}>
-                      {v.description}
-                    </div>
+                    <div className="run-modal-var-desc">{v.description}</div>
                   )}
                   <input
                     id={`run-var-${v.name}`}
@@ -338,19 +317,11 @@ function RunModal({
                       setValues((prev) => ({ ...prev, [v.name]: e.target.value }))
                     }
                     className="input"
-                    style={{ width: "100%" }}
                   />
                 </div>
               ))}
             </div>
-            <div
-              style={{
-                display: "flex",
-                gap: "var(--s-3)",
-                marginTop: "var(--s-5)",
-                justifyContent: "flex-end",
-              }}
-            >
+            <div className="run-modal-actions">
               <button type="button" className="btn ghost" onClick={onClose} disabled={running}>
                 Cancel
               </button>
@@ -430,26 +401,7 @@ function RecipeYamlPanel({ recipe }: { recipe: Recipe }) {
   }, [recipe.name]);
 
   return (
-    <CodeBlock
-      style={{
-        background: "var(--recess)",
-        border: "1px solid var(--line-2)",
-        borderRadius: "var(--r-2)",
-        padding: "10px 12px",
-        fontSize: "var(--fs-xs)",
-        lineHeight: 1.55,
-        maxHeight: 360,
-        overflow: "auto",
-        // Detail panel is ~384px wide; without these the long
-        // {{...}} template values push past the right edge into a
-        // hidden horizontal scroll bar (no scroll affordance shown,
-        // so the visible YAML is silently truncated). Wrap and break
-        // long words — matches the /recipes/new preview behaviour.
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word",
-        fontFamily: "var(--font-mono)",
-      }}
-    >
+    <CodeBlock className="recipe-yaml-block">
       {loading && !yaml ? "Loading…" : highlightYaml(yaml ?? fallbackYaml(recipe))}
     </CodeBlock>
   );
@@ -477,112 +429,50 @@ function RecipeDetailPanel({
   activeRun: ActiveRunState | undefined;
 }) {
   return (
-    <PatchCard
-      className="recipes-detail-panel"
-      style={{
-        position: "sticky",
-        top: 80,
-        overflowY: "auto",
-        maxHeight: "calc(100vh - 100px)",
-        padding: "var(--s-4)",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontWeight: 700,
-            fontSize: "var(--fs-m)",
-            flex: 1,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-          title={recipe.name}
-        >
-          {recipe.name}
-        </span>
+    <PatchCard className="recipes-detail-panel">
+      <div className="rdp-header">
+        <span className="rdp-title" title={recipe.name}>{recipe.name}</span>
         {isLive && <LivePill tone="ok" />}
-        <button type="button" onClick={onRun} className="btn sm primary" style={{ fontSize: "var(--fs-xs)" }}>
-          ▶ Run
-        </button>
+        <button type="button" onClick={onRun} className="btn sm primary">▶ Run</button>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close detail panel"
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--ink-3)",
-            fontSize: "var(--fs-2xl)",
-            lineHeight: 1,
-          }}
+          className="rdp-close-btn"
         >
           ×
         </button>
       </div>
 
       {activeRun ? (
-        <div style={{ marginBottom: 10 }}>
+        <div className="rdp-status">
           <RecipeRunInline state={activeRun} density="strip" />
         </div>
       ) : (
         running[recipe.name] && (
-          <div style={{ marginBottom: 10 }}>
+          <div className="rdp-status">
             <StatusPill tone="warn">{running[recipe.name]}</StatusPill>
           </div>
         )
       )}
 
-      <div style={{ marginBottom: 14 }}>
-        <div
-          style={{
-            fontSize: "var(--fs-2xs)",
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-            color: "var(--ink-3)",
-            marginBottom: 6,
-          }}
-        >
-          Recipe YAML
-        </div>
+      <div className="rdp-section">
+        <div className="rdp-section-label">Recipe YAML</div>
         <RecipeYamlPanel recipe={recipe} />
       </div>
 
       <div>
-        <div
-          style={{
-            fontSize: "var(--fs-2xs)",
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-            color: "var(--ink-3)",
-            marginBottom: 6,
-          }}
-        >
-          Recent runs
-        </div>
+        <div className="rdp-section-label">Recent runs</div>
         {recentRuns.length === 0 ? (
-          <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)" }}>No runs yet.</div>
+          <div className="rdp-no-runs">No runs yet.</div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="rdp-runs-list">
             {recentRuns.map((run, i) => {
               const ok = run.status === "done" || run.status === "success";
               const fail = run.status === "error" || run.status === "failed";
               const tone = ok ? "ok" : fail ? "err" : "warn";
               return (
-                <div
-                  key={`${run.startedAt}-${i}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: "var(--fs-xs)",
-                    fontFamily: "var(--font-mono)",
-                  }}
-                >
+                <div key={`${run.startedAt}-${i}`} className="rdp-run-row">
                   {typeof run.seq === "number" ? (
                     <RunChip
                       seq={run.seq}
@@ -593,10 +483,10 @@ function RecipeDetailPanel({
                   ) : (
                     <StatusPill tone={tone}>{ok ? "ok" : run.status}</StatusPill>
                   )}
-                  <span style={{ color: "var(--ink-3)", flex: 1 }}>{relTime(run.startedAt)}</span>
-                  <span style={{ color: "var(--ink-2)" }}>{formatDuration(run.durationMs)}</span>
+                  <span className="rdp-run-time">{relTime(run.startedAt)}</span>
+                  <span className="rdp-run-dur">{formatDuration(run.durationMs)}</span>
                   {typeof run.toolCount === "number" && (
-                    <span style={{ color: "var(--ink-3)" }}>{run.toolCount} tools</span>
+                    <span className="rdp-run-tools">{run.toolCount} tools</span>
                   )}
                 </div>
               );
@@ -605,20 +495,10 @@ function RecipeDetailPanel({
         )}
       </div>
 
-      <div
-        style={{
-          marginTop: 18,
-          paddingTop: 12,
-          borderTop: "1px solid var(--line-2)",
-          display: "flex",
-          gap: 8,
-          justifyContent: "flex-end",
-        }}
-      >
+      <div className="rdp-footer">
         <button
           type="button"
-          className="btn sm ghost"
-          style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}
+          className="btn sm ghost warn"
           onClick={onArchive}
           title="Move to ~/.patchwork/recipes/.archive — hidden from this list, restorable from disk"
         >
@@ -626,8 +506,7 @@ function RecipeDetailPanel({
         </button>
         <button
           type="button"
-          className="btn sm ghost"
-          style={{ fontSize: "var(--fs-xs)", color: "var(--err)" }}
+          className="btn sm ghost danger"
           onClick={onDelete}
           title="Permanently delete the recipe file. Cannot be undone."
         >
@@ -665,31 +544,11 @@ function MobileRunBar({
         type="button"
         onClick={onClose}
         aria-label="Deselect recipe"
-        style={{
-          background: "transparent",
-          border: "1px solid var(--line-2)",
-          borderRadius: 6,
-          minWidth: 36,
-          minHeight: 36,
-          cursor: "pointer",
-          color: "var(--ink-3)",
-        }}
+        className="recipes-mobile-run-bar-close"
       >
         ×
       </button>
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          fontFamily: "var(--font-mono)",
-          fontWeight: 600,
-          fontSize: "var(--fs-s)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-        title={recipe.name}
-      >
+      <div className="recipes-mobile-run-bar-name" title={recipe.name}>
         {recipe.name}
       </div>
       <button
@@ -697,7 +556,6 @@ function MobileRunBar({
         className="btn primary"
         onClick={onRun}
         disabled={disabled}
-        style={{ minHeight: 44, paddingInline: 16, fontWeight: 600 }}
         aria-label={`Run ${recipe.name}`}
       >
         ▶ Run{recipe.vars && recipe.vars.length > 0 ? "…" : ""}
@@ -1206,6 +1064,7 @@ export default function RecipesPage() {
 
   return (
     <section>
+
       <RunModal
         state={modal}
         onClose={() => setModal(null)}
@@ -1215,8 +1074,8 @@ export default function RecipesPage() {
 
       <div className="page-head">
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <h1 className="editorial-h1" style={{ margin: 0 }}>
+          <div className="page-head-title-row">
+            <h1 className="editorial-h1">
               Recipes — <span className="accent">YAML, declarative, yours.</span>
             </h1>
             <HintCard.Toggle id="recipes" />
@@ -1225,7 +1084,7 @@ export default function RecipesPage() {
             {recipes ? (
               <>
                 <code className="mono-path">~/.patchwork/recipes</code>
-                <span aria-hidden="true" style={{ margin: "0 8px", opacity: 0.4 }}>·</span>
+                <span aria-hidden="true" className="sep-muted">·</span>
                 {installedCount} installed
               </>
             ) : (
@@ -1241,7 +1100,7 @@ export default function RecipesPage() {
             ]}
           />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>
+        <div className="page-head-actions">
           <button
             type="button"
             className="btn sm ghost"
@@ -1250,18 +1109,14 @@ export default function RecipesPage() {
           >
             ↻ Reload
           </button>
-          <Link
-            href="/recipes/new"
-            className="btn primary"
-            style={{ textDecoration: "none" }}
-          >
+          <Link href="/recipes/new" className="btn primary">
             + Add recipe
           </Link>
         </div>
       </div>
 
       <div className="recipes-toolbar">
-        <div className="recipes-search">
+        <div className="recipes-search recipes-search-wrap" style={{ position: "relative" }}>
           <span aria-hidden="true" className="recipes-search-icon">⌕</span>
           <input
             ref={searchInputRef}
@@ -1271,7 +1126,19 @@ export default function RecipesPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             aria-label="Search recipes (shortcut: /)"
+            style={{ paddingRight: search ? 30 : undefined, transition: "border-color 120ms" }}
           />
+          {search && (
+            <button
+              type="button"
+              className="recipes-search-clear"
+              onClick={() => { setSearch(""); searchInputRef.current?.focus(); }}
+              aria-label="Clear search"
+              tabIndex={-1}
+            >
+              ✕
+            </button>
+          )}
         </div>
         {recipes && recipes.length > 0 && (
           <div className="recipes-toolbar-meta">
@@ -1284,17 +1151,9 @@ export default function RecipesPage() {
               type="button"
               onClick={() => setStatusFilter(statusFilter === "enabled" ? "all" : "enabled")}
               aria-pressed={statusFilter === "enabled"}
+              data-filter="enabled"
               title={statusFilter === "enabled" ? "Showing enabled only — click to clear" : "Show only enabled"}
-              style={{
-                background: statusFilter === "enabled" ? "var(--green-soft)" : "transparent",
-                border: "none",
-                color: statusFilter === "enabled" ? "var(--ok)" : "inherit",
-                cursor: "pointer",
-                padding: "2px 8px",
-                borderRadius: 999,
-                font: "inherit",
-                minHeight: 24,
-              }}
+              className="recipes-status-btn"
             >
               {enabledCount} enabled
             </button>
@@ -1305,17 +1164,9 @@ export default function RecipesPage() {
                   type="button"
                   onClick={() => setStatusFilter(statusFilter === "paused" ? "all" : "paused")}
                   aria-pressed={statusFilter === "paused"}
+                  data-filter="paused"
                   title={statusFilter === "paused" ? "Showing paused only — click to clear" : "Show only paused"}
-                  style={{
-                    background: statusFilter === "paused" ? "var(--warn-soft, var(--bg-2))" : "transparent",
-                    border: "none",
-                    color: statusFilter === "paused" ? "var(--warn)" : "var(--ink-3)",
-                    cursor: "pointer",
-                    padding: "2px 8px",
-                    borderRadius: 999,
-                    font: "inherit",
-                    minHeight: 24,
-                  }}
+                  className="recipes-status-btn"
                 >
                   {pausedCount} paused
                 </button>
@@ -1328,44 +1179,17 @@ export default function RecipesPage() {
       <HintCard id="recipes" />
 
       {connectorFilter && (
-        <div
-          role="status"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            margin: "0 0 var(--s-4)",
-            padding: "5px 6px 5px 12px",
-            borderRadius: 999,
-            fontSize: "var(--fs-s)",
-            background: "var(--accent-soft)",
-            border: "1px solid var(--accent-tint)",
-            color: "var(--accent)",
-          }}
-        >
+        <div role="status" className="recipes-connector-badge">
           <span>
             Filtered by connector:{" "}
-            <strong style={{ fontWeight: 600 }}>{connectorFilter}</strong>
+            <strong>{connectorFilter}</strong>
           </span>
           <button
             type="button"
             onClick={() => router.push("/recipes")}
             aria-label="Clear connector filter"
             title="Clear connector filter"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 22,
-              height: 22,
-              borderRadius: "50%",
-              border: "none",
-              cursor: "pointer",
-              background: "transparent",
-              color: "var(--accent)",
-              fontSize: "var(--fs-m)",
-              lineHeight: 1,
-            }}
+            className="recipes-connector-badge-clear"
           >
             ✕
           </button>
@@ -1396,52 +1220,30 @@ export default function RecipesPage() {
           }
           action={
             <>
-              <Link
-                href="/marketplace"
-                className="btn primary"
-                style={{ textDecoration: "none" }}
-              >
-                Browse marketplace
-              </Link>
-              <Link
-                href="/recipes/new"
-                className="btn ghost"
-                style={{ textDecoration: "none" }}
-              >
-                New recipe
-              </Link>
+              <Link href="/marketplace" className="btn primary">Browse marketplace</Link>
+              <Link href="/recipes/new" className="btn ghost">New recipe</Link>
             </>
           }
         />
       ) : (
-        <div
-          className={`recipes-grid${selectedRecipe ? " has-detail" : ""}`}
-          style={{
-            display: "grid",
-            gap: "var(--s-4)",
-            alignItems: "start",
-            transition: "grid-template-columns 0.18s ease",
-            minWidth: 0,
-          }}
-        >
-          <PatchCard padded={false} style={{ overflow: "hidden", minWidth: 0 }}>
-            <div className="table-wrap" style={{ minWidth: 0, overflow: "auto" }}>
-              <table className="table recipes-table" aria-keyshortcuts="j k" style={{ width: "100%", tableLayout: "fixed" }}>
+        <div className={`recipes-grid${selectedRecipe ? " has-detail" : ""}`}>
+          <PatchCard padded={false} className="recipes-table-card">
+            <div className="table-wrap recipes-table-wrap">
+              <table className="table recipes-table" aria-keyshortcuts="j k">
                 <caption className="sr-only">
                   Installed recipes with health, trigger, last 14 runs, average duration, last run time, and actions.
                 </caption>
                 <thead>
                   <tr>
-                    <th scope="col" style={{ width: 48, textAlign: "center" }}>
-                      <span aria-hidden="true">%</span>
+                    <th scope="col">
                       <span className="sr-only">Health</span>
                     </th>
-                    <th scope="col" style={{ minWidth: 160 }}>RECIPE</th>
-                    <th scope="col" style={{ width: 120 }}>TRIGGER</th>
-                    <th scope="col" style={{ width: 130, textAlign: "center" }}>RECENT</th>
-                    <th scope="col" style={{ width: 70, textAlign: "right" }}>AVG</th>
-                    <th scope="col" style={{ width: 90, textAlign: "right" }}>LAST</th>
-                    <th scope="col" style={{ width: 110, textAlign: "right" }}>
+                    <th scope="col">Recipe</th>
+                    <th scope="col">Trigger</th>
+                    <th scope="col">Runs</th>
+                    <th scope="col">Avg</th>
+                    <th scope="col">Last</th>
+                    <th scope="col">
                       <span className="sr-only">Actions</span>
                     </th>
                   </tr>
@@ -1449,33 +1251,44 @@ export default function RecipesPage() {
                 <tbody>
                   {filteredRecipes.length === 0 && (
                     <tr>
-                      <td colSpan={7} style={{ padding: "var(--s-5) var(--s-4)", textAlign: "center" }}>
-                        <div className="muted" style={{ fontSize: "var(--fs-m)", marginBottom: "var(--s-2)" }}>
-                          {search.trim()
-                            ? `No recipes match "${search.trim()}"`
-                            : statusFilter === "paused"
-                              ? "No paused recipes"
-                              : "No enabled recipes"}
-                        </div>
-                        <div style={{ display: "flex", gap: "var(--s-2)", justifyContent: "center", flexWrap: "wrap" }}>
-                          {search.trim() && (
-                            <button
-                              type="button"
-                              className="btn sm ghost"
-                              onClick={() => setSearch("")}
-                            >
-                              Clear search
-                            </button>
-                          )}
-                          {statusFilter !== "all" && (
-                            <button
-                              type="button"
-                              className="btn sm ghost"
-                              onClick={() => setStatusFilter("all")}
-                            >
-                              Show all
-                            </button>
-                          )}
+                      <td colSpan={7} className="recipes-empty-td" style={{ padding: "40px 24px", textAlign: "center" }}>
+                        <div style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: 12,
+                          animation: "recipeFadeIn 200ms ease both",
+                        }}>
+                          <div style={{ fontSize: 32, opacity: 0.3 }}>
+                            {search.trim() ? "⌕" : "◎"}
+                          </div>
+                          <div style={{ color: "var(--ink-2)", fontSize: "var(--fs-s)", fontWeight: 500 }}>
+                            {search.trim()
+                              ? `No recipes match "${search.trim()}"`
+                              : statusFilter === "paused"
+                                ? "No paused recipes"
+                                : "No enabled recipes"}
+                          </div>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            {search.trim() && (
+                              <button
+                                type="button"
+                                className="btn sm ghost"
+                                onClick={() => setSearch("")}
+                              >
+                                Clear search
+                              </button>
+                            )}
+                            {statusFilter !== "all" && (
+                              <button
+                                type="button"
+                                className="btn sm ghost"
+                                onClick={() => setStatusFilter("all")}
+                              >
+                                Show all
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -1491,6 +1304,7 @@ export default function RecipesPage() {
                       <tr
                         key={r.path ?? r.id ?? `${r.name}:${i}`}
                         className={`recipe-row${sel ? " is-selected" : ""}${enabled ? "" : " is-off"}`}
+                        style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}
                         data-recipe-row={r.name}
                         onClick={() => {
                           router.push(`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`);
@@ -1505,22 +1319,15 @@ export default function RecipesPage() {
                         role="link"
                         aria-label={`Open recipe ${r.name}`}
                       >
-                        <td style={{ textAlign: "center" }}>
+                        <td>
                           <SuccessRing pct={pct} />
                         </td>
-                        <td className="mono" style={{ overflow: "hidden" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <td className="mono">
+                          <div className="recipe-name-row">
                             <Link
                               href={`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`}
                               onClick={(e) => e.stopPropagation()}
-                              style={{
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                fontWeight: sel ? 700 : 500,
-                                color: "inherit",
-                                textDecoration: "none",
-                              }}
+                              className="recipe-name-link"
                               title={r.description ?? r.name}
                             >
                               {r.name}
@@ -1532,10 +1339,11 @@ export default function RecipesPage() {
                                 density="chip"
                               />
                             )}
+                            {enabled && !live && <span className="enabled-pulse-dot" aria-label="enabled" />}
                             {!enabled && <StatusPill tone="muted">off</StatusPill>}
                             {r.lint && r.lint.ok === false && (
                               <StatusPill
-                                tone="err"
+                                tone="warn"
                                 title={r.lint.firstError ?? `${r.lint.errorCount} lint error(s)`}
                               >
                                 lint
@@ -1543,58 +1351,33 @@ export default function RecipesPage() {
                             )}
                           </div>
                           {r.description && (
-                            <div
-                              className="muted"
-                              style={{
-                                fontSize: "var(--fs-xs)",
-                                marginTop: 2,
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {r.description}
-                            </div>
+                            <div className="muted recipe-desc">{r.description}</div>
                           )}
                         </td>
                         <td>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          <div className="recipe-trigger-col">
                             <StatusPill tone={triggerTone(r.trigger)}>
                               {r.trigger ?? "manual"}
                             </StatusPill>
                             {r.schedule && (
                               <span
-                                className="mono muted"
+                                className="mono muted recipe-schedule-text"
                                 title={`Cron expression: ${r.schedule}`}
-                                style={{
-                                  fontSize: "var(--fs-2xs)",
-                                  whiteSpace: "nowrap",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  maxWidth: 140,
-                                }}
                               >
                                 {r.schedule}
                               </span>
                             )}
                             {r.trigger === "webhook" && r.webhookPath && (
                               <span
-                                className="mono muted"
+                                className="mono muted recipe-schedule-text"
                                 title={`Webhook path: ${r.webhookPath}`}
-                                style={{
-                                  fontSize: "var(--fs-2xs)",
-                                  whiteSpace: "nowrap",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  maxWidth: 140,
-                                }}
                               >
                                 {r.webhookPath}
                               </span>
                             )}
                           </div>
                         </td>
-                        <td style={{ textAlign: "center" }}>
+                        <td>
                           <RunSparkBars
                             runs={(allRunsMap.get(r.name) ?? []).slice(0, 14)}
                             slots={14}
@@ -1602,23 +1385,16 @@ export default function RecipesPage() {
                             height={20}
                           />
                         </td>
-                        <td className="mono muted" style={{ fontSize: "var(--fs-s)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        <td className="mono muted">
                           {formatDuration(avg)}
                         </td>
-                        <td className="muted" style={{ fontSize: "var(--fs-s)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        <td className="muted">
                           {last ? relTime(last.startedAt) : "—"}
                         </td>
-                        <td
-                          style={{ textAlign: "right", whiteSpace: "nowrap" }}
-                          onClick={(e) => e.stopPropagation()}
-                        >
+                        <td onClick={(e) => e.stopPropagation()}>
                           <div
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 8,
-                              opacity: enabled ? 1 : 0.85,
-                            }}
+                            className="recipe-actions-wrap"
+                            data-enabled={enabled ? "true" : "false"}
                           >
                             <button
                               type="button"
@@ -1628,53 +1404,19 @@ export default function RecipesPage() {
                               title={enabled ? "Enabled — click to disable" : "Disabled — click to enable"}
                               onClick={() => void handleToggleEnabled(r)}
                               className="recipe-toggle"
-                              style={{
-                                position: "relative",
-                                width: 26,
-                                height: 14,
-                                borderRadius: 999,
-                                border: `1px solid ${enabled ? "var(--ok)" : "var(--line-2)"}`,
-                                background: enabled ? "var(--green-soft)" : "var(--bg-2)",
-                                cursor: "pointer",
-                                padding: 0,
-                                flexShrink: 0,
-                                transition: "background 0.15s, border-color 0.15s",
-                              }}
                             >
                               <span
                                 aria-hidden="true"
-                                style={{
-                                  position: "absolute",
-                                  top: 1,
-                                  left: 1,
-                                  width: 10,
-                                  height: 10,
-                                  borderRadius: "50%",
-                                  background: enabled ? "var(--ok)" : "var(--dot-muted)",
-                                  transform: enabled ? "translateX(12px)" : "translateX(0)",
-                                  transition: "transform 0.18s ease, background 0.15s",
-                                  boxShadow: "0 1px 1px rgba(0,0,0,0.12)",
-                                }}
+                                className="recipe-toggle-thumb"
                               />
                             </button>
                             <button
                               type="button"
-                              className="btn sm"
-                              style={{
-                                fontSize: "var(--fs-xs)",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 4,
-                              }}
+                              className="btn sm recipe-run-btn"
                               onClick={() => handleRunClick(r)}
                               disabled={!enabled}
                             >
-                              <span
-                                aria-hidden="true"
-                                style={{ fontSize: 8, lineHeight: 1, color: "var(--accent)" }}
-                              >
-                                ▶
-                              </span>
+                              <span aria-hidden="true" className="recipe-run-icon">▶</span>
                               Run{r.vars && r.vars.length > 0 ? "…" : ""}
                             </button>
                           </div>

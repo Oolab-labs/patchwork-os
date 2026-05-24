@@ -109,7 +109,7 @@ const CONNECTOR_SCOPES: Record<string, string[]> = {
 
 function IconEnvelope() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <rect x="2" y="4" width="16" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M2 7l8 5 8-5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     </svg>
@@ -118,7 +118,7 @@ function IconEnvelope() {
 
 function IconCalendar() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <rect x="2" y="4" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M6 2v4M14 2v4M2 9h16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
@@ -127,7 +127,7 @@ function IconCalendar() {
 
 function IconGitHub() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <path fillRule="evenodd" clipRule="evenodd" d="M10 2a8 8 0 00-2.529 15.591c.4.074.546-.174.546-.386 0-.19-.007-.693-.01-1.36-2.226.483-2.695-1.073-2.695-1.073-.364-.924-.888-1.17-.888-1.17-.726-.496.055-.486.055-.486.803.056 1.226.824 1.226.824.713 1.221 1.872.869 2.328.664.072-.517.279-.869.508-1.069-1.776-.202-3.644-.888-3.644-3.953 0-.873.312-1.587.824-2.147-.083-.202-.357-1.016.078-2.117 0 0 .672-.215 2.2.82a7.67 7.67 0 012-.27c.679.003 1.363.092 2 .27 1.527-1.035 2.198-.82 2.198-.82.436 1.101.162 1.915.08 2.117.513.56.822 1.274.822 2.147 0 3.073-1.871 3.749-3.653 3.947.287.248.543.735.543 1.48 0 1.069-.01 1.932-.01 2.194 0 .214.144.463.55.385A8.001 8.001 0 0010 2z" fill="currentColor" />
     </svg>
   );
@@ -136,7 +136,7 @@ function IconGitHub() {
 function IconGitlab() {
   // Stylized geometric mark — three triangles converging on a center line.
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <path d="M10 17l-7-9 2-5 2 5h6l2-5 2 5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M10 17L7 8M10 17l3-9" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     </svg>
@@ -145,7 +145,7 @@ function IconGitlab() {
 
 function IconLinear() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <path d="M3.5 13.207L6.793 16.5l9.207-9.207-3.293-3.293L3.5 13.207z" fill="currentColor" opacity="0.5" />
       <path d="M3.293 12.293l4.414 4.414L16.414 8l-4.414-4.414L3.293 12.293z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" fill="none" />
     </svg>
@@ -154,7 +154,7 @@ function IconLinear() {
 
 function IconSlack() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <path d="M7 3v14M13 3v14M3 7h14M3 13h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
@@ -162,7 +162,7 @@ function IconSlack() {
 
 function IconNotion() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <rect x="3" y="2" width="14" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M7 6l6 8M7 6h3M13 14h-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -172,7 +172,7 @@ function IconNotion() {
 function IconAsana() {
   // Asana brand mark — three dots arranged in a triangle (top, bottom-left, bottom-right).
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <circle cx="10" cy="6" r="2.5" fill="currentColor" />
       <circle cx="5.5" cy="13" r="2.5" fill="currentColor" />
       <circle cx="14.5" cy="13" r="2.5" fill="currentColor" />
@@ -182,7 +182,7 @@ function IconAsana() {
 
 function IconConfluence() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <path d="M3 14c2-3 4-5 7-5s5 2 7-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M3 10c2-3 4-5 7-5s5 2 7-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
@@ -191,7 +191,7 @@ function IconConfluence() {
 
 function IconDiscord() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <rect x="2" y="4" width="16" height="12" rx="3" stroke="currentColor" strokeWidth="1.5" />
       <circle cx="7.5" cy="10" r="1" fill="currentColor" />
       <circle cx="12.5" cy="10" r="1" fill="currentColor" />
@@ -202,7 +202,7 @@ function IconDiscord() {
 
 function IconJira() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <path d="M10 3l7 7-7 7-7-7 7-7z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M10 7l3 3-3 3-3-3 3-3z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     </svg>
@@ -211,7 +211,7 @@ function IconJira() {
 
 function IconDatadog() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <rect x="2" y="5" width="16" height="11" rx="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M6 5V3M14 5V3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <circle cx="10" cy="11" r="2.5" stroke="currentColor" strokeWidth="1.5" />
@@ -221,7 +221,7 @@ function IconDatadog() {
 
 function IconHubspot() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
       <circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.5" />
       <path d="M10 3v2M10 15v2M3 10h2M15 10h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -231,7 +231,7 @@ function IconHubspot() {
 
 function IconPagerduty() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <path d="M10 2a4 4 0 00-4 4v3a3 3 0 01-1.5 2.6L3 13h14l-1.5-1.4A3 3 0 0114 9V6a4 4 0 00-4-4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M8.5 16a1.5 1.5 0 003 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
@@ -240,7 +240,7 @@ function IconPagerduty() {
 
 function IconIntercom() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <rect x="2" y="3" width="16" height="11" rx="3" stroke="currentColor" strokeWidth="1.5" />
       <path d="M6 17l2-3h4l2 3" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M6 8h8M6 11h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -250,7 +250,7 @@ function IconIntercom() {
 
 function IconStripe() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <rect x="2" y="4" width="16" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M2 8h16" stroke="currentColor" strokeWidth="1.5" />
       <rect x="4" y="11" width="4" height="2" rx="0.5" fill="currentColor" />
@@ -260,7 +260,7 @@ function IconStripe() {
 
 function IconZendesk() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <path d="M4 10a6 6 0 0112 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <rect x="2" y="10" width="3" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
       <rect x="15" y="10" width="3" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
@@ -271,7 +271,7 @@ function IconZendesk() {
 
 function IconDatabase() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <ellipse cx="10" cy="5" rx="6" ry="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M4 5v5c0 1.1 2.7 2 6 2s6-.9 6-2V5" stroke="currentColor" strokeWidth="1.5" />
       <path d="M4 10v5c0 1.1 2.7 2 6 2s6-.9 6-2v-5" stroke="currentColor" strokeWidth="1.5" />
@@ -281,7 +281,7 @@ function IconDatabase() {
 
 function IconSearch() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="conn-icon-svg">
       <circle cx="9" cy="9" r="5" stroke="currentColor" strokeWidth="1.5" />
       <path d="M13 13l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
@@ -344,7 +344,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Generate an API token at{" "}
-        <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer" className="conn-modal-link">
           id.atlassian.com/manage-profile/security/api-tokens
         </a>
         . Paste it below along with your Atlassian base URL (e.g. <code>https://your-org.atlassian.net</code>) — the bridge stores both.
@@ -362,7 +362,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Create an API key in Datadog under{" "}
-        <a href="https://app.datadoghq.com/organization-settings/api-keys" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://app.datadoghq.com/organization-settings/api-keys" target="_blank" rel="noreferrer" className="conn-modal-link">
           Organization Settings → API Keys
         </a>
         .
@@ -377,7 +377,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Create a private app in HubSpot and copy the access token from{" "}
-        <a href="https://app.hubspot.com/private-apps" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://app.hubspot.com/private-apps" target="_blank" rel="noreferrer" className="conn-modal-link">
           HubSpot → Private Apps
         </a>
         .
@@ -392,7 +392,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Generate an access token in{" "}
-        <a href="https://app.intercom.com/a/apps/_/settings/keys" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://app.intercom.com/a/apps/_/settings/keys" target="_blank" rel="noreferrer" className="conn-modal-link">
           Intercom Settings → Access Tokens
         </a>
         .
@@ -407,7 +407,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Generate an API token at{" "}
-        <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer" className="conn-modal-link">
           id.atlassian.com/manage-profile/security/api-tokens
         </a>
         . Paste it below along with your Atlassian base URL (e.g. <code>https://your-org.atlassian.net</code>) and your Atlassian account email — the bridge stores all three.
@@ -426,7 +426,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Generate a personal or general API access key in{" "}
-        <a href="https://support.pagerduty.com/docs/api-access-keys" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://support.pagerduty.com/docs/api-access-keys" target="_blank" rel="noreferrer" className="conn-modal-link">
           PagerDuty → Integrations → API Access Keys
         </a>
         . Read-only keys are sufficient for this PR&apos;s incident, service, and on-call queries.
@@ -441,7 +441,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Find your secret key in{" "}
-        <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer" className="conn-modal-link">
           Stripe Dashboard → Developers → API Keys
         </a>
         . Use a restricted key with read-only permissions.
@@ -456,7 +456,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Generate an API token in{" "}
-        <a href="https://support.zendesk.com/hc/en-us/articles/4408889192858" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://support.zendesk.com/hc/en-us/articles/4408889192858" target="_blank" rel="noreferrer" className="conn-modal-link">
           Zendesk Admin Center → Apps and Integrations → APIs
         </a>
         . You will also need your subdomain and agent email.
@@ -532,7 +532,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Create an API key in{" "}
-        <a href="https://app.sendgrid.com/settings/api_keys" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://app.sendgrid.com/settings/api_keys" target="_blank" rel="noreferrer" className="conn-modal-link">
           SendGrid → Settings → API Keys
         </a>
         . Restricted-access keys with Mail Send + Templates read are enough.
@@ -552,7 +552,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Find your Account SID + Auth Token in{" "}
-        <a href="https://console.twilio.com/" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://console.twilio.com/" target="_blank" rel="noreferrer" className="conn-modal-link">
           Twilio Console
         </a>
         . Add a default From number (E.164, e.g. <code>+15551234567</code>) so
@@ -572,7 +572,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Generate a Personal Access Token at{" "}
-        <a href="https://www.figma.com/settings" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://www.figma.com/settings" target="_blank" rel="noreferrer" className="conn-modal-link">
           Figma → Settings → Personal access tokens
         </a>
         . Read-only by default — Figma&apos;s API surface is mostly read.
@@ -587,7 +587,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Create a Personal Access Token at{" "}
-        <a href="https://airtable.com/create/tokens" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://airtable.com/create/tokens" target="_blank" rel="noreferrer" className="conn-modal-link">
           Airtable → Developer hub → Personal access tokens
         </a>
         . Grant <code>data.records:read</code> for read tools, plus
@@ -604,7 +604,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Create a Site API Token in{" "}
-        <a href="https://webflow.com/dashboard/account/integrations" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://webflow.com/dashboard/account/integrations" target="_blank" rel="noreferrer" className="conn-modal-link">
           Webflow → Account → Integrations → API access
         </a>
         . Webflow v2 tokens are scoped to one site — the connector captures
@@ -620,7 +620,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Create a Custom App in your Shopify admin under{" "}
-        <a href="https://admin.shopify.com/settings/apps/development" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://admin.shopify.com/settings/apps/development" target="_blank" rel="noreferrer" className="conn-modal-link">
           Settings → Apps and sales channels → Develop apps
         </a>
         . Grant <code>read_products</code>, <code>read_orders</code>, and
@@ -640,7 +640,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Create a Personal Access Token in{" "}
-        <a href="https://docs.snowflake.com/en/user-guide/programmatic-access-tokens" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+        <a href="https://docs.snowflake.com/en/user-guide/programmatic-access-tokens" target="_blank" rel="noreferrer" className="conn-modal-link">
           Snowflake → User → Personal access tokens
         </a>
         . Read-only role recommended — only SELECT/SHOW/DESC/EXPLAIN
@@ -748,21 +748,13 @@ function LogoTile({ def, size = 56 }: { def: ConnectorDef; size?: number }) {
 
   return (
     <div
+      className="conn-logo-tile"
       style={{
         width: size,
         height: size,
         borderRadius: radius,
         background: def.bg,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-        color: "var(--on-accent)",
-        fontWeight: 700,
         fontSize: Math.round(size * 0.29),
-        letterSpacing: "0.02em",
-        fontFamily: "var(--font-mono)",
-        overflow: "hidden",
       }}
       aria-hidden="true"
     >
@@ -773,7 +765,8 @@ function LogoTile({ def, size = 56 }: { def: ConnectorDef; size?: number }) {
           height={iconSize}
           alt=""
           onError={() => setImgFailed(true)}
-          style={{ display: "block", objectFit: "contain", filter: NEEDS_INVERT.has(def.id) ? "invert(1)" : undefined }}
+          className="conn-logo-img"
+          style={NEEDS_INVERT.has(def.id) ? { filter: "invert(1)" } : undefined}
         />
       ) : (
         def.initials
@@ -797,8 +790,14 @@ interface GridCardProps {
 function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, loading, recipeCount }: GridCardProps) {
   const [testResult, setTestResult] = useState<{ ok: boolean; message?: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const [connectSuccess, setConnectSuccess] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const testResultTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => { clearTimeout(testResultTimerRef.current); }, []);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => {
+    clearTimeout(testResultTimerRef.current);
+    clearTimeout(successTimerRef.current);
+  }, []);
 
   const isConnected = statusEntry.status === "connected";
   const isDegraded = statusEntry.status === "needs_reauth";
@@ -817,284 +816,196 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
     testResultTimerRef.current = setTimeout(() => setTestResult(null), 4000);
   }
 
-  const borderColor = isDegraded
-    ? "var(--warn)"
-    : isConnected
-    ? "var(--ok)"
-    : "var(--border-default)";
+  async function handleConnect() {
+    setConnecting(true);
+    try {
+      await onConnect();
+      setConnectSuccess(true);
+      clearTimeout(successTimerRef.current);
+      successTimerRef.current = setTimeout(() => setConnectSuccess(false), 2500);
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  const statusKey = isConnected ? "connected" : isDegraded ? "degraded" : isComingSoon ? "coming-soon" : "available";
 
   return (
-    <div
-      className="card"
-      style={{
-        background: isDegraded ? "var(--warn-soft)" : undefined,
-        borderColor: borderColor,
-        display: "flex",
-        flexDirection: "column",
-        gap: 0,
-        overflow: "hidden",
-        padding: 0,
-      }}
-    >
-      <div style={{ padding: "16px 16px 14px" }}>
-        {/* Logo tile */}
-        <div style={{ marginBottom: 12 }}>
-          <LogoTile def={def} size={48} />
-        </div>
-
-        {/* Name + category */}
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontWeight: 700, fontSize: "var(--fs-base)", color: "var(--ink-0)", lineHeight: 1.25, marginBottom: 2 }}>
-            {def.name}
-          </div>
-          <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", fontWeight: 400 }}>{def.category}</div>
-        </div>
-
-        {/* Status badge */}
-        {isConnected ? (
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 5,
-            padding: "3px 9px", borderRadius: 999,
-            background: "var(--ok-soft)", border: "1px solid var(--ok)",
-            fontSize: "var(--fs-2xs)", fontWeight: 700, color: "var(--ok)",
-            textTransform: "uppercase", letterSpacing: "0.07em",
-            marginBottom: 10,
-          }}>
-            Connected
-          </div>
-        ) : isDegraded ? (
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 5,
-            padding: "3px 9px", borderRadius: 999,
-            background: "var(--warn-soft)", border: "1px solid var(--warn)",
-            fontSize: "var(--fs-2xs)", fontWeight: 700, color: "var(--warn)",
-            textTransform: "uppercase", letterSpacing: "0.07em",
-            marginBottom: 10,
-          }}>
-            Reconnect
-          </div>
-        ) : (
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 5,
-            padding: "3px 9px", borderRadius: 999,
-            background: isComingSoon ? "var(--purple-soft)" : "var(--recess)",
-            border: `1px solid ${isComingSoon ? "var(--purple)" : "var(--line-2)"}`,
-            fontSize: "var(--fs-2xs)", fontWeight: 700, color: isComingSoon ? "var(--purple)" : "var(--ink-3)",
-            textTransform: "uppercase", letterSpacing: "0.07em",
-            marginBottom: 10,
-          }}>
-            {isComingSoon ? "Coming Soon" : "Not Connected"}
-          </div>
-        )}
-
-        {/* Scopes (when connected/degraded) — otherwise show tool count */}
-        {(isConnected || isDegraded) && CONNECTOR_SCOPES[def.id] ? (
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {CONNECTOR_SCOPES[def.id].map((s) => (
+    <>
+      <div
+        className="card cgc-card"
+        data-status={statusKey}
+      >
+        <div className="cgc-body">
+          {/* Logo tile */}
+          <div className="cgc-logo-wrap" style={{ position: "relative" }}>
+            <LogoTile def={def} size={48} />
+            {/* Connected pulsing dot overlay */}
+            {isConnected && (
               <span
-                key={s}
+                aria-hidden="true"
                 style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "var(--fs-2xs)",
-                  padding: "2px 6px",
-                  borderRadius: 4,
-                  background: "var(--purple-soft)",
-                  border: "1px solid var(--purple)",
-                  color: "var(--purple)",
-                  whiteSpace: "nowrap",
+                  position: "absolute",
+                  bottom: 0,
+                  right: 0,
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  background: "var(--ok)",
+                  border: "2px solid var(--card-bg, var(--surface))",
+                  animation: "cgc-pulse 2s ease-in-out infinite",
                 }}
+              />
+            )}
+          </div>
+
+          {/* Name + category */}
+          <div className="cgc-meta">
+            <div className="cgc-name">{def.name}</div>
+            <div className="cgc-category">{def.category}</div>
+          </div>
+
+          {/* Status badge */}
+          <div className="cgc-status-pill" data-status={statusKey}>
+            {isConnected ? "Connected" : isDegraded ? "Reconnect" : isComingSoon ? "Coming Soon" : "Not Connected"}
+          </div>
+
+          {/* Scopes (when connected/degraded) — otherwise show tool count */}
+          {(isConnected || isDegraded) && CONNECTOR_SCOPES[def.id] ? (
+            <div className="cgc-scopes">
+              {CONNECTOR_SCOPES[def.id].map((s) => (
+                <span key={s} className="cgc-scope-chip">{s}</span>
+              ))}
+            </div>
+          ) : (
+            <div className="cgc-tools-count">{def.tools} available tools</div>
+          )}
+
+          {/* Recipe count badge */}
+          {recipeCount !== undefined && recipeCount > 0 && (
+            <div className="cgc-recipe-badge">
+              <Link
+                href={`/recipes?connector=${encodeURIComponent(def.id)}`}
+                className="cgc-recipe-link"
+                title={`${recipeCount} installed recipe${recipeCount === 1 ? "" : "s"} use this connector`}
               >
-                {s}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", fontWeight: 400 }}>
-            {def.tools} available tools
-          </div>
-        )}
+                {recipeCount} recipe{recipeCount === 1 ? "" : "s"}
+              </Link>
+            </div>
+          )}
 
-        {/* Recipe count badge */}
-        {recipeCount !== undefined && recipeCount > 0 && (
-          <div style={{ marginTop: 6 }}>
-            <Link
-              href={`/recipes?connector=${encodeURIComponent(def.id)}`}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: "var(--fs-2xs)",
-                color: "var(--accent)",
-                textDecoration: "none",
-                padding: "2px 7px",
-                borderRadius: 999,
-                background: "var(--accent-soft)",
-                border: "1px solid var(--accent-tint)",
-              }}
-              title={`${recipeCount} installed recipe${recipeCount === 1 ? "" : "s"} use this connector`}
+          {/* Test result */}
+          {testResult && (
+            <div
+              className="cgc-test-result"
+              role="status"
+              aria-live="polite"
+              data-ok={String(testResult.ok)}
             >
-              {recipeCount} recipe{recipeCount === 1 ? "" : "s"}
-            </Link>
+              {testResult.ok
+                ? testResult.message ?? "Connection is working."
+                : testResult.message ?? "Test failed — check bridge logs."}
+            </div>
+          )}
+        </div>
+
+        {/* Footer — only for live connectors */}
+        {(isConnected || isDegraded) && (
+          <div className="cgc-footer" {...(isDegraded ? { "data-degraded": "" } : {})}>
+            <div className="cgc-footer-left" {...(isDegraded ? { "data-degraded": "" } : {})}>
+              <span
+                className="cgc-status-dot"
+                {...(isDegraded ? { "data-degraded": "" } : {})}
+                title={
+                  statusEntry.lastSync
+                    ? `Last sync: ${relativeTime(statusEntry.lastSync)}`
+                    : isDegraded
+                      ? "Degraded — re-auth required"
+                      : "Connected"
+                }
+                aria-hidden="true"
+                style={isConnected && !isDegraded ? { animation: "cgc-pulse 2s ease-in-out infinite" } : undefined}
+              />
+              {isDegraded && <span className="cgc-degraded-label">Degraded</span>}
+            </div>
+            <div className="cgc-footer-actions">
+              {isConnected && (
+                <button
+                  type="button"
+                  onClick={onDisconnect}
+                  disabled={loading}
+                  role="switch"
+                  aria-checked={true}
+                  aria-label={`Toggle ${def.name} off`}
+                  title="Toggle off (disconnect)"
+                  className="cgc-toggle"
+                >
+                  <span className="cgc-toggle-thumb" />
+                </button>
+              )}
+              {isConnected && (
+                <button
+                  type="button"
+                  onClick={handleTest}
+                  disabled={testing || loading}
+                  aria-label={`Test ${def.name} connection`}
+                  className="cgc-test-btn"
+                >
+                  {testing ? (
+                    <span className="cgc-spinner" aria-hidden="true" />
+                  ) : "Test"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={isDegraded ? () => void handleConnect() : onDisconnect}
+                disabled={loading}
+                aria-label={isDegraded ? `Reconnect ${def.name}` : `Disconnect ${def.name}`}
+                className="cgc-action-btn"
+                {...(isDegraded ? { "data-degraded": "" } : {})}
+              >
+                {loading ? (
+                  <span className="cgc-connect-btn-inner">
+                    <span className="cgc-spinner" aria-hidden="true" />
+                    {isDegraded ? "Reconnecting…" : "…"}
+                  </span>
+                ) : isDegraded ? "Reconnect" : "Disconnect"}
+              </button>
+            </div>
           </div>
         )}
 
-        {/* Test result */}
-        {testResult && (
-          <div
-            role="status"
-            aria-live="polite"
-            style={{
-              marginTop: 8,
-              padding: "6px 10px",
-              borderRadius: "var(--r-2)",
-              fontSize: "var(--fs-xs)",
-              background: testResult.ok ? "var(--ok-soft)" : "var(--err-soft)",
-              color: testResult.ok ? "var(--ok)" : "var(--err)",
-            }}
-          >
-            {testResult.ok
-              ? testResult.message ?? "Connection is working."
-              : testResult.message ?? "Test failed — check bridge logs."}
+        {/* Connect button for disconnected wave-1 */}
+        {!isConnected && !isDegraded && !isComingSoon && (
+          <div className="cgc-connect-footer">
+            <button
+              type="button"
+              onClick={() => void handleConnect()}
+              disabled={connecting || loading}
+              aria-label={`Connect ${def.name}`}
+              className="cgc-connect-btn"
+              style={{
+                transition: "background 0.2s ease, transform 0.1s ease",
+              }}
+            >
+              <span className="cgc-connect-btn-inner">
+                {connecting ? (
+                  <>
+                    <span className="cgc-spinner" aria-hidden="true" />
+                    Connecting…
+                  </>
+                ) : connectSuccess ? (
+                  <>
+                    <span className="cgc-checkmark" aria-hidden="true">✓</span>
+                    Connected!
+                  </>
+                ) : "Connect"}
+              </span>
+            </button>
           </div>
         )}
       </div>
-
-      {/* Footer — only for live connectors */}
-      {(isConnected || isDegraded) && (
-        <div
-          style={{
-            borderTop: `1px solid ${isDegraded ? "var(--warn)" : "var(--border-default)"}`,
-            padding: "9px 14px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            background: isDegraded ? "var(--warn-soft)" : "rgba(0,0,0,0.012)",
-            gap: 6,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "var(--fs-s)", color: isDegraded ? "var(--warn)" : "var(--ink-2)", minWidth: 0, overflow: "hidden" }}>
-            <span
-              // The toggle + Test + Disconnect cluster on the right squeezes
-              // this left half down to ~25px of usable width. Putting "Connected
-              // · 1w ago" inline made the text ellipsise to a single letter ("C"
-              // / "0" / "1."). Status is already conveyed by the green dot, the
-              // CONNECTED status pill at the top of the card, and the toggle's
-              // ON position; the only signal that gets lost is the lastSync time,
-              // surfaced here as a title tooltip on the dot.
-              title={
-                statusEntry.lastSync
-                  ? `Last sync: ${relativeTime(statusEntry.lastSync)}`
-                  : isDegraded
-                    ? "Degraded — re-auth required"
-                    : "Connected"
-              }
-              style={{
-                width: 6, height: 6, borderRadius: "50%",
-                background: isDegraded ? "#f59e0b" : "var(--ok)",
-                flexShrink: 0,
-              }}
-              aria-hidden="true"
-            />
-            {/* "Degraded" label kept — it's a distinct warning state worth
-                naming inline. "Connected" word + lastSync are now on the
-                dot's title tooltip (see comment above). */}
-            {isDegraded && <span style={{ fontWeight: 500, flexShrink: 0 }}>Degraded</span>}
-          </div>
-          <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
-            {isConnected && (
-              <button
-                type="button"
-                onClick={onDisconnect}
-                disabled={loading}
-                role="switch"
-                aria-checked={true}
-                aria-label={`Toggle ${def.name} off`}
-                title="Toggle off (disconnect)"
-                style={{
-                  width: 28,
-                  height: 16,
-                  borderRadius: 999,
-                  border: "none",
-                  background: "var(--ok)",
-                  position: "relative",
-                  cursor: loading ? "wait" : "pointer",
-                  padding: 0,
-                  flexShrink: 0,
-                }}
-              >
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 2,
-                    left: 14,
-                    width: 12,
-                    height: 12,
-                    borderRadius: "50%",
-                    background: "#fff",
-                    transition: "left 0.15s ease",
-                  }}
-                />
-              </button>
-            )}
-            {isConnected && (
-              <button
-                type="button"
-                onClick={handleTest}
-                disabled={testing || loading}
-                aria-label={`Test ${def.name} connection`}
-                style={{
-                  fontSize: "var(--fs-xs)", fontWeight: 500, padding: "3px 9px",
-                  borderRadius: 5, border: "1px solid var(--border-default)",
-                  background: "var(--card-bg)", color: "var(--ink-1)",
-                  cursor: testing ? "wait" : "pointer",
-                  opacity: (testing || loading) ? 0.55 : 1,
-                }}
-              >
-                {testing ? "…" : "Test"}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={isDegraded ? onConnect : onDisconnect}
-              disabled={loading}
-              aria-label={isDegraded ? `Reconnect ${def.name}` : `Disconnect ${def.name}`}
-              style={{
-                fontSize: "var(--fs-xs)", fontWeight: 500, padding: "3px 9px",
-                borderRadius: 5, border: "none",
-                background: isDegraded ? "var(--warn-soft)" : "var(--err-soft)",
-                color: isDegraded ? "var(--warn)" : "var(--err)",
-                cursor: loading ? "wait" : "pointer",
-                opacity: loading ? 0.55 : 1,
-              }}
-            >
-              {loading ? "…" : isDegraded ? "Reconnect" : "Disconnect"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Connect button for disconnected wave-1 */}
-      {!isConnected && !isDegraded && !isComingSoon && (
-        <div style={{ borderTop: "1px solid var(--border-default)", padding: "10px 14px" }}>
-          <button
-            type="button"
-            onClick={onConnect}
-            disabled={loading}
-            aria-label={`Connect ${def.name}`}
-            style={{
-              width: "100%", fontSize: "var(--fs-s)", fontWeight: 600, padding: "7px 0",
-              borderRadius: 6, border: "none",
-              background: "var(--accent)", color: "var(--on-orange)",
-              cursor: loading ? "wait" : "pointer",
-              opacity: loading ? 0.55 : 1,
-              letterSpacing: "0.01em",
-            }}
-          >
-            {loading ? "Connecting…" : "Connect"}
-          </button>
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -1102,24 +1013,11 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
 
 function RecentCard({ def, lastSync }: { def: ConnectorDef; lastSync: string }) {
   return (
-    <div
-      className="glass-card glass-card--hover"
-      style={{
-        padding: "12px 14px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        minWidth: 160,
-        maxWidth: 200,
-        flexShrink: 0,
-      }}
-    >
+    <div className="glass-card glass-card--hover conn-recent-card">
       <LogoTile def={def} size={40} />
       <div>
-        <div style={{ fontWeight: 700, fontSize: "var(--fs-m)", color: "var(--ink-0)" }}>{def.name}</div>
-        <div style={{ fontSize: "var(--fs-xs)", color: "var(--ok)", marginTop: 2, fontWeight: 500 }}>
-          ✓ {relativeTime(lastSync)}
-        </div>
+        <div className="conn-recent-name">{def.name}</div>
+        <div className="conn-recent-sync">✓ {relativeTime(lastSync)}</div>
       </div>
     </div>
   );
@@ -1518,8 +1416,8 @@ export default function ConnectionsPage() {
     <section>
       <div className="page-head">
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <h1 className="editorial-h1" style={{ margin: 0 }}>
+          <div className="page-head-title-row">
+            <h1 className="editorial-h1">
               Connections — <span className="accent">writes are gated. Reads are not.</span>
             </h1>
             <HintCard.Toggle id="connections" />
@@ -1536,14 +1434,13 @@ export default function ConnectionsPage() {
           />
         </div>
         {!loading && !bridgeOffline && (
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div className="conn-toolbar">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search connectors…"
-              className="input"
-              style={{ minWidth: 220 }}
+              className="input conn-search"
             />
             <button
               type="button"
@@ -1556,9 +1453,7 @@ export default function ConnectionsPage() {
               {reAuthing ? "Re-authing…" : "↻ Re-auth all"}
             </button>
             {reAuthMsg && (
-              <span role="status" style={{ fontSize: "var(--fs-s)", color: "var(--warn)" }}>
-                {reAuthMsg}
-              </span>
+              <span role="status" className="conn-reauth-msg">{reAuthMsg}</span>
             )}
           </div>
         )}
@@ -1592,11 +1487,9 @@ export default function ConnectionsPage() {
         <>
           {/* Recently used strip */}
           {recentlyUsed.length > 0 && (
-            <div style={{ marginBottom: "var(--s-5)" }}>
-              <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
-                Recently used
-              </div>
-              <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
+            <div className="conn-recent-section">
+              <div className="conn-recent-label">Recently used</div>
+              <div className="conn-recent-scroll">
                 {recentlyUsed.map(({ def, entry }) => (
                   <RecentCard key={def.id} def={def} lastSync={entry.lastSync!} />
                 ))}
@@ -1606,18 +1499,60 @@ export default function ConnectionsPage() {
 
           {/* Empty state CTA */}
           {!hasAnyConnected && (
-            <div style={{ textAlign: "center", padding: "var(--s-6) 0", marginBottom: "var(--s-5)" }}>
-              <p style={{ color: "var(--ink-2)", fontSize: "var(--fs-base)", marginBottom: "var(--s-4)" }}>
-                No connections yet. Add one to get started.
-              </p>
-              <button type="button" className="btn primary" onClick={() => setModalOpen(true)}>
-                Add connection
+            <div
+              className="conn-empty-cta"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 16,
+                padding: "40px 24px",
+                marginBottom: "var(--s-4)",
+                background: "var(--card-bg)",
+                border: "2px dashed var(--line-2)",
+                borderRadius: "var(--radius)",
+                textAlign: "center",
+              }}
+            >
+              <div
+                aria-hidden="true"
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: "50%",
+                  background: "rgba(var(--accent-rgb, 99, 102, 241), 0.1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 22,
+                }}
+              >
+                🔌
+              </div>
+              <div>
+                <p
+                  className="conn-empty-cta-text"
+                  style={{ margin: "0 0 4px", fontWeight: 600, color: "var(--ink-0)" }}
+                >
+                  No connections yet
+                </p>
+                <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
+                  Connect a service to start automating workflows.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => setModalOpen(true)}
+                style={{ minWidth: 140 }}
+              >
+                + Add connection
               </button>
             </div>
           )}
 
           {/* Status filter pills */}
-          <div style={{ display: "flex", gap: 8, marginBottom: "var(--s-4)", flexWrap: "wrap" }}>
+          <div className="conn-filter-pills">
             {([
               ["all", `All [${counts.all}]`],
               ["connected", `Connected [${counts.connected}]`],
@@ -1628,28 +1563,99 @@ export default function ConnectionsPage() {
                 key={k}
                 type="button"
                 onClick={() => setStatusFilter(k)}
-                className={statusFilter === k ? "pill accent" : "pill muted"}
-                style={{ cursor: "pointer", border: "none", fontSize: "var(--fs-s)" }}
+                className={statusFilter === k ? "pill accent conn-filter-pill" : "pill muted conn-filter-pill"}
               >
                 {label}
               </button>
             ))}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12, marginBottom: "var(--s-6)" }}>
-            {visibleCatalog.map((def) => (
-              <ConnectorGridCard
-                key={def.id}
-                def={def}
-                statusEntry={getConnector(def.id)}
-                onConnect={() => handleConnect(def.id)}
-                onDisconnect={() => setConfirmDisconnectId(def.id)}
-                onTest={() => handleTest(def.id)}
-                loading={acting === def.id}
-                recipeCount={connectorRecipeCounts.get(def.id)}
-              />
-            ))}
-          </div>
+          {(() => {
+            const connected = visibleCatalog.filter((d) => {
+              const s = getConnector(d.id).status;
+              return s === "connected" || s === "needs_reauth";
+            });
+            const notConnected = visibleCatalog.filter((d) => {
+              const s = getConnector(d.id).status;
+              return s !== "connected" && s !== "needs_reauth";
+            });
+            return (
+              <>
+                {connected.length > 0 && statusFilter === "all" && (
+                  <div style={{ marginBottom: "var(--s-2)" }}>
+                    <div
+                      style={{
+                        fontSize: "var(--fs-xs)",
+                        fontWeight: 600,
+                        color: "var(--ok)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        marginBottom: "var(--s-3)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: "50%",
+                          background: "var(--ok)",
+                          display: "inline-block",
+                        }}
+                      />
+                      Connected ({connected.length})
+                    </div>
+                    <div className="conn-grid">
+                      {connected.map((def) => (
+                        <ConnectorGridCard
+                          key={def.id}
+                          def={def}
+                          statusEntry={getConnector(def.id)}
+                          onConnect={() => handleConnect(def.id)}
+                          onDisconnect={() => setConfirmDisconnectId(def.id)}
+                          onTest={() => handleTest(def.id)}
+                          loading={acting === def.id}
+                          recipeCount={connectorRecipeCounts.get(def.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {notConnected.length > 0 && statusFilter === "all" && connected.length > 0 && (
+                  <div
+                    style={{
+                      fontSize: "var(--fs-xs)",
+                      fontWeight: 600,
+                      color: "var(--ink-3)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                      marginBottom: "var(--s-3)",
+                      marginTop: "var(--s-2)",
+                    }}
+                  >
+                    Available ({notConnected.length})
+                  </div>
+                )}
+                <div className="conn-grid">
+                  {(statusFilter === "all" ? notConnected : visibleCatalog).map((def) => (
+                    <ConnectorGridCard
+                      key={def.id}
+                      def={def}
+                      statusEntry={getConnector(def.id)}
+                      onConnect={() => handleConnect(def.id)}
+                      onDisconnect={() => setConfirmDisconnectId(def.id)}
+                      onTest={() => handleTest(def.id)}
+                      loading={acting === def.id}
+                      recipeCount={connectorRecipeCounts.get(def.id)}
+                    />
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </>
       )}
 
@@ -1660,33 +1666,24 @@ export default function ConnectionsPage() {
         ariaLabelledBy="reauth-confirm-title"
         maxWidth={420}
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <strong id="reauth-confirm-title" style={{ fontSize: "var(--fs-l)" }}>
+        <div className="conn-modal-body">
+          <strong id="reauth-confirm-title" className="conn-modal-title">
             Re-authorize {reAuthTargets.length} connector
             {reAuthTargets.length === 1 ? "" : "s"}?
           </strong>
-          <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: 0 }}>
+          <p className="conn-modal-desc">
             One OAuth popup will open at a time, in order. Each waits for you to
             finish before the next one opens — you can cancel between popups by
             closing the window.
           </p>
           {reAuthTargets.length > 0 && (
-            <ul
-              style={{
-                margin: 0,
-                paddingLeft: 18,
-                fontSize: "var(--fs-s)",
-                color: "var(--fg-1)",
-                maxHeight: 180,
-                overflow: "auto",
-              }}
-            >
+            <ul className="conn-reauth-list">
               {reAuthTargets.map((c) => (
                 <li key={c.id}>{c.id}</li>
               ))}
             </ul>
           )}
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <div className="conn-modal-actions">
             <button
               type="button"
               className="btn sm ghost"
@@ -1713,14 +1710,14 @@ export default function ConnectionsPage() {
         ariaLabelledBy="notion-modal-title"
         maxWidth={420}
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="conn-modal-body">
+          <div className="conn-modal-header">
             <IconNotion />
-            <strong id="notion-modal-title" style={{ fontSize: "var(--fs-l)" }}>Connect Notion</strong>
+            <strong id="notion-modal-title" className="conn-modal-title">Connect Notion</strong>
           </div>
-          <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: 0 }}>
+          <p className="conn-modal-desc">
             Create an internal integration at{" "}
-            <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+            <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" className="conn-modal-link">
               notion.so/my-integrations
             </a>
             , copy the integration token, and paste it below. Then share your databases/pages with the integration inside Notion.
@@ -1731,22 +1728,22 @@ export default function ConnectionsPage() {
             value={notionToken}
             onChange={(e) => setNotionToken(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void handleNotionConnect(); }}
-            style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-m)", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-0)", color: "var(--fg-1)", width: "100%", boxSizing: "border-box" }}
+            className="conn-modal-input"
           />
-          {notionErr && <div className="alert-err" role="alert" style={{ fontSize: "var(--fs-s)" }}>{notionErr}</div>}
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          {notionErr && <div className="alert-err conn-modal-err" role="alert">{notionErr}</div>}
+          <div className="conn-modal-actions">
             <button
               type="button"
+              className="conn-modal-cancel"
               onClick={() => { setNotionModalOpen(false); setNotionToken(""); setNotionErr(null); }}
-              style={{ padding: "6px 16px", fontSize: "var(--fs-m)", cursor: "pointer", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-1)", color: "var(--fg-1)" }}
             >
               Cancel
             </button>
             <button
               type="button"
+              className="conn-modal-submit"
               onClick={() => void handleNotionConnect()}
               disabled={notionConnecting || !notionToken}
-              style={{ padding: "6px 16px", fontSize: "var(--fs-m)", cursor: notionConnecting ? "wait" : "pointer", borderRadius: 6, border: "none", background: "var(--fg-1)", color: "var(--bg-0)", opacity: !notionToken ? 0.5 : 1 }}
             >
               {notionConnecting ? "Connecting…" : "Connect"}
             </button>
@@ -1762,12 +1759,12 @@ export default function ConnectionsPage() {
         maxWidth={440}
       >
         {tokenModal && TOKEN_MODAL_CONNECTORS[tokenModal] && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="conn-modal-body">
+            <div className="conn-modal-header">
               {TOKEN_MODAL_CONNECTORS[tokenModal].icon}
-              <strong id="token-modal-title" style={{ fontSize: "var(--fs-l)" }}>Connect {TOKEN_MODAL_CONNECTORS[tokenModal].name}</strong>
+              <strong id="token-modal-title" className="conn-modal-title">Connect {TOKEN_MODAL_CONNECTORS[tokenModal].name}</strong>
             </div>
-            <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: 0, lineHeight: 1.6 }}>
+            <p className="conn-modal-desc">
               {TOKEN_MODAL_CONNECTORS[tokenModal].instructions}
             </p>
             <input
@@ -1777,11 +1774,11 @@ export default function ConnectionsPage() {
               onChange={(e) => setTokenValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") void handleTokenConnect(); }}
               aria-label={`${TOKEN_MODAL_CONNECTORS[tokenModal].name} ${TOKEN_MODAL_CONNECTORS[tokenModal].placeholder}`}
-              style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-m)", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-0)", color: "var(--fg-1)", width: "100%", boxSizing: "border-box" }}
+              className="conn-modal-input"
             />
             {(TOKEN_MODAL_CONNECTORS[tokenModal].extraFields ?? []).map((f) => (
-              <div key={f.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <label htmlFor={`token-extra-${f.key}`} style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
+              <div key={f.key} className="conn-modal-field">
+                <label htmlFor={`token-extra-${f.key}`} className="conn-modal-field-label">
                   {f.label}{f.required ? " *" : ""}
                 </label>
                 <input
@@ -1791,24 +1788,24 @@ export default function ConnectionsPage() {
                   value={tokenExtras[f.key] ?? ""}
                   onChange={(e) => setTokenExtras((prev) => ({ ...prev, [f.key]: e.target.value }))}
                   onKeyDown={(e) => { if (e.key === "Enter") void handleTokenConnect(); }}
-                  style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-m)", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-0)", color: "var(--fg-1)", width: "100%", boxSizing: "border-box" }}
+                  className="conn-modal-input"
                 />
               </div>
             ))}
-            {tokenErr && <div className="alert-err" role="alert" style={{ fontSize: "var(--fs-s)" }}>{tokenErr}</div>}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            {tokenErr && <div className="alert-err conn-modal-err" role="alert">{tokenErr}</div>}
+            <div className="conn-modal-actions">
               <button
                 type="button"
+                className="conn-modal-cancel"
                 onClick={() => { setTokenModal(null); setTokenValue(""); setTokenExtras({}); setTokenErr(null); }}
-                style={{ padding: "6px 16px", fontSize: "var(--fs-m)", cursor: "pointer", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-1)", color: "var(--fg-1)" }}
               >
                 Cancel
               </button>
               <button
                 type="button"
+                className="conn-modal-submit"
                 onClick={() => void handleTokenConnect()}
                 disabled={tokenConnecting || !tokenValue.trim()}
-                style={{ padding: "6px 16px", fontSize: "var(--fs-m)", cursor: tokenConnecting ? "wait" : "pointer", borderRadius: 6, border: "none", background: "var(--fg-1)", color: "var(--bg-0)", opacity: !tokenValue.trim() ? 0.5 : 1 }}
               >
                 {tokenConnecting ? "Connecting…" : "Connect"}
               </button>
@@ -1838,50 +1835,32 @@ export default function ConnectionsPage() {
           const displayName = def?.name ?? id ?? "this connector";
           const busy = id ? acting === id : false;
           return (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <strong id="disconnect-confirm-title" style={{ fontSize: "var(--fs-l)" }}>
+            <div className="conn-modal-body conn-modal-body--sm">
+              <strong id="disconnect-confirm-title" className="conn-modal-title">
                 Disconnect {displayName}?
               </strong>
-              <p style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", margin: 0, lineHeight: 1.5 }}>
+              <p className="conn-modal-desc">
                 Recipes that use {displayName} will fail until you reconnect.
                 Patchwork will keep your existing recipe definitions; only the auth token is removed.
               </p>
-              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+              <div className="conn-modal-actions conn-modal-actions--mt">
                 <button
                   type="button"
+                  className="conn-modal-cancel-sm"
                   onClick={() => setConfirmDisconnectId(null)}
                   disabled={busy}
-                  style={{
-                    padding: "6px 14px",
-                    fontSize: "var(--fs-m)",
-                    cursor: busy ? "wait" : "pointer",
-                    borderRadius: 6,
-                    border: "1px solid var(--border-default)",
-                    background: "var(--card-bg)",
-                    color: "var(--ink-1)",
-                  }}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
+                  className="conn-modal-danger"
                   onClick={async () => {
                     if (!id) return;
                     await handleDisconnect(id);
                     setConfirmDisconnectId(null);
                   }}
                   disabled={busy}
-                  style={{
-                    padding: "6px 14px",
-                    fontSize: "var(--fs-m)",
-                    cursor: busy ? "wait" : "pointer",
-                    borderRadius: 6,
-                    border: "none",
-                    background: "var(--err)",
-                    color: "#fff",
-                    fontWeight: 600,
-                    opacity: busy ? 0.6 : 1,
-                  }}
                 >
                   {busy ? "Disconnecting…" : "Disconnect"}
                 </button>

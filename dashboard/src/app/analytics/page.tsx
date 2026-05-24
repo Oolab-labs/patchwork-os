@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StatCard } from "@/components/StatCard";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { AreaChart, EmptyState, ErrorState, RelationStrip, ToolChip } from "@/components/patchwork";
@@ -61,13 +61,45 @@ function taskStatusPill(status: string) {
   return <span className="pill muted">{status}</span>;
 }
 
+// Count-up hook: animates from 0 to target over ~600ms on first load
+function useCountUp(target: number, active: boolean): number {
+  const [display, setDisplay] = useState(0);
+  const frameRef = useRef<number | undefined>(undefined);
+  const startTimeRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!active || target === 0) { setDisplay(target); return; }
+    const duration = 600;
+    const startVal = display;
+    startTimeRef.current = undefined;
+    const animate = (ts: number) => {
+      if (startTimeRef.current === undefined) startTimeRef.current = ts;
+      const elapsed = ts - startTimeRef.current;
+      const progress = Math.min(elapsed / duration, 1);
+      // ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(Math.round(startVal + (target - startVal) * eased));
+      if (progress < 1) frameRef.current = requestAnimationFrame(animate);
+    };
+    frameRef.current = requestAnimationFrame(animate);
+    return () => { if (frameRef.current !== undefined) cancelAnimationFrame(frameRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, active]);
+  return display;
+}
+
 export default function AnalyticsPage() {
   const windowHours = 24;
   // Always start at 0 so server and client first-render match. Filled in
   // after mount via the effect below — anything that depends on wall-clock
   // time must gate on `clientNow !== 0` to avoid hydration mismatches.
   const [clientNow, setClientNow] = useState(0);
-  useEffect(() => { setClientNow(Date.now()); }, []);
+  const [chartVisible, setChartVisible] = useState(false);
+  useEffect(() => {
+    setClientNow(Date.now());
+    // Delay chart entrance for a staggered feel
+    const t = setTimeout(() => setChartVisible(true), 150);
+    return () => clearTimeout(t);
+  }, []);
 
   const { data, error, loading, refetch } = useBridgeFetch<AnalyticsData>(
     `/api/bridge/analytics?windowHours=${windowHours}`,
@@ -86,6 +118,12 @@ export default function AnalyticsPage() {
   const maxCalls = topTools.length > 0 ? topTools[0].calls : 1;
 
   const recentTasks = (data?.recentAutomationTasks ?? []).slice(0, 20);
+
+  // Count-up animated values (only animate when data first arrives)
+  const dataLoaded = !loading && !!data;
+  const animatedCalls = useCountUp(totalCalls, dataLoaded);
+  const animatedTools = useCountUp(allTools.length, dataLoaded);
+  const animatedHooks = useCountUp(hooksFired, dataLoaded);
 
   interface RunBrief { createdAt: number; status: string; durationMs: number }
   const { data: runsData } = useBridgeFetch<{ runs?: RunBrief[] }>(
@@ -172,7 +210,7 @@ export default function AnalyticsPage() {
           <div className="stat-grid">
             <StatCard
               label="Total tool calls"
-              value={loading ? "—" : totalCalls.toLocaleString()}
+              value={loading ? "—" : animatedCalls.toLocaleString()}
               foot="Last 24h"
               icon={
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(var(--orange-rgb), 0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--orange)" }}>
@@ -182,7 +220,7 @@ export default function AnalyticsPage() {
             />
             <StatCard
               label="Unique tools"
-              value={loading ? "—" : topTools.length.toLocaleString()}
+              value={loading ? "—" : animatedTools.toLocaleString()}
               foot="Distinct tools invoked"
               icon={
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--purple-soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--purple)" }}>
@@ -192,7 +230,7 @@ export default function AnalyticsPage() {
             />
             <StatCard
               label="Hooks fired"
-              value={loading ? "—" : hooksFired.toLocaleString()}
+              value={loading ? "—" : animatedHooks.toLocaleString()}
               foot="Automation hook triggers"
               icon={
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--green-soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--green)" }}>
@@ -228,9 +266,12 @@ export default function AnalyticsPage() {
           </div>
 
           {/* Area chart — runs per hour */}
-          <div className="card" style={{ padding: "14px 20px 10px", marginTop: "var(--s-4)", marginBottom: "var(--s-4)" }}>
+          <div
+            className={`card${chartVisible ? " anl-chart-enter" : ""}`}
+            style={{ padding: "14px 20px 10px", marginTop: "var(--s-4)", marginBottom: "var(--s-4)" }}
+          >
             <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)", marginBottom: 8 }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 500, color: "var(--ink-3)" }}>
                 Calls — last 24 hours
               </span>
               <span style={{ flex: 1 }} />
@@ -242,7 +283,15 @@ export default function AnalyticsPage() {
               </span>
             </div>
             {clientNow === 0 ? (
-              <div style={{ height: 140 }} aria-hidden="true" />
+              <div
+                style={{
+                  height: 140,
+                  background: "linear-gradient(90deg, var(--line-2) 0%, transparent 100%)",
+                  borderRadius: 4,
+                  opacity: 0.3,
+                }}
+                aria-hidden="true"
+              />
             ) : (
               <AreaChart series={areaSeries} xLabels={areaLabels} height={140} yTicks={4} />
             )}
@@ -258,7 +307,7 @@ export default function AnalyticsPage() {
             <SkeletonList rows={5} columns={3} />
           ) : topTools.length === 0 ? (
             <EmptyState
-              title="No data yet"
+              title="No data yet — run some recipes to see analytics"
               description="Usage data builds up as your agents work. Run a recipe or make a Claude request to see your first stats."
             />
           ) : (
@@ -269,13 +318,29 @@ export default function AnalyticsPage() {
                     // Bridge-supplied list — toolName is not guaranteed
                     // unique (same tool across MCP namespaces / aggregation
                     // dupes). Suffix the index to avoid React key collisions.
-                    <tr key={`${t.tool}-${i}`} style={{ borderBottom: "1px solid var(--line-3)" }}>
+                    <tr
+                      key={`${t.tool}-${i}`}
+                      style={{
+                        borderBottom: "1px solid var(--line-3)",
+                        animation: `anl-fade-up 0.3s ease both`,
+                        animationDelay: `${i * 30}ms`,
+                      }}
+                    >
                       <td style={{ padding: "7px 8px", fontSize: "var(--fs-xs)", color: "var(--ink-0)", whiteSpace: "nowrap" }}>
                         <ToolChip name={t.tool} variant="link" />
                       </td>
                       <td style={{ padding: "7px 8px", width: "100%" }}>
                         <div style={{ background: "var(--line-3)", borderRadius: 2, height: 5, width: "100%" }}>
-                          <div style={{ background: "var(--orange)", borderRadius: 2, height: 5, width: `${(t.calls / maxCalls) * 100}%` }} />
+                          <div
+                            className="anl-bar-animated"
+                            style={{
+                              background: "var(--orange)",
+                              borderRadius: 2,
+                              height: 5,
+                              width: `${(t.calls / maxCalls) * 100}%`,
+                              animationDelay: `${i * 30 + 100}ms`,
+                            }}
+                          />
                         </div>
                       </td>
                       <td style={{ textAlign: "right", padding: "7px 8px", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", whiteSpace: "nowrap" }}>{t.calls}</td>
@@ -321,14 +386,14 @@ export default function AnalyticsPage() {
                           <td className="muted" style={{ whiteSpace: "nowrap" }}>
                             {clientNow === 0 ? "—" : relTime(task.startedAt)}
                           </td>
-                          <td className="mono">
-                            {task.name ?? task.id}
+                          <td className="mono" title={task.id}>
+                            {task.name ?? task.id.slice(0, 8)}
                             {task.name && (
                               <span
                                 className="muted"
                                 style={{ marginLeft: 8, fontSize: "var(--fs-xs)" }}
                               >
-                                {task.id}
+                                {task.id.slice(0, 8)}
                               </span>
                             )}
                           </td>

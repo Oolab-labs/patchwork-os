@@ -3,12 +3,14 @@ import type { CSSProperties, ReactNode } from "react";
 export function CodeBlock({
   children,
   style,
+  className,
 }: {
   children: ReactNode;
   style?: CSSProperties;
+  className?: string;
 }) {
   return (
-    <pre className="code-block" style={{ margin: 0, ...style }}>
+    <pre className={`code-block${className ? ` ${className}` : ""}`} style={{ margin: 0, ...style }}>
       {children}
     </pre>
   );

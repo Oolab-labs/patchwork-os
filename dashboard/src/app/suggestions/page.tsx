@@ -199,7 +199,7 @@ export default function SuggestionsPage() {
           />
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <label htmlFor="since-days" style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
+          <label htmlFor="since-days" style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
             Lookback
           </label>
           <select
@@ -208,9 +208,9 @@ export default function SuggestionsPage() {
             onChange={(e) => setSinceDays(parseSinceDays(e.target.value))}
             style={{
               background: "var(--bg-2)",
-              border: "1px solid var(--border-default)",
+              border: "1px solid var(--line-1)",
               borderRadius: "var(--r-2)",
-              color: "var(--fg-0)",
+              color: "var(--ink-0)",
               fontSize: "var(--fs-s)",
               padding: "4px 8px",
               outline: "none",
@@ -249,10 +249,10 @@ export default function SuggestionsPage() {
           title="No suggestions right now"
           description={
             <>
-              Either the lookback window is too short, your activity log doesn&apos;t
-              have enough variety yet, or every co-occurring pair is already in a
-              recipe. Try widening the lookback above, or come back after a few
-              more days of normal use.
+              Suggestions are generated from your tool call history. Either the lookback window is
+              too short, or every co-occurring pair is already in a recipe. Try widening the
+              lookback above, or come back after a few more days of normal use. You can also run{" "}
+              <code>patchwork suggest</code> from the CLI.
             </>
           }
         />
@@ -334,7 +334,7 @@ export default function SuggestionsPage() {
         <p
           style={{
             fontSize: "var(--fs-xs)",
-            color: "var(--fg-2)",
+            color: "var(--ink-2)",
             marginTop: "var(--s-5)",
           }}
         >
@@ -346,6 +346,73 @@ export default function SuggestionsPage() {
 }
 
 const SUGGESTION_PAGE_SIZE = 20;
+
+function SuggestionRow({
+  s,
+  idx,
+  meta,
+  action,
+  rowKey,
+}: {
+  s: AutomationSuggestion;
+  idx: number;
+  meta: typeof KIND_META[AutomationSuggestion["kind"]];
+  action: React.ReactNode;
+  rowKey: string;
+}) {
+  const [dismissed, setDismissed] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
+
+  function handleDismiss() {
+    setDismissing(true);
+    setTimeout(() => setDismissed(true), 280);
+  }
+
+  if (dismissed) return null;
+
+  return (
+    <li
+      key={rowKey}
+      className="suggestion-row"
+      style={{
+        animation: dismissing
+          ? "sug-dismiss 0.28s ease forwards"
+          : `sug-fade-up 0.25s ease both`,
+        animationDelay: dismissing ? "0ms" : `${Math.min(idx * 25, 200)}ms`,
+        transition: "box-shadow 0.15s ease",
+      }}
+    >
+      <span className={`pill ${meta.pillClass}`} style={{ fontSize: "var(--fs-2xs)" }}>
+        {meta.label}
+      </span>
+      <span className="suggestion-label" style={{ fontSize: "var(--fs-m)" }}>{s.label}</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+        {action}
+        <button
+          type="button"
+          onClick={handleDismiss}
+          title="Dismiss"
+          aria-label="Dismiss suggestion"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--ink-3)",
+            fontSize: "var(--fs-s)",
+            padding: "2px 4px",
+            borderRadius: 4,
+            lineHeight: 1,
+            transition: "color 0.15s ease",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--ink-1)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--ink-3)"; }}
+        >
+          ✕
+        </button>
+      </span>
+    </li>
+  );
+}
 
 function SuggestionGroup({
   title,
@@ -362,53 +429,56 @@ function SuggestionGroup({
   const visible = showAll ? items : items.slice(0, SUGGESTION_PAGE_SIZE);
   const hidden = items.length - visible.length;
   return (
-    <div className="card" style={{ marginTop: "var(--s-4)" }}>
-      <div className="card-head">
-        <h2>{title}</h2>
-        <span className="pill muted">{items.length}</span>
+    <>
+      <div className="card" style={{ marginTop: "var(--s-4)" }}>
+        <div className="card-head">
+          <h2>{title}</h2>
+          <span className="pill muted">{items.length}</span>
+        </div>
+        <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", margin: "0 0 var(--s-3)" }}>
+          {subtitle}
+        </p>
+        <ul role="list" aria-label={title} style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {visible.map((s, idx) => {
+            const meta = KIND_META[s.kind];
+            const key = `${s.kind}-${idx}-${
+              isCoOccurringPair(s.details)
+                ? s.details.pair.join("|")
+                : isTrustDetails(s.details)
+                  ? s.details.recipeName
+                  : isUnusedDetails(s.details)
+                    ? `unused-${s.details.unusedCount}`
+                    : "anon"
+            }`;
+            const action = renderAction(s);
+            return (
+              // Suggestion row: 3-column flex (pill | label | CTA) on
+              // desktop. At 390 px the label column was getting squashed
+              // to ~140 px and prose wrapped to 6+ lines. The
+              // `.suggestion-row` class wraps to a stacked layout on
+              // mobile so the label gets full width and CTAs sit below.
+              <SuggestionRow
+                key={key}
+                rowKey={key}
+                s={s}
+                idx={idx}
+                meta={meta}
+                action={action}
+              />
+            );
+          })}
+        </ul>
+        {hidden > 0 && (
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => setShowAll(true)}
+            style={{ marginTop: "var(--s-3)", fontSize: "var(--fs-s)" }}
+          >
+            Show {hidden} more
+          </button>
+        )}
       </div>
-      <p style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)", margin: "0 0 var(--s-3)" }}>
-        {subtitle}
-      </p>
-      <ul role="list" aria-label={title} style={{ listStyle: "none", padding: 0, margin: 0 }}>
-        {visible.map((s, idx) => {
-          const meta = KIND_META[s.kind];
-          const key = `${s.kind}-${idx}-${
-            isCoOccurringPair(s.details)
-              ? s.details.pair.join("|")
-              : isTrustDetails(s.details)
-                ? s.details.recipeName
-                : isUnusedDetails(s.details)
-                  ? `unused-${s.details.unusedCount}`
-                  : "anon"
-          }`;
-          const action = renderAction(s);
-          return (
-            // Suggestion row: 3-column flex (pill | label | CTA) on
-            // desktop. At 390 px the label column was getting squashed
-            // to ~140 px and prose wrapped to 6+ lines. The
-            // `.suggestion-row` class wraps to a stacked layout on
-            // mobile so the label gets full width and CTAs sit below.
-            <li key={key} className="suggestion-row">
-              <span className={`pill ${meta.pillClass}`} style={{ fontSize: "var(--fs-2xs)" }}>
-                {meta.label}
-              </span>
-              <span className="suggestion-label" style={{ fontSize: "var(--fs-m)" }}>{s.label}</span>
-              {action}
-            </li>
-          );
-        })}
-      </ul>
-      {hidden > 0 && (
-        <button
-          type="button"
-          className="btn sm ghost"
-          onClick={() => setShowAll(true)}
-          style={{ marginTop: "var(--s-3)", fontSize: "var(--fs-s)" }}
-        >
-          Show {hidden} more
-        </button>
-      )}
-    </div>
+    </>
   );
 }

@@ -30,61 +30,17 @@ export function ConfigFileCard({ path }: { path: string }) {
   const blocked = state === "blocked";
 
   return (
-    <div
-      style={{
-        marginTop: 16,
-        background: "var(--bg-2)",
-        border: "1px solid var(--border-default)",
-        borderRadius: "var(--r-2)",
-        padding: 10,
-      }}
-    >
-      <div
-        style={{
-          fontSize: "var(--fs-2xs)",
-          fontWeight: 600,
-          letterSpacing: "0.05em",
-          color: "var(--fg-3)",
-          textTransform: "uppercase",
-        }}
-      >
-        Config file
-      </div>
-      <div
-        className="mono"
-        title={path}
-        style={{
-          fontSize: "var(--fs-xs)",
-          color: "var(--fg-1)",
-          marginTop: 6,
-          lineHeight: 1.4,
-          // Truncate cleanly with an ellipsis rather than breaking the
-          // path mid-word ("config.jso\nn"). Full path stays available
-          // via the title tooltip and the Copy button below.
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
+    <div className="stg-config-card">
+      <div className="stg-config-label">Config file</div>
+      <div className="mono stg-config-path" title={path}>
         {path}
       </div>
       <button
         type="button"
         onClick={copy}
         aria-label="Copy config path"
-        style={{
-          marginTop: 8,
-          background: "transparent",
-          border: "1px solid var(--border-default)",
-          borderRadius: "var(--r-s)",
-          color: copied ? "var(--ok)" : blocked ? "var(--err)" : "var(--fg-1)",
-          fontSize: "var(--fs-xs)",
-          padding: "3px 8px",
-          cursor: "pointer",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 4,
-        }}
+        className="stg-config-copy-btn"
+        data-state={state}
       >
         <span aria-hidden>{copied ? "✓" : blocked ? "⚠" : "⧉"}</span>
         {copied

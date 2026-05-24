@@ -28,7 +28,7 @@ function colorVar(color: DotColor): string {
       ? "var(--warn)"
       : color === "red"
         ? "var(--err)"
-        : "var(--fg-3)";
+        : "var(--ink-3)";
 }
 
 function statusLabel(status: string | undefined): string {
@@ -140,9 +140,7 @@ export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
               margin: 0,
               fontSize: "var(--fs-xs)",
               color: "var(--ink-2)",
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.07em",
+              fontWeight: 600,
             }}
           >
             Required connectors
@@ -156,7 +154,7 @@ export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
           <span style={{ fontSize: "var(--fs-xs)", color: "var(--err)" }}>{fetchErr}</span>
         )}
         {statusMap === null && !fetchErr && (
-          <span style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>Loading…</span>
+          <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>Loading…</span>
         )}
       </div>
 
@@ -191,7 +189,7 @@ export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
               <span
                 style={{
                   flex: 1,
-                  color: "var(--fg-1)",
+                  color: "var(--ink-1)",
                   fontFamily: "var(--font-mono)",
                   fontSize: "var(--fs-s)",
                 }}
@@ -203,7 +201,7 @@ export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
                 <span
                   style={{
                     fontSize: "var(--fs-xs)",
-                    color: "var(--fg-3)",
+                    color: "var(--ink-3)",
                     marginLeft: "var(--s-1)",
                     maxWidth: 200,
                     overflow: "hidden",

@@ -20,51 +20,22 @@ export function PermColumn({
   // twice is itself wrong, so collapsing is the correct fix.
   const uniqueRules = [...new Set(rules)];
   return (
-    <div
-      style={{
-        background: "var(--bg-2)",
-        border: "1px solid var(--border-default)",
-        borderRadius: "var(--r-2)",
-        padding: 10,
-        minHeight: 80,
-      }}
-    >
-      <div
-        style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}
-      >
+    <div className="perm-col">
+      <div className="perm-col-head">
         <StatusPill tone={tone}>{title}</StatusPill>
-        <span style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>
-          {uniqueRules.length}
-        </span>
+        <span className="perm-col-count">{uniqueRules.length}</span>
       </div>
       {uniqueRules.length === 0 ? (
-        <div style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>—</div>
+        <div className="perm-col-empty">—</div>
       ) : (
-        <ul
-          style={{
-            listStyle: "none",
-            margin: 0,
-            padding: 0,
-            display: "flex",
-            flexDirection: "column",
-            gap: 3,
-          }}
-        >
+        <ul className="perm-col-list">
           {uniqueRules.slice(0, 8).map((r) => (
-            <li
-              key={r}
-              className="mono"
-              style={{
-                fontSize: "var(--fs-xs)",
-                color: "var(--fg-1)",
-                wordBreak: "break-all",
-              }}
-            >
+            <li key={r} className="mono perm-col-item">
               {r}
             </li>
           ))}
           {uniqueRules.length > 8 && (
-            <li style={{ fontSize: "var(--fs-xs)", color: "var(--fg-3)" }}>
+            <li className="perm-col-more">
               +{uniqueRules.length - 8} more
             </li>
           )}

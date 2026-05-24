@@ -41,7 +41,7 @@ import type { ApprovalBehavior, RiskLevel } from "@/lib/registry";
 
 // CodeMirror touches `document` on mount — load it client-only.
 const YamlEditor = dynamic(
-  () => import("../../recipes/[...name]/edit/_components/YamlEditor"),
+  () => import("../../recipes/[...name]/_edit/_components/YamlEditor"),
   { ssr: false },
 );
 
@@ -736,13 +736,13 @@ export default function MarketplaceSubmitPage() {
           background: "var(--bg-2)",
           border: "1px solid var(--border-subtle)",
           borderRadius: "var(--r-2)",
-          color: "var(--fg-2)",
+          color: "var(--ink-2)",
           fontSize: "var(--fs-s)",
           marginBottom: "var(--s-5)",
           padding: "var(--s-3) var(--s-4)",
         }}
       >
-        <strong style={{ color: "var(--fg-1)" }}>How this works:</strong> fill
+        <strong style={{ color: "var(--ink-1)" }}>How this works:</strong> fill
         the form below, validate the YAML, then click{" "}
         <strong>Open PR on GitHub</strong>. We open a prefilled &quot;create new
         file&quot; page on the registry repo. GitHub will fork it for you if
@@ -759,7 +759,7 @@ export default function MarketplaceSubmitPage() {
             background: "var(--info-soft, var(--bg-1))",
             border: "1px solid var(--info, var(--border-default))",
             borderRadius: "var(--r-2)",
-            color: "var(--fg-1)",
+            color: "var(--ink-1)",
             display: "flex",
             fontSize: "var(--fs-s)",
             gap: "var(--s-3)",
@@ -808,16 +808,16 @@ export default function MarketplaceSubmitPage() {
           fontSize: "var(--fs-s)",
         }}
       >
-        <span style={{ color: "var(--fg-2)" }}>Start from:</span>
+        <span style={{ color: "var(--ink-2)" }}>Start from:</span>
         <label
           style={{
             display: "flex",
             alignItems: "center",
             gap: "var(--s-2)",
-            color: "var(--fg-2)",
+            color: "var(--ink-2)",
           }}
         >
-          <span style={{ color: "var(--fg-3)", fontSize: "var(--fs-xs)" }}>
+          <span style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>
             preset
           </span>
           <select
@@ -830,7 +830,7 @@ export default function MarketplaceSubmitPage() {
               background: "var(--bg-2)",
               border: "1px solid var(--border-default)",
               borderRadius: "var(--r-2)",
-              color: "var(--fg-0)",
+              color: "var(--ink-0)",
               fontSize: "var(--fs-s)",
               padding: "var(--s-1) var(--s-2)",
             }}
@@ -851,10 +851,10 @@ export default function MarketplaceSubmitPage() {
               display: "flex",
               alignItems: "center",
               gap: "var(--s-2)",
-              color: "var(--fg-2)",
+              color: "var(--ink-2)",
             }}
           >
-            <span style={{ color: "var(--fg-3)", fontSize: "var(--fs-xs)" }}>
+            <span style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>
               installed recipe
             </span>
             <select
@@ -876,7 +876,7 @@ export default function MarketplaceSubmitPage() {
                 background: "var(--bg-2)",
                 border: "1px solid var(--border-default)",
                 borderRadius: "var(--r-2)",
-                color: "var(--fg-0)",
+                color: "var(--ink-0)",
                 fontSize: "var(--fs-s)",
                 padding: "var(--s-1) var(--s-2)",
               }}
@@ -1101,7 +1101,7 @@ export default function MarketplaceSubmitPage() {
                   alignItems: "center",
                   gap: "var(--s-2)",
                   fontSize: "var(--fs-s)",
-                  color: "var(--fg-2)",
+                  color: "var(--ink-2)",
                   cursor: "pointer",
                 }}
               >
@@ -1118,7 +1118,7 @@ export default function MarketplaceSubmitPage() {
                   alignItems: "center",
                   gap: "var(--s-2)",
                   fontSize: "var(--fs-s)",
-                  color: "var(--fg-2)",
+                  color: "var(--ink-2)",
                   cursor: "pointer",
                 }}
               >
@@ -1154,7 +1154,7 @@ export default function MarketplaceSubmitPage() {
               style={{
                 fontSize: "var(--fs-m)",
                 fontWeight: 500,
-                color: "var(--fg-1)",
+                color: "var(--ink-1)",
               }}
             >
               Recipe YAML <span style={{ color: "var(--err)" }}>*</span>
@@ -1184,7 +1184,7 @@ export default function MarketplaceSubmitPage() {
                 background: "var(--warn-soft, var(--bg-2))",
                 border: "1px solid var(--warn, var(--border-default))",
                 borderRadius: "var(--r-2)",
-                color: "var(--warn, var(--fg-1))",
+                color: "var(--warn, var(--ink-1))",
                 fontSize: "var(--fs-s)",
                 padding: "var(--s-2) var(--s-3)",
               }}
@@ -1202,7 +1202,7 @@ export default function MarketplaceSubmitPage() {
                   background: "var(--ok-soft, var(--bg-2))",
                   border: "1px solid var(--ok, var(--border-default))",
                   borderRadius: "var(--r-2)",
-                  color: "var(--ok, var(--fg-1))",
+                  color: "var(--ok, var(--ink-1))",
                   display: "flex",
                   fontSize: "var(--fs-s)",
                   gap: "var(--s-2)",
@@ -1221,7 +1221,7 @@ export default function MarketplaceSubmitPage() {
             <div
               role="status"
               style={{
-                color: "var(--fg-3)",
+                color: "var(--ink-3)",
                 fontSize: "var(--fs-xs)",
                 fontStyle: "italic",
               }}
@@ -1262,7 +1262,7 @@ export default function MarketplaceSubmitPage() {
               <ul
                 style={{
                   margin: "var(--s-2) 0 0 var(--s-4)",
-                  color: "var(--fg-2)",
+                  color: "var(--ink-2)",
                 }}
               >
                 {lintResult.warnings.map((w, i) => (
@@ -1286,7 +1286,7 @@ export default function MarketplaceSubmitPage() {
           }}
         >
           <summary
-            style={{ color: "var(--fg-2)", cursor: "pointer" }}
+            style={{ color: "var(--ink-2)", cursor: "pointer" }}
             aria-label="Toggle the manifest preview"
           >
             Preview <code>recipe.json</code> — the manifest that will be
@@ -1297,7 +1297,7 @@ export default function MarketplaceSubmitPage() {
               background: "var(--bg-1)",
               border: "1px solid var(--border-subtle)",
               borderRadius: "var(--r-2)",
-              color: "var(--fg-1)",
+              color: "var(--ink-1)",
               fontFamily: "var(--font-mono)",
               fontSize: "var(--fs-s)",
               margin: "var(--s-2) 0 0",
@@ -1335,7 +1335,7 @@ export default function MarketplaceSubmitPage() {
           </Link>
           <div
             style={{
-              color: "var(--fg-3)",
+              color: "var(--ink-3)",
               fontSize: "var(--fs-s)",
               // `marginLeft: auto` pushes the readout to the right edge on
               // wide rows AND keeps it left-aligned on its own row after
@@ -1360,7 +1360,7 @@ export default function MarketplaceSubmitPage() {
                 color:
                   yamlUrlLength > URL_SAFE_CONTENT_LIMIT
                     ? "var(--warn)"
-                    : "var(--fg-3)",
+                    : "var(--ink-3)",
                 fontSize: "var(--fs-xs)",
               }}
               title={
@@ -1376,13 +1376,6 @@ export default function MarketplaceSubmitPage() {
         </div>
       </form>
 
-      <style>{`
-        @media (min-width: 1024px) {
-          .recipe-submit-layout {
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) !important;
-          }
-        }
-      `}</style>
 
       <Dialog
         open={pendingOverwrite !== null}
@@ -1404,7 +1397,7 @@ export default function MarketplaceSubmitPage() {
             margin: 0,
             marginBottom: "var(--s-5)",
             fontSize: "var(--fs-s)",
-            color: "var(--fg-2)",
+            color: "var(--ink-2)",
             lineHeight: 1.5,
           }}
         >
@@ -1574,7 +1567,7 @@ function SubmissionSummary({
         style={{
           fontSize: "var(--fs-m)",
           fontWeight: 600,
-          color: "var(--fg-2)",
+          color: "var(--ink-2)",
           marginBottom: "var(--s-3)",
         }}
       >
@@ -1632,10 +1625,10 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
         padding: "var(--s-1) 0",
       }}
     >
-      <dt style={{ color: "var(--fg-3)", fontWeight: 500 }}>{label}</dt>
+      <dt style={{ color: "var(--ink-3)", fontWeight: 500 }}>{label}</dt>
       <dd
         style={{
-          color: "var(--fg-1)",
+          color: "var(--ink-1)",
           fontFamily: "var(--font-mono)",
           margin: 0,
           wordBreak: "break-word",
@@ -1689,7 +1682,7 @@ function CopyableBlock({
       >
         <span
           style={{
-            color: "var(--fg-2)",
+            color: "var(--ink-2)",
             fontFamily: "var(--font-mono)",
             fontSize: "var(--fs-s)",
             fontWeight: 500,
@@ -1723,7 +1716,7 @@ function CopyableBlock({
           background: "var(--bg-2)",
           border: "1px solid var(--border-subtle)",
           borderRadius: "var(--r-2)",
-          color: "var(--fg-1)",
+          color: "var(--ink-1)",
           fontFamily: "var(--font-mono)",
           fontSize: "var(--fs-s)",
           margin: 0,
@@ -1755,12 +1748,10 @@ function FieldGroup({
     <div>
       <div
         style={{
-          color: "var(--fg-2)",
+          color: "var(--ink-2)",
           fontSize: "var(--fs-s)",
           fontWeight: 500,
-          letterSpacing: "0.06em",
           marginBottom: "var(--s-3)",
-          textTransform: "uppercase",
         }}
       >
         {title}
@@ -1809,7 +1800,7 @@ function FormField({
         style={{
           display: "block",
           marginBottom: "var(--s-2)",
-          color: "var(--fg-1)",
+          color: "var(--ink-1)",
           fontSize: "var(--fs-m)",
           fontWeight: 500,
         }}
@@ -1834,7 +1825,7 @@ function FormField({
           <div
             id={msgId}
             style={{
-              color: "var(--fg-3)",
+              color: "var(--ink-3)",
               fontSize: "var(--fs-s)",
               marginTop: "var(--s-1)",
             }}
@@ -1855,7 +1846,7 @@ const INPUT_STYLE_BASE: React.CSSProperties = {
   background: "var(--bg-2)",
   border: "1px solid var(--border-default)",
   borderRadius: "var(--r-2)",
-  color: "var(--fg-0)",
+  color: "var(--ink-0)",
   fontFamily: "var(--font-mono)",
   fontSize: "var(--fs-base)",
   outline: "none",

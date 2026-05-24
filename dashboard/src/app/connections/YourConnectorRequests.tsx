@@ -77,12 +77,10 @@ export function YourConnectorRequests() {
           fontSize: "var(--fs-s)",
           fontWeight: 600,
           color: "var(--ink-2)",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
         }}
       >
         Your connector requests{" "}
-        <span style={{ color: "var(--ink-3)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+        <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>
           · {requests.length}
         </span>
       </h2>

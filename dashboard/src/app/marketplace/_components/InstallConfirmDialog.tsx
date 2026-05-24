@@ -74,7 +74,7 @@ export function InstallConfirmDialog({
           margin: 0,
           marginBottom: "var(--s-4)",
           fontSize: "var(--fs-s)",
-          color: "var(--fg-2)",
+          color: "var(--ink-2)",
           lineHeight: 1.5,
         }}
       >

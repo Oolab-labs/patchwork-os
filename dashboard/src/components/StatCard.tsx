@@ -23,7 +23,7 @@ function DeltaBadge({ delta }: { delta: string }) {
     ? "var(--ok)"
     : isNegative
       ? "var(--err)"
-      : "var(--fg-2)";
+      : "var(--ink-2)";
   const arrow = isPositive ? "↑" : isNegative ? "↓" : "";
 
   return (

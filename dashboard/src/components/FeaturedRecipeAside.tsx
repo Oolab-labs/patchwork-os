@@ -215,18 +215,18 @@ export function FeaturedRecipeAside({
       aria-label={`Recipe ${pick.name}`}
     >
       <div className="quilt-aside-eyebrow">
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          {eyebrow}
-        </span>
-        <SuccessRing pct={pick.okRate} size={22} stroke={3} />
+        {eyebrow}
       </div>
-      <Link
-        href={`/recipes/${encodeURIComponent(pick.name)}/edit`}
-        className="quilt-aside-name"
-        title={`Edit ${pick.name}`}
-      >
-        {pick.name}
-      </Link>
+      <div className="quilt-aside-hero">
+        <Link
+          href={`/recipes/${encodeURIComponent(pick.name)}/edit`}
+          className="quilt-aside-name"
+          title={`Edit ${pick.name}`}
+        >
+          {pick.name}
+        </Link>
+        <SuccessRing pct={pick.okRate} size={28} stroke={3.5} />
+      </div>
       <div className="quilt-aside-meta">
         {pick.mode === "running" ? (
           <>Started {relTime(pick.lastRun.startedAt)} · {pick.total - 1} other{pick.total - 1 === 1 ? "" : "s"} today</>
@@ -237,7 +237,7 @@ export function FeaturedRecipeAside({
         )}
       </div>
       <div className="quilt-aside-spark">
-        <RunSparkBars runs={pick.recent} slots={10} width={180} height={20} />
+        <RunSparkBars runs={pick.recent} slots={10} width={180} height={22} />
       </div>
       {ctaHref ? (
         <Link

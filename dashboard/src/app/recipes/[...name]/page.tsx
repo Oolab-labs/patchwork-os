@@ -17,6 +17,8 @@
 
 import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import RecipeEditPage from "./_edit/page";
+import RecipePlanPage from "./_plan/page";
 import { useRouter } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { canonicalRecipeKey, inboxItemKey } from "@/lib/entityKey";
@@ -34,7 +36,7 @@ import {
   StatusPill,
 } from "@/components/patchwork";
 import type { TimelineEvent, RelatedGroup } from "@/components/patchwork";
-import { detectConnectorsForRecipe } from "./layout";
+import { detectConnectorsForRecipe } from "@/lib/recipeConnectors";
 import { fmtDuration } from "@/components/time";
 
 interface RecipeVar {
@@ -159,12 +161,11 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
     <h2
       style={{
-        fontSize: "var(--fs-xs)",
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        color: "var(--ink-3)",
-        margin: "0 0 10px",
+        fontSize: "var(--fs-s)",
+        fontWeight: 600,
+        color: "var(--ink-2)",
+        margin: "0 0 14px",
+        letterSpacing: "0.01em",
       }}
     >
       {children}
@@ -218,7 +219,7 @@ function RunModal({
                   borderRadius: "var(--r-1)",
                   background: "var(--bg-2)",
                   fontSize: "var(--fs-m)",
-                  color: "var(--fg-2)",
+                  color: "var(--ink-2)",
                 }}
               >
                 Running this recipe will execute its steps immediately and may use API credits or
@@ -241,7 +242,7 @@ function RunModal({
                     {v.required && <span style={{ color: "var(--err)", marginLeft: 4 }}>*</span>}
                   </label>
                   {v.description && (
-                    <div style={{ fontSize: "var(--fs-s)", color: "var(--fg-3)", marginBottom: 4 }}>
+                    <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", marginBottom: 4 }}>
                       {v.description}
                     </div>
                   )}
@@ -272,13 +273,7 @@ function RunModal({
   );
 }
 
-export default function RecipeHubOverviewPage({
-  params,
-}: {
-  params: Promise<{ name: string[] }>;
-}) {
-  const { name: rawNameParts } = use(params);
-  const name = canonicalRecipeKey(decodeURIComponent(rawNameParts.join("/")));
+function RecipeHubOverviewPage({ name }: { name: string }) {
   const toast = useToast();
   const router = useRouter();
 
@@ -600,13 +595,13 @@ export default function RecipeHubOverviewPage({
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr) minmax(0, 200px)",
+        gridTemplateColumns: "minmax(0, 1fr) minmax(0, 240px)",
         gap: "var(--s-4, 16px)",
         alignItems: "start",
       }}
     >
       {/* main column */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)", minWidth: 0 }}>
+      <div className="recipe-hub-main" style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)", minWidth: 0 }}>
       <RunModal
         open={runModalOpen}
         recipe={recipe}
@@ -616,7 +611,7 @@ export default function RecipeHubOverviewPage({
       />
 
       {/* SUMMARY */}
-      <PatchCard style={{ padding: "var(--s-4)" }}>
+      <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animationDelay: "0ms", animation: "hubCardIn 200ms ease both" }}>
         <SectionHeader>Summary</SectionHeader>
         <div
           style={{
@@ -628,15 +623,15 @@ export default function RecipeHubOverviewPage({
         >
           <div>
             <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>Trigger</div>
-            <div style={{ fontFamily: "var(--font-mono)", marginTop: 2 }}>{recipe?.trigger ?? "manual"}</div>
+            <div className="stat-value" style={{ fontFamily: "var(--font-mono)", marginTop: 6 }}>{recipe?.trigger ?? "manual"}</div>
           </div>
           <div>
             <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>Schedule</div>
-            <div style={{ fontFamily: "var(--font-mono)", marginTop: 2 }}>{scheduleString}</div>
+            <div className="stat-value" style={{ fontFamily: "var(--font-mono)", marginTop: 6 }}>{scheduleString}</div>
           </div>
           <div>
             <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>Last run</div>
-            <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="stat-value" style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
               {lastRunDerived ? (
                 <>
                   <StatusPill tone={lastRunDerived.tone}>{lastRunDerived.label}</StatusPill>
@@ -649,7 +644,7 @@ export default function RecipeHubOverviewPage({
           </div>
           <div>
             <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>Success rate</div>
-            <div style={{ fontFamily: "var(--font-mono)", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
+            <div className="stat-value" style={{ fontFamily: "var(--font-mono)", marginTop: 6, fontVariantNumeric: "tabular-nums" }}>
               {successPct == null ? "—" : `${successPct.toFixed(0)}%`}
               {runs.length > 0 && (
                 <span style={{ color: "var(--ink-3)", marginLeft: 4, fontSize: "var(--fs-xs)" }}>
@@ -660,7 +655,7 @@ export default function RecipeHubOverviewPage({
           </div>
           <div>
             <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>Avg duration</div>
-            <div style={{ fontFamily: "var(--font-mono)", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
+            <div className="stat-value" style={{ fontFamily: "var(--font-mono)", marginTop: 6, fontVariantNumeric: "tabular-nums" }}>
               {formatDuration(avgDurationMs)}
             </div>
           </div>
@@ -668,7 +663,7 @@ export default function RecipeHubOverviewPage({
       </PatchCard>
 
       {/* RECENT RUNS */}
-      <PatchCard style={{ padding: "var(--s-4)" }}>
+      <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 220ms 40ms ease both", animationFillMode: "both" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <SectionHeader>Recent runs</SectionHeader>
           <Link
@@ -679,22 +674,34 @@ export default function RecipeHubOverviewPage({
           </Link>
         </div>
         {recentRuns.length === 0 ? (
-          <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-s)" }}>
-            No runs yet. Use Run now below to start one.
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 8,
+            padding: "24px 0",
+            color: "var(--ink-3)",
+            fontSize: "var(--fs-s)",
+            textAlign: "center",
+          }}>
+            <span style={{ fontSize: 24, opacity: 0.4 }}>▷</span>
+            No runs yet. Use <strong style={{ color: "var(--ink-2)" }}>Run now</strong> below to start one.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
             {recentRuns.map((r, i) => (
               <div
                 key={`${r.seq ?? r.startedAt}-${i}`}
+                className="hub-run-row"
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
                   fontSize: "var(--fs-xs)",
-                  padding: "6px 8px",
-                  borderRadius: "var(--r-1)",
-                  background: "var(--bg-2)",
+                  padding: "9px 4px",
+                  borderBottom: i < recentRuns.length - 1 ? "1px solid var(--line-1)" : undefined,
+                  animationDelay: `${i * 40}ms`,
+                  borderRadius: 4,
                 }}
               >
                 {typeof r.seq === "number" ? (
@@ -711,7 +718,6 @@ export default function RecipeHubOverviewPage({
                       fontSize: "var(--fs-xs)",
                       color: "var(--accent)",
                       textDecoration: "none",
-                      opacity: 0.75,
                     }}
                   >
                     → inbox
@@ -726,27 +732,9 @@ export default function RecipeHubOverviewPage({
         )}
       </PatchCard>
 
-      {/* RECENT RUNS TIMELINE */}
-      <PatchCard style={{ padding: "var(--s-4)" }}>
-        <SectionHeader>Run timeline</SectionHeader>
-        <EntityTimeline
-          ariaLabel={`Recent run timeline for ${name}`}
-          events={recentRuns.map((r, i): TimelineEvent => ({
-            id: `run-${r.seq ?? r.startedAt}-${i}`,
-            kind: "run",
-            timestamp: r.startedAt,
-            label: `Run — ${r.status}`,
-            status: r.status,
-            meta: typeof r.seq === "number"
-              ? { seq: r.seq, recipeName: r.recipeName ?? r.recipe, hadStepErrors: r.hadStepErrors }
-              : undefined,
-          }))}
-        />
-      </PatchCard>
-
       {/* HALT SUMMARY */}
       {haltSummary && haltSummary.total > 0 && (
-        <PatchCard style={{ padding: "var(--s-4)" }}>
+        <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 240ms 80ms ease both", animationFillMode: "both" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <SectionHeader>Halts</SectionHeader>
             <Link
@@ -758,9 +746,10 @@ export default function RecipeHubOverviewPage({
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {(Object.entries(haltSummary.byCategory) as Array<[HaltCategory, number]>).map(
-              ([cat, count]) => (
+              ([cat, count], idx) => (
                 <div
                   key={cat}
+                  className="halt-badge"
                   title={HALT_CATEGORY_HINT[cat] ?? "Uncategorised halt."}
                   style={{
                     display: "inline-flex",
@@ -773,6 +762,7 @@ export default function RecipeHubOverviewPage({
                     fontSize: "var(--fs-xs)",
                     color: "var(--amber)",
                     cursor: "help",
+                    animationDelay: `${idx * 40}ms`,
                   }}
                 >
                   <span style={{ fontFamily: "var(--font-mono)" }}>
@@ -788,7 +778,7 @@ export default function RecipeHubOverviewPage({
 
       {/* CONNECTORS */}
       {requiredConnectors.length > 0 && (
-        <PatchCard style={{ padding: "var(--s-4)" }}>
+        <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 240ms 100ms ease both", animationFillMode: "both" }}>
           <SectionHeader>Connectors required</SectionHeader>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {requiredConnectors.map((id) => (
@@ -800,7 +790,7 @@ export default function RecipeHubOverviewPage({
 
       {/* LATEST INBOX OUTPUT */}
       {latestInboxOutput && (
-        <PatchCard style={{ padding: "var(--s-4)" }}>
+        <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 240ms 120ms ease both", animationFillMode: "both" }}>
           <SectionHeader>Latest output → Inbox</SectionHeader>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-s)" }}>
             <InboxChip name={latestInboxOutput.filename} recipeName={name} />
@@ -818,12 +808,12 @@ export default function RecipeHubOverviewPage({
       )}
 
       {/* CONTROLS */}
-      <PatchCard style={{ padding: "var(--s-4)" }}>
+      <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 260ms 140ms ease both", animationFillMode: "both" }}>
         <SectionHeader>Controls</SectionHeader>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s-3)" }}>
           <button
             type="button"
-            className="btn warn"
+            className="btn primary hub-control-btn"
             onClick={() => setRunModalOpen(true)}
             disabled={!recipe || recipe.enabled === false}
             title="Execute this recipe now"
@@ -832,37 +822,37 @@ export default function RecipeHubOverviewPage({
           </button>
           <button
             type="button"
-            className="btn"
+            className="btn ghost hub-control-btn"
             onClick={() => void handleToggle()}
             disabled={!recipe || toggling}
             aria-pressed={recipe?.enabled !== false}
           >
-            {recipe?.enabled === false ? "Enable" : "Disable"}
+            {toggling ? (recipe?.enabled === false ? "Enabling…" : "Disabling…") : (recipe?.enabled === false ? "Enable" : "Disable")}
           </button>
           <Link
             href={`/recipes/${encodeURIComponent(name)}/edit`}
-            className="btn"
+            className="btn ghost hub-control-btn"
             style={{ textDecoration: "none" }}
           >
             Edit
           </Link>
           <Link
             href={`/recipes/${encodeURIComponent(name)}/plan`}
-            className="btn"
+            className="btn ghost hub-control-btn"
             style={{ textDecoration: "none" }}
           >
             Plan
           </Link>
           <Link
             href={`/recipes/compare?name=${encodeURIComponent(name)}`}
-            className="btn ghost"
+            className="btn ghost hub-control-btn"
             style={{ textDecoration: "none" }}
           >
             Compare versions
           </Link>
           <button
             type="button"
-            className="btn ghost"
+            className="btn ghost hub-control-btn"
             style={{ color: "var(--err)", marginLeft: "auto" }}
             onClick={() => void handleUninstall()}
             disabled={!recipe}
@@ -889,4 +879,25 @@ export default function RecipeHubOverviewPage({
       </aside>
     </div>
   );
+}
+
+export default function RecipePage({
+  params,
+}: {
+  params: Promise<{ name: string[] }>;
+}) {
+  const { name: rawNameParts } = use(params);
+  const last = rawNameParts[rawNameParts.length - 1];
+
+  if (last === "edit") {
+    const recipeName = decodeURIComponent(rawNameParts.slice(0, -1).join("/"));
+    return <RecipeEditPage name={recipeName} />;
+  }
+  if (last === "plan") {
+    const recipeName = decodeURIComponent(rawNameParts.slice(0, -1).join("/"));
+    return <RecipePlanPage name={recipeName} />;
+  }
+
+  const recipeName = canonicalRecipeKey(decodeURIComponent(rawNameParts.join("/")));
+  return <RecipeHubOverviewPage name={recipeName} />;
 }

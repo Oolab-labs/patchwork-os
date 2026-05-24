@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { apiPath } from "@/lib/api";
 import { EmptyState, ErrorState, RelationStrip } from "@/components/patchwork";
+import { DecisionsTabs } from "@/components/DecisionsTabs";
 import { SkeletonList } from "@/components/Skeleton";
 
 interface ToolInsight {
@@ -92,7 +93,7 @@ function approvalBar(approvals: number, rejections: number) {
             pct >= 80
               ? "var(--ok)"
               : pct >= 50
-                ? "var(--warn, #f59e0b)"
+                ? "var(--amber)"
                 : "var(--err)",
           transition: "width 0.2s",
         }}
@@ -115,14 +116,14 @@ function relativeTime(iso: string | null): string {
 
 function RuleCell({ explanation }: { explanation: RuleExplanation | null | undefined }) {
   if (explanation === undefined) {
-    return <span style={{ color: "var(--fg-3)", fontSize: "var(--fs-xs)" }}>…</span>;
+    return <span style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>…</span>;
   }
   if (explanation === null) {
-    return <span style={{ color: "var(--fg-3)", fontSize: "var(--fs-xs)" }}>no rule</span>;
+    return <span style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>no rule</span>;
   }
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-      <code style={{ fontSize: "var(--fs-xs)", color: "var(--fg-1)" }}>{explanation.matchedRule}</code>
+      <code style={{ fontSize: "var(--fs-xs)", color: "var(--ink-1)" }}>{explanation.matchedRule}</code>
       <span className={`pill ${TIER_PILL[explanation.tier]}`} style={{ fontSize: "var(--fs-2xs)" }}>
         {explanation.tier}
       </span>
@@ -217,7 +218,9 @@ function InsightsContent() {
   }
 
   const sortIndicator = (k: SortKey) =>
-    sortKey === k ? (sortDir === "asc" ? " ▲" : " ▼") : "";
+    sortKey === k
+      ? <span aria-hidden="true">{sortDir === "asc" ? " ▲" : " ▼"}</span>
+      : null;
 
   useEffect(() => {
     document.title = "Insights — Patchwork OS";
@@ -251,6 +254,7 @@ function InsightsContent() {
 
   return (
     <section>
+      <DecisionsTabs />
       <div className="page-head">
         <div>
           <h1 className="editorial-h1">
@@ -352,11 +356,12 @@ function InsightsContent() {
       {!loading && !error && tools.length === 0 && (
         <EmptyState
           title="No approval history yet"
-          description={`Once you start approving or rejecting tool calls in the approval queue, this page will show you your patterns — "you approved this 27 times", "you rejected this tool before", and so on.`}
+          description={`Run \`patchwork suggest\` or wait for activity. Once you start approving or rejecting tool calls, this page shows your patterns — "you approved this 27 times", "you rejected this tool before", and so on.`}
         />
       )}
 
       {tools.length > 0 && (
+        <>
         <div className="card" style={{ marginTop: "var(--s-4)" }}>
           <div className="card-head">
             <h2>Tool history</h2>
@@ -375,7 +380,7 @@ function InsightsContent() {
                     textAlign: "left",
                     padding: "8px 0",
                     fontWeight: 500,
-                    color: "var(--fg-2)",
+                    color: "var(--ink-2)",
                     fontSize: "var(--fs-xs)",
                     cursor: "pointer",
                     userSelect: "none",
@@ -390,7 +395,7 @@ function InsightsContent() {
                     textAlign: "left",
                     padding: "8px 8px",
                     fontWeight: 500,
-                    color: "var(--fg-2)",
+                    color: "var(--ink-2)",
                     fontSize: "var(--fs-xs)",
                   }}
                 >
@@ -401,7 +406,7 @@ function InsightsContent() {
                     textAlign: "left",
                     padding: "8px 8px",
                     fontWeight: 500,
-                    color: "var(--fg-2)",
+                    color: "var(--ink-2)",
                     fontSize: "var(--fs-xs)",
                   }}
                 >
@@ -412,7 +417,7 @@ function InsightsContent() {
                     textAlign: "right",
                     padding: "8px 8px",
                     fontWeight: 500,
-                    color: "var(--fg-2)",
+                    color: "var(--ink-2)",
                     fontSize: "var(--fs-xs)",
                     cursor: "pointer",
                     userSelect: "none",
@@ -428,7 +433,7 @@ function InsightsContent() {
                     textAlign: "right",
                     padding: "8px 8px",
                     fontWeight: 500,
-                    color: "var(--fg-2)",
+                    color: "var(--ink-2)",
                     fontSize: "var(--fs-xs)",
                     cursor: "pointer",
                     userSelect: "none",
@@ -444,7 +449,7 @@ function InsightsContent() {
                     textAlign: "center",
                     padding: "8px 8px",
                     fontWeight: 500,
-                    color: "var(--fg-2)",
+                    color: "var(--ink-2)",
                     fontSize: "var(--fs-xs)",
                     cursor: "pointer",
                     userSelect: "none",
@@ -459,7 +464,7 @@ function InsightsContent() {
                     textAlign: "right",
                     padding: "8px 0",
                     fontWeight: 500,
-                    color: "var(--fg-2)",
+                    color: "var(--ink-2)",
                     fontSize: "var(--fs-xs)",
                     cursor: "pointer",
                     userSelect: "none",
@@ -483,11 +488,14 @@ function InsightsContent() {
                   // Suffix the index so the key is unique regardless.
                   key={`${t.toolName}-${i}`}
                   ref={isHighlighted ? highlightRef : undefined}
+                  className="ins-table-row"
                   style={{
                     borderBottom: "1px solid var(--border-subtle)",
                     background: isHighlighted ? "color-mix(in srgb, var(--accent) 8%, transparent)" : undefined,
                     outline: isHighlighted ? "2px solid var(--accent)" : undefined,
                     outlineOffset: isHighlighted ? -2 : undefined,
+                    animation: "ins-fade-up 0.25s ease both",
+                    animationDelay: `${Math.min(i * 20, 300)}ms`,
                   }}
                 >
                   <td style={{ padding: "10px 0", verticalAlign: "middle" }}>
@@ -510,7 +518,7 @@ function InsightsContent() {
                   <td
                     style={{
                       padding: "10px 8px",
-                      color: "var(--fg-2)",
+                      color: "var(--ink-2)",
                       verticalAlign: "middle",
                       maxWidth: 260,
                     }}
@@ -554,7 +562,7 @@ function InsightsContent() {
                       color:
                         t.rejections > 0
                           ? "var(--err)"
-                          : "var(--fg-3)",
+                          : "var(--ink-3)",
                       verticalAlign: "middle",
                       fontVariantNumeric: "tabular-nums",
                     }}
@@ -584,7 +592,7 @@ function InsightsContent() {
                     style={{
                       padding: "10px 0",
                       textAlign: "right",
-                      color: "var(--fg-3)",
+                      color: "var(--ink-3)",
                       verticalAlign: "middle",
                       whiteSpace: "nowrap",
                     }}
@@ -598,20 +606,21 @@ function InsightsContent() {
           </table>
           </div>
         </div>
-      )}
 
-      {data?.generatedAt && (
-        <p
-          style={{
-            fontSize: "var(--fs-xs)",
-            color: "var(--fg-2)",
-            marginTop: "var(--s-5)",
-          }}
-        >
-          Generated at {new Date(data.generatedAt).toLocaleTimeString()}.
-          Signals computed from your local activity log — nothing leaves your
-          machine.
-        </p>
+        {data?.generatedAt && (
+          <p
+            style={{
+              fontSize: "var(--fs-xs)",
+              color: "var(--ink-2)",
+              marginTop: "var(--s-5)",
+            }}
+          >
+            Generated at {new Date(data.generatedAt).toLocaleTimeString()}.
+            Signals computed from your local activity log — nothing leaves your
+            machine.
+          </p>
+        )}
+        </>
       )}
     </section>
   );

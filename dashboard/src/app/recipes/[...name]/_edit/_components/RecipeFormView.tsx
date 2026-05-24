@@ -115,10 +115,8 @@ function FieldRow({
       <label
         style={{
           fontSize: "var(--fs-xs)",
-          fontWeight: 600,
+          fontWeight: 500,
           color: "var(--ink-2)",
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
         }}
       >
         {label}

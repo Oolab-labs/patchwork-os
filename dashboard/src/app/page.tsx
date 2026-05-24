@@ -31,6 +31,11 @@ import { LiveWire } from "@/components/LiveWire";
 import { FeaturedRecipeAside } from "@/components/FeaturedRecipeAside";
 
 // ---------------------------------------------------------------------------
+// Keyframe injection — scoped to this page, no globals.css edits needed.
+// ---------------------------------------------------------------------------
+
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -122,76 +127,40 @@ function ToolCallsWidget({
   bridgeOk: boolean;
 }): React.JSX.Element {
   const total = series.reduce((a, b) => a + b, 0);
-  const hasActivity = peak > 0 || total > 0 || toolCallTotal > 0;
+  const hasActivity = peak > 0 || total > 0;
   return (
-    <div
-      className="card"
-      style={{
-        padding: "16px 20px 12px",
-        marginBottom: "var(--s-5)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 10,
-          marginBottom: 4,
-        }}
-      >
-        <span
-          style={{
-            fontSize: "var(--fs-m)",
-            fontWeight: 700,
-            color: "var(--ink-0)",
-            flex: 1,
-          }}
-        >
-          Tool calls — last 24 hours
+    <div className="card tool-calls-card">
+      <div className="tcw-header">
+        <span className="stat-tile-icon stat-tile-icon--tools" aria-hidden="true">
+          <TileIconShell />
         </span>
-        {/* Live pill matches the wireframe's top-right indicator. The
-            numeric "total" badge it replaced was redundant with the chart
-            area's own visual weight and added noise. */}
+        <span className="card-h2">Tool calls — last 24 hours</span>
+        {hasActivity && (
+          <span
+            className="pw-live-dot"
+            aria-label="Live"
+            title="Live data"
+            style={{ marginRight: 4 }}
+          />
+        )}
         <LivePill connection={hasActivity ? "live" : "offline"} />
       </div>
-      <div
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "var(--fs-xs)",
-          color: "var(--ink-3)",
-          marginBottom: 10,
-        }}
-      >
-        peak {peak}/hour · {uniqueTools} unique tools · {activeRecipesCount}{" "}
-        active recipes
+      <div className="tcw-meta">
+        {hasActivity
+          ? <>peak {peak}/hour · {uniqueTools} unique tool{uniqueTools !== 1 ? "s" : ""} · {activeRecipesCount} recipe{activeRecipesCount !== 1 ? "s" : ""}</>
+          : <>{activeRecipesCount} recipe{activeRecipesCount !== 1 ? "s" : ""} · no calls in 24h</>
+        }
       </div>
       {hasActivity ? (
         <AreaChart
-          series={[{ values: series, color: "var(--orange)" }]}
+          series={[{ values: series, color: "var(--info)" }]}
           height={120}
           minimal
         />
       ) : (
-        <div
-          role="status"
-          style={{
-            alignItems: "center",
-            border: "1px dashed var(--line-2)",
-            borderRadius: "var(--r-2)",
-            color: "var(--ink-3)",
-            display: "flex",
-            fontSize: "var(--fs-xs)",
-            gap: 10,
-            height: 56,
-            justifyContent: "space-between",
-            padding: "0 14px",
-            textAlign: "left",
-          }}
-        >
+        <div role="status" className="tcw-empty">
           <div>
-            <span style={{ color: "var(--ink-2)", fontWeight: 600 }}>
-              No tool calls in the last 24h.
-            </span>{" "}
+            <span className="tcw-empty-msg">No tool calls in the last 24h.</span>{" "}
             <span>
               {bridgeOk
                 ? "Run a recipe and the curve fills in."
@@ -199,15 +168,7 @@ function ToolCallsWidget({
             </span>
           </div>
           {bridgeOk && (
-            <Link
-              href="/recipes"
-              style={{
-                color: "var(--accent)",
-                fontWeight: 600,
-                textDecoration: "none",
-                flexShrink: 0,
-              }}
-            >
+            <Link href="/recipes" className="tcw-empty-link">
               Browse recipes →
             </Link>
           )}
@@ -227,6 +188,12 @@ function activityKind(e: ActivityEvent): string {
   if (e.kind === "tool" && e.tool) {
     const ns = e.tool.split(".")[0];
     return ns ?? "tool";
+  }
+  if (e.kind === "lifecycle" && e.event) {
+    if (/approval/i.test(e.event)) return "approval";
+    if (/session/i.test(e.event)) return "session";
+    if (/step/i.test(e.event)) return "step";
+    if (/recipe/i.test(e.event)) return "recipe";
   }
   return e.kind ?? "event";
 }
@@ -280,15 +247,14 @@ function formatUptime(ms: number): string {
 // >_ tools, ☉ tokens) but rendered as 12×12 inline SVGs at --ink-3 so they
 // read as muted decoration next to the uppercase tile labels.
 const TILE_ICON_PROPS = {
-  width: 12,
-  height: 12,
+  width: 18,
+  height: 18,
   viewBox: "0 0 24 24",
   fill: "none" as const,
   stroke: "currentColor",
   strokeWidth: 1.6,
   strokeLinecap: "round" as const,
   strokeLinejoin: "round" as const,
-  style: { color: "var(--ink-3)" },
 };
 function TileIconLines() {
   return (
@@ -431,28 +397,9 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
   }, [events]);
 
   return (
-    <div className="card" style={{ padding: "18px 20px" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 12,
-        }}
-      >
-        <h2
-          style={{
-            fontSize: "var(--fs-m)",
-            fontWeight: 700,
-            margin: 0,
-            color: "var(--ink-0)",
-            flex: 1,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
-          Activity thread
-        </h2>
+    <div className="card card--pg">
+      <div className="card-hd">
+        <h2 className="card-h2">Activity thread</h2>
         <ActionPill href="/activity" ariaLabel="View all activity">
           view all →
         </ActionPill>
@@ -480,105 +427,78 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
       </div>
 
       {events.length === 0 ? (
-        <div
-          style={{
-            color: "var(--ink-3)",
-            fontSize: "var(--fs-s)",
-            padding: "var(--s-3) 0 var(--s-4)",
-          }}
-        >
-          <div style={{ color: "var(--ink-2)", marginBottom: 4 }}>
-            No recent events.
-          </div>
-          <div style={{ fontSize: "var(--fs-xs)" }}>
+        <div className="atd-empty" style={{ animation: "pw-fade-in 0.3s ease both" }}>
+          <div style={{ fontSize: 28, marginBottom: 6, opacity: 0.35 }} aria-hidden="true">⚡</div>
+          <div className="atd-empty-title">No recent events.</div>
+          <div className="atd-empty-body">
             Tool calls and lifecycle events from connected agents will
             appear here in real time.
           </div>
+          <Link
+            href="/activity"
+            style={{
+              display: "inline-block",
+              marginTop: 10,
+              fontSize: "var(--fs-xs)",
+              color: "var(--accent)",
+              textDecoration: "none",
+              fontWeight: 500,
+              transition: "opacity 0.15s ease",
+            }}
+          >
+            View full activity log →
+          </Link>
         </div>
       ) : (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 0,
-            position: "relative",
-          }}
-        >
+        <div className="atd-stream">
           {/* vertical rail */}
-          <div
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              left: 6,
-              top: 6,
-              bottom: 6,
-              width: 1,
-              background: "var(--line-3)",
-            }}
-          />
+          <div className="activity-rail" aria-hidden="true" />
           {events.map((e, i) => {
             const ts = e.at ?? Date.now();
             const tool = activityLabel(e);
             const kind = activityKind(e);
             const recipe = activityRecipe(e);
             const isErr = e.status === "error";
-            const dur =
-              typeof e.durationMs === "number" ? `${e.durationMs}ms` : null;
+            const rawDurMs = e.durationMs;
+            const dur = typeof rawDurMs === "number"
+              ? rawDurMs >= 1000
+                ? `${(rawDurMs / 1000).toFixed(1)}s`
+                : `${rawDurMs}ms`
+              : null;
             const rawCount = (e as Record<string, unknown>)._count;
             const repeatCount = typeof rawCount === "number" ? rawCount : 0;
             const eventKey = (e.id ?? `${e.kind}-${e.at ?? 0}-${e.tool ?? e.event ?? ""}`) as
               | string
               | number;
             const isFresh = freshKeys.has(eventKey);
+            const kindPillClass = e.kind === "lifecycle"
+              ? /rejected|error|halt/i.test(e.event ?? "") ? "err"
+                : /done|success|complet/i.test(e.event ?? "") ? "ok"
+                : /start|session/i.test(e.event ?? "") ? "info"
+                : "muted"
+              : "muted";
             return (
               <div
                 // biome-ignore lint/suspicious/noArrayIndexKey: stable list
                 key={e.id ?? i}
                 className={`activity-row${isFresh ? " is-fresh" : ""}${isErr ? " is-err" : ""}`}
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "7px 0 7px 18px",
-                  position: "relative",
-                  fontSize: "var(--fs-s)",
-                  minWidth: 0,
+                  animation: "pw-slide-up 0.25s ease both",
+                  animationDelay: `${Math.min(i * 35, 350)}ms`,
                 }}
               >
                 <span
                   aria-hidden="true"
-                  style={{
-                    position: "absolute",
-                    left: 2,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    width: 9,
-                    height: 9,
-                    borderRadius: "50%",
-                    background: isErr ? "var(--err)" : "var(--orange)",
-                    border: "2px solid var(--card-bg, #fff)",
-                  }}
+                  className="activity-dot"
+                  data-err={isErr ? "true" : undefined}
+                  data-tone={
+                    e.kind === "lifecycle" && !isErr && kindPillClass !== "muted"
+                      ? kindPillClass
+                      : undefined
+                  }
                 />
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "var(--fs-xs)",
-                    color: "var(--ink-3)",
-                    minWidth: 56,
-                    flexShrink: 0,
-                  }}
-                >
-                  {relTime(ts)}
-                </span>
-                <span
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    flex: 1,
-                    minWidth: 0,
-                  }}
-                >
+                <span className="activity-ts">{relTime(ts)}</span>
+                <span className="activity-content">
                   {recipe && (
                     <RecipeChip
                       name={recipe}
@@ -586,61 +506,29 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                     />
                   )}
                   {recipe && (
-                    <span aria-hidden="true" style={{ color: "var(--ink-3)" }}>·</span>
+                    <span aria-hidden="true" className="muted">·</span>
                   )}
                   {e.kind === "tool" && e.tool ? (
                     <ToolChip name={e.tool} variant="row" />
                   ) : (
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: "var(--fs-s)",
-                        color: "var(--ink-0)",
-                        fontWeight: 600,
-                        flex: 1,
-                        minWidth: 0,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {tool}
-                    </span>
+                    <span className="activity-tool-name">{tool}</span>
                   )}
                   {repeatCount > 1 && (
                     <span
-                      className="pill muted"
-                      style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
+                      className="pill muted xs"
                       title={`Last ${repeatCount} events collapsed`}
                     >
                       ×{repeatCount}
                     </span>
                   )}
                 </span>
-                <span
-                  className="pill muted"
-                  style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
-                >
-                  {kind}
-                </span>
-                {dur && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "var(--fs-2xs)",
-                      color: "var(--ink-2)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {dur}
+                <span className={`pill ${kindPillClass} xs`}>{kind}</span>
+                {dur && <span className="activity-dur">{dur}</span>}
+                {(e.kind === "tool" || isErr) && (
+                  <span className={`pill ${isErr ? "err" : "ok"} xs`}>
+                    {isErr ? "err" : "ok"}
                   </span>
                 )}
-                <span
-                  className={`pill ${isErr ? "err" : "ok"}`}
-                  style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
-                >
-                  {isErr ? "err" : "ok"}
-                </span>
               </div>
             );
           })}
@@ -715,83 +603,59 @@ function NeedsAttentionBand({
 
   const allClear = items.length === 0;
 
-  return (
-    <div
-      className="card"
-      style={{
-        padding: "14px 20px",
-        marginBottom: "var(--s-4)",
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        flexWrap: "wrap",
-      }}
-    >
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "var(--fs-2xs)",
-          fontWeight: 700,
-          letterSpacing: "0.1em",
-          textTransform: "uppercase",
-          color: "var(--ink-3)",
-          flexShrink: 0,
-        }}
-      >
-        Needs attention
-      </span>
-
-      {allClear ? (
-        <span
-          style={{
-            fontSize: "var(--fs-s)",
-            color: bridgeOk ? "var(--green, #4caf50)" : "var(--ink-3)",
-            fontWeight: 600,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          {bridgeOk ? (
-            <>
-              <span aria-hidden="true">✓</span>
-              All clear — no approvals pending, no halts, no failures.
-            </>
-          ) : (
-            "Bridge offline — connect to see agent status."
-          )}
+  if (!bridgeOk) {
+    return (
+      <div className="attention-offline">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--err)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>
+          <strong className="attention-offline-label">Bridge offline</strong>
+          {" — connect to see agent status. "}
+          <Link href="/connections" className="attention-offline-link">
+            Check connections →
+          </Link>
         </span>
-      ) : (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "5px 12px",
-                borderRadius: "var(--r-2)",
-                background: item.urgent ? "var(--amber-bg, rgba(212,154,58,0.12))" : "var(--surface-2, var(--line-3))",
-                border: `1px solid ${item.urgent ? "var(--amber, #d49a3a)" : "var(--line-2)"}`,
-                color: item.urgent ? "var(--amber, #d49a3a)" : "var(--ink-1)",
-                fontWeight: 700,
-                fontSize: "var(--fs-s)",
-                textDecoration: "none",
-                transition: "opacity 0.15s",
-              }}
-              aria-label={`${item.count} ${item.label} — view all`}
-            >
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-m)" }}>
-                {item.count}
-              </span>
-              <span style={{ fontWeight: 400, fontSize: "var(--fs-xs)" }}>{item.label}</span>
-              <span aria-hidden="true" style={{ fontSize: "var(--fs-xs)", opacity: 0.6 }}>→</span>
-            </Link>
-          ))}
+      </div>
+    );
+  }
+
+  if (allClear) {
+    return (
+      <div className="attention-clear">
+        <div className="attention-clear-ring" aria-hidden="true">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
         </div>
-      )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="attention-clear-ok">All clear</span>
+          <span
+            className="pw-live-dot"
+            aria-label="All systems healthy"
+            title="No issues detected"
+          />
+          <span className="attention-clear-sub">
+            No approvals pending · no halts · no failures
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="attention-band">
+      <span className="attention-band-label">Needs attention</span>
+      <div className="attention-chips">
+        {items.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`attention-chip ${item.urgent ? "attention-chip--urgent" : "attention-chip--warn"}`}
+            aria-label={`${item.count} ${item.label} — view all`}
+          >
+            <span className="attention-chip-count">{item.count}</span>
+            <span className="attention-chip-label">{item.label}</span>
+            <span className="attention-chip-arrow" aria-hidden="true">→</span>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
@@ -884,7 +748,7 @@ function RecipesAtAGlance({ runs }: { runs: LiveRun[] }) {
   const recipeMap = new Map<string, { count: number; lastAt: number; hasHalt: boolean }>();
   for (const r of runs) {
     if (!r.recipeName) continue;
-    const key = r.recipeName;
+    const key = canonicalRecipeKey(r.recipeName);
     const existing = recipeMap.get(key) ?? { count: 0, lastAt: 0, hasHalt: false };
     recipeMap.set(key, {
       count: existing.count + 1,
@@ -894,86 +758,34 @@ function RecipesAtAGlance({ runs }: { runs: LiveRun[] }) {
   }
   const sorted = Array.from(recipeMap.entries())
     .filter(([, v]) => Date.now() - v.lastAt < 7 * dayMs)
-    .sort(([, a], [, b]) => b.count - a.count)
+    .sort(([, a], [, b]) => b.lastAt - a.lastAt)
     .slice(0, 6);
 
   if (sorted.length === 0) return null;
 
   return (
-    <div className="card" style={{ padding: "18px 20px", marginBottom: "var(--s-5)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <h2
-          style={{
-            fontSize: "var(--fs-m)",
-            fontWeight: 700,
-            margin: 0,
-            color: "var(--ink-0)",
-            flex: 1,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
-          Recipes · 7d
-        </h2>
+    <div className="card card--pg mb-5">
+      <div className="card-hd">
+        <h2 className="card-h2">Recent recipes</h2>
         <ActionPill href="/recipes" ariaLabel="View all recipes">
           view all →
         </ActionPill>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {sorted.map(([name, stats]) => {
-          const recipeKey = canonicalRecipeKey(name);
+      <div className="rag-list">
+        {sorted.map(([name, stats], idx) => {
           return (
             <Link
               key={name}
-              href={`/runs?recipe=${encodeURIComponent(recipeKey)}`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "7px 8px",
-                borderRadius: "var(--r-1)",
-                textDecoration: "none",
-                color: "inherit",
-              }}
-              className="row-hover"
+              href={`/runs?recipe=${encodeURIComponent(name)}`}
+              className="rag-row row-hover"
+              style={{ animationDelay: `${idx * 50}ms` }}
             >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: stats.hasHalt ? "var(--err)" : "var(--green, #4caf50)",
-                  flexShrink: 0,
-                }}
-                aria-hidden="true"
-              />
-              <span
-                style={{
-                  flex: 1,
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "var(--fs-s)",
-                  color: "var(--ink-0)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {recipeKey}
-              </span>
-              <span
-                style={{
-                  fontSize: "var(--fs-xs)",
-                  color: "var(--ink-3)",
-                  flexShrink: 0,
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                {stats.count} run{stats.count !== 1 ? "s" : ""}
-              </span>
+              <span className="rag-name">{name}</span>
+              <span className="rag-count rag-time">{relTime(stats.lastAt)}</span>
+              <span aria-hidden="true" className="rag-sep">·</span>
+              <span className="rag-count">{stats.count} run{stats.count !== 1 ? "s" : ""}</span>
               {stats.hasHalt && (
-                <span className="pill err" style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}>
-                  halted
-                </span>
+                <span className="pill err xs">halted</span>
               )}
             </Link>
           );
@@ -1195,12 +1007,30 @@ export default function HomePage() {
     (e) => e.kind === "recipe" || e.kind === "tool",
   ).length;
   const headline = bridgeStatus.ok ? (
-    patchesStitched > 0 || pendingCount > 0 ? (
+    patchesStitched > 0 && pendingCount > 0 ? (
       <>
-        Your agents stitched <span className="num">{patchesStitched.toLocaleString()}</span> patches overnight,
-        drafted <span className="num">{pendingCount}</span>{" "}
-        <span className="accent">{pendingCount === 1 ? "thing that needs a nod" : "things that need a nod"}</span>
-        {pendingCount === 0 ? ", and woke up clean." : "."}
+        Your agents stitched{" "}
+        <span className="num">{patchesStitched.toLocaleString()}</span>{" "}
+        {patchesStitched === 1 ? "patch" : "patches"} overnight, drafted{" "}
+        <span className="num">{pendingCount}</span>{" "}
+        <span className="accent">
+          {pendingCount === 1 ? "thing that needs a nod." : "things that need a nod."}
+        </span>
+      </>
+    ) : patchesStitched > 0 ? (
+      <>
+        Your agents stitched{" "}
+        <span className="num">{patchesStitched.toLocaleString()}</span>{" "}
+        {patchesStitched === 1 ? "patch" : "patches"} overnight,{" "}
+        <span className="accent">and woke up clean.</span>
+      </>
+    ) : pendingCount > 0 ? (
+      <>
+        Your agents drafted{" "}
+        <span className="num">{pendingCount}</span>{" "}
+        <span className="accent">
+          {pendingCount === 1 ? "thing that needs a nod." : "things that need a nod."}
+        </span>
       </>
     ) : (
       <>Your agents are quiet. <span className="accent">No activity overnight, no approvals pending.</span></>
@@ -1209,9 +1039,13 @@ export default function HomePage() {
     <>Bridge offline — start it to see live agent activity here.</>
   );
 
-  const summary = bridgeStatus.ok
-    ? "Bridge connected. Recipes ran on schedule. Nothing left your machine without permission."
-    : "Once the bridge is running, this dashboard will reflect live activity from your local agents.";
+  const summary = !bridgeStatus.ok
+    ? "Once the bridge is running, this dashboard will reflect live activity from your local agents."
+    : runsCount24h === 0
+      ? "Bridge connected. No recipe runs in the last 24h."
+      : haltCount24h > 0
+        ? `Bridge connected. ${runsCount24h} run${runsCount24h !== 1 ? "s" : ""} in 24h — ${haltCount24h} halted.`
+        : `Bridge connected. ${runsCount24h} run${runsCount24h !== 1 ? "s" : ""} ran clean in the last 24h.`;
 
   // Tool-calls 24h curve — bucketed from activity-event timestamps so
   // historical activity is visible immediately on page load (not only what
@@ -1333,38 +1167,33 @@ export default function HomePage() {
       {/* ------------------------------------------------------------------ */}
       {/* TELEMETRY eyebrow                                                    */}
       {/* ------------------------------------------------------------------ */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--s-3)",
-          marginTop: "var(--s-2)",
-          marginBottom: "var(--s-3)",
-        }}
-      >
+      <div className="pg-section-head" style={{ animation: "pw-fade-in 0.4s ease both" }}>
         <span
+          className="pg-section-head-label"
           style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--fs-2xs)",
-            fontWeight: 700,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--ink-3)",
-            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
           }}
         >
+          <span
+            aria-hidden="true"
+            style={{
+              display: "inline-block",
+              width: 3,
+              height: 14,
+              borderRadius: 2,
+              background: "var(--accent)",
+              flexShrink: 0,
+            }}
+          />
           Telemetry
         </span>
+        <div className="pg-section-head-rule" aria-hidden="true" />
         <button
           type="button"
           className="btn sm ghost"
           onClick={() => tickRef.current()}
-          style={{
-            fontSize: "var(--fs-xs)",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-          }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M23 4v6h-6M1 20v-6h6" />
@@ -1375,12 +1204,6 @@ export default function HomePage() {
         <Link
           href="/recipes/new"
           className="btn sm primary"
-          style={{
-            textDecoration: "none",
-            fontSize: "var(--fs-xs)",
-            background: "var(--orange)",
-            border: "none",
-          }}
         >
           + New recipe
         </Link>
@@ -1392,12 +1215,7 @@ export default function HomePage() {
           ellipsise to "PENDING APPROV/" / "TOOLS CALLED TOD…" on mobile.
           Drop the inline override; .stat-grid auto-fit gives 4 cols at
           desktop (≥768px content width) and stacks gracefully on narrow. */}
-      <div
-        className="stat-grid"
-        style={{
-          marginBottom: "var(--s-5)",
-        }}
-      >
+      <div className="stat-grid mb-5">
         {!health && bridgeStatus.ok !== false ? (
           <>
             <SkeletonStatCard />
@@ -1407,64 +1225,95 @@ export default function HomePage() {
           </>
         ) : (
           <>
-            <StatCard
-              label="Runs · 24h"
-              icon={<TileIconLines />}
-              value={<AnimatedNumber value={runsCount24h} />}
-              foot={
-                <div>
-                  <div>{runsFootLabel}</div>
-                  {runs7dSeries.some((v) => v > 0) && (
-                    <div style={{ marginTop: 4 }}>
-                      <Sparkline
-                        values={runs7dSeries}
-                        color="var(--accent)"
-                        height={22}
-                        labels={days7dLabels}
-                        unit="runs"
-                      />
+            <div className="stat-card-wrap" style={{ animationDelay: "0ms", animation: "pw-slide-up 0.3s ease both" }}>
+              <StatCard
+                label="Runs · 24h"
+                className="stat-card--runs"
+                icon={<span className="stat-tile-icon stat-tile-icon--runs"><TileIconLines /></span>}
+                value={<AnimatedNumber value={runsCount24h} />}
+                foot={
+                  <div>
+                    <div>{runsFootLabel}</div>
+                    {runs7dSeries.some((v) => v > 0) && (
+                      <div className="mt-1">
+                        <Sparkline
+                          values={runs7dSeries}
+                          color="var(--accent)"
+                          height={22}
+                          labels={days7dLabels}
+                          unit="runs"
+                        />
+                      </div>
+                    )}
+                  </div>
+                }
+                href="/runs?window=24h"
+              />
+            </div>
+            <div className="stat-card-wrap" style={{ animationDelay: "60ms", animation: "pw-slide-up 0.3s ease both" }}>
+              <StatCard
+                label="Pending approvals"
+                className="stat-card--approvals"
+                icon={<span className="stat-tile-icon stat-tile-icon--approvals"><TileIconLock /></span>}
+                value={<AnimatedNumber value={pendingCount} />}
+                foot={
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {pendingCount > 0 && (
+                      <span className="pw-live-dot pw-live-dot--warn" aria-label="Pending approvals" />
+                    )}
+                    {oldestApprovalLabel}
+                  </div>
+                }
+                href="/approvals"
+              />
+            </div>
+            <div className="stat-card-wrap" style={{ animationDelay: "120ms", animation: "pw-slide-up 0.3s ease both" }}>
+              <StatCard
+                label="Halts · 24h"
+                className="stat-card--halts"
+                icon={<span className="stat-tile-icon stat-tile-icon--halts"><TileIconSun /></span>}
+                value={<AnimatedNumber value={haltCount24h} />}
+                foot={
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {haltCount24h > 0 && (
+                        <span className="pw-live-dot pw-live-dot--err" aria-label="Halts detected" />
+                      )}
+                      {haltsFootLabel}
                     </div>
-                  )}
-                </div>
-              }
-              href="/runs?window=24h"
-            />
-            <StatCard
-              label="Pending approvals"
-              icon={<TileIconLock />}
-              value={<AnimatedNumber value={pendingCount} />}
-              foot={oldestApprovalLabel}
-              href="/approvals"
-            />
-            <StatCard
-              label="Halts · 24h"
-              icon={<TileIconSun />}
-              value={<AnimatedNumber value={haltCount24h} />}
-              foot={
-                <div>
-                  <div>{haltsFootLabel}</div>
-                  {halts7dSeries.some((v) => v > 0) && (
-                    <div style={{ marginTop: 4 }}>
-                      <Sparkline
-                        values={halts7dSeries}
-                        color="var(--err)"
-                        height={22}
-                        labels={days7dLabels}
-                        unit="halts"
-                      />
-                    </div>
-                  )}
-                </div>
-              }
-              href="/runs?halt=1"
-            />
-            <StatCard
-              label="Tools called today"
-              icon={<TileIconShell />}
-              value={<AnimatedNumber value={toolsToday} />}
-              foot={toolsTrendLabel}
-              href="/activity"
-            />
+                    {halts7dSeries.some((v) => v > 0) && (
+                      <div className="mt-1">
+                        <Sparkline
+                          values={halts7dSeries}
+                          color="var(--err)"
+                          height={22}
+                          labels={days7dLabels}
+                          unit="halts"
+                        />
+                      </div>
+                    )}
+                  </div>
+                }
+                href="/runs?halt=1"
+              />
+            </div>
+            <div className="stat-card-wrap" style={{ animationDelay: "180ms", animation: "pw-slide-up 0.3s ease both" }}>
+              <StatCard
+                label="Tools called today"
+                className="stat-card--tools"
+                icon={<span className="stat-tile-icon stat-tile-icon--tools"><TileIconShell /></span>}
+                value={<AnimatedNumber value={toolsToday} />}
+                foot={
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {toolsToday > 0 && (
+                      <span className="pw-live-dot" aria-label="Active today" />
+                    )}
+                    {toolsTrendLabel}
+                  </div>
+                }
+                href="/activity"
+              />
+            </div>
           </>
         )}
       </div>
@@ -1484,27 +1333,32 @@ export default function HomePage() {
       {/* ------------------------------------------------------------------ */}
       {/* Activity thread + Recipes at a glance                               */}
       {/* ------------------------------------------------------------------ */}
-      {/* Use the .grid-2 utility (collapses to a single column at ≤760 px)
-          rather than an inline 2-col grid that ignored viewport. Side-by-
-          side at phone width forced both cards to ~150 px wide and made
-          activity timestamps + recipe slugs collide. */}
-      <div className="grid-2" style={{ marginBottom: "var(--s-5)" }}>
+      <div className="pg-section-head" style={{ animation: "pw-fade-in 0.4s ease both" }}>
+        <span
+          className="pg-section-head-label"
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              display: "inline-block",
+              width: 3,
+              height: 14,
+              borderRadius: 2,
+              background: "var(--accent)",
+              flexShrink: 0,
+            }}
+          />
+          Activity
+        </span>
+        <div className="pg-section-head-rule" aria-hidden="true" />
+        <Link href="/activity" className="btn sm ghost">view all →</Link>
+      </div>
+      <div className="grid-2 mb-5">
         {/* Left col: unified entity timeline (runs + approvals) */}
-        <div className="card" style={{ padding: "18px 20px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <h2
-              style={{
-                fontSize: "var(--fs-m)",
-                fontWeight: 700,
-                margin: 0,
-                color: "var(--ink-0)",
-                flex: 1,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-              }}
-            >
-              Activity stream
-            </h2>
+        <div className="card card--pg">
+          <div className="card-hd">
+            <h2 className="card-h2">Activity stream</h2>
             <ActionPill href="/activity" ariaLabel="View all activity">
               view all →
             </ActionPill>
@@ -1528,6 +1382,27 @@ export default function HomePage() {
       {/* Recipes at a glance — top 6 by run count over last 7 days           */}
       {/* Each row links to /runs?recipe=<name> (param honored by runs/page) */}
       {/* ------------------------------------------------------------------ */}
+      <div className="pg-section-head" style={{ animation: "pw-fade-in 0.4s ease both" }}>
+        <span
+          className="pg-section-head-label"
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              display: "inline-block",
+              width: 3,
+              height: 14,
+              borderRadius: 2,
+              background: "var(--accent)",
+              flexShrink: 0,
+            }}
+          />
+          Recipes
+        </span>
+        <div className="pg-section-head-rule" aria-hidden="true" />
+        <Link href="/recipes" className="btn sm ghost">view all →</Link>
+      </div>
       <RecipesAtAGlance runs={runs} />
 
       {/* Recipe leaderboard — detailed health view */}

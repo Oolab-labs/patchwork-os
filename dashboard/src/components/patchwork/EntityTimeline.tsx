@@ -211,9 +211,10 @@ export function EntityTimeline({
                   style={{
                     flex: 1,
                     width: 1,
-                    background: "var(--border-subtle, var(--line-2))",
+                    background: `linear-gradient(to bottom, ${dotColor} 0%, var(--line-3) 60%, transparent 100%)`,
                     minHeight: 16,
                     marginTop: 2,
+                    opacity: 0.7,
                   }}
                 />
               )}
@@ -239,9 +240,8 @@ export function EntityTimeline({
                   className="mono"
                   style={{
                     fontSize: "var(--fs-2xs)",
-                    color: "var(--ink-3)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
+                    color: dotColor,
+                    opacity: 0.85,
                   }}
                 >
                   {event.kind}

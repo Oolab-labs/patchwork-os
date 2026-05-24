@@ -688,8 +688,8 @@ function NewRecipePageInner() {
     <section>
       <div className="page-head">
         <div>
-          <h1>New recipe</h1>
-          <div className="page-head-sub">
+          <h1 style={{ animation: "newRecipeIn 180ms ease both" }}>New recipe</h1>
+          <div className="page-head-sub" style={{ animation: "newRecipeIn 200ms 40ms ease both", animationFillMode: "both" }}>
             Start with structured fields, save a YAML recipe draft, then continue in the source editor.
           </div>
         </div>
@@ -711,13 +711,13 @@ function NewRecipePageInner() {
           background: "var(--bg-2)",
           border: "1px solid var(--border-subtle)",
           borderRadius: "var(--r-2)",
-          color: "var(--fg-2)",
+          color: "var(--ink-2)",
           fontSize: "var(--fs-s)",
           marginBottom: "var(--s-4)",
           padding: "var(--s-3) var(--s-4)",
         }}
       >
-        <strong style={{ color: "var(--fg-1)" }}>Form scope:</strong> agent
+        <strong style={{ color: "var(--ink-1)" }}>Form scope:</strong> agent
         steps with manual, webhook, or schedule triggers. For advanced shapes
         — <code>tool:</code> steps, <code>parallel:</code> groups, nested
         recipes, or file-watch / git-hook / test-run triggers — save a stub
@@ -744,7 +744,7 @@ function NewRecipePageInner() {
             background: "var(--bg-2)",
             border: "none",
             borderBottom: aiOpen ? "1px solid var(--border-default)" : "none",
-            color: "var(--fg-1)",
+            color: "var(--ink-1)",
             cursor: "pointer",
             fontSize: "var(--fs-m)",
             fontWeight: 500,
@@ -781,7 +781,7 @@ function NewRecipePageInner() {
           >
             <p
               style={{
-                color: "var(--fg-2)",
+                color: "var(--ink-2)",
                 fontSize: "var(--fs-m)",
                 margin: 0,
               }}
@@ -800,7 +800,7 @@ function NewRecipePageInner() {
                 background: "var(--bg-2)",
                 border: "1px solid var(--border-default)",
                 borderRadius: "var(--r-2)",
-                color: "var(--fg-0)",
+                color: "var(--ink-0)",
                 fontSize: "var(--fs-m)",
                 fontFamily: "var(--font-sans)",
                 outline: "none",
@@ -824,8 +824,12 @@ function NewRecipePageInner() {
                   fontWeight: 500,
                   opacity: aiLoading || !aiPrompt.trim() ? 0.6 : 1,
                   padding: "var(--s-2) var(--s-4)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 0,
                 }}
               >
+                {aiLoading && <span className="new-recipe-spinner" aria-hidden="true" style={{ borderTopColor: "var(--on-orange)", borderColor: "rgba(255,255,255,0.25)" }} />}
                 {aiLoading ? "Generating…" : "Generate"}
               </button>
             </div>
@@ -859,7 +863,7 @@ function NewRecipePageInner() {
                 </summary>
                 <ul
                   style={{
-                    color: "var(--fg-2)",
+                    color: "var(--ink-2)",
                     marginTop: "var(--s-1)",
                     paddingLeft: "var(--s-4)",
                   }}
@@ -873,6 +877,7 @@ function NewRecipePageInner() {
 
             {aiResult?.yaml && (
               <div
+                className="ai-result-block"
                 style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)" }}
               >
                 <pre
@@ -880,7 +885,7 @@ function NewRecipePageInner() {
                     background: "var(--bg-2)",
                     border: "1px solid var(--border-default)",
                     borderRadius: "var(--r-2)",
-                    color: "var(--fg-0)",
+                    color: "var(--ink-0)",
                     fontSize: "var(--fs-s)",
                     fontFamily: "var(--font-mono)",
                     margin: 0,
@@ -907,8 +912,12 @@ function NewRecipePageInner() {
                       fontWeight: 500,
                       opacity: aiSaving ? 0.6 : 1,
                       padding: "var(--s-2) var(--s-4)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 0,
                     }}
                   >
+                    {aiSaving && <span className="new-recipe-spinner" aria-hidden="true" style={{ borderTopColor: "var(--on-orange)", borderColor: "rgba(255,255,255,0.25)" }} />}
                     {aiSaving ? "Saving…" : "Save and edit"}
                   </button>
                   <button
@@ -922,7 +931,7 @@ function NewRecipePageInner() {
                       background: "var(--bg-2)",
                       border: "1px solid var(--border-default)",
                       borderRadius: "var(--r-2)",
-                      color: "var(--fg-1)",
+                      color: "var(--ink-1)",
                       cursor: aiSaving ? "not-allowed" : "pointer",
                       fontSize: "var(--fs-m)",
                       opacity: aiSaving ? 0.6 : 1,
@@ -969,7 +978,7 @@ function NewRecipePageInner() {
                 style={{
                   display: "block",
                   marginBottom: "var(--s-2)",
-                  color: "var(--fg-1)",
+                  color: "var(--ink-1)",
                   fontSize: "var(--fs-m)",
                   fontWeight: 500,
                 }}
@@ -983,12 +992,13 @@ function NewRecipePageInner() {
                 onChange={(e) => setName(e.target.value)}
                 required
                 placeholder="my-daily-report"
+                className="new-recipe-field-input"
                 style={{
                   width: "100%",
                   background: "var(--bg-2)",
                   border: `1px solid ${nameError ? "var(--err)" : "var(--border-default)"}`,
                   borderRadius: "var(--r-2)",
-                  color: "var(--fg-0)",
+                  color: "var(--ink-0)",
                   fontSize: "var(--fs-base)",
                   padding: "var(--s-2) var(--s-3)",
                   outline: "none",
@@ -997,6 +1007,7 @@ function NewRecipePageInner() {
               />
               {nameError && (
                 <div
+                  className="new-recipe-validation-err"
                   style={{
                     marginTop: "var(--s-1)",
                     fontSize: "var(--fs-s)",
@@ -1015,13 +1026,13 @@ function NewRecipePageInner() {
                 style={{
                   display: "block",
                   marginBottom: "var(--s-2)",
-                  color: "var(--fg-1)",
+                  color: "var(--ink-1)",
                   fontSize: "var(--fs-m)",
                   fontWeight: 500,
                 }}
               >
                 Description{" "}
-                <span style={{ color: "var(--fg-3)", fontWeight: 400 }}>
+                <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>
                   (optional)
                 </span>
               </label>
@@ -1032,12 +1043,13 @@ function NewRecipePageInner() {
                 placeholder="What does this recipe do?"
                 rows={2}
                 maxHeight={240}
+                className="new-recipe-field-input"
                 style={{
                   width: "100%",
                   background: "var(--bg-2)",
                   border: "1px solid var(--border-default)",
                   borderRadius: "var(--r-2)",
-                  color: "var(--fg-0)",
+                  color: "var(--ink-0)",
                   fontSize: "var(--fs-base)",
                   padding: "var(--s-2) var(--s-3)",
                   outline: "none",
@@ -1053,7 +1065,7 @@ function NewRecipePageInner() {
                 style={{
                   display: "block",
                   marginBottom: "var(--s-2)",
-                  color: "var(--fg-1)",
+                  color: "var(--ink-1)",
                   fontSize: "var(--fs-m)",
                   fontWeight: 500,
                 }}
@@ -1068,12 +1080,13 @@ function NewRecipePageInner() {
                     e.target.value as "manual" | "webhook" | "schedule",
                   )
                 }
+                className="new-recipe-field-input"
                 style={{
                   width: "100%",
                   background: "var(--bg-2)",
                   border: "1px solid var(--border-default)",
                   borderRadius: "var(--r-2)",
-                  color: "var(--fg-0)",
+                  color: "var(--ink-0)",
                   fontSize: "var(--fs-base)",
                   padding: "var(--s-2) var(--s-3)",
                   outline: "none",
@@ -1093,7 +1106,7 @@ function NewRecipePageInner() {
                       display: "block",
                       marginBottom: "var(--s-2)",
                       fontSize: "var(--fs-s)",
-                      color: "var(--fg-2)",
+                      color: "var(--ink-2)",
                     }}
                   >
                     Webhook path
@@ -1109,7 +1122,7 @@ function NewRecipePageInner() {
                         borderRadius: "var(--r-2) 0 0 var(--r-2)",
                         padding: "var(--s-2) var(--s-3)",
                         fontSize: "var(--fs-m)",
-                        color: "var(--fg-2)",
+                        color: "var(--ink-2)",
                         fontFamily: "var(--font-mono)",
                         whiteSpace: "nowrap",
                       }}
@@ -1122,12 +1135,13 @@ function NewRecipePageInner() {
                       value={form.trigger.path}
                       onChange={(e) => setTriggerPath(e.target.value)}
                       placeholder="my-recipe"
+                      className="new-recipe-field-input"
                       style={{
                         flex: 1,
                         background: "var(--bg-2)",
                         border: `1px solid ${validation.triggerPath ? "var(--err)" : "var(--border-default)"}`,
                         borderRadius: "0 var(--r-2) var(--r-2) 0",
-                        color: "var(--fg-0)",
+                        color: "var(--ink-0)",
                         fontSize: "var(--fs-m)",
                         padding: "var(--s-2) var(--s-3)",
                         outline: "none",
@@ -1137,6 +1151,7 @@ function NewRecipePageInner() {
                   </div>
                   {validation.triggerPath && (
                     <div
+                      className="new-recipe-validation-err"
                       style={{
                         marginTop: "var(--s-1)",
                         fontSize: "var(--fs-s)",
@@ -1157,7 +1172,7 @@ function NewRecipePageInner() {
                       display: "block",
                       marginBottom: "var(--s-2)",
                       fontSize: "var(--fs-s)",
-                      color: "var(--fg-2)",
+                      color: "var(--ink-2)",
                     }}
                   >
                     Cron expression
@@ -1168,12 +1183,13 @@ function NewRecipePageInner() {
                     value={form.trigger.cron}
                     onChange={(e) => setTriggerCron(e.target.value)}
                     placeholder="0 9 * * 1-5"
+                    className="new-recipe-field-input"
                     style={{
                       width: "100%",
                       background: "var(--bg-2)",
                       border: `1px solid ${validation.cron ? "var(--err)" : "var(--border-default)"}`,
                       borderRadius: "var(--r-2)",
-                      color: "var(--fg-0)",
+                      color: "var(--ink-0)",
                       fontSize: "var(--fs-m)",
                       padding: "var(--s-2) var(--s-3)",
                       outline: "none",
@@ -1182,6 +1198,7 @@ function NewRecipePageInner() {
                   />
                   {validation.cron && (
                     <div
+                      className="new-recipe-validation-err"
                       style={{
                         marginTop: "var(--s-1)",
                         fontSize: "var(--fs-s)",
@@ -1206,10 +1223,10 @@ function NewRecipePageInner() {
                 }}
               >
                 <span
-                  style={{ color: "var(--fg-1)", fontSize: "var(--fs-m)", fontWeight: 500 }}
+                  style={{ color: "var(--ink-1)", fontSize: "var(--fs-m)", fontWeight: 500 }}
                 >
                   Variables{" "}
-                  <span style={{ color: "var(--fg-3)", fontWeight: 400 }}>
+                  <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>
                     (optional)
                   </span>
                 </span>
@@ -1222,7 +1239,7 @@ function NewRecipePageInner() {
                 <div
                   style={{
                     fontSize: "var(--fs-s)",
-                    color: "var(--fg-3)",
+                    color: "var(--ink-3)",
                     padding: "var(--s-2) 0",
                   }}
                 >
@@ -1241,6 +1258,7 @@ function NewRecipePageInner() {
                   {form.vars.map((v, i) => (
                     <div
                       key={i}
+                      className="new-recipe-var-card"
                       style={{
                         background: "var(--bg-2)",
                         border: "1px solid var(--border-subtle)",
@@ -1249,6 +1267,9 @@ function NewRecipePageInner() {
                         display: "flex",
                         flexDirection: "column",
                         gap: "var(--s-2)",
+                        animation: "newRecipeIn 180ms ease both",
+                        animationDelay: `${i * 40}ms`,
+                        animationFillMode: "both",
                       }}
                     >
                       <div
@@ -1279,11 +1300,12 @@ function NewRecipePageInner() {
                           onChange={(e) => updateVar(i, "name", e.target.value)}
                           placeholder="VAR_NAME"
                           aria-label={`Variable ${i + 1} name`}
+                          className="new-recipe-field-input"
                           style={{
                             background: "var(--bg-1)",
                             border: `1px solid ${validation.vars[i] ? "var(--err)" : "var(--border-subtle)"}`,
                             borderRadius: "var(--r-2)",
-                            color: "var(--fg-0)",
+                            color: "var(--ink-0)",
                             fontSize: "var(--fs-m)",
                             padding: "var(--s-2) var(--s-3)",
                             outline: "none",
@@ -1298,11 +1320,12 @@ function NewRecipePageInner() {
                           }
                           placeholder="Description / hint"
                           aria-label={`Variable ${i + 1} description`}
+                          className="new-recipe-field-input"
                           style={{
                             background: "var(--bg-1)",
                             border: "1px solid var(--border-subtle)",
                             borderRadius: "var(--r-2)",
-                            color: "var(--fg-0)",
+                            color: "var(--ink-0)",
                             fontSize: "var(--fs-m)",
                             padding: "var(--s-2) var(--s-3)",
                             outline: "none",
@@ -1321,6 +1344,7 @@ function NewRecipePageInner() {
                       </div>
                       {validation.vars[i] && (
                         <div
+                          className="new-recipe-validation-err"
                           style={{
                             fontSize: "var(--fs-s)",
                             color: "var(--err)",
@@ -1343,7 +1367,7 @@ function NewRecipePageInner() {
                             alignItems: "center",
                             gap: "var(--s-2)",
                             fontSize: "var(--fs-s)",
-                            color: "var(--fg-2)",
+                            color: "var(--ink-2)",
                             cursor: "pointer",
                             userSelect: "none",
                           }}
@@ -1365,11 +1389,12 @@ function NewRecipePageInner() {
                           }
                           placeholder="Default value (optional)"
                           aria-label={`Variable ${i + 1} default`}
+                          className="new-recipe-field-input"
                           style={{
                             background: "var(--bg-1)",
                             border: "1px solid var(--border-subtle)",
                             borderRadius: "var(--r-2)",
-                            color: "var(--fg-0)",
+                            color: "var(--ink-0)",
                             fontSize: "var(--fs-s)",
                             padding: "var(--s-1) var(--s-3)",
                             outline: "none",
@@ -1395,7 +1420,7 @@ function NewRecipePageInner() {
               >
                 <span
                   style={{
-                    color: "var(--fg-1)",
+                    color: "var(--ink-1)",
                     fontSize: "var(--fs-m)",
                     fontWeight: 500,
                   }}
@@ -1417,11 +1442,15 @@ function NewRecipePageInner() {
                 {form.steps.map((step, i) => (
                   <div
                     key={step.id}
+                    className="new-recipe-step-card"
                     style={{
                       background: "var(--bg-2)",
                       border: "1px solid var(--border-subtle)",
                       borderRadius: "var(--r-3)",
                       padding: "var(--s-3) var(--s-4)",
+                      animation: "newRecipeIn 180ms ease both",
+                      animationDelay: `${i * 40}ms`,
+                      animationFillMode: "both",
                     }}
                   >
                     <div
@@ -1437,7 +1466,7 @@ function NewRecipePageInner() {
                         htmlFor={`step-prompt-${i}`}
                         style={{
                           fontSize: "var(--fs-s)",
-                          color: "var(--fg-2)",
+                          color: "var(--ink-2)",
                           fontWeight: 500,
                         }}
                       >
@@ -1500,12 +1529,13 @@ function NewRecipePageInner() {
                       placeholder="Describe what Claude should do in this step…"
                       aria-label={`Step ${i + 1} prompt`}
                       rows={3}
+                      className="new-recipe-field-input"
                       style={{
                         width: "100%",
                         background: "var(--bg-1)",
                         border: `1px solid ${validation.steps[i] ? "var(--err)" : "var(--border-subtle)"}`,
                         borderRadius: "var(--r-2)",
-                        color: "var(--fg-0)",
+                        color: "var(--ink-0)",
                         fontSize: "var(--fs-m)",
                         padding: "var(--s-2) var(--s-3)",
                         outline: "none",
@@ -1515,6 +1545,7 @@ function NewRecipePageInner() {
                     />
                     {validation.steps[i] && (
                       <div
+                        className="new-recipe-validation-err"
                         style={{
                           marginTop: "var(--s-1)",
                           fontSize: "var(--fs-s)",
@@ -1538,7 +1569,7 @@ function NewRecipePageInner() {
                   background: "var(--bg-2)",
                   border: "1px solid var(--border-default)",
                   borderRadius: "var(--r-2)",
-                  color: "var(--fg-1)",
+                  color: "var(--ink-1)",
                   fontSize: "var(--fs-s)",
                   padding: "var(--s-2) var(--s-3)",
                 }}
@@ -1553,7 +1584,8 @@ function NewRecipePageInner() {
                 alignItems: "center",
               }}
             >
-              <button type="submit" className="btn" disabled={saving}>
+              <button type="submit" className="btn" disabled={saving} style={{ display: "inline-flex", alignItems: "center", gap: 0 }}>
+                {saving && <span className="new-recipe-spinner" aria-hidden="true" />}
                 {saving ? "Creating…" : "Create YAML draft"}
               </button>
               <button
@@ -1580,10 +1612,8 @@ function NewRecipePageInner() {
               <div
                 style={{
                   fontSize: "var(--fs-s)",
-                  color: "var(--fg-2)",
+                  color: "var(--ink-2)",
                   fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
                 }}
               >
                 YAML preview
@@ -1593,7 +1623,7 @@ function NewRecipePageInner() {
             <div
               style={{
                 fontSize: "var(--fs-s)",
-                color: "var(--fg-3)",
+                color: "var(--ink-3)",
                 marginBottom: "var(--s-2)",
               }}
             >
@@ -1607,7 +1637,7 @@ function NewRecipePageInner() {
                 padding: "var(--s-4)",
                 fontSize: "var(--fs-s)",
                 fontFamily: "var(--font-mono)",
-                color: "var(--fg-1)",
+                color: "var(--ink-1)",
                 overflowX: "auto",
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
@@ -1621,13 +1651,6 @@ function NewRecipePageInner() {
         </div>
       </form>
 
-      <style>{`
-        @media (min-width: 900px) {
-          .recipe-form-layout {
-            grid-template-columns: 1fr 1fr !important;
-          }
-        }
-      `}</style>
     </section>
   );
 }

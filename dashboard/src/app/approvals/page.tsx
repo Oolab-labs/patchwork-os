@@ -247,67 +247,44 @@ const ApprovalCard = memo(function ApprovalCard({
     }
   }, [isKeyboardFocused]);
 
+  const urgencyClass =
+    p.tier === "high" ? "apc-urgent-high" :
+    p.tier === "medium" ? "apc-urgent-medium" : "";
+
   return (
     <article
       ref={cardRef}
-      className="card"
-      style={{
-        opacity: fadingOut ? 0 : 1,
-        transform: fadingOut ? "translateY(-4px)" : "translateY(0)",
-        transition: "opacity 300ms ease, transform 300ms ease, box-shadow 150ms ease, border-color 150ms ease",
-        padding: "16px 18px",
-        marginBottom: "var(--s-3)",
-        outline: isKeyboardFocused ? "2px solid var(--accent)" : "none",
-        outlineOffset: isKeyboardFocused ? 2 : 0,
-      }}
+      className={`card apc apc-entrance ${urgencyClass}`}
+      data-fading={fadingOut ? "true" : undefined}
+      data-kbd-focus={isKeyboardFocused ? "true" : undefined}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+      <div className="apc-header">
         <input
           type="checkbox"
           checked={isSelected}
           onChange={() => onToggleSelect(p.callId)}
           aria-label={`Select ${p.toolName} approval ${p.callId.slice(0, 8)}`}
-          style={{ cursor: "pointer", accentColor: "var(--accent)", flexShrink: 0, marginTop: 4 }}
         />
-        <span
-          aria-hidden="true"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 28,
-            height: 28,
-            borderRadius: 6,
-            background: "var(--recess)",
-            border: "1px solid var(--line-1)",
-            fontSize: "var(--fs-base)",
-            flexShrink: 0,
-          }}
-        >
-          {icon}
-        </span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h3 style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: "var(--fs-base)", fontWeight: 700, color: "var(--ink-0)", overflowWrap: "anywhere" }}>
-            {heading}
-          </h3>
+        <span aria-hidden="true" className="apc-icon">{icon}</span>
+        <div className="apc-body">
+          <h3 className="apc-title">{heading}</h3>
         </div>
         <RiskMeter level={p.tier} />
         {match && (
-          <span className={`pill ${ruleClass(match)}`} style={{ flexShrink: 0 }}>
+          <span className={`pill ${ruleClass(match)} apc-shrink0`}>
             CC: {match}
           </span>
         )}
         {p.sessionId && (
-          <span className="pill muted" title={`Session: ${p.sessionId}`} style={{ flexShrink: 0 }}>
+          <span className="pill muted apc-shrink0" title={`Session: ${p.sessionId}`}>
             {p.sessionId.slice(0, 8)}
           </span>
         )}
-        <span style={{ flexShrink: 0 }}>
+        <span className="apc-shrink0">
           {expired ? (
             <span
-              className="pill err"
+              className="pill err apc-expired-pill"
               title="The agent's request window has passed — approving now will likely 404."
-              style={{ fontSize: "var(--fs-xs)" }}
             >
               Expired
             </span>
@@ -318,20 +295,11 @@ const ApprovalCard = memo(function ApprovalCard({
       </div>
 
       {p.summary && (
-        <p style={{ margin: "10px 0 0 52px", fontSize: "var(--fs-m)", color: "var(--ink-2)", lineHeight: 1.5 }}>
-          {p.summary}
-        </p>
+        <p className="apc-summary">{p.summary}</p>
       )}
 
       {p.riskSignals && p.riskSignals.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            gap: 6,
-            flexWrap: "wrap",
-            marginTop: 6,
-          }}
-        >
+        <div className="apc-signals">
           {p.riskSignals.map((s) => (
             <span
               key={`${s.kind}-${s.label}`}
@@ -345,20 +313,11 @@ const ApprovalCard = memo(function ApprovalCard({
       )}
 
       {p.personalSignals && p.personalSignals.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            gap: 6,
-            flexWrap: "wrap",
-            marginTop: 6,
-          }}
-        >
+        <div className="apc-signals">
           {p.personalSignals.map((s) => (
             <span
               key={`personal-${s.kind}-${s.label}`}
               className={`pill ${s.severity === "high" ? "err" : s.severity === "medium" ? "warn" : "muted"}`}
-              // Title shows kind + source so a future "why this signal?"
-              // popover has somewhere to start; for now it's hover text.
               title={`${s.kind} (from ${s.source})`}
             >
               {s.label}
@@ -387,13 +346,13 @@ const ApprovalCard = memo(function ApprovalCard({
           >
             {isExpanded ? "▾" : "▸"} Full params
             {!isExpanded && p.params && (
-              <span className="muted" style={{ marginLeft: 6 }}>
+              <span className="muted apc-params-key-list">
                 {Object.keys(p.params).join(", ")}
               </span>
             )}
           </button>
           {isExpanded && (
-            <div id={`approval-params-${p.callId}`} style={{ position: "relative" }}>
+            <div id={`approval-params-${p.callId}`} className="apc-params-body">
               <button
                 type="button"
                 onClick={() => {
@@ -404,20 +363,8 @@ const ApprovalCard = memo(function ApprovalCard({
                   });
                 }}
                 aria-label="Copy params as JSON"
-                style={{
-                  position: "absolute",
-                  top: 6,
-                  right: 6,
-                  fontSize: "var(--fs-xs)",
-                  padding: "3px 8px",
-                  borderRadius: 4,
-                  background: "var(--surface)",
-                  border: "1px solid var(--line-1)",
-                  color: paramsCopied ? "var(--ok)" : "var(--ink-2)",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  zIndex: 1,
-                }}
+                className="apc-params-copy"
+                data-copied={paramsCopied ? "true" : undefined}
               >
                 {paramsCopied ? "✓ Copied" : "Copy JSON"}
               </button>
@@ -429,54 +376,22 @@ const ApprovalCard = memo(function ApprovalCard({
         </div>
       )}
 
-      <div style={{ marginTop: 12, marginLeft: 52 }}>
+      <div className="apc-code">
         {diff ? (
           <CodeBlock>
-            <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)", marginBottom: 4 }}>
-              {diff.path}
-            </div>
+            <div className="apc-diff-path">{diff.path}</div>
             {diff.lines.map((line, i) => {
-              const bg =
-                line.kind === "add"
-                  ? "rgba(34, 197, 94, 0.12)"
-                  : line.kind === "del"
-                    ? "rgba(239, 68, 68, 0.12)"
-                    : "transparent";
-              const color =
-                line.kind === "add"
-                  ? "var(--ok)"
-                  : line.kind === "del"
-                    ? "var(--err)"
-                    : "var(--ink-2)";
-              const prefix =
-                line.kind === "add" ? "+" : line.kind === "del" ? "-" : " ";
+              const kind = line.kind === "add" ? "add" : line.kind === "del" ? "del" : "ctx";
+              const prefix = line.kind === "add" ? "+" : line.kind === "del" ? "-" : " ";
               return (
-                <div key={i} style={{ display: "flex", background: bg }}>
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      color,
-                      minWidth: 18,
-                      textAlign: "center",
-                      userSelect: "none",
-                    }}
-                  >
-                    {prefix}
-                  </span>
-                  <span
-                    style={{
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-all",
-                      color,
-                    }}
-                  >
-                    {line.text}
-                  </span>
+                <div key={i} className="apc-diff-line" data-kind={kind}>
+                  <span aria-hidden="true" className="apc-diff-prefix" data-kind={kind}>{prefix}</span>
+                  <span className="apc-diff-text" data-kind={kind}>{line.text}</span>
                 </div>
               );
             })}
             {diff.truncated && (
-              <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)", marginTop: 4 }}>
+              <div className="apc-diff-truncated">
                 … truncated. Expand &quot;Full params&quot; for the complete payload.
               </div>
             )}
@@ -484,11 +399,9 @@ const ApprovalCard = memo(function ApprovalCard({
         ) : (
           <CodeBlock>
             {codeLines?.map((line, i) => (
-              <div key={i} style={{ display: "flex" }}>
-                <span style={{ color: "var(--ink-3)", minWidth: 28, textAlign: "right", paddingRight: 12, userSelect: "none" }}>
-                  {i + 1}
-                </span>
-                <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{line}</span>
+              <div key={i} className="apc-code-line">
+                <span className="apc-line-num">{i + 1}</span>
+                <span className="apc-line-text">{line}</span>
               </div>
             ))}
           </CodeBlock>
@@ -501,11 +414,10 @@ const ApprovalCard = memo(function ApprovalCard({
           a different line from "Edit & approve", increasing fat-finger
           risk on phones. Secondary actions (copy commands) live below in
           a separate flex group. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12, marginLeft: 52, flexWrap: "wrap" }}>
+      <div className="apc-decisions">
         <button
           type="button"
-          className="btn primary"
-          style={{ background: "var(--green)", borderColor: "var(--green)", color: "var(--on-accent)", display: "inline-flex", alignItems: "center", gap: 6, minHeight: 44 }}
+          className="btn primary apc-approve-btn"
           onClick={() => handleDecide("approve")}
           disabled={isApproving || isRejecting || expired}
           title={expired ? "Expired — the agent has moved on" : undefined}
@@ -517,8 +429,7 @@ const ApprovalCard = memo(function ApprovalCard({
         </button>
         <button
           type="button"
-          className="btn danger"
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, minHeight: 44 }}
+          className="btn danger apc-deny-btn"
           onClick={() => handleDecide("reject")}
           disabled={isApproving || isRejecting || expired}
           title={expired ? "Expired — the agent has moved on" : undefined}
@@ -529,7 +440,7 @@ const ApprovalCard = memo(function ApprovalCard({
           <KeyChip>X</KeyChip>
         </button>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, marginLeft: 52, flexWrap: "wrap" }}>
+      <div className="apc-actions">
         <button
           type="button"
           className="btn sm ghost"
@@ -545,8 +456,7 @@ const ApprovalCard = memo(function ApprovalCard({
         </button>
         <button
           type="button"
-          className="btn sm ghost"
-          style={{ fontFamily: "var(--font-mono)" }}
+          className="btn sm ghost mono"
           onClick={() => {
             navigator.clipboard.writeText(`patchwork approve ${p.callId}`).then(() => {
               setCliCopied(true);
@@ -581,34 +491,12 @@ function BatchActionBar({
   if (selectedCount === 0) return null;
 
   return (
-    <div
-      style={{
-        position: "sticky",
-        // Lift above the mobile bottom-nav (--bottom-nav-h is 0 on desktop,
-        // 62px on phones); env() adds the iPhone safe-area inset.
-        bottom: "calc(var(--s-6) + var(--bottom-nav-h, 0px) + env(safe-area-inset-bottom, 0px))",
-        zIndex: 10,
-        display: "flex",
-        gap: "var(--s-3)",
-        alignItems: "center",
-        background: "var(--bg-2)",
-        border: "1px solid var(--border-strong)",
-        borderRadius: "var(--r-3)",
-        padding: "var(--s-3) var(--s-4)",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-        marginTop: "var(--s-4)",
-        animation: "fade-in 200ms ease",
-      }}
-      role="toolbar"
-      aria-label="Batch actions"
-    >
-      <span style={{ fontSize: "var(--fs-m)", color: "var(--fg-1)", fontWeight: 500 }}>
-        {selectedCount} selected
-      </span>
+    <div className="approval-batch-bar" role="toolbar" aria-label="Batch actions">
+      <span className="approval-batch-count">{selectedCount} selected</span>
       <span className="approval-spacer" />
       <button
         type="button"
-        className="btn success"
+        className="btn primary"
         onClick={onBatchApprove}
         disabled={batchApproving || batchRejecting}
       >
@@ -1048,37 +936,17 @@ function ApprovalsContent() {
 
   return (
     <section>
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
 
       <DecisionsTabs pendingCount={pending.length} />
 
-      <div
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        style={{
-          position: "absolute",
-          width: 1,
-          height: 1,
-          padding: 0,
-          margin: -1,
-          overflow: "hidden",
-          clip: "rect(0,0,0,0)",
-          whiteSpace: "nowrap",
-          border: 0,
-        }}
-      >
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {announcement}
       </div>
 
       <div className="page-head">
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <h1 className="editorial-h1" style={{ margin: 0 }}>
+          <div className="page-head-title-row">
+            <h1 className="editorial-h1">
               Approval queue — <span className="accent">nothing leaves your machine without a nod.</span>
             </h1>
             <HintCard.Toggle id="approvals" />
@@ -1107,48 +975,14 @@ function ApprovalsContent() {
               { label: "Knowledge", href: "/decisions", title: "Saved reasoning your agents wrote down" },
             ]}
           />
-          <div
-            className="kbd-hint-row"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 14,
-              marginTop: 8,
-              fontSize: "var(--fs-xs)",
-              color: "var(--ink-3)",
-              flexWrap: "wrap",
-            }}
-            aria-label="Keyboard shortcuts"
-          >
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <KeyChip>J</KeyChip> next
-            </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <KeyChip>K</KeyChip> prev
-            </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <KeyChip>E</KeyChip> approve
-            </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <KeyChip>X</KeyChip> reject
-            </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <KeyChip>⌘K</KeyChip> palette
-            </span>
-            {/*
-              Cross-link to Approval Insights. Before this link, the
-              /insights page (per-tool approval/rejection patterns,
-              explain-batch, replay) had no entry point from the
-              approval queue — the two pages share the same data but
-              the dashboard never told the user that.
-            */}
-            <span style={{ color: "var(--line-2)" }} aria-hidden="true">·</span>
-            <Link
-              href="/insights"
-              style={{ color: "var(--ink-2)", textDecoration: "none" }}
-            >
-              See approval patterns →
-            </Link>
+          <div className="kbd-hint-row" aria-label="Keyboard shortcuts">
+            <span><KeyChip>J</KeyChip> next</span>
+            <span><KeyChip>K</KeyChip> prev</span>
+            <span><KeyChip>E</KeyChip> approve</span>
+            <span><KeyChip>X</KeyChip> reject</span>
+            <span><KeyChip>⌘K</KeyChip> palette</span>
+            <span className="kbd-hint-sep" aria-hidden="true">·</span>
+            <Link href="/insights">See approval patterns →</Link>
           </div>
         </div>
         <span className={`pill ${pending.length > 0 ? "warn" : "ok"}`}>
@@ -1191,70 +1025,24 @@ function ApprovalsContent() {
           empty-state (UX audit 2026-05-20). The historical rate strip
           still surfaces past decisions via the empty-state path. */}
       {pending.length > 0 && (
-      <div
-        className="card"
-        style={{
-          padding: "20px 24px",
-          marginBottom: "var(--s-4)",
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--s-6)",
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 180 }}>
-          <div
-            style={{
-              fontSize: "var(--fs-2xs)",
-              color: "var(--ink-2)",
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.07em",
-              marginBottom: 4,
-            }}
-          >
-            Queue
-          </div>
-          <div style={{ fontSize: "var(--fs-3xl)", fontWeight: 800, color: "var(--ink-0)", lineHeight: 1.1 }}>
-            {`${pending.length} awaiting decision`}
-          </div>
+      <div className="card apq-hero-card">
+        <div className="apq-queue">
+          <div className="apq-section-label">Queue</div>
+          <div className="apq-count">{`${pending.length} awaiting decision`}</div>
         </div>
         {pending.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--s-4)", flexWrap: "wrap" }}>
+          <div className="apq-stats">
             {([
-              { label: "Total", val: counts.all, color: "var(--ink-0)" },
-              { label: "High", val: counts.high, color: "var(--err)" },
-              { label: "Medium", val: counts.medium, color: "var(--warn)" },
-              { label: "Low", val: counts.low, color: "var(--ink-1)" },
+              { label: "Total", val: counts.all, tone: undefined },
+              { label: "High",  val: counts.high,  tone: "err"  },
+              { label: "Medium",val: counts.medium, tone: "warn" },
+              { label: "Low",   val: counts.low,    tone: "ink1" },
             ] as const).map((s, i) => (
-              <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "var(--s-4)" }}>
-                {i > 0 && (
-                  <span aria-hidden="true" style={{ width: 1, height: 28, background: "var(--line-2)" }} />
-                )}
-                <div style={{ textAlign: "center", minWidth: 54 }}>
-                  <div
-                    style={{
-                      fontSize: 22,
-                      fontWeight: 800,
-                      fontFamily: "var(--font-mono)",
-                      color: s.color,
-                      lineHeight: 1,
-                    }}
-                  >
-                    {s.val}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "var(--fs-2xs)",
-                      color: "var(--ink-2)",
-                      marginTop: 4,
-                      fontWeight: 600,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                    }}
-                  >
-                    {s.label}
-                  </div>
+              <div key={s.label} className="apq-stat-wrapper">
+                {i > 0 && <span aria-hidden="true" className="apq-divider" />}
+                <div className="apq-stat">
+                  <div className="apq-stat-value" data-tone={s.tone}>{s.val}</div>
+                  <div className="apq-stat-label">{s.label}</div>
                 </div>
               </div>
             ))}
@@ -1274,52 +1062,24 @@ function ApprovalsContent() {
           const approvePct = Math.round((totalApproved / total) * 100);
           const rejectPct = 100 - approvePct;
           return (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-                minWidth: 160,
-                paddingLeft: "var(--s-4)",
-                borderLeft: "1px solid var(--line-2)",
-              }}
-            >
-              <div style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-2)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em" }}>
-                Historical rate
-              </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <span
-                  className="pill ok"
-                  style={{ fontSize: "var(--fs-xs)", fontFamily: "var(--font-mono)", fontWeight: 700 }}
-                  title={`${totalApproved} approved`}
-                >
+            <div className="apq-rate">
+              <div className="apq-rate-label">Historical rate</div>
+              <div className="apq-rate-pills">
+                <span className="pill ok apq-rate-pill" title={`${totalApproved} approved`}>
                   {approvePct}% approved
                 </span>
-                <span
-                  className="pill err"
-                  style={{ fontSize: "var(--fs-xs)", fontFamily: "var(--font-mono)", fontWeight: 700 }}
-                  title={`${totalRejected} rejected`}
-                >
+                <span className="pill err apq-rate-pill" title={`${totalRejected} rejected`}>
                   {rejectPct}% rejected
                 </span>
               </div>
               <div
-                style={{
-                  display: "flex",
-                  height: 5,
-                  borderRadius: 3,
-                  overflow: "hidden",
-                  background: "var(--recess)",
-                  gap: 1,
-                }}
+                className="apq-rate-bar"
                 aria-label={`Approval rate: ${approvePct}% approved, ${rejectPct}% rejected`}
               >
-                <div style={{ width: `${approvePct}%`, background: "var(--ok)", borderRadius: "3px 0 0 3px" }} />
-                {rejectPct > 0 && (
-                  <div style={{ flex: 1, background: "var(--err)", borderRadius: "0 3px 3px 0" }} />
-                )}
+                <div className="apq-rate-fill-ok" style={{ width: `${approvePct}%` }} />
+                {rejectPct > 0 && <div className="apq-rate-fill-err" />}
               </div>
-              <div style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-3)" }}>
+              <div className="apq-rate-note">
                 {total} decision{total !== 1 ? "s" : ""} this session
               </div>
             </div>
@@ -1330,7 +1090,7 @@ function ApprovalsContent() {
 
       {/* Risk filter buttons — hidden when there's nothing to filter */}
       {pending.length > 0 && (
-        <div className="filter-chips" style={{ marginBottom: "var(--s-4)" }}>
+        <div className="filter-chips">
           {FILTERS.map((f) => (
             <button
               key={f.value}
@@ -1348,31 +1108,13 @@ function ApprovalsContent() {
       {err && <div className="alert-err">Unreachable: {err}</div>}
 
       {sessionFilter && (
-        <div
-          className="alert-err"
-          style={{
-            background: "var(--info-soft)",
-            borderColor: "var(--info)",
-            color: "var(--info)",
-          }}
-        >
+        <div className="alert-info">
           Showing approvals for session{" "}
-          <code style={{ fontFamily: "var(--font-mono)" }}>
-            {sessionFilter.slice(0, 8)}
-          </code>
+          <code>{sessionFilter.slice(0, 8)}</code>
           {" · "}
           <button
             type="button"
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--info)",
-              cursor: "pointer",
-              textDecoration: "underline",
-              padding: 0,
-              font: "inherit",
-              fontSize: "inherit",
-            }}
+            className="alert-inline-link"
             onClick={() => router.push("/approvals")}
           >
             Clear filter
@@ -1381,22 +1123,10 @@ function ApprovalsContent() {
       )}
 
       {recipeFilter && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "var(--s-2) var(--s-3)",
-            marginBottom: "var(--s-3)",
-            background: "var(--bg-2)",
-            border: "1px solid var(--line-2)",
-            borderRadius: "var(--r-2)",
-            fontSize: "var(--fs-s)",
-          }}
-        >
-          <span style={{ color: "var(--ink-2)" }}>Linked from recipe:</span>
-          <code style={{ fontFamily: "var(--font-mono)" }}>{recipeFilter}</code>
-          <span style={{ color: "var(--ink-3)" }}>
+        <div className="apq-recipe-filter">
+          <span className="apq-recipe-filter-label">Linked from recipe:</span>
+          <code>{recipeFilter}</code>
+          <span className="apq-recipe-filter-note">
             · approval payloads don&apos;t carry a recipe identifier — showing all pending approvals
           </span>
           <button
@@ -1413,23 +1143,20 @@ function ApprovalsContent() {
         hasLoaded ? (
           <EmptyState
             icon={
-              <span style={{ fontSize: 48, lineHeight: 1, color: "var(--ok)" }} aria-hidden="true">
-                ✓
-              </span>
+              <span className="apq-ok-icon" aria-hidden="true">✓</span>
             }
             title="All caught up!"
             description={
               riskFilter !== "all"
-                ? `No ${riskFilter} risk approvals pending.`
-                : "No pending approvals. All tool calls handled by policy or already decided."
+                ? `No ${riskFilter}-risk approvals pending. Your recipes are running smoothly.`
+                : "No pending approvals — your recipes are running smoothly. Tool calls are handled by policy or have already been decided."
             }
             action={
               riskFilter !== "all" ? (
                 <button
                   type="button"
-                  className="btn sm ghost"
+                  className="btn sm ghost accent"
                   onClick={() => setRiskFilter("all")}
-                  style={{ color: "var(--accent)", borderColor: "var(--accent)" }}
                 >
                   Clear filter
                 </button>
@@ -1443,25 +1170,14 @@ function ApprovalsContent() {
         <>
           {/* Select-all header row */}
           {filtered.length > 1 && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--s-3)",
-                marginBottom: "var(--s-2)",
-                padding: "0 var(--s-2)",
-              }}
-            >
+            <div className="apq-select-all">
               <input
                 type="checkbox"
                 checked={allFilteredSelected}
                 onChange={toggleSelectAll}
                 aria-label="Select all approvals"
-                style={{ cursor: "pointer", accentColor: "var(--accent)" }}
               />
-              <span style={{ fontSize: "var(--fs-s)", color: "var(--fg-2)" }}>
-                Select all
-              </span>
+              <span className="apq-select-all-label">Select all</span>
             </div>
           )}
 
@@ -1491,7 +1207,7 @@ function ApprovalsContent() {
             batchRejecting={batchRejecting}
           />
           {batchErr && (
-            <div className="alert-err" role="alert" style={{ marginTop: "var(--s-3)" }}>
+            <div className="alert-err mt-3" role="alert">
               {batchErr}
             </div>
           )}
@@ -1499,63 +1215,24 @@ function ApprovalsContent() {
       )}
 
       {suggestions.length > 0 && (
-        <div className="card" style={{ marginTop: "var(--s-6)" }}>
+        <div className="card apq-suggestions-card">
           <div className="card-head">
             <h2>
               <span aria-hidden="true">💡</span> Pattern suggestions
             </h2>
           </div>
-          <p
-            style={{
-              fontSize: "var(--fs-m)",
-              color: "var(--fg-2)",
-              marginBottom: "var(--s-4)",
-            }}
-          >
+          <p className="apq-suggestions-desc">
             Tools you&apos;ve consistently approved. Copy a JSON snippet to add
             an allow rule.
           </p>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "var(--s-2)",
-            }}
-          >
+          <div className="apq-suggestions-list">
             {suggestions.map(([toolName, p]) => (
-              <div
-                key={toolName}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "var(--s-3)",
-                  padding: "var(--s-3) var(--s-4)",
-                  background: "var(--bg-0)",
-                  border: "1px solid var(--border-subtle)",
-                  borderRadius: "var(--r-2)",
-                  flexWrap: "wrap",
-                }}
-              >
-                <code
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "var(--fs-m)",
-                    color: "var(--fg-0)",
-                    flex: 1,
-                    minWidth: 140,
-                  }}
-                >
-                  {toolName}
-                </code>
-                <span
-                  style={{ fontSize: "var(--fs-m)", color: "var(--fg-2)", flexShrink: 0 }}
-                >
-                  approved {p.approved}&times;
-                </span>
+              <div key={toolName} className="apq-suggestion">
+                <code className="apq-suggestion-name">{toolName}</code>
+                <span className="apq-suggestion-count">approved {p.approved}&times;</span>
                 <button
                   type="button"
                   className="btn sm"
-                  style={{ flexShrink: 0 }}
                   onClick={() => copyRule(toolName)}
                 >
                   {copied === toolName ? "Copied!" : "Copy allow rule"}
@@ -1564,7 +1241,6 @@ function ApprovalsContent() {
                   type="button"
                   className="btn sm ghost"
                   aria-label={`Dismiss suggestion for ${toolName}`}
-                  style={{ flexShrink: 0, padding: "0 var(--s-2)" }}
                   onClick={() => dismissSuggestion(toolName)}
                 >
                   &#x2715;
@@ -1572,13 +1248,7 @@ function ApprovalsContent() {
               </div>
             ))}
           </div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              marginTop: "var(--s-4)",
-            }}
-          >
+          <div className="apq-suggestions-footer">
             <button
               type="button"
               className="btn sm ghost"

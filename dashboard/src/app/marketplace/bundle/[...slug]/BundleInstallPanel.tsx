@@ -380,7 +380,7 @@ export default function BundleInstallPanel({
             flexDirection: "column",
             gap: 6,
             fontSize: "var(--fs-s)",
-            color: "var(--fg-2)",
+            color: "var(--ink-2)",
             paddingTop: 4,
             borderTop: "1px solid var(--line-1)",
           }}

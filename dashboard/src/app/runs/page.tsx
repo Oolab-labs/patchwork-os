@@ -41,7 +41,19 @@ function normaliseTrigger(t: string): string {
   if (t.startsWith("cron") || t.startsWith("@")) return "cron";
   if (t.startsWith("webhook") || t.startsWith("yaml-webhook")) return "webhook";
   if (t.startsWith("git_hook")) return "git_hook";
+  if (t.startsWith("file_watch") || t.startsWith("on_file_save")) return "file_watch";
+  if (t.startsWith("on_test_run") || t.startsWith("test_run")) return "on_test_run";
   return "manual";
+}
+
+function triggerPillClass(t: string): string {
+  const norm = normaliseTrigger(t);
+  if (norm === "cron") return "accent";
+  if (norm === "webhook") return "info";
+  if (norm === "git_hook") return "ok";
+  if (norm === "file_watch") return "warn";
+  if (norm === "on_test_run") return "purp";
+  return "muted";
 }
 
 interface Run {
@@ -85,8 +97,14 @@ function fmtWhen(ms: number): string {
 
 function fmtDur(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${(ms / 60_000).toFixed(1)}m`;
+  if (ms < 60_000) {
+    const s = Math.floor(ms / 1000);
+    const rem = ms % 1000;
+    return rem === 0 ? `${s}s` : `${s}.${String(Math.floor(rem / 100))}s`;
+  }
+  const m = Math.floor(ms / 60_000);
+  const s = Math.floor((ms % 60_000) / 1000);
+  return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
 
 function statusPill(r: Run): "ok" | "err" | "warn" | "muted" | "running" {
@@ -534,17 +552,9 @@ export default function RunsPage() {
                   {" · "}
                   <button
                     type="button"
+                    className="btn-inline"
                     onClick={() => setStatus(k)}
                     title={`Filter to ${k} runs`}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: "var(--accent)",
-                      cursor: "pointer",
-                      font: "inherit",
-                      padding: 0,
-                      textDecoration: "underline",
-                    }}
                   >
                     {stats[k]} {k}
                   </button>
@@ -566,24 +576,14 @@ export default function RunsPage() {
 
       {haltSummary && haltSummary.total > 0 && (
         <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            alignItems: "center",
-            marginBottom: "var(--s-4)",
-            padding: "8px 12px",
-            border: "1px solid var(--border-subtle)",
-            borderRadius: 6,
-            background: "var(--bg-0)",
-          }}
+          className="runs-summary-band"
           title={
             haltSummary.recent
               .map((r) => `run #${r.runSeq}: ${r.reason}`)
               .join("\n") || undefined
           }
         >
-          <span className="mono muted" style={{ fontSize: "var(--fs-xs)" }}>
+          <span className="mono muted runs-summary-band-label">
             halts ({TIME_WINDOW_LABEL[window].toLowerCase()}): {haltSummary.total}
           </span>
           {(
@@ -596,21 +596,11 @@ export default function RunsPage() {
               <button
                 key={cat}
                 type="button"
-                className="pill"
+                className="pill runs-halt-pill runs-filter-chip-btn"
+                data-cat={cat}
                 onClick={() => setStatus("error")}
                 aria-label={`Filter to errored runs (${HALT_CATEGORY_LABEL[cat]} · ${count}) — ${HALT_CATEGORY_HINT[cat]}`}
                 title={`${HALT_CATEGORY_HINT[cat]}\n\nClick to filter list to errored runs.`}
-                style={{
-                  fontSize: "var(--fs-2xs)",
-                  background: cat === "unknown" ? "var(--bg-1)" : undefined,
-                  color: cat === "unknown" ? "var(--fg-2)" : "var(--err)",
-                  ...(cat === "unknown" && {
-                    border: "1px solid var(--border-subtle)",
-                  }),
-                  cursor: "pointer",
-                  font: "inherit",
-                  minHeight: 24,
-                }}
               >
                 {HALT_CATEGORY_LABEL[cat]} · {count}
               </button>
@@ -620,17 +610,7 @@ export default function RunsPage() {
 
       {judgeSummary && judgeSummary.total > 0 && (
         <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            alignItems: "center",
-            marginBottom: "var(--s-4)",
-            padding: "8px 12px",
-            border: "1px solid var(--border-subtle)",
-            borderRadius: 6,
-            background: "var(--bg-0)",
-          }}
+          className="runs-summary-band"
           title={
             judgeSummary.recent
               .map(
@@ -640,7 +620,7 @@ export default function RunsPage() {
               .join("\n") || undefined
           }
         >
-          <span className="mono muted" style={{ fontSize: "var(--fs-xs)" }}>
+          <span className="mono muted runs-summary-band-label">
             judgments: {judgeSummary.total}
           </span>
           {(
@@ -652,20 +632,8 @@ export default function RunsPage() {
             .map(([verdict, count]) => (
               <span
                 key={verdict}
-                className="pill"
-                style={{
-                  fontSize: "var(--fs-2xs)",
-                  color:
-                    verdict === "approve"
-                      ? "var(--ok)"
-                      : verdict === "request_changes"
-                        ? "var(--warn, #d49a3a)"
-                        : "var(--fg-2)",
-                  ...(verdict === "unparseable" && {
-                    border: "1px solid var(--border-subtle)",
-                    background: "var(--bg-1)",
-                  }),
-                }}
+                className="pill runs-judge-pill"
+                data-verdict={verdict}
               >
                 {JUDGE_VERDICT_LABEL[verdict]} · {count}
               </span>
@@ -674,30 +642,20 @@ export default function RunsPage() {
       )}
 
       {/* filter bar */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap",
-          alignItems: "center",
-          marginBottom: "var(--s-4)",
-        }}
-      >
+      <div className="runs-filter-bar">
         <input
           type="text"
           value={recipeQuery}
           onChange={(e) => setRecipeQuery(e.target.value)}
           placeholder="Filter by recipe…"
           aria-label="Filter by recipe"
-          className="input"
-          style={{ minWidth: "min(200px, 100%)", width: 240, maxWidth: "100%" }}
+          className="input runs-search-input"
         />
         <select
           value={trigger}
           onChange={(e) => setTrigger(e.target.value as TriggerFilter)}
           aria-label="Trigger type"
-          className="input"
-          style={{ width: "auto", cursor: "pointer" }}
+          className="input runs-select"
         >
           <option value="all">All triggers</option>
           <option value="cron">Cron</option>
@@ -710,8 +668,7 @@ export default function RunsPage() {
           value={window}
           onChange={(e) => setWindow(e.target.value as TimeWindow)}
           aria-label="Time window"
-          className="input"
-          style={{ width: "auto", cursor: "pointer" }}
+          className="input runs-select"
         >
           {(Object.keys(TIME_WINDOW_LABEL) as TimeWindow[]).map((w) => (
             <option key={w} value={w}>
@@ -721,8 +678,7 @@ export default function RunsPage() {
         </select>
         {attemptFilter && (
           <span
-            className="pill mono"
-            style={{ fontSize: "var(--fs-xs)" }}
+            className="pill mono xs"
             title="Filtering by attempt id"
           >
             attempt:{attemptFilter}
@@ -730,8 +686,7 @@ export default function RunsPage() {
         )}
         {sessionFilter && (
           <span
-            className="pill mono"
-            style={{ fontSize: "var(--fs-xs)" }}
+            className="pill mono xs"
             title={`Filtering to runs in session ${sessionFilter}`}
           >
             session:{sessionFilter.slice(0, 8)}
@@ -744,7 +699,7 @@ export default function RunsPage() {
           sessionFilter) && (
           <button
             type="button"
-            className="btn sm ghost"
+            className="btn sm ghost runs-filter-chip-btn"
             onClick={() => {
               setRecipeQuery("");
               setTrigger("all");
@@ -777,60 +732,45 @@ export default function RunsPage() {
       </div>
 
       {/* stat cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "var(--s-4)", marginBottom: "var(--s-5)" }}>
+      <div className="runs-stat-grid">
         <button
           type="button"
-          className="card"
+          className="card runs-stat-card"
+          data-variant="all"
+          data-active={status === "all" ? "true" : undefined}
           onClick={() => setStatus("all")}
-          style={{
-            textAlign: "left",
-            padding: "20px 24px",
-            borderLeft: `3px solid ${status === "all" ? "var(--orange)" : "var(--line-2)"}`,
-            cursor: "pointer",
-            background: "transparent",
-          }}
           aria-pressed={status === "all"}
           aria-label={`Filter: all runs (${stats.total})`}
         >
-          <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: 8 }}>All runs</div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}><AnimatedNumber value={stats.total} /></div>
-          <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 4 }}>Last 24h</div>
+          <div className="runs-stat-label">All runs</div>
+          <div className="runs-stat-value"><AnimatedNumber value={stats.total} /></div>
+          <div className="runs-stat-foot">{TIME_WINDOW_LABEL[window]}</div>
         </button>
         <button
           type="button"
-          className="card"
+          className="card runs-stat-card"
+          data-variant="done"
+          data-active={status === "done" ? "true" : undefined}
           onClick={() => setStatus("done")}
-          style={{
-            textAlign: "left",
-            padding: "20px 24px",
-            borderLeft: `3px solid ${status === "done" ? "var(--ok)" : "var(--line-2)"}`,
-            cursor: "pointer",
-            background: "transparent",
-          }}
           aria-pressed={status === "done"}
           aria-label={`Filter: successful runs (${stats.ok})`}
         >
-          <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ok)", marginBottom: 8 }}>✓ Successful</div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}><AnimatedNumber value={stats.ok} /></div>
-          <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 4 }}>{stats.total > 0 ? Math.round(stats.ok / stats.total * 100) + "%" : "—"} success rate</div>
+          <div className="runs-stat-label runs-stat-label--ok">✓ Successful</div>
+          <div className="runs-stat-value"><AnimatedNumber value={stats.ok} /></div>
+          <div className="runs-stat-foot">{stats.total > 0 ? Math.round(stats.ok / stats.total * 100) + "%" : "—"} success rate</div>
         </button>
         <button
           type="button"
-          className="card"
+          className="card runs-stat-card"
+          data-variant="error"
+          data-active={status === "error" ? "true" : undefined}
           onClick={() => setStatus("error")}
-          style={{
-            textAlign: "left",
-            padding: "20px 24px",
-            borderLeft: `3px solid ${status === "error" ? "var(--err)" : "var(--line-2)"}`,
-            cursor: "pointer",
-            background: "transparent",
-          }}
           aria-pressed={status === "error"}
           aria-label={`Filter: errored runs (${stats.err})`}
         >
-          <div style={{ fontSize: "var(--fs-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--err)", marginBottom: 8 }}>⚠ Errored</div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 36, fontWeight: 800, color: stats.err > 0 ? "var(--err)" : "var(--ink-0)", lineHeight: 1 }}><AnimatedNumber value={stats.err} /></div>
-          <div style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginTop: 4 }}>{stats.total > 0 ? Math.round(stats.err / stats.total * 100) + "%" : "—"} error rate</div>
+          <div className="runs-stat-label runs-stat-label--err">⚠ Errored</div>
+          <div className={`runs-stat-value${stats.err > 0 ? " runs-stat-value--err" : ""}`}><AnimatedNumber value={stats.err} /></div>
+          <div className="runs-stat-foot">{stats.total > 0 ? Math.round(stats.err / stats.total * 100) + "%" : "—"} error rate</div>
         </button>
       </div>
 
@@ -889,7 +829,7 @@ export default function RunsPage() {
                   </>
                 ) : (
                   <>
-                    No runs in “{TIME_WINDOW_LABEL[window]}”. Try widening
+                    No runs in &ldquo;{TIME_WINDOW_LABEL[window]}&rdquo;. Try widening
                     the window.
                   </>
                 )
@@ -910,7 +850,7 @@ export default function RunsPage() {
                     Clear filters
                   </button>
                 ) : (
-                  <Link href="/recipes" className="btn sm" style={{ textDecoration: "none" }}>
+                  <Link href="/recipes" className="btn sm">
                     Go to recipes →
                   </Link>
                 )
@@ -925,16 +865,16 @@ export default function RunsPage() {
           <table className="table" aria-keyshortcuts="j k">
             <thead>
               <tr>
-                <th style={{ width: 120 }}>When</th>
+                <th>When</th>
                 <th>Recipe</th>
-                <th style={{ width: 90 }}>Trigger</th>
-                <th style={{ width: 110 }}>Status</th>
-                <th style={{ width: 200, textAlign: "right" }}>Duration</th>
-                <th style={{ width: 80 }}>Task</th>
+                <th>Trigger</th>
+                <th>Status</th>
+                <th>Duration</th>
+                <th>Task</th>
               </tr>
             </thead>
             <tbody>
-              {windowedRuns.map((r) => {
+              {windowedRuns.map((r, rowIdx) => {
                 const key = `${r.taskId}-${r.seq}`;
                 const isExpanded = expanded === key;
                 const pct = Math.max(
@@ -948,10 +888,14 @@ export default function RunsPage() {
                     : sClass === "err"
                       ? "var(--red)"
                       : "var(--amber)";
+                const isFailure = r.status === "error" || (r.assertionFailures && r.assertionFailures.length > 0);
                 return (
                   <React.Fragment key={key}>
                     <tr
                       data-run-row={key}
+                      data-status={r.status}
+                      className={`runs-tr runs-stagger-row${isFailure ? " runs-tr--failure" : ""}`}
+                      style={{ animationDelay: `${Math.min(rowIdx * 30, 400)}ms` }}
                       onClick={() => setExpanded(isExpanded ? null : key)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
@@ -963,13 +907,6 @@ export default function RunsPage() {
                       role="button"
                       aria-expanded={isExpanded}
                       aria-label={`Run of ${formatRecipeName(r.recipeName, r.trigger)}, ${statusLabel(r)}, ${normaliseTrigger(r.trigger)} trigger`}
-                      style={{
-                        cursor: "pointer",
-                        boxShadow:
-                          r.status === "running"
-                            ? "inset 3px 0 0 var(--blue)"
-                            : undefined,
-                      }}
                     >
                       <td className="mono muted">
                         {fmtWhen(
@@ -983,9 +920,9 @@ export default function RunsPage() {
                             expands; row-level "Open full run →" in the
                             drawer handles the run navigation. */}
                         <span
+                          className="runs-chip-wrap"
                           onClick={(e) => e.stopPropagation()}
                           onKeyDown={(e) => e.stopPropagation()}
-                          style={{ display: "inline-flex" }}
                         >
                           <RecipeChip
                             name={r.recipeName}
@@ -995,17 +932,12 @@ export default function RunsPage() {
                         </span>
                       </td>
                       <td>
-                        <span className="pill muted">{normaliseTrigger(r.trigger)}</span>
+                        <span className={`pill ${triggerPillClass(r.trigger)}`}>{normaliseTrigger(r.trigger)}</span>
                         {r.manualRunId && (
                           <Link
                             href={`/runs?attempt=${encodeURIComponent(r.manualRunId)}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="pill muted mono"
-                            style={{
-                              marginLeft: 6,
-                              fontSize: "var(--fs-2xs)",
-                              textDecoration: "none",
-                            }}
+                            className="pill muted mono runs-attempt-pill"
                             title={`Attempt id ${r.manualRunId} — click to filter to all runs sharing this attempt`}
                           >
                             attempt:{r.manualRunId.slice(-6)}
@@ -1013,11 +945,21 @@ export default function RunsPage() {
                         )}
                       </td>
                       <td>
-                        <span
-                          className={`pill ${sClass}`}
-                          style={{ fontSize: "var(--fs-xs)" }}
-                        >
-                          {sClass !== "running" && (
+                        <span className={`pill ${sClass} runs-status-pill`}>
+                          {sClass === "running" ? (
+                            <span
+                              style={{
+                                display: "inline-block",
+                                width: 7,
+                                height: 7,
+                                borderRadius: "50%",
+                                background: "var(--accent)",
+                                marginRight: 5,
+                                animation: "runs-pulse 1.4s ease-in-out infinite",
+                                verticalAlign: "middle",
+                              }}
+                            />
+                          ) : (
                             <span className="pill-dot" />
                           )}
                           {statusLabel(r)}
@@ -1027,17 +969,8 @@ export default function RunsPage() {
                         </span>
                       </td>
                       <td>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                          }}
-                        >
-                          <div
-                            className="progress"
-                            style={{ flex: 1, height: 6 }}
-                          >
+                        <div className="runs-dur-cell">
+                          <div className="progress runs-dur-bar">
                             <div
                               className="progress-fill"
                               style={{
@@ -1047,15 +980,7 @@ export default function RunsPage() {
                               }}
                             />
                           </div>
-                          <span
-                            className="mono"
-                            style={{
-                              fontSize: "var(--fs-xs)",
-                              color: "var(--ink-2)",
-                              minWidth: 42,
-                              textAlign: "right",
-                            }}
-                          >
+                          <span className="mono runs-dur-text">
                             {r.status === "running"
                               ? fmtDur(Date.now() - (r.startedAt ?? r.createdAt))
                               : fmtDur(r.durationMs)}
@@ -1069,59 +994,36 @@ export default function RunsPage() {
                     {isExpanded && (
                       <tr key={`${key}-detail`} className="task-row-expand">
                         <td colSpan={6}>
-                          <div
-                            style={{
-                              padding: "12px 14px",
-                              fontSize: "var(--fs-s)",
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 8,
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                gap: 16,
-                                flexWrap: "wrap",
-                                color: "var(--ink-2)",
-                              }}
-                            >
+                          <div className="run-expand-body">
+                            <div className="run-expand-meta">
                               {r.model && (
                                 <span>
                                   Model{" "}
-                                  <span className="mono" style={{ color: "var(--ink-0)" }}>
-                                    {r.model}
-                                  </span>
+                                  <span className="mono run-expand-mono">{r.model}</span>
                                 </span>
                               )}
                               <span>
                                 Created{" "}
-                                <span
-                                  className="mono"
-                                  style={{ color: "var(--ink-0)" }}
-                                >
+                                <span className="mono run-expand-mono">
                                   {new Date(r.createdAt).toISOString()}
                                 </span>
                               </span>
                             </div>
                             {r.errorMessage && (
-                              <div>
-                                <div
-                                  style={{
-                                    fontSize: "var(--fs-2xs)",
-                                    color: "var(--red)",
-                                    fontWeight: 600,
-                                    textTransform: "uppercase",
-                                    letterSpacing: "0.06em",
-                                    marginBottom: 4,
-                                  }}
-                                >
-                                  Error
+                              <div
+                                style={{
+                                  borderLeft: "3px solid var(--err)",
+                                  paddingLeft: 12,
+                                  borderRadius: "0 var(--radius) var(--radius) 0",
+                                  background: "color-mix(in oklch, var(--err) 6%, var(--card-bg))",
+                                  padding: "10px 12px",
+                                  marginBottom: 8,
+                                }}
+                              >
+                                <div className="run-expand-section-label run-expand-section-label--err" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{ fontSize: "1.1em" }}>⚠</span> Error
                                 </div>
-                                <pre
-                                  className="task-output"
-                                  style={{ color: "var(--red)" }}
-                                >
+                                <pre className="task-output task-output--err">
                                   {r.errorMessage}
                                 </pre>
                               </div>
@@ -1129,41 +1031,19 @@ export default function RunsPage() {
                             {r.assertionFailures &&
                               r.assertionFailures.length > 0 && (
                                 <div>
-                                  <div
-                                    style={{
-                                      fontSize: "var(--fs-2xs)",
-                                      color: "var(--red)",
-                                      fontWeight: 600,
-                                      textTransform: "uppercase",
-                                      letterSpacing: "0.06em",
-                                      marginBottom: 4,
-                                    }}
-                                  >
+                                  <div className="run-expand-section-label run-expand-section-label--err">
                                     {r.assertionFailures.length} assertion
                                     failure
                                     {r.assertionFailures.length !== 1 ? "s" : ""}
                                   </div>
-                                  <ul
-                                    style={{
-                                      margin: 0,
-                                      paddingLeft: 20,
-                                      display: "flex",
-                                      flexDirection: "column",
-                                      gap: 3,
-                                    }}
-                                  >
+                                  <ul className="run-expand-assertions">
                                     {r.assertionFailures.map((f, i) => (
                                       <li
+                                        // biome-ignore lint/suspicious/noArrayIndexKey: assertion order is stable
                                         key={i}
-                                        style={{
-                                          fontSize: "var(--fs-s)",
-                                          color: "var(--red)",
-                                        }}
+                                        className="run-expand-assertion"
                                       >
-                                        <span
-                                          className="mono"
-                                          style={{ fontWeight: 600 }}
-                                        >
+                                        <span className="mono run-expand-assertion-key">
                                           {f.assertion}
                                         </span>
                                         {" — "}
@@ -1175,16 +1055,7 @@ export default function RunsPage() {
                               )}
                             {r.outputTail && (
                               <div>
-                                <div
-                                  style={{
-                                    fontSize: "var(--fs-2xs)",
-                                    color: "var(--ink-2)",
-                                    fontWeight: 600,
-                                    textTransform: "uppercase",
-                                    letterSpacing: "0.06em",
-                                    marginBottom: 4,
-                                  }}
-                                >
+                                <div className="run-expand-section-label run-expand-section-label--out">
                                   Output tail
                                 </div>
                                 <pre className="task-output">{r.outputTail}</pre>
@@ -1194,7 +1065,6 @@ export default function RunsPage() {
                               <Link
                                 href={`/runs/${r.seq}`}
                                 className="btn sm ghost"
-                                style={{ textDecoration: "none" }}
                               >
                                 Open full run →
                               </Link>
@@ -1216,13 +1086,7 @@ export default function RunsPage() {
             // which are then filtered out. Hide the button to avoid a no-op
             // network request.
             (windowedRuns == null || windowedRuns.length === runs.length) && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                padding: "var(--s-4) 0",
-              }}
-            >
+            <div className="runs-load-more">
               <button
                 type="button"
                 className="btn ghost"
@@ -1238,7 +1102,7 @@ export default function RunsPage() {
             unreadable crammed into a phone viewport, so each run becomes
             a tappable card. Shown only ≤768px via .runs-card-list CSS. */}
         <div className="runs-card-list">
-          {windowedRuns.map((r) => {
+          {windowedRuns.map((r, rowIdx) => {
             const key = `${r.taskId}-${r.seq}`;
             const isExpanded = expanded === key;
             const sClass = statusPill(r);
@@ -1246,8 +1110,9 @@ export default function RunsPage() {
               <div
                 key={key}
                 data-run-row={key}
-                className="run-card"
+                className="run-card runs-stagger-row"
                 data-status={r.status}
+                style={{ animationDelay: `${Math.min(rowIdx * 30, 400)}ms` }}
                 onClick={() => setExpanded(isExpanded ? null : key)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -1261,9 +1126,9 @@ export default function RunsPage() {
               >
                 <div className="run-card-head">
                   <span
+                    className="runs-chip-wrap-mobile"
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => e.stopPropagation()}
-                    style={{ display: "inline-flex", minWidth: 0 }}
                   >
                     <RecipeChip
                       name={r.recipeName}
@@ -1271,11 +1136,23 @@ export default function RunsPage() {
                       variant="row"
                     />
                   </span>
-                  <span
-                    className={`pill ${sClass}`}
-                    style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
-                  >
-                    {sClass !== "running" && <span className="pill-dot" />}
+                  <span className={`pill ${sClass} xs`}>
+                    {sClass === "running" ? (
+                      <span
+                        style={{
+                          display: "inline-block",
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: "currentColor",
+                          marginRight: 4,
+                          animation: "runs-pulse 1.4s ease-in-out infinite",
+                          verticalAlign: "middle",
+                        }}
+                      />
+                    ) : (
+                      <span className="pill-dot" />
+                    )}
                     {statusLabel(r)}
                     {r.assertionFailures &&
                       r.assertionFailures.length > 0 &&
@@ -1283,7 +1160,7 @@ export default function RunsPage() {
                   </span>
                 </div>
                 <div className="run-card-meta">
-                  <span className="pill muted" style={{ fontSize: "var(--fs-2xs)" }}>
+                  <span className={`pill ${triggerPillClass(r.trigger)} xs`}>
                     {normaliseTrigger(r.trigger)}
                   </span>
                   <span className="mono muted">
@@ -1307,7 +1184,7 @@ export default function RunsPage() {
                 {isExpanded && (
                   <div className="run-card-detail">
                     {r.errorMessage && (
-                      <pre className="task-output" style={{ color: "var(--red)" }}>
+                      <pre className="task-output task-output--err">
                         {r.errorMessage}
                       </pre>
                     )}
@@ -1317,7 +1194,6 @@ export default function RunsPage() {
                     <Link
                       href={`/runs/${r.seq}`}
                       className="btn sm ghost"
-                      style={{ textDecoration: "none" }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       Open full run →
@@ -1333,8 +1209,7 @@ export default function RunsPage() {
               windowedRuns.length === runs.length) && (
               <button
                 type="button"
-                className="btn ghost"
-                style={{ alignSelf: "center", marginTop: "var(--s-3)" }}
+                className="btn ghost runs-card-load-more"
                 onClick={() => setLimit((n) => n + RUNS_PAGE_SIZE)}
               >
                 Load more (+{RUNS_PAGE_SIZE})

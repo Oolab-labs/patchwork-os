@@ -1,16 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 // BackLink and RelationStrip are rendered by the shared recipes/[name]/layout.tsx
 import { useToast } from "@/components/Toast";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { ConnectorChip } from "@/components/patchwork";
-import {
-  detectConnectorsForRecipe,
-  detectConnectorsFromYaml,
-} from "../layout";
+import { detectConnectorsForRecipe } from "@/lib/recipeConnectors";
+import { detectConnectorsFromYaml } from "@/lib/recipeConnectors";
 import type { YamlLintIssue } from "./_components/YamlEditor";
 import { RecipeFormView } from "./_components/RecipeFormView";
 import dynamic from "next/dynamic";
@@ -34,15 +32,7 @@ const YamlEditor = dynamic(() => import("./_components/YamlEditor"), {
 });
 
 
-export default function RecipeEditPage({
-  params,
-}: {
-  // Next 15: dynamic route params are Promise-typed; client components
-  // unwrap with React.use().
-  params: Promise<{ name: string[] }>;
-}) {
-  const { name: rawNameParts } = use(params);
-  const name = decodeURIComponent(rawNameParts.join("/"));
+export default function RecipeEditPage({ name }: { name: string }) {
   const [content, setContent] = useState<string>("");
   const [savedContent, setSavedContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -566,21 +556,21 @@ export default function RecipeEditPage({
             </button>
           ))}
         </div>
-        <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center", marginLeft: "auto" }}>
+        <div style={{ display: "flex", gap: "var(--s-2)", alignItems: "center", marginLeft: "auto" }}>
           <Link
             href={`/recipes/${encodeURIComponent(name)}/plan`}
-            className="btn"
+            className="btn ghost"
           >
             Dry-run plan
           </Link>
           <button
             type="button"
-            className="btn warn"
+            className="btn ghost"
             onClick={() => void handleRun()}
             disabled={running || loading}
             title="Run the saved recipe immediately. May use API credits or call external services."
           >
-            {running ? "Starting…" : "Run"}
+            {running ? "Starting…" : "▶ Run"}
           </button>
           <button
             type="button"
@@ -589,15 +579,11 @@ export default function RecipeEditPage({
             disabled={saving || loading || !dirty}
             title={!dirty && !saving ? "No unsaved changes" : undefined}
           >
-            {saving ? "Saving…" : dirty ? "Save •" : "Save"}
+            {saving ? "Saving…" : dirty ? "Save •" : "Saved"}
           </button>
         </div>
       </div>
 
-      {/* Recipe-not-found banner — fires when /api/bridge/recipes/:name 404'd
-          on load. The editor still mounts (so the user can save and create the
-          recipe) but without this banner the empty buffer looks like the
-          recipe loaded blank. */}
       {!loading && notFound && (
         <div
           role="status"
@@ -605,10 +591,9 @@ export default function RecipeEditPage({
             marginBottom: "var(--s-3)",
             padding: "var(--s-3) var(--s-4)",
             borderRadius: "var(--r-2)",
-            background: "var(--warn-soft)",
-            border: "1px solid var(--warn)",
-            color: "var(--warn)",
-            fontSize: "var(--fs-m)",
+            background: "color-mix(in srgb, var(--warn) 8%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--warn) 40%, transparent)",
+            fontSize: "var(--fs-s)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "flex-start",
@@ -616,11 +601,11 @@ export default function RecipeEditPage({
           }}
         >
           <div>
-            <strong style={{ display: "block", marginBottom: 2 }}>
+            <strong style={{ display: "block", marginBottom: 2, color: "var(--warn)" }}>
               Recipe not found
             </strong>
-            <span style={{ fontSize: "var(--fs-s)" }}>
-              No recipe named <code style={{ fontFamily: "var(--font-mono)" }}>{name}</code> exists yet. Saving here will create it as a new recipe.
+            <span style={{ color: "var(--ink-2)" }}>
+              No recipe named <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)" }}>{name}</code> exists yet. Saving here will create it.
             </span>
           </div>
           <Link
@@ -872,19 +857,16 @@ export default function RecipeEditPage({
         </div>
       )}
 
-      {/* Connectors required (Phase 1A item 5) — same chip strip as the
-          overview page, surfaced here so authoring isn't blind to "this
-          recipe needs Gmail and Gmail isn't connected". Clicking a chip
-          deep-links to /connections#<id>. */}
+      {/* Connectors required — surfaced at edit time so authoring isn't
+          blind to "this recipe needs Gmail and Gmail isn't connected". */}
       {requiredConnectors.length > 0 && (
         <div
           style={{
             marginBottom: "var(--s-3)",
             padding: "var(--s-3) var(--s-4)",
             borderRadius: "var(--r-2)",
-            background: "var(--recess)",
-            border: "1px solid var(--line-2)",
-            fontSize: "var(--fs-m)",
+            background: "var(--bg-2)",
+            border: "1px solid var(--line-1)",
           }}
         >
           <div
@@ -896,13 +878,15 @@ export default function RecipeEditPage({
               gap: "var(--s-3)",
             }}
           >
-            <strong>Connectors required</strong>
+            <span style={{ fontSize: "var(--fs-s)", fontWeight: 500, color: "var(--ink-2)" }}>
+              Connectors required
+            </span>
             {unhealthyConnectors.length > 0 && (
               <Link
                 href="/connections"
                 style={{
-                  fontSize: "var(--fs-s)",
-                  color: "var(--info)",
+                  fontSize: "var(--fs-xs)",
+                  color: "var(--accent)",
                   textDecoration: "none",
                 }}
               >
@@ -910,7 +894,7 @@ export default function RecipeEditPage({
               </Link>
             )}
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {requiredConnectors.map((id) => (
               <ConnectorChip
                 key={id}
@@ -923,7 +907,15 @@ export default function RecipeEditPage({
       )}
 
       {/* Editor card */}
-      <div className="glass-card" style={{ padding: "var(--s-4)" }}>
+      <div
+        style={{
+          borderRadius: "var(--r-2)",
+          border: "1px solid var(--line-1)",
+          background: "var(--bg-1)",
+          padding: "var(--s-4)",
+          overflow: "hidden",
+        }}
+      >
         {/* Deep-link banner: surfaces when the user arrived from a
             failed-run "→ open in recipe YAML" link, regardless of
             whether the step was found. Distinguishes the three states:
@@ -1018,18 +1010,19 @@ export default function RecipeEditPage({
           <div
             style={{
               marginTop: "var(--s-3)",
-              fontSize: "var(--fs-s)",
-              color: "var(--fg-3)",
+              fontSize: "var(--fs-xs)",
+              color: "var(--ink-3)",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
+              gap: "var(--s-3)",
             }}
           >
-            <span>
-              {content.split("\n").length} lines &middot; {content.length} chars
+            <span style={{ fontFamily: "var(--font-mono)" }}>
+              {content.split("\n").length} lines · {content.length} chars
             </span>
             <span>
-              {linting ? "Linting… " : ""}Tab inserts 2 spaces &middot; Cmd/Ctrl+S to save
+              {linting ? "Linting… · " : ""}Tab → 2 spaces · ⌘S to save
             </span>
           </div>
         )}

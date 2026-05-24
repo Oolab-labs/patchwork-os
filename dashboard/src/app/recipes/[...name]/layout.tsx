@@ -15,6 +15,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { use, useEffect, useMemo, useRef } from "react";
 import { canonicalRecipeKey } from "@/lib/entityKey";
+import { detectConnectorsForRecipe } from "@/lib/recipeConnectors";
 import { Breadcrumb, RelationStrip, StatusPill } from "@/components/patchwork";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 
@@ -28,135 +29,6 @@ interface RecipeSummary {
 
 interface RecipesListResponse {
   recipes?: RecipeSummary[];
-}
-
-/**
- * Tool-namespace → connector-id map. Default: namespace IS the connector
- * id (1:1 for postgres, github, slack, etc.). Aliases handle the
- * historical cases where the tool prefix and the connector id diverge.
- */
-const TOOL_NAMESPACE_TO_CONNECTOR: Record<string, string> = {
-  calendar: "google-calendar",
-  gcal: "google-calendar",
-  drive: "google-drive",
-  gdrive: "google-drive",
-  docs: "google-docs",
-  gdocs: "google-docs",
-  mongo: "mongodb",
-  es: "elasticsearch",
-};
-
-/** All connector ids the dashboard recognises. Used as the default
- *  passthrough for `<namespace>.<tool>` ids whose namespace matches a
- *  connector id exactly. Keep in sync with
- *  `src/connectors/connectorRegistry.ts` — the registry is canonical
- *  but is bridge-side; this list is the dashboard's view. Out-of-sync
- *  entries just mean the chip doesn't render — no functional break. */
-const KNOWN_CONNECTOR_IDS = new Set([
-  "gmail",
-  "google-calendar",
-  "google-drive",
-  "google-docs",
-  "github",
-  "linear",
-  "sentry",
-  "slack",
-  "asana",
-  "discord",
-  "gitlab",
-  "notion",
-  "confluence",
-  "datadog",
-  "hubspot",
-  "intercom",
-  "jira",
-  "pagerduty",
-  "stripe",
-  "zendesk",
-  "postgres",
-  "mongodb",
-  "redis",
-  "elasticsearch",
-  "sendgrid",
-  "twilio",
-  "figma",
-  "airtable",
-  "webflow",
-  "monday",
-  "salesforce",
-  "shopify",
-  "snowflake",
-]);
-
-function namespaceToConnector(ns: string): string | null {
-  const lower = ns.toLowerCase();
-  const alias = TOOL_NAMESPACE_TO_CONNECTOR[lower];
-  if (alias) return alias;
-  if (KNOWN_CONNECTOR_IDS.has(lower)) return lower;
-  return null;
-}
-
-/**
- * Parse a recipe YAML buffer and return the set of connector ids it
- * requires by inspecting `tool:` strings on each step (and on parallel
- * branches). Falls back gracefully to the name/description heuristic
- * if YAML parsing fails — keeps the call site safe against
- * mid-keystroke broken buffers.
- *
- * Walks:
- *   - top-level `steps[].tool`
- *   - nested `steps[].parallel[].tool` (one level deep — matches
- *     today's recipe DSL)
- *   - `chain:` step bodies are deliberately NOT recursed (separate file)
- *
- * Phase 1A.1 (PR #782 follow-up): replaces the name+description string
- * match that missed 69% of real recipes. Tested against the live
- * 42-recipe installation: catches recipes whose connectors are only
- * mentioned via `tool: gmail.fetch_unread`, not in the description.
- */
-export function detectConnectorsFromYaml(yamlContent: string): string[] {
-  const found = new Set<string>();
-
-  // Cheap string-scan first (no dep on a YAML parser bundle). For each
-  // `tool: <ns>.<rest>` line, extract `<ns>`. Handles:
-  //   - tool: gmail.fetch_unread
-  //   - tool: "gmail.fetch_unread"
-  //   - tool: gmail_fetch_unread          (legacy underscore form)
-  //   - parallel:\n  - tool: ...          (nested two-space indent)
-  // The dashboard already ships `yaml` for the editor, but a regex
-  // scan keeps this fast in the live-typing hot path.
-  const toolRe = /(^|\n)\s*-?\s*tool:\s*["']?([a-zA-Z0-9_-]+)[._]/g;
-  let match: RegExpExecArray | null;
-  // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic regex exec loop
-  while ((match = toolRe.exec(yamlContent)) !== null) {
-    const ns = match[2];
-    if (!ns) continue;
-    const c = namespaceToConnector(ns);
-    if (c) found.add(c);
-  }
-
-  return Array.from(found).sort();
-}
-
-/**
- * Name/description heuristic — preserved for callers that only have a
- * `RecipeSummary` (the overview page card grid). For the edit page we
- * use `detectConnectorsFromYaml` against the live buffer because the
- * summary lacks step bodies.
- */
-export function detectConnectorsForRecipe(recipe: RecipeSummary): string[] {
-  const haystack = `${recipe.name} ${recipe.description ?? ""}`.toLowerCase();
-  const found = new Set<string>();
-  for (const ns of [
-    ...Object.keys(TOOL_NAMESPACE_TO_CONNECTOR),
-    ...KNOWN_CONNECTOR_IDS,
-  ]) {
-    if (haystack.includes(ns.toLowerCase())) {
-      const c = namespaceToConnector(ns);
-      if (c) found.add(c);
-    }
-  }
-  return Array.from(found).sort();
 }
 
 type TabKey = "overview" | "edit" | "plan";
@@ -242,6 +114,7 @@ function TabBar({ name }: { name: string }) {
             aria-current={isActive ? "page" : undefined}
             tabIndex={isActive ? 0 : -1}
             onKeyDown={(e) => onKey(e, i)}
+            className="recipe-hub-tab-link"
             style={{
               padding: "8px 14px",
               fontSize: "var(--fs-s)",
@@ -250,7 +123,6 @@ function TabBar({ name }: { name: string }) {
               textDecoration: "none",
               borderBottom: `2px solid ${isActive ? "var(--accent)" : "transparent"}`,
               marginBottom: -1,
-              transition: "color 120ms, border-color 120ms",
             }}
           >
             {t.label}
@@ -290,7 +162,16 @@ export default function RecipeDetailLayout({
   params: Promise<{ name: string[] }>;
 }) {
   const { name: rawNameParts } = use(params);
-  const name = canonicalRecipeKey(decodeURIComponent(rawNameParts.join("/")));
+  // The [...name] catch-all captures "edit" and "plan" as trailing segments
+  // when the user is on those sub-tabs. Strip them so the layout's name always
+  // refers to the actual recipe — not "my-recipe/edit".
+  const TAB_SUFFIXES = new Set(["edit", "plan"]);
+  const nameParts =
+    rawNameParts.length > 1 &&
+    TAB_SUFFIXES.has(rawNameParts[rawNameParts.length - 1] ?? "")
+      ? rawNameParts.slice(0, -1)
+      : rawNameParts;
+  const name = canonicalRecipeKey(decodeURIComponent(nameParts.join("/")));
 
   // Resolve the recipe from the list endpoint. Cheap, cached, and the
   // single-recipe `/api/bridge/recipes/[name]` returns raw YAML rather
@@ -350,6 +231,8 @@ export default function RecipeDetailLayout({
     return items;
   }, [name, connectors]);
 
+  const enabledStatus = recipe ? recipe.enabled !== false : null;
+
   return (
     <section>
       <div style={{ marginBottom: 16 }}>
@@ -364,6 +247,7 @@ export default function RecipeDetailLayout({
           }}
         >
           <h1
+            className="recipe-hub-h1"
             style={{
               margin: 0,
               fontFamily: "var(--font-mono)",
@@ -372,20 +256,27 @@ export default function RecipeDetailLayout({
           >
             {name}
           </h1>
-          <StatusPill tone={tone}>{label}</StatusPill>
+          <span className={enabledStatus === true ? "recipe-hub-status-pill-enabled" : undefined} style={{ borderRadius: 999 }}>
+            <StatusPill tone={tone}>{label}</StatusPill>
+          </span>
         </div>
         {recipe?.description && (
           <div
             style={{
-              marginTop: 6,
-              color: "var(--ink-3)",
+              marginTop: 8,
+              color: "var(--ink-2)",
               fontSize: "var(--fs-s)",
+              lineHeight: 1.5,
+              animation: "layoutHeadIn 240ms 60ms ease both",
+              animationFillMode: "both",
             }}
           >
             {recipe.description}
           </div>
         )}
-        <RelationStrip items={relationItems} />
+        <div className="recipe-relation-strip">
+          <RelationStrip items={relationItems} />
+        </div>
         <TabBar name={name} />
       </div>
       {children}
