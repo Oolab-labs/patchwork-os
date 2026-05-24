@@ -498,14 +498,18 @@ describe("ChildBridgeRegistry: lock file validation", () => {
     expect(registry.getRejected()).toHaveLength(0);
   });
 
-  it("symlink lock files are skipped without crashing", () => {
-    const target = path.join(lockDir, "real.lock");
-    fs.writeFileSync(target, JSON.stringify({ isBridge: true }), "utf-8");
-    fs.symlinkSync(target, path.join(lockDir, "4747.lock"));
-    const registry = new ChildBridgeRegistry(lockDir, 10_000, 4746);
-    expect(() => registry.refresh()).not.toThrow();
-    expect(registry.getAll()).toHaveLength(0);
-  });
+  // fs.symlinkSync requires Developer Mode or admin on Windows — skip there.
+  it.skipIf(process.platform === "win32")(
+    "symlink lock files are skipped without crashing",
+    () => {
+      const target = path.join(lockDir, "real.lock");
+      fs.writeFileSync(target, JSON.stringify({ isBridge: true }), "utf-8");
+      fs.symlinkSync(target, path.join(lockDir, "4747.lock"));
+      const registry = new ChildBridgeRegistry(lockDir, 10_000, 4746);
+      expect(() => registry.refresh()).not.toThrow();
+      expect(registry.getAll()).toHaveLength(0);
+    },
+  );
 });
 
 // ── pickBest() ────────────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { execSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -75,18 +75,20 @@ export async function runLaunchdInstall(_argv: string[]): Promise<void> {
   mkdirSync(LOG_DIR, { recursive: true });
   mkdirSync(path.dirname(PLIST_DEST), { recursive: true });
 
-  // Unload first if already loaded
-  if (existsSync(PLIST_DEST)) {
-    spawnSync("launchctl", ["unload", PLIST_DEST]);
-  }
-
   writeFileSync(PLIST_DEST, plist, { mode: 0o644 });
 
-  try {
-    execSync(`launchctl load -w "${PLIST_DEST}"`, { stdio: "pipe" });
-  } catch (err) {
+  // Use the modern launchctl bootstrap/bootout API (replaces deprecated
+  // `load/unload -w` which macOS 10.10+ deprecated and Sequoia warns on).
+  // bootout is idempotent — non-fatal if not previously loaded.
+  const uid = process.getuid ? process.getuid() : 501;
+  const domain = `gui/${uid}`;
+  spawnSync("launchctl", ["bootout", domain, PLIST_DEST]);
+  const loadResult = spawnSync("launchctl", ["bootstrap", domain, PLIST_DEST], {
+    encoding: "utf-8",
+  });
+  if (loadResult.status !== 0) {
     process.stderr.write(
-      `Warning: launchctl load failed: ${err instanceof Error ? err.message : String(err)}\n`,
+      `Warning: launchctl bootstrap failed (status ${loadResult.status}): ${loadResult.stderr || ""}\n`,
     );
   }
 
@@ -108,11 +110,9 @@ export async function runLaunchdUninstall(_argv: string[]): Promise<void> {
     return;
   }
 
-  try {
-    execSync(`launchctl unload -w "${PLIST_DEST}"`, { stdio: "pipe" });
-  } catch {
-    /* may fail if not loaded */
-  }
+  // Modern launchctl API: bootout replaces deprecated `unload -w`.
+  const uid = process.getuid ? process.getuid() : 501;
+  spawnSync("launchctl", ["bootout", `gui/${uid}`, PLIST_DEST]);
 
   const { unlinkSync } = await import("node:fs");
   try {

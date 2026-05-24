@@ -7,6 +7,7 @@ import {
   readSync,
   renameSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -271,7 +272,24 @@ export class DecisionTraceLog {
       writeFileSync(tmp, joined.length > 0 ? `${joined}\n` : "", {
         mode: 0o600,
       });
-      renameSync(tmp, this.file);
+      // On Windows renameSync throws EEXIST when target exists; POSIX replaces atomically.
+      try {
+        renameSync(tmp, this.file);
+      } catch (renameErr) {
+        if (
+          process.platform === "win32" &&
+          (renameErr as NodeJS.ErrnoException).code === "EEXIST"
+        ) {
+          try {
+            unlinkSync(this.file);
+          } catch {
+            /* best-effort */
+          }
+          renameSync(tmp, this.file);
+        } else {
+          throw renameErr;
+        }
+      }
     } catch (err) {
       this.opts.logger?.warn?.(
         `[dtrace-log] rotate failed: ${err instanceof Error ? err.message : String(err)}`,

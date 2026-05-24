@@ -79,7 +79,21 @@ export class SessionCheckpoint {
       fs.writeFileSync(tmpPath, JSON.stringify(dataWithWorkspace, null, 2), {
         mode: 0o600,
       });
-      fs.renameSync(tmpPath, this.checkpointPath);
+      // On Windows, renameSync throws EEXIST when the target already exists
+      // (POSIX atomically replaces). Unlink the target and retry once.
+      try {
+        fs.renameSync(tmpPath, this.checkpointPath);
+      } catch (renameErr) {
+        if (
+          process.platform === "win32" &&
+          (renameErr as NodeJS.ErrnoException).code === "EEXIST"
+        ) {
+          fs.unlinkSync(this.checkpointPath);
+          fs.renameSync(tmpPath, this.checkpointPath);
+        } else {
+          throw renameErr;
+        }
+      }
       // Ensure restrictive permissions even if the file pre-existed with a wider mode.
       fs.chmodSync(this.checkpointPath, 0o600);
     } catch (err) {

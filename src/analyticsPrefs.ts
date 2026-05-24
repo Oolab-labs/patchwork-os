@@ -9,6 +9,26 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+/**
+ * Atomic rename helper: on Windows `renameSync` throws EEXIST when the target
+ * already exists (unlike POSIX which replaces atomically). Unlink + retry once.
+ */
+function atomicRename(tmp: string, target: string): void {
+  try {
+    fs.renameSync(tmp, target);
+  } catch (err) {
+    if (
+      process.platform === "win32" &&
+      (err as NodeJS.ErrnoException).code === "EEXIST"
+    ) {
+      fs.unlinkSync(target);
+      fs.renameSync(tmp, target);
+    } else {
+      throw err;
+    }
+  }
+}
+
 export interface TelemetryPrefs {
   crashReports: boolean;
   usageStats: boolean;
@@ -117,7 +137,7 @@ function writePrefs(content: PrefsFileV2): void {
   fs.writeFileSync(tmp, `${JSON.stringify(content, null, 2)}\n`, {
     mode: 0o600,
   });
-  fs.renameSync(tmp, p);
+  atomicRename(tmp, p);
 }
 
 /**
@@ -162,7 +182,7 @@ export function recordAnalyticsSent(): void {
       fs.writeFileSync(tmp, `${JSON.stringify(updated, null, 2)}\n`, {
         mode: 0o600,
       });
-      fs.renameSync(tmp, p);
+      atomicRename(tmp, p);
     }
   } catch {
     // No prefs file or unreadable — nothing to update
@@ -215,6 +235,6 @@ export function getAnalyticsSalt(): string {
   const salt = crypto.randomBytes(16).toString("hex");
   const tmp = `${p}.tmp`;
   fs.writeFileSync(tmp, `${salt}\n`, { mode: 0o600 });
-  fs.renameSync(tmp, p);
+  atomicRename(tmp, p);
   return salt;
 }

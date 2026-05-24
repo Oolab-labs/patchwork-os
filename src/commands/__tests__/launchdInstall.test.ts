@@ -19,10 +19,12 @@ vi.mock("../../installGuard.js", () => ({
 
 // Mock all platform-specific side effects so the test is safe on Linux/CI.
 vi.mock("node:child_process", () => ({
-  execSync: vi.fn(),
-  spawnSync: vi
-    .fn()
-    .mockReturnValue({ error: null, stdout: "/usr/local/bin/patchwork-os\n" }),
+  spawnSync: vi.fn().mockReturnValue({
+    error: null,
+    status: 0,
+    stdout: "/usr/local/bin/patchwork-os\n",
+    stderr: "",
+  }),
 }));
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();

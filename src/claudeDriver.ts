@@ -334,6 +334,18 @@ export class SubprocessDriver implements IClaudeDriver {
      */
     const killProcessGroup = (signal: NodeJS.Signals = "SIGTERM"): void => {
       if (typeof child.pid !== "number") return;
+      // Negative PID kills the POSIX process group. On Windows this would throw
+      // ERR_INVALID_ARG_VALUE — use treeKill (taskkill /T) on win32 instead.
+      // NOTE: this is in the @deprecated legacy driver; production code uses
+      // src/drivers/claude/subprocess.ts which delegates to treeKill already.
+      if (process.platform === "win32") {
+        try {
+          child.kill(signal);
+        } catch {
+          /* already exited */
+        }
+        return;
+      }
       try {
         process.kill(-child.pid, signal);
       } catch {
