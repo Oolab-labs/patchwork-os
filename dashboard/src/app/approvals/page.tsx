@@ -817,6 +817,12 @@ function ApprovalsContent() {
       }
       const res = await fetch(`${API}/${decision}/${callId}`, init);
       if (!res.ok) {
+        if (res.status === 409) {
+          // Another session already decided this call — treat as success
+          // so the card fades out rather than showing a confusing error.
+          removeWithFade(callId);
+          return;
+        }
         const text = await res.text().catch(() => res.statusText);
         throw new Error(`${decision} failed: ${text || res.status}`);
       }
