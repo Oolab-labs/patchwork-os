@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import type { ExtensionClient } from "./extensionClient.js";
@@ -1314,8 +1315,7 @@ export function checkCcHookWiring(): Record<string, boolean> {
 
   try {
     const configDir =
-      process.env.CLAUDE_CONFIG_DIR ??
-      path.join(process.env.HOME ?? process.env.USERPROFILE ?? "~", ".claude");
+      process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
     const settingsPath = path.join(configDir, "settings.json");
     const raw = fs.readFileSync(settingsPath, "utf-8");
     type FlatHook = { command?: string };

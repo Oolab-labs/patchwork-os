@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 
 /**
  * Watch a directory for any change, falling back to mtime polling when
@@ -55,7 +56,7 @@ export function watchDirectoryWithFallback(
         if (!ent.isFile()) continue;
         if (ent.name.startsWith(".")) continue;
         try {
-          const st = fs.statSync(`${dir}/${ent.name}`);
+          const st = fs.statSync(path.join(dir, ent.name));
           out.set(ent.name, st.mtimeMs);
         } catch {
           /* file disappeared between readdir and stat — ignore */

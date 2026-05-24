@@ -105,53 +105,59 @@ describe("file.* jail — exploit fixtures from G-security G2", () => {
     if (result) expectJailEscape(result);
   });
 
-  it("rejects symlink escape (exploit-symlink.yaml)", async () => {
-    // Build a symlink inside the tmp jail that points outside (to /etc).
-    // The fixture references /tmp/dogfood-G2/symlink-target — we recreate
-    // the equivalent inside a fresh tmpdir so the test is hermetic.
-    const linkRoot = mkdtempSync(path.join(os.tmpdir(), "file-jail-link-"));
-    const linkPath = path.join(linkRoot, "symlink-target");
-    const realOutside = mkdtempSync(path.join(os.tmpdir(), "file-jail-out-"));
-    // Make the outside dir look like /etc-style — but actually it's a
-    // separate tmp dir so we don't pollute the real /etc on CI.
-    symlinkSync(realOutside, linkPath);
+  // fs.symlinkSync requires Developer Mode or admin on Windows — skip there.
+  it.skipIf(process.platform === "win32")(
+    "rejects symlink escape (exploit-symlink.yaml)",
+    async () => {
+      // Build a symlink inside the tmp jail that points outside (to /etc).
+      // The fixture references /tmp/dogfood-G2/symlink-target — we recreate
+      // the equivalent inside a fresh tmpdir so the test is hermetic.
+      const linkRoot = mkdtempSync(path.join(os.tmpdir(), "file-jail-link-"));
+      const linkPath = path.join(linkRoot, "symlink-target");
+      const realOutside = mkdtempSync(path.join(os.tmpdir(), "file-jail-out-"));
+      // Make the outside dir look like /etc-style — but actually it's a
+      // separate tmp dir so we don't pollute the real /etc on CI.
+      symlinkSync(realOutside, linkPath);
 
-    const recipe: YamlRecipe = {
-      name: "exploit-symlink",
-      trigger: { type: "manual" },
-      steps: [
-        {
-          tool: "file.write",
-          path: path.join(linkPath, "inner.txt"),
-          content: "PWNED",
-        },
-      ],
-    } as YamlRecipe;
+      const recipe: YamlRecipe = {
+        name: "exploit-symlink",
+        trigger: { type: "manual" },
+        steps: [
+          {
+            tool: "file.write",
+            path: path.join(linkPath, "inner.txt"),
+            content: "PWNED",
+          },
+        ],
+      } as YamlRecipe;
 
-    // /tmp is allowed by the test env, so the lexical check passes; the
-    // symlink-aware check is what we want to fire here. To make that
-    // happen we need the symlink target to live OUTSIDE every jail root.
-    // /tmp is an allowed root in tests, so a tmp→tmp link doesn't escape.
-    // Instead: turn off tmp-jail for this one assertion and use a real
-    // outside root to demonstrate the symlink defense.
-    const prev = process.env.CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL;
-    delete process.env.CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL;
-    try {
-      let result: { stepResults: { error?: string }[] } | undefined;
+      // /tmp is allowed by the test env, so the lexical check passes; the
+      // symlink-aware check is what we want to fire here. To make that
+      // happen we need the symlink target to live OUTSIDE every jail root.
+      // /tmp is an allowed root in tests, so a tmp→tmp link doesn't escape.
+      // Instead: turn off tmp-jail for this one assertion and use a real
+      // outside root to demonstrate the symlink defense.
+      const prev = process.env.CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL;
+      delete process.env.CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL;
       try {
-        result = await runYamlRecipe(recipe, makeDeps());
-      } catch (err) {
-        expect((err as { code?: string }).code).toBe("recipe_path_jail_escape");
-        return;
+        let result: { stepResults: { error?: string }[] } | undefined;
+        try {
+          result = await runYamlRecipe(recipe, makeDeps());
+        } catch (err) {
+          expect((err as { code?: string }).code).toBe(
+            "recipe_path_jail_escape",
+          );
+          return;
+        }
+        if (result) expectJailEscape(result);
+      } finally {
+        if (prev !== undefined)
+          process.env.CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL = prev;
+        rmSync(linkRoot, { recursive: true, force: true });
+        rmSync(realOutside, { recursive: true, force: true });
       }
-      if (result) expectJailEscape(result);
-    } finally {
-      if (prev !== undefined)
-        process.env.CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL = prev;
-      rmSync(linkRoot, { recursive: true, force: true });
-      rmSync(realOutside, { recursive: true, force: true });
-    }
-  });
+    },
+  );
 
   it("rejects template-driven traversal after render (exploit-template-traversal.yaml)", async () => {
     // Mimic the live exploit: --var target=../../../../tmp/PWNED.txt

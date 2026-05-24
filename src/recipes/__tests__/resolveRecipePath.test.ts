@@ -119,25 +119,29 @@ describe("resolveRecipePath", () => {
     expect(result).toBe(path.resolve(tmpTarget));
   });
 
-  it("rejects a symlink whose target lives outside the jail", () => {
-    const linkPath = path.join(inboxDir, "evil-link");
-    // outsideDir is itself in /tmp; with tmp-jail OFF the symlink target
-    // escapes every allowed root.
-    const target = path.join(outsideDir, "real");
-    mkdirSync(target, { recursive: true });
-    symlinkSync(target, linkPath);
+  // fs.symlinkSync requires Developer Mode or admin on Windows — skip there.
+  it.skipIf(process.platform === "win32")(
+    "rejects a symlink whose target lives outside the jail",
+    () => {
+      const linkPath = path.join(inboxDir, "evil-link");
+      // outsideDir is itself in /tmp; with tmp-jail OFF the symlink target
+      // escapes every allowed root.
+      const target = path.join(outsideDir, "real");
+      mkdirSync(target, { recursive: true });
+      symlinkSync(target, linkPath);
 
-    expect.assertions(1);
-    try {
-      resolveRecipePath(linkPath, {
-        homeDir,
-        workspace: workspaceDir,
-        allowTmp: false,
-      });
-    } catch (err) {
-      expect((err as { code?: string }).code).toBe("recipe_path_jail_escape");
-    }
-  });
+      expect.assertions(1);
+      try {
+        resolveRecipePath(linkPath, {
+          homeDir,
+          workspace: workspaceDir,
+          allowTmp: false,
+        });
+      } catch (err) {
+        expect((err as { code?: string }).code).toBe("recipe_path_jail_escape");
+      }
+    },
+  );
 
   it("rejects a hardlink on writes (nlink > 1)", () => {
     // Create a real file inside the jail, then hardlink it from inside the
@@ -220,20 +224,24 @@ describe("resolveRecipePath", () => {
   // Make sure the helper actually walks ancestor-realpath. We create a
   // symlinked-ancestor scenario where the leaf doesn't exist but a parent
   // is a symlink pointing into outsideDir — the walk must catch that.
-  it("rejects a non-existent leaf whose ancestor symlinks outside the jail", () => {
-    const linkParent = path.join(inboxDir, "ancestor-link");
-    symlinkSync(outsideDir, linkParent);
-    const leaf = path.join(linkParent, "still-not-a-file.txt");
-    expect.assertions(1);
-    try {
-      // tmp-jail OFF — outsideDir lives in /tmp.
-      resolveRecipePath(leaf, {
-        homeDir,
-        workspace: workspaceDir,
-        allowTmp: false,
-      });
-    } catch (err) {
-      expect((err as { code?: string }).code).toBe("recipe_path_jail_escape");
-    }
-  });
+  // fs.symlinkSync requires Developer Mode or admin on Windows — skip there.
+  it.skipIf(process.platform === "win32")(
+    "rejects a non-existent leaf whose ancestor symlinks outside the jail",
+    () => {
+      const linkParent = path.join(inboxDir, "ancestor-link");
+      symlinkSync(outsideDir, linkParent);
+      const leaf = path.join(linkParent, "still-not-a-file.txt");
+      expect.assertions(1);
+      try {
+        // tmp-jail OFF — outsideDir lives in /tmp.
+        resolveRecipePath(leaf, {
+          homeDir,
+          workspace: workspaceDir,
+          allowTmp: false,
+        });
+      } catch (err) {
+        expect((err as { code?: string }).code).toBe("recipe_path_jail_escape");
+      }
+    },
+  );
 });

@@ -1876,8 +1876,12 @@ if (process.argv[2] === "traces" && process.argv[3] === "import") {
           }
           const plain = decryptTraceBundle(raw, passphrase);
           const { tmpdir } = await import("node:os");
+          const { join: pathJoin } = await import("node:path");
           const { writeFileSync } = await import("node:fs");
-          const tmp = `${tmpdir()}/patchwork-import-${Date.now()}.jsonl.gz`;
+          const tmp = pathJoin(
+            tmpdir(),
+            `patchwork-import-${Date.now()}.jsonl.gz`,
+          );
           writeFileSync(tmp, plain, { mode: 0o600 });
           input = tmp;
           process.stderr.write("Decryption succeeded.\n");

@@ -79,7 +79,20 @@ export function setAnalyticsConfig(update: AnalyticsConfig): void {
   fs.mkdirSync(path.dirname(p), { recursive: true });
   const tmp = `${p}.tmp.${process.pid}`;
   fs.writeFileSync(tmp, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
-  fs.renameSync(tmp, p);
+  // On Windows, renameSync throws EEXIST when target exists; POSIX atomically replaces.
+  try {
+    fs.renameSync(tmp, p);
+  } catch (renameErr) {
+    if (
+      process.platform === "win32" &&
+      (renameErr as NodeJS.ErrnoException).code === "EEXIST"
+    ) {
+      fs.unlinkSync(p);
+      fs.renameSync(tmp, p);
+    } else {
+      throw renameErr;
+    }
+  }
 }
 
 export function clearAnalyticsConfig(): void {
