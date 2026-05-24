@@ -1296,6 +1296,83 @@ button.topbar-search {
    while keeping the track scrollable via wheel / trackpad / touch. */
 .live-runs-strip {
   scrollbar-width: thin;
+  margin-bottom: var(--s-4);
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding-right: 12px;
+  scroll-padding-inline: 4px;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+/* Individual card — all visual + layout in one place */
+.live-run-card {
+  flex: 0 0 clamp(220px, 78vw, 260px);
+  scroll-snap-align: start;
+  padding: 10px 12px;
+  border-radius: var(--r-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--line-3);
+  background: var(--surface);
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.live-run-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px -6px rgba(0,0,0,0.2);
+  border-color: var(--line-2);
+}
+.live-run-card[data-live="1"] {
+  background: color-mix(in srgb, var(--warn) 6%, var(--surface));
+  border-color: color-mix(in srgb, var(--warn) 38%, var(--line-3));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--warn) 10%, transparent) inset;
+}
+.live-run-card[data-tone="err"] {
+  background: color-mix(in srgb, var(--err) 5%, var(--surface));
+  border-color: color-mix(in srgb, var(--err) 30%, var(--line-3));
+}
+/* Card inner link */
+.lrc-link {
+  text-decoration: none;
+  color: var(--ink-1);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.lrc-status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.lrc-name {
+  font-family: var(--font-mono);
+  color: var(--ink-0);
+  font-size: var(--fs-s);
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lrc-meta {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  display: flex;
+  gap: 6px;
+}
+.lrc-halt-reason {
+  color: var(--err);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
 }
 .live-runs-strip::-webkit-scrollbar {
   height: 6px;
@@ -4282,27 +4359,6 @@ button.topbar-search {
   transform: translateY(-1px);
 }
 .lbrd-run-btn:disabled { opacity: 0.5; cursor: wait; }
-
-/* ── Live run cards ───────────────────────────────────────────────────── */
-.live-run-card {
-  border: 1px solid var(--line-3);
-  background: var(--surface);
-  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
-}
-.live-run-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 14px -6px rgba(0,0,0,0.2);
-  border-color: var(--line-2);
-}
-.live-run-card[data-live="1"] {
-  background: color-mix(in srgb, var(--warn) 6%, var(--surface));
-  border-color: color-mix(in srgb, var(--warn) 38%, var(--line-3));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--warn) 10%, transparent) inset;
-}
-.live-run-card[data-tone="err"] {
-  background: color-mix(in srgb, var(--err) 5%, var(--surface));
-  border-color: color-mix(in srgb, var(--err) 30%, var(--line-3));
-}
 
 /* ── Activity thread vertical rail ───────────────────────────────────── */
 .activity-rail {
