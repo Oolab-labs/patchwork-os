@@ -1,7 +1,7 @@
 /**
  * Verifies the first-run funnel on /dashboard:
  *   - step ordering: recipe → run → inbox → connect
- *   - first incomplete step is marked as "next" (data-next="true")
+ *   - first incomplete step is marked as "next" (data-state="next")
  *   - collapses when all 4 steps are complete
  *   - collapses when the user dismisses + persists across remounts
  */
@@ -52,10 +52,10 @@ describe("<FirstRunChecklist/>", () => {
     expect(await findByText(/Get started/)).toBeInTheDocument();
     // Step 1 label is present
     expect(container.textContent).toMatch(/Install or create a recipe/);
-    // First item should have data-next="true"
+    // First item should have data-state="next"
     const items = container.querySelectorAll("li");
-    expect(items[0]?.getAttribute("data-next")).toBe("true");
-    expect(items[1]?.getAttribute("data-next")).toBeNull();
+    expect(items[0]?.getAttribute("data-state")).toBe("next");
+    expect(items[1]?.getAttribute("data-state")).not.toBe("next");
   });
 
   it("step 2 (run) is next when recipes are installed but no runs", async () => {
@@ -68,9 +68,9 @@ describe("<FirstRunChecklist/>", () => {
     const { findByText, container } = render(<FirstRunChecklist />);
     await findByText(/Get started/);
     const items = container.querySelectorAll("li");
-    // Step 1 done (no data-next), step 2 is next
-    expect(items[0]?.getAttribute("data-next")).toBeNull();
-    expect(items[1]?.getAttribute("data-next")).toBe("true");
+    // Step 1 done, step 2 is next
+    expect(items[0]?.getAttribute("data-state")).toBe("done");
+    expect(items[1]?.getAttribute("data-state")).toBe("next");
   });
 
   it("step 3 (inbox) is next when recipes + runs exist but inbox empty", async () => {
@@ -83,7 +83,7 @@ describe("<FirstRunChecklist/>", () => {
     const { findByText, container } = render(<FirstRunChecklist />);
     await findByText(/Get started/);
     const items = container.querySelectorAll("li");
-    expect(items[2]?.getAttribute("data-next")).toBe("true");
+    expect(items[2]?.getAttribute("data-state")).toBe("next");
   });
 
   it("collapses entirely when all four steps are complete", async () => {
