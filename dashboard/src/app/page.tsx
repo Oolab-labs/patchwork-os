@@ -503,50 +503,14 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                 // biome-ignore lint/suspicious/noArrayIndexKey: stable list
                 key={e.id ?? i}
                 className={`activity-row${isFresh ? " is-fresh" : ""}${isErr ? " is-err" : ""}`}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "7px 0 7px 18px",
-                  position: "relative",
-                  fontSize: "var(--fs-s)",
-                  minWidth: 0,
-                }}
               >
                 <span
                   aria-hidden="true"
-                  style={{
-                    position: "absolute",
-                    left: 2,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    width: 9,
-                    height: 9,
-                    borderRadius: "50%",
-                    background: isErr ? "var(--err)" : "var(--orange)",
-                    border: "2px solid var(--card-bg, #fff)",
-                  }}
+                  className="activity-dot"
+                  data-err={isErr ? "true" : undefined}
                 />
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "var(--fs-xs)",
-                    color: "var(--ink-3)",
-                    minWidth: 56,
-                    flexShrink: 0,
-                  }}
-                >
-                  {relTime(ts)}
-                </span>
-                <span
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    flex: 1,
-                    minWidth: 0,
-                  }}
-                >
+                <span className="activity-ts">{relTime(ts)}</span>
+                <span className="activity-content">
                   {recipe && (
                     <RecipeChip
                       name={recipe}
@@ -559,21 +523,7 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                   {e.kind === "tool" && e.tool ? (
                     <ToolChip name={e.tool} variant="row" />
                   ) : (
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: "var(--fs-s)",
-                        color: "var(--ink-0)",
-                        fontWeight: 600,
-                        flex: 1,
-                        minWidth: 0,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {tool}
-                    </span>
+                    <span className="activity-tool-name">{tool}</span>
                   )}
                   {repeatCount > 1 && (
                     <span
@@ -591,18 +541,7 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
                 >
                   {kind}
                 </span>
-                {dur && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "var(--fs-2xs)",
-                      color: "var(--ink-2)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {dur}
-                  </span>
-                )}
+                {dur && <span className="activity-dur">{dur}</span>}
                 <span
                   className={`pill ${isErr ? "err" : "ok"}`}
                   style={{ fontSize: "var(--fs-2xs)", flexShrink: 0 }}
@@ -870,27 +809,8 @@ function RecipesAtAGlance({ runs }: { runs: LiveRun[] }) {
               >
                 {i + 1}
               </span>
-              <span
-                style={{
-                  flex: 1,
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "var(--fs-s)",
-                  color: "var(--ink-0)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {recipeKey}
-              </span>
-              <span
-                style={{
-                  fontSize: "var(--fs-xs)",
-                  color: "var(--ink-3)",
-                  flexShrink: 0,
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
+              <span className="rag-name">{recipeKey}</span>
+              <span className="rag-count">
                 {stats.count} run{stats.count !== 1 ? "s" : ""}
               </span>
               {stats.hasHalt && (

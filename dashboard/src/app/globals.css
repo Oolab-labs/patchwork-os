@@ -2245,6 +2245,55 @@ button.topbar-search {
 }
 .activity-row {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0 7px 18px;
+  font-size: var(--fs-s);
+  min-width: 0;
+}
+.activity-dot {
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--orange);
+  border: 2px solid var(--card-bg, #fff);
+}
+.activity-dot[data-err="true"] { background: var(--err); }
+.activity-ts {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  min-width: 56px;
+  flex-shrink: 0;
+}
+.activity-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.activity-tool-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+  color: var(--ink-0);
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-dur {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--ink-2);
+  flex-shrink: 0;
 }
 .activity-row.is-fresh {
   animation:
@@ -4102,6 +4151,23 @@ button.topbar-search {
   background: color-mix(in srgb, var(--err) 6%, var(--surface));
 }
 .live-run-rerun-btn:disabled { opacity: 0.5; cursor: wait; }
+
+/* ── Recipes at a glance row ─────────────────────────────────────────── */
+.rag-name {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+  color: var(--ink-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rag-count {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
 
 /* ── First-run checklist ─────────────────────────────────────────────── */
 .first-run-checklist {
