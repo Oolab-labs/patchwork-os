@@ -142,16 +142,7 @@ function ToolCallsWidget({
         <span className="stat-tile-icon stat-tile-icon--tools" aria-hidden="true">
           <TileIconShell />
         </span>
-        <span
-          style={{
-            fontSize: "var(--fs-m)",
-            fontWeight: 700,
-            color: "var(--ink-0)",
-            flex: 1,
-          }}
-        >
-          Tool calls — last 24 hours
-        </span>
+        <span className="card-h2">Tool calls — last 24 hours</span>
         <LivePill connection={hasActivity ? "live" : "offline"} />
       </div>
       <div
