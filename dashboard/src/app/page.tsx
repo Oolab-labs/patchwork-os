@@ -439,19 +439,7 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
           marginBottom: 12,
         }}
       >
-        <h2
-          style={{
-            fontSize: "var(--fs-m)",
-            fontWeight: 700,
-            margin: 0,
-            color: "var(--ink-0)",
-            flex: 1,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
-          Activity thread
-        </h2>
+        <h2 className="card-h2">Activity thread</h2>
         <ActionPill href="/activity" ariaLabel="View all activity">
           view all →
         </ActionPill>
@@ -504,17 +492,7 @@ function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
           }}
         >
           {/* vertical rail */}
-          <div
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              left: 6,
-              top: 6,
-              bottom: 6,
-              width: 1,
-              background: "var(--line-3)",
-            }}
-          />
+          <div className="activity-rail" aria-hidden="true" />
           {events.map((e, i) => {
             const ts = e.at ?? Date.now();
             const tool = activityLabel(e);
@@ -872,19 +850,7 @@ function RecipesAtAGlance({ runs }: { runs: LiveRun[] }) {
   return (
     <div className="card" style={{ padding: "18px 20px", marginBottom: "var(--s-5)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <h2
-          style={{
-            fontSize: "var(--fs-m)",
-            fontWeight: 700,
-            margin: 0,
-            color: "var(--ink-0)",
-            flex: 1,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
-          Recipes · 7d
-        </h2>
+        <h2 className="card-h2">Recipes · 7d</h2>
         <ActionPill href="/recipes" ariaLabel="View all recipes">
           view all →
         </ActionPill>
@@ -1433,19 +1399,7 @@ export default function HomePage() {
         {/* Left col: unified entity timeline (runs + approvals) */}
         <div className="card" style={{ padding: "18px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <h2
-              style={{
-                fontSize: "var(--fs-m)",
-                fontWeight: 700,
-                margin: 0,
-                color: "var(--ink-0)",
-                flex: 1,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-              }}
-            >
-              Activity stream
-            </h2>
+            <h2 className="card-h2">Activity stream</h2>
             <ActionPill href="/activity" ariaLabel="View all activity">
               view all →
             </ActionPill>
@@ -1469,6 +1423,10 @@ export default function HomePage() {
       {/* Recipes at a glance — top 6 by run count over last 7 days           */}
       {/* Each row links to /runs?recipe=<name> (param honored by runs/page) */}
       {/* ------------------------------------------------------------------ */}
+      <div className="pg-section-head">
+        <span className="pg-section-head-label">Recipes</span>
+        <div className="pg-section-head-rule" aria-hidden="true" />
+      </div>
       <RecipesAtAGlance runs={runs} />
 
       {/* Recipe leaderboard — detailed health view */}

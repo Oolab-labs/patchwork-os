@@ -126,29 +126,10 @@ export function LiveRunsStrip({
               scrollSnapAlign: "start",
               padding: "10px 12px",
               borderRadius: "var(--r-2)",
-              border: "1px solid var(--line-3)",
-              background: isLive
-                ? "color-mix(in srgb, var(--warn) 6%, var(--surface))"
-                : tone === "err"
-                  ? "color-mix(in srgb, var(--err) 5%, var(--surface))"
-                  : "var(--surface)",
               display: "flex",
               flexDirection: "column",
               gap: 6,
               minWidth: 0,
-              transition: "transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease",
-            }}
-            onMouseEnter={(ev) => {
-              const t = ev.currentTarget;
-              t.style.transform = "translateY(-1px)";
-              t.style.boxShadow = "0 4px 14px -8px rgba(0,0,0,0.18)";
-              t.style.borderColor = "var(--line-2)";
-            }}
-            onMouseLeave={(ev) => {
-              const t = ev.currentTarget;
-              t.style.transform = "";
-              t.style.boxShadow = "";
-              t.style.borderColor = "var(--line-3)";
             }}
             title={
               r.haltReason

@@ -127,30 +127,8 @@ export function RecipeLeaderboard({
           marginBottom: 14,
         }}
       >
-        <h2
-          style={{
-            fontSize: "var(--fs-m)",
-            fontWeight: 700,
-            margin: 0,
-            color: "var(--ink-0)",
-            flex: 1,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
-          Top recipes
-        </h2>
-        <div
-          role="tablist"
-          aria-label="Time window"
-          style={{
-            display: "inline-flex",
-            border: "1px solid var(--line-3)",
-            borderRadius: "var(--r-2)",
-            padding: 2,
-            background: "var(--surface)",
-          }}
-        >
+        <h2 className="card-h2">Top recipes</h2>
+        <div role="tablist" aria-label="Time window" className="lbrd-tabs">
           {(["1h", "24h", "7d"] as const).map((k) => {
             const active = k === windowKey;
             return (
@@ -160,17 +138,7 @@ export function RecipeLeaderboard({
                 aria-selected={active}
                 type="button"
                 onClick={() => setWindowKey(k)}
-                style={{
-                  fontSize: "var(--fs-xs)",
-                  fontFamily: "var(--font-mono)",
-                  padding: "2px 9px",
-                  border: "none",
-                  borderRadius: "var(--r-sm)",
-                  cursor: "pointer",
-                  background: active ? "color-mix(in srgb, var(--accent) 14%, transparent)" : "transparent",
-                  color: active ? "var(--accent)" : "var(--ink-3)",
-                  fontWeight: active ? 600 : 500,
-                }}
+                className="lbrd-tab"
               >
                 {k}
               </button>
@@ -205,13 +173,6 @@ export function RecipeLeaderboard({
                   padding: "8px 8px",
                   borderRadius: "var(--r-sm)",
                   fontSize: "var(--fs-s)",
-                  transition: "background 120ms ease",
-                }}
-                onMouseEnter={(ev) => {
-                  ev.currentTarget.style.background = "var(--recess)";
-                }}
-                onMouseLeave={(ev) => {
-                  ev.currentTarget.style.background = "";
                 }}
               >
                 <SuccessRing pct={a.okRate} size={26} stroke={3} />
@@ -270,17 +231,7 @@ export function RecipeLeaderboard({
                   type="button"
                   onClick={() => void run(a.name)}
                   disabled={isQueueing}
-                  style={{
-                    fontSize: "var(--fs-xs)",
-                    padding: "2px 8px",
-                    border: "1px solid var(--line-2)",
-                    background: isQueueing ? "var(--recess)" : "var(--surface)",
-                    color: "var(--accent)",
-                    borderRadius: "var(--r-2)",
-                    cursor: isQueueing ? "wait" : "pointer",
-                    fontWeight: 600,
-                    flexShrink: 0,
-                  }}
+                  className="lbrd-run-btn"
                   title={`Run ${a.name} now`}
                 >
                   {isQueueing ? "…" : "▶ Run"}

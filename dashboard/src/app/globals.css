@@ -4011,6 +4011,104 @@ button.topbar-search {
   }
 }
 
+/* ── Shared card section heading ─────────────────────────────────────── */
+.card-h2 {
+  font-size: var(--fs-m);
+  font-weight: 700;
+  margin: 0;
+  color: var(--ink-0);
+  flex: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── Leaderboard tab strip ───────────────────────────────────────────── */
+.lbrd-tabs {
+  display: inline-flex;
+  border: 1px solid var(--line-3);
+  border-radius: var(--r-2);
+  padding: 2px;
+  background: var(--surface);
+  gap: 1px;
+}
+.lbrd-tab {
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  padding: 2px 9px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--ink-3);
+  font-weight: 500;
+  transition: background 120ms ease, color 120ms ease;
+}
+.lbrd-tab[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Leaderboard rows ────────────────────────────────────────────────── */
+.leaderboard-row { transition: background 120ms ease; border-radius: var(--r-sm); }
+.leaderboard-row:hover { background: var(--recess); }
+
+/* ── Leaderboard run button ───────────────────────────────────────────── */
+.lbrd-run-btn {
+  font-size: var(--fs-xs);
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line-2));
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: var(--accent);
+  border-radius: var(--r-2);
+  cursor: pointer;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: background 120ms ease, border-color 120ms ease, transform 100ms ease;
+}
+.lbrd-run-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2));
+  transform: translateY(-1px);
+}
+.lbrd-run-btn:disabled { opacity: 0.5; cursor: wait; }
+
+/* ── Live run cards ───────────────────────────────────────────────────── */
+.live-run-card {
+  border: 1px solid var(--line-3);
+  background: var(--surface);
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.live-run-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px -6px rgba(0,0,0,0.2);
+  border-color: var(--line-2);
+}
+.live-run-card[data-live="1"] {
+  background: color-mix(in srgb, var(--warn) 6%, var(--surface));
+  border-color: color-mix(in srgb, var(--warn) 38%, var(--line-3));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--warn) 10%, transparent) inset;
+}
+.live-run-card[data-tone="err"] {
+  background: color-mix(in srgb, var(--err) 5%, var(--surface));
+  border-color: color-mix(in srgb, var(--err) 30%, var(--line-3));
+}
+
+/* ── Activity thread vertical rail ───────────────────────────────────── */
+.activity-rail {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 30%, transparent) 0%,
+    var(--line-3) 55%,
+    transparent 100%
+  );
+}
+
 /* ── Overview page UI upgrades ────────────────────────────────────────── */
 
 /* Stat tile colored top-border variants */
