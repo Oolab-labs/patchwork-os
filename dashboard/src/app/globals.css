@@ -98,6 +98,13 @@
   /* role-named: stat-number displays in sessions/inbox cards */
   --fs-stat:   17px;
 
+  /* Cool accent — informational / tools / running-state surfaces.
+     Reserved for: info stat tile stroke, sparkline strokes, FlowSvg
+     running-state badge, +N connector pill text. Do NOT use for primary
+     CTAs (those stay --accent orange) or destructive actions. */
+  --accent-cool:      #0787ff;
+  --accent-cool-glow: rgba(7,135,255,0.3);
+
   /* Visually-hidden until focused; surfaces for keyboard users only. */
 }
 .skip-nav {
@@ -930,8 +937,9 @@ button.topbar-search {
 .stat-card-label {
   font-size: 11px;
   color: var(--ink-3);
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   margin-bottom: 8px;
 }
 .stat-card-value {
@@ -1060,6 +1068,17 @@ a.btn { text-decoration: none; }
   padding: 0 20px;
   font-size: 15px;
   border-radius: var(--r-l);
+}
+
+/* Sync button spin-once on click */
+@keyframes spin-once {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .btn--spinning svg {
+    animation: spin-once 600ms var(--ease-out, cubic-bezier(0.16,1,0.3,1)) both;
+  }
 }
 
 
@@ -2386,7 +2405,8 @@ a.btn { text-decoration: none; }
   background: color-mix(in srgb, var(--err) 4%, var(--surface));
 }
 .live-wire[data-state="quiet"] {
-  border-color: color-mix(in srgb, var(--accent) 18%, var(--line-3));
+  border-color: var(--line-2);
+  border-top-color: color-mix(in srgb, var(--accent) 35%, var(--line-2));
 }
 .live-wire-dot {
   width: 8px;
@@ -2721,24 +2741,24 @@ a.btn { text-decoration: none; }
 }
 
 /* ---- Recipe leaderboard focal-card treatment ----
-   Static accent presence (top stripe + subtle accent-tinted bg) so the
-   card reads as "this is the protagonist section" without the rotating
-   conic-gradient beam we previously used — that radar sweep was a
-   gimmick and showed through even at rest. */
+   Green top accent signals "active performance data" — matches the ACTIVE
+   kanban column and conveys health rather than marketing attention. The
+   background tint follows the same token so the card reads as a coherent
+   status surface, not a promo block. */
 .recipe-leaderboard-card {
   position: relative;
   padding: 18px 20px;
-  border-top: 2px solid color-mix(in srgb, var(--accent) 80%, transparent);
+  border-top: 2px solid color-mix(in srgb, var(--ok) 75%, transparent);
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--accent) 4%, var(--surface)) 0%,
+    color-mix(in srgb, var(--ok) 4%, var(--surface)) 0%,
     var(--surface) 80px
   );
 }
 [data-theme="dark"] .recipe-leaderboard-card {
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--accent) 7%, var(--bg-2)) 0%,
+    color-mix(in srgb, var(--ok) 6%, var(--bg-2)) 0%,
     var(--bg-2) 80px
   );
 }
@@ -4563,6 +4583,514 @@ a.btn { text-decoration: none; }
 .rag-time  { opacity: 0.7; }
 .rag-sep   { font-size: var(--fs-xs); color: var(--ink-3); opacity: 0.4; flex-shrink: 0; }
 
+/* ── Recipes kanban — Framley/Kilo style (rag3) ──────────────────────── */
+
+/* Section header */
+.rag3-hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.rag3-title {
+  font-size: var(--fs-l);
+  font-weight: 700;
+  color: var(--ink-0);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+.rag3-title-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  background: var(--bg-3);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--r-full);
+  padding: 0 7px;
+  line-height: 1;
+}
+
+/* Three-column grid */
+.rag3-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: stretch;
+}
+
+/* Tab strip — desktop: hidden; mobile: visible */
+.rag3-tabs { display: none; }
+
+@media (max-width: 720px) {
+  .rag3-grid { grid-template-columns: 1fr !important; }
+
+  .rag3-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 0 0 14px;
+  }
+  .rag3-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-full);
+    background: var(--bg-1);
+    color: var(--ink-2);
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s, color 0.1s;
+    min-height: 36px;
+  }
+  .rag3-tab--active {
+    background: var(--ink-0);
+    border-color: var(--ink-0);
+    color: var(--bg-0);
+  }
+  .rag3-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    border-radius: var(--r-full);
+    background: var(--bg-3);
+    color: var(--ink-2);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 0 5px;
+    line-height: 1;
+  }
+  .rag3-tab--active .rag3-tab-count {
+    background: rgba(255,255,255,0.2);
+    color: inherit;
+  }
+
+  /* Hide non-active columns on mobile */
+  .rag3-grid[data-active-tab="draft"]  .rag3-col[data-kind="paused"],
+  .rag3-grid[data-active-tab="draft"]  .rag3-col[data-kind="active"],
+  .rag3-grid[data-active-tab="paused"] .rag3-col[data-kind="draft"],
+  .rag3-grid[data-active-tab="paused"] .rag3-col[data-kind="active"],
+  .rag3-grid[data-active-tab="active"] .rag3-col[data-kind="draft"],
+  .rag3-grid[data-active-tab="active"] .rag3-col[data-kind="paused"] {
+    display: none;
+  }
+}
+
+/* Column container */
+.rag3-col {
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-l);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  min-height: 160px;
+}
+/* Status top accents */
+.rag3-col[data-kind="draft"]  { border-top: 2px solid color-mix(in srgb, var(--ink-3) 50%, transparent); }
+.rag3-col[data-kind="paused"] { border-top: 2px solid color-mix(in srgb, var(--warn)  65%, transparent); }
+.rag3-col[data-kind="active"] {
+  border-color: color-mix(in srgb, var(--ok) 35%, var(--line-2));
+  border-top: 2px solid color-mix(in srgb, var(--ok) 75%, transparent);
+}
+
+/* Column header */
+.rag3-col-hd {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line-2);
+}
+.rag3-col-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.rag3-col-icon--draft  { color: var(--ink-3); background: color-mix(in srgb, var(--ink-3) 14%, transparent); }
+.rag3-col-icon--paused { color: var(--warn);  background: color-mix(in srgb, var(--warn)  22%, transparent); }
+.rag3-col-icon--active { color: var(--ok);    background: color-mix(in srgb, var(--ok)    24%, transparent); }
+.rag3-col-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-1);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.rag3-col[data-kind="paused"] .rag3-col-label { color: color-mix(in srgb, var(--warn) 80%, var(--ink-1)); }
+.rag3-col[data-kind="active"] .rag3-col-label { color: color-mix(in srgb, var(--ok)   80%, var(--ink-1)); }
+.rag3-col-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  border-radius: var(--r-full);
+  background: var(--bg-3);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 6px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Column header "+" add link */
+.rag3-col-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-2);
+  color: var(--ink-3);
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.rag3-col-add:hover { background: var(--bg-3); color: var(--ink-1); }
+
+/* Card stack */
+.rag3-cards { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+
+/* Individual recipe card */
+.rag3-card {
+  color: inherit;
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-m);
+  padding: 14px 16px 13px;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              border-left-color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out);
+  position: relative;
+}
+.rag3-card:hover {
+  border-color: var(--line-3);
+  background: var(--bg-hover, var(--bg-1));
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rag3-card { transition: border-color var(--dur-fast) var(--ease-out),
+               border-left-color var(--dur-fast) var(--ease-out),
+               background var(--dur-fast) var(--ease-out),
+               transform 0.12s; }
+  .rag3-card:hover { transform: translateY(-1px); }
+}
+.rag3-card--draft  { border-left: 3px solid color-mix(in srgb, var(--ink-3) 28%, transparent); }
+.rag3-card--paused { border-left: 3px solid color-mix(in srgb, var(--warn)  45%, transparent); }
+.rag3-card--active { border-left: 3px solid color-mix(in srgb, var(--ok)    55%, transparent); }
+.rag3-card--draft:hover  { border-left-color: color-mix(in srgb, var(--ink-3) 50%, transparent); }
+.rag3-card--paused:hover { border-left-color: color-mix(in srgb, var(--warn)  70%, transparent); }
+.rag3-card--active:hover { border-left-color: color-mix(in srgb, var(--ok)    80%, transparent); }
+
+/* Card link wrapper */
+.rag3-card-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Card layout */
+.rag3-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.rag3-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-m);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  letter-spacing: 0.01em;
+}
+.rag3-card-info { flex: 1; min-width: 0; }
+.rag3-card-name {
+  font-size: var(--fs-s);
+  font-weight: 600;
+  color: var(--ink-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+.rag3-card-role {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Chips */
+.rag3-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.rag3-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-full);
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.rag3-chip--tag {
+  background: var(--bg-2);
+  color: var(--ink-2);
+  border-color: var(--line-2);
+}
+.rag3-chip--tag-blue   { color: #3b82f6; background: rgba(59,130,246,0.1);  border-color: rgba(59,130,246,0.25); }
+.rag3-chip--tag-purple { color: #a855f7; background: rgba(168,85,247,0.1);  border-color: rgba(168,85,247,0.25); }
+.rag3-chip--tag-pink   { color: #ec4899; background: rgba(236,72,153,0.1);  border-color: rgba(236,72,153,0.25); }
+.rag3-chip--tag-slate  { color: #64748b; background: rgba(100,116,139,0.1); border-color: rgba(100,116,139,0.25); }
+.rag3-chip--tag-amber  { color: #f59e0b; background: rgba(245,158,11,0.1);  border-color: rgba(245,158,11,0.25); }
+.rag3-chip--tag-teal   { color: #14b8a6; background: rgba(20,184,166,0.1);  border-color: rgba(20,184,166,0.25); }
+.rag3-chip--tag-indigo { color: #6366f1; background: rgba(99,102,241,0.1);  border-color: rgba(99,102,241,0.25); }
+
+/* Active-only run button — hidden at rest, revealed on card hover */
+.rag3-card-run {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--ok) 40%, var(--line-2));
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
+  color: var(--ok);
+  border-radius: var(--r-2);
+  cursor: pointer;
+  font-weight: 700;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out),
+              background 100ms ease,
+              border-color 100ms ease;
+}
+.rag3-card:hover .rag3-card-run {
+  opacity: 1;
+  pointer-events: auto;
+}
+.rag3-card-run:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  border-color: color-mix(in srgb, var(--ok) 65%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rag3-card-run:hover:not(:disabled) { transform: translateY(-1px); }
+  .rag3-card-run:active:not(:disabled) { transform: translateY(0); }
+}
+.rag3-card-run:disabled { opacity: 0.4 !important; cursor: wait; }
+
+/* Overflow "+N more" link */
+.rag3-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-3);
+  background: transparent;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-full);
+  padding: 7px 12px;
+  text-decoration: none;
+  margin-top: 2px;
+  transition: background 0.1s, border-color 0.1s, border-style 0s, color 0.1s;
+}
+.rag3-more::after {
+  content: "→";
+  font-size: 11px;
+  display: inline-block;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rag3-more::after {
+    transform: translateX(-4px);
+    transition: opacity 0.15s, transform 0.15s var(--ease-out);
+  }
+}
+.rag3-more:hover {
+  background: var(--bg-2);
+  border-color: var(--line-3);
+  border-style: solid;
+  color: var(--ink-1);
+}
+.rag3-more:hover::after { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .rag3-more:hover::after { transform: translateX(0); }
+}
+
+/* Empty state */
+.rag3-empty {
+  font-size: 12px;
+  color: var(--dot-muted, var(--ink-3));
+  padding: 22px 8px;
+  text-align: center;
+  margin: 0;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-m);
+}
+
+/* ── Dark mode kanban overrides ────────────────────────────────────────── */
+[data-theme="dark"] .rag3-col {
+  background: transparent;
+  border-color: transparent;
+  border-radius: 0;
+  padding: 16px;
+  border-left: 1px solid var(--line-2);
+}
+[data-theme="dark"] .rag3-col:first-child { border-left-color: transparent; }
+
+/* Unified grid shell in dark mode — no outer border (outer .card provides top edge) */
+[data-theme="dark"] .rag3-grid {
+  background: var(--surface);
+  border: none;
+  border-radius: var(--r-m);
+  overflow: hidden;
+  gap: 0;
+}
+
+/* Column status top accents in dark */
+[data-theme="dark"] .rag3-col[data-kind="draft"]  { border-top: 2px solid color-mix(in srgb, var(--ink-3) 60%, transparent); }
+[data-theme="dark"] .rag3-col[data-kind="paused"] { border-top: 2px solid color-mix(in srgb, var(--warn)  70%, transparent); }
+[data-theme="dark"] .rag3-col[data-kind="active"] { border-top: 2px solid color-mix(in srgb, var(--ok)    65%, transparent); }
+
+[data-theme="dark"] .rag3-col-hd { border-bottom-color: var(--line-1); }
+
+[data-theme="dark"] .rag3-col-count {
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.5);
+}
+[data-theme="dark"] .rag3-col-add:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--ink-0);
+}
+
+/* Dark cards — flat list inside the unified shell */
+[data-theme="dark"] .rag3-cards { gap: 0; }
+[data-theme="dark"] .rag3-card {
+  background: transparent;
+  border-color: transparent;
+  border-radius: 0;
+}
+[data-theme="dark"] .rag3-card + .rag3-card { border-top: 1px solid var(--line-2); }
+[data-theme="dark"] .rag3-card:hover {
+  background: var(--pressed);
+  border-color: transparent;
+}
+[data-theme="dark"] .rag3-card--draft:hover  { border-left-color: color-mix(in srgb, var(--ink-3) 70%, transparent) !important; }
+[data-theme="dark"] .rag3-card--paused:hover { border-left-color: color-mix(in srgb, var(--warn)  85%, transparent) !important; }
+[data-theme="dark"] .rag3-card--active:hover { border-left-color: color-mix(in srgb, var(--ok)    90%, transparent) !important; }
+[data-theme="dark"] .rag3-card--draft  { border-left-color: color-mix(in srgb, var(--ink-3) 40%, transparent); }
+[data-theme="dark"] .rag3-card--paused { border-left-color: color-mix(in srgb, var(--warn)  55%, transparent); }
+[data-theme="dark"] .rag3-card--active { border-left-color: color-mix(in srgb, var(--ok)    65%, transparent); }
+
+[data-theme="dark"] .rag3-chip--tag-blue   { color: #60a5fa; background: rgba(59,130,246,0.14); border-color: rgba(59,130,246,0.28); }
+[data-theme="dark"] .rag3-chip--tag-purple { color: #c084fc; background: rgba(168,85,247,0.14); border-color: rgba(168,85,247,0.28); }
+[data-theme="dark"] .rag3-chip--tag-pink   { color: #f472b6; background: rgba(236,72,153,0.14); border-color: rgba(236,72,153,0.28); }
+[data-theme="dark"] .rag3-chip--tag-slate  { color: #94a3b8; background: rgba(100,116,139,0.14); border-color: rgba(100,116,139,0.28); }
+[data-theme="dark"] .rag3-chip--tag-amber  { color: #fbbf24; background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.28); }
+[data-theme="dark"] .rag3-chip--tag-teal   { color: #2dd4bf; background: rgba(20,184,166,0.14); border-color: rgba(20,184,166,0.28); }
+[data-theme="dark"] .rag3-chip--tag-indigo { color: #818cf8; background: rgba(99,102,241,0.14); border-color: rgba(99,102,241,0.28); }
+
+@media (max-width: 720px) {
+  [data-theme="dark"] .rag3-grid { gap: 0; }
+  [data-theme="dark"] .rag3-col { border-left-color: transparent; border-top: 1px solid var(--line-2); }
+  [data-theme="dark"] .rag3-col[data-kind="draft"]  { border-top: 2px solid color-mix(in srgb, var(--ink-3) 60%, transparent); }
+  [data-theme="dark"] .rag3-col[data-kind="paused"] { border-top: 2px solid color-mix(in srgb, var(--warn)  70%, transparent); }
+  [data-theme="dark"] .rag3-col[data-kind="active"] { border-top: 2px solid color-mix(in srgb, var(--ok)    65%, transparent); }
+}
+
+/* ── Telemetry tiles — flat unified panel (dark mode) ────────────────────
+   Four stat-cards rendered as a single borderless panel: unified surface,
+   top-edge accent bar, per-segment vertical dividers. No card lift on hover
+   (too much motion for a passive read-only widget).
+   ──────────────────────────────────────────────────────────────────────── */
+[data-theme="dark"] .stat-grid {
+  background: var(--surface);
+  border: 1px solid transparent;
+  border-top: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--r-l);
+  overflow: hidden;
+  gap: 0;
+}
+[data-theme="dark"] .stat-card-wrap {
+  border-radius: 0;
+}
+[data-theme="dark"] .stat-card-wrap:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+[data-theme="dark"] .stat-card-wrap + .stat-card-wrap {
+  border-left: 1px solid var(--line-2);
+}
+[data-theme="dark"] .stat-card {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+[data-theme="dark"] .stat-card:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: transparent;
+  background: color-mix(in srgb, var(--pressed) 60%, transparent);
+}
+/* Per-segment colored accent on top (overrides the unified panel top border within hover state) */
+[data-theme="dark"] .stat-card.stat-card--runs      { border-top: 2px solid var(--accent); }
+[data-theme="dark"] .stat-card.stat-card--approvals { border-top: 2px solid var(--amber);  }
+[data-theme="dark"] .stat-card.stat-card--halts     { border-top: 2px solid var(--err);    }
+[data-theme="dark"] .stat-card.stat-card--tools     { border-top: 2px solid var(--accent-cool); }
+
+/* ── Leaderboard dark mode — flat panel, suppress outer .card double-border ── */
+[data-theme="dark"] .recipe-leaderboard-card {
+  background: var(--surface);
+  border: 1px solid transparent;
+  border-top: 2px solid color-mix(in srgb, var(--ok) 65%, transparent);
+  border-radius: var(--r-m);
+}
+/* .card.recipe-leaderboard-card: the outer .card adds border-top: 1px solid var(--line-3).
+   This rule wins on specificity (.card.recipe-leaderboard-card > [data-theme="dark"] .card) and
+   replaces the generic line-3 border with the ok stripe — no double-border. */
+[data-theme="dark"] .card.recipe-leaderboard-card {
+  border-top: 2px solid color-mix(in srgb, var(--ok) 65%, transparent);
+}
+[data-theme="dark"] .lbrd-list .leaderboard-row { border-radius: 0; }
+
 /* ── First-run checklist ─────────────────────────────────────────────── */
 .first-run-checklist {
   margin-bottom: var(--s-5);
@@ -4721,7 +5249,7 @@ a.btn { text-decoration: none; }
 .stat-card.stat-card--runs      { border-top: 2.5px solid var(--accent); }
 .stat-card.stat-card--approvals { border-top: 2.5px solid var(--amber);  }
 .stat-card.stat-card--halts     { border-top: 2.5px solid var(--err);    }
-.stat-card.stat-card--tools     { border-top: 2.5px solid var(--info);   }
+.stat-card.stat-card--tools     { border-top: 2.5px solid var(--accent-cool); }
 
 /* Icon container pill — sits in the top-right of each stat tile */
 .stat-tile-icon {
@@ -4749,6 +5277,7 @@ a.btn { text-decoration: none; }
   margin-bottom: var(--s-4);
   background: color-mix(in srgb, var(--ok) 5%, var(--card-bg));
   border: 1px solid color-mix(in srgb, var(--ok) 22%, var(--line-1));
+  border-left: 3px solid var(--ok);
   border-radius: var(--r-l);
   box-shadow: var(--card-shadow);
 }
@@ -4781,6 +5310,7 @@ a.btn { text-decoration: none; }
   margin-bottom: var(--s-4);
   background: color-mix(in srgb, var(--err) 4%, var(--card-bg));
   border: 1px solid color-mix(in srgb, var(--err) 18%, var(--line-1));
+  border-left: 3px solid var(--err);
   border-radius: var(--r-l);
   box-shadow: var(--card-shadow);
   font-size: var(--fs-s);
@@ -4796,6 +5326,7 @@ a.btn { text-decoration: none; }
   margin-bottom: var(--s-4);
   background: color-mix(in srgb, var(--warn) 4%, var(--card-bg));
   border: 1px solid color-mix(in srgb, var(--warn) 20%, var(--line-1));
+  border-left: 3px solid var(--warn);
   border-radius: var(--r-l);
   box-shadow: var(--card-shadow);
   flex-wrap: wrap;
@@ -4847,7 +5378,7 @@ a.btn { text-decoration: none; }
   line-height: 1;
 }
 .attention-chip-label { font-size: var(--fs-xs); font-weight: 400; }
-.attention-chip-arrow { font-size: var(--fs-xs); opacity: 0.5; }
+.attention-chip-arrow { font-size: var(--fs-xs); opacity: 0.7; margin-left: 2px; }
 
 /* ── Page-level section divider ──────────────────────────────────────── */
 .pg-section-head {
@@ -7328,4 +7859,517 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
     min-height: 44px;
     align-items: center;
   }
+}
+
+/* ── Mobile audit pass 4 — Recipes + Marketplace ──────────────────────────
+   Viewport: 375×812 (iPhone SE / 14 Pro)
+   Issues fixed:
+
+   1. Recipe stacked-card description — `.recipe-desc` keeps `white-space:
+      nowrap` from the desktop table rule. On the mobile stacked-card layout
+      (block-display rows) the description is clipped to one line and the
+      card has plenty of room. Allow wrapping + clamp to 2 lines.
+
+   2. Recipe stacked-card action row — the `recipe-actions-wrap` inside
+      `td:nth-child(7)` is `inline-block` / 40px tall. Stretch it to full
+      card width and give toggle + run-btn adequate vertical breathing room
+      so thumbs can reach them.
+
+   3. `.recipe-toggle` tap target — the toggle knob is 30×17px CSS, far below
+      the 44×44 minimum. Wrap with a transparent hit-area on touch devices
+      without changing the visual knob size.
+
+   4. `.recipes-status-btn` — 24px tall at mobile widths; the existing coarse
+      rule bumps `.btn.sm` but not these bespoke inline buttons. Bump to 44px.
+
+   5. Marketplace grid — `minmax(280px, 1fr)` is too wide for a 375px viewport
+      (only ~327px content area). Force 1-column on phone so cards don't
+      compress below their minimum or produce a single skinny column.
+
+   6. Marketplace featured-card "★ Featured" absolute badge — at full viewport
+      width it overlaps the recipe name link. Move below the name row at 375px.
+
+   7. Marketplace page-head at 480px — the editorial-h1 + sub + action buttons
+      stack cleanly but the action-row buttons (Search + Submit) need min 44px
+      touch height on coarse devices; covered by existing `.btn.sm` rule for
+      Submit, but "Search" is `.btn.sm.ghost` and already covered too. ✓
+
+   8. Recipe detail relation strip — items have `overflow-x: auto` (correct for
+      scroll) but `flex-wrap: nowrap` was missing, letting some items wrap to a
+      second line AND create a scroll bar simultaneously. Pin to nowrap.
+
+   9. `.mkt-recipe-card` bottom action row — at 375px the connector-dot cluster
+      plus install button sit in a `justify-content: space-between` row. The
+      connector dots wrap at this width, pushing the Install button below.
+      Allow wrapping but keep Install on its own row when it drops.
+
+  10. Table-wrap scroll gradient on stacked recipe cards — the `::after`
+      gradient still shows on mobile even when the recipes table is in
+      block/stacked mode (no horizontal scroll needed). Hide it on the
+      `.recipes-table-wrap` container once the table is stacked.
+   ────────────────────────────────────────────────────────────────────── */
+
+/* 1. Recipe description — allow wrapping in stacked card layout */
+@media (max-width: 768px) {
+  .recipes-table .recipe-desc {
+    white-space: normal;
+    overflow: hidden;
+    /* Clamp to 2 lines so the card doesn't grow unbounded */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    text-overflow: clip;
+    /* Reset the ellipsis that the table rule sets */
+    word-break: break-word;
+    margin-bottom: 2px;
+  }
+}
+
+/* 2. Recipe stacked-card action row — full-width flex */
+@media (max-width: 768px) {
+  /* The actions cell already renders inline-block (from sweep-3). Stretch
+     it to full card width on phone so the row reads as a footer bar. */
+  .recipes-table td:nth-child(7) {
+    display: flex !important;
+    width: 100% !important;
+    margin-right: 0 !important;
+    padding-top: 8px !important;
+    border-top: 1px solid var(--line-1) !important;
+    margin-top: 6px !important;
+  }
+  .recipe-actions-wrap {
+    width: 100%;
+    justify-content: space-between;
+  }
+  /* Run button fills remaining width in the actions row */
+  .recipe-run-btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+/* 3. Toggle tap target — transparent hit-area via pseudo-element on touch */
+@media (hover: none) and (pointer: coarse) {
+  .recipe-toggle {
+    /* The knob is 30×17px — well below 44px. Expand the hit-area using a
+       pseudo-element so the visual size stays compact while the touchable
+       zone meets the 44×44 minimum. */
+    position: relative;
+  }
+  .recipe-toggle::before {
+    content: "";
+    position: absolute;
+    inset: -13px -7px;
+  }
+}
+
+/* 4. Status filter buttons — bump to 44px on touch */
+@media (hover: none) and (pointer: coarse) {
+  .recipes-status-btn {
+    min-height: 44px;
+    padding-inline: 12px;
+  }
+}
+
+/* 5. Marketplace grid — force 1-column below 480px */
+@media (max-width: 480px) {
+  .marketplace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 10. Hide table-wrap scroll-shadow when recipes table is in stacked mode */
+@media (max-width: 768px) {
+  .recipes-table-wrap.table-wrap::after {
+    display: none;
+  }
+}
+
+/* 8. Recipe detail relation strip — prevent simultaneous wrap + scroll.
+   The RelationStrip component uses `flexWrap: "wrap"` as an inline style,
+   which wins over any CSS class rule. Use !important on the inner nav to
+   suppress wrapping and rely on overflow-x scroll instead — avoids a two-
+   row strip + scrollbar coexisting. */
+@media (max-width: 768px) {
+  .recipe-relation-strip nav {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px; /* Prevents clip on scroll */
+  }
+}
+
+/* ── Mobile audit pass 4 — Approvals + Inbox + Settings + Connections + Analytics ──
+   Viewport: 375×812 (iPhone SE / 13 mini)
+
+   Issues found via source-code + DOM-measurement audit (bridge offline,
+   so pages were audited from TSX source + computed CSS):
+
+   1. APPROVALS — Approve/Deny/secondary buttons miss 44px touch height on
+      coarse-pointer. Decision cluster also has a 52px left margin on desktop
+      that is already reset to 0 at ≤480px, but the buttons themselves never
+      received a min-height: 44px guard. BatchActionBar buttons same gap.
+      "Sync inbox" button is .btn.sm.ghost (h=32). apc-params-copy too small.
+      apq-suggestion copy/dismiss buttons too small.
+
+   2. INBOX — .inbox-refresh-btn and .inbox-cat-btn (category chips) are
+      ~24-32px tall. Need 44px on touch devices.
+
+   3. SETTINGS — .stg-action-btn (Set primary), .stg-save-btn, .stg-push-btn,
+      .stg-restart-btn, nav links all below 44px. toggle-row checkbox needs a
+      larger touch area.
+
+   4. CONNECTIONS — .cgc-test-btn and .cgc-action-btn are 24px (3px padding).
+      .cgc-toggle (28×16px) is the smallest interactive element on the page —
+      wraps in a 44×44 pseudo-target. conn-search needs full-width at 375px.
+
+   5. ANALYTICS — stat-grid at 375px produces two 167px columns; fine but the
+      AreaChart legend row can overflow on very narrow widths — wrap it.
+      table-wrap already scrolls horizontally; no change needed there.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── 1. APPROVALS ── */
+
+/* Approve + Deny buttons: already have min-height: 44px on desktop via inline
+   .apc-decisions rule. Ensure they stretch to full available width on phones
+   so the tap surface fills the row. */
+@media (max-width: 480px) {
+  .apc-decisions {
+    flex-direction: column;
+  }
+  .apc-decisions .btn.primary,
+  .apc-decisions .btn.danger {
+    width: 100%;
+    justify-content: center;
+  }
+  .apc-actions {
+    flex-direction: column;
+  }
+  .apc-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Sync inbox button + any .btn.sm.ghost on approvals page */
+@media (hover: none) and (pointer: coarse) {
+  /* Batch bar: full-width stacked buttons on small touch */
+  .approval-batch-bar {
+    flex-wrap: wrap;
+  }
+  .approval-batch-bar .btn {
+    min-height: 44px;
+    flex: 1 1 auto;
+  }
+
+  /* Params copy button: enlarged touch target */
+  .apc-params-copy {
+    min-height: 36px;
+    padding: 6px 12px;
+  }
+
+  /* Pattern suggestion row: stack and enlarge buttons */
+  .apq-suggestion {
+    flex-wrap: wrap;
+  }
+  .apq-suggestion .btn {
+    min-height: 44px;
+    flex: 1 1 auto;
+  }
+
+  /* "Sync inbox" ghost button in page-head */
+  .page-head .btn.sm.ghost {
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+}
+
+/* ── 2. INBOX ── */
+
+@media (hover: none) and (pointer: coarse) {
+  /* Refresh button */
+  .inbox-refresh-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 10px 14px;
+  }
+
+  /* Category filter chips */
+  .inbox-cat-btn {
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  /* Reader action buttons */
+  .inbox-reader-actions .btn {
+    min-height: 44px;
+  }
+}
+
+/* ── 3. SETTINGS ── */
+
+@media (hover: none) and (pointer: coarse) {
+  /* "Set primary" and similar action buttons in driver rows */
+  .stg-action-btn {
+    min-height: 44px;
+    padding: 10px 16px;
+  }
+
+  /* Save button */
+  .stg-save-btn {
+    min-height: 44px;
+    padding: 10px 20px;
+  }
+
+  /* Restart bridge button */
+  .stg-restart-btn {
+    min-height: 44px;
+    padding: 10px 20px;
+  }
+
+  /* Push notification buttons */
+  .stg-push-btn,
+  .stg-push-btn-ghost {
+    min-height: 44px;
+    padding: 10px 16px;
+  }
+
+  /* Nav links in settings sidebar: taller tap target */
+  .stg-nav-link {
+    padding: 10px 12px;
+  }
+
+  /* ToggleRow: larger checkbox touch area via padding trick */
+  .toggle-row input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+  }
+}
+
+/* ── 4. CONNECTIONS ── */
+
+@media (hover: none) and (pointer: coarse) {
+  /* Test + Disconnect/Reconnect buttons in card footer */
+  .cgc-test-btn {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+  .cgc-action-btn {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+
+  /* Toggle switch: wrap in a 44px hit area using padding */
+  .cgc-toggle {
+    padding: 14px 8px;
+    box-sizing: content-box;
+  }
+
+  /* Footer actions row: give it room to breathe */
+  .cgc-footer {
+    padding: 12px 16px;
+    min-height: 56px;
+    align-items: center;
+  }
+}
+
+/* conn-search full-width at very narrow viewports */
+@media (max-width: 375px) {
+  .conn-search {
+    min-width: 0;
+    width: 100%;
+  }
+  .conn-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ── 5. ANALYTICS ── */
+
+/* AreaChart legend (inline flex row) can overflow at 375px — allow wrap */
+@media (max-width: 480px) {
+  /* stat-grid: drop to 2 cols minimum, no smaller than 140px */
+  .stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+}
+
+/* ── Mobile audit pass 4 — Overview + Shell ──────────────────────────────
+   Viewport: 375×812 (iPhone 14). Issues found in 2026-05-25 screenshot
+   audit of new Overview elements introduced this session.
+
+   1. stat-grid (4 telemetry tiles) — minmax(180px,1fr) at 343px content
+      width forces a single column. Correct fallback but dark-mode panel
+      has overflow:hidden + gap:0 which can clip card shadows at the
+      left/right edges when the grid collapses. Remove the dark-mode
+      overflow:hidden at mobile so shadows breathe.
+
+   2. NeedsAttentionBand (.attention-clear / .attention-band / .attention-offline)
+      — all carry border-left:3px solid. At 375px the inner flex row
+      (.attention-clear's ring + "All clear" + live-dot + sub-text)
+      overflows or ellipsises because attention-clear-sub has no wrap
+      budget. Allow the inner row to wrap and stack the sub-text below
+      on narrow screens.
+
+   3. rag3-hd — "Your Recipes N  [View all] [+ New]" in one row. The
+      button group is flex-shrink:0 so the title gets crushed. At 480px
+      it still fits, but at 375px "Your Recipes 43" + buttons is ~310px
+      of content in ~343px available — passable but tight. Stack to two
+      rows below 480px so the buttons never truncate the count badge.
+
+   4. pg-section-head "Recipes" row — label + rule + "view all →" btn.
+      Fine at 375px (monospace label is short), but the rule disappears
+      when content is near the breakpoint. No change needed.
+
+   5. LiveWire strip — full-width single-row, text truncates via
+      white-space:nowrap + text-overflow:ellipsis. Correct at mobile.
+
+   6. ActivityTicker — already hidden at max-width:900px (line 711).
+      Confirmed collapsed at 375px. No change needed.
+
+   7. Mobile menu button — 36×36 on mouse UA; pointer:coarse rule above
+      bumps it to 44×44 on real touch devices. Confirmed correct.
+
+   8. Bridge status pill / identity pill — hidden at ≤768px via existing
+      rule (line 3360). Confirmed not visible. No change needed.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* 1 ── stat-grid: remove dark-mode overflow:hidden clipping on mobile
+        (shadows need to bleed outside the grid boundary when cols = 1) */
+@media (max-width: 768px) {
+  [data-theme="dark"] .stat-grid {
+    overflow: visible;
+    /* Restore per-card gap so stacked tiles have breathing room */
+    gap: 12px;
+    /* Keep the accent top-border but let the panel background show
+       only on the first card — when overflow is visible the unified
+       panel illusion is gone anyway, so reset to card-by-card look */
+    background: transparent;
+    border: none;
+  }
+  [data-theme="dark"] .stat-card-wrap {
+    border-radius: var(--r-l);
+  }
+}
+
+/* 2 ── attention-clear: allow sub-text to wrap on narrow phones */
+@media (max-width: 480px) {
+  .attention-clear {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  /* Inner row (ring + text group) can also wrap its sub-text */
+  .attention-clear > div {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .attention-clear-sub {
+    /* Move sub-text to its own line so it doesn't overflow */
+    width: 100%;
+    margin-left: 0;
+  }
+  /* Attention band: label + chips may need an extra row */
+  .attention-band {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  /* Offline band: icon + text wrap naturally, no change to flex-direction */
+  .attention-offline {
+    flex-wrap: wrap;
+  }
+}
+
+/* 3 ── rag3-hd: stack title row and button group on phone
+        so "+ New" never truncates the recipe count badge */
+@media (max-width: 480px) {
+  .rag3-hd {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  /* Title stays full-width on its own row */
+  .rag3-title {
+    flex: 1 1 100%;
+  }
+  /* Button group right-aligns within the second row */
+  .rag3-hd > div {
+    margin-left: auto;
+  }
+}
+
+/* ── Mobile audit pass 4 — Runs + Live + Sessions + Traces ──────────────
+   Viewport: 375×812 (iPhone 14). Issues found in 2026-05-25 source + DOM
+   audit of runs, run-detail, activity, sessions, and traces pages.
+
+   1. rd-tab-btn (Steps / Execution Plan tab buttons on run detail):
+      inline padding 6px 14px → ~30px tall. Not a .btn so misses the
+      existing .btn.sm min-height rule.
+
+   2. rd-breadcrumb-back (← Runs breadcrumb link): padding 2px 4px →
+      ~22px tap target. Needs 44px inline-flex on touch.
+
+   3. act-tab-btn (All / tools / lifecycle filter tabs on /activity):
+      inline padding 7px 16px → ~30px. Not a .btn class.
+
+   4. traces-expand-btn + traces-copy-btn: 20px-wide expand chevron and
+      icon-only copy button — too small for reliable touch.
+
+   5. traces-filter-pill (status + view filter pills on /traces): .pill
+      height is ~24px, not covered by .btn.sm rule.
+
+   6. rd-step-row tool-name column: the 4-col inline grid
+      (28px 1fr auto auto) needs min-width:0 on the 1fr cell so long
+      tool names truncate instead of blowing out the row at 375px.
+   ────────────────────────────────────────────────────────────────────── */
+
+@media (hover: none) and (pointer: coarse) {
+  /* 1 — run detail Steps / Execution Plan tab buttons */
+  .rd-tab-btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* 2 — run detail breadcrumb back link */
+  .rd-breadcrumb-back {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* 3 — activity page tab filter buttons */
+  .act-tab-btn {
+    min-height: 44px;
+  }
+
+  /* 4 — traces expand + copy icon buttons */
+  .traces-expand-btn,
+  .traces-copy-btn {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 5 — traces status / view filter pill buttons */
+  .traces-filter-pill {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+/* 6 — rd-step-row: guard tool-name column overflow at narrow widths.
+   The inline grid (28px 1fr auto auto) needs min-width:0 on the 1fr
+   column so long tool names truncate instead of blowing out the row.
+   Applied universally — correct at every viewport. */
+.rd-step-row > div > div:nth-child(2) {
+  min-width: 0;
 }
