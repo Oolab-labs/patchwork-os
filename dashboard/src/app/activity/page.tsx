@@ -577,6 +577,8 @@ export default function ActivityPage() {
           gap: 0,
           borderBottom: "1px solid var(--border-subtle)",
           marginBottom: 12,
+          overflowX: "auto",
+          WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
         }}
       >
         {(["all", "tools", "recipe_start", "recipe_end"] as Tab[]).map((t) => {

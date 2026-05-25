@@ -1785,7 +1785,7 @@ a.btn { text-decoration: none; }
 @media (max-width: 640px) {
   .runs-search-input { width: auto; min-width: 0; flex: 1 1 100%; }
 }
-.runs-select { width: auto; cursor: pointer; }
+.runs-select { width: auto; min-width: min(140px, 100%); cursor: pointer; }
 
 /* Stat cards grid */
 .runs-stat-grid {
@@ -1929,10 +1929,11 @@ a.btn { text-decoration: none; }
   display: grid;
   grid-template-columns: 440px minmax(0, 1fr);
   gap: var(--s-4);
+  align-items: start;
 }
 @media (max-width: 768px) {
   .tasks-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1960,6 +1961,16 @@ a.btn { text-decoration: none; }
   }
 }
 
+
+/* Sticky detail pane — sticks on desktop, becomes static on mobile
+   (single-column stack doesn't benefit from sticky and can cause overlap). */
+.sticky-pane {
+  position: sticky;
+  top: 80px;
+}
+@media (max-width: 768px) {
+  .sticky-pane { position: static; }
+}
 
 /* ---- Decision rows ---- */
 
@@ -2199,6 +2210,17 @@ a.btn { text-decoration: none; }
   font-family: var(--font-mono);
   letter-spacing: 0.02em;
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 768px) {
+  .editorial-sub {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+  }
 }
 
 /* ---- Grids ---- */
@@ -2227,7 +2249,7 @@ a.btn { text-decoration: none; }
   .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .grid-2, .grid-3, .grid-4, .grid-2-3 { grid-template-columns: 1fr; }
 }
 
@@ -2502,6 +2524,9 @@ a.btn { text-decoration: none; }
   border-radius: var(--r-2);
   background: var(--recess);
   width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .activity-filter-chip {
   font-size: 11px;
@@ -3192,11 +3217,20 @@ a.btn { text-decoration: none; }
   }
   .settings-grid > nav {
     position: static !important;
-    flex-direction: row !important;
-    flex-wrap: wrap;
-    gap: var(--s-2) !important;
+    flex-direction: column !important;
+    gap: var(--s-3) !important;
     min-height: auto !important;
+  }
+  /* Nav links become a horizontal scrollable chip row on mobile */
+  .settings-grid > nav .stg-nav-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--s-1);
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .settings-grid > nav .stg-nav-link {
+    white-space: nowrap;
   }
 }
 
@@ -3523,7 +3557,7 @@ a.btn { text-decoration: none; }
   position: relative;
   flex: 1 1 320px;
   max-width: 420px;
-  min-width: 220px;
+  min-width: min(220px, 100%);
 }
 .recipes-search-icon {
   position: absolute;
@@ -3546,6 +3580,7 @@ a.btn { text-decoration: none; }
   font-size: var(--fs-s);
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
+  flex-wrap: wrap;
 }
 .recipes-toolbar-meta strong {
   color: var(--ink-1);
@@ -3600,8 +3635,8 @@ a.btn { text-decoration: none; }
     position: fixed;
     left: 0;
     right: 0;
-    bottom: calc(var(--bottom-nav-h, 62px) + env(safe-area-inset-bottom, 0px));
-    z-index: 27;
+    bottom: calc(var(--bottom-nav-h, 0px) + env(safe-area-inset-bottom, 0px));
+    z-index: 29;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -3610,9 +3645,9 @@ a.btn { text-decoration: none; }
     border-top: 1px solid var(--line-2);
     box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
   }
-  /* Pad bottom of recipes content so the bar never overlaps the last row. */
+  /* Pad bottom of recipes content so the run bar never overlaps the last row. */
   .recipes-grid {
-    padding-bottom: 70px;
+    padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -3709,6 +3744,9 @@ a.btn { text-decoration: none; }
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 .cluster-tab {
   position: relative;
@@ -3799,6 +3837,7 @@ a.btn { text-decoration: none; }
     justify-content: center;
     gap: 2px;
     padding: 6px 4px;
+    min-height: 44px;
     border-radius: var(--r-2);
     color: var(--ink-2);
     text-decoration: none;
@@ -3813,7 +3852,7 @@ a.btn { text-decoration: none; }
   .mobile-more-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 29;
+    z-index: 30;
     background: rgba(0, 0, 0, 0.4);
     border: none;
     padding: 0;
@@ -3825,7 +3864,7 @@ a.btn { text-decoration: none; }
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 30;
+    z-index: 31;
     background: var(--surface);
     border-top: 1px solid var(--line-2);
     border-radius: 14px 14px 0 0;
@@ -3849,7 +3888,8 @@ a.btn { text-decoration: none; }
   }
   .mobile-more-sheet-item {
     display: block;
-    padding: 12px 14px;
+    padding: 13px 14px;
+    min-height: 44px;
     border-radius: var(--r-2);
     background: var(--recess);
     color: var(--ink-1);
@@ -3877,13 +3917,9 @@ a.btn { text-decoration: none; }
     width: 20px;
     height: 20px;
   }
-  /* Make room for the bottom bar so content isn't hidden underneath.
-     Bottom-nav is ~56px + 6px top + 6px bottom + safe-area; we want a
-     little extra so the form's primary CTA isn't tight against the nav. */
-  .app-main {
-    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
-  }
 }
+/* .app-content (inside .app-main) already adds 80px bottom padding on mobile;
+   a second padding on .app-main stacked ≈160px of dead space below every page. */
 
 
 /* Visually hidden, available to screen readers. */
@@ -3948,7 +3984,7 @@ a.btn { text-decoration: none; }
     bottom: calc(72px + env(safe-area-inset-bottom, 0px));
     left: 12px;
     right: 12px;
-    z-index: 25;
+    z-index: 29;
     padding: 10px 12px;
     background: var(--surface);
     border: 1px solid var(--line-2);
@@ -3966,7 +4002,7 @@ a.btn { text-decoration: none; }
      this, the bottom of the YAML or the line-count footer hides under
      the bar. `:has()` is supported in all evergreen browsers we target. */
   body:has(.recipe-editor-mobile-savebar) .app-content {
-    padding-bottom: 140px;
+    padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -4232,6 +4268,19 @@ a.btn { text-decoration: none; }
   }
   .sidebar-create {
     min-height: 44px;
+  }
+  .tasks-row-btn {
+    min-height: 44px;
+  }
+  .input,
+  .runs-select {
+    min-height: 44px;
+  }
+  .btn-inline {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 4px;
   }
 }
 
@@ -4629,6 +4678,28 @@ a.btn { text-decoration: none; }
 }
 .lbrd-run-btn:disabled { opacity: 0.5; cursor: wait; }
 
+/* ── Leaderboard mobile overrides (≤480px) ────────────────────────────
+   On a 375px viewport the full row (ring + name + sparkbars + count +
+   status-pill + run-btn) is ~340px minimum, leaving zero space for the
+   recipe name. Hide the sparkbars and run-btn, drop the min-widths on
+   count + status-pill so they can shrink, and trim lbrd-count to show
+   only the number (not "N runs") to save horizontal space.             */
+@media (max-width: 480px) {
+  .lbrd-sparkbars { display: none; }
+  .lbrd-run-btn   { display: none; }
+  .lbrd-count     { min-width: 0; white-space: nowrap; }
+  .lbrd-status-pill { min-width: 0; }
+  .lbrd-header    { flex-wrap: wrap; gap: 6px; }
+}
+
+/* ── Activity thread mobile — hide duration on narrow viewports ───────
+   The .activity-dur timestamp makes rows overflow on 375px when a recipe
+   chip + tool chip + kind pill + ok/err pill are all present. Duration
+   is supplementary info and is available on /activity anyway.          */
+@media (max-width: 480px) {
+  .activity-dur { display: none; }
+}
+
 /* ── Activity thread vertical rail ───────────────────────────────────── */
 .activity-rail {
   position: absolute;
@@ -4741,6 +4812,10 @@ a.btn { text-decoration: none; }
 /* Offline band text nodes */
 .attention-offline-label { color: var(--err); font-weight: 700; }
 .attention-offline-link { color: var(--accent); text-decoration: none; font-weight: 600; }
+/* Bridge-offline banner dismiss button: bump tap target on touch devices */
+@media (hover: none) and (pointer: coarse) {
+  .bridge-offline-dismiss { min-height: 44px; padding: 10px 14px; }
+}
 /* All-clear text nodes */
 .attention-clear-ok { color: var(--ok); font-weight: 700; font-size: var(--fs-s); }
 .attention-clear-sub { color: var(--ink-3); font-size: var(--fs-s); margin-left: 8px; }
@@ -4848,8 +4923,19 @@ a.btn { text-decoration: none; }
 .apc-shrink0 { flex-shrink: 0; }
 .apc-expired-pill { font-size: var(--fs-xs); }
 .apc-summary { margin: 10px 0 0 52px; font-size: var(--fs-m); color: var(--ink-2); line-height: 1.5; }
+@media (max-width: 480px) {
+  .apc-summary { margin-left: 0; }
+}
 .apc-signals { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-.apc-code { margin-top: 12px; margin-left: 52px; }
+.apc-code { margin-top: 12px; margin-left: 52px; overflow-x: auto; }
+@media (max-width: 768px) {
+  .apc-code { margin-left: 0; }
+  /* Decision/action rows: remove the 52px icon indent so buttons fill the
+     full card width on narrow phones. Both rows are flex+wrap so they
+     reflow naturally. */
+  .apc-decisions { margin-left: 0; }
+  .apc-actions   { margin-left: 0; }
+}
 
 /* Diff view inside ApprovalCard */
 .apc-diff-path { color: var(--ink-3); font-size: var(--fs-xs); margin-bottom: 4px; }
@@ -4891,6 +4977,7 @@ a.btn { text-decoration: none; }
   display: flex;
   gap: var(--s-3);
   align-items: center;
+  flex-wrap: wrap;
   background: var(--bg-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-3);
@@ -4898,6 +4985,14 @@ a.btn { text-decoration: none; }
   box-shadow: 0 8px 32px rgba(0,0,0,0.5);
   margin-top: var(--s-4);
   animation: fade-in 200ms ease;
+}
+@media (max-width: 768px) {
+  /* Batch bar: let buttons fill the row so neither clips at 375 px. */
+  .approval-batch-bar .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-height: 44px;
+  }
 }
 .approval-batch-count { font-size: var(--fs-m); color: var(--ink-1); font-weight: 500; }
 
@@ -5010,6 +5105,9 @@ a.btn { text-decoration: none; }
   color: var(--warn);
 }
 .recipes-status-btn[data-filter="paused"] { color: var(--ink-3); }
+@media (pointer: coarse) {
+  .recipes-status-btn { min-height: 44px; padding-inline: 14px; }
+}
 
 /* Connector filter badge */
 .recipes-connector-badge {
@@ -5160,6 +5258,13 @@ a.btn { text-decoration: none; }
   max-height: calc(100vh - 100px);
   padding: var(--s-4);
 }
+@media (max-width: 768px) {
+  .recipes-detail-panel {
+    position: static;
+    max-height: none;
+    padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+  }
+}
 .rdp-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .rdp-title {
   font-family: var(--font-mono);
@@ -5177,6 +5282,11 @@ a.btn { text-decoration: none; }
   color: var(--ink-3);
   font-size: var(--fs-2xl);
   line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .rdp-status { margin-bottom: 10px; }
 .rdp-section { margin-bottom: 14px; }
@@ -5229,8 +5339,8 @@ a.btn { text-decoration: none; }
   background: transparent;
   border: 1px solid var(--line-2);
   border-radius: 6px;
-  min-width: 36px;
-  min-height: 36px;
+  min-width: 44px;
+  min-height: 44px;
   cursor: pointer;
   color: var(--ink-3);
 }
@@ -5333,8 +5443,12 @@ a.btn { text-decoration: none; }
 .conn-recent-sync { font-size: var(--fs-xs); color: var(--ok); margin-top: 2px; font-weight: 500; }
 
 /* Page toolbar + strips */
-.conn-toolbar { display: flex; gap: 8px; align-items: center; }
+.conn-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .conn-search { min-width: 220px; }
+@media (max-width: 480px) {
+  .conn-toolbar { flex-wrap: wrap; }
+  .conn-search { min-width: 0; flex: 1 1 100%; }
+}
 .conn-reauth-msg { font-size: var(--fs-s); color: var(--warn); }
 .conn-recent-section { margin-bottom: var(--s-5); }
 .conn-recent-label { font-size: var(--fs-xs); font-weight: 500; color: var(--ink-2); margin-bottom: 10px; }
@@ -5343,6 +5457,9 @@ a.btn { text-decoration: none; }
 .conn-empty-cta-text { color: var(--ink-2); font-size: var(--fs-base); margin-bottom: var(--s-4); }
 .conn-filter-pills { display: flex; gap: 8px; margin-bottom: var(--s-4); flex-wrap: wrap; }
 .conn-filter-pill { cursor: pointer; border: none; font-size: var(--fs-s); }
+@media (hover: none) and (pointer: coarse) {
+  .conn-filter-pill { min-height: 44px; padding-top: 10px; padding-bottom: 10px; }
+}
 .conn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: var(--s-6); }
 @media (max-width: 480px) {
   .conn-grid { grid-template-columns: 1fr; }
@@ -5575,7 +5692,14 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .inbox-page-section { display: flex; flex-direction: column; height: calc(100dvh - 120px); min-height: 500px; }
 .inbox-page-head { margin-bottom: var(--s-4) !important; }
 .inbox-h1 { margin: 0 !important; }
-.inbox-head-actions { display: flex; align-items: center; gap: var(--s-2); }
+.inbox-head-actions { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+@media (max-width: 768px) {
+  /* On mobile the page-head wraps so the fixed dvh-120 calc undershoots.
+     Let the section grow naturally inside the flex .app-content column,
+     bounded by the bottom-nav padding already on .app-content. */
+  .inbox-page-section { height: auto; flex: 1; min-height: 0; }
+  .inbox-twopane { min-height: 480px; }
+}
 .inbox-head-pill { font-size: var(--fs-xs); }
 .inbox-refresh-btn {
   display: flex;
@@ -5756,6 +5880,27 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .stg-input-key { flex: 1; max-width: 340px; width: auto; }
 .stg-input-local { flex: 1; min-width: 220px; width: auto; }
 .stg-select { width: auto; }
+@media (max-width: 480px) {
+  .stg-input-key, .stg-input-local { max-width: 100%; min-width: 0; width: 100%; }
+  /* select fills row width so "off — no gating" doesn't truncate */
+  .stg-select { width: 100%; }
+  /* driver-row header: stack meta above button on mobile so the long
+     detail text doesn't get crushed by the "Set primary" button */
+  .stg-driver-row-header {
+    flex-wrap: wrap;
+  }
+  .stg-driver-row-header .stg-action-btn {
+    align-self: flex-start;
+  }
+  /* page head: stack save indicator below title on narrow screens */
+  .stg-page-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .stg-save-indicator {
+    justify-content: flex-start;
+  }
+}
 
 /* Help text */
 .stg-help { font-size: var(--fs-s); color: var(--ink-2); margin: 4px 0 0; line-height: 1.5; }
@@ -6293,6 +6438,9 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   background: color-mix(in oklch, var(--accent) 6%, var(--card-bg)) !important;
   transform: translateX(2px);
 }
+@media (hover: none) and (pointer: coarse) {
+  .tasks-row-btn:hover { transform: none; }
+}
 .tasks-row-btn[aria-pressed="true"] { background: var(--recess) !important; }
 .tasks-row-btn--running { animation: tasks-pulse-border 2s ease-in-out infinite; }
 .tasks-row-btn--running .tasks-timeline-dot { animation: tasks-pulse-border 2s ease-in-out infinite; }
@@ -6419,6 +6567,17 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   outline-offset: 2px;
   border-radius: 6px;
 }
+@media (max-width: 768px) {
+  /* Decisions search inputs: override the inline width so each input
+     stretches to full container width instead of 280/180 px fixed. */
+  .decisions-input-focus {
+    width: 100%;
+  }
+  .decisions-input-focus input {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
 .verdict-badge {
   display: inline-flex;
   align-items: center;
@@ -6482,6 +6641,18 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   transition: box-shadow 0.15s ease;
 }
 .tx-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.08); }
+@media (max-width: 768px) {
+  /* card-head has 4 pills (staged time, TTL, file count, line delta) that
+     overflow at 375px — wrap them below the transaction ID. */
+  .tx-card .card-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .tx-card .card-head > div {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+}
 .tx-table-row { transition: background 0.12s ease; }
 .tx-table-row:hover {
   background: color-mix(in srgb, var(--surface) 60%, var(--card-bg) 40%);
@@ -6720,6 +6891,13 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   color: var(--ink-1);
   background: color-mix(in srgb, var(--ink-0) 8%, transparent);
 }
+@media (pointer: coarse) {
+  .recipes-search-clear {
+    min-height: 44px;
+    min-width: 44px;
+    right: 4px;
+  }
+}
 .recipe-status-badge { display: inline-flex; align-items: center; gap: 5px; }
 .recipes-table-card { animation: recipeFadeIn 200ms ease both; }
 
@@ -6772,6 +6950,24 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .new-recipe-section { animation: newRecipeIn 220ms ease both; }
 @media (min-width: 900px) {
   .recipe-form-layout { grid-template-columns: 1fr 1fr !important; }
+}
+@media (max-width: 768px) {
+  /* Var card: collapse 3-col (name / description / ✕) to 2-row layout.
+     Row 1: name input + ✕ button. Row 2: description spans full width. */
+  .new-recipe-var-card > div:first-child {
+    grid-template-columns: 1fr auto !important;
+  }
+  .new-recipe-var-card > div:first-child > input:nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  /* Step card header: wrap label + button group so they don't squish */
+  .new-recipe-step-card > div:first-child {
+    flex-wrap: wrap;
+    row-gap: var(--s-2);
+  }
+  /* Hide "Remove" text on step buttons at narrow width to save space */
+  .new-recipe-step-remove-label { display: none; }
 }
 
 /* --- recipes/compare/page.tsx --- */
@@ -6963,6 +7159,37 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .rd-tab-btn { transition: color 0.12s, border-bottom-color 0.12s; }
 .rd-tab-btn:hover { color: var(--ink-1) !important; }
 
+/* Two-column layout: main content + related panel aside.
+   Collapses to a single column on mobile so the 200px related panel
+   doesn't squeeze the main content to ~175px on a 375px viewport. */
+.rd-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 200px);
+  gap: var(--s-4, 16px);
+  align-items: start;
+}
+@media (max-width: 768px) {
+  .rd-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Related aside: sticky on desktop, static on mobile (single-column
+   stack doesn't benefit from sticky; it could also overlap bottom nav). */
+.rd-related-aside {
+  position: sticky;
+  top: 80px;
+  padding: var(--s-4, 16px);
+  background: var(--bg-1);
+  border-radius: var(--r-2, 8px);
+  border: 1px solid var(--line-2);
+  min-width: 0;
+}
+@media (max-width: 768px) {
+  .rd-related-aside {
+    position: static;
+  }
+}
+
 /* --- sessions/[id]/page.tsx --- */
 @keyframes sd-row-in {
   from { opacity: 0; transform: translateY(5px); }
@@ -6984,6 +7211,31 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   background: var(--ok);
   animation: sd-live-pulse 1.6s ease-in-out infinite;
   vertical-align: middle;
+}
+/* Approval row tool name: clamp so long names (searchWorkspaceSymbols etc.)
+   don't push the summary span off-screen on narrow viewports. */
+.sd-approval-tool {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+  flex-shrink: 0;
+}
+@media (max-width: 480px) {
+  .sd-approval-tool { max-width: 90px; }
+}
+@media (max-width: 768px) {
+  /* Event stream card head: wrap pill + noise button onto a second row so
+     items don't overflow the 375 px viewport. */
+  .sd-event-card-head {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .sd-event-card-head .btn {
+    margin-left: 0 !important;
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* --- components/Toast.tsx --- */
@@ -7022,8 +7274,18 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   color: var(--ink-1) !important;
   background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
+@media (pointer: coarse) {
+  .recipe-hub-tab-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
 .recipe-relation-strip a { transition: color 120ms, text-decoration-color 120ms; }
 .recipe-relation-strip a:hover { text-decoration-color: currentColor; }
+@media (max-width: 768px) {
+  .recipe-relation-strip { overflow-x: auto; flex-wrap: nowrap; }
+}
 
 .recipe-hub-layout {
   display: grid;
@@ -7051,5 +7313,19 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   .runs-halt-pill {
     min-height: 44px;
     padding: 8px 12px;
+  }
+}
+
+/* ── Mobile sweep — final pass (2026-05-25) ──────────────────────────────
+   Fixes identified in iPhone SE (375×667) screenshot audit:
+   1. .attention-chip: ~32px tall on touch devices (pending/halt/error chips
+      on the home overview band). Bump to 44px on coarse-pointer.
+   2. .lbrd-tabs: tab strip doesn't need extra height itself but sits next
+      to the h2 — no issue.
+   ──────────────────────────────────────────────────────────────────────── */
+@media (hover: none) and (pointer: coarse) {
+  .attention-chip {
+    min-height: 44px;
+    align-items: center;
   }
 }

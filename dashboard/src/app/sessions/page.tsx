@@ -446,7 +446,7 @@ export default function SessionsPage() {
           </div>
 
           {/* right: log panel */}
-          <div style={{ position: "sticky", top: 80 }}>
+          <div className="sticky-pane">
             {selectedId && selectedSession ? (
               <SessionSummaryPanel
                 shortId={`s${selectedIndex + 1}`}

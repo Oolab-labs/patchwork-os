@@ -311,7 +311,7 @@ export default function RecipePlanPage({ name }: { name: string }) {
             style={{
               border: "1px solid var(--line-1)",
               borderRadius: "var(--r-2)",
-              overflow: "hidden",
+              overflowX: "auto",
             }}
           >
             <table

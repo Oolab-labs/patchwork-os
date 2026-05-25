@@ -171,7 +171,7 @@ const iconBtnStyle: React.CSSProperties = {
   alignItems: "center",
   fontSize: "var(--fs-base)",
   lineHeight: 1,
-  minHeight: 24,
+  minHeight: 44,
 };
 
 function StepCard({ step, index, total, editable, onChangeField, onRemove, onMove, stepIssues }: StepCardProps) {

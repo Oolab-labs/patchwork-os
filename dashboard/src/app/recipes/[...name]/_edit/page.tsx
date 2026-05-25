@@ -549,7 +549,7 @@ export default function RecipeEditPage({ name }: { name: string }) {
                 border: "none",
                 cursor: "pointer",
                 transition: "background 0.12s, color 0.12s",
-                minHeight: 32,
+                minHeight: 44,
               }}
             >
               {mode === "yaml" ? "YAML" : "Form"}

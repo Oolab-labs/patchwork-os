@@ -821,6 +821,7 @@ export default function MarketplacePage() {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            flexWrap: "wrap",
             gap: 12,
             fontSize: "var(--fs-m)",
           }}

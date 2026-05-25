@@ -1504,7 +1504,7 @@ function NewRecipePageInner() {
                             color: "var(--err)",
                           }}
                         >
-                          &#x2715; Remove
+                          &#x2715;<span className="new-recipe-step-remove-label"> Remove</span>
                         </button>
                       </div>
                     </div>

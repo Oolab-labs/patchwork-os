@@ -217,7 +217,7 @@ function DecisionsContent() {
               placeholder="Filter by ref (e.g. PR-42)"
               className="input"
               aria-label="Filter by ref"
-              style={{ minWidth: 160, width: 180, fontFamily: "var(--font-mono)", transition: "border-color 0.15s ease" }}
+              style={{ minWidth: "min(160px, 100%)", width: 180, maxWidth: "100%", fontFamily: "var(--font-mono)", transition: "border-color 0.15s ease" }}
             />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>

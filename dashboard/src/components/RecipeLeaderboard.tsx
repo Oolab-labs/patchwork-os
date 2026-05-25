@@ -174,7 +174,9 @@ export function RecipeLeaderboard({
                   )}
                   <span>{a.name}</span>
                 </Link>
-                <RunSparkBars runs={a.runs.slice(0, 8)} slots={8} width={84} height={16} />
+                <span className="lbrd-sparkbars" aria-hidden="true">
+                  <RunSparkBars runs={a.runs.slice(0, 8)} slots={8} width={84} height={16} />
+                </span>
                 <span
                   className="mono muted lbrd-count"
                   title={`${a.total} run${a.total === 1 ? "" : "s"}`}

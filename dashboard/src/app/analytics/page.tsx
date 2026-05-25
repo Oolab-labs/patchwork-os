@@ -311,7 +311,7 @@ export default function AnalyticsPage() {
               description="Usage data builds up as your agents work. Run a recipe or make a Claude request to see your first stats."
             />
           ) : (
-            <div className="card" style={{ padding: "var(--s-5)" }}>
+            <div className="table-wrap">
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-s)" }}>
                 <tbody>
                   {topTools.map((t, i) => (

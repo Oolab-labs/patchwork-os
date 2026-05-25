@@ -137,6 +137,7 @@ export function BridgeOfflineBanner({ status }: { status: BridgeStatus }) {
           setDismissed(true);
         }}
         aria-label="Dismiss bridge-offline banner"
+        className="bridge-offline-dismiss"
         style={{
           background: "transparent",
           border: "1px solid color-mix(in srgb, var(--amber) 35%, transparent)",

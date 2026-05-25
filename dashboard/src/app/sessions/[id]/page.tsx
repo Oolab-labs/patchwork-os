@@ -411,7 +411,7 @@ export default function SessionDetailPage() {
                 >
                   {a.tier}
                 </span>
-                <span className="mono" style={{ fontSize: "var(--fs-m)" }}>
+                <span className="mono sd-approval-tool" style={{ fontSize: "var(--fs-m)" }}>
                   {a.toolName}
                 </span>
                 <span
@@ -512,7 +512,7 @@ export default function SessionDetailPage() {
 
       {stream.length > 0 && (
         <div className="card" style={{ marginTop: "var(--s-4)" }}>
-          <div className="card-head">
+          <div className="card-head sd-event-card-head">
             <h2>Event stream</h2>
             <span
               style={{

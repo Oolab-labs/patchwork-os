@@ -168,7 +168,7 @@ function TaskDetail({ task, onCancel, cancelling }: {
             aria-live={task.status === "running" ? "polite" : undefined}
             aria-atomic="false"
             aria-label={`Task ${task.taskId.slice(0, 8)} output`}
-            style={{ maxHeight: "calc(100vh - 460px)" }}
+            style={{ maxHeight: "max(200px, calc(100dvh - 460px - var(--bottom-nav-h, 0px)))" }}
           >
             {task.output.slice(0, 8000)}
           </pre>
@@ -335,6 +335,17 @@ function TasksContent() {
   }, [idFromUrl, hasLoaded]);
 
   const refetchRef = useRef<() => void>(() => {});
+  const detailPaneRef = useRef<HTMLDivElement>(null);
+
+  // On mobile (single-column), scroll the detail pane into view when a task
+  // is selected so the user sees the output without manually scrolling 1000s
+  // of pixels past the task list.
+  useEffect(() => {
+    if (!selectedTaskId || window.innerWidth > 768) return;
+    requestAnimationFrame(() => {
+      detailPaneRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [selectedTaskId]);
 
   useEffect(() => {
     let fastId: ReturnType<typeof setInterval> | null = null;
@@ -584,7 +595,7 @@ function TasksContent() {
             style={{ flex: "1 1 min(280px, 100%)", maxWidth: 360, fontSize: "var(--fs-m)" }}
             aria-label="Filter tasks (shortcut: /)"
           />
-          <div style={{ display: "flex", gap: 4 }} role="group" aria-label="Status filter">
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }} role="group" aria-label="Status filter">
             {([
               ["all", "All", statusCounts.all],
               ["live", "Live", statusCounts.live],
@@ -637,7 +648,7 @@ function TasksContent() {
         // wider than a 390 px iPhone viewport, causing 148 px of
         // horizontal overflow on the whole `app-content`). The
         // `.tasks-layout` class collapses to one column at ≤768 px.
-        <div className="tasks-layout" style={{ alignItems: "start" }}>
+        <div className="tasks-layout">
           {/* left: timeline rail + task list */}
           <div style={{ position: "relative" }}>
             <div
@@ -844,7 +855,7 @@ function TasksContent() {
           </div>
 
           {/* right: detail pane */}
-          <div style={{ position: "sticky", top: 80 }}>
+          <div className="sticky-pane" ref={detailPaneRef}>
             {selectedTask ? (
               <TaskDetail
                 task={selectedTask}

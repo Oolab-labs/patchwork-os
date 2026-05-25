@@ -1543,16 +1543,7 @@ export default function RunDetailPage() {
               },
             ];
             return (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 200px)",
-                  gap: "var(--s-4, 16px)",
-                  alignItems: "start",
-                  // On viewports narrower than ~640px the panel stacks below
-                  // the main column rather than floating beside it.
-                }}
-              >
+              <div className="rd-detail-layout">
                 {/* ── main column ── */}
                 <div style={{ minWidth: 0 }}>
           {/* ── tabs ── */}
@@ -1933,17 +1924,7 @@ export default function RunDetailPage() {
                 </div>{/* end main column */}
 
                 {/* ── related panel column ── */}
-                <aside
-                  style={{
-                    position: "sticky",
-                    top: 80,
-                    padding: "var(--s-4, 16px)",
-                    background: "var(--bg-1)",
-                    borderRadius: "var(--r-2, 8px)",
-                    border: "1px solid var(--line-2)",
-                    minWidth: 0,
-                  }}
-                >
+                <aside className="rd-related-aside">
                   <RelatedPanel groups={relatedGroups} />
                 </aside>
               </div>
