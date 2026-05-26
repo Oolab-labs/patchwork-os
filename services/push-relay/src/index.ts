@@ -14,8 +14,8 @@
  */
 
 import express from "express";
-import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import helmet from "helmet";
 import { bearerAuthMiddleware, EnvTokenStore } from "./auth.js";
 import { InMemoryRegistry, RedisRegistry } from "./deviceRegistry.js";
 import type { ApnsAdapter, FcmAdapter } from "./dispatcher.js";
@@ -149,9 +149,14 @@ async function main() {
     res.json({ ok: true });
   });
 
-  // Global per-IP rate limit on authenticated endpoints. Sits AFTER the
-  // /health exception so uptime probes are never throttled. Defence-in-depth
-  // on top of the per-user registration limiter in routes.ts.
+  // Bearer auth runs BEFORE the rate limiter so only authenticated requests
+  // consume IP token-bucket slots. Unauthenticated requests are rejected at
+  // the auth gate and never reach the rate-limiter.
+  app.use(bearerAuthMiddleware(tokenStore));
+
+  // Global per-IP rate limit on authenticated endpoints. skip: /health so
+  // uptime probes are never throttled. Defence-in-depth on top of the
+  // per-user registration limiter in routes.ts.
   app.use(
     rateLimit({
       windowMs: 60_000,
@@ -161,8 +166,6 @@ async function main() {
       skip: (req) => req.path === "/health",
     }),
   );
-
-  app.use(bearerAuthMiddleware(tokenStore));
   app.use(buildRouter(registry, { fcm, apns, apnsTopic }));
 
   // Authenticated extended-status endpoint for the dashboard / settings page
