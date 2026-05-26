@@ -520,6 +520,64 @@ describe("McpTransport", () => {
     expect(err.message).toMatch(/rate limit/i);
   });
 
+  it("malformed tools/call payloads (AJV fail) do NOT consume the per-session rate-limit window", async () => {
+    // Audit finding H2: the per-session ring buffer used to record the
+    // request timestamp BEFORE AJV validation ran, so 200 INVALID_PARAMS
+    // payloads would saturate the window and lock out legitimate calls
+    // for 60 s. The per-tool token bucket (consumeToolRateLimitToken)
+    // already skipped on AJV failure; this test pins the same behavior
+    // for the global ring buffer.
+    const { ws } = await setup("rate-limit-ajv-rollback", (t) => {
+      t.registerTool(
+        {
+          name: "strictTool",
+          description:
+            "Requires a string `must` arg — used to trigger AJV fail.",
+          inputSchema: {
+            type: "object",
+            properties: { must: { type: "string" } },
+            required: ["must"],
+            additionalProperties: false,
+          },
+        },
+        async (args) => ({
+          content: [{ type: "text", text: String(args.must) }],
+        }),
+      );
+    });
+
+    // Fire 250 AJV-failing calls (250 > 200 = RATE_LIMIT_MAX). Each one
+    // should be rejected with INVALID_PARAMS and should NOT consume a
+    // slot in the global ring buffer.
+    for (let i = 1; i <= 250; i++) {
+      send(ws, {
+        jsonrpc: "2.0",
+        id: i,
+        method: "tools/call",
+        // Empty args object → AJV rejects (missing required `must`).
+        params: { name: "strictTool", arguments: {} },
+      });
+    }
+    // Wait for all 250 INVALID_PARAMS responses.
+    const last = await waitFor(ws, (m) => m.id === 250, 15000);
+    expect(last.error?.code).toBe(ErrorCodes.INVALID_PARAMS);
+
+    // A VALID 251st call should succeed — NOT rate-limited. Pre-fix
+    // behavior: this call would return RATE_LIMIT_EXCEEDED because the
+    // ring buffer was saturated by the 250 malformed payloads.
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 251,
+      method: "tools/call",
+      params: { name: "strictTool", arguments: { must: "ok" } },
+    });
+    const valid = await waitFor(ws, (m) => m.id === 251, 5000);
+    expect(valid.error).toBeUndefined();
+    expect(valid.result).toMatchObject({
+      content: [{ type: "text", text: "ok" }],
+    });
+  });
+
   it("notification rate limit: exactly the 500th notification is dropped (>= off-by-one fix)", async () => {
     // NOTIFICATION_RATE_LIMIT = 500. After setup, notifCount = 1
     // (notifications/initialized). We send 498 dummy notifications/cancelled
