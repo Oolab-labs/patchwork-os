@@ -129,16 +129,34 @@ export default function RecipeEditPage({ name }: { name: string }) {
         }
       }
 
+      // Flatten a single raw step (or parallel: wrapper) into FlowSvgStep[].
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (rawSteps as any[]).map((s: any, idx: number): FlowSvgStep => {
+      function mapStep(s: any, idx: number, idPrefix = ""): FlowSvgStep[] {
+        // W2 — Handle parallel: wrapper — flatten inner steps as top-level nodes
+        // so they appear in the DAG. Each inner step gets a generated ID prefixed
+        // with the wrapper index to avoid collisions.
+        if (s && typeof s === "object" && Array.isArray(s.parallel?.steps)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (s.parallel.steps as any[]).flatMap((inner: any, innerIdx: number) => {
+            const innerIdSuffix =
+              typeof inner?.id === "string"
+                ? inner.id
+                : typeof inner?.tool === "string"
+                  ? inner.tool
+                  : String(innerIdx);
+            return mapStep(inner, innerIdx, `${idx}_${innerIdSuffix}_`);
+          });
+        }
+
         const id =
-          typeof s?.id === "string"
+          idPrefix +
+          (typeof s?.id === "string"
             ? s.id
             : typeof s?.tool === "string"
               ? s.tool
               : typeof s?.into === "string"
                 ? s.into
-                : `step_${idx + 1}`;
+                : `step_${idx + 1}`);
 
         // Determine type
         const type: FlowSvgStep["type"] =
@@ -148,28 +166,64 @@ export default function RecipeEditPage({ name }: { name: string }) {
               ? "agent"
               : "tool";
 
-        // Resolve implicit deps from {{}} refs in the entire step body,
+        // Pass 1 — resolve implicit deps from {{}} template refs in the step body,
         // mapped through the intoToId table. Exclude self-references.
         const refs = new Set<string>();
         collectRefs(s, refs);
-        const dependencies = Array.from(refs)
+        const implicitDeps = Array.from(refs)
           .map((r) => intoToId.get(r))
           .filter((depId): depId is string => depId !== undefined && depId !== id);
 
-        return {
-          id,
-          type,
-          tool: typeof s?.tool === "string" ? s.tool : undefined,
-          namespace: typeof s?.namespace === "string" ? s.namespace : undefined,
-          prompt: s?.agent?.prompt ?? (typeof s?.prompt === "string" ? s.prompt : undefined),
-          recipe: typeof s?.recipe === "string" ? s.recipe : undefined,
-          dependencies: dependencies.length > 0 ? dependencies : undefined,
-        };
-      });
+        // Pass 2 (W1) — honour explicit `dependencies:` arrays. These carry step
+        // IDs directly; no intoToId lookup needed.
+        const explicitDeps: string[] = [];
+        if (Array.isArray(s?.dependencies)) {
+          for (const dep of s.dependencies as unknown[]) {
+            if (typeof dep === "string" && dep !== id) {
+              explicitDeps.push(dep);
+            }
+          }
+        }
+
+        // Merge and dedup — implicit first (preserves existing behaviour),
+        // then any explicit IDs not already covered.
+        const seen = new Set<string>(implicitDeps);
+        const dependencies: string[] = [...implicitDeps];
+        for (const dep of explicitDeps) {
+          if (!seen.has(dep)) {
+            seen.add(dep);
+            dependencies.push(dep);
+          }
+        }
+
+        return [
+          {
+            id,
+            type,
+            tool: typeof s?.tool === "string" ? s.tool : undefined,
+            namespace: typeof s?.namespace === "string" ? s.namespace : undefined,
+            prompt: s?.agent?.prompt ?? (typeof s?.prompt === "string" ? s.prompt : undefined),
+            recipe: typeof s?.recipe === "string" ? s.recipe : undefined,
+            dependencies: dependencies.length > 0 ? dependencies : undefined,
+          },
+        ];
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (rawSteps as any[]).flatMap((s: any, idx: number) => mapStep(s, idx));
     } catch {
       return [];
     }
   }, [content]);
+
+  // W3 — Prefetch the YamlEditor dynamic-import chunk whenever flow mode is
+  // active. This ensures the chunk is already loaded before onStepClick calls
+  // switchEditMode("yaml"), eliminating the loading state flash on transition.
+  useEffect(() => {
+    if (editMode === "flow") {
+      void import("./_components/YamlEditor");
+    }
+  }, [editMode]);
 
   // Connector preflight surfaced on the edit page (Phase 1A item 5,
   // upgraded by Phase 1A.1).
