@@ -54,8 +54,8 @@ export function createGetToolCapabilitiesTool(
         extensionConnected: extensionClient.isConnected(),
         tier: extensionClient.isConnected() ? "full" : "basic",
         tierDescription: extensionClient.isConnected()
-          ? "All tools available including LSP, debugger, and terminal integration"
-          : "File operations, Git, GitHub, and CLI tools available. Connect the VS Code extension for LSP, debugger, and terminal tools.",
+          ? "All tools available (LSP, debugger, terminal)"
+          : "Basic tools available. Connect the VS Code extension for LSP/debugger/terminal.",
         editor: config.editorCommand ?? "none",
         cliTools: {
           rg: probes.rg,

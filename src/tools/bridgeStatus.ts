@@ -121,7 +121,6 @@ export function createBridgeStatusTool(
           tier: { type: "string", enum: ["full", "basic"] },
           tierDescription: { type: "string" },
           hint: { type: "string" },
-          suggestedActions: { type: "array", items: { type: "string" } },
           lastDisconnect: {
             type: "object",
             properties: {
@@ -167,25 +166,6 @@ export function createBridgeStatusTool(
               : ("poor" as const);
 
       const automationStatus = automationHooks?.getStatus() ?? null;
-      const unwired = automationStatus?.unwiredEnabledHooks ?? [];
-
-      const baseSuggestedActions = extensionConnected
-        ? [
-            "Use explainSymbol to understand any function in one call",
-            "Use refactorPreview to see what a refactoring would change before applying",
-            "Use setEditorDecorations to highlight code review findings inline",
-          ]
-        : [
-            "Connect the VS Code extension for LSP, debugger, and terminal tools",
-            "File operations, Git, GitHub, and CLI tools are available without the extension",
-          ];
-
-      if (unwired.length > 0) {
-        baseSuggestedActions.push(
-          `Automation hooks enabled but not wired in settings.json: ${unwired.join(", ")}. ` +
-            `Add CC hook entries calling the bridge notify tools (see CLAUDE.md Automation Policy section).`,
-        );
-      }
 
       // Compute tool availability: answers "why can't Claude call X?" without
       // requiring the caller to try the tool first and parse the error.
@@ -268,14 +248,11 @@ export function createBridgeStatusTool(
         }),
         tier: extensionConnected ? "full" : "basic",
         tierDescription: extensionConnected
-          ? "All tools available including LSP, debugger, and terminal integration"
-          : "File operations, Git, GitHub, and CLI tools available. Connect the VS Code extension for LSP, debugger, and terminal tools.",
-        suggestedActions: baseSuggestedActions,
+          ? "All tools available (LSP, debugger, terminal)"
+          : "Basic tools available. Connect the VS Code extension for LSP/debugger/terminal.",
         hint: extensionConnected
           ? "All tools available."
-          : "Extension disconnected — extension-dependent tools (LSP, terminal, debugging, etc.) are temporarily unavailable. " +
-            "Native tools (file search, git, GitHub) still work. " +
-            "The extension will auto-reconnect, or the user can run the 'Claude IDE Bridge: Reconnect' command.",
+          : "Extension disconnected — LSP/terminal/debugger unavailable. Will auto-reconnect.",
         ...(getDisconnectInfo && {
           lastDisconnect: getDisconnectInfo(),
         }),
