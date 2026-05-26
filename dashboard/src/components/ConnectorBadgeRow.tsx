@@ -17,7 +17,7 @@ function initials(id: string): string {
 
 function ConnectorGlyph({ id }: { id: string }) {
   if (KNOWN_SVGS.has(id)) {
-    const url = `/dashboard/connectors/${id}.svg`;
+    const url = `/connectors/${id}.svg`;
     return (
       <span
         role="img"
