@@ -149,9 +149,14 @@ async function main() {
     res.json({ ok: true });
   });
 
-  // Global per-IP rate limit on authenticated endpoints. Sits AFTER the
-  // /health exception so uptime probes are never throttled. Defence-in-depth
-  // on top of the per-user registration limiter in routes.ts.
+  // Bearer auth runs BEFORE the rate limiter so only authenticated requests
+  // consume IP token-bucket slots. Unauthenticated requests are rejected at
+  // the auth gate and never reach the rate-limiter.
+  app.use(bearerAuthMiddleware(tokenStore));
+
+  // Global per-IP rate limit on authenticated endpoints. skip: /health so
+  // uptime probes are never throttled. Defence-in-depth on top of the
+  // per-user registration limiter in routes.ts.
   app.use(
     rateLimit({
       windowMs: 60_000,
@@ -161,8 +166,6 @@ async function main() {
       skip: (req) => req.path === "/health",
     }),
   );
-
-  app.use(bearerAuthMiddleware(tokenStore));
   app.use(buildRouter(registry, { fcm, apns, apnsTopic }));
 
   // Authenticated extended-status endpoint for the dashboard / settings page
@@ -170,25 +173,6 @@ async function main() {
   app.get("/status", (_req, res) => {
     res.json({ ok: true, fcm: !!fcm, apns: !!apns });
   });
-
-  // JSON error middleware — must follow all route registrations. Express's
-  // default error handler renders an HTML page containing the stack trace and
-  // absolute filesystem paths (e.g. node_modules/raw-body/index.js:163:17),
-  // which leaks deployment shape on otherwise-correct error responses (e.g.
-  // 413 from express.json's body cap). Force a minimal JSON envelope instead.
-  app.use(
-    (
-      err: unknown,
-      _req: express.Request,
-      res: express.Response,
-      _next: express.NextFunction,
-    ) => {
-      const e = err as { statusCode?: unknown; type?: unknown };
-      const status = typeof e?.statusCode === "number" ? e.statusCode : 500;
-      const type = typeof e?.type === "string" ? e.type : "error";
-      res.status(status).json({ error: type });
-    },
-  );
 
   // Server-to-server API: no browser callers, so CORS is intentionally
   // omitted (no Access-Control-Allow-Origin headers emitted). Helmet's

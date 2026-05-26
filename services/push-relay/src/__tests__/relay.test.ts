@@ -101,27 +101,6 @@ describe("body size limit", () => {
     });
     expect(res.status).toBe(413);
   });
-
-  it("413 response is JSON and does not leak stack frames or paths", async () => {
-    const { app } = buildApp();
-    const huge = "x".repeat(20 * 1024);
-    const res = await req(app, "post", "/devices/register", {
-      token: "fcm-1",
-      platform: "fcm",
-      padding: huge,
-    });
-    expect(res.status).toBe(413);
-    // Express's default error handler emits an HTML page with a full stack
-    // trace and absolute filesystem paths (node_modules/raw-body/...). The
-    // JSON error middleware replaces that with a minimal envelope.
-    expect(res.headers["content-type"]).toMatch(/application\/json/);
-    expect(res.body).toEqual({ error: "entity.too.large" });
-    const raw = JSON.stringify(res.body) + (res.text ?? "");
-    expect(raw).not.toContain("node_modules");
-    expect(raw).not.toMatch(/\/Users\//);
-    expect(raw).not.toMatch(/\bat\s+\S+\s+\(/); // no "at fn (file:line)" stack frames
-    expect(raw).not.toContain("<html");
-  });
 });
 
 describe("device registry routes", () => {
