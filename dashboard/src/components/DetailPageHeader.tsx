@@ -39,7 +39,7 @@ export function DetailPageHeader({
           {breadcrumb && breadcrumb.length > 0 && (
             <div
               style={{
-                fontSize: "var(--fs-m)",
+                fontSize: 13,
                 fontWeight: 400,
                 color: "var(--ink-3)",
                 marginBottom: 4,
@@ -68,7 +68,7 @@ export function DetailPageHeader({
           )}
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <h1 style={{ margin: 0, fontSize: "22px", fontWeight: 600, color: "var(--ink-1)", lineHeight: 1.2 }}>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: "var(--ink-1)", lineHeight: 1.2 }}>
               {title}
             </h1>
             {statusBadge && (
@@ -82,7 +82,7 @@ export function DetailPageHeader({
             <div
               style={{
                 marginTop: 6,
-                fontSize: "var(--fs-m)",
+                fontSize: 13,
                 fontWeight: 400,
                 color: "var(--ink-2)",
                 display: "flex",

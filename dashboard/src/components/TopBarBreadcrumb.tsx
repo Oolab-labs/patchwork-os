@@ -72,7 +72,7 @@ export function TopBarBreadcrumb() {
         display: "flex",
         alignItems: "center",
         gap: 4,
-        fontSize: "var(--fs-m)",
+        fontSize: 13,
         maxWidth: 320,
         overflow: "hidden",
         flexShrink: 1,
