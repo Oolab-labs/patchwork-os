@@ -17,7 +17,7 @@ function initials(id: string): string {
 
 function ConnectorGlyph({ id }: { id: string }) {
   if (KNOWN_SVGS.has(id)) {
-    const url = `/dashboard/connectors/${id}.svg`;
+    const url = `/connectors/${id}.svg`;
     return (
       <span
         role="img"
@@ -64,9 +64,9 @@ export function ConnectorBadgeRow({ connectors }: { connectors: string[] }) {
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-      {visible.map((c) => (
+      {visible.map((c, i) => (
         <span
-          key={c}
+          key={i}
           title={c}
           aria-label={c}
           style={{
@@ -91,7 +91,7 @@ export function ConnectorBadgeRow({ connectors }: { connectors: string[] }) {
             padding: "0 5px",
             height: 16,
             borderRadius: 8,
-            background: "var(--accent-pill-bg)",
+            background: "color-mix(in srgb, var(--accent-cool) 15%, transparent)",
             color: "var(--accent-cool)",
             fontSize: 11,
             fontWeight: 600,

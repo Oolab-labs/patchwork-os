@@ -8678,3 +8678,43 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
     min-height: 44px;
   }
 }
+
+/* ContextRail layout — two-column detail page layout with optional sticky aside */
+.context-rail-layout {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: var(--s-4, 16px);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .context-rail-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.context-rail {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3, 12px);
+}
+
+.context-rail-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2, 8px);
+  padding: var(--s-3, 12px);
+  background: var(--bg-1, var(--surface));
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-2, 10px);
+}
+
+.context-rail-label {
+  font-size: var(--fs-xs, 11px);
+  font-weight: 600;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
