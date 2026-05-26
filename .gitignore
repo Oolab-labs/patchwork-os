@@ -90,3 +90,9 @@ screenshots/
 intellij-plugin/bin/
 intellij-plugin/build/
 intellij-plugin/.gradle/
+
+# Design-review artifacts — screenshots, button annotations, page snapshots
+*-buttons.json
+*-snapshot.md
+*.jpeg
+*.jpg
