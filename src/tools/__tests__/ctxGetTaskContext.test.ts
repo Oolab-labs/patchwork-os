@@ -374,3 +374,107 @@ describe("ctxGetTaskContext — sources map", () => {
     expect(res.sources).toEqual({ gh: true, git: true, linkLog: true });
   });
 });
+
+describe("ctxGetTaskContext — summary mode (default)", () => {
+  it("caps issue body at 500 chars and sets bodyTruncated", async () => {
+    const longBody = "x".repeat(600);
+    mockExec
+      .mockResolvedValueOnce(ok("gh v"))
+      .mockResolvedValueOnce(ok(".git"))
+      .mockResolvedValueOnce(
+        ok(
+          JSON.stringify({
+            number: 1,
+            title: "t",
+            state: "OPEN",
+            url: "u",
+            body: longBody,
+          }),
+        ),
+      );
+    const res = parse(
+      await createCtxGetTaskContextTool({ workspace: WS }).handler({
+        ref: "#1",
+      }),
+    );
+    expect(res.issue.body.length).toBe(500);
+    expect(res.bodyTruncated).toBe(true);
+  });
+
+  it("preserves PR linkedIssueRefs even when 'Closes #N' lives past the cap", async () => {
+    // 510 chars of filler, then ref past byte 500 — must still extract.
+    const body = `${"x".repeat(510)}\n\nCloses #42`;
+    mockExec
+      .mockResolvedValueOnce(ok("gh v"))
+      .mockResolvedValueOnce(ok(".git"))
+      .mockResolvedValueOnce(
+        ok(
+          JSON.stringify({
+            number: 7,
+            title: "t",
+            state: "OPEN",
+            url: "u",
+            body,
+          }),
+        ),
+      );
+    const res = parse(
+      await createCtxGetTaskContextTool({ workspace: WS }).handler({
+        ref: "PR-7",
+      }),
+    );
+    expect(res.pullRequest.linkedIssueRefs).toEqual(["#42"]);
+    expect(res.pullRequest.body.length).toBe(500);
+    expect(res.bodyTruncated).toBe(true);
+  });
+
+  it("mode:'full' returns untruncated body and bodyTruncated:false", async () => {
+    const longBody = "x".repeat(600);
+    mockExec
+      .mockResolvedValueOnce(ok("gh v"))
+      .mockResolvedValueOnce(ok(".git"))
+      .mockResolvedValueOnce(
+        ok(
+          JSON.stringify({
+            number: 1,
+            title: "t",
+            state: "OPEN",
+            url: "u",
+            body: longBody,
+          }),
+        ),
+      );
+    const res = parse(
+      await createCtxGetTaskContextTool({ workspace: WS }).handler({
+        ref: "#1",
+        mode: "full",
+      }),
+    );
+    expect(res.issue.body.length).toBe(600);
+    expect(res.bodyTruncated).toBe(false);
+  });
+
+  it("bodyTruncated:false when bodies fit under cap", async () => {
+    mockExec
+      .mockResolvedValueOnce(ok("gh v"))
+      .mockResolvedValueOnce(ok(".git"))
+      .mockResolvedValueOnce(
+        ok(
+          JSON.stringify({
+            number: 1,
+            title: "t",
+            state: "OPEN",
+            url: "u",
+            body: "short",
+          }),
+        ),
+      );
+    const res = parse(
+      await createCtxGetTaskContextTool({ workspace: WS }).handler({
+        ref: "#1",
+      }),
+    );
+    expect(res.bodyTruncated).toBe(false);
+    expect(res.issue.body).toBe("short");
+  });
+});
