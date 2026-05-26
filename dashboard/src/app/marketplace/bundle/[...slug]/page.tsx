@@ -260,6 +260,7 @@ function TrustCard({ bundle }: { bundle: RegistryBundle }) {
   return (
     <div className="glass-card" style={{ padding: "var(--s-5)" }}>
       <h3 style={{ fontSize: "var(--fs-m)", marginTop: 0, marginBottom: "var(--s-3)" }}>Trust &amp; permissions</h3>
+      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
       <table style={{ width: "100%", fontSize: "var(--fs-s)", borderCollapse: "collapse" }}>
         <tbody>
           {rows.map(({ label, value }) => (
@@ -270,6 +271,7 @@ function TrustCard({ bundle }: { bundle: RegistryBundle }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

@@ -37,11 +37,15 @@ interface Task {
 
 // ----------------------------------------------------------- driver badge
 
+// Token-backed driver badges. Each entry references CSS custom properties
+// from globals.css so the badges follow dark-mode + theme overrides instead
+// of pinning a fixed light-mode hex (audit H8: previous inline hex values
+// failed contrast in dark mode and bypassed the design-token system).
 const DRIVER_COLORS: Record<string, { bg: string; fg: string }> = {
-  claude: { bg: "rgba(217,119,87,0.14)", fg: "#c0562e" },
-  gemini: { bg: "rgba(66,133,244,0.14)", fg: "#2f6fe0" },
-  openai: { bg: "rgba(16,163,127,0.14)", fg: "#0d8a5e" },
-  grok: { bg: "rgba(120,120,120,0.14)", fg: "#555" },
+  claude: { bg: "var(--accent-soft)", fg: "var(--accent)" },
+  gemini: { bg: "var(--blue-soft)", fg: "var(--blue)" },
+  openai: { bg: "var(--green-soft)", fg: "var(--green)" },
+  grok: { bg: "var(--recess)", fg: "var(--ink-2)" },
 };
 
 function driverFromTask(t: Task): string {
