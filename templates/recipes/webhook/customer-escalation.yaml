@@ -25,22 +25,21 @@ trigger:
   path: /customer-escalation
 
 steps:
-  - tool: hubspot.find_contact
-    email: "{{payload.customer_email}}"
+  # Look the contact up by email. HubSpot's search API accepts a free-form
+  # query string (matches name / email / company) — the email itself is a
+  # specific enough literal that we get a one-row hit when the email is on
+  # file. If you need stricter matching, post-filter in the agent step.
+  - tool: hubspot.searchContacts
+    query: "{{payload.customer_email}}"
     into: contact
-  - tool: hubspot.list_recent_deals
-    contact_id: "{{contact.id}}"
-    max: 3
-    into: deals
   - agent:
       prompt: |
         Compose a Slack alert for the customer-success team. Keep it under
         12 lines. Include: customer name + company, tier (from contact.tier
-        if present), recent deal context, what they said, and the ticket
-        link. End with a single suggested first move.
+        if present), what they said, and the ticket link. End with a single
+        suggested first move.
 
         Contact: {{contact}}
-        Deals:   {{deals}}
         Summary: {{payload.summary}}
         Ticket:  {{payload.ticket_url}}
       into: alert

@@ -19,13 +19,18 @@ trigger:
   path: /meeting-prep
 
 steps:
-  - tool: gmail.search_threads
+  - tool: gmail.search
     query: "from:({{payload.attendees}}) newer_than:7d"
     max: 10
     into: recent_threads
-  - tool: linear.search_issues
-    query: "{{payload.topic}}"
-    max: 5
+  # linear.list_issues filters by assignee / team / state — there is no
+  # free-text topic search in the connector. We pull the user's own
+  # started/unstarted issues and let the agent correlate them to the
+  # meeting topic. Lossier than a real search, but useful + works
+  # without a Linear MCP setup.
+  - tool: linear.list_issues
+    state: "started,unstarted"
+    max: 10
     into: related_issues
   - agent:
       prompt: |
@@ -34,7 +39,8 @@ steps:
         Topic: {{payload.topic}}
         Attendees: {{payload.attendees}}
         Recent email threads with attendees: {{recent_threads}}
-        Related Linear issues: {{related_issues}}
+        My in-flight Linear issues: {{related_issues}}
+        — only mention issues that look related to the topic above.
 
         Output sections: Context, Open questions, Suggested first move.
       into: brief

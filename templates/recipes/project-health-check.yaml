@@ -38,7 +38,10 @@ steps:
         2. **Issues** — issues needing attention today; omit if empty
         3. **PRs** — PRs waiting on review or action; omit if empty
         4. **Health** — one-sentence overall assessment (on track / needs attention / blocked)
-      driver: claude
+      # Use the subprocess driver (claude -p) — runs under your existing
+      # Claude Code subscription. Switch to `driver: claude` only if you
+      # have ANTHROPIC_API_KEY set and prefer the API path.
+      driver: subprocess
     awaits: [gather]
   - id: write
     tool: file.write
