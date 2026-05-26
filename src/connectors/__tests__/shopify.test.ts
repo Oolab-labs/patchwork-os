@@ -18,7 +18,6 @@ describe("shopify token helpers", () => {
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
     delete process.env.HOME;
     delete process.env.PATCHWORK_HOME;
     delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
@@ -501,7 +500,7 @@ describe("handleShopifyDisconnect", () => {
   it("returns 200 always", async () => {
     vi.resetModules();
     const { handleShopifyDisconnect } = await import("../shopify.js");
-    const result = handleShopifyDisconnect();
+    const result = await handleShopifyDisconnect();
     expect(result.status).toBe(200);
     expect(JSON.parse(result.body).ok).toBe(true);
   });

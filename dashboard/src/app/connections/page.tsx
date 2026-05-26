@@ -620,7 +620,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Create a Custom App in your Shopify admin under{" "}
-        <a href="https://admin.shopify.com/settings/apps/development" target="_blank" rel="noreferrer" className="conn-modal-link">
+        <a href="https://admin.shopify.com/settings/apps/development" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
           Settings → Apps and sales channels → Develop apps
         </a>
         . Grant <code>read_products</code>, <code>read_orders</code>, and
@@ -640,7 +640,7 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     instructions: (
       <>
         Create a Personal Access Token in{" "}
-        <a href="https://docs.snowflake.com/en/user-guide/programmatic-access-tokens" target="_blank" rel="noreferrer" className="conn-modal-link">
+        <a href="https://docs.snowflake.com/en/user-guide/programmatic-access-tokens" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
           Snowflake → User → Personal access tokens
         </a>
         . Read-only role recommended — only SELECT/SHOW/DESC/EXPLAIN
