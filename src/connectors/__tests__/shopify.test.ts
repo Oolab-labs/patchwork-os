@@ -500,7 +500,7 @@ describe("handleShopifyDisconnect", () => {
   it("returns 200 always", async () => {
     vi.resetModules();
     const { handleShopifyDisconnect } = await import("../shopify.js");
-    const result = handleShopifyDisconnect();
+    const result = await handleShopifyDisconnect();
     expect(result.status).toBe(200);
     expect(JSON.parse(result.body).ok).toBe(true);
   });
