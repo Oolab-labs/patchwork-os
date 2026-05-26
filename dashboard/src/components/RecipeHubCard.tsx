@@ -142,7 +142,7 @@ export function RecipeHubCard({
         <Link
           href={href}
           style={{
-            fontSize: 16,
+            fontSize: "var(--fs-xl)",
             fontWeight: 600,
             color: "var(--ink-1)",
             textDecoration: "none",
@@ -160,7 +160,7 @@ export function RecipeHubCard({
         {status && (
           <span
             style={{
-              fontSize: 11,
+              fontSize: "var(--fs-xs)",
               fontWeight: 600,
               padding: "2px 7px",
               borderRadius: 999,
@@ -181,7 +181,7 @@ export function RecipeHubCard({
           display: "flex",
           alignItems: "center",
           gap: 5,
-          fontSize: 12,
+          fontSize: "var(--fs-s)",
           fontWeight: 500,
           color: "var(--ink-2)",
         }}
@@ -191,7 +191,7 @@ export function RecipeHubCard({
       </div>
 
       {/* run meta */}
-      <div style={{ fontSize: 12, fontWeight: 400, color: "var(--ink-3)", flex: 1 }}>
+      <div style={{ fontSize: "var(--fs-s)", fontWeight: 400, color: "var(--ink-3)", flex: 1 }}>
         {totalRuns > 0
           ? `${totalRuns} run${totalRuns === 1 ? "" : "s"} · last ${latestRun ? relTime(latestRun.startedAt) : "—"}`
           : "no runs yet"}

@@ -47,7 +47,7 @@ function ConnectorGlyph({ id }: { id: string }) {
         borderRadius: 4,
         background: "var(--bg-2)",
         color: "var(--ink-3)",
-        fontSize: 7,
+        fontSize: "7px",
         fontWeight: 700,
         flexShrink: 0,
         letterSpacing: 0,
@@ -93,7 +93,7 @@ export function ConnectorBadgeRow({ connectors }: { connectors: string[] }) {
             borderRadius: 8,
             background: "color-mix(in srgb, var(--accent-cool) 15%, transparent)",
             color: "var(--accent-cool)",
-            fontSize: 11,
+            fontSize: "var(--fs-xs)",
             fontWeight: 600,
             letterSpacing: 0,
           }}
