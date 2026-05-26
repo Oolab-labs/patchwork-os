@@ -17,7 +17,7 @@ const SRC = join(ROOT, "src");
 
 // Bump DOWN as inline fontSize literals get migrated to var(--fs-*).
 // Never bump UP. CI reviewer should reject any PR raising this number.
-const BASELINE = 10;
+const BASELINE = 9;
 
 const PATTERN = /fontSize:\s*[0-9]+(?:\.[0-9]+)?/g;
 
