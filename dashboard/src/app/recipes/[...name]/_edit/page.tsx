@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { parse as parseYaml } from "yaml";
 import { apiPath } from "@/lib/api";
 // BackLink and RelationStrip are rendered by the shared recipes/[name]/layout.tsx
 import { useToast } from "@/components/Toast";
@@ -11,6 +12,8 @@ import { detectConnectorsForRecipe } from "@/lib/recipeConnectors";
 import { detectConnectorsFromYaml } from "@/lib/recipeConnectors";
 import type { YamlLintIssue } from "./_components/YamlEditor";
 import { RecipeFormView } from "./_components/RecipeFormView";
+import { FlowSvg } from "./_components/FlowSvg";
+import type { FlowSvgStep } from "./_components/FlowSvg";
 import dynamic from "next/dynamic";
 
 /** Minimal shape we need from `/api/bridge/connectors/status` to drive
@@ -63,23 +66,110 @@ export default function RecipeEditPage({ name }: { name: string }) {
     warnings: string[];
   } | null>(null);
   const [linting, setLinting] = useState(false);
-  // Phase 2B: edit mode toggle — "yaml" (default) or "form" (structured editor).
+  // Phase 2B: edit mode toggle — "yaml" (default), "form" (structured editor),
+  // or "flow" (visual DAG of recipe steps).
   // Preference is persisted to localStorage so returning users stay in their
-  // chosen mode. Form mode is built incrementally: PR A (this) ships the
-  // toggle + skeleton; PRs B/C add the actual form fields.
-  const [editMode, setEditMode] = useState<"yaml" | "form">(() => {
+  // chosen mode.
+  const [editMode, setEditMode] = useState<"yaml" | "form" | "flow">(() => {
     if (typeof window === "undefined") return "yaml";
     try {
-      return (localStorage.getItem("recipe-edit-mode") as "yaml" | "form" | null) ?? "yaml";
+      const stored = localStorage.getItem("recipe-edit-mode");
+      if (stored === "yaml" || stored === "form" || stored === "flow") return stored;
+      return "yaml";
     } catch {
       return "yaml";
     }
   });
-  const switchEditMode = useCallback((mode: "yaml" | "form") => {
+  const switchEditMode = useCallback((mode: "yaml" | "form" | "flow") => {
     setEditMode(mode);
     try { localStorage.setItem("recipe-edit-mode", mode); } catch { /* private mode */ }
   }, []);
   const toast = useToast();
+
+  // Derive FlowSvgStep[] from the live YAML buffer for the "flow" view.
+  // Extracts implicit dependencies by scanning each step's serialised body for
+  // {{varname}} template refs, then mapping those var names to the step whose
+  // `into:` field matches — that step must run first.
+  const flowSteps = useMemo<FlowSvgStep[]>(() => {
+    if (!content.trim()) return [];
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const doc = parseYaml(content) as any;
+      if (!doc || typeof doc !== "object") return [];
+      const rawSteps: unknown[] = Array.isArray(doc.steps) ? doc.steps : [];
+      if (rawSteps.length === 0) return [];
+
+      // Build a map from `into` variable name → step id so we can resolve refs.
+      const intoToId = new Map<string, string>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const s of rawSteps as any[]) {
+        if (s && typeof s === "object" && typeof s.into === "string") {
+          const sid =
+            typeof s.id === "string"
+              ? s.id
+              : typeof s.tool === "string"
+                ? s.tool
+                : s.into;
+          intoToId.set(s.into, sid);
+        }
+      }
+
+      // Extract all {{varname}} refs from a value (recursively).
+      function collectRefs(val: unknown, out: Set<string>): void {
+        if (typeof val === "string") {
+          for (const m of val.matchAll(/\{\{([^}]+)\}\}/g)) {
+            // Strip any dot-path — we only care about the root var name.
+            const root = m[1]!.trim().split(".")[0]!.trim();
+            out.add(root);
+          }
+        } else if (Array.isArray(val)) {
+          for (const item of val) collectRefs(item, out);
+        } else if (val && typeof val === "object") {
+          for (const v of Object.values(val)) collectRefs(v, out);
+        }
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (rawSteps as any[]).map((s: any, idx: number): FlowSvgStep => {
+        const id =
+          typeof s?.id === "string"
+            ? s.id
+            : typeof s?.tool === "string"
+              ? s.tool
+              : typeof s?.into === "string"
+                ? s.into
+                : `step_${idx + 1}`;
+
+        // Determine type
+        const type: FlowSvgStep["type"] =
+          typeof s?.recipe === "string"
+            ? "recipe"
+            : s?.agent
+              ? "agent"
+              : "tool";
+
+        // Resolve implicit deps from {{}} refs in the entire step body,
+        // mapped through the intoToId table. Exclude self-references.
+        const refs = new Set<string>();
+        collectRefs(s, refs);
+        const dependencies = Array.from(refs)
+          .map((r) => intoToId.get(r))
+          .filter((depId): depId is string => depId !== undefined && depId !== id);
+
+        return {
+          id,
+          type,
+          tool: typeof s?.tool === "string" ? s.tool : undefined,
+          namespace: typeof s?.namespace === "string" ? s.namespace : undefined,
+          prompt: s?.agent?.prompt ?? (typeof s?.prompt === "string" ? s.prompt : undefined),
+          recipe: typeof s?.recipe === "string" ? s.recipe : undefined,
+          dependencies: dependencies.length > 0 ? dependencies : undefined,
+        };
+      });
+    } catch {
+      return [];
+    }
+  }, [content]);
 
   // Connector preflight surfaced on the edit page (Phase 1A item 5,
   // upgraded by Phase 1A.1).
@@ -534,7 +624,7 @@ export default function RecipeEditPage({ name }: { name: string }) {
             flexShrink: 0,
           }}
         >
-          {(["yaml", "form"] as const).map((mode) => (
+          {(["yaml", "form", "flow"] as const).map((mode) => (
             <button
               key={mode}
               type="button"
@@ -552,7 +642,7 @@ export default function RecipeEditPage({ name }: { name: string }) {
                 minHeight: 44,
               }}
             >
-              {mode === "yaml" ? "YAML" : "Form"}
+              {mode === "yaml" ? "YAML" : mode === "form" ? "Form" : "Flow"}
             </button>
           ))}
         </div>
@@ -993,6 +1083,42 @@ export default function RecipeEditPage({ name }: { name: string }) {
             }}
             lintIssues={lintIssues}
           />
+        ) : editMode === "flow" ? (
+          <div
+            style={{
+              minHeight: 300,
+              overflowX: "auto",
+              overflowY: "auto",
+              borderRadius: "var(--r-2)",
+              border: "1px solid var(--line-2)",
+            }}
+          >
+            {flowSteps.length === 0 ? (
+              <div
+                style={{
+                  minHeight: 300,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--ink-3)",
+                  fontSize: "var(--fs-s)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                No steps to visualize — add steps in YAML or Form view.
+              </div>
+            ) : (
+              <FlowSvg
+                steps={flowSteps}
+                onStepClick={(id) => {
+                  // Switch to YAML view and highlight the clicked step.
+                  switchEditMode("yaml");
+                  setHighlightStepId(id);
+                }}
+                style={{ minWidth: "100%" }}
+              />
+            )}
+          </div>
         ) : (
           <YamlEditor
             value={content}
