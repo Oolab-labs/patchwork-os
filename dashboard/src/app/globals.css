@@ -94,7 +94,7 @@
   --fs-xl:     16px;
   --fs-2xl:    18px;
   --fs-3xl:    20px;
-  --fs-display: clamp(28px, 4vw, 36px);
+  --fs-display: 28px;
   /* role-named: stat-number displays in sessions/inbox cards */
   --fs-stat:   17px;
 
