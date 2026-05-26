@@ -69,6 +69,9 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Dev override: bypass all auth checks.
+  if (ALLOW_UNAUTHENTICATED) return NextResponse.next();
+
   // Login page itself must be reachable without a session. Next.js
   // strips basePath before matching, so the internal pathname is
   // `/login` even though the external URL is `/dashboard/login`.
