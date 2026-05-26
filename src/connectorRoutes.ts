@@ -2228,7 +2228,7 @@ export function tryHandleConnectorRoute(
         const { handleShopifyDisconnect } = await import(
           "./connectors/shopify.js"
         );
-        const result = handleShopifyDisconnect();
+        const result = await handleShopifyDisconnect();
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });

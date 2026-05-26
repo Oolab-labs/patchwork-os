@@ -631,7 +631,7 @@ export async function handleShopifyTest(): Promise<ConnectorHandlerResult> {
 /**
  * DELETE /connections/shopify
  */
-export function handleShopifyDisconnect(): ConnectorHandlerResult {
+export async function handleShopifyDisconnect(): Promise<ConnectorHandlerResult> {
   clearTokens();
   resetShopifyConnector();
   return {
