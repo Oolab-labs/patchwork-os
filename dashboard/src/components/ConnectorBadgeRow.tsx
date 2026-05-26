@@ -1,18 +1,17 @@
 "use client";
 
-import { formatConnectorLabel, normalizeConnectorId } from "@/lib/registry";
+import { normalizeConnectorId } from "@/lib/registry";
 
 const KNOWN_SVGS = new Set([
   "gmail", "google-calendar", "google-drive", "linear", "github",
   "slack", "asana", "discord", "gitlab", "jira", "confluence",
   "notion", "hubspot", "sentry",
 ]);
-// No SVG yet: pagerduty, zendesk, intercom, datadog
 
 function initials(id: string): string {
   const norm = id.toLowerCase().replace(/[^a-z]/g, "");
-  if (norm === "googlecalendar" || norm === "calendar") return "GC";
-  if (norm === "googledrive") return "GD";
+  if (norm === "googlecalendar" || norm === "calendar" || norm === "google-calendar") return "GC";
+  if (norm === "googledrive" || norm === "google-drive") return "GD";
   return norm.slice(0, 2).toUpperCase();
 }
 
@@ -21,10 +20,12 @@ function ConnectorGlyph({ id }: { id: string }) {
     const url = `/connectors/${id}.svg`;
     return (
       <span
+        role="img"
+        aria-label={id}
         style={{
           display: "block",
-          width: 16,
-          height: 16,
+          width: 14,
+          height: 14,
           flexShrink: 0,
           color: "var(--ink-2)",
           background: "currentColor",
@@ -63,11 +64,11 @@ export function ConnectorBadgeRow({ connectors }: { connectors: string[] }) {
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-      {visible.map((c) => (
+      {visible.map((c, i) => (
         <span
-          key={c}
-          title={formatConnectorLabel(c)}
-          aria-label={formatConnectorLabel(c)}
+          key={i}
+          title={c}
+          aria-label={c}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -90,7 +91,7 @@ export function ConnectorBadgeRow({ connectors }: { connectors: string[] }) {
             padding: "0 5px",
             height: 16,
             borderRadius: 8,
-            background: "var(--accent-pill-bg)",
+            background: "color-mix(in srgb, var(--accent-cool) 15%, transparent)",
             color: "var(--accent-cool)",
             fontSize: "var(--fs-xs)",
             fontWeight: 600,

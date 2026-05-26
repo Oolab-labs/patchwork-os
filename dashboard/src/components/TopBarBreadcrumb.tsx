@@ -80,7 +80,7 @@ export function TopBarBreadcrumb() {
       }}
     >
       {crumbs.map((crumb, i) => (
-        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+        <span key={crumb.href ?? crumb.label} style={{ display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0 }}>
           {i > 0 && (
             <span style={{ color: "var(--ink-3)", fontWeight: 400, flexShrink: 0 }}>›</span>
           )}

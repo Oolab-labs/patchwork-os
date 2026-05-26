@@ -25,7 +25,7 @@ export function MiniBarChart({
   const barW = 7;
   const w = n * slotW;
   const h = height;
-  const max = Math.max(...values, 1);
+  const max = values.reduce((a, b) => Math.max(a, b), 0) || 1;
   const id = useId().replace(/:/g, "");
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);

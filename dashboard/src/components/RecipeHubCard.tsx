@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { canonicalRecipeKey } from "@/lib/entityKey";
 
 interface Recipe {
@@ -106,11 +107,21 @@ export function RecipeHubCard({
   const href = `/recipes/${encodeURIComponent(canonicalRecipeKey(recipe.name))}`;
   const status = isRunning ? "running" : latestRun?.status;
   const enabled = recipe.enabled !== false;
+  const router = useRouter();
 
   return (
     <div
       className="recipe-hub-card"
       data-disabled={!enabled || undefined}
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push(href)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          router.push(href);
+        }
+      }}
       style={{
         background: "var(--bg-1, var(--surface))",
         border: "1px solid var(--line-2)",
@@ -142,7 +153,7 @@ export function RecipeHubCard({
             minWidth: 0,
           }}
           title={recipe.name}
-          tabIndex={0}
+          tabIndex={-1}
         >
           {recipe.name}
         </Link>
@@ -186,25 +197,7 @@ export function RecipeHubCard({
           : "no runs yet"}
       </div>
 
-      {/* footer: open button */}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
-        <Link
-          href={href}
-          className="btn ghost"
-          style={{
-            height: 32,
-            padding: "0 12px",
-            borderRadius: 10,
-            fontSize: "var(--fs-m)",
-            fontWeight: 500,
-            textDecoration: "none",
-          }}
-          tabIndex={-1}
-          aria-hidden="true"
-        >
-          Open →
-        </Link>
-      </div>
+
     </div>
   );
 }

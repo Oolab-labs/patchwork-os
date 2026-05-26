@@ -50,7 +50,7 @@ export function DetailPageHeader({
               }}
             >
               {breadcrumb.map((crumb, i) => (
-                <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <span key={crumb.href ?? crumb.label} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                   {i > 0 && <span style={{ color: "var(--ink-3)", opacity: 0.6 }}>›</span>}
                   {crumb.href ? (
                     <Link
