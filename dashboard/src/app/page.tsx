@@ -11,14 +11,9 @@ import { useBridgeStatus } from "@/hooks/useBridgeStatus";
 import { isNoiseEvent } from "@/lib/activityNoise";
 import { isHaltStatus } from "@/lib/runStatus";
 import {
-  ActionPill,
   AnimatedNumber,
-  AreaChart,
-  EntityTimeline,
-  LivePill,
   QuiltHero,
   Sparkline,
-  type TimelineEvent,
 } from "@/components/patchwork";
 import { RecipeChip, ToolChip } from "@/components/patchwork/entity";
 import { canonicalRecipeKey } from "@/lib/entityKey";
@@ -29,6 +24,7 @@ import {
 import { LiveRunsStrip, type LiveRun } from "@/components/LiveRunsStrip";
 import { LiveWire } from "@/components/LiveWire";
 import { FeaturedRecipeAside } from "@/components/FeaturedRecipeAside";
+import { useRunRecipe } from "@/hooks/useRunRecipe";
 
 // ---------------------------------------------------------------------------
 // Keyframe injection — scoped to this page, no globals.css edits needed.
@@ -99,83 +95,6 @@ function withAt(e: ActivityEvent): ActivityEvent {
     if (Number.isFinite(ms)) return { ...e, at: ms };
   }
   return { ...e, at: Date.now() };
-}
-
-/**
- * Tool calls — last 60 minutes widget. Polls /metrics every 5s and
- * renders the per-minute delta. Pre-empty-state-pass this rendered an
- * AreaChart unconditionally — when the bridge has had no tool calls
- * yet (the common first-run state), the curve is a flat line at zero
- * and the "0" badge in the top-right looks like a broken reading
- * rather than an intentional empty state. Now the chart only renders
- * when there's actual signal; otherwise we show a one-line hint
- * explaining what populates the curve.
- */
-function ToolCallsWidget({
-  series,
-  peak,
-  uniqueTools,
-  activeRecipesCount,
-  toolCallTotal,
-  bridgeOk,
-}: {
-  series: number[];
-  peak: number;
-  uniqueTools: number;
-  activeRecipesCount: number;
-  toolCallTotal: number;
-  bridgeOk: boolean;
-}): React.JSX.Element {
-  const total = series.reduce((a, b) => a + b, 0);
-  const hasActivity = peak > 0 || total > 0;
-  return (
-    <div className="card tool-calls-card">
-      <div className="tcw-header">
-        <span className="stat-tile-icon stat-tile-icon--tools" aria-hidden="true">
-          <TileIconShell />
-        </span>
-        <span className="card-h2">Tool calls — last 24 hours</span>
-        {hasActivity && (
-          <span
-            className="pw-live-dot"
-            aria-label="Live"
-            title="Live data"
-            style={{ marginRight: 4 }}
-          />
-        )}
-        <LivePill connection={hasActivity ? "live" : "offline"} />
-      </div>
-      <div className="tcw-meta">
-        {hasActivity
-          ? <>peak {peak}/hour · {uniqueTools} unique tool{uniqueTools !== 1 ? "s" : ""} · {activeRecipesCount} recipe{activeRecipesCount !== 1 ? "s" : ""}</>
-          : <>{activeRecipesCount} recipe{activeRecipesCount !== 1 ? "s" : ""} · no calls in 24h</>
-        }
-      </div>
-      {hasActivity ? (
-        <AreaChart
-          series={[{ values: series, color: "var(--info)" }]}
-          height={120}
-          minimal
-        />
-      ) : (
-        <div role="status" className="tcw-empty">
-          <div>
-            <span className="tcw-empty-msg">No tool calls in the last 24h.</span>{" "}
-            <span>
-              {bridgeOk
-                ? "Run a recipe and the curve fills in."
-                : "Bridge offline."}
-            </span>
-          </div>
-          {bridgeOk && (
-            <Link href="/recipes" className="tcw-empty-link">
-              Browse recipes →
-            </Link>
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function activityLabel(e: ActivityEvent): string {
@@ -256,10 +175,10 @@ const TILE_ICON_PROPS = {
   strokeLinecap: "round" as const,
   strokeLinejoin: "round" as const,
 };
-function TileIconLines() {
+function TileIconPlay() {
   return (
     <svg {...TILE_ICON_PROPS} aria-hidden="true">
-      <path d="M4 6h16M4 12h16M4 18h16" />
+      <path d="M5 3l14 9-14 9V3z" />
     </svg>
   );
 }
@@ -279,11 +198,10 @@ function TileIconShell() {
     </svg>
   );
 }
-function TileIconSun() {
+function TileIconOctagon() {
   return (
     <svg {...TILE_ICON_PROPS} aria-hidden="true">
-      <circle cx="12" cy="12" r="3.5" />
-      <path d="M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4" />
+      <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2" />
     </svg>
   );
 }
@@ -353,189 +271,6 @@ function eventMatchesFilter(e: ActivityEvent, f: ActivityFilter): boolean {
     return e.kind === "lifecycle" && e.event === "approval_decision";
   }
   return true;
-}
-
-function ActivityThread({ events: rawEvents }: { events: ActivityEvent[] }) {
-  const [filter, setFilter] = useState<ActivityFilter>("all");
-  // Track which event ids were already seen so we can flash newcomers.
-  // Ref instead of state so we don't re-render on each mutation; the
-  // parent's 5s poll already re-renders us when the data changes.
-  const seenIds = useRef<Set<string | number>>(new Set());
-
-  const filtered = useMemo(
-    () => rawEvents.filter((e) => eventMatchesFilter(e, filter)),
-    [rawEvents, filter],
-  );
-  const events = compressActivityRuns(filtered);
-
-  // Compute the set of fresh keys for this render before mutating the
-  // seen set, so the same render renders with consistent fresh flags.
-  const freshKeys = useMemo(() => {
-    const fresh = new Set<string | number>();
-    for (const e of events) {
-      const k = (e.id ?? `${e.kind}-${e.at ?? 0}-${e.tool ?? e.event ?? ""}`) as
-        | string
-        | number;
-      if (!seenIds.current.has(k)) fresh.add(k);
-    }
-    return fresh;
-  }, [events]);
-  useEffect(() => {
-    // Mark everything seen *after* the render commits so the flash CSS
-    // has a chance to play. Capped at 200 to bound memory across long
-    // sessions; the activity feed itself only retains last 500 events.
-    for (const e of events) {
-      const k = (e.id ?? `${e.kind}-${e.at ?? 0}-${e.tool ?? e.event ?? ""}`) as
-        | string
-        | number;
-      seenIds.current.add(k);
-    }
-    if (seenIds.current.size > 600) {
-      const arr = Array.from(seenIds.current);
-      seenIds.current = new Set(arr.slice(-400));
-    }
-  }, [events]);
-
-  return (
-    <div className="card card--pg">
-      <div className="card-hd">
-        <h2 className="card-h2">Activity thread</h2>
-        <ActionPill href="/activity" ariaLabel="View all activity">
-          view all →
-        </ActionPill>
-      </div>
-      <div
-        role="tablist"
-        aria-label="Filter activity by kind"
-        className="activity-filter-row"
-      >
-        {(["all", "tools", "approvals", "errors"] as const).map((f) => {
-          const active = f === filter;
-          return (
-            <button
-              key={f}
-              role="tab"
-              type="button"
-              aria-selected={active}
-              onClick={() => setFilter(f)}
-              className={`activity-filter-chip${active ? " is-active" : ""}`}
-            >
-              {f}
-            </button>
-          );
-        })}
-      </div>
-
-      {events.length === 0 ? (
-        <div className="atd-empty" style={{ animation: "pw-fade-in 0.3s ease both" }}>
-          <div style={{ fontSize: 28, marginBottom: 6, opacity: 0.35 }} aria-hidden="true">⚡</div>
-          <div className="atd-empty-title">No recent events.</div>
-          <div className="atd-empty-body">
-            Tool calls and lifecycle events from connected agents will
-            appear here in real time.
-          </div>
-          <Link
-            href="/activity"
-            style={{
-              display: "inline-block",
-              marginTop: 10,
-              fontSize: "var(--fs-xs)",
-              color: "var(--accent)",
-              textDecoration: "none",
-              fontWeight: 500,
-              transition: "opacity 0.15s ease",
-            }}
-          >
-            View full activity log →
-          </Link>
-        </div>
-      ) : (
-        <div className="atd-stream">
-          {/* vertical rail */}
-          <div className="activity-rail" aria-hidden="true" />
-          {events.map((e, i) => {
-            const ts = e.at ?? Date.now();
-            const tool = activityLabel(e);
-            const kind = activityKind(e);
-            const recipe = activityRecipe(e);
-            const isErr = e.status === "error";
-            const rawDurMs = e.durationMs;
-            const dur = typeof rawDurMs === "number"
-              ? rawDurMs >= 1000
-                ? `${(rawDurMs / 1000).toFixed(1)}s`
-                : `${rawDurMs}ms`
-              : null;
-            const rawCount = (e as Record<string, unknown>)._count;
-            const repeatCount = typeof rawCount === "number" ? rawCount : 0;
-            const eventKey = (e.id ?? `${e.kind}-${e.at ?? 0}-${e.tool ?? e.event ?? ""}`) as
-              | string
-              | number;
-            const isFresh = freshKeys.has(eventKey);
-            const kindPillClass = e.kind === "lifecycle"
-              ? /rejected|error|halt/i.test(e.event ?? "") ? "err"
-                : /done|success|complet/i.test(e.event ?? "") ? "ok"
-                : /start|session/i.test(e.event ?? "") ? "info"
-                : "muted"
-              : "muted";
-            return (
-              <div
-                // biome-ignore lint/suspicious/noArrayIndexKey: stable list
-                key={e.id ?? i}
-                className={`activity-row${isFresh ? " is-fresh" : ""}${isErr ? " is-err" : ""}`}
-                style={{
-                  animation: "pw-slide-up 0.25s ease both",
-                  animationDelay: `${Math.min(i * 35, 350)}ms`,
-                }}
-              >
-                <span
-                  aria-hidden="true"
-                  className="activity-dot"
-                  data-err={isErr ? "true" : undefined}
-                  data-tone={
-                    e.kind === "lifecycle" && !isErr && kindPillClass !== "muted"
-                      ? kindPillClass
-                      : undefined
-                  }
-                />
-                <span className="activity-ts">{relTime(ts)}</span>
-                <span className="activity-content">
-                  {recipe && (
-                    <RecipeChip
-                      name={recipe}
-                      variant="row"
-                    />
-                  )}
-                  {recipe && (
-                    <span aria-hidden="true" className="muted">·</span>
-                  )}
-                  {e.kind === "tool" && e.tool ? (
-                    <ToolChip name={e.tool} variant="row" />
-                  ) : (
-                    <span className="activity-tool-name">{tool}</span>
-                  )}
-                  {repeatCount > 1 && (
-                    <span
-                      className="pill muted xs"
-                      title={`Last ${repeatCount} events collapsed`}
-                    >
-                      ×{repeatCount}
-                    </span>
-                  )}
-                </span>
-                <span className={`pill ${kindPillClass} xs`}>{kind}</span>
-                {dur && <span className="activity-dur">{dur}</span>}
-                {(e.kind === "tool" || isErr) && (
-                  <span className={`pill ${isErr ? "err" : "ok"} xs`}>
-                    {isErr ? "err" : "ok"}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -661,135 +396,300 @@ function NeedsAttentionBand({
 }
 
 // ---------------------------------------------------------------------------
-// Unified activity timeline (EntityTimeline-based)
+// Recipes kanban (Draft / Paused / Active) — Framley/Kilo style
 // ---------------------------------------------------------------------------
 
-/**
- * Reshapes recent runs + pending approvals into TimelineEvent[] for
- * EntityTimeline. Merges and sorts newest-first; each item links out.
- *
- * Uses runs data (already fetched) and pendingApprovals. No new endpoints.
- */
-function buildTimelineEvents(
-  runs: LiveRun[],
-  approvals: Pending[],
-  activityEvents: ActivityEvent[],
-): TimelineEvent[] {
-  const events: TimelineEvent[] = [];
-
-  // Recent runs (capped at 8)
-  const recentRuns = [...runs]
-    .sort((a, b) => b.startedAt - a.startedAt)
-    .slice(0, 8);
-  for (const r of recentRuns) {
-    events.push({
-      id: `run-${r.seq}`,
-      kind: "run",
-      timestamp: r.startedAt,
-      label: r.recipeName ?? `run #${r.seq}`,
-      status: r.status,
-      meta: {
-        seq: r.seq,
-        recipeName: r.recipeName,
-        hadStepErrors: r.hadStepErrors,
-      },
-    });
-  }
-
-  // Pending approvals
-  for (const ap of approvals.slice(0, 4)) {
-    events.push({
-      id: `approval-${ap.callId}`,
-      kind: "approval",
-      timestamp: ap.requestedAt,
-      label: ap.summary ?? ap.toolName,
-      status: "pending",
-      meta: {
-        callId: ap.callId,
-        decision: "pending",
-      },
-    });
-  }
-
-  // Supplement with a few recent activity events that aren't covered by runs
-  const activitySlice = activityEvents
-    .filter((e) => e.kind === "lifecycle" && e.event === "approval_decision")
-    .slice(0, 3);
-  for (const e of activitySlice) {
-    const callId = (e.metadata as Record<string, unknown>)?.callId as string | undefined;
-    if (!callId) continue;
-    // Don't duplicate an already-present pending approval
-    if (events.some((ev) => ev.id === `approval-${callId}`)) continue;
-    events.push({
-      id: `act-${e.id ?? e.at}`,
-      kind: "approval",
-      timestamp: e.at ?? Date.now(),
-      label: (e.metadata as Record<string, unknown>)?.decision as string ?? "decision",
-      meta: {
-        callId,
-        decision: (e.metadata as Record<string, unknown>)?.decision as string,
-      },
-    });
-  }
-
-  return events.sort((a, b) => b.timestamp - a.timestamp).slice(0, 15);
+/** Derive stable pastel avatar colour from recipe name. */
+function ragColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  const hue = h % 360;
+  return `hsl(${hue}, 52%, 38%)`;
 }
 
-// ---------------------------------------------------------------------------
-// Recipes-at-a-glance strip
-// ---------------------------------------------------------------------------
+/** Up to 2 uppercase initials from a recipe name. */
+function ragInitials(name: string): string {
+  const parts = name.replace(/[-_./]/g, " ").split(" ").filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/** Human-readable display name (capitalised, dashes→spaces). */
+function ragDisplayName(name: string): string {
+  return name.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Short role text per column. */
+function ragRole(
+  kind: "draft" | "paused" | "active",
+  name: string,
+  runCount: number,
+  hasHalt: boolean,
+): string {
+  if (kind === "draft") return "No recent runs";
+  if (kind === "paused") return "Paused";
+  if (hasHalt) return `${runCount} run${runCount !== 1 ? "s" : ""} · halted`;
+  return `${runCount} run${runCount !== 1 ? "s" : ""}`;
+}
+
+/** Tag from last segment of recipe name for category chip. */
+function ragTag(name: string): string {
+  const n = name.toLowerCase();
+  if (/tweet|twitter|social/.test(n)) return "SOCIAL";
+  if (/github|commit|pull.?req|code.?review|pr.?review/.test(n)) return "GITHUB";
+  if (/gmail|email|inbox|mail/.test(n)) return "EMAIL";
+  if (/slack/.test(n)) return "SLACK";
+  if (/linear/.test(n)) return "LINEAR";
+  if (/notion/.test(n)) return "NOTION";
+  if (/health|monitor|check|alert|watch|status/.test(n)) return "OPS";
+  if (/snapshot|compact|compac/.test(n)) return "OPS";
+  if (/daily|morning|weekly|hourly|schedule|cron/.test(n)) return "CRON";
+  if (/journal|diary|ambient|note|memo/.test(n)) return "NOTES";
+  if (/report|digest|summary|brief/.test(n)) return "REPORT";
+  if (/test|debug|ci|build/.test(n)) return "CI";
+  if (/customer|support|ticket|escalat/.test(n)) return "SUPPORT";
+  if (/secur|auth/.test(n)) return "SECURITY";
+  if (/usage|analytic|metric/.test(n)) return "ANALYTICS";
+  if (/deploy|release|infra/.test(n)) return "DEVOPS";
+  if (/sync|mirror|replicate|backup/.test(n)) return "SYNC";
+  if (/webhook|event|trigger/.test(n)) return "EVENTS";
+  const first = name.replace(/[-_]/g, " ").split(/\s+/).find(w => w.length > 2) ?? "RECIPE";
+  return first.slice(0, 9).toUpperCase();
+}
+function tagColorClass(tag: string): string {
+  switch (tag) {
+    case "OPS": case "CI": case "DEVOPS": case "SECURITY": return "rag3-chip--tag-blue";
+    case "CRON": case "SCHEDULE": case "EVENTS": case "SYNC": return "rag3-chip--tag-purple";
+    case "SOCIAL": case "MARKETING": return "rag3-chip--tag-pink";
+    case "NOTES": case "DOCS": case "REPORT": return "rag3-chip--tag-slate";
+    case "SUPPORT": case "INBOX": return "rag3-chip--tag-amber";
+    case "GITHUB": case "LINEAR": case "NOTION": case "ANALYTICS": return "rag3-chip--tag-teal";
+    case "EMAIL": case "SLACK": return "rag3-chip--tag-indigo";
+    default: return "";
+  }
+}
+
+/** Calendar icon inline. */
+function RagCalIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <rect x="1" y="2" width="12" height="11" rx="2" />
+      <path d="M1 6h12M5 1v2M9 1v2" />
+    </svg>
+  );
+}
+
+/** Ring/ok-rate icon inline. */
+function RagRingIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <circle cx="7" cy="7" r="5" />
+    </svg>
+  );
+}
+
+/** Column status icon */
+function RagColIcon({ kind }: { kind: "draft" | "paused" | "active" }) {
+  if (kind === "active") return (
+    <svg width="10" height="10" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
+      <polygon points="3,1 13,7 3,13" />
+    </svg>
+  );
+  if (kind === "paused") return (
+    <svg width="10" height="10" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
+      <rect x="2" y="1" width="3.5" height="12" rx="1"/><rect x="8.5" y="1" width="3.5" height="12" rx="1"/>
+    </svg>
+  );
+  // draft — circle
+  return (
+    <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <circle cx="7" cy="7" r="5" />
+    </svg>
+  );
+}
 
 /**
- * Top recipes by recent activity. Each links to /runs?recipe=<name>.
- * Uses the runs data already fetched — no new endpoint.
+ * Framley/Kilo-style three-column recipe kanban.
+ * Draft | Paused | Active — each card shows avatar initials, name, run summary, and chips.
  */
-function RecipesAtAGlance({ runs }: { runs: LiveRun[] }) {
+function RecipesAtAGlance({
+  runs,
+  recipes,
+}: {
+  runs: LiveRun[];
+  recipes: Recipe[];
+}) {
+  const { run: runRecipe, pending: runPending } = useRunRecipe();
   const dayMs = 24 * 60 * 60 * 1000;
-  const recipeMap = new Map<string, { count: number; lastAt: number; hasHalt: boolean }>();
+
+  const runMap = new Map<string, { count: number; ok: number; lastAt: number; hasHalt: boolean }>();
   for (const r of runs) {
     if (!r.recipeName) continue;
     const key = canonicalRecipeKey(r.recipeName);
-    const existing = recipeMap.get(key) ?? { count: 0, lastAt: 0, hasHalt: false };
-    recipeMap.set(key, {
-      count: existing.count + 1,
-      lastAt: Math.max(existing.lastAt, r.startedAt),
-      hasHalt: existing.hasHalt || isHaltStatus(r.status),
+    const e = runMap.get(key) ?? { count: 0, ok: 0, lastAt: 0, hasHalt: false };
+    const isOk = r.status === "done" || r.status === "success";
+    runMap.set(key, {
+      count: e.count + 1,
+      ok: e.ok + (isOk ? 1 : 0),
+      lastAt: Math.max(e.lastAt, r.startedAt),
+      hasHalt: e.hasHalt || isHaltStatus(r.status),
     });
   }
-  const sorted = Array.from(recipeMap.entries())
-    .filter(([, v]) => Date.now() - v.lastAt < 7 * dayMs)
-    .sort(([, a], [, b]) => b.lastAt - a.lastAt)
-    .slice(0, 6);
 
-  if (sorted.length === 0) return null;
+  const draft: Recipe[] = [];
+  const paused: Recipe[] = [];
+  const active: Recipe[] = [];
+
+  for (const recipe of recipes) {
+    if (recipe.enabled === false) {
+      paused.push(recipe);
+    } else {
+      const s = runMap.get(canonicalRecipeKey(recipe.name));
+      if (s && Date.now() - s.lastAt < 7 * dayMs) active.push(recipe);
+      else draft.push(recipe);
+    }
+  }
+  active.sort((a, b) => {
+    const as = runMap.get(canonicalRecipeKey(a.name));
+    const bs = runMap.get(canonicalRecipeKey(b.name));
+    return (bs?.lastAt ?? 0) - (as?.lastAt ?? 0);
+  });
+
+  const cols = [
+    { kind: "draft"  as const, label: "Draft",  items: draft  },
+    { kind: "paused" as const, label: "Paused", items: paused },
+    { kind: "active" as const, label: "Active", items: active },
+  ];
+
+  const defaultTab = active.length > 0 ? "active" : draft.length > 0 ? "draft" : "paused";
+  // Hook must be above the early return to satisfy Rules of Hooks
+  const [activeTab, setActiveTab] = useState<"draft" | "paused" | "active">(defaultTab);
+
+  if (recipes.length === 0) return null;
 
   return (
     <div className="card card--pg mb-5">
-      <div className="card-hd">
-        <h2 className="card-h2">Recent recipes</h2>
-        <ActionPill href="/recipes" ariaLabel="View all recipes">
-          view all →
-        </ActionPill>
+      {/* Section header row */}
+      <div className="rag3-hd">
+        <h2 className="rag3-title">
+          Your Recipes
+          <span className="rag3-title-count">{recipes.length}</span>
+        </h2>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <Link href="/recipes" className="btn sm ghost">View all</Link>
+          <Link href="/recipes/new" className="btn sm primary">+ New</Link>
+        </div>
       </div>
-      <div className="rag-list">
-        {sorted.map(([name, stats], idx) => {
-          return (
-            <Link
-              key={name}
-              href={`/runs?recipe=${encodeURIComponent(name)}`}
-              className="rag-row row-hover"
-              style={{ animationDelay: `${idx * 50}ms` }}
-            >
-              <span className="rag-name">{name}</span>
-              <span className="rag-count rag-time">{relTime(stats.lastAt)}</span>
-              <span aria-hidden="true" className="rag-sep">·</span>
-              <span className="rag-count">{stats.count} run{stats.count !== 1 ? "s" : ""}</span>
-              {stats.hasHalt && (
-                <span className="pill err xs">halted</span>
+
+      {/* Mobile tab strip — hidden on desktop via CSS */}
+      <div className="rag3-tabs">
+        {cols.map(({ kind, label, items }) => (
+          <button
+            key={kind}
+            type="button"
+            className={`rag3-tab${activeTab === kind ? " rag3-tab--active" : ""}`}
+            onClick={() => setActiveTab(kind)}
+          >
+            {label}
+            <span className="rag3-tab-count">{items.length}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Three-column kanban */}
+      <div className="rag3-grid" data-active-tab={activeTab}>
+        {cols.map(({ kind, label, items }) => (
+          <div key={kind} className="rag3-col" data-kind={kind}>
+            {/* Column header */}
+            <div className="rag3-col-hd">
+              <span className={`rag3-col-icon rag3-col-icon--${kind}`}>
+                <RagColIcon kind={kind} />
+              </span>
+              <span className="rag3-col-label">{label}</span>
+              <span className="rag3-col-count">{items.length}</span>
+              <Link
+                href={`/recipes/new?status=${kind}`}
+                className="rag3-col-add"
+                aria-label={`New ${label.toLowerCase()} recipe`}
+                title={`New ${label.toLowerCase()} recipe`}
+              >
+                <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <line x1="7" y1="1" x2="7" y2="13"/><line x1="1" y1="7" x2="13" y2="7"/>
+                </svg>
+              </Link>
+            </div>
+
+            {/* Card stack */}
+            <div className="rag3-cards">
+              {items.length === 0 && (
+                <p className="rag3-empty">No recipes here</p>
               )}
-            </Link>
-          );
-        })}
+              {items.slice(0, 6).map((recipe) => {
+                const stats = runMap.get(canonicalRecipeKey(recipe.name));
+                const refDate = stats?.lastAt ?? recipe.installedAt;
+                const dateLabel = refDate
+                  ? (() => {
+                      const d = new Date(refDate);
+                      const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                      return `${d.getDate()} ${M[d.getMonth()]}`.toUpperCase();
+                    })()
+                  : null;
+                const roleText = ragRole(kind, recipe.name, stats?.count ?? 0, stats?.hasHalt ?? false);
+                const isQueueing = Boolean(runPending[canonicalRecipeKey(recipe.name)]);
+
+                return (
+                  <div key={recipe.name} className={`rag3-card rag3-card--${kind}`}>
+                    <Link
+                      href={`/recipes/${encodeURIComponent(recipe.name)}/edit`}
+                      className="rag3-card-link"
+                    >
+                      <div className="rag3-card-top">
+                        <span className="rag3-avatar" style={{ background: ragColor(recipe.name) }} aria-hidden="true">
+                          {ragInitials(recipe.name)}
+                        </span>
+                        <div className="rag3-card-info">
+                          <div className="rag3-card-name" title={ragDisplayName(recipe.name)}>{ragDisplayName(recipe.name)}</div>
+                          <div className="rag3-card-role">{roleText}</div>
+                        </div>
+                      </div>
+                      <div className="rag3-card-chips">
+                        {dateLabel && (
+                          <span className="rag3-chip">
+                            <RagCalIcon />{dateLabel}
+                          </span>
+                        )}
+                        {stats && (
+                          <span className="rag3-chip">
+                            <RagRingIcon />{stats.ok}/{stats.count}
+                          </span>
+                        )}
+                        {(() => { const t = ragTag(recipe.name); return <span className={`rag3-chip rag3-chip--tag ${tagColorClass(t)}`}>{t}</span>; })()}
+                      </div>
+                    </Link>
+                    {kind === "active" && (
+                      <button
+                        type="button"
+                        className="rag3-card-run"
+                        aria-label={`Run ${ragDisplayName(recipe.name)} now`}
+                        title={`Run ${ragDisplayName(recipe.name)}`}
+                        disabled={isQueueing}
+                        onClick={(e) => { e.preventDefault(); void runRecipe(canonicalRecipeKey(recipe.name)); }}
+                      >
+                        {isQueueing ? "…" : "▶"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {items.length > 6 && (
+                <Link href="/recipes" className="rag3-more">
+                  +{items.length - 6} more
+                </Link>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -811,6 +711,7 @@ export default function HomePage() {
   const [runs, setRuns] = useState<LiveRun[]>([]);
   const [toolCallTotal, setToolCallTotal] = useState(0);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
+  const [syncSpinning, setSyncSpinning] = useState(false);
   const tickRef = useRef<() => void>(() => {});
   const greet = useGreeting();
 
@@ -902,7 +803,9 @@ export default function HomePage() {
     (r) => Date.now() - r.startedAt < dayMs && isHaltStatus(r.status),
   ).length;
   const runs24h = runs.filter((r) => Date.now() - r.startedAt < dayMs);
-  const errCount24h = runs24h.filter((r) => isHaltStatus(r.status)).length;
+  const errCount24h = runs24h.filter(
+    (r) => r.status === "error" || r.status === "failed",
+  ).length;
   // A run can finish `done` yet have had a step fail (the runner
   // continues past non-fatal step errors). Splitting these out keeps
   // the Overview honest — flat "100% ok" was hiding step failures
@@ -1085,12 +988,6 @@ export default function HomePage() {
       return sum;
     });
   })();
-  const peak = Math.max(...curveSeries, 0);
-  const uniqueTools = new Set(
-    activityEvents.filter((e) => e.kind === "tool").map((e) => e.tool),
-  ).size;
-  const activeRecipesCount = recipes.filter((r) => r.enabled !== false).length;
-
   return (
     <section>
       {/* Kill-switch banner rendered globally by Shell — was duplicated here. */}
@@ -1150,14 +1047,6 @@ export default function HomePage() {
       />
 
       {/* ------------------------------------------------------------------ */}
-      {/* LIVE WIRE — always-present 1-row heartbeat ("● 2 running · last    */}
-      {/* finished 4m ago"). Pairs with LiveRunsStrip below, which only shows */}
-      {/* when there's something in flight or just-finished — keeps the page */}
-      {/* feeling alive even during quiet stretches.                          */}
-      {/* ------------------------------------------------------------------ */}
-      <LiveWire runs={runs} bridgeOk={bridgeStatus.ok === true} />
-
-      {/* ------------------------------------------------------------------ */}
       {/* LIVE RUNS — pulses any currently-running or recently-finished       */}
       {/* recipe so a user landing on Overview can see motion at a glance.    */}
       {/* Component auto-hides when there's nothing in-flight or recent.      */}
@@ -1165,35 +1054,24 @@ export default function HomePage() {
       <LiveRunsStrip runs={runs} />
 
       {/* ------------------------------------------------------------------ */}
-      {/* TELEMETRY eyebrow                                                    */}
+      {/* TELEMETRY eyebrow — gated: hidden when no recipes and no runs       */}
+      {/* (four "0" tiles look broken on first visit)                         */}
       {/* ------------------------------------------------------------------ */}
+      {(recipes.length > 0 || runs.length > 0) && <>
       <div className="pg-section-head" style={{ animation: "pw-fade-in 0.4s ease both" }}>
-        <span
-          className="pg-section-head-label"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <span
-            aria-hidden="true"
-            style={{
-              display: "inline-block",
-              width: 3,
-              height: 14,
-              borderRadius: 2,
-              background: "var(--accent)",
-              flexShrink: 0,
-            }}
-          />
+        <span className="pg-section-head-label">
+          <span aria-hidden="true" className="pg-section-head-bar" />
           Telemetry
         </span>
         <div className="pg-section-head-rule" aria-hidden="true" />
         <button
           type="button"
-          className="btn sm ghost"
-          onClick={() => tickRef.current()}
+          className={`btn sm ghost${syncSpinning ? " btn--spinning" : ""}`}
+          onClick={() => {
+            tickRef.current();
+            setSyncSpinning(true);
+            setTimeout(() => setSyncSpinning(false), 650);
+          }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M23 4v6h-6M1 20v-6h6" />
@@ -1201,12 +1079,6 @@ export default function HomePage() {
           </svg>
           Sync
         </button>
-        <Link
-          href="/recipes/new"
-          className="btn sm primary"
-        >
-          + New recipe
-        </Link>
       </div>
 
       {/* Four telemetry tiles. Inline grid-template-columns used to force
@@ -1229,7 +1101,7 @@ export default function HomePage() {
               <StatCard
                 label="Runs · 24h"
                 className="stat-card--runs"
-                icon={<span className="stat-tile-icon stat-tile-icon--runs"><TileIconLines /></span>}
+                icon={<span className="stat-tile-icon stat-tile-icon--runs" style={{ color: "var(--accent)" }}><TileIconPlay /></span>}
                 value={<AnimatedNumber value={runsCount24h} />}
                 foot={
                   <div>
@@ -1254,7 +1126,7 @@ export default function HomePage() {
               <StatCard
                 label="Pending approvals"
                 className="stat-card--approvals"
-                icon={<span className="stat-tile-icon stat-tile-icon--approvals"><TileIconLock /></span>}
+                icon={<span className="stat-tile-icon stat-tile-icon--approvals" style={{ color: "var(--amber)" }}><TileIconLock /></span>}
                 value={<AnimatedNumber value={pendingCount} />}
                 foot={
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -1271,7 +1143,7 @@ export default function HomePage() {
               <StatCard
                 label="Halts · 24h"
                 className="stat-card--halts"
-                icon={<span className="stat-tile-icon stat-tile-icon--halts"><TileIconSun /></span>}
+                icon={<span className="stat-tile-icon stat-tile-icon--halts" style={{ color: "var(--err)" }}><TileIconOctagon /></span>}
                 value={<AnimatedNumber value={haltCount24h} />}
                 foot={
                   <div>
@@ -1298,115 +1170,68 @@ export default function HomePage() {
               />
             </div>
             <div className="stat-card-wrap" style={{ animationDelay: "180ms", animation: "pw-slide-up 0.3s ease both" }}>
-              <StatCard
-                label="Tools called today"
-                className="stat-card--tools"
-                icon={<span className="stat-tile-icon stat-tile-icon--tools"><TileIconShell /></span>}
-                value={<AnimatedNumber value={toolsToday} />}
-                foot={
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    {toolsToday > 0 && (
-                      <span className="pw-live-dot" aria-label="Active today" />
-                    )}
-                    {toolsTrendLabel}
-                  </div>
-                }
-                href="/activity"
-              />
+              {(() => {
+                const toolsDelta = (() => {
+                  const m = toolsTrendLabel.match(/([+-]\d+)%/);
+                  return m ? m[1] + "%" : undefined;
+                })();
+                return (
+                  <StatCard
+                    label="Tools called today"
+                    className="stat-card--tools"
+                    icon={<span className="stat-tile-icon stat-tile-icon--tools" style={{ color: "var(--accent-cool)" }}><TileIconShell /></span>}
+                    value={<AnimatedNumber value={toolsToday} />}
+                    delta={toolsDelta}
+                    foot={
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          {toolsToday > 0 && (
+                            <span className="pw-live-dot" aria-label="Active today" />
+                          )}
+                        </div>
+                        {curveSeries.some((v) => v > 0) && (
+                          <div className="mt-1">
+                            <Sparkline
+                              values={curveSeries}
+                              color="var(--accent-cool)"
+                              height={22}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    }
+                    href="/activity"
+                  />
+                );
+              })()}
             </div>
           </>
         )}
       </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Tool calls — last 60 min (smooth filled curve)                       */}
-      {/* ------------------------------------------------------------------ */}
-      <ToolCallsWidget
-        series={curveSeries}
-        peak={peak}
-        uniqueTools={uniqueTools}
-        activeRecipesCount={activeRecipesCount}
-        toolCallTotal={toolCallTotal}
-        bridgeOk={bridgeStatus.ok}
-      />
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Activity thread + Recipes at a glance                               */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="pg-section-head" style={{ animation: "pw-fade-in 0.4s ease both" }}>
-        <span
-          className="pg-section-head-label"
-          style={{ display: "flex", alignItems: "center", gap: 8 }}
-        >
-          <span
-            aria-hidden="true"
-            style={{
-              display: "inline-block",
-              width: 3,
-              height: 14,
-              borderRadius: 2,
-              background: "var(--accent)",
-              flexShrink: 0,
-            }}
-          />
-          Activity
-        </span>
-        <div className="pg-section-head-rule" aria-hidden="true" />
-        <Link href="/activity" className="btn sm ghost">view all →</Link>
-      </div>
-      <div className="grid-2 mb-5">
-        {/* Left col: unified entity timeline (runs + approvals) */}
-        <div className="card card--pg">
-          <div className="card-hd">
-            <h2 className="card-h2">Activity stream</h2>
-            <ActionPill href="/activity" ariaLabel="View all activity">
-              view all →
-            </ActionPill>
-          </div>
-          <EntityTimeline
-            events={buildTimelineEvents(runs, pendingApprovals, activityEvents)}
-            ariaLabel="Recent runs and approvals"
-          />
-        </div>
-        {/* Right col: classic activity thread for tool-level detail */}
-        <ActivityThread
-          events={activityEvents
-            .filter((e) => !isNoiseEvent(e))
-            .slice(-40)
-            .reverse()
-            .slice(0, 12)}
-        />
-      </div>
+      </>}
 
       {/* ------------------------------------------------------------------ */}
       {/* Recipes at a glance — top 6 by run count over last 7 days           */}
       {/* Each row links to /runs?recipe=<name> (param honored by runs/page) */}
       {/* ------------------------------------------------------------------ */}
       <div className="pg-section-head" style={{ animation: "pw-fade-in 0.4s ease both" }}>
-        <span
-          className="pg-section-head-label"
-          style={{ display: "flex", alignItems: "center", gap: 8 }}
-        >
-          <span
-            aria-hidden="true"
-            style={{
-              display: "inline-block",
-              width: 3,
-              height: 14,
-              borderRadius: 2,
-              background: "var(--accent)",
-              flexShrink: 0,
-            }}
-          />
+        <span className="pg-section-head-label">
+          <span aria-hidden="true" className="pg-section-head-bar" />
           Recipes
         </span>
         <div className="pg-section-head-rule" aria-hidden="true" />
         <Link href="/recipes" className="btn sm ghost">view all →</Link>
       </div>
-      <RecipesAtAGlance runs={runs} />
+      <RecipesAtAGlance runs={runs} recipes={recipes} />
 
       {/* Recipe leaderboard — detailed health view */}
       <RecipeLeaderboard runs={runs as LeaderboardRun[]} />
+
+      {/* ------------------------------------------------------------------ */}
+      {/* LIVE WIRE — demoted below the fold per design spec. Always-present  */}
+      {/* 1-row heartbeat ("● 2 running · last finished 4m ago").             */}
+      {/* ------------------------------------------------------------------ */}
+      <LiveWire runs={runs} bridgeOk={bridgeStatus.ok === true} />
 
     </section>
   );

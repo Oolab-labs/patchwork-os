@@ -222,6 +222,7 @@ export function ActivityTicker() {
       )}
       <button
         type="button"
+        className="activity-ticker-close"
         onClick={() => {
           writeDismissed();
           setDismissed(true);

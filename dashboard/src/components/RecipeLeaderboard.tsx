@@ -138,7 +138,7 @@ export function RecipeLeaderboard({
             );
           })}
         </div>
-        <ActionPill href="/recipes" ariaLabel="View all recipes">
+        <ActionPill href="/runs" ariaLabel="View all recipe runs">
           all →
         </ActionPill>
       </div>

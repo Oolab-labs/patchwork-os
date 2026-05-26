@@ -94,7 +94,7 @@
   --fs-xl:     16px;
   --fs-2xl:    18px;
   --fs-3xl:    20px;
-  --fs-display: 28px;
+  --fs-display: clamp(28px, 4vw, 36px);
   /* role-named: stat-number displays in sessions/inbox cards */
   --fs-stat:   17px;
 
@@ -218,6 +218,11 @@
   --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-spring:   cubic-bezier(0.18, 0.7,  0.2, 1);
   --ease-decel:    cubic-bezier(0.0,  0.0,  0.2, 1);
+  --ease-out:      cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-fast:   160ms;
+  --motion-base:   300ms;
+  --stagger-row:   60ms;
+  --hover-bg:      color-mix(in srgb, var(--ink-1) 4%, transparent);
 
   /* pw-pulse customisation — override per-element to change color/radius */
   --pulse-color:        var(--ok);
@@ -935,7 +940,7 @@ button.topbar-search {
   text-decoration: none;
 }
 .stat-card-label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -943,7 +948,7 @@ button.topbar-search {
   margin-bottom: 8px;
 }
 .stat-card-value {
-  font-size: 28px;
+  font-size: var(--fs-display);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
@@ -952,7 +957,7 @@ button.topbar-search {
 }
 .stat-card-foot {
   margin-top: 8px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
   display: flex;
   align-items: center;
@@ -967,6 +972,7 @@ button.topbar-search {
   justify-content: center;
   gap: 8px;
   height: 38px;
+  min-height: 38px;
   padding: 0 16px;
   border-radius: var(--r-m);
   font-size: 13.5px;
@@ -1058,9 +1064,10 @@ a.btn { text-decoration: none; }
 
 .btn.sm {
   height: 32px;
+  min-height: 32px;
   padding: 0 12px;
   font-size: 13px;
-  border-radius: 7px;
+  border-radius: var(--r-s);
 }
 
 .btn.lg {
@@ -1079,6 +1086,85 @@ a.btn { text-decoration: none; }
   .btn--spinning svg {
     animation: spin-once 600ms var(--ease-out, cubic-bezier(0.16,1,0.3,1)) both;
   }
+}
+
+/* ── Button system audit — polish pass ──────────────────────────────────────
+   Fixes implemented 2026-05-25 after full audit across overview, recipes,
+   approvals, settings, connections pages.
+
+   Issues addressed:
+   1.  MISSING disabled state  — .btn had no :disabled / [aria-disabled] rule.
+       Each bespoke button component handled this ad-hoc with inconsistent
+       opacity values (0.4–0.7) and cursor values. Centralised here.
+   2.  MISSING focus-visible ring — global :focus-visible fires on .btn but
+       the computed style showed outline:none at rest. The btn overflow:hidden
+       clips some outline styles in some browsers. Explicit rule ensures it.
+   3.  MISSING .btn-secondary definition — class used in 404 page JSX
+       (btn btn-secondary) but never defined. Now styled as a subdued variant.
+   4.  MISSING loading/spin disabled state — .btn--spinning had no
+       pointer-events:none / cursor:wait to prevent double-clicks.
+   5.  INCONSISTENT dark-mode primary glow — .btn.primary box-shadow contains
+       an orange bloom glow; dark mode had no suppressor. Toned down here.
+   6.  MISSING .mkt-install-btn dark-mode accent-cool — per design spec,
+       marketplace Install buttons should use --accent-cool (#0787ff) in dark
+       mode instead of the default orange accent.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* 1. Disabled state — unified across all .btn variants */
+.btn:disabled,
+.btn[disabled],
+.btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* 2. Focus-visible ring — explicit on .btn so overflow:hidden can't clip it */
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 3. .btn-secondary — subdued variant (border visible, no filled background) */
+.btn.secondary,
+.btn-secondary {
+  background: transparent;
+  border-color: var(--line-2);
+  color: var(--ink-1);
+  box-shadow: none;
+}
+.btn.secondary:hover,
+.btn-secondary:hover {
+  background: var(--recess);
+  border-color: var(--line-3);
+}
+
+/* 4. Loading/spin — prevent interaction while button is spinning */
+.btn--spinning {
+  pointer-events: none;
+  cursor: wait;
+}
+
+/* 5. Dark mode — suppress primary button orange glow bloom */
+[data-theme="dark"] .btn.primary {
+  box-shadow: 0 1px 0 0 rgba(255,255,255,0.18) inset, 0 2px 6px rgba(var(--orange-rgb), 0.18);
+}
+[data-theme="dark"] .btn.primary:hover {
+  box-shadow: 0 1px 0 0 rgba(255,255,255,0.18) inset, 0 3px 10px rgba(var(--orange-rgb), 0.28);
+}
+
+/* 6. Marketplace install button — use --accent-cool in dark mode */
+[data-theme="dark"] .mkt-install-btn {
+  background: var(--accent-cool);
+  color: #fff;
+  border-color: var(--accent-cool);
+}
+[data-theme="dark"] .mkt-install-btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent-cool) 85%, #fff 15%);
+  border-color: color-mix(in srgb, var(--accent-cool) 85%, #fff 15%);
+  filter: none;
 }
 
 
@@ -5042,8 +5128,8 @@ a.btn { text-decoration: none; }
    ──────────────────────────────────────────────────────────────────────── */
 [data-theme="dark"] .stat-grid {
   background: var(--surface);
-  border: 1px solid transparent;
-  border-top: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border: 1px solid var(--line-2);
+  border-top: none;
   border-radius: var(--r-l);
   overflow: hidden;
   gap: 0;
@@ -5068,13 +5154,18 @@ a.btn { text-decoration: none; }
   transform: none;
   box-shadow: none;
   border-color: transparent;
-  background: color-mix(in srgb, var(--pressed) 60%, transparent);
+  background: var(--pressed);
+  transition: background var(--motion-fast) var(--ease-out);
 }
 /* Per-segment colored accent on top (overrides the unified panel top border within hover state) */
 [data-theme="dark"] .stat-card.stat-card--runs      { border-top: 2px solid var(--accent); }
 [data-theme="dark"] .stat-card.stat-card--approvals { border-top: 2px solid var(--amber);  }
 [data-theme="dark"] .stat-card.stat-card--halts     { border-top: 2px solid var(--err);    }
 [data-theme="dark"] .stat-card.stat-card--tools     { border-top: 2px solid var(--accent-cool); }
+[data-theme="dark"] .stat-card:hover .stat-card-foot {
+  color: var(--ink-2);
+  transition: color var(--motion-fast) var(--ease-out);
+}
 
 /* ── Leaderboard dark mode — flat panel, suppress outer .card double-border ── */
 [data-theme="dark"] .recipe-leaderboard-card {
@@ -5246,10 +5337,10 @@ a.btn { text-decoration: none; }
 /* ── Overview page UI upgrades ────────────────────────────────────────── */
 
 /* Stat tile colored top-border variants */
-.stat-card.stat-card--runs      { border-top: 2.5px solid var(--accent); }
-.stat-card.stat-card--approvals { border-top: 2.5px solid var(--amber);  }
-.stat-card.stat-card--halts     { border-top: 2.5px solid var(--err);    }
-.stat-card.stat-card--tools     { border-top: 2.5px solid var(--accent-cool); }
+.stat-card.stat-card--runs      { border-top: 2px solid var(--accent); }
+.stat-card.stat-card--approvals { border-top: 2px solid var(--amber);  }
+.stat-card.stat-card--halts     { border-top: 2px solid var(--err);    }
+.stat-card.stat-card--tools     { border-top: 2px solid var(--accent-cool); }
 
 /* Icon container pill — sits in the top-right of each stat tile */
 .stat-tile-icon {
@@ -5260,6 +5351,11 @@ a.btn { text-decoration: none; }
   height: 28px;
   border-radius: var(--r-2);
   flex-shrink: 0;
+  opacity: 0.7;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.stat-card:hover .stat-tile-icon {
+  opacity: 1;
 }
 .stat-tile-icon--runs      { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
 .stat-tile-icon--approvals { background: color-mix(in srgb, var(--amber)  10%, transparent); color: var(--amber);  }
@@ -5389,11 +5485,22 @@ a.btn { text-decoration: none; }
   margin-bottom: var(--s-4);
 }
 .pg-section-head-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-weight: 500;
   color: var(--ink-3);
   white-space: nowrap;
+}
+.pg-section-head-bar {
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--accent);
+  flex-shrink: 0;
 }
 .pg-section-head-rule {
   flex: 1;
@@ -5412,6 +5519,10 @@ a.btn { text-decoration: none; }
   text-decoration: none;
   background: var(--orange);
   border: none;
+}
+.pg-section-head .btn.sm.ghost {
+  min-height: 28px;
+  padding: 0 10px;
 }
 
 /* ── Activity thread stream container ────────────────────────────────── */
@@ -6786,9 +6897,9 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .pw-live-dot--warn { background: var(--warn); }
 .pw-live-dot--err  { background: var(--err); }
 .pg-section-head-rule { transition: width 0.3s ease; }
-.btn {
-  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease !important;
-}
+/* Duplicate .btn transition block removed — canonical definition is at line 964.
+   The !important override was fighting the base transition. If a page-specific
+   component needs a faster transition, scope it to its own selector. */
 
 /* --- activity/page.tsx --- */
 @keyframes act-slide-in {
@@ -8372,4 +8483,198 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
    Applied universally — correct at every viewport. */
 .rd-step-row > div > div:nth-child(2) {
   min-width: 0;
+}
+
+/* ── Button audit — content pages ── */
+/*
+ * Issues found across Recipes / Marketplace / Runs / Activity (Live)
+ * at 1280×800 (desktop) and 375×812 (mobile).
+ *
+ * A. activity-ticker-close (✕ dismiss in topbar ticker)
+ *    Rendered 16×14 px — below the 28 px minimum for any interactive
+ *    element. Inline style-only; class added to ActivityTicker.tsx.
+ *    Desktop: enforce 28×28 minimum with centered content.
+ *    Touch:   bump to 44×44 (iOS HIG / WCAG 2.5.5 target size).
+ *
+ * B. bridge-offline-dismiss ("Dismiss" in the offline banner)
+ *    Rendered 24 px tall on desktop via inline padding only.
+ *    Enforce 28 px minimum desktop; touch already at 44 px (line 5429).
+ *
+ * C. Glossary inline trigger buttons (runs / halts / bridge / etc.)
+ *    These render at ~17 px because they are inline text-level elements
+ *    that match the surrounding line-height. They carry full ARIA
+ *    (aria-expanded + aria-describedby + role="tooltip" on the popover)
+ *    and are glossary term popovers — NOT CTAs. Height is intentional;
+ *    no fix applied. Touch users can still activate them via tap.
+ *
+ * D. + Add recipe (Recipes page) — 115×38 px, var(--accent) orange. ✓
+ * E. Submit a recipe (Marketplace) — 113×32 px, btn sm primary, orange. ✓
+ * F. Pause (Activity) — 61×32 px, btn sm ghost. ✓
+ */
+
+/* A — activity ticker close (✕) */
+.activity-ticker-close {
+  /* Centre the ✕ glyph and guarantee a click/tap area */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+}
+@media (hover: none) and (pointer: coarse) {
+  .activity-ticker-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* B — bridge-offline banner dismiss */
+.bridge-offline-dismiss {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── Button audit — admin pages ── */
+/*
+ * Audit: Approvals · Inbox · Settings · Connections · Analytics ·
+ *        Knowledge · Suggestions — 1280×800 desktop + 375×812 mobile.
+ * Date: 2026-05-25
+ *
+ * APPROVALS
+ *   Approve/Deny CTAs: visually distinct (green fill vs transparent red
+ *   outline+text), both carry aria-label, min-height:44px already set,
+ *   12px gap between them. No mis-tap risk at desktop; stacked full-width
+ *   on mobile (<480px). ✓ No changes needed for approve/deny pair.
+ *   Sync inbox (.btn.sm.ghost, 32px): covered by hover:none rule (line ~8054).
+ *
+ * INBOX
+ *   lbrd-tab (1h / 24h / 7d leaderboard strip): 19px — below minimum.
+ *   Fix: raise base height to 28px desktop; 44px on touch.
+ *
+ * SETTINGS — stg-* buttons use padding-only sizing (no min-height).
+ *   stg-action-btn (Set primary, API-key Save): 26px — below minimum.
+ *   stg-save-btn (Delegation policy Save): 27px — below minimum.
+ *   stg-push-btn / stg-push-btn-ghost: 27px — below minimum.
+ *   stg-tel-reset-btn (Delete telemetry): 27px — below minimum.
+ *   stg-config-copy-btn (⧉ Copy path): 22px — very small.
+ *   Fix: enforce 32px minimum on base classes (desktop-safe sizing;
+ *   existing hover:none rules already bump to 44px on touch).
+ *   Also: "Save" buttons for API keys have no aria-label — fixed in
+ *   the component (see settings/page.tsx context block below).
+ *
+ * CONNECTIONS
+ *   cgc-test-btn ("Test"): 24px desktop — below minimum.
+ *   cgc-action-btn ("Disconnect" / "Reconnect"): 24px — below minimum.
+ *   cgc-connect-btn ("Connect"): ~33px — below 36px btn baseline.
+ *   Fix: raise base heights. Touch fixes via hover:none already exist.
+ *
+ * GLOBAL — ✕ dismiss buttons (HintCard, live-stream close)
+ *   These inline buttons have no class, 19px rendered size.
+ *   The ✕ on HintCard uses class "" — can't target safely without
+ *   a class change in JSX. Documented; fix deferred to JSX refactor.
+ *   bridge-offline-dismiss already patched above (28px min-height).
+ *
+ * ANALYTICS / KNOWLEDGE / SUGGESTIONS
+ *   Analytics: no actionable buttons visible (bridge offline).
+ *   Knowledge: Home/Marketplace .btn 38px — within spec. ✓
+ *   Suggestions: no content buttons visible (bridge offline). ✓
+ */
+
+/* ── INBOX: leaderboard period tabs ── */
+.lbrd-tab {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+}
+@media (hover: none) and (pointer: coarse) {
+  .lbrd-tab {
+    min-height: 44px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+}
+
+/* ── SETTINGS: raise stg-* base heights to 32px minimum on desktop ──
+   Scoped to hover:hover so these don't override the 44px touch rules
+   already in place at the earlier hover:none block (~line 8196). */
+@media (hover: hover), (pointer: fine) {
+  /* Set primary + API-key Save/Clear buttons */
+  .stg-action-btn {
+    min-height: 32px;
+  }
+
+  /* Delegation policy Save */
+  .stg-save-btn {
+    min-height: 32px;
+  }
+
+  /* Subscribe to push / push-ghost */
+  .stg-push-btn,
+  .stg-push-btn-ghost {
+    min-height: 32px;
+  }
+
+  /* Delete telemetry button */
+  .stg-tel-reset-btn {
+    min-height: 32px;
+  }
+
+  /* Copy config path (secondary utility, 28px acceptable on desktop) */
+  .stg-config-copy-btn {
+    min-height: 28px;
+  }
+}
+
+/* Universal flex-centering for stg-* buttons (no height conflict) */
+.stg-save-btn,
+.stg-push-btn,
+.stg-push-btn-ghost,
+.stg-tel-reset-btn,
+.stg-config-copy-btn {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── CONNECTIONS: raise cgc-* base heights on desktop ──
+   Same scope strategy — hover:hover for desktop, existing hover:none
+   block already handles 44px touch targets at ~line 8237. */
+@media (hover: hover), (pointer: fine) {
+  /* Test connection button */
+  .cgc-test-btn {
+    min-height: 28px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+
+  /* Disconnect / Reconnect button */
+  .cgc-action-btn {
+    min-height: 28px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+
+  /* Connect CTA — raise to .btn baseline */
+  .cgc-connect-btn {
+    min-height: 36px;
+  }
+}
+
+/* Universal flex-centering for cgc-* buttons */
+.cgc-test-btn,
+.cgc-action-btn {
+  display: inline-flex;
+  align-items: center;
+}
+.cgc-connect-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Touch: connect CTA (supplements existing hover:none block at ~8237) */
+@media (hover: none) and (pointer: coarse) {
+  .cgc-connect-btn {
+    min-height: 44px;
+  }
 }

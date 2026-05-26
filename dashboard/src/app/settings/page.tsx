@@ -853,6 +853,7 @@ export default function SettingsPage() {
                             onClick={() => saveApiKey(provider)}
                             disabled={keySaving === provider || keyDrafts[provider].length === 0}
                             className="stg-action-btn"
+                            aria-label={`Save ${provider} API key`}
                             data-disabled={String(keySaving === provider || keyDrafts[provider].length === 0)}
                           >
                             {keySaving === provider ? "Saving…" : "Save"}
@@ -869,6 +870,7 @@ export default function SettingsPage() {
                               }}
                               disabled={keySaving === provider}
                               title="Remove the stored key from the secure store"
+                              aria-label={`Clear ${provider} API key`}
                               className="stg-action-btn"
                               data-disabled={String(keySaving === provider)}
                             >
@@ -916,6 +918,7 @@ export default function SettingsPage() {
                               onClick={saveLocalConfig}
                               disabled={localSaving || !localEndpoint.trim()}
                               className="stg-action-btn"
+                              aria-label="Save local LLM config"
                               data-disabled={String(localSaving || !localEndpoint.trim())}
                             >
                               {localSaving ? "Saving…" : "Save"}
@@ -1010,6 +1013,7 @@ export default function SettingsPage() {
                     disabled={gateSaving || gatePending === gateValue}
                     onClick={() => saveGate(gatePending)}
                     className="stg-save-btn"
+                    aria-label="Save delegation policy"
                     data-disabled={String(gateSaving || gatePending === gateValue)}
                   >
                     {gateSaving ? "Saving…" : "Save"}
