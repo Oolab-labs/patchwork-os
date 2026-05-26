@@ -1,0 +1,105 @@
+"use client";
+
+import { formatConnectorLabel, normalizeConnectorId } from "@/lib/registry";
+
+const KNOWN_SVGS = new Set([
+  "gmail", "google-calendar", "google-drive", "linear", "github",
+  "slack", "asana", "discord", "gitlab", "jira", "confluence",
+  "notion", "hubspot", "sentry",
+]);
+// No SVG yet: pagerduty, zendesk, intercom, datadog
+
+function initials(id: string): string {
+  const norm = id.toLowerCase().replace(/[^a-z]/g, "");
+  if (norm === "googlecalendar" || norm === "calendar") return "GC";
+  if (norm === "googledrive") return "GD";
+  return norm.slice(0, 2).toUpperCase();
+}
+
+function ConnectorGlyph({ id }: { id: string }) {
+  if (KNOWN_SVGS.has(id)) {
+    const url = `/connectors/${id}.svg`;
+    return (
+      <span
+        style={{
+          display: "block",
+          width: 16,
+          height: 16,
+          flexShrink: 0,
+          color: "var(--ink-2)",
+          background: "currentColor",
+          mask: `url(${url}) center/contain no-repeat`,
+          WebkitMask: `url(${url}) center/contain no-repeat`,
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 16,
+        height: 16,
+        borderRadius: 4,
+        background: "var(--bg-2)",
+        color: "var(--ink-3)",
+        fontSize: "7px",
+        fontWeight: 700,
+        flexShrink: 0,
+        letterSpacing: 0,
+      }}
+    >
+      {initials(id)}
+    </span>
+  );
+}
+
+export function ConnectorBadgeRow({ connectors }: { connectors: string[] }) {
+  const visible = connectors.slice(0, 2).map(normalizeConnectorId);
+  const overflow = connectors.length - 2;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+      {visible.map((c) => (
+        <span
+          key={c}
+          title={formatConnectorLabel(c)}
+          aria-label={formatConnectorLabel(c)}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 16,
+            height: 16,
+            borderRadius: 4,
+            background: "var(--bg-2)",
+            flexShrink: 0,
+          }}
+        >
+          <ConnectorGlyph id={c} />
+        </span>
+      ))}
+      {overflow > 0 && (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            padding: "0 5px",
+            height: 16,
+            borderRadius: 8,
+            background: "var(--accent-pill-bg)",
+            color: "var(--accent-cool)",
+            fontSize: "var(--fs-xs)",
+            fontWeight: 600,
+            letterSpacing: 0,
+          }}
+        >
+          +{overflow}
+        </span>
+      )}
+    </div>
+  );
+}
