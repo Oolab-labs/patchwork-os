@@ -9,7 +9,12 @@
 
 import dns from "node:dns/promises";
 import { describe, expect, it, vi } from "vitest";
-import { isPrivateHost, validateSafeUrl } from "../ssrfGuard.js";
+import {
+  isLoopbackHost,
+  isPrivateHost,
+  isPrivateNonLoopbackHost,
+  validateSafeUrl,
+} from "../ssrfGuard.js";
 
 describe("isPrivateHost", () => {
   it("blocks loopback IPv4", () => {
@@ -174,5 +179,71 @@ describe("validateSafeUrl — DNS rebinding", () => {
     expect(result.ok).toBe(true);
     expect(result.resolvedIp).toBeUndefined();
     vi.restoreAllMocks();
+  });
+});
+
+describe("isLoopbackHost", () => {
+  it("matches IPv4 loopback, IPv6 ::1, localhost", () => {
+    expect(isLoopbackHost("127.0.0.1")).toBe(true);
+    expect(isLoopbackHost("127.255.255.255")).toBe(true);
+    expect(isLoopbackHost("::1")).toBe(true);
+    expect(isLoopbackHost("[::1]")).toBe(true);
+    expect(isLoopbackHost("localhost")).toBe(true);
+    expect(isLoopbackHost("foo.localhost")).toBe(true);
+  });
+
+  it("matches IPv6-mapped/translated loopback", () => {
+    expect(isLoopbackHost("::ffff:127.0.0.1")).toBe(true);
+    expect(isLoopbackHost("::ffff:0:127.0.0.1")).toBe(true);
+  });
+
+  it("does not match private non-loopback", () => {
+    expect(isLoopbackHost("10.0.0.1")).toBe(false);
+    expect(isLoopbackHost("169.254.169.254")).toBe(false);
+    expect(isLoopbackHost("192.168.1.1")).toBe(false);
+    expect(isLoopbackHost("github.com")).toBe(false);
+  });
+});
+
+describe("isPrivateNonLoopbackHost — webhook fan-out gate", () => {
+  it("ALLOWS loopback (the documented exception for local sidecars)", () => {
+    expect(isPrivateNonLoopbackHost("127.0.0.1")).toBe(false);
+    expect(isPrivateNonLoopbackHost("::1")).toBe(false);
+    expect(isPrivateNonLoopbackHost("localhost")).toBe(false);
+  });
+
+  it("blocks RFC 1918 private ranges", () => {
+    expect(isPrivateNonLoopbackHost("10.0.0.1")).toBe(true);
+    expect(isPrivateNonLoopbackHost("172.16.0.1")).toBe(true);
+    expect(isPrivateNonLoopbackHost("192.168.1.1")).toBe(true);
+  });
+
+  it("blocks IMDS (AWS / link-local)", () => {
+    expect(isPrivateNonLoopbackHost("169.254.169.254")).toBe(true);
+  });
+
+  it("blocks 6to4-wrapped IMDS — drift-class regression guard", () => {
+    // 2002:a9fe:a9fe:: embeds 169.254.169.254 (AWS IMDS).
+    // Pre-fix httpClient/interpreterContext copies missed `2002:` entirely.
+    expect(isPrivateNonLoopbackHost("2002:a9fe:a9fe::")).toBe(true);
+  });
+
+  it("blocks ::ffff:0: mapped private — drift-class regression guard", () => {
+    // ::ffff:0:c0a8:0101 wraps 192.168.1.1. Pre-fix copies tested the SHORT
+    // ::ffff: prefix BEFORE the longer ::ffff:0: → the longer branch was
+    // dead code and the address fell through to "not private" (BYPASS).
+    expect(isPrivateNonLoopbackHost("::ffff:0:192.168.1.1")).toBe(true);
+    expect(isPrivateNonLoopbackHost("::ffff:0:10.0.0.1")).toBe(true);
+  });
+
+  it("blocks ULA + link-local IPv6", () => {
+    expect(isPrivateNonLoopbackHost("fe80::1")).toBe(true);
+    expect(isPrivateNonLoopbackHost("fc00::1")).toBe(true);
+    expect(isPrivateNonLoopbackHost("fd00::1")).toBe(true);
+  });
+
+  it("permits public hosts", () => {
+    expect(isPrivateNonLoopbackHost("github.com")).toBe(false);
+    expect(isPrivateNonLoopbackHost("8.8.8.8")).toBe(false);
   });
 });

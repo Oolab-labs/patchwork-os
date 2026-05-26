@@ -107,8 +107,25 @@ function resolveTargetPath(
     // activity rows carry the original file name — preserve it so a
     // multi-instance export round-trips per-port. Default fallback if
     // the envelope didn't include one.
-    const name = envelopeFile ?? "activity.jsonl";
-    return path.join(activityDir, name);
+    //
+    // SECURITY: strip directory components from the envelope field. A bundle
+    // row whose `file` is `../../.ssh/authorized_keys` would otherwise let
+    // `path.join` resolve outside `activityDir` and overwrite arbitrary files
+    // when the operator runs `patchwork traces import`. We use `basename`
+    // here and additionally assert the realpath is inside `activityDir`
+    // below as defense-in-depth.
+    const name = path.basename(envelopeFile ?? "activity.jsonl");
+    const resolved = path.resolve(activityDir, name);
+    const activityRoot = path.resolve(activityDir);
+    if (
+      resolved !== activityRoot &&
+      !resolved.startsWith(`${activityRoot}${path.sep}`)
+    ) {
+      throw new Error(
+        `Bundle row 'file' resolves outside activity dir (got ${envelopeFile}); refusing to write.`,
+      );
+    }
+    return resolved;
   }
   return path.join(patchworkDir, SINGLE_FILE_TARGETS[source]);
 }
@@ -223,10 +240,14 @@ export async function runTracesImport(
       const parent = path.dirname(targetPath);
       if (!existsSync(parent)) mkdirSync(parent, { recursive: true });
       const payload = `${buf.lines.join("\n")}\n`;
+      // 0o600: trace files (especially activity logs) can contain PII and
+      // connector tool outputs. Match the mode every other writer in the
+      // platform uses (runLog.ts, decisionTraceLog.ts, commitIssueLinkLog.ts,
+      // activityLog.ts). Import previously inherited umask (typically 0o644).
       if (mode === "overwrite") {
-        writeFileSync(targetPath, payload, "utf-8");
+        writeFileSync(targetPath, payload, { encoding: "utf-8", mode: 0o600 });
       } else {
-        appendFileSync(targetPath, payload, "utf-8");
+        appendFileSync(targetPath, payload, { encoding: "utf-8", mode: 0o600 });
       }
     }
     files.push({ source: buf.source, targetPath, count });
