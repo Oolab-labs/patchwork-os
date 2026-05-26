@@ -94,7 +94,7 @@ if (approvals.length > 0) {
 
 // ── Poll until a recipe run completes ────────────────────────────────────────
 
-async function runAndWait(name, vars, timeoutMs = 60_000) {
+export async function runAndWait(name, vars, timeoutMs = 60_000) {
   const { seq } = await bridgeFetch("/recipes/run", {
     method: "POST",
     body: JSON.stringify({ name, vars }),
@@ -115,6 +115,7 @@ async function runAndWait(name, vars, timeoutMs = 60_000) {
   throw new Error(`Timed out waiting for run #${seq}`);
 }
 
-// Uncomment to use:
+// Example usage (run with: node examples/recipe-api/client.mjs):
+// import { runAndWait } from "./client.mjs";
 // const result = await runAndWait("morning-brief");
 // console.log("Output:", result.output);
