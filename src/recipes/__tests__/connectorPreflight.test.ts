@@ -93,6 +93,39 @@ describe("detectRequiredConnectors", () => {
     ).toEqual([]);
   });
 
+  // Regression: every connector tool registered today uses dot-form IDs
+  // (`slack.post_message`, `gmail.fetch_unread`, ...). The pre-fix prefix
+  // map keyed by `slack_` etc. and used `tool.startsWith(prefix)` →
+  // never matched dot-form → every YAML recipe install reported
+  // "no connectors needed" regardless of what the recipe actually used.
+  it("detects connectors from canonical dot-form tool IDs (registry shape)", () => {
+    expect(
+      detectRequiredConnectors(
+        recipe([
+          { id: "s1", agent: false, tool: "slack.post_message", params: {} },
+          { id: "s2", agent: false, tool: "gmail.fetch_unread", params: {} },
+          { id: "s3", agent: false, tool: "linear.list_issues", params: {} },
+          { id: "s4", agent: false, tool: "github.list_prs", params: {} },
+        ] as Recipe["steps"]),
+      ),
+    ).toEqual(["github", "gmail", "linear", "slack"]);
+  });
+
+  it("detects connectors from dot-form in agent tools[] arrays", () => {
+    expect(
+      detectRequiredConnectors(
+        recipe([
+          {
+            id: "s1",
+            agent: true,
+            prompt: "compose",
+            tools: ["hubspot.listContacts", "calendar.list_events"],
+          },
+        ] as Recipe["steps"]),
+      ),
+    ).toEqual(["google-calendar", "hubspot"]);
+  });
+
   it("matches every entry in the public prefix map", () => {
     // Sanity: every prefix in the map should match a tool we synthesize
     // from it. Guards against typos that would silently break the map.

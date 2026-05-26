@@ -23,33 +23,65 @@
 import type { Recipe, Step } from "./schema.js";
 
 /**
- * Tool-name prefix → connector id (matching the IDs returned by
+ * Tool-namespace → connector id (matching the IDs returned by
  * `/connections` — see src/connectors/gmail.ts handleConnectionsList).
  * Both `google-calendar` and the dashboard's `googleCalendar` spelling
  * are accepted on the caller side; this map is authoritative for the
  * bridge.
+ *
+ * Keys are BARE namespace names (no separator). The matcher accepts BOTH
+ * dot-form (`slack.post_message`) and underscore-form (`slack_post_message`)
+ * tool IDs. Real registry tools use dot-form
+ * (e.g. `src/recipes/tools/slack.ts` registers `slack.post_message`); the
+ * previous map keyed by `slack_` etc. silently failed every YAML recipe
+ * install because `tool.startsWith("slack_")` never matched `slack.post_message`.
  */
-export const TOOL_PREFIX_TO_CONNECTOR: Record<string, string> = {
-  slack_: "slack",
-  github_: "github",
-  jira_: "jira",
-  linear_: "linear",
-  gmail_: "gmail",
-  calendar_: "google-calendar",
-  drive_: "google-drive",
-  intercom_: "intercom",
-  hubspot_: "hubspot",
-  datadog_: "datadog",
-  stripe_: "stripe",
-  sentry_: "sentry",
-  zendesk_: "zendesk",
-  asana_: "asana",
-  notion_: "notion",
-  confluence_: "confluence",
-  discord_: "discord",
-  gitlab_: "gitlab",
-  pagerduty_: "pagerduty",
+export const TOOL_NAMESPACE_TO_CONNECTOR: Record<string, string> = {
+  slack: "slack",
+  github: "github",
+  jira: "jira",
+  linear: "linear",
+  gmail: "gmail",
+  calendar: "google-calendar",
+  drive: "google-drive",
+  intercom: "intercom",
+  hubspot: "hubspot",
+  datadog: "datadog",
+  stripe: "stripe",
+  sentry: "sentry",
+  zendesk: "zendesk",
+  asana: "asana",
+  notion: "notion",
+  confluence: "confluence",
+  discord: "discord",
+  gitlab: "gitlab",
+  pagerduty: "pagerduty",
 };
+
+/**
+ * @deprecated Use `TOOL_NAMESPACE_TO_CONNECTOR` instead. Kept as a thin
+ * alias derived from the canonical map so legacy callers (and the
+ * underscore-suffix tool-name shape) keep working until they migrate.
+ */
+export const TOOL_PREFIX_TO_CONNECTOR: Record<string, string> =
+  Object.fromEntries(
+    Object.entries(TOOL_NAMESPACE_TO_CONNECTOR).map(([ns, connector]) => [
+      `${ns}_`,
+      connector,
+    ]),
+  );
+
+/**
+ * Extract the namespace prefix from a registered tool ID. Tool IDs land
+ * in either `namespace.tool_name` (the canonical dot-form used by every
+ * registry entry today — see `src/recipes/tools/*.ts`) or the older
+ * `namespace_tool_name` underscore-form some tests use. Either form
+ * resolves to the bare namespace, lowercased.
+ */
+function extractNamespace(toolId: string): string | undefined {
+  const m = toolId.match(/^([a-z][a-z0-9-]*)[_.]/i);
+  return m?.[1]?.toLowerCase();
+}
 
 function toolsOfStep(step: Step): string[] {
   // agent: false steps carry a single `tool` field. agent: true steps
@@ -73,13 +105,8 @@ function toolsOfStep(step: Step): string[] {
 const PROMPT_PREFIX_PATTERNS: ReadonlyArray<{
   prefix: string;
   connector: string;
-}> = Object.entries(TOOL_PREFIX_TO_CONNECTOR).map(([prefix, connector]) => ({
-  // Strip trailing underscore — when the prompt mentions a tool name like
-  // `slack_post_message` the underscore is part of the literal we look
-  // for, but when an agent prompt is more conversational ("post to slack
-  // using slack.post_message"), we want to match the prefix without the
-  // separator too.
-  prefix: prefix.replace(/_$/, ""),
+}> = Object.entries(TOOL_NAMESPACE_TO_CONNECTOR).map(([prefix, connector]) => ({
+  prefix,
   connector,
 }));
 
@@ -131,13 +158,14 @@ export function detectRequiredConnectors(recipe: Recipe): string[] {
   const required = new Set<string>();
   for (const step of recipe.steps) {
     // Explicit `tool` / `tools[]` fields (canonical detection path).
+    // Pull the namespace out of the tool ID — works for both dot-form
+    // (the registry's canonical `slack.post_message`) and the legacy
+    // underscore-form some tests use (`slack_post_message`).
     for (const tool of toolsOfStep(step)) {
-      for (const [prefix, connector] of Object.entries(
-        TOOL_PREFIX_TO_CONNECTOR,
-      )) {
-        if (tool.startsWith(prefix)) {
-          required.add(connector);
-        }
+      const ns = extractNamespace(tool);
+      if (ns) {
+        const connector = TOOL_NAMESPACE_TO_CONNECTOR[ns];
+        if (connector) required.add(connector);
       }
     }
     // Prompt body scan for agent-mode steps — catches recipes that
