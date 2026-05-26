@@ -72,6 +72,14 @@ function detectRefType(raw: string): { type: RefType; id: string } {
   return { type: "unknown", id: trimmed };
 }
 
+const BODY_CAP = 500;
+
+function trimBody(raw: unknown): { value: string | null; truncated: boolean } {
+  if (typeof raw !== "string") return { value: null, truncated: false };
+  if (raw.length <= BODY_CAP) return { value: raw, truncated: false };
+  return { value: raw.slice(0, BODY_CAP), truncated: true };
+}
+
 async function fetchGhJson(
   workspace: string,
   args: string[],
@@ -150,7 +158,7 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
     schema: {
       name: "ctxGetTaskContext",
       description:
-        "Unified context for any issue / PR / commit / error ref. Auto-detects ref type (#42, PR-42, sha) and composes issue + linked commits + related traces. Prefer over raw gh / git tools.",
+        "Unified context for issue/PR/commit/error ref. Composes issue + linked commits + related traces. mode:'summary' (default) caps bodies; mode:'full' for untruncated. Prefer over gh/git.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -166,6 +174,12 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
             minimum: 1,
             maximum: 50,
             description: "Cap on linked-commits section. Default 10.",
+          },
+          mode: {
+            type: "string",
+            enum: ["summary", "full"],
+            description:
+              "Response verbosity. 'summary' (default) caps body fields at 500 chars and sets bodyTruncated:true. 'full' returns untruncated bodies. linkedIssueRefs on pullRequest is extracted from the raw body BEFORE truncation, so it is preserved in both modes.",
           },
         },
         additionalProperties: false as const,
@@ -189,6 +203,11 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
           pullRequest: { type: ["object", "null"] },
           commit: { type: ["object", "null"] },
           linkedCommits: { type: "array" },
+          bodyTruncated: {
+            type: "boolean",
+            description:
+              "True if any body field (issue, pullRequest, commit, linearIssue) was truncated under mode:'summary'. Re-call with mode:'full' for the untruncated body.",
+          },
           sources: {
             type: "object",
             properties: {
@@ -206,6 +225,9 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       const rawRef = requireString(args, "ref", 256);
       const maxLinked = optionalInt(args, "maxLinkedCommits", 1, 50) ?? 10;
+      const summaryMode =
+        typeof args.mode === "string" ? args.mode !== "full" : true;
+      let bodyTruncated = false;
       const { type: refType, id } = detectRefType(rawRef);
 
       const warnings: string[] = [];
@@ -245,6 +267,7 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
           pullRequest,
           commit,
           linkedCommits,
+          bodyTruncated,
           sources,
           warnings,
         });
@@ -254,11 +277,17 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
       if (refType === "linear_issue") {
         try {
           const li = await fetchIssue(id, signal);
+          let description: string | null = li.description ?? null;
+          if (summaryMode && typeof description === "string") {
+            const t = trimBody(description);
+            description = t.value;
+            if (t.truncated) bodyTruncated = true;
+          }
           linearIssue = {
             id: li.id,
             identifier: li.identifier,
             title: li.title,
-            description: li.description ?? null,
+            description,
             state: li.state,
             assignee: li.assignee ?? null,
             priority: li.priority,
@@ -293,6 +322,11 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
           );
           if (fetched.ok) {
             issue = fetched.data;
+            if (summaryMode && typeof issue.body === "string") {
+              const t = trimBody(issue.body);
+              issue.body = t.value;
+              if (t.truncated) bodyTruncated = true;
+            }
           } else {
             warnings.push(
               `issue ${id}: ${fetched.reason === "not_authed" ? GH_NOT_AUTHED : fetched.reason === "not_found" ? GH_NOT_FOUND : fetched.detail}`,
@@ -339,9 +373,16 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
             pullRequest = fetched.data;
             const body =
               typeof fetched.data.body === "string" ? fetched.data.body : "";
+            // Extract refs from full body BEFORE truncation — preserves
+            // linkedIssueRefs even when "Closes #42" lives past the cap.
             const refs = extractIssueRefs(body);
             if (refs.length > 0) {
               pullRequest.linkedIssueRefs = refs;
+            }
+            if (summaryMode && typeof pullRequest.body === "string") {
+              const t = trimBody(pullRequest.body);
+              pullRequest.body = t.value;
+              if (t.truncated) bodyTruncated = true;
             }
           } else {
             warnings.push(
@@ -359,6 +400,10 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
           commit = await fetchCommit(deps.workspace, id, signal);
           if (!commit) {
             warnings.push(`commit ${id}: not found in repo`);
+          } else if (summaryMode && typeof commit.body === "string") {
+            const t = trimBody(commit.body);
+            commit.body = t.value;
+            if (t.truncated) bodyTruncated = true;
           }
         } else {
           warnings.push("not a git repository — commit details skipped");
@@ -390,6 +435,7 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
         pullRequest,
         commit,
         linkedCommits,
+        bodyTruncated,
         sources,
         warnings,
       });
