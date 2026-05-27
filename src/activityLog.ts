@@ -422,11 +422,12 @@ export class ActivityLog {
   queryAll(opts?: { sinceMs?: number; last?: number }): ActivityEntry[] {
     const since = opts?.sinceMs ?? 0;
     const last = Math.min(opts?.last ?? 5000, 5000);
-    const filtered =
-      since > 0
-        ? this.entries.filter((e) => Date.parse(e.timestamp) >= since)
-        : this.entries;
-    return filtered.slice(-last);
+    if (since <= 0) return this.entries.slice(-last);
+    const result: ActivityEntry[] = [];
+    for (const e of this.entries) {
+      if (Date.parse(e.timestamp) >= since) result.push(e);
+    }
+    return result.slice(-last);
   }
 
   queryTimeline(opts?: { last?: number }): TimelineEntry[] {
