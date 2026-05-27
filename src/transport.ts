@@ -816,9 +816,18 @@ export class McpTransport {
           );
           return;
         }
-        // Record this timestamp and advance the head pointer
-        this.rateLimitBuf[this.rateLimitHead] = now;
-        this.rateLimitHead = (this.rateLimitHead + 1) % RATE_LIMIT_MAX;
+        // Defer the ring-buffer WRITE until after the request is known to
+        // not be malformed. A flood of AJV-failing payloads should NOT
+        // consume the per-session sliding window — that's symmetrical
+        // with the per-tool token bucket which already skips on AJV
+        // failure (consumeToolRateLimitToken runs only after validation
+        // passes). Rollback-after-write was the original fix, but
+        // concurrent message handlers race between write and rollback
+        // and can momentarily fill the buffer.
+        //
+        // Default: count the request. AJV-fail branches below set
+        // `countRequestInRateLimit = false` to skip the write.
+        let countRequestInRateLimit = true;
 
         let response: JsonRpcResponse = {
           jsonrpc: "2.0",
@@ -1229,6 +1238,7 @@ export class McpTransport {
                 ) {
                   this.callCount++;
                   this.errorCount++;
+                  countRequestInRateLimit = false; // malformed → don't consume window slot
                   response = {
                     jsonrpc: "2.0",
                     id: msg.id,
@@ -1244,6 +1254,7 @@ export class McpTransport {
                 if (JSON.stringify(rawArgs).length > 1_048_576) {
                   this.callCount++;
                   this.errorCount++;
+                  countRequestInRateLimit = false; // malformed → don't consume window slot
                   response = {
                     jsonrpc: "2.0",
                     id: msg.id,
@@ -1268,6 +1279,7 @@ export class McpTransport {
                 if (validate && !validate(toolArgs)) {
                   this.callCount++;
                   this.errorCount++;
+                  countRequestInRateLimit = false; // AJV-fail → don't consume window slot
                   const messages = (validate.errors ?? [])
                     .map((e) => `${e.instancePath || "."} ${e.message}`)
                     .join("; ");
@@ -1718,6 +1730,16 @@ export class McpTransport {
                 message: `Method not found: ${safeMethod(msg.method)}`,
               },
             };
+        }
+
+        // Deferred rate-limit accounting: write the slot only after the
+        // dispatch path has decided the request is well-formed. AJV-fail
+        // branches in tools/call clear `countRequestInRateLimit` above so
+        // a flood of malformed payloads can't saturate the per-session
+        // 200/min sliding window.
+        if (countRequestInRateLimit) {
+          this.rateLimitBuf[this.rateLimitHead] = now;
+          this.rateLimitHead = (this.rateLimitHead + 1) % RATE_LIMIT_MAX;
         }
 
         this.logger.debug(`--> response for ${safeMethod(msg.method)}`);
