@@ -61,10 +61,10 @@ export class ApiDriver implements ProviderDriver {
       type: string;
       text?: string;
     }>;
-    const text: string = content
-      .filter((b: { type: string }) => b.type === "text")
-      .map((b: { text?: string }) => b.text ?? "")
-      .join("");
+    let text = "";
+    for (const b of content as Array<{ type: string; text?: string }>) {
+      if (b.type === "text") text += b.text ?? "";
+    }
 
     input.onChunk?.(text);
 
