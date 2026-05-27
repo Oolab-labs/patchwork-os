@@ -61,8 +61,11 @@ steps:
         6. **Linear** — list in-progress and unstarted issues by priority; omit this section entirely if the list is empty or returned an error
 
         Be concise. Skip newsletters and automated notifications.
-      # Use claude (not gemini) — Gemini free tier hits daily quota mid-recipe
-      driver: claude
+      # Use the claude-code driver (subprocess `claude -p`) — runs under
+      # your existing Claude Code subscription, no ANTHROPIC_API_KEY
+      # required. Switch to `driver: claude` only if you have an API key
+      # set and want the Anthropic API path (different billing).
+      driver: claude-code
       into: brief
   - tool: file.write
     path: ~/.patchwork/inbox/morning-brief-{{date}}.md
