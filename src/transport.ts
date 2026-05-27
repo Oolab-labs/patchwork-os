@@ -322,13 +322,25 @@ export class McpTransport {
     inputSchema: unknown;
     outputSchema?: unknown;
   }> {
-    return Array.from(this.tools.values()).map((t) => ({
-      name: t.schema.name,
-      inputSchema: t.schema.inputSchema,
-      ...(t.schema.outputSchema !== undefined && {
-        outputSchema: t.schema.outputSchema,
-      }),
-    }));
+    const result: Array<{
+      name: string;
+      inputSchema: unknown;
+      outputSchema?: unknown;
+    }> = [];
+    for (const t of this.tools.values()) {
+      const entry: {
+        name: string;
+        inputSchema: unknown;
+        outputSchema?: unknown;
+      } = {
+        name: t.schema.name,
+        inputSchema: t.schema.inputSchema,
+      };
+      if (t.schema.outputSchema !== undefined)
+        entry.outputSchema = t.schema.outputSchema;
+      result.push(entry);
+    }
+    return result;
   }
 
   setExtensionConnectedFn(fn: () => boolean): void {
@@ -627,11 +639,19 @@ export class McpTransport {
     description: string;
     categories?: string[];
   }> {
-    return Array.from(this.tools.values()).map((t) => ({
-      name: t.schema.name,
-      description: t.schema.description,
-      categories: t.schema.categories,
-    }));
+    const result: Array<{
+      name: string;
+      description: string;
+      categories?: string[];
+    }> = [];
+    for (const t of this.tools.values()) {
+      result.push({
+        name: t.schema.name,
+        description: t.schema.description,
+        categories: t.schema.categories,
+      });
+    }
+    return result;
   }
 
   /** Top-N tools by largest result seen this session (descending by sizeChars). */
