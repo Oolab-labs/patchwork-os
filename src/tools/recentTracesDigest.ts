@@ -154,9 +154,7 @@ export async function buildRecentTracesDigest(
   let judgeLine: string | null = null;
   if (deps.recipeRunLog) {
     const cutoff = now - windowMs;
-    const recentRuns = deps.recipeRunLog
-      .query({ limit: 500 })
-      .filter((r) => r.createdAt >= cutoff);
+    const recentRuns = deps.recipeRunLog.query({ limit: 500, since: cutoff });
     const halts = summariseHalts(recentRuns);
     if (halts.total > 0) {
       const breakdown = Object.entries(halts.byCategory)
