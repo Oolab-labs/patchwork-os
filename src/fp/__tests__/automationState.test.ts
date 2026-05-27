@@ -70,7 +70,8 @@ describe("recordTrigger", () => {
   it("caps taskTimestamps at 10 000 entries", () => {
     // build a state with 10 000 timestamps already
     let state = EMPTY_AUTOMATION_STATE;
-    const startTs = 1_000_000;
+    // Use recent timestamps (within the 1-hour pruning window) so they survive pruning
+    const startTs = NOW - 3_590_000;
     // Seed 10 000 entries directly
     const fakeTimestamps = Array.from(
       { length: 10_000 },
