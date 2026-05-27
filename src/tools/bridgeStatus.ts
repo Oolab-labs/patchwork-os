@@ -75,6 +75,8 @@ const TOOL_AVAILABILITY_TABLE: Record<
   githubViewPR: { probe: "gh" },
 };
 
+const TOOL_AVAILABILITY_ENTRIES = Object.entries(TOOL_AVAILABILITY_TABLE);
+
 export function createBridgeStatusTool(
   extensionClient: ExtensionClient,
   probes: ProbeResults,
@@ -119,8 +121,6 @@ export function createBridgeStatusTool(
             enum: ["healthy", "degraded", "poor"],
           },
           tier: { type: "string", enum: ["full", "basic"] },
-          tierDescription: { type: "string" },
-          hint: { type: "string" },
           lastDisconnect: {
             type: "object",
             properties: {
@@ -173,7 +173,7 @@ export function createBridgeStatusTool(
         string,
         { available: false; reason: string }
       > = {};
-      for (const [name, spec] of Object.entries(TOOL_AVAILABILITY_TABLE)) {
+      for (const [name, spec] of TOOL_AVAILABILITY_ENTRIES) {
         if (spec.extensionRequired && !extensionConnected) {
           toolAvailability[name] = {
             available: false,
@@ -247,12 +247,6 @@ export function createBridgeStatusTool(
           },
         }),
         tier: extensionConnected ? "full" : "basic",
-        tierDescription: extensionConnected
-          ? "All tools available (LSP, debugger, terminal)"
-          : "Basic tools available. Connect the VS Code extension for LSP/debugger/terminal.",
-        hint: extensionConnected
-          ? "All tools available."
-          : "Extension disconnected — LSP/terminal/debugger unavailable. Will auto-reconnect.",
         ...(getDisconnectInfo && {
           lastDisconnect: getDisconnectInfo(),
         }),

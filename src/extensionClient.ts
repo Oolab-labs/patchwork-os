@@ -1125,7 +1125,7 @@ export class ExtensionClient {
         const o = r as Record<string, unknown>;
         return Array.isArray(o.contents) ? r : null;
       },
-      undefined,
+      12_000,
       signal,
     );
   }
@@ -1479,7 +1479,7 @@ export class ExtensionClient {
         const o = r as Record<string, unknown>;
         return Array.isArray(o.symbols) ? r : null;
       },
-      undefined,
+      15_000,
       signal,
     );
   }
@@ -2003,7 +2003,11 @@ export class ExtensionClient {
         this.latestDiagnosticsUpdatedAt.delete(f);
       }
     }
-    return Array.from(this.latestDiagnostics.values()).flat();
+    const result: Diagnostic[] = [];
+    for (const diags of this.latestDiagnostics.values()) {
+      for (const d of diags) result.push(d);
+    }
+    return result;
   }
 
   addDiagnosticsListener(

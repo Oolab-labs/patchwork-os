@@ -422,25 +422,39 @@ export class ActivityLog {
   queryAll(opts?: { sinceMs?: number; last?: number }): ActivityEntry[] {
     const since = opts?.sinceMs ?? 0;
     const last = Math.min(opts?.last ?? 5000, 5000);
-    const filtered =
-      since > 0
-        ? this.entries.filter((e) => Date.parse(e.timestamp) >= since)
-        : this.entries;
-    return filtered.slice(-last);
+    if (since <= 0) return this.entries.slice(-last);
+    const result: ActivityEntry[] = [];
+    for (const e of this.entries) {
+      if (Date.parse(e.timestamp) >= since) result.push(e);
+    }
+    return result.slice(-last);
   }
 
   queryTimeline(opts?: { last?: number }): TimelineEntry[] {
-    const tools: TimelineEntry[] = this.entries.map((e) => ({
-      kind: "tool" as const,
-      ...e,
-    }));
-    const lifecycle: TimelineEntry[] = this.lifecycleEntries.map((e) => ({
-      kind: "lifecycle" as const,
-      ...e,
-    }));
-    const combined = [...tools, ...lifecycle].sort((a, b) => a.id - b.id);
     const last = Math.min(opts?.last ?? 50, 200);
-    return combined.slice(-last);
+    const ents = this.entries;
+    const lifes = this.lifecycleEntries;
+    // Both arrays are individually sorted by id asc (shared nextId counter).
+    // Merge from the end to return only the `last` newest entries in O(last).
+    const result: TimelineEntry[] = [];
+    let ei = ents.length - 1;
+    let li = lifes.length - 1;
+    while (result.length < last && (ei >= 0 || li >= 0)) {
+      const e = ei >= 0 ? ents[ei] : undefined;
+      const l = li >= 0 ? lifes[li] : undefined;
+      if (!e) {
+        result.push({ kind: "lifecycle" as const, ...l! });
+        li--;
+      } else if (!l || e.id > l.id) {
+        result.push({ kind: "tool" as const, ...e });
+        ei--;
+      } else {
+        result.push({ kind: "lifecycle" as const, ...l });
+        li--;
+      }
+    }
+    result.reverse();
+    return result;
   }
 
   query(opts?: {
@@ -448,10 +462,16 @@ export class ActivityLog {
     status?: string;
     last?: number;
   }): ActivityEntry[] {
-    let result = this.entries;
-    if (opts?.tool) result = result.filter((e) => e.tool === opts.tool);
-    if (opts?.status) result = result.filter((e) => e.status === opts.status);
+    const tool = opts?.tool;
+    const status = opts?.status;
     const last = Math.min(opts?.last ?? 50, 200);
+    if (!tool && !status) return this.entries.slice(-last);
+    const result: ActivityEntry[] = [];
+    for (const e of this.entries) {
+      if (tool && e.tool !== tool) continue;
+      if (status && e.status !== status) continue;
+      result.push(e);
+    }
     return result.slice(-last);
   }
 
@@ -462,12 +482,14 @@ export class ActivityLog {
   }): string {
     const s = this.stats();
     const p = this.percentiles();
+    const sEntries = Object.entries(s);
+    const pEntries = Object.entries(p);
     const lines: string[] = [];
     lines.push(
       "# HELP bridge_tool_calls_total Total tool calls by tool name and status",
     );
     lines.push("# TYPE bridge_tool_calls_total counter");
-    for (const [tool, data] of Object.entries(s)) {
+    for (const [tool, data] of sEntries) {
       const t = escapeLabelValue(tool);
       lines.push(
         `bridge_tool_calls_total{tool="${t}",status="success"} ${data.count - data.errors}`,
@@ -480,19 +502,19 @@ export class ActivityLog {
       "# HELP bridge_tool_duration_ms_avg Average tool duration in milliseconds",
     );
     lines.push("# TYPE bridge_tool_duration_ms_avg gauge");
-    for (const [tool, data] of Object.entries(s)) {
+    for (const [tool, data] of sEntries) {
       const t = escapeLabelValue(tool);
       lines.push(
         `bridge_tool_duration_ms_avg{tool="${t}"} ${data.avgDurationMs}`,
       );
     }
     // Per-tool latency percentiles
-    if (Object.keys(p).length > 0) {
+    if (pEntries.length > 0) {
       lines.push(
         "# HELP bridge_tool_duration_p50_ms p50 latency per tool (ms)",
       );
       lines.push("# TYPE bridge_tool_duration_p50_ms gauge");
-      for (const [tool, data] of Object.entries(p)) {
+      for (const [tool, data] of pEntries) {
         const t = escapeLabelValue(tool);
         lines.push(`bridge_tool_duration_p50_ms{tool="${t}"} ${data.p50}`);
       }
@@ -500,7 +522,7 @@ export class ActivityLog {
         "# HELP bridge_tool_duration_p95_ms p95 latency per tool (ms)",
       );
       lines.push("# TYPE bridge_tool_duration_p95_ms gauge");
-      for (const [tool, data] of Object.entries(p)) {
+      for (const [tool, data] of pEntries) {
         const t = escapeLabelValue(tool);
         lines.push(`bridge_tool_duration_p95_ms{tool="${t}"} ${data.p95}`);
       }
@@ -508,7 +530,7 @@ export class ActivityLog {
         "# HELP bridge_tool_duration_p99_ms p99 latency per tool (ms)",
       );
       lines.push("# TYPE bridge_tool_duration_p99_ms gauge");
-      for (const [tool, data] of Object.entries(p)) {
+      for (const [tool, data] of pEntries) {
         const t = escapeLabelValue(tool);
         lines.push(`bridge_tool_duration_p99_ms{tool="${t}"} ${data.p99}`);
       }

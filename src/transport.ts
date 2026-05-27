@@ -2,7 +2,6 @@ import { WebSocket } from "ws";
 import type { ActivityLog } from "./activityLog.js";
 import { createAjv2020, type ValidateFunction } from "./ajv2020.js";
 import { ErrorCodes } from "./errors.js";
-import { consumeToken, refillBucket } from "./fp/tokenBucket.js";
 import type { Logger } from "./logger.js";
 import { withSpan } from "./telemetry.js";
 import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
@@ -168,6 +167,8 @@ export class McpTransport {
   private wireSchemaCache: unknown[] | null = null;
   /** Cached wire-schema array for tools/list in lazy mode (inputSchema stripped). */
   private wireSchemaCacheLazy: unknown[] | null = null;
+  /** Cached byte-length of wireSchemaCache. Avoids re-serializing on every metrics/health call. */
+  private wireSchemaCacheSizeBytes: number | null = null;
   /** When true, tools/list omits inputSchema. Clients must call tools/schema before tools/call. */
   private lazyTools = false;
   /** Per-session tool-call rate limit (calls/minute). 0 = disabled. */
@@ -255,32 +256,27 @@ export class McpTransport {
   /** Refill the token bucket and return whether at least one token is available (does NOT consume). */
   private peekToolRateLimit(): boolean {
     if (this.toolRateLimit <= 0) return true;
-    const next = refillBucket(this.toolBucket, Date.now(), this.toolRateLimit);
-    this.toolBucket.tokens = next.tokens;
-    this.toolBucket.lastRefill = next.lastRefill;
+    const now = Date.now();
+    const elapsed = Math.max(0, now - this.toolBucket.lastRefill);
+    this.toolBucket.tokens = Math.min(
+      this.toolRateLimit,
+      Math.max(
+        0,
+        this.toolBucket.tokens + (elapsed / 60_000) * this.toolRateLimit,
+      ),
+    );
+    this.toolBucket.lastRefill = now;
     return this.toolBucket.tokens >= 1;
   }
 
   /** Consume one token. Call only after peekToolRateLimit() returned true. */
   private consumeToolRateLimitToken(): void {
     if (this.toolRateLimit <= 0) return;
-    const { nextState } = consumeToken(this.toolBucket);
-    this.toolBucket.tokens = nextState.tokens;
-    this.toolBucket.lastRefill = nextState.lastRefill;
+    if (this.toolBucket.tokens >= 1) this.toolBucket.tokens -= 1;
   }
 
   private getValidator(toolName: string): ValidateFunction | null {
-    if (this.schemaValidators.has(toolName)) {
-      // biome-ignore lint/style/noNonNullAssertion: has() guard above proves this is defined
-      return this.schemaValidators.get(toolName)!;
-    }
-    const tool = this.tools.get(toolName);
-    if (!tool) return null;
-    const schema = tool.schema.inputSchema;
-    if (typeof schema !== "object" || schema === null) return null;
-    const fn = this.ajv.compile(schema as object);
-    this.schemaValidators.set(toolName, fn);
-    return fn;
+    return this.schemaValidators.get(toolName) ?? null;
   }
 
   /** Returns true once the MCP handshake is complete (notifications/initialized received). */
@@ -326,13 +322,25 @@ export class McpTransport {
     inputSchema: unknown;
     outputSchema?: unknown;
   }> {
-    return Array.from(this.tools.values()).map((t) => ({
-      name: t.schema.name,
-      inputSchema: t.schema.inputSchema,
-      ...(t.schema.outputSchema !== undefined && {
-        outputSchema: t.schema.outputSchema,
-      }),
-    }));
+    const result: Array<{
+      name: string;
+      inputSchema: unknown;
+      outputSchema?: unknown;
+    }> = [];
+    for (const t of this.tools.values()) {
+      const entry: {
+        name: string;
+        inputSchema: unknown;
+        outputSchema?: unknown;
+      } = {
+        name: t.schema.name,
+        inputSchema: t.schema.inputSchema,
+      };
+      if (t.schema.outputSchema !== undefined)
+        entry.outputSchema = t.schema.outputSchema;
+      result.push(entry);
+    }
+    return result;
   }
 
   setExtensionConnectedFn(fn: () => boolean): void {
@@ -426,6 +434,22 @@ export class McpTransport {
       handler,
       timeoutMs: timeoutMs ?? schema.timeoutMs,
     });
+    if (typeof schema.inputSchema === "object" && schema.inputSchema !== null) {
+      this.schemaValidators.set(
+        schema.name,
+        this.ajv.compile(schema.inputSchema as object),
+      );
+    }
+    if (
+      schema.outputSchema !== undefined &&
+      typeof schema.outputSchema === "object" &&
+      schema.outputSchema !== null
+    ) {
+      this.outputValidators.set(
+        schema.name,
+        this.ajv.compile(schema.outputSchema as object),
+      );
+    }
   }
 
   /** Upsert a tool by name — replaces if already registered, inserts if new. */
@@ -444,11 +468,28 @@ export class McpTransport {
     this.outputValidators.delete(schema.name);
     this.wireSchemaCache = null;
     this.wireSchemaCacheLazy = null;
+    this.wireSchemaCacheSizeBytes = null;
     this.tools.set(schema.name, {
       schema,
       handler,
       timeoutMs: timeoutMs ?? schema.timeoutMs,
     });
+    if (typeof schema.inputSchema === "object" && schema.inputSchema !== null) {
+      this.schemaValidators.set(
+        schema.name,
+        this.ajv.compile(schema.inputSchema as object),
+      );
+    }
+    if (
+      schema.outputSchema !== undefined &&
+      typeof schema.outputSchema === "object" &&
+      schema.outputSchema !== null
+    ) {
+      this.outputValidators.set(
+        schema.name,
+        this.ajv.compile(schema.outputSchema as object),
+      );
+    }
   }
 
   /** Remove all tools whose name starts with `prefix`. Returns count removed. */
@@ -457,13 +498,14 @@ export class McpTransport {
     this.outputValidators.delete(name);
     this.wireSchemaCache = null;
     this.wireSchemaCacheLazy = null;
+    this.wireSchemaCacheSizeBytes = null;
     return this.tools.delete(name);
   }
 
   deregisterToolsByPrefix(prefix: string): number {
     if (!prefix) return 0;
     let count = 0;
-    for (const name of [...this.tools.keys()]) {
+    for (const name of this.tools.keys()) {
       if (name.startsWith(prefix)) {
         this.tools.delete(name);
         this.schemaValidators.delete(name);
@@ -574,8 +616,7 @@ export class McpTransport {
 
   /** Returns the byte length of the wire-schema cache, or null if not yet built. */
   getWireSchemaCacheSize(): number | null {
-    if (this.wireSchemaCache === null) return null;
-    return JSON.stringify(this.wireSchemaCache).length;
+    return this.wireSchemaCacheSizeBytes;
   }
 
   /** Bulk-apply category tags to registered tools. Called after registerAllTools(). */
@@ -589,6 +630,7 @@ export class McpTransport {
     // Invalidate wire cache — categories are stripped but getToolSchemas reads them
     this.wireSchemaCache = null;
     this.wireSchemaCacheLazy = null;
+    this.wireSchemaCacheSizeBytes = null;
   }
 
   /** Returns all registered tool schemas — used by searchTools for keyword/category discovery. */
@@ -597,11 +639,19 @@ export class McpTransport {
     description: string;
     categories?: string[];
   }> {
-    return Array.from(this.tools.values()).map((t) => ({
-      name: t.schema.name,
-      description: t.schema.description,
-      categories: t.schema.categories,
-    }));
+    const result: Array<{
+      name: string;
+      description: string;
+      categories?: string[];
+    }> = [];
+    for (const t of this.tools.values()) {
+      result.push({
+        name: t.schema.name,
+        description: t.schema.description,
+        categories: t.schema.categories,
+      });
+    }
+    return result;
   }
 
   /** Top-N tools by largest result seen this session (descending by sizeChars). */
@@ -924,6 +974,10 @@ export class McpTransport {
                     } = t.schema;
                     return wireSchema;
                   },
+                );
+                this.wireSchemaCacheSizeBytes = Buffer.byteLength(
+                  JSON.stringify(this.wireSchemaCache),
+                  "utf8",
                 );
               }
             }
@@ -1251,7 +1305,12 @@ export class McpTransport {
                 }
                 // Guard against oversized argument payloads before they reach tool handlers.
                 // Check rawArgs (before _meta strip) so a large _meta cannot bypass the limit.
-                if (JSON.stringify(rawArgs).length > 1_048_576) {
+                // Fast-path: the WS message buffer is always ≥ rawArgs JSON size, so skip
+                // the expensive re-serialize for messages under 512 KB (virtually all calls).
+                if (
+                  data.byteLength > 524_288 &&
+                  JSON.stringify(rawArgs).length > 1_048_576
+                ) {
                   this.callCount++;
                   this.errorCount++;
                   countRequestInRateLimit = false; // malformed → don't consume window slot
@@ -1462,14 +1521,11 @@ export class McpTransport {
                     tool.schema.outputSchema !== undefined &&
                     toolResult.structuredContent !== undefined
                   ) {
-                    let outValidator = this.outputValidators.get(params.name);
-                    if (!outValidator) {
-                      outValidator = this.ajv.compile(
-                        tool.schema.outputSchema as object,
-                      );
-                      this.outputValidators.set(params.name, outValidator);
-                    }
-                    if (!outValidator(toolResult.structuredContent)) {
+                    const outValidator = this.outputValidators.get(params.name);
+                    if (
+                      typeof outValidator === "function" &&
+                      !outValidator(toolResult.structuredContent)
+                    ) {
                       callLog.warn(
                         `structuredContent failed outputSchema validation for tool "${params.name}" — stripping`,
                       );

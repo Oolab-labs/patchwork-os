@@ -155,9 +155,12 @@ class HttpAdapter extends EventEmitter {
    */
   getEventsAfter(lastId: number): Array<{ id: number; data: string }> {
     const now = Date.now();
-    return this.eventBuffer
-      .filter((e) => e.id > lastId && now - e.ts <= SSE_BUFFER_TTL_MS)
-      .map((e) => ({ id: e.id, data: e.data }));
+    const result: Array<{ id: number; data: string }> = [];
+    for (const e of this.eventBuffer) {
+      if (e.id > lastId && now - e.ts <= SSE_BUFFER_TTL_MS)
+        result.push({ id: e.id, data: e.data });
+    }
+    return result;
   }
 
   /** Attach (or detach, when null) a GET /mcp SSE response for server-initiated notifications. */
@@ -419,6 +422,17 @@ export class StreamableHttpHandler {
     req: http.IncomingMessage,
     res: http.ServerResponse,
   ): Promise<void> {
+    // Fast-path 413 for honest clients that declare an oversized Content-Length
+    // before any body bytes are buffered. readBody still enforces the cap for
+    // clients that lie or omit the header.
+    const declaredLength = Number(req.headers["content-length"]);
+    if (!Number.isNaN(declaredLength) && declaredLength > BODY_SIZE_LIMIT) {
+      res.writeHead(413, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Request body too large" }));
+      req.resume(); // drain so TCP can close cleanly
+      return;
+    }
+
     // Read body with size limit
     let body: string;
     try {
@@ -960,7 +974,7 @@ export class StreamableHttpHandler {
   /** Call on bridge shutdown to clean up all sessions and the prune timer. */
   close(): void {
     clearInterval(this.cleanupTimer);
-    for (const id of [...this.sessions.keys()]) {
+    for (const id of this.sessions.keys()) {
       this.destroySession(id);
     }
   }

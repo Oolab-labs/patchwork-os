@@ -20,6 +20,7 @@ import {
   getStatus,
   handleLinearDisconnect,
   handleLinearTest,
+  listIssues,
   loadTokens,
 } from "../linear.js";
 import { McpClient } from "../mcpClient.js";
@@ -75,6 +76,12 @@ describe("getStatus", () => {
     const s = getStatus();
     expect(s.status).toBe("connected");
     expect(s.workspace).toBe("acme");
+  });
+});
+
+describe("listIssues", () => {
+  it("throws when not connected", async () => {
+    await expect(listIssues()).rejects.toThrow(/not connected/);
   });
 });
 

@@ -131,11 +131,18 @@ export function recordTrigger(
   const newActiveTasks = new Map(state.activeTasks);
   newActiveTasks.set(key, taskId);
 
-  const rawTimestamps = [...state.taskTimestamps, now];
+  // Prune entries older than 1 hour while building the new array — keeps the
+  // array small so tasksInLastHour() scans only recent entries.
+  const cutoff = now - 3_600_000;
+  const pruned: number[] = [];
+  for (const t of state.taskTimestamps) {
+    if (t >= cutoff) pruned.push(t);
+  }
+  pruned.push(now);
   const newTaskTimestamps =
-    rawTimestamps.length > MAX_TASK_TIMESTAMPS
-      ? rawTimestamps.slice(rawTimestamps.length - MAX_TASK_TIMESTAMPS)
-      : rawTimestamps;
+    pruned.length > MAX_TASK_TIMESTAMPS
+      ? pruned.slice(pruned.length - MAX_TASK_TIMESTAMPS)
+      : pruned;
 
   return {
     ...state,
@@ -208,7 +215,11 @@ export function setLastTestOutcome(
  */
 export function tasksInLastHour(state: AutomationState, now: number): number {
   const cutoff = now - 3_600_000;
-  return state.taskTimestamps.filter((t) => t > cutoff).length;
+  let count = 0;
+  for (const t of state.taskTimestamps) {
+    if (t > cutoff) count++;
+  }
+  return count;
 }
 
 // ── Deduplication helpers ─────────────────────────────────────────────────────

@@ -43,18 +43,18 @@ function parse(r: { content: Array<{ type: string; text: string }> }) {
 }
 
 describe("createBridgeStatusTool", () => {
-  it("returns extensionConnected:true and all-available hint when connected", async () => {
+  it("returns extensionConnected:true when connected", async () => {
     const tool = createBridgeStatusTool(makeClient(true), makeProbes());
     const data = parse(await tool.handler());
     expect(data.extensionConnected).toBe(true);
-    expect(data.hint).toContain("All tools available");
+    expect(data.hint).toBeUndefined();
   });
 
-  it("returns extensionConnected:false and reconnect hint when disconnected", async () => {
+  it("returns extensionConnected:false when disconnected", async () => {
     const tool = createBridgeStatusTool(makeClient(false), makeProbes());
     const data = parse(await tool.handler());
     expect(data.extensionConnected).toBe(false);
-    expect(data.hint).toContain("auto-reconnect");
+    expect(data.hint).toBeUndefined();
   });
 
   it("returns activeSessions from sessions map when provided", async () => {
@@ -116,14 +116,14 @@ describe("createBridgeStatusTool", () => {
     const tool = createBridgeStatusTool(makeClient(true), makeProbes());
     const data = parse(await tool.handler());
     expect(data.tier).toBe("full");
-    expect(data.tierDescription).toContain("All tools available");
+    expect(data.tierDescription).toBeUndefined();
   });
 
   it("returns tier 'basic' when extension is disconnected", async () => {
     const tool = createBridgeStatusTool(makeClient(false), makeProbes());
     const data = parse(await tool.handler());
     expect(data.tier).toBe("basic");
-    expect(data.tierDescription).toContain("Connect the VS Code extension");
+    expect(data.tierDescription).toBeUndefined();
   });
 
   it("returns uptimeSeconds as a non-negative integer", async () => {

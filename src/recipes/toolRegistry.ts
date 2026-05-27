@@ -83,9 +83,12 @@ export function hasTool(id: string): boolean {
  * List all registered tools, optionally filtered by namespace.
  */
 export function listTools(namespace?: string): RegisteredTool[] {
-  const tools = Array.from(registry.values());
-  if (!namespace) return tools;
-  return tools.filter((t) => t.namespace === namespace);
+  if (!namespace) return Array.from(registry.values());
+  const result: RegisteredTool[] = [];
+  for (const t of registry.values()) {
+    if (t.namespace === namespace) result.push(t);
+  }
+  return result;
 }
 
 /**

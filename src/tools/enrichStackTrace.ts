@@ -59,7 +59,10 @@ function scoreConfidence(
   topSha: string | null,
 ): "high" | "medium" | "low" {
   if (!topShaResolved || !topSha) return "low";
-  const topAgreements = uniqueShas.filter((s) => s === topSha).length;
+  let topAgreements = 0;
+  for (const s of uniqueShas) {
+    if (s === topSha) topAgreements++;
+  }
   if (topAgreements >= 2) return "high";
   return "medium";
 }
@@ -223,10 +226,11 @@ export function createEnrichStackTraceTool(workspace: string) {
       if (topSha) {
         const meta = commitMetaCache.get(topSha);
         if (meta) {
-          topSuspect = {
-            ...meta,
-            frameCount: allBlamedShas.filter((s) => s === topSha).length,
-          };
+          let frameCount = 0;
+          for (const s of allBlamedShas) {
+            if (s === topSha) frameCount++;
+          }
+          topSuspect = { ...meta, frameCount };
         }
       }
 

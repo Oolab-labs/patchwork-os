@@ -76,25 +76,39 @@ export function createListClaudeTasksTool(
       }
 
       // Return tasks belonging to this session, plus automation-spawned tasks (sessionId === "")
-      const tasks = orchestrator
-        .list(statusFilter as TaskStatus | undefined)
-        .filter((t) => t.sessionId === sessionId || t.sessionId === "");
-
-      return successStructured({
-        count: tasks.length,
-        tasks: tasks.map((t) => ({
+      const tasks: Array<{
+        taskId: string;
+        status: string;
+        createdAt: number;
+        startedAt?: number;
+        doneAt?: number;
+        output?: string;
+        errorMessage?: string;
+        timeoutMs?: number;
+        origin: "session" | "automation";
+        triggerSource?: string;
+      }> = [];
+      for (const t of orchestrator.list(
+        statusFilter as TaskStatus | undefined,
+      )) {
+        if (t.sessionId !== sessionId && t.sessionId !== "") continue;
+        tasks.push({
           taskId: t.id,
           status: t.status,
           createdAt: t.createdAt,
           startedAt: t.startedAt,
           doneAt: t.doneAt,
-          // Truncate output to 100 chars per task in list view
           output: t.output ? t.output.slice(0, 100) : undefined,
           errorMessage: t.errorMessage,
           timeoutMs: t.timeoutMs,
           origin: t.isAutomationTask ? "automation" : "session",
           triggerSource: t.triggerSource,
-        })),
+        });
+      }
+
+      return successStructured({
+        count: tasks.length,
+        tasks,
       });
     },
   };

@@ -219,29 +219,35 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
         pools.push(...decisionTraces(deps.decisionTraceLog));
       }
 
-      let filtered = pools;
-      if (since !== undefined) filtered = filtered.filter((t) => t.ts > since);
-      if (tagFilter) {
-        filtered = filtered.filter((t) => {
-          if (t.traceType !== "decision") return false;
-          const tags = t.body.tags;
-          return Array.isArray(tags) && tags.includes(tagFilter);
-        });
-      }
-      if (keyFilter) {
-        const needle = keyFilter;
-        filtered = filtered.filter((t) => t.key.includes(needle));
-      }
-      if (qFilter) {
-        const needle = qFilter.toLowerCase();
-        filtered = filtered.filter((t) => {
-          if (t.summary.toLowerCase().includes(needle)) return true;
-          try {
-            return JSON.stringify(t.body).toLowerCase().includes(needle);
-          } catch {
-            return false;
+      const needsFilter =
+        since !== undefined || tagFilter || keyFilter || qFilter;
+      let filtered: DecisionTrace[];
+      if (!needsFilter) {
+        filtered = pools;
+      } else {
+        const qNeedle = qFilter?.toLowerCase();
+        filtered = [];
+        for (const t of pools) {
+          if (since !== undefined && t.ts <= since) continue;
+          if (tagFilter) {
+            if (t.traceType !== "decision") continue;
+            const tags = t.body.tags;
+            if (!Array.isArray(tags) || !tags.includes(tagFilter)) continue;
           }
-        });
+          if (keyFilter && !t.key.includes(keyFilter)) continue;
+          if (qNeedle) {
+            let match = t.summary.toLowerCase().includes(qNeedle);
+            if (!match) {
+              try {
+                match = JSON.stringify(t.body).toLowerCase().includes(qNeedle);
+              } catch {
+                match = false;
+              }
+            }
+            if (!match) continue;
+          }
+          filtered.push(t);
+        }
       }
 
       filtered.sort((a, b) => b.ts - a.ts);

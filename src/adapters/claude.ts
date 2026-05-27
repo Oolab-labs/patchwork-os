@@ -164,17 +164,19 @@ export class ClaudeAdapter implements ModelAdapter {
     }
 
     const data = (await res.json()) as AnthropicResponse;
-    const text = data.content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text ?? "")
-      .join("");
-    const toolCalls: ToolCall[] = data.content
-      .filter((b) => b.type === "tool_use")
-      .map((b) => ({
-        id: b.id ?? "",
-        name: b.name ?? "",
-        arguments: (b.input as Record<string, unknown>) ?? {},
-      }));
+    let text = "";
+    const toolCalls: ToolCall[] = [];
+    for (const b of data.content) {
+      if (b.type === "text") {
+        text += b.text ?? "";
+      } else if (b.type === "tool_use") {
+        toolCalls.push({
+          id: b.id ?? "",
+          name: b.name ?? "",
+          arguments: (b.input as Record<string, unknown>) ?? {},
+        });
+      }
+    }
 
     const stopReason: CompletionResult["stopReason"] =
       data.stop_reason === "stop_sequence" ? "end_turn" : data.stop_reason;
@@ -320,11 +322,14 @@ export class ClaudeAdapter implements ModelAdapter {
       return;
     }
 
-    const toolCalls: ToolCall[] = [...toolStates.values()].map((s) => ({
-      id: s.id,
-      name: s.name,
-      arguments: safeJsonParse(s.json),
-    }));
+    const toolCalls: ToolCall[] = [];
+    for (const s of toolStates.values()) {
+      toolCalls.push({
+        id: s.id,
+        name: s.name,
+        arguments: safeJsonParse(s.json),
+      });
+    }
 
     yield {
       type: "done",

@@ -564,10 +564,12 @@ export interface Diagnostic {
  * order-independent so LSP re-emissions with the same diagnostics in a
  * different order still collide.
  */
+function _diagKey(d: Diagnostic): string {
+  return `${d.severity}|${d.code ?? ""}|${(d.source ?? "").toLowerCase()}|${d.message.slice(0, 200)}`;
+}
+
 export function diagnosticSignature(diagnostics: Diagnostic[]): string {
-  const keyOf = (d: Diagnostic) =>
-    `${d.severity}|${d.code ?? ""}|${(d.source ?? "").toLowerCase()}|${d.message.slice(0, 200)}`;
-  const sigText = [...diagnostics].map(keyOf).sort().join("\n");
+  const sigText = diagnostics.map(_diagKey).sort().join("\n");
   return crypto.createHash("sha256").update(sigText).digest("hex").slice(0, 12);
 }
 
@@ -1291,6 +1293,7 @@ const CC_HOOK_TOOL_MAP: Record<string, string> = {
   PermissionDenied: "notifyPermissionDenied",
   CwdChanged: "notifyCwdChanged",
 };
+const CC_HOOK_TOOL_ENTRIES = Object.entries(CC_HOOK_TOOL_MAP);
 
 /** Policy hook names that correspond to CC hook events (need settings.json wiring). */
 const _POLICY_TO_CC_EVENT: Record<string, string> = {
@@ -1301,6 +1304,7 @@ const _POLICY_TO_CC_EVENT: Record<string, string> = {
   onPermissionDenied: "PermissionDenied",
   onCwdChanged: "CwdChanged",
 };
+const _POLICY_TO_CC_ENTRIES = Object.entries(_POLICY_TO_CC_EVENT);
 
 /**
  * Check which CC hook events have at least one settings.json entry whose
@@ -1309,7 +1313,7 @@ const _POLICY_TO_CC_EVENT: Record<string, string> = {
  */
 export function checkCcHookWiring(): Record<string, boolean> {
   const result: Record<string, boolean> = {};
-  for (const ccEvent of Object.keys(CC_HOOK_TOOL_MAP)) {
+  for (const [ccEvent] of CC_HOOK_TOOL_ENTRIES) {
     result[ccEvent] = false;
   }
 
@@ -1331,7 +1335,7 @@ export function checkCcHookWiring(): Record<string, boolean> {
     ) =>
       typeof cmd === "string" &&
       (cmd.includes(toolName) || cmd.includes(`notify ${ccEvent}`));
-    for (const [ccEvent, toolName] of Object.entries(CC_HOOK_TOOL_MAP)) {
+    for (const [ccEvent, toolName] of CC_HOOK_TOOL_ENTRIES) {
       const entries = hooks[ccEvent] ?? [];
       result[ccEvent] = entries.some((e) => {
         // New format: { matcher, hooks: [{ type, command }] }
@@ -1564,9 +1568,10 @@ export class AutomationHooks {
       information: 0,
       hint: 0,
     };
-    const currentErrorCount = diagnostics.filter(
-      (d) => (severityRankForClear[d.severity] ?? 0) >= 1,
-    ).length;
+    let currentErrorCount = 0;
+    for (const d of diagnostics) {
+      if ((severityRankForClear[d.severity] ?? 0) >= 1) currentErrorCount++;
+    }
     const prevErrorCount = this.prevDiagnosticErrors.get(normalizedFile) ?? 0;
     this.prevDiagnosticErrors.set(normalizedFile, currentErrorCount);
     // FIFO cap to bound memory
@@ -1609,13 +1614,14 @@ export class AutomationHooks {
         .join("\n") + (overflow > 0 ? `\n… and ${overflow} more` : "");
 
     // Collect source/code strings for diagnosticTypes filtering
-    const diagnosticSources = diagnostics
-      .flatMap((d) => [
-        d.source?.toLowerCase() ?? "",
-        String(d.code ?? "").toLowerCase(),
-      ])
-      .filter(Boolean)
-      .join(",");
+    const _dsParts: string[] = [];
+    for (const d of diagnostics) {
+      const src = d.source?.toLowerCase();
+      if (src) _dsParts.push(src);
+      const code = String(d.code ?? "").toLowerCase();
+      if (code) _dsParts.push(code);
+    }
+    const diagnosticSources = _dsParts.join(",");
 
     const diagnosticSig = diagnosticSignature(diagnostics);
 
@@ -1892,14 +1898,15 @@ export class AutomationHooks {
   } {
     const p = this.policy;
     const wiring = checkCcHookWiring();
-    const unwiredEnabledHooks = Object.entries(_POLICY_TO_CC_EVENT)
-      .filter(([policyKey, ccEvent]) => {
-        const hookCfg = p[policyKey as keyof AutomationPolicy] as
-          | { enabled?: boolean }
-          | undefined;
-        return hookCfg?.enabled === true && wiring[ccEvent] === false;
-      })
-      .map(([policyKey]) => policyKey);
+    const unwiredEnabledHooks: string[] = [];
+    for (const [policyKey, ccEvent] of _POLICY_TO_CC_ENTRIES) {
+      const hookCfg = p[policyKey as keyof AutomationPolicy] as
+        | { enabled?: boolean }
+        | undefined;
+      if (hookCfg?.enabled === true && wiring[ccEvent] === false) {
+        unwiredEnabledHooks.push(policyKey);
+      }
+    }
     return {
       onPreCompact: p.onPreCompact
         ? {
@@ -2068,10 +2075,11 @@ export class AutomationHooks {
       "onDebugSessionEnd",
       "onRecipeSave",
     ] as const;
-    const hooksEnabled = hookKeys.filter((k) => {
+    let hooksEnabled = 0;
+    for (const k of hookKeys) {
       const hook = this.policy[k] as { enabled?: boolean } | undefined;
-      return hook !== undefined && hook.enabled !== false;
-    }).length;
+      if (hook !== undefined && hook.enabled !== false) hooksEnabled++;
+    }
 
     // Convert skipCountsByHookAndReason Map to plain object
     const skipCountsByHookAndReason: Record<

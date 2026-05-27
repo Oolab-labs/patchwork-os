@@ -166,6 +166,8 @@ export interface RunQuery {
   recipe?: string;
   /** Runs with seq > after. */
   after?: number;
+  /** Only return runs with createdAt >= since (ms epoch). */
+  since?: number;
   /** PR5c — exact-match on manualRunId. Yields all retries of one attempt. */
   manualRunId?: string;
 }
@@ -275,20 +277,24 @@ export class RecipeRunLog {
 
   query(q: RunQuery = {}): RecipeRun[] {
     this.syncFromDisk();
-    let out = this.runs;
-    if (q.trigger) out = out.filter((r) => r.trigger === q.trigger);
-    if (q.status) out = out.filter((r) => r.status === q.status);
-    if (q.recipe) out = out.filter((r) => r.recipeName === q.recipe);
-    if (q.manualRunId) {
-      const id = q.manualRunId;
-      out = out.filter((r) => r.manualRunId === id);
-    }
-    if (q.after !== undefined) {
-      const after = q.after;
-      out = out.filter((r) => r.seq > after);
+    const trigger = q.trigger;
+    const status = q.status;
+    const recipe = q.recipe;
+    const manualRunId = q.manualRunId;
+    const after = q.after;
+    const since = q.since;
+    const out: RecipeRun[] = [];
+    for (const r of this.runs) {
+      if (trigger && r.trigger !== trigger) continue;
+      if (status && r.status !== status) continue;
+      if (recipe && r.recipeName !== recipe) continue;
+      if (manualRunId && r.manualRunId !== manualRunId) continue;
+      if (after !== undefined && r.seq <= after) continue;
+      if (since !== undefined && r.createdAt < since) continue;
+      out.push(r);
     }
     // Newest first.
-    out = [...out].sort((a, b) => b.seq - a.seq);
+    out.sort((a, b) => b.seq - a.seq);
     const limit = Math.min(Math.max(q.limit ?? 100, 1), 500);
     return out.slice(0, limit);
   }
@@ -317,7 +323,11 @@ export class RecipeRunLog {
   /** Return seqs of all in-memory runs whose parentSeq matches this seq. */
   getChildSeqs(parentSeq: number): number[] {
     this.syncFromDisk();
-    return this.runs.filter((r) => r.parentSeq === parentSeq).map((r) => r.seq);
+    const result: number[] = [];
+    for (const r of this.runs) {
+      if (r.parentSeq === parentSeq) result.push(r.seq);
+    }
+    return result;
   }
 
   private readFromDiskBySeq(seq: number): RecipeRun | null {

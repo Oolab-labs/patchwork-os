@@ -137,9 +137,11 @@ function parseOutput(output: string, cwd: string): TestResult[] {
       counts[match[2] ?? ""] = Number.parseInt(match[1] ?? "0", 10);
     }
     // Add placeholder passed results for summary (no file:line for passed tests in -q output)
-    const passedCount =
-      (counts.passed ?? 0) -
-      results.filter((r) => r.status === "passed").length;
+    let passedInResults = 0;
+    for (const r of results) {
+      if (r.status === "passed") passedInResults++;
+    }
+    const passedCount = (counts.passed ?? 0) - passedInResults;
     for (let j = 0; j < passedCount; j++) {
       results.push({
         name: `passed_test_${j + 1}`,

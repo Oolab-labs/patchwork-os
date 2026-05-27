@@ -17,7 +17,13 @@ export function createGetToolCapabilitiesTool(
       cache_control: { type: "ephemeral" as const },
       inputSchema: {
         type: "object" as const,
-        properties: {},
+        properties: {
+          verbose: {
+            type: "boolean",
+            description:
+              "When true, expand lsp category to a name array instead of a count.",
+          },
+        },
         additionalProperties: false as const,
       },
       outputSchema: {
@@ -25,7 +31,6 @@ export function createGetToolCapabilitiesTool(
         properties: {
           extensionConnected: { type: "boolean" },
           tier: { type: "string" },
-          tierDescription: { type: "string" },
           editor: { type: "string" },
           cliTools: { type: "object" },
           linters: { type: "object" },
@@ -33,12 +38,15 @@ export function createGetToolCapabilitiesTool(
           testRunners: { type: "object" },
           features: { type: "object" },
           commandAllowlist: { type: "array", items: { type: "string" } },
-          availableTools: { type: "object" },
+          availableTools: {
+            type: "object",
+            description:
+              "Per-category tool counts (integer). lsp is a name array only when verbose:true.",
+          },
         },
         required: [
           "extensionConnected",
           "tier",
-          "tierDescription",
           "cliTools",
           "linters",
           "formatters",
@@ -49,13 +57,12 @@ export function createGetToolCapabilitiesTool(
         ],
       },
     },
-    handler: async () => {
+    handler: async (params: { verbose?: boolean } = {}) => {
+      const connected = extensionClient.isConnected();
+      const verbose = params.verbose === true;
       return successStructured({
-        extensionConnected: extensionClient.isConnected(),
-        tier: extensionClient.isConnected() ? "full" : "basic",
-        tierDescription: extensionClient.isConnected()
-          ? "All tools available (LSP, debugger, terminal)"
-          : "Basic tools available. Connect the VS Code extension for LSP/debugger/terminal.",
+        extensionConnected: connected,
+        tier: connected ? "full" : "basic",
         editor: config.editorCommand ?? "none",
         cliTools: {
           rg: probes.rg,
@@ -87,7 +94,7 @@ export function createGetToolCapabilitiesTool(
         },
         features: {
           diagnostics:
-            extensionClient.isConnected() ||
+            connected ||
             probes.tsc ||
             probes.eslint ||
             probes.pyright ||
@@ -103,203 +110,75 @@ export function createGetToolCapabilitiesTool(
             : probes.git
               ? "git-ls-files"
               : "find-fallback",
-          fileOps: extensionClient.isConnected()
-            ? "available (VS Code)"
-            : "available (native fs fallback — no trash, no undo buffer)",
-          editText: extensionClient.isConnected()
-            ? "available (VS Code WorkspaceEdit)"
-            : "available (native fs fallback — no undo buffer)",
-          selection: extensionClient.isConnected() ? "available" : "stub-only",
-          dirtyCheck: extensionClient.isConnected()
-            ? "real-time"
-            : "mtime-heuristic",
-          save: extensionClient.isConnected()
-            ? "real-buffer-save (VS Code)"
+          fileOps: connected ? "vscode" : "native",
+          editText: connected ? "vscode" : "native",
+          selection: connected ? "available" : "stub-only",
+          dirtyCheck: connected ? "real-time" : "mtime-heuristic",
+          save: connected
+            ? "vscode"
             : config.editorCommand
-              ? "editor-cli-reopen (edits already on disk)"
-              : "no-op (edits already on disk via editText)",
-          lsp: extensionClient.isConnected()
-            ? "available (VS Code LSP)"
-            : "unavailable (requires extension)",
-          terminalOutput: extensionClient.isConnected()
-            ? "available (runInTerminal uses VS Code shell integration; getTerminalOutput uses proposed API)"
-            : "unavailable (requires extension)",
+              ? "editor-cli"
+              : "no-op",
+          lsp: connected ? "vscode" : "unavailable",
+          terminalOutput: connected ? "available" : "unavailable",
         },
         commandAllowlist: config.commandAllowlist,
         availableTools: {
-          // Always available (work with or without extension)
-          files: [
-            "openFile",
-            "createFile",
-            "deleteFile",
-            "renameFile",
-            "findFiles",
-            "getFileTree",
-            "getOpenEditors",
-            "checkDocumentDirty",
-            "saveDocument",
-            "getBufferContent",
-            ...(extensionClient.isConnected()
-              ? ["watchFiles", "unwatchFiles"]
-              : []),
-          ],
-          editing: [
-            "replaceBlock",
-            "editText",
-            "openDiff",
-            "closeAllDiffTabs",
-            "formatDocument",
-            "fixAllLintErrors",
-            ...(extensionClient.isConnected()
-              ? ["closeTab", "organizeImports"]
-              : []),
-          ],
-          git: [
-            "getGitStatus",
-            "getGitDiff",
-            "getGitLog",
-            "gitAdd",
-            "gitCommit",
-            "gitCheckout",
-            "gitBlame",
-            "gitFetch",
-            "gitPull",
-            "gitPush",
-            "gitListBranches",
-            "gitStash",
-            "gitStashPop",
-            "gitStashList",
-            "getCommitDetails",
-            "getDiffBetweenRefs",
-          ],
-          diagnostics: [
-            "getDiagnostics",
-            "runTests",
-            ...(extensionClient.isConnected() ? ["watchDiagnostics"] : []),
-          ],
-          search: ["searchWorkspace", "searchAndReplace"],
-          lsp: extensionClient.isConnected()
-            ? [
-                "getDocumentSymbols",
-                "goToDefinition",
-                "findReferences",
-                "getHover",
-                "getCodeActions",
-                "applyCodeAction",
-                "previewCodeAction",
-                "renameSymbol",
-                "searchWorkspaceSymbols",
-                "getCallHierarchy",
-                "getTypeHierarchy",
-                "getInlayHints",
-                "getHoverAtCursor",
-                "explainSymbol",
-                "refactorPreview",
-                "prepareRename",
-                "signatureHelp",
-                "foldingRanges",
-                "selectionRanges",
-                "refactorAnalyze",
-                "getSemanticTokens",
-                "getCodeLens",
-                "getChangeImpact",
-                "getImportedSignatures",
-                "getDocumentLinks",
-                "batchGetHover",
-                "batchGoToDefinition",
-                "batchFindImplementations",
-                "refactorExtractFunction",
-                "getImportTree",
-                "findImplementations",
-                "goToTypeDefinition",
-                "goToDeclaration",
-              ]
-            : [],
-          planning: [
-            "createPlan",
-            "updatePlan",
-            "getPlan",
-            "deletePlan",
-            "listPlans",
-          ],
-          terminal: extensionClient.isConnected()
-            ? [
-                "listTerminals",
-                "getTerminalOutput",
-                "createTerminal",
-                "sendTerminalCommand",
-                "runInTerminal",
-                "waitForTerminalOutput",
-                "disposeTerminal",
-              ]
-            : [],
-          debug: extensionClient.isConnected()
-            ? [
-                "getDebugState",
-                "evaluateInDebugger",
-                "setDebugBreakpoints",
-                "startDebugging",
-                "stopDebugging",
-              ]
-            : [],
-          http: ["sendHttpRequest", "parseHttpFile"],
-          analysis: [
-            "getTypeSignature",
-            "getImportTree",
-            "getCodeCoverage",
-            "generateTests",
-            "getDependencyTree",
-            "getGitHotspots",
-            "getSecurityAdvisories",
-            "getPRTemplate",
-            ...(probes.gh ? ["createIssueFromAIComment"] : []),
-          ],
-          ...(probes.gh
-            ? {
-                github: [
-                  "githubCreatePR",
-                  "githubListPRs",
-                  "githubViewPR",
-                  "githubGetPRDiff",
-                  "githubPostPRReview",
-                  "githubListIssues",
-                  "githubGetIssue",
-                  "githubCreateIssue",
-                  "githubCommentIssue",
-                  "githubListRuns",
-                  "githubGetRunLogs",
-                ],
-              }
-            : {}),
-          other: [
-            "runCommand",
-            "getToolCapabilities",
-            "getProjectInfo",
-            "getAIComments",
-            "getActivityLog",
-            "getCurrentSelection",
-            "getLatestSelection",
-            "getWorkspaceFolders",
-            "setActiveWorkspaceFolder",
-            "bridgeStatus",
-            ...(extensionClient.isConnected()
+          // Integer counts per category. lsp is kept as a name array for
+          // cross-validation against SLIM_TOOL_NAMES in tests.
+          files: connected ? 12 : 10,
+          editing: connected ? 8 : 6,
+          git: 16,
+          diagnostics: connected ? 3 : 2,
+          search: 2,
+          lsp: verbose
+            ? connected
               ? [
-                  "readClipboard",
-                  "writeClipboard",
-                  "getWorkspaceSettings",
-                  "setWorkspaceSetting",
-                  "executeVSCodeCommand",
-                  "listVSCodeCommands",
-                  "getNotebookCells",
-                  "runNotebookCell",
-                  "getNotebookOutput",
-                  "setEditorDecorations",
-                  "clearEditorDecorations",
-                  "listTasks",
-                  "runTask",
+                  "getDocumentSymbols",
+                  "goToDefinition",
+                  "findReferences",
+                  "getHover",
+                  "getCodeActions",
+                  "applyCodeAction",
+                  "previewCodeAction",
+                  "renameSymbol",
+                  "searchWorkspaceSymbols",
+                  "getCallHierarchy",
+                  "getTypeHierarchy",
+                  "getInlayHints",
+                  "getHoverAtCursor",
+                  "explainSymbol",
+                  "refactorPreview",
+                  "prepareRename",
+                  "signatureHelp",
+                  "foldingRanges",
+                  "selectionRanges",
+                  "refactorAnalyze",
+                  "getSemanticTokens",
+                  "getCodeLens",
+                  "getChangeImpact",
+                  "getImportedSignatures",
+                  "getDocumentLinks",
+                  "batchGetHover",
+                  "batchGoToDefinition",
+                  "batchFindImplementations",
+                  "refactorExtractFunction",
+                  "getImportTree",
+                  "findImplementations",
+                  "goToTypeDefinition",
+                  "goToDeclaration",
                 ]
-              : []),
-          ],
+              : []
+            : connected
+              ? 33
+              : 0,
+          planning: 5,
+          terminal: connected ? 7 : 0,
+          debug: connected ? 5 : 0,
+          http: 2,
+          analysis: 8 + (probes.gh ? 1 : 0),
+          ...(probes.gh ? { github: 11 } : {}),
+          other: connected ? 23 : 10,
         },
       });
     },

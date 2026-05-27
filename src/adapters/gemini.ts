@@ -105,17 +105,20 @@ export class GeminiAdapter implements ModelAdapter {
     const data = (await res.json()) as GeminiResponse;
     const candidate = data.candidates?.[0];
     const parts: GeminiPart[] = candidate?.content?.parts ?? [];
-    const text = parts
-      .map((p) => p.text ?? "")
-      .join("")
-      .trim();
-    const toolCalls: ToolCall[] = parts
-      .filter((p) => p.functionCall)
-      .map((p, i) => ({
-        id: `gemini_${Date.now()}_${i}`,
-        name: p.functionCall?.name ?? "",
-        arguments: p.functionCall?.args ?? {},
-      }));
+    let text = "";
+    const toolCalls: ToolCall[] = [];
+    let tcIdx = 0;
+    for (const p of parts) {
+      if (p.text !== undefined) text += p.text;
+      if (p.functionCall) {
+        toolCalls.push({
+          id: `gemini_${Date.now()}_${tcIdx++}`,
+          name: p.functionCall.name ?? "",
+          arguments: p.functionCall.args ?? {},
+        });
+      }
+    }
+    text = text.trim();
 
     const stopReason: CompletionResult["stopReason"] =
       toolCalls.length > 0

@@ -395,48 +395,47 @@ export function createGetDiagnosticsTool(
             }),
         ),
       );
-      let diagnostics = results.flat();
+      const rawDiagnostics = results.flat();
 
-      // Dedup: tsc appends trailing period to messages; extension/other linters
-      // may not. Normalise message before building the key so "Cannot find name
-      // 'x'." and "Cannot find name 'x'" are treated as the same diagnostic.
-      {
-        const seen = new Set<string>();
-        diagnostics = diagnostics.filter((d) => {
-          const normalizedMsg = d.message.replace(/\.$/, "").trim();
-          const key = `${d.file}:${d.line ?? ""}:${d.column ?? ""}:${normalizedMsg}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-      }
-
-      // Filter by URI if specified
-      if (uri) {
-        const normalizedUri = uri.startsWith("file://") ? uri : toFileUri(uri);
-        diagnostics = diagnostics.filter((d) => {
+      // Dedup + URI filter + message sanitize in a single pass.
+      // tsc appends trailing period to messages; extension/other linters may not.
+      // Normalise message before building the dedup key.
+      const dedupSeen = new Set<string>();
+      const normalizedUri = uri
+        ? uri.startsWith("file://")
+          ? uri
+          : toFileUri(uri)
+        : null;
+      const diagnostics: typeof rawDiagnostics = [];
+      for (const d of rawDiagnostics) {
+        const normalizedMsg = d.message.replace(/\.$/, "").trim();
+        const key = `${d.file}:${d.line ?? ""}:${d.column ?? ""}:${normalizedMsg}`;
+        if (dedupSeen.has(key)) continue;
+        dedupSeen.add(key);
+        if (normalizedUri !== null) {
           const diagUri = d.file.startsWith("file://")
             ? d.file
             : toFileUri(d.file);
-          return diagUri === normalizedUri;
-        });
+          if (diagUri !== normalizedUri) continue;
+        }
+        diagnostics.push({ ...d, message: sanitizeMessage(d.message) });
       }
-
-      // Sanitize message fields before filtering/returning
-      diagnostics = diagnostics.map((d) => ({
-        ...d,
-        message: sanitizeMessage(d.message),
-      }));
 
       const totalBeforeFilter = diagnostics.length;
       const filteredDiags = applyFilters(
         diagnostics as unknown[],
       ) as typeof diagnostics;
 
+      let _errors = 0,
+        _warnings = 0;
+      for (const d of filteredDiags) {
+        if (d.severity === "error") _errors++;
+        else if (d.severity === "warning") _warnings++;
+      }
       const summary = {
         total: filteredDiags.length,
-        errors: filteredDiags.filter((d) => d.severity === "error").length,
-        warnings: filteredDiags.filter((d) => d.severity === "warning").length,
+        errors: _errors,
+        warnings: _warnings,
       };
 
       const errors: Record<string, string> = {};

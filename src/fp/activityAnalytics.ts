@@ -15,11 +15,14 @@ export function computeStats(
     { count: number; totalMs: number; errors: number }
   >();
   for (const entry of entries) {
-    const s = map.get(entry.tool) ?? { count: 0, totalMs: 0, errors: 0 };
+    let s = map.get(entry.tool);
+    if (!s) {
+      s = { count: 0, totalMs: 0, errors: 0 };
+      map.set(entry.tool, s);
+    }
     s.count++;
     s.totalMs += entry.durationMs;
     if (entry.status === "error") s.errors++;
-    map.set(entry.tool, s);
   }
   const result: Record<
     string,
@@ -81,15 +84,19 @@ export function computeCoOccurrence(
 ): Array<{ pair: string; count: number }> {
   const counts = new Map<string, number>();
   const n = entries.length;
+  // Pre-compute epoch timestamps once to avoid repeated Date construction in nested loop.
+  const times = new Array<number>(n);
+  for (let k = 0; k < n; k++) {
+    times[k] = Date.parse(entries[k]?.timestamp ?? "");
+  }
   for (let i = 0; i < n; i++) {
     const a = entries[i];
     if (!a) continue;
-    const tA = new Date(a.timestamp).getTime();
+    const tA = times[i] ?? 0;
     for (let j = i + 1; j < n; j++) {
       const b = entries[j];
       if (!b) continue;
-      const tB = new Date(b.timestamp).getTime();
-      if (tB - tA > windowMs) break;
+      if ((times[j] ?? 0) - tA > windowMs) break;
       if (a.tool === b.tool) continue;
       const key =
         a.tool < b.tool ? `${a.tool}|${b.tool}` : `${b.tool}|${a.tool}`;
@@ -97,10 +104,14 @@ export function computeCoOccurrence(
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
-  return [...counts.entries()]
-    .map(([pair, count]) => ({ pair, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, maxPairs);
+  const pairs = Array.from(counts.entries());
+  pairs.sort((a, b) => b[1] - a[1]);
+  const result: Array<{ pair: string; count: number }> = [];
+  for (let i = 0; i < pairs.length && i < maxPairs; i++) {
+    const [pair, count] = pairs[i]!;
+    result.push({ pair, count });
+  }
+  return result;
 }
 
 /**
@@ -120,12 +131,15 @@ export function computeWindowedStats(
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i];
     if (!e) continue;
-    if (new Date(e.timestamp).getTime() < cutoff) break;
-    const s = map.get(e.tool) ?? { count: 0, totalMs: 0, errors: 0 };
+    if (Date.parse(e.timestamp) < cutoff) break;
+    let s = map.get(e.tool);
+    if (!s) {
+      s = { count: 0, totalMs: 0, errors: 0 };
+      map.set(e.tool, s);
+    }
     s.count++;
     s.totalMs += e.durationMs;
     if (e.status === "error") s.errors++;
-    map.set(e.tool, s);
   }
   const result: Record<
     string,

@@ -717,7 +717,13 @@ describe("mergeAutomationStates — PBT", () => {
           let b = EMPTY_AUTOMATION_STATE;
           for (const ts of tsBs) b = recordTrigger(b, "k", "t", ts);
           const merged = mergeAutomationStates(a, b);
-          return merged.taskTimestamps.length === tsAs.length + tsBs.length;
+          // recordTrigger prunes entries older than 1 h at write time, so the
+          // post-prune state lengths (not the raw input lengths) are the right
+          // baseline for asserting no-dedup concatenation in mergeAutomationStates.
+          return (
+            merged.taskTimestamps.length ===
+            a.taskTimestamps.length + b.taskTimestamps.length
+          );
         },
       ),
       { seed: 42 },

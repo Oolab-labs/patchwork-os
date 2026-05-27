@@ -149,7 +149,10 @@ export async function listIssues(
   opts: ListLinearIssuesOpts = {},
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>[]> {
-  if (!loadTokens()) return [];
+  if (!loadTokens())
+    throw new Error(
+      "Linear not connected — visit /connections to authenticate",
+    );
   const args: Record<string, unknown> = {
     limit: Math.min(opts.limit ?? 20, 50),
   };

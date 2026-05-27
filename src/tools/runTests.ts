@@ -306,12 +306,22 @@ export function createRunTestsTool(
       const results = allResults.flat();
       const durationMs = Date.now() - startTime;
 
+      let passed = 0,
+        failed = 0,
+        skipped = 0,
+        errored = 0;
+      for (const r of results) {
+        if (r.status === "passed") passed++;
+        else if (r.status === "failed") failed++;
+        else if (r.status === "skipped") skipped++;
+        else if (r.status === "errored") errored++;
+      }
       const summary = {
         total: results.length,
-        passed: results.filter((r) => r.status === "passed").length,
-        failed: results.filter((r) => r.status === "failed").length,
-        skipped: results.filter((r) => r.status === "skipped").length,
-        errored: results.filter((r) => r.status === "errored").length,
+        passed,
+        failed,
+        skipped,
+        errored,
         durationMs,
       };
 

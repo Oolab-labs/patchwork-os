@@ -442,7 +442,9 @@ export function createPlanTools(workspace: string) {
       let completed = 0;
       const sections = plan.sections.map((s) => {
         total += s.tasks.length;
-        completed += s.tasks.filter((t) => t.completed).length;
+        for (const t of s.tasks) {
+          if (t.completed) completed++;
+        }
         return {
           name: s.name,
           tasks: s.tasks.map((t) => ({

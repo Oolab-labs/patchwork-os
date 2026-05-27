@@ -436,10 +436,10 @@ export class SubprocessDriver implements IClaudeDriver {
           if (Array.isArray(content)) {
             // Concatenate all text blocks in this event before dispatching to onChunk
             // to avoid many tiny single-character calls on tool_use-heavy responses.
-            const text = content
-              .filter((b) => b.type === "text")
-              .map((b) => b.text ?? "")
-              .join("");
+            let text = "";
+            for (const b of content) {
+              if (b.type === "text") text += b.text ?? "";
+            }
             if (text.length > 0) {
               accumulated += text;
               if (outputBytesSent < OUTPUT_CAP) {
@@ -637,10 +637,10 @@ export class ApiDriver implements IClaudeDriver {
       type: string;
       text?: string;
     }>;
-    const text: string = content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text ?? "")
-      .join("");
+    let text = "";
+    for (const b of content) {
+      if (b.type === "text") text += b.text ?? "";
+    }
 
     _input.onChunk?.(text);
 

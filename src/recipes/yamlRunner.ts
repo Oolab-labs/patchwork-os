@@ -2001,7 +2001,7 @@ export function defaultClaudeCodeFn(
         // hygiene. Preserves CLAUDE_CODE_OAUTH_TOKEN (subscription auth).
         env: sanitizeEnv(process.env),
         encoding: "utf-8",
-        timeout: 120_000,
+        timeout: 600_000,
         maxBuffer: 10 * 1024 * 1024,
       },
     );

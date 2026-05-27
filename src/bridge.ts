@@ -300,9 +300,10 @@ export class Bridge {
       // ─────────────────────────────────────────────────────────────────────
 
       // Reject connections beyond capacity (grace-period sessions don't count)
-      const activeSessionCount = [...this.sessions.values()].filter(
-        (s) => !s.graceTimer,
-      ).length;
+      let activeSessionCount = 0;
+      for (const s of this.sessions.values()) {
+        if (!s.graceTimer) activeSessionCount++;
+      }
       if (activeSessionCount >= this.config.maxSessions) {
         this.logger.warn(
           `Session capacity reached (${this.config.maxSessions} active). Rejecting connection.`,
@@ -629,10 +630,14 @@ export class Bridge {
       // Detect false→true transition (session started)
       if (!this._lastDebugSessionActive && state.hasActiveSession) {
         const breakpoints = state.breakpoints ?? [];
+        let enabledBreakpoints = 0;
+        for (const b of breakpoints) {
+          if (b.enabled) enabledBreakpoints++;
+        }
         this.automationHooks?.handleDebugSessionStart({
           sessionName: state.sessionName ?? "unknown",
           sessionType: state.sessionType ?? "unknown",
-          breakpointCount: breakpoints.filter((b) => b.enabled).length,
+          breakpointCount: enabledBreakpoints,
           activeFile: breakpoints[0]?.file ?? "",
         });
       }
@@ -674,8 +679,12 @@ export class Bridge {
       let warnings = 0;
       const errorFiles: string[] = [];
       for (const [file, diags] of this.extensionClient.latestDiagnostics) {
-        const e = diags.filter((d) => d.severity === "error").length;
-        const w = diags.filter((d) => d.severity === "warning").length;
+        let e = 0;
+        let w = 0;
+        for (const d of diags) {
+          if (d.severity === "error") e++;
+          else if (d.severity === "warning") w++;
+        }
         errors += e;
         warnings += w;
         if (e > 0) errorFiles.push(file.split("/").pop() ?? file);
@@ -1175,10 +1184,10 @@ export class Bridge {
         totalCalls += s.count;
         totalErrors += s.errors;
       }
-      const p95Values = Object.values(allPercentiles).map((p) => p.p95);
-      const overallP95Ms = p95Values.length > 0 ? Math.max(...p95Values) : 0;
+      let overallP95Ms = 0;
       const perTool: Record<string, unknown> = {};
       for (const [tool, pct] of Object.entries(allPercentiles)) {
+        if (pct.p95 > overallP95Ms) overallP95Ms = pct.p95;
         const ws = windowedS[tool];
         perTool[tool] = {
           p50: pct.p50,
@@ -1290,14 +1299,15 @@ export class Bridge {
       // Count automation tasks (isAutomationTask) created within the window.
       // These originate from automation hooks (onFileSave, onGitCommit, etc.)
       // and accurately represent "hooks fired" rather than session lifecycle events.
-      const hooksLast24h = this.orchestrator
-        ? this.orchestrator
-            .list()
-            .filter((t) => t.isAutomationTask && t.createdAt > cutoff).length
-        : 0;
-      const recentAutomationTasks = this.orchestrator
-        ? this.orchestrator
-            .list()
+      const allTasks = this.orchestrator ? this.orchestrator.list() : null;
+      let hooksLast24h = 0;
+      if (allTasks) {
+        for (const t of allTasks) {
+          if (t.isAutomationTask && t.createdAt > cutoff) hooksLast24h++;
+        }
+      }
+      const recentAutomationTasks = allTasks
+        ? allTasks
             .sort((a, b) => b.createdAt - a.createdAt)
             .slice(0, 20)
             .map((t) => ({
@@ -1465,7 +1475,7 @@ export class Bridge {
     });
     this.server.readyFn = () => {
       // Count tools from the first active session (all sessions share the same tool set)
-      const anySession = [...this.sessions.values()][0];
+      const anySession = this.sessions.values().next().value;
       const toolCount = anySession?.transport.toolCount ?? 0;
       return {
         ready: this.ready,
@@ -1994,7 +2004,7 @@ export class Bridge {
     }
     // Clean up all active sessions (cleanupSession skips the extension notification
     // during shutdown because this.stopped is already true)
-    for (const id of [...this.sessions.keys()]) {
+    for (const id of this.sessions.keys()) {
       this.cleanupSession(id);
     }
     const shutdownErrorPart =

@@ -1,0 +1,25 @@
+{
+  "name": "weekly-commit-report",
+  "version": "1.0.0",
+  "description": "Every Monday: fetch an employee's GitHub commits for the past 7 days and produce a structured contribution report with themes, stats, and highlights. Optionally pushes to phone via ntfy.sh.",
+  "author": "Oolab Labs",
+  "license": "MIT",
+  "tags": ["github", "reporting", "productivity", "weekly", "commits"],
+  "connectors": ["github"],
+  "recipes": {
+    "main": "weekly-commit-report.yaml"
+  },
+  "variables": {
+    "REPORT_REPO": {
+      "description": "GitHub repository to report on (owner/repo format)",
+      "required": true,
+      "default": "Oolab-labs/patchwork-os"
+    },
+    "NTFY_TOPIC": {
+      "description": "ntfy.sh topic for phone push notification — leave blank to skip",
+      "required": false,
+      "default": ""
+    }
+  },
+  "homepage": "https://github.com/Oolab-labs/patchwork-os"
+}

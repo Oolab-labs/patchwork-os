@@ -38,10 +38,10 @@ export function parseStreamLine(line: string): ParsedStreamLine {
     if (event.type === "assistant") {
       const content = event.message?.content;
       if (Array.isArray(content)) {
-        text = content
-          .filter((b) => b.type === "text")
-          .map((b) => b.text ?? "")
-          .join("");
+        text = "";
+        for (const b of content) {
+          if (b.type === "text") text += b.text ?? "";
+        }
       }
     } else if (event.type === "result") {
       text = typeof event.result === "string" ? event.result : "";

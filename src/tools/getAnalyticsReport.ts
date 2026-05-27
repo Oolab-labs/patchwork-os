@@ -106,10 +106,11 @@ export function createGetAnalyticsReportTool(
       const timeline = activityLog.queryTimeline({
         last: TIMELINE_QUERY_LIMIT,
       });
-      const hooksLast24h = timeline.filter(
-        (e) =>
-          e.kind === "lifecycle" && new Date(e.timestamp).getTime() > cutoff,
-      ).length;
+      let hooksLast24h = 0;
+      for (const e of timeline) {
+        if (e.kind === "lifecycle" && new Date(e.timestamp).getTime() > cutoff)
+          hooksLast24h++;
+      }
 
       // --- recentAutomationTasks: last 20 tasks from orchestrator ---
       const recentAutomationTasks =

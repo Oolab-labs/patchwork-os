@@ -117,14 +117,14 @@ export function computeApprovalInsights(
   const tools: ToolInsight[] = [];
   for (const [toolName, bucket] of byTool) {
     const total = bucket.approvals + bucket.rejections;
-    const sorted = [...bucket.timestamps].sort();
+    bucket.timestamps.sort();
     tools.push({
       toolName,
       approvals: bucket.approvals,
       rejections: bucket.rejections,
       approvalRate: total > 0 ? bucket.approvals / total : null,
-      lastDecisionAt: sorted[sorted.length - 1] ?? null,
-      firstDecisionAt: sorted[0] ?? null,
+      lastDecisionAt: bucket.timestamps[bucket.timestamps.length - 1] ?? null,
+      firstDecisionAt: bucket.timestamps[0] ?? null,
       heuristicLabel: heuristicLabel(bucket.approvals, bucket.rejections),
       severity: severity(bucket.approvals, bucket.rejections),
     });
@@ -138,13 +138,18 @@ export function computeApprovalInsights(
     return a.toolName.localeCompare(b.toolName);
   });
 
+  let rejectedToolCount = 0;
+  let trustedToolCount = 0;
+  for (const t of tools) {
+    if (t.rejections > 0) rejectedToolCount++;
+    if (t.approvals >= 3 && t.rejections === 0) trustedToolCount++;
+  }
+
   return {
     tools,
     generatedAt: new Date().toISOString(),
     totalDecisions: decisions.length,
-    rejectedToolCount: tools.filter((t) => t.rejections > 0).length,
-    trustedToolCount: tools.filter(
-      (t) => t.approvals >= 3 && t.rejections === 0,
-    ).length,
+    rejectedToolCount,
+    trustedToolCount,
   };
 }

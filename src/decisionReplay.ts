@@ -151,17 +151,23 @@ export function computeDecisionReplay(
     });
   }
 
-  const changedRows = rows.filter((r) => !r.unchanged);
+  let changedCount = 0;
+  let nowAllowedCount = 0;
+  let nowDeniedCount = 0;
+  for (const r of rows) {
+    if (r.unchanged) continue;
+    changedCount++;
+    if (r.changeKind === "now_allowed") nowAllowedCount++;
+    else if (r.changeKind === "now_denied") nowDeniedCount++;
+  }
 
   return {
     rows,
     generatedAt: new Date().toISOString(),
     totalRows: rows.length,
-    changedCount: changedRows.length,
-    nowAllowedCount: changedRows.filter((r) => r.changeKind === "now_allowed")
-      .length,
-    nowDeniedCount: changedRows.filter((r) => r.changeKind === "now_denied")
-      .length,
+    changedCount,
+    nowAllowedCount,
+    nowDeniedCount,
     workspace,
   };
 }

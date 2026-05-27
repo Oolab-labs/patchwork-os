@@ -221,12 +221,11 @@ export class RecipeOrchestration {
       const sinceMs = opts?.sinceMs ?? 7 * 24 * 60 * 60 * 1000;
       const limit = opts?.limit ?? 500;
       const cutoff = Date.now() - sinceMs;
-      const runs = this.deps.recipeRunLog
-        .query({
-          limit,
-          ...(opts?.recipe !== undefined && { recipe: opts.recipe }),
-        })
-        .filter((r) => r.createdAt >= cutoff);
+      const runs = this.deps.recipeRunLog.query({
+        limit,
+        since: cutoff,
+        ...(opts?.recipe !== undefined && { recipe: opts.recipe }),
+      });
       return summariseHalts(runs);
     };
 
@@ -243,12 +242,11 @@ export class RecipeOrchestration {
       const sinceMs = opts?.sinceMs ?? 7 * 24 * 60 * 60 * 1000;
       const limit = opts?.limit ?? 500;
       const cutoff = Date.now() - sinceMs;
-      const runs = this.deps.recipeRunLog
-        .query({
-          limit,
-          ...(opts?.recipe !== undefined && { recipe: opts.recipe }),
-        })
-        .filter((r) => r.createdAt >= cutoff);
+      const runs = this.deps.recipeRunLog.query({
+        limit,
+        since: cutoff,
+        ...(opts?.recipe !== undefined && { recipe: opts.recipe }),
+      });
       return summariseJudgments(runs);
     };
 
@@ -427,6 +425,7 @@ export class RecipeOrchestration {
         const taskId = orchestrator.enqueue({
           prompt: renderWebhookPrompt(loaded.prompt, payload),
           triggerSource: `webhook:${match.name}`,
+          timeoutMs: 600_000,
         });
         return { ok: true, taskId, name: match.name };
       } catch (err) {
@@ -495,6 +494,7 @@ export class RecipeOrchestration {
           const taskId = orchestrator.enqueue({
             prompt,
             triggerSource: `recipe:${name}`,
+            timeoutMs: 600_000,
           });
           return { ok: true, taskId };
         } catch (err) {
@@ -1355,18 +1355,34 @@ function applyTriggerInputDefaults(
   } catch {
     return vars;
   }
-  const trigger = (parsed as { trigger?: unknown } | null)?.trigger;
-  const inputs = (trigger as { inputs?: unknown } | null)?.inputs;
-  if (!Array.isArray(inputs)) return vars;
+  const trigger = (parsed as { trigger?: unknown } | null)?.trigger as
+    | Record<string, unknown>
+    | null
+    | undefined;
 
+  // Collect defaults from both trigger.inputs and trigger.vars (array forms).
+  // trigger.vars holds recipe-declared defaults; trigger.inputs holds
+  // user-overrideable parameters. Both use {name, default} entries.
   const defaults: Record<string, string> = {};
-  for (const item of inputs) {
-    if (!item || typeof item !== "object") continue;
-    const name = (item as { name?: unknown }).name;
-    const dflt = (item as { default?: unknown }).default;
-    if (typeof name !== "string" || name.length === 0) continue;
-    if (dflt === undefined || dflt === null) continue;
-    defaults[name] = String(dflt);
+  for (const key of ["inputs", "vars"] as const) {
+    const arr = trigger?.[key];
+    if (arr !== undefined && !Array.isArray(arr) && typeof arr === "object") {
+      // Map format (vars: {NAME: value}) is not supported — values silently
+      // never reach the recipe context. Warn so authors catch the mistake early.
+      console.warn(
+        `[recipe] trigger.${key} must be an array of {name, default} objects, ` +
+          `got a plain object in ${ymlPath}. Vars will not be substituted.`,
+      );
+    }
+    if (!Array.isArray(arr)) continue;
+    for (const item of arr) {
+      if (!item || typeof item !== "object") continue;
+      const name = (item as { name?: unknown }).name;
+      const dflt = (item as { default?: unknown }).default;
+      if (typeof name !== "string" || name.length === 0) continue;
+      if (dflt === undefined || dflt === null) continue;
+      if (!(name in defaults)) defaults[name] = String(dflt);
+    }
   }
 
   if (Object.keys(defaults).length === 0) return vars;

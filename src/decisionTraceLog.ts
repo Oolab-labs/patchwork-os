@@ -169,26 +169,23 @@ export class DecisionTraceLog {
     // since our last query / load. Single-process operation pays only a
     // `statSync` per query — read-delta is empty when `size === offset`.
     this.tailDisk();
-    let out = this.traces;
-    if (q.ref) {
-      const needle = q.ref;
-      out = out.filter((t) => t.ref === needle || t.ref.includes(needle));
+    const ref = q.ref;
+    const tag = q.tag;
+    const workspace = q.workspace;
+    const sessionId = q.sessionId;
+    const after = q.after;
+    const since = q.since;
+    const out: DecisionTrace[] = [];
+    for (const t of this.traces) {
+      if (ref && !(t.ref === ref || t.ref.includes(ref))) continue;
+      if (tag && !(t.tags?.includes(tag) ?? false)) continue;
+      if (workspace && t.workspace !== workspace) continue;
+      if (sessionId && t.sessionId !== sessionId) continue;
+      if (after !== undefined && t.seq <= after) continue;
+      if (since !== undefined && t.createdAt < since) continue;
+      out.push(t);
     }
-    if (q.tag) {
-      const needle = q.tag;
-      out = out.filter((t) => t.tags?.includes(needle) ?? false);
-    }
-    if (q.workspace) out = out.filter((t) => t.workspace === q.workspace);
-    if (q.sessionId) out = out.filter((t) => t.sessionId === q.sessionId);
-    if (q.after !== undefined) {
-      const after = q.after;
-      out = out.filter((t) => t.seq > after);
-    }
-    if (q.since !== undefined) {
-      const since = q.since;
-      out = out.filter((t) => t.createdAt >= since);
-    }
-    out = [...out].sort((a, b) => b.seq - a.seq);
+    out.sort((a, b) => b.seq - a.seq);
     const limit = Math.min(Math.max(q.limit ?? 100, 1), 1_000);
     return out.slice(0, limit);
   }

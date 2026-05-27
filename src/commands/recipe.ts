@@ -743,8 +743,10 @@ export function runLint(recipePath: string): LintResult {
   const chainIssues = lintChainRefs(parsed, recipePath);
   if (chainIssues.length > 0) {
     result.issues.push(...chainIssues);
-    result.errors += chainIssues.filter((i) => i.level === "error").length;
-    result.warnings += chainIssues.filter((i) => i.level === "warning").length;
+    for (const i of chainIssues) {
+      if (i.level === "error") result.errors++;
+      else if (i.level === "warning") result.warnings++;
+    }
     if (result.errors > 0) {
       (result as { valid: boolean }).valid = false;
     }
@@ -2083,8 +2085,12 @@ export async function runRecord(
     }
   }
 
-  const errors = issues.filter((issue) => issue.level === "error").length;
-  const warnings = issues.filter((issue) => issue.level === "warning").length;
+  let errors = 0,
+    warnings = 0;
+  for (const issue of issues) {
+    if (issue.level === "error") errors++;
+    else if (issue.level === "warning") warnings++;
+  }
 
   return {
     valid: errors === 0,
@@ -2228,8 +2234,12 @@ export async function runTest(
     }
   }
 
-  const errors = issues.filter((issue) => issue.level === "error").length;
-  const warnings = issues.filter((issue) => issue.level === "warning").length;
+  let errors = 0,
+    warnings = 0;
+  for (const issue of issues) {
+    if (issue.level === "error") errors++;
+    else if (issue.level === "warning") warnings++;
+  }
 
   return {
     valid: errors === 0,

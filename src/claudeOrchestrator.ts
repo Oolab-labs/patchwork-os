@@ -146,7 +146,7 @@ export class ClaudeOrchestrator {
   static readonly MAX_CONCURRENT = 10;
   static readonly MAX_QUEUE = 20;
   static readonly MAX_HISTORY = 500;
-  static readonly DEFAULT_TIMEOUT_MS = 120_000;
+  static readonly DEFAULT_TIMEOUT_MS = 600_000;
   /** Maximum total estimated tokens in-flight across all running tasks. */
   static readonly MAX_TOKEN_BUDGET = 500_000;
 
@@ -305,9 +305,12 @@ export class ClaudeOrchestrator {
   }
 
   list(status?: TaskStatus): ClaudeTask[] {
-    const all = [...this.tasks.values()];
-    if (status === undefined) return all;
-    return all.filter((t) => t.status === status);
+    if (status === undefined) return [...this.tasks.values()];
+    const result: ClaudeTask[] = [];
+    for (const t of this.tasks.values()) {
+      if (t.status === status) result.push(t);
+    }
+    return result;
   }
 
   /**
@@ -536,33 +539,41 @@ export class ClaudeOrchestrator {
    * running tasks are saved as "interrupted" so on reload they appear as a
    * known-terminal state rather than a stale "running" entry. */
   private _buildTasksPayload(): PersistedTask[] {
-    return [...this.tasks.values()].map((t) => ({
-      id: t.id,
-      sessionId: t.sessionId,
-      prompt: t.prompt,
-      contextFiles: t.contextFiles,
-      status: (t.status === "running" ? "interrupted" : t.status) as string,
-      output: t.output,
-      errorMessage: t.errorMessage,
-      createdAt: t.createdAt,
-      startedAt: t.startedAt,
-      doneAt: t.doneAt,
-      timeoutMs: t.timeoutMs,
-      tokenEstimate: t.tokenEstimate,
-      ...(t.model !== undefined && { model: t.model }),
-      ...(t.effort !== undefined && { effort: t.effort }),
-      ...(t.fallbackModel !== undefined && { fallbackModel: t.fallbackModel }),
-      ...(t.maxBudgetUsd !== undefined && { maxBudgetUsd: t.maxBudgetUsd }),
-      ...(t.startupTimeoutMs !== undefined && {
-        startupTimeoutMs: t.startupTimeoutMs,
-      }),
-      ...(t.cancelReason !== undefined && { cancelReason: t.cancelReason }),
-      ...(t.stderrTail !== undefined && { stderrTail: t.stderrTail }),
-      ...(t.wasAborted !== undefined && { wasAborted: t.wasAborted }),
-      ...(t.startupMs !== undefined && { startupMs: t.startupMs }),
-      ...(t.systemPrompt !== undefined && { systemPrompt: t.systemPrompt }),
-      ...(t.triggerSource !== undefined && { triggerSource: t.triggerSource }),
-    }));
+    const result: PersistedTask[] = [];
+    for (const t of this.tasks.values()) {
+      result.push({
+        id: t.id,
+        sessionId: t.sessionId,
+        prompt: t.prompt,
+        contextFiles: t.contextFiles,
+        status: (t.status === "running" ? "interrupted" : t.status) as string,
+        output: t.output,
+        errorMessage: t.errorMessage,
+        createdAt: t.createdAt,
+        startedAt: t.startedAt,
+        doneAt: t.doneAt,
+        timeoutMs: t.timeoutMs,
+        tokenEstimate: t.tokenEstimate,
+        ...(t.model !== undefined && { model: t.model }),
+        ...(t.effort !== undefined && { effort: t.effort }),
+        ...(t.fallbackModel !== undefined && {
+          fallbackModel: t.fallbackModel,
+        }),
+        ...(t.maxBudgetUsd !== undefined && { maxBudgetUsd: t.maxBudgetUsd }),
+        ...(t.startupTimeoutMs !== undefined && {
+          startupTimeoutMs: t.startupTimeoutMs,
+        }),
+        ...(t.cancelReason !== undefined && { cancelReason: t.cancelReason }),
+        ...(t.stderrTail !== undefined && { stderrTail: t.stderrTail }),
+        ...(t.wasAborted !== undefined && { wasAborted: t.wasAborted }),
+        ...(t.startupMs !== undefined && { startupMs: t.startupMs }),
+        ...(t.systemPrompt !== undefined && { systemPrompt: t.systemPrompt }),
+        ...(t.triggerSource !== undefined && {
+          triggerSource: t.triggerSource,
+        }),
+      });
+    }
+    return result;
   }
 
   /** Persist all tasks to disk for cross-session resumability. Best-effort. */

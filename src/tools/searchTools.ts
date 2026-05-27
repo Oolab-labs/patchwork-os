@@ -60,32 +60,37 @@ export function createSearchToolsTool(transport: McpTransport) {
           : DEFAULT_LIMIT;
 
       const allSchemas = transport.getToolSchemas();
+      const filterCatSet =
+        filterCategories.length > 0 ? new Set(filterCategories) : null;
 
-      const matched = allSchemas.filter((t) => {
-        // Category filter: if specified, tool must belong to at least one of them
-        if (filterCategories.length > 0) {
-          const toolCats = (t.categories ?? []).map((c) => c.toLowerCase());
-          if (!filterCategories.some((fc) => toolCats.includes(fc))) {
-            return false;
-          }
+      const tools: Array<{
+        name: string;
+        description: string;
+        categories?: string[];
+      }> = [];
+      let totalMatched = 0;
+      for (const t of allSchemas) {
+        if (filterCatSet) {
+          const cats = t.categories ?? [];
+          if (!cats.some((c) => filterCatSet.has(c.toLowerCase()))) continue;
         }
-        // Keyword filter: match against name or description
         if (query) {
-          const haystack = `${t.name} ${t.description}`.toLowerCase();
-          if (!haystack.includes(query)) return false;
+          if (!`${t.name} ${t.description}`.toLowerCase().includes(query))
+            continue;
         }
-        return true;
-      });
-
-      const tools = matched.slice(0, limit).map((t) => ({
-        name: t.name,
-        description: t.description,
-        ...(t.categories ? { categories: t.categories } : {}),
-      }));
+        totalMatched++;
+        if (tools.length < limit) {
+          tools.push({
+            name: t.name,
+            description: t.description,
+            ...(t.categories ? { categories: t.categories } : {}),
+          });
+        }
+      }
 
       return successStructured({
         tools,
-        totalMatched: matched.length,
+        totalMatched,
         ...(query ? { query } : {}),
         ...(filterCategories.length > 0
           ? { categories: filterCategories }
