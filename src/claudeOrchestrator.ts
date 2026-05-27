@@ -146,7 +146,7 @@ export class ClaudeOrchestrator {
   static readonly MAX_CONCURRENT = 10;
   static readonly MAX_QUEUE = 20;
   static readonly MAX_HISTORY = 500;
-  static readonly DEFAULT_TIMEOUT_MS = 120_000;
+  static readonly DEFAULT_TIMEOUT_MS = 600_000;
   /** Maximum total estimated tokens in-flight across all running tasks. */
   static readonly MAX_TOKEN_BUDGET = 500_000;
 

@@ -86,9 +86,9 @@ describe("getStatus", () => {
 });
 
 describe("listIssues", () => {
-  it("returns [] when not connected (no MCP call)", async () => {
+  it("throws when not connected (no MCP call)", async () => {
     const callTool = vi.spyOn(McpClient.prototype, "callTool");
-    expect(await listIssues()).toEqual([]);
+    await expect(listIssues()).rejects.toThrow(/not connected/);
     expect(callTool).not.toHaveBeenCalled();
     callTool.mockRestore();
   });
@@ -160,8 +160,8 @@ describe("listIssues", () => {
 });
 
 describe("listPRs", () => {
-  it("returns [] when not connected", async () => {
-    expect(await listPRs()).toEqual([]);
+  it("throws when not connected", async () => {
+    await expect(listPRs()).rejects.toThrow(/not connected/);
   });
 
   it("preserves draft + reviewDecision", async () => {
@@ -407,9 +407,11 @@ describe("handleGithubDisconnect", () => {
 });
 
 describe("listCommits", () => {
-  it("returns [] when not connected", async () => {
+  it("throws when not connected", async () => {
     const callTool = vi.spyOn(McpClient.prototype, "callTool");
-    expect(await listCommits({ repo: "acme/widget" })).toEqual([]);
+    await expect(listCommits({ repo: "acme/widget" })).rejects.toThrow(
+      /not connected/,
+    );
     expect(callTool).not.toHaveBeenCalled();
     callTool.mockRestore();
   });

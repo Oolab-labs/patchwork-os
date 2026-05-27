@@ -147,7 +147,10 @@ function coerceIssue(raw: RawIssue, fallbackRepo: string): GitHubIssue {
 export async function listIssues(
   opts: ListIssuesOpts = {},
 ): Promise<GitHubIssue[]> {
-  if (!isConnected("github")) return [];
+  if (!isConnected("github"))
+    throw new Error(
+      "github connector not connected — visit /connections to authenticate",
+    );
   const { owner, repo } = parseRepo(opts);
   const args: Record<string, unknown> = {
     state: "open",
@@ -190,7 +193,10 @@ interface RawPR extends RawIssue {
 }
 
 export async function listPRs(opts: ListPRsOpts = {}): Promise<GitHubPR[]> {
-  if (!isConnected("github")) return [];
+  if (!isConnected("github"))
+    throw new Error(
+      "github connector not connected — visit /connections to authenticate",
+    );
   const { owner, repo } = parseRepo(opts);
   const args: Record<string, unknown> = {
     state: "open",
@@ -224,7 +230,10 @@ export async function listPRs(opts: ListPRsOpts = {}): Promise<GitHubPR[]> {
 export async function listCommits(
   opts: ListCommitsOpts,
 ): Promise<GitHubCommit[]> {
-  if (!isConnected("github")) return [];
+  if (!isConnected("github"))
+    throw new Error(
+      "github connector not connected — visit /connections to authenticate",
+    );
   const { owner, repo } = parseRepo(opts);
   if (!owner || !repo)
     throw new Error('github list_commits requires "owner/repo" format');

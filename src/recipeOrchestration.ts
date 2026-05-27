@@ -1366,6 +1366,14 @@ function applyTriggerInputDefaults(
   const defaults: Record<string, string> = {};
   for (const key of ["inputs", "vars"] as const) {
     const arr = trigger?.[key];
+    if (arr !== undefined && !Array.isArray(arr) && typeof arr === "object") {
+      // Map format (vars: {NAME: value}) is not supported — values silently
+      // never reach the recipe context. Warn so authors catch the mistake early.
+      console.warn(
+        `[recipe] trigger.${key} must be an array of {name, default} objects, ` +
+          `got a plain object in ${ymlPath}. Vars will not be substituted.`,
+      );
+    }
     if (!Array.isArray(arr)) continue;
     for (const item of arr) {
       if (!item || typeof item !== "object") continue;
