@@ -516,6 +516,7 @@ export class McpTransport {
     if (count > 0) {
       this.wireSchemaCache = null;
       this.wireSchemaCacheLazy = null;
+      this.wireSchemaCacheSizeBytes = null;
     }
     return count;
   }

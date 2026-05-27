@@ -136,7 +136,7 @@ export function recordTrigger(
   const cutoff = now - 3_600_000;
   const pruned: number[] = [];
   for (const t of state.taskTimestamps) {
-    if (t >= cutoff) pruned.push(t);
+    if (t > cutoff) pruned.push(t);
   }
   pruned.push(now);
   const newTaskTimestamps =

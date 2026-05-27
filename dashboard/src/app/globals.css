@@ -1366,6 +1366,7 @@ a.btn { text-decoration: none; }
   /* Allow horizontal scroll on narrow viewports rather than clipping the
      table. `overflow: hidden` here was hiding columns at <360px. */
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   overflow-y: hidden;
   box-shadow: var(--card-shadow);
   /* Scroll-affordance — round-3 audit found /activity, /analytics,
@@ -8717,4 +8718,31 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   color: var(--ink-3);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* ── Mobile tap-target baseline (WCAG 2.5.5 — 44×44 px minimum) ─────────── */
+@media (max-width: 640px) {
+  .btn,
+  .btn.sm {
+    min-height: 44px;
+  }
+  .filter-chip {
+    min-height: 44px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  /* Marketplace recipe card description: raise from 12px to 14px on mobile.
+     !important needed to override the inline fontSize="var(--fs-s)" on the <p>. */
+  .mkt-recipe-card p {
+    font-size: 14px !important;
+  }
+  /* Recipes search toolbar: stick to top on mobile so it's always accessible */
+  .recipes-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg-1);
+    padding: var(--s-3) 0;
+    margin-bottom: var(--s-3);
+  }
 }

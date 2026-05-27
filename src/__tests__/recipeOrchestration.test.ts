@@ -1,6 +1,9 @@
 /**
  * Tests for RecipeOrchestration — RED phase (module doesn't exist yet).
  */
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // These imports will fail until src/recipeOrchestration.ts exists.
@@ -160,6 +163,46 @@ describe("RecipeOrchestration", () => {
     expect(fireStub).toHaveBeenCalledWith(
       expect.objectContaining({ filePath: "/r/foo.yaml" }),
     );
+  });
+
+  it("wireServerFns() — runRecipeFn rejects missing required vars before firing", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "ro-test-"));
+    const ymlPath = join(tmpDir, "bar.yaml");
+    writeFileSync(
+      ymlPath,
+      "trigger:\n  inputs:\n    - name: issueId\n      required: true\nsteps: []\n",
+    );
+    try {
+      const { loadRecipePrompt, findYamlRecipePath } = await import(
+        "../recipesHttp.js"
+      );
+      vi.mocked(loadRecipePrompt).mockReturnValue(null as never);
+      vi.mocked(findYamlRecipePath).mockReturnValue(ymlPath as never);
+
+      const fireStub = vi.fn().mockResolvedValue({ ok: true, taskId: "y2" });
+      const recipeOrch = makeRecipeOrchestrator({ fire: fireStub });
+      const mockOrchestrator = { enqueue: vi.fn(), runAndWait: vi.fn() };
+
+      const server = makeServer();
+      const ro = new RecipeOrchestration({
+        server,
+        getOrchestrator: () => mockOrchestrator,
+        recipeOrchestrator: recipeOrch,
+        recipeRunLog: null,
+        workdir: "/tmp/ws",
+        logger: {},
+      });
+      ro.wireServerFns();
+
+      const result = await (server.runRecipeFn as any)("bar");
+      expect(result).toEqual({
+        ok: false,
+        error: "missing_required_vars:issueId",
+      });
+      expect(fireStub).not.toHaveBeenCalled();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it("wireServerFns() — runsFn returns empty array when no runLog", () => {

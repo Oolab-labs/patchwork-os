@@ -528,6 +528,17 @@ export class RecipeOrchestration {
       // (e.g. team=Engineering) instead of empty strings.
       const mergedVars = applyTriggerInputDefaults(ymlPath, vars);
 
+      // Enforce required vars server-side. Browser-side HTML `required` attr is
+      // bypassable (webhooks, scheduler, direct API calls). Return named missing
+      // vars so the dashboard can surface them without parsing the YAML itself.
+      const missingRequired = checkRequiredVars(ymlPath, mergedVars);
+      if (missingRequired.length > 0) {
+        return {
+          ok: false,
+          error: `missing_required_vars:${missingRequired.join(",")}`,
+        };
+      }
+
       return this.fireYamlRecipe({
         filePath: ymlPath,
         name,
@@ -1387,4 +1398,35 @@ function applyTriggerInputDefaults(
 
   if (Object.keys(defaults).length === 0) return vars;
   return { ...defaults, ...(vars ?? {}) };
+}
+
+function checkRequiredVars(
+  ymlPath: string,
+  vars?: Record<string, string>,
+): string[] {
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(readFileSync(ymlPath, "utf-8"));
+  } catch {
+    return [];
+  }
+  const trigger = (parsed as { trigger?: unknown } | null)?.trigger as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  const missing: string[] = [];
+  for (const key of ["inputs", "vars"] as const) {
+    const arr = trigger?.[key];
+    if (!Array.isArray(arr)) continue;
+    for (const item of arr) {
+      if (!item || typeof item !== "object") continue;
+      const name = (item as { name?: unknown }).name;
+      const required = (item as { required?: unknown }).required;
+      if (typeof name !== "string" || !required) continue;
+      const val = vars?.[name];
+      if (val === undefined || val === null || String(val).trim() === "")
+        missing.push(name);
+    }
+  }
+  return missing;
 }
