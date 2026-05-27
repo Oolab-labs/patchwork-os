@@ -46,7 +46,11 @@ export class PluginWatcher {
   }
 
   getTools(): LoadedPluginTool[] {
-    return [...this.loadedPlugins.values()].flatMap((p) => p.tools);
+    const result: LoadedPluginTool[] = [];
+    for (const p of this.loadedPlugins.values()) {
+      for (const t of p.tools) result.push(t);
+    }
+    return result;
   }
 
   stop(): void {

@@ -392,9 +392,8 @@ export class ApprovalQueue {
    * were cancelled.
    */
   cancelAll(): number {
-    const callIds = [...this.entries.keys()];
     let n = 0;
-    for (const id of callIds) {
+    for (const id of this.entries.keys()) {
       if (this.resolveEntry(id, "cancelled")) n++;
     }
     return n;

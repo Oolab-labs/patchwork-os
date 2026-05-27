@@ -974,7 +974,7 @@ export class StreamableHttpHandler {
   /** Call on bridge shutdown to clean up all sessions and the prune timer. */
   close(): void {
     clearInterval(this.cleanupTimer);
-    for (const id of [...this.sessions.keys()]) {
+    for (const id of this.sessions.keys()) {
       this.destroySession(id);
     }
   }
