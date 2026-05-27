@@ -44,9 +44,10 @@ function extractStringSet(src, varName) {
 }
 
 function extractLspArray(src) {
-  // Extract the connected-branch array: lsp: extensionClient.isConnected() ? [ ... ] : []
+  // Shape (post-verbose-refactor): lsp: verbose ? connected ? [...names] : [] : connected ? N : 0
+  // Identify the tool-name array by the trailing `] : []` (the else-branch empty array).
   const re =
-    /lsp:\s*extensionClient\.isConnected\(\)\s*\?\s*\[([\s\S]*?)\]\s*:/;
+    /lsp:\s*verbose\s*\?\s*connected\s*\?\s*\[([\s\S]*?)\]\s*\n\s*:\s*\[\]/;
   const m = src.match(re);
   if (!m) return null;
   return new Set([...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]));
