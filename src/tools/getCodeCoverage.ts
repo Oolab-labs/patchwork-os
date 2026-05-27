@@ -14,6 +14,13 @@ function pct(hit: number, found: number): number {
   return Math.round((hit / found) * 10000) / 100;
 }
 
+const CLOVER_STATEMENTS_RE = /\bstatements="(\d+)"/;
+const CLOVER_COVERED_STATEMENTS_RE = /\bcoveredstatements="(\d+)"/;
+const CLOVER_CONDITIONALS_RE = /\bconditionals="(\d+)"/;
+const CLOVER_COVERED_CONDITIONALS_RE = /\bcoveredconditionals="(\d+)"/;
+const CLOVER_METHODS_RE = /\bmethods="(\d+)"/;
+const CLOVER_COVERED_METHODS_RE = /\bcoveredmethods="(\d+)"/;
+
 function parseCoverageSummary(
   content: string,
   workspace: string,
@@ -91,17 +98,17 @@ function parseClover(content: string): FileCoverageEntry[] {
     const filePath = m[1] ?? "";
     const attrs = m[2] ?? "";
 
-    const getAttr = (name: string): number => {
-      const a = new RegExp(`${name}="(\\d+)"`).exec(attrs);
+    const cloverAttr = (re: RegExp): number => {
+      const a = re.exec(attrs);
       return a ? Number.parseInt(a[1] ?? "0", 10) : 0;
     };
 
-    const statements = getAttr("statements");
-    const coveredStatements = getAttr("coveredstatements");
-    const conditionals = getAttr("conditionals");
-    const coveredConditionals = getAttr("coveredconditionals");
-    const methods = getAttr("methods");
-    const coveredMethods = getAttr("coveredmethods");
+    const statements = cloverAttr(CLOVER_STATEMENTS_RE);
+    const coveredStatements = cloverAttr(CLOVER_COVERED_STATEMENTS_RE);
+    const conditionals = cloverAttr(CLOVER_CONDITIONALS_RE);
+    const coveredConditionals = cloverAttr(CLOVER_COVERED_CONDITIONALS_RE);
+    const methods = cloverAttr(CLOVER_METHODS_RE);
+    const coveredMethods = cloverAttr(CLOVER_COVERED_METHODS_RE);
 
     entries.push({
       file: filePath,

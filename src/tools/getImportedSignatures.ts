@@ -83,10 +83,10 @@ function parseImportedSymbolRefs(source: string): SymbolRef[] {
         // Find which line this name appears on (in the brace section)
         let foundLine = stmtLines[0]?.lineIdx ?? i - stmtLines.length;
         let foundCol = 1;
+        const nameRe = new RegExp(`\\b${name}\\b`);
         for (const { lineIdx, text } of stmtLines) {
           const braceStart = text.indexOf("{");
           const searchIn = braceStart >= 0 ? text.slice(braceStart) : text;
-          const nameRe = new RegExp(`\\b${name}\\b`);
           const m = nameRe.exec(searchIn);
           if (m) {
             foundLine = lineIdx;
@@ -110,8 +110,9 @@ function parseImportedSymbolRefs(source: string): SymbolRef[] {
         const name = defaultMatch[1];
         let foundLine = stmtLines[0]?.lineIdx ?? i - stmtLines.length;
         let foundCol = 1;
+        const defaultNameRe = new RegExp(`\\b${name}\\b`);
         for (const { lineIdx, text } of stmtLines) {
-          const m = new RegExp(`\\b${name}\\b`).exec(text);
+          const m = defaultNameRe.exec(text);
           if (m) {
             foundLine = lineIdx;
             foundCol = m.index + 1;

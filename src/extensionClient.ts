@@ -2003,7 +2003,11 @@ export class ExtensionClient {
         this.latestDiagnosticsUpdatedAt.delete(f);
       }
     }
-    return Array.from(this.latestDiagnostics.values()).flat();
+    const result: Diagnostic[] = [];
+    for (const diags of this.latestDiagnostics.values()) {
+      for (const d of diags) result.push(d);
+    }
+    return result;
   }
 
   addDiagnosticsListener(
