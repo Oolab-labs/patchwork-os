@@ -226,6 +226,15 @@ export default function InstallPanel({
             Log in
           </Link>
         )}
+        {isInstalled && (
+          <Link
+            href={`/recipes/${shortName(name)}`}
+            className="btn sm"
+            style={{ textDecoration: "none", flexShrink: 0 }}
+          >
+            Run recipe →
+          </Link>
+        )}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
