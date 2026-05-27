@@ -230,52 +230,36 @@ export function createGetImportedSignaturesTool(
         if (compositeSignal.aborted) break;
         const batch = symbolRefs.slice(i, i + CONCURRENCY);
 
-        const defResults = await Promise.allSettled(
-          batch.map((sym) =>
-            extensionClient.goToDefinition(
-              filePath,
-              sym.line,
-              sym.column,
-              compositeSignal,
-            ),
+        // Chain goToDefinition → getHover per symbol in a single allSettled so
+        // hovers start as soon as each definition resolves (no inter-phase stall).
+        const hoverResults = await Promise.allSettled(
+          batch.map((_sym, j) =>
+            extensionClient
+              .goToDefinition(filePath, _sym.line, _sym.column, compositeSignal)
+              .then((locs) => {
+                const locsArr = locs as Array<{
+                  file: string;
+                  line: number;
+                  column: number;
+                }> | null;
+                if (!Array.isArray(locsArr) || locsArr.length === 0)
+                  return null;
+                const loc = locsArr[0];
+                if (!loc) return null;
+                return extensionClient
+                  .getHover(loc.file, loc.line, loc.column, compositeSignal)
+                  .then((hover) => ({ symIdx: j, defFile: loc.file, hover }))
+                  .catch((err: unknown) => {
+                    console.warn(
+                      `[getImportedSignatures] getHover failed for ${loc.file}:${loc.line}:${loc.column} —`,
+                      err instanceof Error ? err.message : String(err),
+                    );
+                    return null;
+                  });
+              })
+              .catch(() => null),
           ),
         );
-
-        // For each definition, fetch hover
-        const hoverJobs: Array<Promise<{
-          symIdx: number;
-          defFile: string;
-          hover: unknown;
-        }> | null> = defResults.map((defResult, j) => {
-          if (defResult.status !== "fulfilled" || !defResult.value) return null;
-          const locs = defResult.value as Array<{
-            file: string;
-            line: number;
-            column: number;
-          }>;
-          if (!Array.isArray(locs) || locs.length === 0) return null;
-          const loc = locs[0];
-          if (!loc) return null;
-          return extensionClient
-            .getHover(loc.file, loc.line, loc.column, compositeSignal)
-            .then((hover) => ({ symIdx: j, defFile: loc.file, hover }))
-            .catch((err: unknown) => {
-              console.warn(
-                `[getImportedSignatures] getHover failed for ${loc.file}:${loc.line}:${loc.column} —`,
-                err instanceof Error ? err.message : String(err),
-              );
-              return null;
-            }) as Promise<{
-            symIdx: number;
-            defFile: string;
-            hover: unknown;
-          }>;
-        });
-
-        const validHoverJobs = hoverJobs.filter(
-          (j): j is NonNullable<typeof j> => j !== null,
-        );
-        const hoverResults = await Promise.allSettled(validHoverJobs);
 
         // Map results back to symbols
         const hoverBySymIdx = new Map<

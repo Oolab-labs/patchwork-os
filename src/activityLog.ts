@@ -462,12 +462,14 @@ export class ActivityLog {
   }): string {
     const s = this.stats();
     const p = this.percentiles();
+    const sEntries = Object.entries(s);
+    const pEntries = Object.entries(p);
     const lines: string[] = [];
     lines.push(
       "# HELP bridge_tool_calls_total Total tool calls by tool name and status",
     );
     lines.push("# TYPE bridge_tool_calls_total counter");
-    for (const [tool, data] of Object.entries(s)) {
+    for (const [tool, data] of sEntries) {
       const t = escapeLabelValue(tool);
       lines.push(
         `bridge_tool_calls_total{tool="${t}",status="success"} ${data.count - data.errors}`,
@@ -480,19 +482,19 @@ export class ActivityLog {
       "# HELP bridge_tool_duration_ms_avg Average tool duration in milliseconds",
     );
     lines.push("# TYPE bridge_tool_duration_ms_avg gauge");
-    for (const [tool, data] of Object.entries(s)) {
+    for (const [tool, data] of sEntries) {
       const t = escapeLabelValue(tool);
       lines.push(
         `bridge_tool_duration_ms_avg{tool="${t}"} ${data.avgDurationMs}`,
       );
     }
     // Per-tool latency percentiles
-    if (Object.keys(p).length > 0) {
+    if (pEntries.length > 0) {
       lines.push(
         "# HELP bridge_tool_duration_p50_ms p50 latency per tool (ms)",
       );
       lines.push("# TYPE bridge_tool_duration_p50_ms gauge");
-      for (const [tool, data] of Object.entries(p)) {
+      for (const [tool, data] of pEntries) {
         const t = escapeLabelValue(tool);
         lines.push(`bridge_tool_duration_p50_ms{tool="${t}"} ${data.p50}`);
       }
@@ -500,7 +502,7 @@ export class ActivityLog {
         "# HELP bridge_tool_duration_p95_ms p95 latency per tool (ms)",
       );
       lines.push("# TYPE bridge_tool_duration_p95_ms gauge");
-      for (const [tool, data] of Object.entries(p)) {
+      for (const [tool, data] of pEntries) {
         const t = escapeLabelValue(tool);
         lines.push(`bridge_tool_duration_p95_ms{tool="${t}"} ${data.p95}`);
       }
@@ -508,7 +510,7 @@ export class ActivityLog {
         "# HELP bridge_tool_duration_p99_ms p99 latency per tool (ms)",
       );
       lines.push("# TYPE bridge_tool_duration_p99_ms gauge");
-      for (const [tool, data] of Object.entries(p)) {
+      for (const [tool, data] of pEntries) {
         const t = escapeLabelValue(tool);
         lines.push(`bridge_tool_duration_p99_ms{tool="${t}"} ${data.p99}`);
       }

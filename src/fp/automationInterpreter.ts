@@ -34,6 +34,38 @@ import type {
 } from "./interpreterContext.js";
 import { err, ok, type ToolResult } from "./result.js";
 
+const PLACEHOLDER_KEYS: readonly string[] = [
+  "file",
+  "branch",
+  "runner",
+  "taskId",
+  "output",
+  "tool",
+  "reason",
+  "cwd",
+  "prompt",
+  "hash",
+  "message",
+  "files",
+  "count",
+  "remote",
+  "failed",
+  "passed",
+  "total",
+  "failures",
+  "sessionName",
+  "sessionType",
+  "breakpointCount",
+  "activeFile",
+  "previousBranch",
+  "created",
+  "url",
+  "number",
+  "title",
+  "diagnostics",
+];
+const MULTI_LINE_KEYS = new Set(["diagnostics", "failures", "files", "output"]);
+
 // ── Accumulator ───────────────────────────────────────────────────────────────
 
 interface Acc {
@@ -221,10 +253,11 @@ export function resolvePromptSource(
   }
   const result = getPrompt(source.promptName, resolvedArgs);
   if (!result) return null;
-  const text = result.messages
-    .filter((m) => m.role === "user")
-    .map((m) => m.content.text)
-    .join("\n\n");
+  const parts: string[] = [];
+  for (const m of result.messages) {
+    if (m.role === "user") parts.push(m.content.text);
+  }
+  const text = parts.join("\n\n");
   return truncatePrompt(text);
 }
 
@@ -240,46 +273,6 @@ function buildFinalPrompt(
   const file = eventData.file;
   const meta = buildHookMetadata(hookType, new Date().toISOString(), file);
 
-  // Replace placeholders with untrusted-wrapped values
-  const PLACEHOLDER_KEYS: string[] = [
-    "file",
-    "branch",
-    "runner",
-    "taskId",
-    "output",
-    "tool",
-    "reason",
-    "cwd",
-    "prompt",
-    "hash",
-    "message",
-    "files",
-    "count",
-    "remote",
-    "failed",
-    "passed",
-    "total",
-    "failures",
-    "sessionName",
-    "sessionType",
-    "breakpointCount",
-    "activeFile",
-    "previousBranch",
-    "created",
-    "url",
-    "number",
-    "title",
-    "diagnostics",
-  ];
-
-  // Keys that carry pre-formatted multi-line output — higher truncation limit
-  const MULTI_LINE_KEYS = new Set([
-    "diagnostics",
-    "failures",
-    "files",
-    "output",
-  ]);
-
   let resolved = promptTemplate;
   for (const key of PLACEHOLDER_KEYS) {
     const val = eventData[key];
@@ -287,7 +280,8 @@ function buildFinalPrompt(
       // Truncate user-controlled values at 500 chars (10 000 for structured multi-line outputs)
       const limit = MULTI_LINE_KEYS.has(key) ? 10_000 : 500;
       const truncatedVal = val.replace(/[\x00-\x1F\x7F]/g, "").slice(0, limit);
-      resolved = resolved.split(`{{${key}}}`).join(
+      resolved = resolved.replaceAll(
+        `{{${key}}}`,
         untrustedBlock(
           key
             .toUpperCase()
@@ -610,13 +604,17 @@ async function interpret(
       // webhook-only hooks, defeating the cooldown gate the operator
       // configured.
       const newTaskIds = innerAcc.taskIds.slice(acc.taskIds.length);
-      const webhookFired =
+      let webhookFired =
         innerAcc.state.lastWebhookFiredAt.size >
-          acc.state.lastWebhookFiredAt.size ||
-        // Same key was already in the map but timestamp moved forward
-        Array.from(innerAcc.state.lastWebhookFiredAt.entries()).some(
-          ([k, v]) => (acc.state.lastWebhookFiredAt.get(k) ?? -1) < v,
-        );
+        acc.state.lastWebhookFiredAt.size;
+      if (!webhookFired) {
+        for (const [k, v] of innerAcc.state.lastWebhookFiredAt) {
+          if ((acc.state.lastWebhookFiredAt.get(k) ?? -1) < v) {
+            webhookFired = true;
+            break;
+          }
+        }
+      }
       if (newTaskIds.length > 0) {
         const lastTaskId = newTaskIds[newTaskIds.length - 1] ?? "";
         const newState = recordTrigger(

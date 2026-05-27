@@ -120,8 +120,12 @@ export function createGetChangeImpactTool(
         .catch(() => null);
 
       const diagItems = Array.isArray(diagnosticsRaw) ? diagnosticsRaw : [];
-      const errors = diagItems.filter((d) => d.severity === "error").length;
-      const warnings = diagItems.filter((d) => d.severity === "warning").length;
+      let errors = 0;
+      let warnings = 0;
+      for (const d of diagItems) {
+        if (d.severity === "error") errors++;
+        else if (d.severity === "warning") warnings++;
+      }
 
       if (compositeSignal.aborted) {
         return error("Request aborted");

@@ -137,8 +137,10 @@ export function createScreenshotAndAnnotateTool(
                 Record<string, unknown>
               >)
             : [];
-        errorCount = diagArr.filter((d) => d.severity === "error").length;
-        warningCount = diagArr.filter((d) => d.severity === "warning").length;
+        for (const d of diagArr) {
+          if (d.severity === "error") errorCount++;
+          else if (d.severity === "warning") warningCount++;
+        }
         diagnosticSummary =
           errorCount + warningCount === 0
             ? "No errors or warnings"

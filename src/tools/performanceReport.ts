@@ -151,9 +151,10 @@ export function createGetPerformanceReportTool(deps: PerformanceReportDeps) {
         };
       }
 
-      // Overall p95: max across all tools (worst-case SLA)
-      const p95Values = Object.values(allPercentiles).map((p) => p.p95);
-      const overallP95Ms = p95Values.length > 0 ? Math.max(...p95Values) : 0;
+      let overallP95Ms = 0;
+      for (const pct of Object.values(allPercentiles)) {
+        if (pct.p95 > overallP95Ms) overallP95Ms = pct.p95;
+      }
 
       // --- Throughput ---
       let totalCalls = 0;

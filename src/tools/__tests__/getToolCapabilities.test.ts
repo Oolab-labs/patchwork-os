@@ -89,9 +89,9 @@ describe("createGetToolCapabilitiesTool — extension connected", () => {
     );
     const data = parse(await tool.handler());
     expect(data.extensionConnected).toBe(true);
-    expect(data.features.fileOps).toContain("VS Code");
-    expect(data.features.lsp).toContain("VS Code LSP");
-    expect(data.features.terminalOutput).toContain("available");
+    expect(data.features.fileOps).toBe("vscode");
+    expect(data.features.lsp).toBe("vscode");
+    expect(data.features.terminalOutput).toBe("available");
     expect(data.features.selection).toBe("available");
     expect(data.features.dirtyCheck).toBe("real-time");
   });
@@ -104,7 +104,7 @@ describe("createGetToolCapabilitiesTool — extension connected", () => {
     );
     const data = parse(await tool.handler());
     expect(data.tier).toBe("full");
-    expect(data.tierDescription).toContain("All tools available");
+    expect(data.tierDescription).toBeUndefined();
   });
 
   it("includes terminal and debug tools when connected", async () => {
@@ -113,9 +113,9 @@ describe("createGetToolCapabilitiesTool — extension connected", () => {
       makeClient(true),
       cfg(),
     );
-    const data = parse(await tool.handler());
-    expect(data.availableTools.terminal).toContain("listTerminals");
-    expect(data.availableTools.debug).toContain("getDebugState");
+    const data = parse(await tool.handler({ verbose: true }));
+    expect(data.availableTools.terminal).toBe(7);
+    expect(data.availableTools.debug).toBe(5);
     expect(data.availableTools.lsp).toContain("getSemanticTokens");
     expect(data.availableTools.lsp).toContain("getCodeLens");
     expect(data.availableTools.lsp).toContain("getChangeImpact");
@@ -132,8 +132,8 @@ describe("createGetToolCapabilitiesTool — extension connected", () => {
       cfg(),
     );
     const data = parse(await tool.handler());
-    expect(data.availableTools.files).toContain("watchFiles");
-    expect(data.availableTools.editing).toContain("organizeImports");
+    expect(data.availableTools.files).toBe(12);
+    expect(data.availableTools.editing).toBe(8);
   });
 
   it("includes github tools when gh probe is true", async () => {
@@ -143,7 +143,7 @@ describe("createGetToolCapabilitiesTool — extension connected", () => {
       cfg(),
     );
     const data = parse(await tool.handler());
-    expect(data.availableTools.github).toContain("githubCreatePR");
+    expect(data.availableTools.github).toBe(11);
   });
 });
 
@@ -156,9 +156,9 @@ describe("createGetToolCapabilitiesTool — extension disconnected", () => {
     );
     const data = parse(await tool.handler());
     expect(data.extensionConnected).toBe(false);
-    expect(data.features.fileOps).toContain("native fs fallback");
-    expect(data.features.lsp).toContain("unavailable");
-    expect(data.features.terminalOutput).toContain("unavailable");
+    expect(data.features.fileOps).toBe("native");
+    expect(data.features.lsp).toBe("unavailable");
+    expect(data.features.terminalOutput).toBe("unavailable");
     expect(data.features.selection).toBe("stub-only");
     expect(data.features.dirtyCheck).toBe("mtime-heuristic");
   });
@@ -171,18 +171,18 @@ describe("createGetToolCapabilitiesTool — extension disconnected", () => {
     );
     const data = parse(await tool.handler());
     expect(data.tier).toBe("basic");
-    expect(data.tierDescription).toContain("Connect the VS Code extension");
+    expect(data.tierDescription).toBeUndefined();
   });
 
-  it("returns empty terminal and debug arrays when disconnected", async () => {
+  it("returns zero terminal and debug counts when disconnected", async () => {
     const tool = createGetToolCapabilitiesTool(
       minimalProbes,
       makeClient(false),
       cfg(),
     );
     const data = parse(await tool.handler());
-    expect(data.availableTools.terminal).toEqual([]);
-    expect(data.availableTools.debug).toEqual([]);
+    expect(data.availableTools.terminal).toBe(0);
+    expect(data.availableTools.debug).toBe(0);
   });
 
   it("omits github key when gh probe is false", async () => {
@@ -202,7 +202,7 @@ describe("createGetToolCapabilitiesTool — extension disconnected", () => {
       cfg("cursor"),
     );
     const data = parse(await tool.handler());
-    expect(data.features.save).toContain("editor-cli-reopen");
+    expect(data.features.save).toBe("editor-cli");
   });
 
   it("shows no-op save when editorCommand is null and extension disconnected", async () => {
@@ -212,7 +212,7 @@ describe("createGetToolCapabilitiesTool — extension disconnected", () => {
       cfg(null),
     );
     const data = parse(await tool.handler());
-    expect(data.features.save).toContain("no-op");
+    expect(data.features.save).toBe("no-op");
   });
 
   it("reports diagnostics unavailable when all linters missing and disconnected", async () => {
@@ -306,7 +306,7 @@ describe("LSP tool list consistency", () => {
       makeClient(true),
       cfg(),
     );
-    const data = parse(await tool.handler());
+    const data = parse(await tool.handler({ verbose: true }));
     return data.availableTools.lsp as string[];
   }
 
@@ -325,7 +325,7 @@ describe("LSP tool list consistency", () => {
       makeClient(false),
       cfg(),
     );
-    const data = parse(await tool.handler());
+    const data = parse(await tool.handler({ verbose: true }));
     expect(data.availableTools.lsp).toEqual([]);
   });
 

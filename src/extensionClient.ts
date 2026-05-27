@@ -1125,7 +1125,7 @@ export class ExtensionClient {
         const o = r as Record<string, unknown>;
         return Array.isArray(o.contents) ? r : null;
       },
-      undefined,
+      12_000,
       signal,
     );
   }
@@ -1479,7 +1479,7 @@ export class ExtensionClient {
         const o = r as Record<string, unknown>;
         return Array.isArray(o.symbols) ? r : null;
       },
-      undefined,
+      15_000,
       signal,
     );
   }

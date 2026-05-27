@@ -419,6 +419,17 @@ export class StreamableHttpHandler {
     req: http.IncomingMessage,
     res: http.ServerResponse,
   ): Promise<void> {
+    // Fast-path 413 for honest clients that declare an oversized Content-Length
+    // before any body bytes are buffered. readBody still enforces the cap for
+    // clients that lie or omit the header.
+    const declaredLength = Number(req.headers["content-length"]);
+    if (!Number.isNaN(declaredLength) && declaredLength > BODY_SIZE_LIMIT) {
+      res.writeHead(413, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Request body too large" }));
+      req.resume(); // drain so TCP can close cleanly
+      return;
+    }
+
     // Read body with size limit
     let body: string;
     try {

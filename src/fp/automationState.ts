@@ -208,7 +208,11 @@ export function setLastTestOutcome(
  */
 export function tasksInLastHour(state: AutomationState, now: number): number {
   const cutoff = now - 3_600_000;
-  return state.taskTimestamps.filter((t) => t > cutoff).length;
+  let count = 0;
+  for (const t of state.taskTimestamps) {
+    if (t > cutoff) count++;
+  }
+  return count;
 }
 
 // ── Deduplication helpers ─────────────────────────────────────────────────────

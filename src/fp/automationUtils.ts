@@ -27,7 +27,7 @@ export function untrustedBlock(
   // Use literal string replacement (not RegExp) — nonce is an opaque ID that
   // may contain regex metacharacters (e.g. "[", "+", ".").  RegExp would throw
   // SyntaxError for those inputs, enabling a DoS on every hook trigger.
-  const safe = value.split(nonce).join("");
+  const safe = value.replaceAll(nonce, "");
   return `\n--- BEGIN ${label} [${nonce}] (untrusted) ---\n${safe}\n--- END ${label} [${nonce}] ---\n`;
 }
 
