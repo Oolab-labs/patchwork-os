@@ -305,9 +305,12 @@ export class ClaudeOrchestrator {
   }
 
   list(status?: TaskStatus): ClaudeTask[] {
-    const all = [...this.tasks.values()];
-    if (status === undefined) return all;
-    return all.filter((t) => t.status === status);
+    if (status === undefined) return [...this.tasks.values()];
+    const result: ClaudeTask[] = [];
+    for (const t of this.tasks.values()) {
+      if (t.status === status) result.push(t);
+    }
+    return result;
   }
 
   /**

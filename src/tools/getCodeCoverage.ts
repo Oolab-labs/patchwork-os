@@ -260,10 +260,15 @@ export function createGetCodeCoverageTool(workspace: string) {
                 100,
             ) / 100
           : 0;
-      const belowThreshold =
-        minCoverage > 0
-          ? filtered.length
-          : files.filter((f) => f.lines < 80).length;
+      let belowThreshold: number;
+      if (minCoverage > 0) {
+        belowThreshold = filtered.length;
+      } else {
+        belowThreshold = 0;
+        for (const f of files) {
+          if (f.lines < 80) belowThreshold++;
+        }
+      }
 
       return successStructuredLarge({
         reportFile,
