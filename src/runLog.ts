@@ -323,7 +323,11 @@ export class RecipeRunLog {
   /** Return seqs of all in-memory runs whose parentSeq matches this seq. */
   getChildSeqs(parentSeq: number): number[] {
     this.syncFromDisk();
-    return this.runs.filter((r) => r.parentSeq === parentSeq).map((r) => r.seq);
+    const result: number[] = [];
+    for (const r of this.runs) {
+      if (r.parentSeq === parentSeq) result.push(r.seq);
+    }
+    return result;
   }
 
   private readFromDiskBySeq(seq: number): RecipeRun | null {
