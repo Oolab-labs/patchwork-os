@@ -111,9 +111,9 @@ export function computeAutomationSuggestions(
   const pairsInRecipes = deps.recipeRunLog
     ? buildRecipePairSet(deps.recipeRunLog)
     : new Set<string>();
-  const coOccurringPairs = computeCoOccurrence(recent, window, 50)
-    .filter((p) => p.count >= minCount)
-    .filter((p) => !pairsInRecipes.has(p.pair));
+  const coOccurringPairs = computeCoOccurrence(recent, window, 50).filter(
+    (p) => p.count >= minCount && !pairsInRecipes.has(p.pair),
+  );
   for (const { pair, count } of coOccurringPairs.slice(0, 10)) {
     const [a, b] = pair.split("|") as [string, string];
     suggestions.push({
@@ -150,8 +150,10 @@ export function computeAutomationSuggestions(
   if (deps.recipeRunLog) {
     const byRecipe = groupRunsByRecipe(deps.recipeRunLog);
     const graduates = [...byRecipe.entries()]
-      .filter(([, runs]) => runs.length >= minRuns)
-      .filter(([, runs]) => runs.every((r) => r.status === "done"))
+      .filter(
+        ([, runs]) =>
+          runs.length >= minRuns && runs.every((r) => r.status === "done"),
+      )
       .sort((a, b) => b[1].length - a[1].length)
       .slice(0, 10);
     for (const [recipeName, runs] of graduates) {

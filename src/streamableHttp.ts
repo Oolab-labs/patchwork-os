@@ -155,9 +155,12 @@ class HttpAdapter extends EventEmitter {
    */
   getEventsAfter(lastId: number): Array<{ id: number; data: string }> {
     const now = Date.now();
-    return this.eventBuffer
-      .filter((e) => e.id > lastId && now - e.ts <= SSE_BUFFER_TTL_MS)
-      .map((e) => ({ id: e.id, data: e.data }));
+    const result: Array<{ id: number; data: string }> = [];
+    for (const e of this.eventBuffer) {
+      if (e.id > lastId && now - e.ts <= SSE_BUFFER_TTL_MS)
+        result.push({ id: e.id, data: e.data });
+    }
+    return result;
   }
 
   /** Attach (or detach, when null) a GET /mcp SSE response for server-initiated notifications. */
