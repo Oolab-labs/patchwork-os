@@ -65,6 +65,15 @@ const PLACEHOLDER_KEYS: readonly string[] = [
   "diagnostics",
 ];
 const MULTI_LINE_KEYS = new Set(["diagnostics", "failures", "files", "output"]);
+const PLACEHOLDER_DISPLAY: ReadonlyMap<string, string> = new Map(
+  PLACEHOLDER_KEYS.map((k) => [
+    k,
+    k
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, " ")
+      .trim(),
+  ]),
+);
 
 // ── Accumulator ───────────────────────────────────────────────────────────────
 
@@ -283,10 +292,7 @@ function buildFinalPrompt(
       resolved = resolved.replaceAll(
         `{{${key}}}`,
         untrustedBlock(
-          key
-            .toUpperCase()
-            .replace(/[^A-Z0-9]/g, " ")
-            .trim(),
+          PLACEHOLDER_DISPLAY.get(key) ?? key.toUpperCase(),
           truncatedVal,
           nonce,
         ),

@@ -277,17 +277,23 @@ export class ChildBridgeRegistry {
   }
 
   getAll(): ChildBridge[] {
-    return Array.from(this.bridges.values());
+    return [...this.bridges.values()];
   }
 
   getHealthy(): ChildBridge[] {
-    return Array.from(this.bridges.values()).filter((b) => b.healthy);
+    const result: ChildBridge[] = [];
+    for (const b of this.bridges.values()) {
+      if (b.healthy) result.push(b);
+    }
+    return result;
   }
 
   getWarmingUp(): ChildBridge[] {
-    return Array.from(this.bridges.values()).filter(
-      (b) => !b.healthy && b.warmingUp,
-    );
+    const result: ChildBridge[] = [];
+    for (const b of this.bridges.values()) {
+      if (!b.healthy && b.warmingUp) result.push(b);
+    }
+    return result;
   }
 
   /** Pick the best bridge for a given workspace path (longest prefix match).
