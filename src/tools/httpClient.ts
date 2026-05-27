@@ -1,5 +1,6 @@
 import dns from "node:dns/promises";
 import fs from "node:fs/promises";
+import { isPrivateHost } from "../ssrfGuard.js";
 import {
   error,
   optionalBool,
@@ -23,55 +24,6 @@ const ALLOWED_METHODS = new Set([
 
 const DEFAULT_RESPONSE_BYTES = 50 * 1024; // 50 KB
 const MAX_RESPONSE_BYTES = 1024 * 1024; // 1 MB hard cap
-
-/**
- * Block requests to private/loopback addresses to prevent SSRF.
- * Checks hostname patterns only — DNS resolution happens separately in the
- * handler via dns.lookup() so that hostnames that resolve to private IPs are
- * also blocked.
- */
-function isPrivateHost(hostname: string): boolean {
-  // Strip IPv6 brackets: [::1] → ::1
-  const host =
-    hostname.startsWith("[") && hostname.endsWith("]")
-      ? hostname.slice(1, -1).toLowerCase()
-      : hostname.toLowerCase();
-
-  if (host === "localhost" || host.endsWith(".localhost")) return true;
-  if (host === "0.0.0.0") return true;
-
-  // Reject non-decimal IPv4 notations that bypass the dotted-quad regex below:
-  //   hex:   0x7f000001  → 127.0.0.1
-  //   octal: 0177.0.0.1  → 127.0.0.1
-  // Node's URL parser may normalize these on some platforms; block unconditionally.
-  if (/^0x[0-9a-f]+$/i.test(host) || /^0[0-7]{7,}$/.test(host)) return true;
-
-  // IPv4 range checks
-  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4) {
-    const a = Number(ipv4[1]);
-    const b = Number(ipv4[2]);
-    if (a === 127) return true; // 127.0.0.0/8  loopback
-    if (a === 10) return true; // 10.0.0.0/8   RFC 1918 private
-    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 RFC 1918 private
-    if (a === 192 && b === 168) return true; // 192.168.0.0/16 RFC 1918 private
-    if (a === 169 && b === 254) return true; // 169.254.0.0/16 link-local / AWS metadata endpoint
-    if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT (RFC 6598)
-    if (a === 0) return true; // 0.0.0.0/8
-  }
-
-  // IPv6 checks
-  if (host === "::1") return true; // loopback
-  if (host.startsWith("fe80:")) return true; // link-local
-  if (host.startsWith("fc") || host.startsWith("fd")) return true; // ULA (RFC 4193)
-  // IPv6-mapped IPv4 addresses (::ffff:x.x.x.x) bypass the IPv4 block above
-  // on dual-stack systems — recurse on the embedded IPv4 part.
-  if (host.startsWith("::ffff:")) return isPrivateHost(host.slice(7));
-  // RFC 2765 SIIT alternate mapped form (::ffff:0:x.x.x.x)
-  if (host.startsWith("::ffff:0:")) return isPrivateHost(host.slice(9));
-
-  return false;
-}
 
 export function createSendHttpRequestTool(options?: {
   allowPrivateHttp?: boolean;

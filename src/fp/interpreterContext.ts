@@ -3,6 +3,7 @@
  * AutomationProgram interpreter.
  */
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
+import { isPrivateNonLoopbackHost } from "../ssrfGuard.js";
 import type { AutomationState } from "./automationState.js";
 
 // ── Backend interface ─────────────────────────────────────────────────────────
@@ -129,46 +130,6 @@ export interface InterpreterResult {
  * comes from a trusted policy file that the operator wrote. Loopback is
  * the common case there, not the exceptional one.
  */
-function isLoopbackHost(hostname: string): boolean {
-  const host =
-    hostname.startsWith("[") && hostname.endsWith("]")
-      ? hostname.slice(1, -1).toLowerCase()
-      : hostname.toLowerCase();
-  if (host === "localhost" || host.endsWith(".localhost")) return true;
-  if (host === "::1") return true;
-  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4 && Number(ipv4[1]) === 127) return true;
-  return false;
-}
-
-function isPrivateNonLoopbackHost(hostname: string): boolean {
-  if (isLoopbackHost(hostname)) return false;
-  const host =
-    hostname.startsWith("[") && hostname.endsWith("]")
-      ? hostname.slice(1, -1).toLowerCase()
-      : hostname.toLowerCase();
-  if (host === "0.0.0.0") return true;
-  if (/^0x[0-9a-f]+$/i.test(host) || /^0[0-7]{7,}$/.test(host)) return true;
-  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4) {
-    const a = Number(ipv4[1]);
-    const b = Number(ipv4[2]);
-    if (a === 10) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 100 && b >= 64 && b <= 127) return true;
-    if (a === 0) return true;
-  }
-  if (host.startsWith("fe80:")) return true;
-  if (host.startsWith("fc") || host.startsWith("fd")) return true;
-  if (host.startsWith("::ffff:"))
-    return isPrivateNonLoopbackHost(host.slice(7));
-  if (host.startsWith("::ffff:0:"))
-    return isPrivateNonLoopbackHost(host.slice(9));
-  return false;
-}
-
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
 export class VsCodeBackend implements Backend {
