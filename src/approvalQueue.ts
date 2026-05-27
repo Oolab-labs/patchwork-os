@@ -401,18 +401,22 @@ export class ApprovalQueue {
   }
 
   list(): PendingApproval[] {
-    return [...this.entries.values()].map((e) => ({
-      callId: e.callId,
-      toolName: e.toolName,
-      params: e.params,
-      tier: e.tier,
-      requestedAt: e.requestedAt,
-      sessionId: e.sessionId,
-      summary: e.summary,
-      riskSignals: e.riskSignals,
-      personalSignals: e.personalSignals,
-      // approvalToken intentionally omitted from list — never expose to untrusted callers
-    }));
+    const result: PendingApproval[] = [];
+    for (const e of this.entries.values()) {
+      result.push({
+        callId: e.callId,
+        toolName: e.toolName,
+        params: e.params,
+        tier: e.tier,
+        requestedAt: e.requestedAt,
+        sessionId: e.sessionId,
+        summary: e.summary,
+        riskSignals: e.riskSignals,
+        personalSignals: e.personalSignals,
+        // approvalToken intentionally omitted from list — never expose to untrusted callers
+      });
+    }
+    return result;
   }
 
   size(): number {

@@ -19,15 +19,15 @@ export interface ExtensionSnapshot {
 // A notification arriving after snapshot creation would mutate the
 // underlying Map if we just alias it.
 export function snapshotExtension(client: ExtensionClient): ExtensionSnapshot {
+  const diagnostics = new Map<string, readonly Diagnostic[]>();
+  for (const [k, v] of client.latestDiagnostics) diagnostics.set(k, [...v]);
+  const aiComments = new Map<string, readonly AIComment[]>();
+  for (const [k, v] of client.latestAIComments) aiComments.set(k, [...v]);
   return {
-    diagnostics: new Map(
-      [...client.latestDiagnostics.entries()].map(([k, v]) => [k, [...v]]),
-    ),
+    diagnostics,
     selection: client.latestSelection,
     activeFile: client.latestActiveFile,
-    aiComments: new Map(
-      [...client.latestAIComments.entries()].map(([k, v]) => [k, [...v]]),
-    ),
+    aiComments,
     debugState: client.latestDebugState,
     capturedAt: Date.now(),
   };
