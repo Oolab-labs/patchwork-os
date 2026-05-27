@@ -200,24 +200,24 @@ export function createGetChangeImpactTool(
               ? (refsRaw.references as Record<string, unknown>[])
               : [];
 
-            const wsRefs = allRefs.filter((r) =>
-              workspaceOnly
-                ? typeof r.file === "string" &&
+            const affectedFileSet = new Set<string>();
+            let wsRefCount = 0;
+            for (const r of allRefs) {
+              if (
+                workspaceOnly &&
+                !(
+                  typeof r.file === "string" &&
                   (r.file.startsWith(workspace) ||
                     !r.file.includes("node_modules"))
-                : true,
-            );
-            const externalRefCount = allRefs.length - wsRefs.length;
-
-            const affectedFiles = [
-              ...new Set(
-                wsRefs
-                  .map((r) => r.file)
-                  .filter((f): f is string => typeof f === "string"),
-              ),
-            ];
-
-            const referenceCount = Math.min(wsRefs.length, maxRefsPerSymbol);
+                )
+              )
+                continue;
+              wsRefCount++;
+              if (typeof r.file === "string") affectedFileSet.add(r.file);
+            }
+            const externalRefCount = allRefs.length - wsRefCount;
+            const affectedFiles = [...affectedFileSet];
+            const referenceCount = Math.min(wsRefCount, maxRefsPerSymbol);
 
             symbolImpact.push({
               name: pos.name,
