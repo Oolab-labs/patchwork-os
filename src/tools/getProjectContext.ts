@@ -284,22 +284,33 @@ export function createGetProjectContextTool(
         Array.isArray(diagnosticsResult.value)
       ) {
         const allDiags = diagnosticsResult.value as Diagnostic[];
-        const errorsAndWarnings = allDiags.filter(
-          (d) => d.severity === "error" || d.severity === "warning",
-        );
-        brief.recentErrors = errorsAndWarnings
-          .slice(0, MAX_ERRORS)
-          .map((d) => ({
-            file: d.file,
-            message: d.message,
-            severity: d.severity,
-          }));
         let errCount = 0,
           warnCount = 0;
+        const recentErrors: {
+          file: string;
+          message: string;
+          severity: string;
+        }[] = [];
         for (const d of allDiags) {
-          if (d.severity === "error") errCount++;
-          else if (d.severity === "warning") warnCount++;
+          if (d.severity === "error") {
+            errCount++;
+            if (recentErrors.length < MAX_ERRORS)
+              recentErrors.push({
+                file: d.file,
+                message: d.message,
+                severity: d.severity,
+              });
+          } else if (d.severity === "warning") {
+            warnCount++;
+            if (recentErrors.length < MAX_ERRORS)
+              recentErrors.push({
+                file: d.file,
+                message: d.message,
+                severity: d.severity,
+              });
+          }
         }
+        brief.recentErrors = recentErrors;
         brief.diagnosticSummary =
           errCount > 0 || warnCount > 0
             ? `${errCount} error(s), ${warnCount} warning(s)`

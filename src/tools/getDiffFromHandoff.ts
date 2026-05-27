@@ -173,12 +173,12 @@ export function createGetDiffFromHandoffTool(
         parts.push("No uncommitted changes");
       }
       if (newDiagnostics.length > 0) {
-        const errors = newDiagnostics.filter(
-          (d) => d.severity === "error",
-        ).length;
-        const warnings = newDiagnostics.filter(
-          (d) => d.severity === "warning",
-        ).length;
+        let errors = 0;
+        let warnings = 0;
+        for (const d of newDiagnostics) {
+          if (d.severity === "error") errors++;
+          else if (d.severity === "warning") warnings++;
+        }
         parts.push(
           `${errors} error(s), ${warnings} warning(s) in current diagnostics`,
         );
