@@ -166,6 +166,8 @@ export interface RunQuery {
   recipe?: string;
   /** Runs with seq > after. */
   after?: number;
+  /** Only return runs with createdAt >= since (ms epoch). */
+  since?: number;
   /** PR5c — exact-match on manualRunId. Yields all retries of one attempt. */
   manualRunId?: string;
 }
@@ -280,6 +282,7 @@ export class RecipeRunLog {
     const recipe = q.recipe;
     const manualRunId = q.manualRunId;
     const after = q.after;
+    const since = q.since;
     const out: RecipeRun[] = [];
     for (const r of this.runs) {
       if (trigger && r.trigger !== trigger) continue;
@@ -287,6 +290,7 @@ export class RecipeRunLog {
       if (recipe && r.recipeName !== recipe) continue;
       if (manualRunId && r.manualRunId !== manualRunId) continue;
       if (after !== undefined && r.seq <= after) continue;
+      if (since !== undefined && r.createdAt < since) continue;
       out.push(r);
     }
     // Newest first.

@@ -221,12 +221,11 @@ export class RecipeOrchestration {
       const sinceMs = opts?.sinceMs ?? 7 * 24 * 60 * 60 * 1000;
       const limit = opts?.limit ?? 500;
       const cutoff = Date.now() - sinceMs;
-      const runs = this.deps.recipeRunLog
-        .query({
-          limit,
-          ...(opts?.recipe !== undefined && { recipe: opts.recipe }),
-        })
-        .filter((r) => r.createdAt >= cutoff);
+      const runs = this.deps.recipeRunLog.query({
+        limit,
+        since: cutoff,
+        ...(opts?.recipe !== undefined && { recipe: opts.recipe }),
+      });
       return summariseHalts(runs);
     };
 
@@ -243,12 +242,11 @@ export class RecipeOrchestration {
       const sinceMs = opts?.sinceMs ?? 7 * 24 * 60 * 60 * 1000;
       const limit = opts?.limit ?? 500;
       const cutoff = Date.now() - sinceMs;
-      const runs = this.deps.recipeRunLog
-        .query({
-          limit,
-          ...(opts?.recipe !== undefined && { recipe: opts.recipe }),
-        })
-        .filter((r) => r.createdAt >= cutoff);
+      const runs = this.deps.recipeRunLog.query({
+        limit,
+        since: cutoff,
+        ...(opts?.recipe !== undefined && { recipe: opts.recipe }),
+      });
       return summariseJudgments(runs);
     };
 
