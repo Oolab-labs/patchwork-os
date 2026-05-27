@@ -629,10 +629,14 @@ export class Bridge {
       // Detect false→true transition (session started)
       if (!this._lastDebugSessionActive && state.hasActiveSession) {
         const breakpoints = state.breakpoints ?? [];
+        let enabledBreakpoints = 0;
+        for (const b of breakpoints) {
+          if (b.enabled) enabledBreakpoints++;
+        }
         this.automationHooks?.handleDebugSessionStart({
           sessionName: state.sessionName ?? "unknown",
           sessionType: state.sessionType ?? "unknown",
-          breakpointCount: breakpoints.filter((b) => b.enabled).length,
+          breakpointCount: enabledBreakpoints,
           activeFile: breakpoints[0]?.file ?? "",
         });
       }

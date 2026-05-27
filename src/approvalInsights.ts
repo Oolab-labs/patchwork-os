@@ -138,13 +138,18 @@ export function computeApprovalInsights(
     return a.toolName.localeCompare(b.toolName);
   });
 
+  let rejectedToolCount = 0;
+  let trustedToolCount = 0;
+  for (const t of tools) {
+    if (t.rejections > 0) rejectedToolCount++;
+    if (t.approvals >= 3 && t.rejections === 0) trustedToolCount++;
+  }
+
   return {
     tools,
     generatedAt: new Date().toISOString(),
     totalDecisions: decisions.length,
-    rejectedToolCount: tools.filter((t) => t.rejections > 0).length,
-    trustedToolCount: tools.filter(
-      (t) => t.approvals >= 3 && t.rejections === 0,
-    ).length,
+    rejectedToolCount,
+    trustedToolCount,
   };
 }

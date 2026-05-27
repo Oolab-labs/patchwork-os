@@ -304,19 +304,22 @@ export function createSearchAndReplaceTool(workspace: string) {
         }
       }
 
-      const totalReplacements = results.reduce(
-        (sum, r) =>
-          sum + (typeof r.replacements === "number" ? r.replacements : 0),
-        0,
-      );
-      const writtenCount = results.filter((r) => r.written).length;
-      const failedCount = results.filter(
-        (r) =>
+      let totalReplacements = 0;
+      let writtenCount = 0;
+      let failedCount = 0;
+      for (const r of results) {
+        if (typeof r.replacements === "number")
+          totalReplacements += r.replacements;
+        if (r.written) {
+          writtenCount++;
+        } else if (
           !dryRun &&
-          !r.written &&
           typeof r.replacements === "number" &&
-          r.replacements > 0,
-      ).length;
+          r.replacements > 0
+        ) {
+          failedCount++;
+        }
+      }
 
       return successStructured({
         matched: matchedFiles.length,

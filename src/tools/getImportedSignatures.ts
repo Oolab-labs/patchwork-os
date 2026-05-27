@@ -302,7 +302,10 @@ export function createGetImportedSignaturesTool(
         }
       }
 
-      const resolvedCount = resolved.filter((r) => r.signature !== null).length;
+      let resolvedCount = 0;
+      for (const r of resolved) {
+        if (r.signature !== null) resolvedCount++;
+      }
 
       return successStructured({
         imports: resolved,
