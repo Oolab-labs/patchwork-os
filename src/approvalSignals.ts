@@ -337,21 +337,24 @@ export function computePersonalSignals(input: {
   // not "is this tool a step up from this tool's history". The latter is
   // covered by heuristic 1 (prior approvals on the same tool).
   if (currentTier) {
-    const recentAllows = activityLog
-      .queryApprovalDecisions({ decision: "allow", last: 50 })
-      .filter(
-        (e): e is typeof e & { metadata: { tier: RiskTier } } =>
-          e.metadata?.tier === "low" ||
-          e.metadata?.tier === "medium" ||
-          e.metadata?.tier === "high",
-      );
-    if (recentAllows.length >= TIER_BASELINE_MIN_SAMPLES) {
+    const tierRanks: number[] = [];
+    for (const e of activityLog.queryApprovalDecisions({
+      decision: "allow",
+      last: 50,
+    })) {
+      if (
+        e.metadata?.tier === "low" ||
+        e.metadata?.tier === "medium" ||
+        e.metadata?.tier === "high"
+      ) {
+        tierRanks.push(TIER_RANK[e.metadata.tier as RiskTier]);
+      }
+    }
+    if (tierRanks.length >= TIER_BASELINE_MIN_SAMPLES) {
       // p50 over rank space — sort ranks, pick the middle. Equivalent to
       // median; cheaper than a full distribution and stable on small N.
-      const ranks = recentAllows
-        .map((e) => TIER_RANK[e.metadata.tier])
-        .sort((a, b) => a - b);
-      const baselineRank = ranks[Math.floor(ranks.length / 2)] ?? 0;
+      tierRanks.sort((a, b) => a - b);
+      const baselineRank = tierRanks[Math.floor(tierRanks.length / 2)] ?? 0;
       const currentRank = TIER_RANK[currentTier];
       if (currentRank > baselineRank) {
         const baselineTier = (Object.keys(TIER_RANK) as RiskTier[]).find(
