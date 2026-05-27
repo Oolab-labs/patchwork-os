@@ -202,6 +202,9 @@ function Variables({ manifest }: { manifest: RecipeManifest | null }) {
   return (
     <div className="glass-card" style={{ padding: "var(--s-5)" }}>
       <h3 style={{ fontSize: "var(--fs-m)", marginTop: 0, marginBottom: "var(--s-3)" }}>Configuration</h3>
+      {/* Horizontal scroll wrapper — table has 4 columns + variable-width
+          description content, overflows at 375 px without this guard. */}
+      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
       <table style={{ width: "100%", fontSize: "var(--fs-s)", borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ textAlign: "left", color: "var(--ink-2)" }}>
@@ -228,6 +231,7 @@ function Variables({ manifest }: { manifest: RecipeManifest | null }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -365,6 +369,7 @@ function TrustMetadataCard({ recipe }: { recipe: RegistryRecipe }) {
   return (
     <div className="glass-card" style={{ padding: "var(--s-5)" }}>
       <h3 style={{ fontSize: "var(--fs-m)", marginTop: 0, marginBottom: "var(--s-3)" }}>Trust &amp; permissions</h3>
+      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
       <table style={{ width: "100%", fontSize: "var(--fs-s)", borderCollapse: "collapse" }}>
         <tbody>
           {rows.map(({ label, value }) => (
@@ -375,6 +380,7 @@ function TrustMetadataCard({ recipe }: { recipe: RegistryRecipe }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
