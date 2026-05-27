@@ -275,20 +275,22 @@ export class RecipeRunLog {
 
   query(q: RunQuery = {}): RecipeRun[] {
     this.syncFromDisk();
-    let out = this.runs;
-    if (q.trigger) out = out.filter((r) => r.trigger === q.trigger);
-    if (q.status) out = out.filter((r) => r.status === q.status);
-    if (q.recipe) out = out.filter((r) => r.recipeName === q.recipe);
-    if (q.manualRunId) {
-      const id = q.manualRunId;
-      out = out.filter((r) => r.manualRunId === id);
-    }
-    if (q.after !== undefined) {
-      const after = q.after;
-      out = out.filter((r) => r.seq > after);
+    const trigger = q.trigger;
+    const status = q.status;
+    const recipe = q.recipe;
+    const manualRunId = q.manualRunId;
+    const after = q.after;
+    const out: RecipeRun[] = [];
+    for (const r of this.runs) {
+      if (trigger && r.trigger !== trigger) continue;
+      if (status && r.status !== status) continue;
+      if (recipe && r.recipeName !== recipe) continue;
+      if (manualRunId && r.manualRunId !== manualRunId) continue;
+      if (after !== undefined && r.seq <= after) continue;
+      out.push(r);
     }
     // Newest first.
-    out = [...out].sort((a, b) => b.seq - a.seq);
+    out.sort((a, b) => b.seq - a.seq);
     const limit = Math.min(Math.max(q.limit ?? 100, 1), 500);
     return out.slice(0, limit);
   }

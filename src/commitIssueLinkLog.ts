@@ -149,26 +149,24 @@ export class CommitIssueLinkLog {
     // ADR-0007 tail-on-read: pick up any rows a sibling bridge appended
     // since our last query / load. statSync-only when no growth.
     this.syncFromDisk();
-    let out = this.links;
-    if (q.sha) {
-      const needle = q.sha;
-      out = out.filter(
-        (l) =>
-          l.sha === needle || (needle.length >= 7 && l.sha.startsWith(needle)),
-      );
+    const sha = q.sha;
+    const ref = q.ref;
+    const workspace = q.workspace;
+    const linkType = q.linkType;
+    const resolved = q.resolved;
+    const after = q.after;
+    const out: CommitIssueLink[] = [];
+    for (const l of this.links) {
+      if (sha && !(l.sha === sha || (sha.length >= 7 && l.sha.startsWith(sha))))
+        continue;
+      if (ref && l.ref !== ref) continue;
+      if (workspace && l.workspace !== workspace) continue;
+      if (linkType && l.linkType !== linkType) continue;
+      if (resolved !== undefined && l.resolved !== resolved) continue;
+      if (after !== undefined && l.seq <= after) continue;
+      out.push(l);
     }
-    if (q.ref) out = out.filter((l) => l.ref === q.ref);
-    if (q.workspace) out = out.filter((l) => l.workspace === q.workspace);
-    if (q.linkType) out = out.filter((l) => l.linkType === q.linkType);
-    if (q.resolved !== undefined) {
-      const wanted = q.resolved;
-      out = out.filter((l) => l.resolved === wanted);
-    }
-    if (q.after !== undefined) {
-      const after = q.after;
-      out = out.filter((l) => l.seq > after);
-    }
-    out = [...out].sort((a, b) => b.seq - a.seq);
+    out.sort((a, b) => b.seq - a.seq);
     const limit = Math.min(Math.max(q.limit ?? 100, 1), 1_000);
     return out.slice(0, limit);
   }
