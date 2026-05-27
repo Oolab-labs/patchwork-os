@@ -152,6 +152,21 @@ const FALLBACK_REGISTRY: RegistryData = {
       approval_behavior: "ask_on_novel",
       maintainer: "@patchworkos",
     },
+    {
+      name: "@patchworkos/sentry-to-linear",
+      version: "1.0.0",
+      description:
+        "Fetch a Sentry issue, enrich its stack trace with git blame to identify the suspect commit, and create a triage-ready Linear ticket — one command, zero manual copy-paste.",
+      tags: ["engineering", "debugging", "triage", "sentry", "linear"],
+      connectors: ["sentry", "linear"],
+      install: "github:Oolab-labs/patchwork-os/templates/recipes/sentry-to-linear",
+      downloads: 0,
+      risk_level: "low",
+      network_access: true,
+      file_access: true,
+      approval_behavior: "ask_on_novel",
+      maintainer: "@patchworkos",
+    },
   ],
 };
 
