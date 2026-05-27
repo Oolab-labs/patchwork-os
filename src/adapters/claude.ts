@@ -322,11 +322,14 @@ export class ClaudeAdapter implements ModelAdapter {
       return;
     }
 
-    const toolCalls: ToolCall[] = [...toolStates.values()].map((s) => ({
-      id: s.id,
-      name: s.name,
-      arguments: safeJsonParse(s.json),
-    }));
+    const toolCalls: ToolCall[] = [];
+    for (const s of toolStates.values()) {
+      toolCalls.push({
+        id: s.id,
+        name: s.name,
+        arguments: safeJsonParse(s.json),
+      });
+    }
 
     yield {
       type: "done",

@@ -117,14 +117,14 @@ export function computeApprovalInsights(
   const tools: ToolInsight[] = [];
   for (const [toolName, bucket] of byTool) {
     const total = bucket.approvals + bucket.rejections;
-    const sorted = [...bucket.timestamps].sort();
+    bucket.timestamps.sort();
     tools.push({
       toolName,
       approvals: bucket.approvals,
       rejections: bucket.rejections,
       approvalRate: total > 0 ? bucket.approvals / total : null,
-      lastDecisionAt: sorted[sorted.length - 1] ?? null,
-      firstDecisionAt: sorted[0] ?? null,
+      lastDecisionAt: bucket.timestamps[bucket.timestamps.length - 1] ?? null,
+      firstDecisionAt: bucket.timestamps[0] ?? null,
       heuristicLabel: heuristicLabel(bucket.approvals, bucket.rejections),
       severity: severity(bucket.approvals, bucket.rejections),
     });

@@ -300,9 +300,10 @@ export class Bridge {
       // ─────────────────────────────────────────────────────────────────────
 
       // Reject connections beyond capacity (grace-period sessions don't count)
-      const activeSessionCount = [...this.sessions.values()].filter(
-        (s) => !s.graceTimer,
-      ).length;
+      let activeSessionCount = 0;
+      for (const s of this.sessions.values()) {
+        if (!s.graceTimer) activeSessionCount++;
+      }
       if (activeSessionCount >= this.config.maxSessions) {
         this.logger.warn(
           `Session capacity reached (${this.config.maxSessions} active). Rejecting connection.`,

@@ -153,7 +153,7 @@ export function buildSummary(
 
   const toolStats: ToolStat[] = [];
   for (const [tool, s] of map) {
-    const sorted = [...s.durations].sort((a, b) => a - b);
+    const sorted = s.durations.sort((a, b) => a - b);
     const { p50, p95 } = percentiles(sorted);
     toolStats.push({
       tool,
