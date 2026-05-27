@@ -113,6 +113,7 @@ export function RelationStrip({
           alignItems: "center",
           gap: 5,
           padding: "2px 9px",
+          minHeight: "32px",
           borderRadius: 999,
           border: `1px solid ${styles.borderColor}`,
           background: styles.background,
