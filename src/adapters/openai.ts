@@ -290,17 +290,16 @@ export class OpenAIAdapter implements ModelAdapter {
       return;
     }
 
+    const toolCalls: ToolCall[] = [];
     for (const state of toolStates.values()) {
-      if (state.started) yield { type: "tool_call_end", id: state.id };
+      if (!state.started) continue;
+      yield { type: "tool_call_end", id: state.id };
+      toolCalls.push({
+        id: state.id,
+        name: state.name,
+        arguments: safeJsonParse(state.argsJson),
+      });
     }
-
-    const toolCalls: ToolCall[] = [...toolStates.values()]
-      .filter((s) => s.started)
-      .map((s) => ({
-        id: s.id,
-        name: s.name,
-        arguments: safeJsonParse(s.argsJson),
-      }));
 
     const stopReason: CompletionResult["stopReason"] =
       finishReason === "tool_calls"
