@@ -431,17 +431,30 @@ export class ActivityLog {
   }
 
   queryTimeline(opts?: { last?: number }): TimelineEntry[] {
-    const tools: TimelineEntry[] = this.entries.map((e) => ({
-      kind: "tool" as const,
-      ...e,
-    }));
-    const lifecycle: TimelineEntry[] = this.lifecycleEntries.map((e) => ({
-      kind: "lifecycle" as const,
-      ...e,
-    }));
-    const combined = [...tools, ...lifecycle].sort((a, b) => a.id - b.id);
     const last = Math.min(opts?.last ?? 50, 200);
-    return combined.slice(-last);
+    const ents = this.entries;
+    const lifes = this.lifecycleEntries;
+    // Both arrays are individually sorted by id asc (shared nextId counter).
+    // Merge from the end to return only the `last` newest entries in O(last).
+    const result: TimelineEntry[] = [];
+    let ei = ents.length - 1;
+    let li = lifes.length - 1;
+    while (result.length < last && (ei >= 0 || li >= 0)) {
+      const e = ei >= 0 ? ents[ei] : undefined;
+      const l = li >= 0 ? lifes[li] : undefined;
+      if (!e) {
+        result.push({ kind: "lifecycle" as const, ...l! });
+        li--;
+      } else if (!l || e.id > l.id) {
+        result.push({ kind: "tool" as const, ...e });
+        ei--;
+      } else {
+        result.push({ kind: "lifecycle" as const, ...l });
+        li--;
+      }
+    }
+    result.reverse();
+    return result;
   }
 
   query(opts?: {
