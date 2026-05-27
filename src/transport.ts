@@ -1511,7 +1511,7 @@ export class McpTransport {
                   ) {
                     const outValidator = this.outputValidators.get(params.name);
                     if (
-                      outValidator &&
+                      typeof outValidator === "function" &&
                       !outValidator(toolResult.structuredContent)
                     ) {
                       callLog.warn(
