@@ -1475,7 +1475,7 @@ export class Bridge {
     });
     this.server.readyFn = () => {
       // Count tools from the first active session (all sessions share the same tool set)
-      const anySession = [...this.sessions.values()][0];
+      const anySession = this.sessions.values().next().value;
       const toolCount = anySession?.transport.toolCount ?? 0;
       return {
         ready: this.ready,
@@ -2004,7 +2004,7 @@ export class Bridge {
     }
     // Clean up all active sessions (cleanupSession skips the extension notification
     // during shutdown because this.stopped is already true)
-    for (const id of [...this.sessions.keys()]) {
+    for (const id of this.sessions.keys()) {
       this.cleanupSession(id);
     }
     const shutdownErrorPart =

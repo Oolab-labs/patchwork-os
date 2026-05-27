@@ -505,7 +505,7 @@ export class McpTransport {
   deregisterToolsByPrefix(prefix: string): number {
     if (!prefix) return 0;
     let count = 0;
-    for (const name of [...this.tools.keys()]) {
+    for (const name of this.tools.keys()) {
       if (name.startsWith(prefix)) {
         this.tools.delete(name);
         this.schemaValidators.delete(name);
