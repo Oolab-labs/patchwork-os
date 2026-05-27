@@ -113,12 +113,12 @@ export function computeUnifiedDiff(
       if (op.type === "equal" || op.type === "insert") newLine++;
     }
 
-    const origCount = hunkOps.filter(
-      (o) => o.type === "equal" || o.type === "delete",
-    ).length;
-    const newCount = hunkOps.filter(
-      (o) => o.type === "equal" || o.type === "insert",
-    ).length;
+    let origCount = 0;
+    let newCount = 0;
+    for (const o of hunkOps) {
+      if (o.type === "equal" || o.type === "delete") origCount++;
+      if (o.type === "equal" || o.type === "insert") newCount++;
+    }
 
     diffLines.push(`@@ -${origLine},${origCount} +${newLine},${newCount} @@`);
 

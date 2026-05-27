@@ -1299,10 +1299,12 @@ export class Bridge {
       // These originate from automation hooks (onFileSave, onGitCommit, etc.)
       // and accurately represent "hooks fired" rather than session lifecycle events.
       const allTasks = this.orchestrator ? this.orchestrator.list() : null;
-      const hooksLast24h = allTasks
-        ? allTasks.filter((t) => t.isAutomationTask && t.createdAt > cutoff)
-            .length
-        : 0;
+      let hooksLast24h = 0;
+      if (allTasks) {
+        for (const t of allTasks) {
+          if (t.isAutomationTask && t.createdAt > cutoff) hooksLast24h++;
+        }
+      }
       const recentAutomationTasks = allTasks
         ? allTasks
             .sort((a, b) => b.createdAt - a.createdAt)
