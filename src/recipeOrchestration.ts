@@ -425,6 +425,7 @@ export class RecipeOrchestration {
         const taskId = orchestrator.enqueue({
           prompt: renderWebhookPrompt(loaded.prompt, payload),
           triggerSource: `webhook:${match.name}`,
+          timeoutMs: 600_000,
         });
         return { ok: true, taskId, name: match.name };
       } catch (err) {
@@ -493,6 +494,7 @@ export class RecipeOrchestration {
           const taskId = orchestrator.enqueue({
             prompt,
             triggerSource: `recipe:${name}`,
+            timeoutMs: 600_000,
           });
           return { ok: true, taskId };
         } catch (err) {

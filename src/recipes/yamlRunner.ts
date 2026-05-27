@@ -1979,7 +1979,7 @@ export function defaultClaudeCodeFn(
       {
         cwd: workspace.path,
         encoding: "utf-8",
-        timeout: 120_000,
+        timeout: 600_000,
         maxBuffer: 10 * 1024 * 1024,
       },
     );
