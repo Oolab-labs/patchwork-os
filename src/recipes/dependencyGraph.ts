@@ -237,10 +237,14 @@ export function getReadySteps(
   graph: DependencyGraph,
   completed: Set<string>,
 ): string[] {
-  return graph.steps
-    .filter(
-      (s) =>
-        !completed.has(s.stepId) && s.awaits.every((dep) => completed.has(dep)),
-    )
-    .map((s) => s.stepId);
+  const result: string[] = [];
+  for (const s of graph.steps) {
+    if (
+      !completed.has(s.stepId) &&
+      s.awaits.every((dep) => completed.has(dep))
+    ) {
+      result.push(s.stepId);
+    }
+  }
+  return result;
 }
