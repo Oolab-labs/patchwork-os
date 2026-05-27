@@ -448,10 +448,16 @@ export class ActivityLog {
     status?: string;
     last?: number;
   }): ActivityEntry[] {
-    let result = this.entries;
-    if (opts?.tool) result = result.filter((e) => e.tool === opts.tool);
-    if (opts?.status) result = result.filter((e) => e.status === opts.status);
+    const tool = opts?.tool;
+    const status = opts?.status;
     const last = Math.min(opts?.last ?? 50, 200);
+    if (!tool && !status) return this.entries.slice(-last);
+    const result: ActivityEntry[] = [];
+    for (const e of this.entries) {
+      if (tool && e.tool !== tool) continue;
+      if (status && e.status !== status) continue;
+      result.push(e);
+    }
     return result.slice(-last);
   }
 

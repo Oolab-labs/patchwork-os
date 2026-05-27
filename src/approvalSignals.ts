@@ -572,9 +572,10 @@ export function computePersonalSignals(input: {
   // should show both when both fire.
   const recentCalls = activityLog.query({ tool: toolName, last: 50 });
   const cutoff = Date.now() - COOLDOWN_WINDOW_MS;
-  const burstCount = recentCalls.filter(
-    (e) => Date.parse(e.timestamp) >= cutoff,
-  ).length;
+  let burstCount = 0;
+  for (const e of recentCalls) {
+    if (Date.parse(e.timestamp) >= cutoff) burstCount++;
+  }
   if (burstCount >= COOLDOWN_BREACH_MIN) {
     signals.push({
       kind: "cooldown_breach",
