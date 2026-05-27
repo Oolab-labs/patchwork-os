@@ -1355,18 +1355,26 @@ function applyTriggerInputDefaults(
   } catch {
     return vars;
   }
-  const trigger = (parsed as { trigger?: unknown } | null)?.trigger;
-  const inputs = (trigger as { inputs?: unknown } | null)?.inputs;
-  if (!Array.isArray(inputs)) return vars;
+  const trigger = (parsed as { trigger?: unknown } | null)?.trigger as
+    | Record<string, unknown>
+    | null
+    | undefined;
 
+  // Collect defaults from both trigger.inputs and trigger.vars (array forms).
+  // trigger.vars holds recipe-declared defaults; trigger.inputs holds
+  // user-overrideable parameters. Both use {name, default} entries.
   const defaults: Record<string, string> = {};
-  for (const item of inputs) {
-    if (!item || typeof item !== "object") continue;
-    const name = (item as { name?: unknown }).name;
-    const dflt = (item as { default?: unknown }).default;
-    if (typeof name !== "string" || name.length === 0) continue;
-    if (dflt === undefined || dflt === null) continue;
-    defaults[name] = String(dflt);
+  for (const key of ["inputs", "vars"] as const) {
+    const arr = trigger?.[key];
+    if (!Array.isArray(arr)) continue;
+    for (const item of arr) {
+      if (!item || typeof item !== "object") continue;
+      const name = (item as { name?: unknown }).name;
+      const dflt = (item as { default?: unknown }).default;
+      if (typeof name !== "string" || name.length === 0) continue;
+      if (dflt === undefined || dflt === null) continue;
+      if (!(name in defaults)) defaults[name] = String(dflt);
+    }
   }
 
   if (Object.keys(defaults).length === 0) return vars;

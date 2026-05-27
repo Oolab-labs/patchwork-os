@@ -12,6 +12,9 @@ description: |
     2. Set REPORT_REPO to the target repository (owner/repo) in trigger.vars below.
     3. Optionally set NTFY_TOPIC to a ntfy.sh topic to receive a phone push.
 
+  Works with any public or private GitHub repo the connected account can access.
+  Requires "repo" OAuth scope (granted automatically by the Patchwork GitHub connector).
+
   Produces a Markdown report at:
     ~/.patchwork/inbox/weekly-report-YYYY-MM-DD.md
 
@@ -64,6 +67,7 @@ steps:
     awaits:
       - fetch_commits
       - fetch_prs
+    timeout_ms: 600000
     agent:
       driver: claude-code
       model: claude-haiku-4-5-20251001
@@ -158,3 +162,5 @@ on_error:
   notify: true
   retry: 1
   fallback: log_only
+
+timeout_ms: 600000
