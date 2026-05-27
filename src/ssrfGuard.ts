@@ -89,6 +89,40 @@ export function isPrivateHost(hostname: string): boolean {
 }
 
 /**
+ * Loopback-only check (127.0.0.0/8, ::1, localhost). Lexical-only.
+ *
+ * Used by `isPrivateNonLoopbackHost` and by automation webhook fan-out, which
+ * intentionally ALLOWS loopback (sidecars) but blocks every other private
+ * range (RFC 1918, link-local, ULA, IMDS, 6to4-wrapped private, etc.).
+ */
+export function isLoopbackHost(hostname: string): boolean {
+  const host =
+    hostname.startsWith("[") && hostname.endsWith("]")
+      ? hostname.slice(1, -1).toLowerCase()
+      : hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host === "::1") return true;
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4 && Number(ipv4[1]) === 127) return true;
+  // IPv6-mapped/translated loopback: ::ffff:127.0.0.1 / ::ffff:0:127.0.0.1
+  if (host.startsWith("::ffff:0:")) return isLoopbackHost(host.slice(9));
+  if (host.startsWith("::ffff:")) return isLoopbackHost(host.slice(7));
+  return false;
+}
+
+/**
+ * Private host MINUS loopback. Lexical-only.
+ *
+ * Use when a sink intentionally allows loopback (e.g. webhook fan-out to local
+ * sidecars) but must still block RFC 1918, link-local, IMDS, ULA, 6to4-wrapped
+ * private, and IPv4-mapped/translated private addresses.
+ */
+export function isPrivateNonLoopbackHost(hostname: string): boolean {
+  if (isLoopbackHost(hostname)) return false;
+  return isPrivateHost(hostname);
+}
+
+/**
  * Async URL safety gate used by `/recipes/install` and `commands/recipeInstall.ts`.
  *
  * Steps:

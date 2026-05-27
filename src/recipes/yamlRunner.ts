@@ -38,6 +38,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
+import { sanitizeEnv } from "../drivers/claude/envSanitizer.js";
 import { loadConfig as loadPatchworkConfigSync } from "../patchworkConfig.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
 import type { RecipeRunLog } from "../runLog.js";
@@ -1953,7 +1954,7 @@ export function resolveClaudeBinary(): string {
 
 export function defaultClaudeCodeFn(
   prompt: string,
-  _opts?: { mcpAccess?: boolean },
+  opts?: { mcpAccess?: boolean },
 ): Promise<string> {
   const binary = resolveClaudeBinary();
   // Resolve a workspace cwd so the spawned `claude -p` doesn't inherit the
@@ -1966,18 +1967,39 @@ export function defaultClaudeCodeFn(
       `[agent step failed: recipe_no_workspace — no .git ancestor of "${process.cwd()}" and PATCHWORK_WORKSPACE not set. Set PATCHWORK_WORKSPACE in the bridge environment or add a 'workspace:' field to the recipe.]`,
     );
   }
+  // mcpAccess is plumbed through executeAgent → buildChainedDeps → here.
+  // The default fn has no bridge MCP endpoint resolver (SubprocessDriver
+  // owns that). Surface mcpAccess=true as a typed error rather than
+  // silently falling back to no-MCP spawn — the recipe explicitly asked
+  // for bridge tools and should be routed through SubprocessDriver via
+  // the runtime injector instead.
+  if (opts?.mcpAccess === true) {
+    return Promise.resolve(
+      "[agent step failed: recipe_mcp_unsupported — defaultClaudeCodeFn does not support mcpAccess:true; route via SubprocessDriver or unset the mcpAccess flag on this step]",
+    );
+  }
   try {
     const result = spawnSync(
       binary,
       [
         "-p",
         prompt,
+        // --strict-mcp-config: never load ~/.claude.json or .mcp.json. Recipes
+        // are sandboxed by default (mcpAccess defaults to false above). This
+        // also prevents accidental session attachment when the parent process
+        // had a bridge MCP entry in ~/.claude.json.
+        "--strict-mcp-config",
         "--system-prompt",
         "You are a helpful assistant processing a recipe task. Use ONLY the data explicitly provided in the user message — treat it as ground truth. Do not call tools to look up git history, emails, or any other information; all necessary data is already included.",
         "--no-session-persistence",
       ],
       {
         cwd: workspace.path,
+        // sanitizeEnv strips CLAUDECODE / CLAUDE_CODE_* / MCP_* from the
+        // child so the spawn doesn't re-authenticate as, or nest under,
+        // the parent Claude Code session. Mirrors SubprocessDriver.run
+        // hygiene. Preserves CLAUDE_CODE_OAUTH_TOKEN (subscription auth).
+        env: sanitizeEnv(process.env),
         encoding: "utf-8",
         timeout: 120_000,
         maxBuffer: 10 * 1024 * 1024,

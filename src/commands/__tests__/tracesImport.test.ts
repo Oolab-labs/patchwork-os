@@ -200,4 +200,92 @@ describe("tracesImport", () => {
       }),
     ).rejects.toThrow(/not found/);
   });
+
+  it("rejects path traversal in envelope `file` field — drops dir components", async () => {
+    // Craft a bundle line where `file` tries to escape activityDir via `../`.
+    // Pre-fix: path.join(activityDir, "../../evil.txt") resolved outside the
+    // dir and wrote arbitrary files (path traversal). Post-fix: basename
+    // strips the dir components AND the realpath check rejects the row.
+    const manifest = JSON.stringify({
+      type: "manifest",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      counts: { activity: 1 },
+    });
+    const evilRow = JSON.stringify({
+      source: "activity",
+      file: "../../evil.txt",
+      entry: { kind: "tool", tool: "x" },
+    });
+    const plain = path.join(workDir, "bundle.jsonl");
+    writeFileSync(plain, `${manifest}\n${evilRow}\n`);
+
+    const result = await runTracesImport({
+      input: plain,
+      patchworkDir: dstPatchwork,
+      activityDir: dstActivity,
+    });
+    // Row written into dstActivity under basename "evil.txt" — NOT outside.
+    const safePath = path.join(dstActivity, "evil.txt");
+    expect(result.files[0]?.targetPath).toBe(safePath);
+    expect(existsSync(safePath)).toBe(true);
+    // The would-be-escape path does not exist.
+    const escapedPath = path.resolve(dstActivity, "../../evil.txt");
+    expect(existsSync(escapedPath)).toBe(false);
+  });
+
+  it("rejects absolute paths in envelope `file` field", async () => {
+    // basename(/etc/passwd) = "passwd" — strips the absolute leading path
+    // before the realpath check, then writes into activityDir as "passwd".
+    const manifest = JSON.stringify({
+      type: "manifest",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      counts: { activity: 1 },
+    });
+    const evilRow = JSON.stringify({
+      source: "activity",
+      file: "/etc/passwd",
+      entry: { kind: "tool", tool: "x" },
+    });
+    const plain = path.join(workDir, "bundle.jsonl");
+    writeFileSync(plain, `${manifest}\n${evilRow}\n`);
+
+    const result = await runTracesImport({
+      input: plain,
+      patchworkDir: dstPatchwork,
+      activityDir: dstActivity,
+    });
+    expect(result.files[0]?.targetPath).toBe(path.join(dstActivity, "passwd"));
+    expect(existsSync("/etc/passwd-was-not-written-to")).toBe(false); // sanity
+  });
+
+  it("writes restored activity files with 0o600 mode (no world-readable umask leak)", async () => {
+    if (process.platform === "win32") return; // NTFS reports 0o666 regardless of mode
+    const manifest = JSON.stringify({
+      type: "manifest",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      counts: { activity: 1 },
+    });
+    const row = JSON.stringify({
+      source: "activity",
+      file: "activity-3000.jsonl",
+      entry: { kind: "tool", tool: "x" },
+    });
+    const plain = path.join(workDir, "bundle.jsonl");
+    writeFileSync(plain, `${manifest}\n${row}\n`);
+
+    await runTracesImport({
+      input: plain,
+      patchworkDir: dstPatchwork,
+      activityDir: dstActivity,
+      mode: "overwrite",
+    });
+    const restored = path.join(dstActivity, "activity-3000.jsonl");
+    const { statSync } = await import("node:fs");
+    const stat = statSync(restored);
+    // eslint-disable-next-line no-bitwise
+    expect(stat.mode & 0o777).toBe(0o600);
+  });
 });

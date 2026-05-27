@@ -99,4 +99,92 @@ describe("defaultClaudeCodeFn — workspace cwd threading", () => {
       rmSync(isolated, { recursive: true, force: true });
     }
   });
+
+  it("returns typed recipe_mcp_unsupported when mcpAccess:true (was: silently ignored)", async () => {
+    // Pre-fix: `_opts.mcpAccess` was underscore-prefixed and ignored. Recipes
+    // declaring mcpAccess:true got a spawn with no MCP injection AND no
+    // warning. Now defaultClaudeCodeFn surfaces a typed reason so the run
+    // halts visibly and the operator routes via SubprocessDriver instead.
+    process.env.PATCHWORK_WORKSPACE = workspace;
+    const out = await defaultClaudeCodeFn("ignored", { mcpAccess: true });
+    expect(out).toMatch(/^\[agent step failed: recipe_mcp_unsupported\b/);
+    expect(out).toMatch(/SubprocessDriver/);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "sanitizes CLAUDECODE / CLAUDE_CODE_* / MCP_* from child env (env-leak guard)",
+    async () => {
+      process.env.PATCHWORK_WORKSPACE = workspace;
+      // Plant parent-session vars that would otherwise leak to the child.
+      const savedCC = process.env.CLAUDECODE;
+      const savedSession = process.env.CLAUDE_CODE_SESSION_ID;
+      const savedMcp = process.env.MCP_SERVERS_JSON;
+      process.env.CLAUDECODE = "1";
+      process.env.CLAUDE_CODE_SESSION_ID = "parent-session-xyz";
+      process.env.MCP_SERVERS_JSON = '{"bridge":"http://parent"}';
+
+      // Swap the fake claude binary for one that dumps the relevant env vars
+      // so the test can prove they're absent in the child.
+      const dumpClaude = path.join(fakeBinDir, "claude");
+      writeFileSync(
+        dumpClaude,
+        '#!/bin/sh\necho "CLAUDECODE=${CLAUDECODE:-unset}"\necho "CLAUDE_CODE_SESSION_ID=${CLAUDE_CODE_SESSION_ID:-unset}"\necho "MCP_SERVERS_JSON=${MCP_SERVERS_JSON:-unset}"\n',
+      );
+      chmodSync(dumpClaude, 0o755);
+
+      try {
+        const out = await defaultClaudeCodeFn("ignored");
+        expect(out).toContain("CLAUDECODE=unset");
+        expect(out).toContain("CLAUDE_CODE_SESSION_ID=unset");
+        expect(out).toContain("MCP_SERVERS_JSON=unset");
+      } finally {
+        if (savedCC === undefined) delete process.env.CLAUDECODE;
+        else process.env.CLAUDECODE = savedCC;
+        if (savedSession === undefined)
+          delete process.env.CLAUDE_CODE_SESSION_ID;
+        else process.env.CLAUDE_CODE_SESSION_ID = savedSession;
+        if (savedMcp === undefined) delete process.env.MCP_SERVERS_JSON;
+        else process.env.MCP_SERVERS_JSON = savedMcp;
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "preserves CLAUDE_CODE_OAUTH_TOKEN (subscription auth must survive sanitize)",
+    async () => {
+      process.env.PATCHWORK_WORKSPACE = workspace;
+      const savedOauth = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = "sk-ant-oat01-test-survives";
+
+      const dumpClaude = path.join(fakeBinDir, "claude");
+      writeFileSync(
+        dumpClaude,
+        '#!/bin/sh\necho "OAUTH=${CLAUDE_CODE_OAUTH_TOKEN:-unset}"\n',
+      );
+      chmodSync(dumpClaude, 0o755);
+
+      try {
+        const out = await defaultClaudeCodeFn("ignored");
+        expect(out).toContain("OAUTH=sk-ant-oat01-test-survives");
+      } finally {
+        if (savedOauth === undefined)
+          delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+        else process.env.CLAUDE_CODE_OAUTH_TOKEN = savedOauth;
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "passes --strict-mcp-config to claude -p (no ~/.claude.json MCP attach)",
+    async () => {
+      process.env.PATCHWORK_WORKSPACE = workspace;
+      // Replace claude with a script that echoes its argv.
+      const echoClaude = path.join(fakeBinDir, "claude");
+      writeFileSync(echoClaude, '#!/bin/sh\necho "$@"\n');
+      chmodSync(echoClaude, 0o755);
+
+      const out = await defaultClaudeCodeFn("ignored");
+      expect(out).toContain("--strict-mcp-config");
+    },
+  );
 });
