@@ -149,14 +149,15 @@ export function computeAutomationSuggestions(
   // (3) Recipe trust graduation — recipes with ≥ minRuns successful runs.
   if (deps.recipeRunLog) {
     const byRecipe = groupRunsByRecipe(deps.recipeRunLog);
-    const graduates = [...byRecipe.entries()]
-      .filter(
-        ([, runs]) =>
-          runs.length >= minRuns && runs.every((r) => r.status === "done"),
-      )
-      .sort((a, b) => b[1].length - a[1].length)
-      .slice(0, 10);
+    const graduates: Array<[string, RecipeRun[]]> = [];
+    for (const [recipeName, runs] of byRecipe) {
+      if (runs.length >= minRuns && runs.every((r) => r.status === "done"))
+        graduates.push([recipeName, runs]);
+    }
+    graduates.sort((a, b) => b[1].length - a[1].length);
+    let graduateIdx = 0;
     for (const [recipeName, runs] of graduates) {
+      if (graduateIdx++ >= 10) break;
       suggestions.push({
         kind: "recipe_trust_graduation",
         label: `Recipe \`${recipeName}\` has succeeded ${runs.length}/${runs.length} times — consider trust graduation.`,

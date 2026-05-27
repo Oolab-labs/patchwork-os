@@ -104,10 +104,14 @@ export function computeCoOccurrence(
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, maxPairs)
-    .map(([pair, count]) => ({ pair, count }));
+  const pairs = Array.from(counts.entries());
+  pairs.sort((a, b) => b[1] - a[1]);
+  const result: Array<{ pair: string; count: number }> = [];
+  for (let i = 0; i < pairs.length && i < maxPairs; i++) {
+    const [pair, count] = pairs[i]!;
+    result.push({ pair, count });
+  }
+  return result;
 }
 
 /**

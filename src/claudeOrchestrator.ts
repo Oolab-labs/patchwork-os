@@ -539,33 +539,41 @@ export class ClaudeOrchestrator {
    * running tasks are saved as "interrupted" so on reload they appear as a
    * known-terminal state rather than a stale "running" entry. */
   private _buildTasksPayload(): PersistedTask[] {
-    return [...this.tasks.values()].map((t) => ({
-      id: t.id,
-      sessionId: t.sessionId,
-      prompt: t.prompt,
-      contextFiles: t.contextFiles,
-      status: (t.status === "running" ? "interrupted" : t.status) as string,
-      output: t.output,
-      errorMessage: t.errorMessage,
-      createdAt: t.createdAt,
-      startedAt: t.startedAt,
-      doneAt: t.doneAt,
-      timeoutMs: t.timeoutMs,
-      tokenEstimate: t.tokenEstimate,
-      ...(t.model !== undefined && { model: t.model }),
-      ...(t.effort !== undefined && { effort: t.effort }),
-      ...(t.fallbackModel !== undefined && { fallbackModel: t.fallbackModel }),
-      ...(t.maxBudgetUsd !== undefined && { maxBudgetUsd: t.maxBudgetUsd }),
-      ...(t.startupTimeoutMs !== undefined && {
-        startupTimeoutMs: t.startupTimeoutMs,
-      }),
-      ...(t.cancelReason !== undefined && { cancelReason: t.cancelReason }),
-      ...(t.stderrTail !== undefined && { stderrTail: t.stderrTail }),
-      ...(t.wasAborted !== undefined && { wasAborted: t.wasAborted }),
-      ...(t.startupMs !== undefined && { startupMs: t.startupMs }),
-      ...(t.systemPrompt !== undefined && { systemPrompt: t.systemPrompt }),
-      ...(t.triggerSource !== undefined && { triggerSource: t.triggerSource }),
-    }));
+    const result: PersistedTask[] = [];
+    for (const t of this.tasks.values()) {
+      result.push({
+        id: t.id,
+        sessionId: t.sessionId,
+        prompt: t.prompt,
+        contextFiles: t.contextFiles,
+        status: (t.status === "running" ? "interrupted" : t.status) as string,
+        output: t.output,
+        errorMessage: t.errorMessage,
+        createdAt: t.createdAt,
+        startedAt: t.startedAt,
+        doneAt: t.doneAt,
+        timeoutMs: t.timeoutMs,
+        tokenEstimate: t.tokenEstimate,
+        ...(t.model !== undefined && { model: t.model }),
+        ...(t.effort !== undefined && { effort: t.effort }),
+        ...(t.fallbackModel !== undefined && {
+          fallbackModel: t.fallbackModel,
+        }),
+        ...(t.maxBudgetUsd !== undefined && { maxBudgetUsd: t.maxBudgetUsd }),
+        ...(t.startupTimeoutMs !== undefined && {
+          startupTimeoutMs: t.startupTimeoutMs,
+        }),
+        ...(t.cancelReason !== undefined && { cancelReason: t.cancelReason }),
+        ...(t.stderrTail !== undefined && { stderrTail: t.stderrTail }),
+        ...(t.wasAborted !== undefined && { wasAborted: t.wasAborted }),
+        ...(t.startupMs !== undefined && { startupMs: t.startupMs }),
+        ...(t.systemPrompt !== undefined && { systemPrompt: t.systemPrompt }),
+        ...(t.triggerSource !== undefined && {
+          triggerSource: t.triggerSource,
+        }),
+      });
+    }
+    return result;
   }
 
   /** Persist all tasks to disk for cross-session resumability. Best-effort. */
