@@ -1,5 +1,5 @@
 /**
- * GitHub tools — github.list_issues, github.list_prs
+ * GitHub tools — github.list_issues, github.list_prs, github.list_commits
  *
  * Self-registering tool module for the recipe tool registry.
  */
@@ -113,6 +113,86 @@ registerTool({
       return JSON.stringify({
         count: 0,
         prs: [],
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+});
+
+// ============================================================================
+// github.list_commits
+// ============================================================================
+
+registerTool({
+  id: "github.list_commits",
+  namespace: "github",
+  description:
+    "List commits in a GitHub repository, optionally filtered by author and time range.",
+  paramsSchema: {
+    type: "object",
+    required: ["repo"],
+    properties: {
+      repo: {
+        type: "string",
+        description: "Repository in 'owner/repo' format",
+      },
+      author: {
+        type: "string",
+        description:
+          "GitHub username to filter by (use '@me' for the connected user)",
+        default: "@me",
+      },
+      since: {
+        type: "string",
+        description:
+          "ISO 8601 date-time string — only commits after this date. Example: '2026-05-19T00:00:00Z'",
+      },
+      until: {
+        type: "string",
+        description:
+          "ISO 8601 date-time string — only commits before this date.",
+      },
+      sha: {
+        type: "string",
+        description:
+          "Branch name or SHA to list commits from (default: default branch)",
+      },
+      max: CommonSchemas.max,
+      into: CommonSchemas.into,
+    },
+  },
+  outputSchema: {
+    type: "object",
+    properties: {
+      count: { type: "number" },
+      commits: { type: "array" },
+      repo: { type: "string" },
+      error: { type: "string" },
+    },
+  },
+  riskDefault: "low",
+  isWrite: false,
+  isConnector: true,
+  execute: async ({ params }) => {
+    const { listCommits } = await import("../../connectors/github.js");
+    const repo = String(params.repo ?? "");
+    const author = params.author ? String(params.author) : "@me";
+    const limit = typeof params.max === "number" ? params.max : 100;
+    try {
+      const commits = await listCommits({
+        repo,
+        author,
+        since: params.since ? String(params.since) : undefined,
+        until: params.until ? String(params.until) : undefined,
+        sha: params.sha ? String(params.sha) : undefined,
+        limit,
+      });
+      return JSON.stringify({ count: commits.length, commits, repo });
+    } catch (err) {
+      return JSON.stringify({
+        count: 0,
+        commits: [],
+        repo,
         error: err instanceof Error ? err.message : String(err),
       });
     }

@@ -62,6 +62,24 @@ export interface ListPRsOpts {
   repo?: string;
 }
 
+export interface ListCommitsOpts {
+  repo: string;
+  author?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  sha?: string;
+}
+
+export interface GitHubCommit {
+  sha: string;
+  message: string;
+  author: string;
+  authoredAt: string;
+  url: string;
+  repo: string;
+}
+
 export interface ConnectorHandlerResult {
   status: number;
   body: string;
@@ -199,6 +217,68 @@ export async function listPRs(opts: ListPRsOpts = {}): Promise<GitHubPR[]> {
     // Same antipattern as listIssues — see comment there.
     throw new Error(
       `github list_pull_requests failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+export async function listCommits(
+  opts: ListCommitsOpts,
+): Promise<GitHubCommit[]> {
+  if (!isConnected("github")) return [];
+  const { owner, repo } = parseRepo(opts);
+  if (!owner || !repo)
+    throw new Error('github list_commits requires "owner/repo" format');
+  const args: Record<string, unknown> = {
+    owner,
+    repo,
+    perPage: Math.min(opts.limit ?? 50, 100),
+  };
+  if (opts.sha) args.sha = opts.sha;
+  if (opts.since) args.since = opts.since;
+  if (opts.until) args.until = opts.until;
+  if (opts.author) {
+    if (opts.author === "@me") {
+      const file = loadTokenFile("github");
+      if (file?.profile?.login) args.author = file.profile.login;
+    } else {
+      args.author = opts.author;
+    }
+  }
+
+  try {
+    const res = await client().callTool("list_commits", args, {
+      cacheKey: `gh:commits:${JSON.stringify(args)}`,
+      cacheTtlMs: 60_000,
+    });
+    type RawCommit = {
+      sha?: string;
+      commit?: {
+        message?: string;
+        author?: { name?: string; login?: string; date?: string };
+      };
+      author?: { login?: string };
+      html_url?: string;
+    };
+    const parsed = McpClient.extractJson<RawCommit[] | { items?: RawCommit[] }>(
+      res,
+    );
+    const arr = Array.isArray(parsed) ? parsed : (parsed.items ?? []);
+    const fullRepo = `${owner}/${repo}`;
+    return arr.map((c) => ({
+      sha: (c.sha ?? "").slice(0, 12),
+      message: (c.commit?.message ?? "").split("\n")[0] ?? "",
+      author:
+        c.author?.login ??
+        c.commit?.author?.name ??
+        c.commit?.author?.login ??
+        "",
+      authoredAt: c.commit?.author?.date ?? "",
+      url: c.html_url ?? "",
+      repo: fullRepo,
+    }));
+  } catch (err) {
+    throw new Error(
+      `github list_commits failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 }

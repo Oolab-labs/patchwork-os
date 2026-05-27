@@ -26,9 +26,11 @@ import {
   handleGithubCallback,
   handleGithubDisconnect,
   handleGithubTest,
+  listCommits,
   listIssues,
   listPRs,
 } from "../github.js";
+
 import { McpClient } from "../mcpClient.js";
 
 const MOCK_TOKEN_FILE = {
@@ -401,5 +403,120 @@ describe("handleGithubDisconnect", () => {
     const result = await handleGithubDisconnect();
     expect(result.status).toBe(200);
     expect(JSON.parse(result.body)).toEqual({ ok: true });
+  });
+});
+
+describe("listCommits", () => {
+  it("returns [] when not connected", async () => {
+    const callTool = vi.spyOn(McpClient.prototype, "callTool");
+    expect(await listCommits({ repo: "acme/widget" })).toEqual([]);
+    expect(callTool).not.toHaveBeenCalled();
+    callTool.mockRestore();
+  });
+
+  it("throws when repo is not owner/repo format", async () => {
+    mockConnected();
+    await expect(listCommits({ repo: "widget" })).rejects.toThrow(
+      /owner\/repo/,
+    );
+  });
+
+  it("calls list_commits with owner/repo and perPage cap", async () => {
+    mockConnected();
+    const callTool = vi
+      .spyOn(McpClient.prototype, "callTool")
+      .mockResolvedValue(mcpJsonResult([]));
+    await listCommits({ repo: "acme/widget", limit: 999 });
+    expect(callTool).toHaveBeenCalledWith(
+      "list_commits",
+      expect.objectContaining({ owner: "acme", repo: "widget", perPage: 100 }),
+      expect.any(Object),
+    );
+    callTool.mockRestore();
+  });
+
+  it("resolves @me author to connected login", async () => {
+    mockConnected();
+    const callTool = vi
+      .spyOn(McpClient.prototype, "callTool")
+      .mockResolvedValue(mcpJsonResult([]));
+    await listCommits({ repo: "acme/widget", author: "@me" });
+    expect(callTool).toHaveBeenCalledWith(
+      "list_commits",
+      expect.objectContaining({ author: "octocat" }),
+      expect.any(Object),
+    );
+    callTool.mockRestore();
+  });
+
+  it("passes since/until/sha when provided", async () => {
+    mockConnected();
+    const callTool = vi
+      .spyOn(McpClient.prototype, "callTool")
+      .mockResolvedValue(mcpJsonResult([]));
+    await listCommits({
+      repo: "acme/widget",
+      since: "2026-05-19T00:00:00Z",
+      until: "2026-05-26T00:00:00Z",
+      sha: "main",
+    });
+    expect(callTool).toHaveBeenCalledWith(
+      "list_commits",
+      expect.objectContaining({
+        since: "2026-05-19T00:00:00Z",
+        until: "2026-05-26T00:00:00Z",
+        sha: "main",
+      }),
+      expect.any(Object),
+    );
+    callTool.mockRestore();
+  });
+
+  it("coerces raw MCP response to GitHubCommit shape", async () => {
+    mockConnected();
+    vi.spyOn(McpClient.prototype, "callTool").mockResolvedValue(
+      mcpJsonResult([
+        {
+          sha: "abc1234567890",
+          commit: {
+            message: "fix(auth): correct token refresh\n\nLonger description",
+            author: { name: "Alice", date: "2026-05-20T10:00:00Z" },
+          },
+          author: { login: "alice" },
+          html_url: "https://github.com/acme/widget/commit/abc1234567890",
+        },
+      ]),
+    );
+    const commits = await listCommits({ repo: "acme/widget" });
+    expect(commits).toHaveLength(1);
+    expect(commits[0]).toMatchObject({
+      sha: "abc123456789",
+      message: "fix(auth): correct token refresh",
+      author: "alice",
+      authoredAt: "2026-05-20T10:00:00Z",
+      url: "https://github.com/acme/widget/commit/abc1234567890",
+      repo: "acme/widget",
+    });
+  });
+
+  it("unwraps { items } envelope", async () => {
+    mockConnected();
+    vi.spyOn(McpClient.prototype, "callTool").mockResolvedValue(
+      mcpJsonResult({
+        items: [{ sha: "deadbeef1234", commit: { message: "chore: bump" } }],
+      }),
+    );
+    const commits = await listCommits({ repo: "acme/widget" });
+    expect(commits).toHaveLength(1);
+  });
+
+  it("throws on MCP failure — PR #72 contract", async () => {
+    mockConnected();
+    vi.spyOn(McpClient.prototype, "callTool").mockRejectedValue(
+      new Error("401 token expired"),
+    );
+    await expect(listCommits({ repo: "acme/widget" })).rejects.toThrow(
+      /list_commits failed.*401 token expired/,
+    );
   });
 });
