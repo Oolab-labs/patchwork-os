@@ -171,8 +171,12 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
     issues.push(...validateRecipeSchema(normalizedRecipe));
   }
 
-  const errors = issues.filter((i) => i.level === "error").length;
-  const warnings = issues.filter((i) => i.level === "warning").length;
+  let errors = 0,
+    warnings = 0;
+  for (const i of issues) {
+    if (i.level === "error") errors++;
+    else if (i.level === "warning") warnings++;
+  }
 
   return {
     valid: errors === 0,

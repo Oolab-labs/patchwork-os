@@ -294,10 +294,12 @@ export function createGetProjectContextTool(
             message: d.message,
             severity: d.severity,
           }));
-        const errCount = allDiags.filter((d) => d.severity === "error").length;
-        const warnCount = allDiags.filter(
-          (d) => d.severity === "warning",
-        ).length;
+        let errCount = 0,
+          warnCount = 0;
+        for (const d of allDiags) {
+          if (d.severity === "error") errCount++;
+          else if (d.severity === "warning") warnCount++;
+        }
         brief.diagnosticSummary =
           errCount > 0 || warnCount > 0
             ? `${errCount} error(s), ${warnCount} warning(s)`

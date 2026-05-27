@@ -433,10 +433,16 @@ export function createGetDiagnosticsTool(
         diagnostics as unknown[],
       ) as typeof diagnostics;
 
+      let _errors = 0,
+        _warnings = 0;
+      for (const d of filteredDiags) {
+        if (d.severity === "error") _errors++;
+        else if (d.severity === "warning") _warnings++;
+      }
       const summary = {
         total: filteredDiags.length,
-        errors: filteredDiags.filter((d) => d.severity === "error").length,
-        warnings: filteredDiags.filter((d) => d.severity === "warning").length,
+        errors: _errors,
+        warnings: _warnings,
       };
 
       const errors: Record<string, string> = {};
