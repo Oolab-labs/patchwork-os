@@ -123,4 +123,25 @@ describe("loadOrCreateBridgeToken", () => {
     expect(loadOrCreateBridgeToken(configDirA)).toBe(tokenA);
     expect(loadOrCreateBridgeToken(configDirB)).toBe(tokenB);
   });
+
+  it("LOW: rejects a loose 36-char hex/hyphen token (old regex) and regenerates", () => {
+    const configDir = makeTmpDir();
+    const ideDir = path.join(configDir, "ide");
+    fs.mkdirSync(ideDir, { recursive: true });
+    const legacyPath = path.join(ideDir, "bridge-token.json");
+    // A 36-char string that matches /^[0-9a-f-]{36}$/ but NOT a real UUID
+    const looseToken = "------------------------------------";
+    fs.writeFileSync(
+      legacyPath,
+      JSON.stringify({ token: looseToken }),
+      "utf-8",
+    );
+    // The new regex requires ^[0-9a-f]{8}-[0-9a-f]{4}-...$
+    // so the loose token is rejected and a fresh UUID is generated.
+    const loaded = loadOrCreateBridgeToken(configDir);
+    expect(loaded).not.toBe(looseToken);
+    expect(loaded).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+  });
 });

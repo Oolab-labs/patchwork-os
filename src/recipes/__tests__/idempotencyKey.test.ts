@@ -118,6 +118,64 @@ describe("WriteEffectLedger", () => {
   });
 });
 
+describe("WriteEffectLedger.getOrExecute", () => {
+  it("H3: executes fn exactly once for concurrent calls with the same key", async () => {
+    const ledger = new WriteEffectLedger();
+    let callCount = 0;
+    let resolveWork!: (v: string) => void;
+    const work = new Promise<string>((r) => (resolveWork = r));
+
+    const fn = () => {
+      callCount++;
+      return work;
+    };
+
+    // Two concurrent calls — only fn should fire once
+    const p1 = ledger.getOrExecute("key", fn);
+    const p2 = ledger.getOrExecute("key", fn);
+
+    resolveWork("done");
+    const [r1, r2] = await Promise.all([p1, p2]);
+
+    expect(r1).toBe("done");
+    expect(r2).toBe("done");
+    expect(callCount).toBe(1);
+    expect(ledger.has("key")).toBe(true);
+  });
+
+  it("serves cached result on subsequent calls without re-executing fn", async () => {
+    const ledger = new WriteEffectLedger();
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      return "cached";
+    };
+    await ledger.getOrExecute("k", fn);
+    const second = await ledger.getOrExecute("k", fn);
+    expect(second).toBe("cached");
+    expect(calls).toBe(1);
+  });
+
+  it("does not cache failures — fn is re-executed on retry", async () => {
+    const ledger = new WriteEffectLedger();
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      if (calls === 1) throw new Error("transient");
+      return "ok";
+    };
+
+    await expect(ledger.getOrExecute("k", fn)).rejects.toThrow("transient");
+    expect(ledger.has("k")).toBe(false);
+    expect(ledger.size()).toBe(0);
+
+    const result = await ledger.getOrExecute("k", fn);
+    expect(result).toBe("ok");
+    expect(calls).toBe(2);
+    expect(ledger.size()).toBe(1);
+  });
+});
+
 describe("WriteEffectLedger — disk-backed (PR5b)", () => {
   let dir: string;
   beforeEach(() => {

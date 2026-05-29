@@ -193,4 +193,49 @@ describe("executeTool — idempotency dedup (PR5a)", () => {
     expect(failingExec).toHaveBeenCalledTimes(2);
     expect(ledger.size()).toBe(1); // now recorded
   });
+
+  it("H3: concurrent calls with same key execute the tool only once (TOCTOU fix)", async () => {
+    const ledger = new WriteEffectLedger();
+    const ctx: RunContext = {};
+    const params = { x: 1 };
+    let resolveExec!: (v: string) => void;
+    const slowExec = vi
+      .fn()
+      .mockReturnValue(new Promise<string>((r) => (resolveExec = r)));
+    clearRegistry();
+    registerTool({
+      id: "test.slow_write",
+      namespace: "test",
+      description: "slow write tool",
+      paramsSchema: { type: "object" },
+      outputSchema: { type: "string" },
+      riskDefault: "high",
+      isWrite: true,
+      execute: slowExec as unknown as Exec,
+    });
+
+    // Launch two concurrent calls before the first has resolved
+    const p1 = executeTool("test.slow_write", {
+      params,
+      step: {},
+      ctx,
+      deps: makeDeps(ledger),
+    });
+    const p2 = executeTool("test.slow_write", {
+      params,
+      step: {},
+      ctx,
+      deps: makeDeps(ledger),
+    });
+
+    resolveExec("result");
+    const [r1, r2] = await Promise.all([p1, p2]);
+
+    // Both callers get the same result
+    expect(r1).toBe("result");
+    expect(r2).toBe("result");
+    // Tool executed exactly once — not twice
+    expect(slowExec).toHaveBeenCalledTimes(1);
+    expect(ledger.size()).toBe(1);
+  });
 });

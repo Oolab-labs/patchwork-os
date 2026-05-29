@@ -29,9 +29,11 @@ import type { OutputRegistry } from "./outputRegistry.js";
 import { createOutputRegistry } from "./outputRegistry.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import type { ErrorPolicy } from "./schema.js";
-import { captureForRunlog } from "./stepObservation.js";
+import { captureForRunlog, detectSilentFail } from "./stepObservation.js";
 import type { TemplateContext, TemplateError } from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
+import type { StepExpect } from "./yamlRunner.js";
+import { evaluateStepExpect } from "./yamlRunner.js";
 
 export interface ChainedStep {
   id: string;
@@ -52,6 +54,7 @@ export interface ChainedStep {
   /** Delay in ms between retries (default 1000). */
   retryDelay?: number;
   transform?: string; // template rendered after tool execution; $result = raw tool output
+  expect?: StepExpect;
   [key: string]: unknown;
 }
 
@@ -336,9 +339,21 @@ export async function executeChainedStep(
     const resultStr =
       typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult);
     const flatCtx: Record<string, string> = { $result: resultStr };
-    // Expose env keys as flat vars too
+    // Expose env keys
     for (const [k, v] of Object.entries(ctx.env)) {
       if (v !== undefined) flatCtx[k] = v;
+    }
+    // Expose upstream step outputs as steps.<id>.data so transforms can reference them
+    for (const [stepId, output] of Object.entries(ctx.steps)) {
+      if (output?.data !== undefined) {
+        const dataStr =
+          typeof output.data === "string"
+            ? output.data
+            : JSON.stringify(output.data);
+        flatCtx[`steps.${stepId}.data`] = dataStr;
+        // Also expose as bare step id for convenience (matches flat runner ctx keys)
+        flatCtx[stepId] = dataStr;
+      }
     }
     try {
       return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr) => {
@@ -472,6 +487,19 @@ export async function executeChainedStep(
         step.agent.model,
         step.agent.driver,
       );
+      // Detect failure signals returned as sentinel strings (mirrors flat runner)
+      if (
+        typeof result === "string" &&
+        result.startsWith("[agent step failed:")
+      ) {
+        return { success: false, error: result, resolvedParams: resolved };
+      }
+      const agentSilentFail =
+        step.silentFailDetection !== false ? detectSilentFail(result) : null;
+      if (agentSilentFail) {
+        const reason = `silent-fail detected (${agentSilentFail.reason}): ${agentSilentFail.matched}`;
+        return { success: false, error: reason, resolvedParams: resolved };
+      }
       if (step.transform) {
         try {
           result = applyTransform(step.transform, result, templateContext);
@@ -479,15 +507,56 @@ export async function executeChainedStep(
           console.warn(`transform failed for step ${step.id}: ${err}`);
         }
       }
+      if (step.expect) {
+        const failures = await evaluateStepExpect(step.expect, result);
+        if (failures.length > 0 && (step.expect.on_fail ?? "halt") === "halt") {
+          return {
+            success: false,
+            error: `expect failed: ${failures.join("; ")}`,
+            resolvedParams: resolved,
+          };
+        }
+      }
       return { success: true, data: result, resolvedParams: resolved };
     } else if (step.tool) {
       // Tool step
       let result: unknown = await deps.executeTool(step.tool, resolved);
+      // Detect tool-level errors reported as JSON {ok: false, error: ...} (mirrors flat runner)
+      if (typeof result === "string") {
+        try {
+          const parsed = JSON.parse(result) as Record<string, unknown>;
+          if (parsed.ok === false && typeof parsed.error === "string") {
+            return {
+              success: false,
+              error: parsed.error,
+              resolvedParams: resolved,
+            };
+          }
+        } catch {
+          /* non-JSON result is fine */
+        }
+      }
+      const toolSilentFail =
+        step.silentFailDetection !== false ? detectSilentFail(result) : null;
+      if (toolSilentFail) {
+        const reason = `silent-fail detected (${toolSilentFail.reason}): ${toolSilentFail.matched}`;
+        return { success: false, error: reason, resolvedParams: resolved };
+      }
       if (step.transform) {
         try {
           result = applyTransform(step.transform, result, templateContext);
         } catch (err) {
           console.warn(`transform failed for step ${step.id}: ${err}`);
+        }
+      }
+      if (step.expect) {
+        const failures = await evaluateStepExpect(step.expect, result);
+        if (failures.length > 0 && (step.expect.on_fail ?? "halt") === "halt") {
+          return {
+            success: false,
+            error: `expect failed: ${failures.join("; ")}`,
+            resolvedParams: resolved,
+          };
         }
       }
       return { success: true, data: result, resolvedParams: resolved };
@@ -562,6 +631,8 @@ export function expandParallelSteps(steps: ChainedStep[]): ChainedStep[] {
   const flat: ChainedStep[] = [];
   // Maps a group placeholder id → the ids of its expanded children.
   const groupChildren = new Map<string, string[]>();
+  // Track all assigned step ids to detect duplicates early.
+  const seenIds = new Set<string>();
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
@@ -577,6 +648,12 @@ export function expandParallelSteps(steps: ChainedStep[]): ChainedStep[] {
         const child = step.parallel[j];
         if (!child) continue;
         const childId = child.id ?? `${groupId}_${j}`;
+        if (seenIds.has(childId)) {
+          throw new Error(
+            `expandParallelSteps: duplicate step id "${childId}" — each step id must be unique across all parallel groups`,
+          );
+        }
+        seenIds.add(childId);
         childIds.push(childId);
         // Expand child recursively in case it also has parallel:.
         const expanded = expandParallelSteps([
@@ -591,6 +668,12 @@ export function expandParallelSteps(steps: ChainedStep[]): ChainedStep[] {
 
       groupChildren.set(groupId, childIds);
     } else {
+      if (step.id && seenIds.has(step.id)) {
+        throw new Error(
+          `expandParallelSteps: duplicate step id "${step.id}" — each step id must be unique`,
+        );
+      }
+      if (step.id) seenIds.add(step.id);
       flat.push(step);
     }
   }

@@ -131,13 +131,7 @@ export async function executeTool(
     const ledger = context.deps.writeEffectLedger;
     if (ledger) {
       const key = deriveIdempotencyKey(id, context.params);
-      if (ledger.has(key)) {
-        const cached = ledger.get(key);
-        return cached ?? null;
-      }
-      const result = await tool.execute(context);
-      ledger.record(key, result);
-      return result;
+      return ledger.getOrExecute(key, () => tool.execute(context));
     }
   }
   return tool.execute(context);

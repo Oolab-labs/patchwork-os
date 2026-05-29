@@ -112,6 +112,9 @@ export function createSendHttpRequestTool(options?: {
           `URL must use http:// or https://, got "${parsedUrl.protocol}"`,
         );
       }
+      // Strip credentials from the URL — they must not be sent in the request URL.
+      parsedUrl.username = "";
+      parsedUrl.password = "";
       if (!allowPrivateHttp && isPrivateHost(parsedUrl.hostname)) {
         return error(
           `Requests to private/loopback addresses are not allowed ("${parsedUrl.hostname}"). Only public hosts are permitted. Use --allow-private-http to enable.`,
@@ -145,9 +148,11 @@ export function createSendHttpRequestTool(options?: {
       // Build the initial URL: if we successfully resolved an IP, use it as the
       // hostname so Node's fetch does not re-resolve (closes the TOCTOU window).
       // IPv6 addresses require bracket wrapping in URLs.
-      let initialUrl = urlStr;
+      // Use parsedUrl (credentials already stripped) not the raw urlStr.
+      const cleanUrlStr = parsedUrl.toString();
+      let initialUrl = cleanUrlStr;
       if (resolvedIp !== null) {
-        const pinnedUrl = new URL(urlStr);
+        const pinnedUrl = new URL(cleanUrlStr);
         pinnedUrl.hostname = resolvedIp.includes(":")
           ? `[${resolvedIp}]`
           : resolvedIp;
@@ -223,6 +228,10 @@ export function createSendHttpRequestTool(options?: {
       const start = Date.now();
       try {
         let currentUrl = initialUrl;
+        // Track the un-pinned URL in parallel so relative redirects resolve
+        // against the real hostname (not the pinned IP), and so Host header
+        // derivation uses the real name rather than the resolved IP address.
+        let currentDisplayUrl = cleanUrlStr;
         let redirectCount = 0;
         let resp: Response;
 
@@ -247,48 +256,59 @@ export function createSendHttpRequestTool(options?: {
             return error(`Too many redirects (>${MAX_REDIRECTS})`);
           }
 
-          // Resolve relative redirect URL and re-validate it
-          let nextUrl: URL;
+          // Resolve relative redirect URL against the un-pinned display URL so
+          // the hostname is the real name, not a resolved IP from a prior hop.
+          let nextDisplayUrl: URL;
           try {
-            nextUrl = new URL(location, currentUrl);
+            nextDisplayUrl = new URL(location, currentDisplayUrl);
           } catch {
             cleanup();
             return error(`Invalid redirect location: "${location}"`);
           }
-          if (!["http:", "https:"].includes(nextUrl.protocol)) {
+          if (!["http:", "https:"].includes(nextDisplayUrl.protocol)) {
             cleanup();
             return error(
-              `Redirect to non-http(s) protocol blocked: "${nextUrl.protocol}"`,
+              `Redirect to non-http(s) protocol blocked: "${nextDisplayUrl.protocol}"`,
             );
           }
-          if (!allowPrivateHttp && isPrivateHost(nextUrl.hostname)) {
+          if (!allowPrivateHttp && isPrivateHost(nextDisplayUrl.hostname)) {
             cleanup();
             return error(
-              `Redirect to private/loopback address blocked ("${nextUrl.hostname}")`,
+              `Redirect to private/loopback address blocked ("${nextDisplayUrl.hostname}")`,
             );
           }
 
+          // Always set Host from the un-pinned display URL so a DNS failure
+          // doesn't leave the previous hop's Host header on the new request.
+          headers.host = nextDisplayUrl.hostname;
+
+          // Strip any userinfo (user:password@) from the URL sent to fetch —
+          // credentials must not be forwarded across redirect hops to new origins.
+          nextDisplayUrl.username = "";
+          nextDisplayUrl.password = "";
+
           // Pin the redirect hop to its resolved IP to close the TOCTOU window.
           // DNS failures fall through — fetch will report the error naturally.
+          const nextUrl = new URL(nextDisplayUrl.toString());
           try {
-            const { address: redirectIp } = await dns.lookup(nextUrl.hostname);
+            const { address: redirectIp } = await dns.lookup(
+              nextDisplayUrl.hostname,
+            );
             if (!allowPrivateHttp && isPrivateHost(redirectIp)) {
               cleanup();
               return error(
-                `Redirect hostname "${nextUrl.hostname}" resolves to a private address (${redirectIp}) — blocked`,
+                `Redirect hostname "${nextDisplayUrl.hostname}" resolves to a private address (${redirectIp}) — blocked`,
               );
             }
             // Mutate nextUrl in-place to pin to the resolved IP
             nextUrl.hostname = redirectIp.includes(":")
               ? `[${redirectIp}]`
               : redirectIp;
-            // Preserve original Host for virtual hosting / SNI
-            // Use lowercase "host" to stay consistent with the normalized headers above.
-            headers.host = new URL(location, currentUrl).hostname;
           } catch {
             // DNS failed — use un-pinned URL; fetch will fail naturally
           }
 
+          currentDisplayUrl = nextDisplayUrl.toString();
           currentUrl = nextUrl.toString();
           redirectCount++;
         }
@@ -306,6 +326,12 @@ export function createSendHttpRequestTool(options?: {
         if (contentLengthHeader !== null) {
           const declaredLength = Number(contentLengthHeader);
           if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+            // Drain (cancel) the response body so the socket is released promptly.
+            try {
+              await resp.body?.cancel();
+            } catch {
+              /* best-effort */
+            }
             return error(
               `Response Content-Length (${declaredLength} bytes) exceeds maxResponseBytes (${maxBytes} bytes). Increase maxResponseBytes or use a different approach to fetch this resource.`,
             );

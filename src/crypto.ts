@@ -17,8 +17,13 @@ import crypto from "node:crypto";
  * bytes" via timing.
  */
 export function timingSafeStringEqual(a: string, b: string): boolean {
-  const bA = Buffer.from(a);
-  const bB = Buffer.from(b);
+  // Encode as UTF-16LE (Node's native string representation) so the comparison
+  // is over the actual JS code units. UTF-8 encoding is NOT injective for
+  // ill-formed strings: two distinct strings containing lone surrogates can
+  // produce identical UTF-8 byte sequences (both surrogates → U+FFFD → same bytes),
+  // causing a false equality. UTF-16LE preserves each code unit exactly.
+  const bA = Buffer.from(a, "utf16le");
+  const bB = Buffer.from(b, "utf16le");
   const len = Math.max(bA.length, bB.length);
   const padA = Buffer.alloc(len);
   const padB = Buffer.alloc(len);

@@ -119,6 +119,7 @@ export function isEnabled(flagId: string): boolean {
     if (envLocked && flag?.isKillSwitch) {
       const frozen = FROZEN_KILL_SWITCH_ENV.get(flagId);
       if (frozen !== undefined) return frozen;
+      // biome-ignore lint/style/noNonNullAssertion: flag presence verified by the outer `flag !== undefined` guard
       return FLAG_VALUES.get(flagId)!;
     }
     // Dynamic env read for non-kill-switch flags (test-friendly).
@@ -127,6 +128,7 @@ export function isEnabled(flagId: string): boolean {
     if (envVal !== undefined) {
       return envVal === "1" || envVal.toLowerCase() === "true";
     }
+    // biome-ignore lint/style/noNonNullAssertion: flag presence verified by the outer `flag !== undefined` guard
     return FLAG_VALUES.get(flagId)!;
   }
 
@@ -358,9 +360,17 @@ loadFlags();
  * on most filesystems) don't trigger N reloads. Returns a close
  * handle. Tolerates the file or directory not yet existing.
  */
-export function watchFlags(): () => void {
+export function watchFlags(
+  opts: {
+    /** Override debounce window — useful in tests to avoid 100ms delays. */
+    debounceMs?: number;
+    /** Override the directory watcher — injectable for tests. */
+    watcherFn?: (dir: string, onChange: () => void) => () => void;
+  } = {},
+): () => void {
   const flagsPath = getFlagsPath();
   const flagsDir = join(flagsPath, "..");
+  const debounceMs = opts.debounceMs ?? 100;
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
@@ -376,7 +386,7 @@ export function watchFlags(): () => void {
         // loadFlags has its own try/catch for parse errors;
         // this catch is belt-and-suspenders for fs errors.
       }
-    }, 100);
+    }, debounceMs);
   };
 
   // Watch the directory rather than the file directly — flags.json may not
@@ -384,7 +394,9 @@ export function watchFlags(): () => void {
   // (rename-into-place) lose direct file watches. The helper falls back to
   // mtime polling when the dir is missing or fs.watch fails (Windows
   // network drives, WSL bind mounts), and notices when the dir later appears.
-  const stopWatcher = watchDirectoryWithFallback(flagsDir, () => {
+  const watchFn =
+    opts.watcherFn ?? ((dir, cb) => watchDirectoryWithFallback(dir, cb));
+  const stopWatcher = watchFn(flagsDir, () => {
     if (!stopped) reload();
   });
 

@@ -51,7 +51,10 @@ describe("watchDirectoryWithFallback — polling fallback", () => {
     // Create the directory + a file. Polling should detect on its next tick.
     require("node:fs").mkdirSync(missing);
     writeFileSync(path.join(missing, "a.txt"), "hi");
-    await new Promise((r) => setTimeout(r, 80));
+    const start0 = Date.now();
+    while (onChange.mock.calls.length === 0 && Date.now() - start0 < 2000) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
     expect(onChange).toHaveBeenCalled();
   });
 
@@ -77,14 +80,20 @@ describe("watchDirectoryWithFallback — polling fallback", () => {
 
     require("node:fs").mkdirSync(watchPath);
     writeFileSync(path.join(watchPath, "g.txt"), "v1");
-    await new Promise((r) => setTimeout(r, 60));
+    const start1 = Date.now();
+    while (onChange.mock.calls.length === 0 && Date.now() - start1 < 2000) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
     expect(onChange).toHaveBeenCalled();
     onChange.mockClear();
 
-    // Bump mtime on an existing file.
-    await new Promise((r) => setTimeout(r, 20)); // ensure mtime resolution
+    // Bump mtime on an existing file — wait for mtime resolution then poll.
+    await new Promise((r) => setTimeout(r, 25));
     writeFileSync(path.join(watchPath, "g.txt"), "v2");
-    await new Promise((r) => setTimeout(r, 60));
+    const start2 = Date.now();
+    while (onChange.mock.calls.length === 0 && Date.now() - start2 < 2000) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
     expect(onChange).toHaveBeenCalled();
   });
 
@@ -108,8 +117,12 @@ describe("watchDirectoryWithFallback — polling fallback", () => {
     });
     stops.push(stop);
     writeFileSync(path.join(tmp, "new.txt"), "x");
-    // fs.watch fires within ~10ms on local filesystems
-    await new Promise((r) => setTimeout(r, 50));
+    // Poll for the event rather than sleeping a fixed 50ms — fs.watch event
+    // delivery is OS-scheduled and can be delayed under parallel CI load.
+    const start = Date.now();
+    while (onChange.mock.calls.length === 0 && Date.now() - start < 3000) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
     expect(onChange).toHaveBeenCalled();
   });
 });

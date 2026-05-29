@@ -10,6 +10,8 @@ import { basename, extname, join } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { recordRecipeRun } from "./activationMetrics.js";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
+import { loadConfig } from "./patchworkConfig.js";
+import { getConfigDisabledNames } from "./recipes/disabledMarkers.js";
 import { summariseHalts } from "./recipes/haltCategory.js";
 import { summariseJudgments } from "./recipes/judgeSummary.js";
 import type { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
@@ -376,6 +378,15 @@ export class RecipeOrchestration {
       if (!match) {
         return { ok: false, error: "not_found" };
       }
+      // Check legacy cfg.recipes.disabled list (install-dir marker handled by findWebhookRecipe).
+      try {
+        const configDisabled = getConfigDisabledNames(loadConfig());
+        if (configDisabled.has(match.name)) {
+          return { ok: false, error: "recipe_disabled" };
+        }
+      } catch {
+        /* non-fatal — fail open */
+      }
       // #605: defense-in-depth — webhookFn previously trusted whatever
       // name the on-disk recipe declared. A legacy/tampered recipe
       // with a slashy or oversized name would propagate into
@@ -521,6 +532,15 @@ export class RecipeOrchestration {
           ok: false,
           error: `Recipe "${name}" not found in ${recipesDir}`,
         };
+      }
+      // Check legacy cfg.recipes.disabled list for top-level YAML recipes.
+      try {
+        const configDisabled = getConfigDisabledNames(loadConfig());
+        if (configDisabled.has(name)) {
+          return { ok: false, error: "recipe_disabled" };
+        }
+      } catch {
+        /* non-fatal — fail open */
       }
       // Merge declared trigger.inputs[].default values with caller-provided vars.
       // Caller-provided vars always win. This lets dashboard "Run" buttons that
@@ -1422,7 +1442,15 @@ function checkRequiredVars(
       if (!item || typeof item !== "object") continue;
       const name = (item as { name?: unknown }).name;
       const required = (item as { required?: unknown }).required;
-      if (typeof name !== "string" || !required) continue;
+      // Guard against required:"false" (string) being truthy — treat any
+      // non-true-boolean and the string "false"/"0" as not required.
+      const isRequired =
+        required === true ||
+        (typeof required === "string" &&
+          required !== "false" &&
+          required !== "0" &&
+          required !== "");
+      if (typeof name !== "string" || !isRequired) continue;
       const val = vars?.[name];
       if (val === undefined || val === null || String(val).trim() === "")
         missing.push(name);

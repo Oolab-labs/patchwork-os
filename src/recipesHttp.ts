@@ -1383,8 +1383,8 @@ export function findWebhookRecipe(
   } catch {
     return null;
   }
-  // Pass 1 — top-level files (legacy)
-  for (const f of entries) {
+  // Pass 1 — top-level files (legacy) — sort for deterministic first-match
+  for (const f of [...entries].sort()) {
     const isYaml = f.endsWith(".yaml") || f.endsWith(".yml");
     const isJson = f.endsWith(".json") && !f.endsWith(".permissions.json");
     if (!isYaml && !isJson) continue;

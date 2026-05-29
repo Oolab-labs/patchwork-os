@@ -76,4 +76,14 @@ describe("timingSafeStringEqual", () => {
     expect(timingSafeStringEqual("\0", "\0")).toBe(true);
     expect(timingSafeStringEqual("\0\0", "\0")).toBe(false);
   });
+
+  it("LOW: lone surrogate strings that share UTF-8 bytes must not compare equal", () => {
+    // Bug: Buffer.from(s) (UTF-8) maps both \uD800 and \uDC00 to U+FFFD (EF BF BD),
+    // causing timingSafeStringEqual("\uD800", "\uDC00") to return true.
+    // Fix: encode as UTF-16LE which preserves distinct code units.
+    expect(timingSafeStringEqual("\uD800", "\uDC00")).toBe(false);
+    expect(timingSafeStringEqual("\uD800", "\uD800")).toBe(true);
+    expect(timingSafeStringEqual("\uDFFF", "\uDFFF")).toBe(true);
+    expect(timingSafeStringEqual("\uD800", "\uDFFF")).toBe(false);
+  });
 });

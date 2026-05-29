@@ -90,6 +90,7 @@ export function buildDependencyGraph(
 
   const topologicalOrder: string[] = [];
   while (queue.length > 0) {
+    // biome-ignore lint/style/noNonNullAssertion: queue.length > 0 guard ensures shift() is defined
     const stepId = queue.shift()!;
     topologicalOrder.push(stepId);
 
@@ -201,14 +202,16 @@ export async function executeWithDependencies(
     }
   }
 
-  // Execute with concurrency limit
+  // Execute with concurrency limit (clamp to 1 so maxConcurrency:0 or negative never busy-loops)
+  const concurrency = Math.max(1, options.maxConcurrency);
   const executing: Promise<void>[] = [];
   const queue = [...graph.topologicalOrder];
 
   async function processQueue(): Promise<void> {
     while (queue.length > 0 || executing.length > 0) {
       // Start new steps if under concurrency limit
-      while (executing.length < options.maxConcurrency && queue.length > 0) {
+      while (executing.length < concurrency && queue.length > 0) {
+        // biome-ignore lint/style/noNonNullAssertion: queue.length > 0 guard ensures shift() is defined
         const stepId = queue.shift()!;
         // C2: push before attaching .then() so indexOf is never -1
         let resolveSlot!: () => void;

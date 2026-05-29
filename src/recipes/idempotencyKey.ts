@@ -226,6 +226,7 @@ function assertSafeLedgerDir(dir: string): void {
 
 export class WriteEffectLedger {
   private readonly cache = new Map<string, string | null>();
+  private readonly inFlight = new Map<string, Promise<string | null>>();
   private readonly disk: DiskLedgerOptions | null;
   private readonly file: string | null;
 
@@ -278,6 +279,36 @@ export class WriteEffectLedger {
         recordedAt: Date.now(),
       });
     }
+  }
+
+  /**
+   * Atomically check cache + in-flight map, then execute `fn` at most once
+   * per key. Concurrent callers with the same key share a single Promise —
+   * fixing the TOCTOU window that existed between `has()` and `record()`.
+   * Failures are not cached so retry-after-failure still re-executes.
+   */
+  getOrExecute(
+    key: string,
+    fn: () => Promise<string | null>,
+  ): Promise<string | null> {
+    if (this.cache.has(key)) {
+      return Promise.resolve(this.cache.get(key) ?? null);
+    }
+    const existing = this.inFlight.get(key);
+    if (existing) return existing;
+    const work = fn().then(
+      (result) => {
+        this.record(key, result);
+        this.inFlight.delete(key);
+        return result;
+      },
+      (err: unknown) => {
+        this.inFlight.delete(key);
+        throw err;
+      },
+    );
+    this.inFlight.set(key, work);
+    return work;
   }
 
   /** Test-only inspection of the current key set. */

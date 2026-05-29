@@ -112,7 +112,7 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
         // recipe and it never fires. Mirrors the parse path in
         // src/recipes/scheduler.ts:parseSchedule.
         const at = trigger.at.trim();
-        const isInterval = /^@every\s+\d+\s*(ms|s|m|h)$/i.test(at);
+        const isInterval = /^@every\s+[1-9]\d*\s*(ms|s|m|h)$/i.test(at);
         const isCron5 = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+$/.test(at);
         if (!isInterval && !isCron5) {
           issues.push({

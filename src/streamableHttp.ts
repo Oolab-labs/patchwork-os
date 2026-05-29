@@ -163,11 +163,33 @@ class HttpAdapter extends EventEmitter {
     return result;
   }
 
+  /** Detach only if the given response is still the active SSE stream.
+   *  Prevents a stale close-handler from a superseded GET tearing down the new stream. */
+  detachSSEIfCurrent(res: http.ServerResponse): void {
+    if (this.sseRes === res) {
+      this.attachSSE(null);
+    }
+  }
+
   /** Attach (or detach, when null) a GET /mcp SSE response for server-initiated notifications. */
   attachSSE(res: http.ServerResponse | null): void {
     if (this.sseHeartbeatTimer) {
       clearInterval(this.sseHeartbeatTimer);
       this.sseHeartbeatTimer = null;
+    }
+    // If a previous SSE stream is being superseded by a new one, close the old
+    // response so it doesn't leak a pending socket.
+    if (
+      res !== null &&
+      this.sseRes &&
+      this.sseRes !== res &&
+      !this.sseRes.writableEnded
+    ) {
+      try {
+        this.sseRes.end();
+      } catch {
+        /* already closed */
+      }
     }
     this.sseRes = res;
     if (res) {
@@ -634,6 +656,7 @@ export class StreamableHttpHandler {
       if (sessionIsNew) {
         this.destroySession(session.id);
         res.removeHeader("Mcp-Session-Id");
+        res.removeHeader("Mcp-Session-Token");
       }
       session.inFlight = Math.max(0, session.inFlight - 1);
       res.writeHead(504, { "Content-Type": "application/json" });
@@ -705,8 +728,11 @@ export class StreamableHttpHandler {
     session.lastActivity = Date.now();
     session.lastClientActivity = session.lastActivity;
 
+    // Guard: only detach if THIS response is still the active SSE stream.
+    // Without the guard, a stale close-handler from a superseded GET would
+    // call attachSSE(null) and tear down the live replacement stream.
     req.on("close", () => {
-      session.adapter.attachSSE(null); // detach SSE stream on client disconnect
+      session.adapter.detachSSEIfCurrent(res);
     });
   }
 

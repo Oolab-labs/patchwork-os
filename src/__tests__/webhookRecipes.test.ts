@@ -170,6 +170,28 @@ describe("findWebhookRecipe", () => {
   });
 });
 
+describe("findWebhookRecipe — L6: deterministic first-match", () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "patchwork-webhook-det-"));
+  });
+  afterEach(() => rmSync(tmp, { recursive: true, force: true }));
+
+  it("returns the alphabetically-first matching recipe when multiple share a path", () => {
+    // Bug: readdirSync order is filesystem-dependent; we now sort entries
+    // before iterating so the first match is stable across platforms.
+    const yaml = (name: string) =>
+      `name: ${name}\ntrigger:\n  type: webhook\n  path: /shared\nsteps: []\n`;
+    writeFileSync(path.join(tmp, "zebra.yaml"), yaml("zebra"));
+    writeFileSync(path.join(tmp, "aardvark.yaml"), yaml("aardvark"));
+    writeFileSync(path.join(tmp, "mink.yaml"), yaml("mink"));
+
+    const match = findWebhookRecipe(tmp, "/shared");
+    // After sorting by filename, "aardvark.yaml" comes first
+    expect(match?.name).toBe("aardvark");
+  });
+});
+
 describe("loadRecipePrompt", () => {
   let tmp: string;
 

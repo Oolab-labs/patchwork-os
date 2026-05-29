@@ -205,6 +205,119 @@ describe("RecipeOrchestration", () => {
     }
   });
 
+  it('L5: runRecipeFn — required:"false" (string) must not block execution', async () => {
+    // Bug: `!required` check treated the string "false" as truthy → vars
+    // with required:"false" were incorrectly treated as mandatory.
+    const tmpDir = mkdtempSync(join(tmpdir(), "ro-test-"));
+    const ymlPath = join(tmpDir, "opt.yaml");
+    writeFileSync(
+      ymlPath,
+      'trigger:\n  inputs:\n    - name: optVar\n      required: "false"\nsteps: []\n',
+    );
+    try {
+      const { loadRecipePrompt, findYamlRecipePath } = await import(
+        "../recipesHttp.js"
+      );
+      vi.mocked(loadRecipePrompt).mockReturnValue(null as never);
+      vi.mocked(findYamlRecipePath).mockReturnValue(ymlPath as never);
+
+      const fireStub = vi.fn().mockResolvedValue({ ok: true, taskId: "y99" });
+      const recipeOrch = makeRecipeOrchestrator({ fire: fireStub });
+      const mockOrchestrator = { enqueue: vi.fn(), runAndWait: vi.fn() };
+
+      const server = makeServer();
+      const ro = new RecipeOrchestration({
+        server,
+        getOrchestrator: () => mockOrchestrator,
+        recipeOrchestrator: recipeOrch,
+        recipeRunLog: null,
+        workdir: "/tmp/ws",
+        logger: {},
+      });
+      ro.wireServerFns();
+
+      // No vars provided — should not be rejected (optVar has required:"false")
+      const result = await (server.runRecipeFn as any)("opt");
+      expect(result).not.toMatchObject({
+        error: expect.stringContaining("missing_required"),
+      });
+      expect(fireStub).toHaveBeenCalled();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("M3: runRecipeFn — YAML recipe in cfg.recipes.disabled returns recipe_disabled error", async () => {
+    const { loadConfig } = await import("../patchworkConfig.js");
+    vi.mocked(loadConfig).mockReturnValue({
+      recipes: { disabled: ["secret-recipe"] },
+    } as never);
+
+    const { loadRecipePrompt, findYamlRecipePath } = await import(
+      "../recipesHttp.js"
+    );
+    vi.mocked(loadRecipePrompt).mockReturnValue(null as never);
+    vi.mocked(findYamlRecipePath).mockReturnValue(
+      "/r/secret-recipe.yaml" as never,
+    );
+
+    const fireStub = vi.fn().mockResolvedValue({ ok: true });
+    const recipeOrch = makeRecipeOrchestrator({ fire: fireStub });
+    const mockOrchestrator = { enqueue: vi.fn(), runAndWait: vi.fn() };
+    const server = makeServer();
+    const ro = new RecipeOrchestration({
+      server,
+      getOrchestrator: () => mockOrchestrator,
+      recipeOrchestrator: recipeOrch,
+      recipeRunLog: null,
+      workdir: "/tmp/ws",
+      logger: {},
+    });
+    ro.wireServerFns();
+
+    const result = await (server.runRecipeFn as any)("secret-recipe");
+    expect(result).toMatchObject({ ok: false, error: "recipe_disabled" });
+    expect(fireStub).not.toHaveBeenCalled();
+
+    // Restore mock to empty config for other tests
+    vi.mocked(loadConfig).mockReturnValue({} as never);
+  });
+
+  it("M3: webhookFn — recipe in cfg.recipes.disabled is not fired", async () => {
+    const { loadConfig } = await import("../patchworkConfig.js");
+    vi.mocked(loadConfig).mockReturnValue({
+      recipes: { disabled: ["hooked"] },
+    } as never);
+
+    const { findWebhookRecipe } = await import("../recipesHttp.js");
+    vi.mocked(findWebhookRecipe).mockReturnValue({
+      name: "hooked",
+      path: "/hooks/hooked",
+      filePath: "/r/hooked.yaml",
+      format: "yaml",
+    } as never);
+
+    const fireStub = vi.fn().mockResolvedValue({ ok: true });
+    const recipeOrch = makeRecipeOrchestrator({ fire: fireStub });
+    const mockOrchestrator = { enqueue: vi.fn(), runAndWait: vi.fn() };
+    const server = makeServer();
+    const ro = new RecipeOrchestration({
+      server,
+      getOrchestrator: () => mockOrchestrator,
+      recipeOrchestrator: recipeOrch,
+      recipeRunLog: null,
+      workdir: "/tmp/ws",
+      logger: {},
+    });
+    ro.wireServerFns();
+
+    const result = await (server.webhookFn as any)("/hooks/hooked", {});
+    expect(result).toMatchObject({ ok: false, error: "recipe_disabled" });
+    expect(fireStub).not.toHaveBeenCalled();
+
+    vi.mocked(loadConfig).mockReturnValue({} as never);
+  });
+
   it("wireServerFns() — runsFn returns empty array when no runLog", () => {
     const server = makeServer();
     const ro = new RecipeOrchestration({
