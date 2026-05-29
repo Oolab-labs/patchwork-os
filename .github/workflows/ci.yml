@@ -18,12 +18,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Node 20 reached EOL April 2026; removed from GitHub-hosted runners Sept 2026.
         os: [ubuntu-latest, windows-latest]
-        node-version: [20, 22]
-        exclude:
-          # Run Windows on Node 22 only to keep matrix lean while coverage is new
-          - os: windows-latest
-            node-version: 20
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -295,12 +292,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Node 20 reached EOL April 2026; removed from GitHub-hosted runners Sept 2026.
         os: [ubuntu-latest, windows-latest]
-        node-version: [20, 22]
-        exclude:
-          # Match the bridge `ci` job: Windows on Node 22 only.
-          - os: windows-latest
-            node-version: 20
+        node-version: [22]
     defaults:
       run:
         working-directory: vscode-extension
