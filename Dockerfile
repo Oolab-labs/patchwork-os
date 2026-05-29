@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM node:20-alpine AS builder
+ARG GITHUB_TOKEN
 WORKDIR /app
 COPY package*.json tsconfig.json ./
 RUN npm ci
