@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 ARG GITHUB_TOKEN
 WORKDIR /app
 COPY package*.json tsconfig.json ./
@@ -7,7 +7,7 @@ RUN npm ci
 COPY src/ ./src/
 RUN npm run build && npm prune --omit=dev
 
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 RUN apk add --no-cache tini ctags
 RUN npm install -g typescript-language-server typescript
 RUN addgroup -S bridge && adduser -S bridge -G bridge
