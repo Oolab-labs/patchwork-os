@@ -1,3 +1,4 @@
+apiVersion: patchwork.sh/v1
 name: sentry-to-linear
 description: |
   Fetch a Sentry issue, enrich its stack trace with git blame (via

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   ChainedRecipe,
+  ChainedStep,
   ExecutionDeps,
   RunOptions,
 } from "../chainedRunner.js";
@@ -227,6 +228,76 @@ describe("executeChainedStep", () => {
     );
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/tool error/);
+  });
+
+  it("H2: agent returning [agent step failed:...] is reported as failure", async () => {
+    const reg = createOutputRegistry();
+    const failDeps = {
+      ...noopDeps,
+      executeAgent: vi
+        .fn()
+        .mockResolvedValue("[agent step failed: claude exited 1]"),
+    };
+    const result = await executeChainedStep(
+      {
+        registry: reg,
+        step: { id: "s", agent: { prompt: "do something" } },
+        options: baseOptions,
+        recipe: { name: "r", steps: [] },
+        depth: 0,
+      },
+      failDeps,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/agent step failed/);
+  });
+
+  it("H2: tool returning {ok:false,error} is reported as failure", async () => {
+    const reg = createOutputRegistry();
+    const failDeps = {
+      ...noopDeps,
+      executeTool: vi
+        .fn()
+        .mockResolvedValue(
+          JSON.stringify({ ok: false, error: "permission denied" }),
+        ),
+    };
+    const result = await executeChainedStep(
+      {
+        registry: reg,
+        step: { id: "s", tool: "some_tool" },
+        options: baseOptions,
+        recipe: { name: "r", steps: [] },
+        depth: 0,
+      },
+      failDeps,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/permission denied/);
+  });
+
+  it("M2: step with expect.equals that fails is reported as failure", async () => {
+    const reg = createOutputRegistry();
+    const failDeps = {
+      ...noopDeps,
+      executeTool: vi.fn().mockResolvedValue("actual_output"),
+    };
+    const result = await executeChainedStep(
+      {
+        registry: reg,
+        step: {
+          id: "s",
+          tool: "t",
+          expect: { equals: "expected_output" },
+        } as ChainedStep,
+        options: baseOptions,
+        recipe: { name: "r", steps: [] },
+        depth: 0,
+      },
+      failDeps,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/expect/i);
   });
 
   it("returns failure for step with no tool/agent/recipe", async () => {
@@ -727,6 +798,28 @@ describe("expandParallelSteps", () => {
     expect(expanded).toHaveLength(2);
     expect(expanded[0]?.id).toBe("grp_0");
     expect(expanded[1]?.id).toBe("grp_1");
+  });
+
+  it("M1: duplicate child ids across two parallel groups are detected", () => {
+    const steps: ChainedStep[] = [
+      {
+        id: "grp1",
+        parallel: [
+          { id: "shared", tool: "t1" },
+          { id: "grp1_b", tool: "t2" },
+        ],
+      } as ChainedStep,
+      {
+        id: "grp2",
+        parallel: [
+          { id: "shared", tool: "t3" },
+          { id: "grp2_b", tool: "t4" },
+        ],
+      } as ChainedStep,
+    ];
+    expect(() => expandParallelSteps(steps)).toThrow(
+      /duplicate.*id|id.*duplicate/i,
+    );
   });
 
   it("parallel group executes both steps end-to-end", async () => {

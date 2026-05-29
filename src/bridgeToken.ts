@@ -62,7 +62,12 @@ function normalizeTokenFile(value: unknown): BridgeTokenFile | null {
   }
 
   const token = (value as { token?: unknown }).token;
-  if (typeof token !== "string" || !/^[0-9a-f-]{36}$/.test(token)) {
+  if (
+    typeof token !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+      token,
+    )
+  ) {
     return null;
   }
 
@@ -154,7 +159,7 @@ export function loadOrCreateBridgeToken(configDir: string): string {
   try {
     // Ensure ide/ directory and .gitignore exist
     if (!fs.existsSync(ideDir)) {
-      fs.mkdirSync(ideDir, { recursive: true });
+      fs.mkdirSync(ideDir, { recursive: true, mode: 0o700 });
     }
     ensureGitignore(ideDir);
 

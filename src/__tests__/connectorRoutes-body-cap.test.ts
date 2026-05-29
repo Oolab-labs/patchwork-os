@@ -62,6 +62,68 @@ afterEach(async () => {
   port = 0;
 });
 
+// Helper: unauthenticated GET (no Authorization header)
+function getNoAuth(path: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        method: "GET",
+        path,
+      },
+      (res) => {
+        let body = "";
+        res.on("data", (chunk: Buffer) => {
+          body += chunk.toString();
+        });
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+describe("HIGH: OAuth callbacks must be reachable without bearer token (vendor redirect has no Patchwork token)", () => {
+  // These connectors are authorization-code OAuth flows. The vendor redirects
+  // the user's browser to /connections/<vendor>/callback with ?code=&state= and
+  // NO Patchwork bearer token. If the callback is behind the auth gate the flow
+  // returns 401 and OAuth onboarding fails completely.
+  //
+  // The correct response for a callback with a missing/invalid state is
+  // connector-specific (redirect with error, JSON error, etc.) but must NOT be
+  // a bearer-auth 401.
+
+  it("/connections/discord/callback returns something other than 401 when called without auth", async () => {
+    const { status } = await getNoAuth(
+      "/connections/discord/callback?code=test&state=test",
+    );
+    expect(status).not.toBe(401);
+  });
+
+  it("/connections/asana/callback returns something other than 401 when called without auth", async () => {
+    const { status } = await getNoAuth(
+      "/connections/asana/callback?code=test&state=test",
+    );
+    expect(status).not.toBe(401);
+  });
+
+  it("/connections/gitlab/callback returns something other than 401 when called without auth", async () => {
+    const { status } = await getNoAuth(
+      "/connections/gitlab/callback?code=test&state=test",
+    );
+    expect(status).not.toBe(401);
+  });
+
+  it("/connections/github/callback still reachable (sanity — was already in public dispatcher)", async () => {
+    const { status } = await getNoAuth(
+      "/connections/github/callback?code=test&state=test",
+    );
+    expect(status).not.toBe(401);
+  });
+});
+
 describe("/connections/<vendor>/connect — body cap", () => {
   it("rejects a 32 KB body to /connections/notion/connect with 413 (security audit, 2026-05-07)", async () => {
     // Cap is 16 KB. 32 KB body should hit 413 before the notion module

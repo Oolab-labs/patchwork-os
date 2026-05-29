@@ -94,40 +94,45 @@ describe("FileLock", () => {
     );
   });
 
-  it("third waiter proceeds immediately after second waiter times out (cascade fix)", async () => {
-    // Regression test: before the fix, a timed-out waiter (B) left its `next`
-    // promise unsettled, forcing any subsequent waiter (C) to burn its entire
-    // timeout window instead of proceeding once B threw.
+  it("HIGH: waiter starting after a timed-out B must chain behind B's slot, not bypass A", async () => {
+    // Bug: B times out → calls release() immediately → locks[path] deleted →
+    // C (arriving after B's timeout) sees no lock and chains from Promise.resolve()
+    // → C acquires immediately while A is still holding.
+    //
+    // Fix: B's timedOut path keeps locks[path] = nextB in the map (via bridge),
+    // so C chains from nextB and only acquires after A releases.
     const lock = new FileLock(50); // 50ms timeout
 
-    // A holds the lock forever
-    await lock.acquire("/tmp/cascade.ts");
+    // A holds the lock
+    const releaseA = await lock.acquire("/tmp/mutex.ts");
 
-    // B queues behind A and will time out (A never releases)
-    const bResult = lock.acquire("/tmp/cascade.ts").then(
-      () => "acquired",
-      () => "timed-out",
+    // B times out — wait for it to fully settle
+    await lock.acquire("/tmp/mutex.ts").then(
+      () => {},
+      () => {},
     );
 
-    // C queues behind B
-    // With the fix: B times out AND resolves its tail promise, so C sees B's
-    // slot as free and acquires the lock shortly after B throws.
-    // Without the fix: C would have to wait another full 50ms on its own timer.
-    const cStart = Date.now();
-    const cResult = lock.acquire("/tmp/cascade.ts").then(
-      (release) => {
-        release();
-        return "acquired";
+    // C starts AFTER B has timed out (critical: after, not concurrent)
+    // BUG:  locks[path] was deleted → C chains from Promise.resolve() → immediate
+    // FIX:  locks[path] still has nextB → C chains from nextB → waits for A
+    let cAcquiredEarly = false;
+    const cPromise = lock.acquire("/tmp/mutex.ts").then(
+      (rel) => {
+        cAcquiredEarly = true;
+        rel();
       },
-      () => "timed-out",
+      () => {},
     );
 
-    expect(await bResult).toBe("timed-out");
-    expect(await cResult).toBe("acquired");
+    // Flush microtasks — with the bug, C fires synchronously
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(cAcquiredEarly).toBe(false);
 
-    // C should have resolved very quickly after B's timeout fired — well within
-    // a second 50ms window (give generous 200ms for CI scheduling jitter).
-    expect(Date.now() - cStart).toBeLessThan(200);
+    // Release A — C should now get the lock via the bridge
+    releaseA();
+    await cPromise;
+    expect(cAcquiredEarly).toBe(true); // got it AFTER A released, not before
   });
 
   it("second waiter gets lock after first releases", async () => {
@@ -188,6 +193,50 @@ describe("FileLock.tryAcquire", () => {
     (r2 as { release: () => void }).release();
   });
 
+  it("MEDIUM: re-entry release must not delete the lock map entry, allowing a new waiter to bypass the holder", async () => {
+    // Bug: re-entry creates a new promise and overwrites locks[path]. When the
+    // re-entry releases, it deletes locks[path]. A subsequent acquire() caller
+    // then sees locks[path] = undefined, chains from Promise.resolve(), and
+    // gets the lock immediately — while r1 is still active.
+    const lock = new FileLock(500);
+
+    // Session-A holds the lock
+    const r1 = lock.tryAcquire("/tmp/reentry.ts", "session-A") as {
+      release: () => void;
+    };
+
+    // Session-A re-enters then immediately releases
+    const r2 = lock.tryAcquire("/tmp/reentry.ts", "session-A") as {
+      release: () => void;
+    };
+    r2.release();
+
+    // NEW waiter arrives AFTER re-entry was released
+    // Bug: locks[path] was deleted, so this waiter chains from Promise.resolve()
+    // and gets the lock immediately while r1 still holds it.
+    let r1ReleasedBeforeWaiter = false;
+    let waiterFired = false;
+    const waiterP = lock.acquire("/tmp/reentry.ts").then((rel) => {
+      // If r1 released before this callback, the flag would be set
+      waiterFired = true;
+      rel();
+    });
+
+    // Flush microtasks — with the bug, the new waiter fires immediately
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The new waiter must NOT have acquired while r1 is still held
+    expect(waiterFired).toBe(false);
+
+    r1ReleasedBeforeWaiter = true;
+    r1.release();
+    await waiterP;
+    // waiterFired should be true now (it acquired after r1 released)
+    expect(waiterFired).toBe(true);
+    expect(r1ReleasedBeforeWaiter).toBe(true); // sanity: r1 was released first
+  });
+
   it("grants lock after previous holder releases", () => {
     const lock = new FileLock();
     const r1 = lock.tryAcquire("/tmp/x.ts", "session-A") as {
@@ -208,5 +257,43 @@ describe("FileLock.tryAcquire", () => {
     expect("release" in r2).toBe(true);
     r1.release();
     (r2 as { release: () => void }).release();
+  });
+
+  it("LOW: acquire() release must not wipe a holders entry set by a subsequent tryAcquire", async () => {
+    // Bug: acquire()'s wrappedRelease unconditionally called holders.delete(path).
+    // If a tryAcquire had set holders[path] after acquire() acquired, the
+    // acquire() release would delete that tryAcquire-set entry — making a
+    // subsequent contention check report "unknown-session" instead of the real holder.
+    const lock = new FileLock();
+
+    // acquire() takes the lock (doesn't set holders)
+    const releaseAcquire = await lock.acquire("/tmp/low.ts");
+
+    // While acquire() holds, tryAcquire from session-B is blocked
+    const tryResult = lock.tryAcquire("/tmp/low.ts", "session-B");
+    expect("lockedBySession" in tryResult).toBe(true);
+    // The holder is reported as "unknown-session" (acquire doesn't register)
+    expect((tryResult as { lockedBySession: string }).lockedBySession).toBe(
+      "unknown-session",
+    );
+
+    // Release via acquire — must NOT delete holders[path] for session-B if
+    // session-B happened to acquire right after
+    releaseAcquire();
+
+    // Now session-B can take the lock via tryAcquire
+    const r2 = lock.tryAcquire("/tmp/low.ts", "session-B") as {
+      release: () => void;
+    };
+    expect("release" in r2).toBe(true);
+
+    // A competing session-C must see session-B as the holder
+    const r3 = lock.tryAcquire("/tmp/low.ts", "session-C");
+    expect("lockedBySession" in r3).toBe(true);
+    expect((r3 as { lockedBySession: string }).lockedBySession).toBe(
+      "session-B",
+    );
+
+    r2.release();
   });
 });

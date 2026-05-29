@@ -50,10 +50,12 @@ export class FileLock {
       if (holder !== sessionId) {
         return { lockedBySession: holder };
       }
-      // Same session already holds the lock — grant re-entry. The new promise
-      // chains behind the existing one; the caller gets its own release handle.
+      // Same-session re-entry: return a no-op release so we don't overwrite
+      // the live lock-tail promise, which would break the FIFO chain for any
+      // subsequent acquire() caller that chains behind it.
+      return { release: () => {} };
     }
-    // Lock is free (or same-session re-entry) — grant it synchronously.
+    // Lock is free — grant it synchronously.
     let release!: () => void;
     const next = new Promise<void>((r) => {
       release = r;
@@ -92,18 +94,23 @@ export class FileLock {
       await Promise.race([prev, timeout]);
       clearTimeout(timeoutId);
       if (timedOut) {
-        // Resolve next before throwing so any waiter chained behind us is not
-        // blocked for another full timeout cycle — they get the lock immediately
-        // (even though we do no work) and proceed normally.
-        release();
-        if (this.locks.get(path) === next) this.locks.delete(path);
+        // Bridge: resolve our slot only after the previous holder actually
+        // releases, so any waiter already chained behind us (awaiting `next`)
+        // gets the lock in FIFO order rather than immediately.
+        // Do NOT delete locks[path] here — the bridge needs it to stay so
+        // a new caller who arrives before prev resolves chains correctly.
+        void prev.then(() => {
+          release();
+          if (this.locks.get(path) === next) this.locks.delete(path);
+        });
         throw new Error(
           `Timed out waiting for file lock on "${path}" after ${this.timeoutMs / 1000}s — another session may be editing the same file`,
         );
       }
     } catch (err) {
       clearTimeout(timeoutId);
-      if (this.locks.get(path) === next) this.locks.delete(path);
+      // Do not delete the lock when timedOut — the bridge above will clean up.
+      if (!timedOut && this.locks.get(path) === next) this.locks.delete(path);
       throw err;
     }
 
@@ -114,12 +121,14 @@ export class FileLock {
       throw new Error("Aborted before lock acquired");
     }
 
-    // Clean up map entry after release so it doesn't grow forever
+    // Clean up map entry after release so it doesn't grow forever.
+    // acquire() does not own the holders map (only tryAcquire writes it),
+    // so we must not unconditionally delete a holders entry that a
+    // concurrent tryAcquire may have written.
     const wrappedRelease = () => {
       signal?.removeEventListener("abort", onAbort);
       release();
       if (this.locks.get(path) === next) this.locks.delete(path);
-      this.holders.delete(path);
     };
 
     // If the holder is aborted while holding the lock, release automatically

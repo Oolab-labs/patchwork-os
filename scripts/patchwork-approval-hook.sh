@@ -81,6 +81,13 @@ if [[ "$permission_mode" == "bypassPermissions" || "$permission_mode" == "auto" 
   exit 0
 fi
 
+# MCP tools are already gated by CC's allow list. Routing them through the
+# bridge approval queue is circular (especially bridge introspection tools)
+# and adds latency with no security benefit.
+if [[ "$tool_name" == mcp__* ]]; then
+  exit 0
+fi
+
 # Find bridge port + token.
 port="${PATCHWORK_BRIDGE_PORT:-}"
 token=""

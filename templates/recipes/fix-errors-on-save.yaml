@@ -1,0 +1,71 @@
+apiVersion: patchwork.sh/v1
+name: fix-errors-on-save
+description: |
+  On every save of a .ts/.tsx file, check for TypeScript errors. If errors exist,
+  an agent reads the broken code, navigates to the relevant type definitions, and
+  applies a minimal targeted fix — without refactoring surrounding code.
+
+  Requires: bridge running with --driver subprocess so the agent subprocess has
+  MCP access to getBufferContent, goToDefinition, getHover, getDiagnostics, editText.
+
+trigger:
+  type: on_file_save
+  glob: "**/*.{ts,tsx}"
+
+steps:
+  - tool: diagnostics.get
+    uri: "{{file}}"
+    filter: error
+    into: errors
+
+  - agent:
+      prompt: |
+        A TypeScript file was just saved: {{file}}
+
+        Current errors reported by the language server:
+        {{errors}}
+
+        If there are NO errors (empty list above), output nothing (empty string) and stop.
+
+        Otherwise, fix the errors by following these steps IN ORDER:
+
+        ## Step 1 — Read the file
+        Call getBufferContent for {{file}} to see the current code. Note the line
+        numbers of each error.
+
+        ## Step 2 — Understand the types involved
+        For each error, use getHover at the error location to read the type information.
+        If the error references a symbol whose definition you need (e.g. "Property X does
+        not exist on type Y"), call goToDefinition on that symbol and then getBufferContent
+        on the definition file to read the actual shape of the type.
+
+        ## Step 3 — Apply a minimal fix
+        Call editText to fix each error at its exact line. Rules:
+        - Fix only what the error points to — do not refactor surrounding code
+        - If fixing one error would require restructuring multiple files, stop and report
+          why instead of applying a partial fix
+        - Prefer adding a missing property/cast over restructuring the type
+
+        ## Step 4 — Verify
+        Call getDiagnostics for {{file}} after your edits. If new errors appeared, revert
+        your change with another editText call and report the failure.
+
+        ## Step 5 — Report
+        Output a concise markdown summary:
+        ```
+        ## fix-errors-on-save — {{file}}
+        **Errors found:** <count>
+        **Fixed:** <list each fix: "line N: <what was wrong> → <what was done>">
+        **Remaining:** <count, or "none">
+        **Skipped:** <any errors you couldn't safely fix, and why>
+        ```
+      driver: claude-code
+      model: claude-haiku-4-5-20251001
+      into: result
+
+  # Only append to the inbox when fixes were applied. When no errors exist
+  # the agent outputs nothing (empty string) and {{result}} is empty → falsy → skip.
+  - tool: file.append
+    path: ~/.patchwork/inbox/auto-fixes.md
+    content: "{{result}}\n\n"
+    when: "{{result}}"

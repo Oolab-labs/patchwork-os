@@ -85,7 +85,11 @@ export function tryHandleOAuthRoute(
     (req.method === "GET" || req.method === "POST")
   ) {
     if (deps.oauthServer) {
-      deps.oauthServer.handleAuthorize(req, res);
+      Promise.resolve(deps.oauthServer.handleAuthorize(req, res)).catch(
+        (err) => {
+          respond500(res, err);
+        },
+      );
     } else {
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("OAuth not configured");

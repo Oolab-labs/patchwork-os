@@ -48,6 +48,8 @@ import { validateSafeUrl } from "./ssrfGuard.js";
 
 // 5-minute cache of the public template registry from the patchworkos/recipes
 // GitHub repo. Process-wide; hoisted out of Server class state.
+// Sentinel `false` marks a negative-cache entry (fetch failed) — distinct from
+// `null` (never fetched) so the timestamp-based retry window is respected.
 let templatesCache: unknown = null;
 let templatesCacheTs = 0;
 
@@ -1522,7 +1524,7 @@ export function tryHandleRecipeRoute(
     void (async () => {
       try {
         const now = Date.now();
-        if (!templatesCache || now - templatesCacheTs > 5 * 60 * 1000) {
+        if (templatesCache === null || now - templatesCacheTs > 5 * 60 * 1000) {
           const ghRes = await fetch(
             "https://raw.githubusercontent.com/patchworkos/recipes/main/index.json",
           );
@@ -1545,6 +1547,13 @@ export function tryHandleRecipeRoute(
           templatesCache = raw;
           templatesCacheTs = now;
         }
+        if (templatesCache === false) {
+          res.writeHead(502, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({ ok: false, error: "Upstream fetch failed" }),
+          );
+          return;
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(templatesCache));
       } catch (err) {
@@ -1552,6 +1561,7 @@ export function tryHandleRecipeRoute(
         // #605: negative cache — short window so an upstream 502 doesn't
         // pile up requests; clients see a fast 502 instead of waiting
         // for the next GH round-trip.
+        templatesCache = false; // negative-cache sentinel — prevents !templatesCache bypass
         templatesCacheTs = Date.now() - 5 * 60 * 1000 + 30_000; // 30s before next try
         res.writeHead(502, { "Content-Type": "application/json" });
         res.end(

@@ -176,7 +176,8 @@ describe("schemaGenerator", () => {
       "chained",
     );
     expect(recipeSchema.properties?.maxConcurrency).toMatchObject({
-      type: "number",
+      type: "integer",
+      minimum: 1,
     });
     expect(recipeSchema.properties?.maxDepth).toMatchObject({ type: "number" });
 

@@ -108,7 +108,7 @@ export async function replayMockedRun(opts: {
 
   const runOptions: RunOptions = {
     env: { ...process.env } as Record<string, string | undefined>,
-    maxConcurrency: recipe.maxConcurrency ?? 4,
+    maxConcurrency: Math.max(1, recipe.maxConcurrency ?? 4),
     maxDepth: recipe.maxDepth ?? 3,
     dryRun: false,
     ...(sourcePath !== undefined && { sourcePath }),

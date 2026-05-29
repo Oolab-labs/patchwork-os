@@ -140,6 +140,18 @@ describe("parseGithubInstallSource", () => {
     expect(
       parseGithubInstallSource("github:patchworkos/recipes/recipes/../etc").ok,
     ).toBe(false);
+    // L7: pure ".." name segment was accepted by old regex ([a-z0-9_.-]{1,100})
+    expect(
+      parseGithubInstallSource("github:patchworkos/recipes/recipes/..").ok,
+    ).toBe(false);
+    // Double-dot within a name (e.g. "a..b") is also rejected
+    expect(
+      parseGithubInstallSource("github:patchworkos/recipes/recipes/a..b").ok,
+    ).toBe(false);
+    // Single dot in a name is still allowed
+    expect(
+      parseGithubInstallSource("github:patchworkos/recipes/recipes/a.b").ok,
+    ).toBe(true);
   });
 
   it("rejects empty segments", () => {

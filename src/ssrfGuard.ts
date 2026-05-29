@@ -24,6 +24,33 @@
 
 import dns from "node:dns/promises";
 
+/**
+ * Convert the hex-compressed form that `new URL()` may return for an
+ * IPv4-mapped/translated IPv6 address back to dotted-decimal so the existing
+ * `isPrivateHost` checks apply.
+ *
+ * Handles:
+ *   "xxxx:yyyy"  — two 16-bit groups (up to 4 hex digits each, no leading zeros)
+ *   "xxxxxxxx"   — a single 32-bit group
+ *
+ * Returns null when the input is not recognisable as 32-bit hex-IPv4.
+ */
+function hexIpv4ToDotted(s: string): string | null {
+  const colon = s.indexOf(":");
+  if (colon !== -1) {
+    const hi = s.slice(0, colon);
+    const lo = s.slice(colon + 1);
+    if (!/^[0-9a-f]{1,4}$/i.test(hi) || !/^[0-9a-f]{1,4}$/i.test(lo))
+      return null;
+    const hiN = parseInt(hi, 16);
+    const loN = parseInt(lo, 16);
+    return `${(hiN >>> 8) & 0xff}.${hiN & 0xff}.${(loN >>> 8) & 0xff}.${loN & 0xff}`;
+  }
+  if (!/^[0-9a-f]{1,8}$/i.test(s)) return null;
+  const n = parseInt(s, 16);
+  return `${(n >>> 24) & 0xff}.${(n >>> 16) & 0xff}.${(n >>> 8) & 0xff}.${n & 0xff}`;
+}
+
 export interface UrlValidationResult {
   ok: boolean;
   /** Parsed URL when ok === true. */
@@ -82,8 +109,17 @@ export function isPrivateHost(hostname: string): boolean {
   // a 6to4 address for a private IPv4 (e.g. 2002:c0a8:0101:: → 192.168.1.1) bypasses
   // the IPv4 checks above unless we block the entire /16 here.
   // Check longer prefix first — ::ffff:0: (IPv4-translated) before ::ffff: (IPv4-mapped)
-  if (host.startsWith("::ffff:0:")) return isPrivateHost(host.slice(9));
-  if (host.startsWith("::ffff:")) return isPrivateHost(host.slice(7));
+  // Also handle hex-compressed form that new URL() may return (e.g. "7f00:1" = 127.0.0.1).
+  if (host.startsWith("::ffff:0:")) {
+    const rest = host.slice(9);
+    const dotted = hexIpv4ToDotted(rest);
+    return isPrivateHost(dotted ?? rest);
+  }
+  if (host.startsWith("::ffff:")) {
+    const rest = host.slice(7);
+    const dotted = hexIpv4ToDotted(rest);
+    return isPrivateHost(dotted ?? rest);
+  }
 
   return false;
 }
@@ -105,8 +141,17 @@ export function isLoopbackHost(hostname: string): boolean {
   const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (ipv4 && Number(ipv4[1]) === 127) return true;
   // IPv6-mapped/translated loopback: ::ffff:127.0.0.1 / ::ffff:0:127.0.0.1
-  if (host.startsWith("::ffff:0:")) return isLoopbackHost(host.slice(9));
-  if (host.startsWith("::ffff:")) return isLoopbackHost(host.slice(7));
+  // Also handle hex-compressed form from new URL() (e.g. "7f00:1" = 127.0.0.1).
+  if (host.startsWith("::ffff:0:")) {
+    const rest = host.slice(9);
+    const dotted = hexIpv4ToDotted(rest);
+    return isLoopbackHost(dotted ?? rest);
+  }
+  if (host.startsWith("::ffff:")) {
+    const rest = host.slice(7);
+    const dotted = hexIpv4ToDotted(rest);
+    return isLoopbackHost(dotted ?? rest);
+  }
   return false;
 }
 

@@ -185,3 +185,31 @@ describe("BUG 5 — validation file_watch missing {{file}} (line 300)", () => {
     expect(fileRefErrors).toEqual([]);
   });
 });
+
+describe("L9 — @every 0s validates as ok but scheduler never fires it", () => {
+  it("@every 0s is rejected with an error at validation time", () => {
+    const recipe = {
+      name: "zero-interval",
+      trigger: { type: "cron", at: "@every 0s" },
+      steps: [{ tool: "echo" }],
+    };
+    const result = validateRecipeDefinition(recipe);
+    const scheduleErrors = result.issues.filter(
+      (i) => i.level === "error" && i.message.includes("@every 0s"),
+    );
+    expect(scheduleErrors.length).toBeGreaterThan(0);
+  });
+
+  it("@every 1s is accepted", () => {
+    const recipe = {
+      name: "one-second",
+      trigger: { type: "cron", at: "@every 1s" },
+      steps: [{ tool: "echo" }],
+    };
+    const result = validateRecipeDefinition(recipe);
+    const scheduleErrors = result.issues.filter(
+      (i) => i.level === "error" && i.message.includes("at"),
+    );
+    expect(scheduleErrors).toHaveLength(0);
+  });
+});

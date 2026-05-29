@@ -67,6 +67,16 @@ describe("isPrivateHost", () => {
     expect(isPrivateHost("::ffff:0:10.0.0.1")).toBe(true);
   });
 
+  it("LOW: blocks hex-compressed IPv4-mapped/translated addresses (new URL() form)", () => {
+    // new URL("http://[::ffff:7f00:0001]/").hostname → "::ffff:7f00:1" in some environments
+    // new URL("http://[::ffff:0:7f00:0001]/").hostname → "::ffff:0:7f00:1"
+    // The stripped remainder "7f00:1" is 127.0.0.1 in hex — must be blocked.
+    expect(isPrivateHost("::ffff:7f00:1")).toBe(true); // 127.0.0.1 mapped
+    expect(isPrivateHost("::ffff:0:7f00:1")).toBe(true); // 127.0.0.1 translated
+    expect(isPrivateHost("::ffff:c0a8:101")).toBe(true); // 192.168.1.1 mapped
+    expect(isPrivateHost("::ffff:0a00:1")).toBe(true); // 10.0.0.1 mapped
+  });
+
   it("blocks 0.0.0.0", () => {
     expect(isPrivateHost("0.0.0.0")).toBe(true);
   });
@@ -195,6 +205,12 @@ describe("isLoopbackHost", () => {
   it("matches IPv6-mapped/translated loopback", () => {
     expect(isLoopbackHost("::ffff:127.0.0.1")).toBe(true);
     expect(isLoopbackHost("::ffff:0:127.0.0.1")).toBe(true);
+  });
+
+  it("LOW: matches hex-compressed IPv6-mapped loopback (same fix as isPrivateHost)", () => {
+    expect(isLoopbackHost("::ffff:7f00:1")).toBe(true); // 127.0.0.1 mapped
+    expect(isLoopbackHost("::ffff:0:7f00:1")).toBe(true); // 127.0.0.1 translated
+    expect(isLoopbackHost("::ffff:c0a8:101")).toBe(false); // 192.168.1.1 — not loopback
   });
 
   it("does not match private non-loopback", () => {

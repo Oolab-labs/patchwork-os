@@ -217,6 +217,119 @@ describe("sendHttpRequest — allowPrivateHttp flag", () => {
   });
 });
 
+describe("sendHttpRequest — userinfo (credentials) stripped from URL", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("LOW: URL with user:password@ is accepted but credentials are not forwarded to fetch", async () => {
+    // Bug: parsedUrl.username/password were preserved into the pinned fetch URL,
+    // sending credentials to the resolved IP. Fix: clear them on parsedUrl.
+    // We verify by checking the URL fed to fetch has no userinfo.
+    let fetchedUrl: string | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      fetchedUrl = String(input);
+      return new Response("ok", { status: 200 });
+    });
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    } as never);
+
+    await tool.handler({
+      method: "GET",
+      url: "https://user:pass@example.com/path",
+    });
+
+    expect(fetchedUrl).toBeDefined();
+    // Credentials must be stripped — neither user:pass nor %40 encoding
+    expect(fetchedUrl).not.toContain("user");
+    expect(fetchedUrl).not.toContain("pass");
+    expect(fetchedUrl).not.toContain("@");
+  });
+});
+
+describe("sendHttpRequest — Content-Length exceeded drains body", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("LOW: body stream is cancelled when Content-Length > maxResponseBytes", async () => {
+    // Bug: early return on Content-Length check left resp.body un-consumed,
+    // holding the socket open until GC. Fix: call resp.body?.cancel().
+    let bodyCancelled = false;
+    const mockBody = {
+      cancel: async () => {
+        bodyCancelled = true;
+      },
+      getReader: () => ({
+        read: async () => ({ done: true, value: undefined }),
+      }),
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: new Headers({
+        "content-length": "999999999",
+        "content-type": "text/plain",
+      }),
+      body: mockBody,
+    } as unknown as Response);
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    } as never);
+
+    const result = await tool.handler({
+      method: "GET",
+      url: "https://example.com/large",
+      maxResponseBytes: 1024,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/Content-Length/);
+    expect(bodyCancelled).toBe(true);
+  });
+});
+
+describe("sendHttpRequest — redirect Host header after DNS failure", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("LOW: Host header is set from redirect target even when redirect DNS lookup fails", async () => {
+    // Bug: headers.host was only set inside the DNS try-block. On DNS failure
+    // the catch block fell through, leaving the PREVIOUS hop's Host header
+    // attached to the new request. Fix: set headers.host before the try.
+    let capturedHost: string | undefined;
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 301,
+        statusText: "Moved",
+        headers: new Headers({ location: "https://other.example.com/path" }),
+        body: {
+          getReader: () => ({
+            read: async () => ({ done: true, value: undefined }),
+          }),
+        },
+      } as unknown as Response)
+      .mockImplementation(async (_url, init) => {
+        capturedHost = (init?.headers as Record<string, string>)?.host;
+        return new Response("final", { status: 200 });
+      });
+
+    // First hop: DNS succeeds (sets host = example.com)
+    // Redirect hop: DNS fails → host should still be "other.example.com"
+    vi.spyOn(dns, "lookup")
+      .mockResolvedValueOnce({ address: "93.184.216.34", family: 4 } as never)
+      .mockRejectedValueOnce(new Error("DNS lookup failed"));
+
+    await tool.handler({
+      method: "GET",
+      url: "https://example.com/",
+    });
+
+    // Host must be the redirect target, not the first hop's host
+    expect(capturedHost).toBe("other.example.com");
+  });
+});
+
 describe("sendHttpRequest — Host header SSRF bypass prevention", () => {
   it("does not allow caller-supplied Host header to override the pinned hostname", async () => {
     // The tool sets Host = parsedUrl.hostname when IP-pinning.

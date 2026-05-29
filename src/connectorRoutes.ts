@@ -304,6 +304,75 @@ export function tryHandlePublicConnectorRoute(
     })();
     return true;
   }
+  // Discord, Asana, GitLab — OAuth authorization-code connectors whose vendor
+  // redirects back to these callback URLs with no Patchwork bearer token.
+  // They must be registered here (pre-auth) so the browser redirect doesn't
+  // hit the bearer-auth gate and get rejected with 401.
+  if (
+    parsedUrl.pathname === "/connections/discord/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      try {
+        const { handleDiscordCallback } = await import(
+          "./connectors/discord.js"
+        );
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleDiscordCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "text/html",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/asana/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      try {
+        const { handleAsanaCallback } = await import("./connectors/asana.js");
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleAsanaCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "text/html",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/gitlab/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      try {
+        const { handleGitLabCallback } = await import("./connectors/gitlab.js");
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
+        const result = await handleGitLabCallback(code, state, error);
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "text/html",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
   return false;
 }
 

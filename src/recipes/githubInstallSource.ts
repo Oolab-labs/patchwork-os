@@ -41,7 +41,7 @@ export type GithubInstallParseResult =
     };
 
 const DEFAULT_ALLOWLIST: ReadonlyArray<string> = ["patchworkos/recipes"];
-export const SEGMENT_RE = /^[a-z0-9_.-]{1,100}$/;
+export const SEGMENT_RE = /^(?!.*\.\.)[a-z0-9_.-]{1,100}$/;
 
 /**
  * Read the runtime allowlist. Combines the always-on default with

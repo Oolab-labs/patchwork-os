@@ -365,7 +365,8 @@ function generateRecipeSchema(
         description: "Human-readable description of what this recipe does",
       },
       maxConcurrency: {
-        type: "number",
+        type: "integer",
+        minimum: 1,
         description:
           "Maximum number of chained steps that may execute in parallel",
       },

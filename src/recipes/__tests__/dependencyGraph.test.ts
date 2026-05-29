@@ -165,6 +165,34 @@ describe("executeWithDependencies", () => {
       executeWithDependencies(g, async () => {}, { maxConcurrency: 1 }),
     ).rejects.toThrow("cycles");
   });
+
+  it("H1: maxConcurrency 0 must not infinite-loop — resolves with all steps executed", async () => {
+    const g = buildDependencyGraph([{ id: "a" }, { id: "b" }]);
+    const executed: string[] = [];
+    const results = await executeWithDependencies(
+      g,
+      async (id) => {
+        executed.push(id);
+      },
+      { maxConcurrency: 0 },
+    );
+    expect(executed.sort()).toEqual(["a", "b"]);
+    expect(results.get("a")?.success).toBe(true);
+    expect(results.get("b")?.success).toBe(true);
+  });
+
+  it("H1: maxConcurrency negative must not infinite-loop", async () => {
+    const g = buildDependencyGraph([{ id: "x" }]);
+    const executed: string[] = [];
+    await executeWithDependencies(
+      g,
+      async (id) => {
+        executed.push(id);
+      },
+      { maxConcurrency: -1 },
+    );
+    expect(executed).toEqual(["x"]);
+  });
 });
 
 describe("getReadySteps", () => {

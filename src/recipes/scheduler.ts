@@ -299,9 +299,9 @@ export class RecipeScheduler {
     for (const entry of this.scheduled) {
       if (entry.cronJob) {
         entry.cronJob.stop();
-      } else {
-        this.clearIntervalFn(entry.timer);
       }
+      // Always clear the sentinel/interval timer — cron entries hold a dummy timer too
+      this.clearIntervalFn(entry.timer);
     }
     this.scheduled = [];
   }
@@ -432,6 +432,7 @@ export function parseSchedule(schedule: string): ParsedSchedule | null {
   // @every Ns|Nm|Nh
   const m = /^@every\s+(\d+)\s*(ms|s|m|h)$/i.exec(trimmed);
   if (m) {
+    // biome-ignore lint/style/noNonNullAssertion: capture group 1 is guaranteed by the regex
     const n = Number.parseInt(m[1]!, 10);
     const unit = m[2]?.toLowerCase();
     if (!Number.isFinite(n) || n <= 0) return null;

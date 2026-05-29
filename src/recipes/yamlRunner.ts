@@ -2398,7 +2398,7 @@ export async function dispatchRecipe(
         TIME: now.toTimeString().slice(0, 5),
         ...seedContext,
       } as Record<string, string | undefined>,
-      maxConcurrency: chainedRecipe.maxConcurrency ?? 4,
+      maxConcurrency: Math.max(1, chainedRecipe.maxConcurrency ?? 4),
       maxDepth: chainedRecipe.maxDepth ?? 3,
       dryRun: deps.chainedOptions?.dryRun ?? false,
       sourcePath: deps.chainedOptions?.sourcePath,

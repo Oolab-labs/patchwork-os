@@ -160,6 +160,29 @@ describe("RecipeScheduler", () => {
     expect(scheduler.list()).toHaveLength(0);
   });
 
+  it("L8: stop() clears the dummy sentinel timer for cron5 recipes (timer-leak fix)", () => {
+    // Bug: cron entries stored a dummy setInterval to keep the ScheduledRecipe
+    // shape stable, but stop() only called clearInterval in the `else` branch
+    // (no cronJob). Fix: always call clearInterval for both branches.
+    writeRecipe("daily", { type: "cron", schedule: "0 8 * * *" });
+    let cleared = 0;
+    const _cronJobStopped: string[] = [];
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: () => "tid",
+      setInterval: (() =>
+        ({}) as unknown as NodeJS.Timeout) as unknown as typeof setInterval,
+      clearInterval: (() => {
+        cleared++;
+      }) as unknown as typeof clearInterval,
+    });
+    const scheduled = scheduler.start();
+    expect(scheduled).toHaveLength(1);
+    // The cron entry stores a dummy timer — verify it gets cleared on stop()
+    scheduler.stop();
+    expect(cleared).toBe(1); // dummy timer must be cleared
+  });
+
   it("tolerates missing recipes directory", () => {
     const scheduler = new RecipeScheduler({
       recipesDir: path.join(tmp, "does-not-exist"),

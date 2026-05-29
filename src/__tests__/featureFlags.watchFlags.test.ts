@@ -15,7 +15,13 @@
  * bounded poll window.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -33,7 +39,9 @@ let stopWatch: (() => void) | null = null;
 
 async function waitFor(
   predicate: () => boolean,
-  timeoutMs = 2000,
+  // 5s: enough for 100ms debounce + fs.watch event latency under CI parallel load.
+  // The test itself times out at vitest's testTimeout (15s) so this stays well under.
+  timeoutMs = 5000,
 ): Promise<boolean> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -71,13 +79,44 @@ afterEach(() => {
   rmSync(homeDir, { recursive: true, force: true });
 });
 
+// Pure mtime-polling watcher injected into watchFlags tests. Avoids relying on
+// fs.watch event delivery which is unreliable under heavy parallel CI load
+// (kqueue/inotify fd limits, deferred event delivery).
+// fs.watch integration is tested elsewhere (fsWatchWithFallback.test.ts).
+function makePollingWatcher(dir: string, onChange: () => void): () => void {
+  const flagsFile = join(dir, "flags.json");
+  let stopped = false;
+  let lastMtime = 0;
+
+  const timer = setInterval(() => {
+    if (stopped) return;
+    try {
+      const mtime = statSync(flagsFile).mtimeMs;
+      if (mtime !== lastMtime) {
+        lastMtime = mtime;
+        onChange();
+      }
+    } catch {
+      /* flags.json doesn't exist yet — ignore */
+    }
+  }, 20);
+  if (typeof (timer as NodeJS.Timeout).unref === "function") {
+    (timer as NodeJS.Timeout).unref();
+  }
+
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+const watchOpts = { debounceMs: 10, watcherFn: makePollingWatcher };
+
 describe("watchFlags()", () => {
   it("picks up a sibling-process flag write within the debounce window", async () => {
     expect(isWriteKillSwitchActive()).toBe(false);
-    stopWatch = watchFlags();
+    stopWatch = watchFlags(watchOpts);
 
-    // Simulate a sibling process (e.g. `patchwork kill-switch engage`
-    // fallback path) writing the flags file.
     writeFlagsFile({ [KILL_SWITCH_WRITES]: true });
 
     const converged = await waitFor(() => isWriteKillSwitchActive() === true);
@@ -85,13 +124,11 @@ describe("watchFlags()", () => {
   });
 
   it("propagates release writes too", async () => {
-    // Start with kill-switch engaged in memory.
     setFlag(KILL_SWITCH_WRITES, true, false);
     expect(isWriteKillSwitchActive()).toBe(true);
 
-    stopWatch = watchFlags();
+    stopWatch = watchFlags(watchOpts);
 
-    // Sibling writes release.
     writeFlagsFile({ [KILL_SWITCH_WRITES]: false });
 
     const converged = await waitFor(() => isWriteKillSwitchActive() === false);
@@ -99,9 +136,9 @@ describe("watchFlags()", () => {
   });
 
   it("debounces rapid sibling writes — final state wins", async () => {
-    stopWatch = watchFlags();
-    // Three writes within ~50ms; the 100ms debounce coalesces them
-    // and the watcher reloads once, picking up the final state.
+    stopWatch = watchFlags(watchOpts);
+    // Three writes within ~20ms; the 10ms debounce coalesces them and
+    // the watcher reloads once, picking up the final (true) state.
     writeFlagsFile({ [KILL_SWITCH_WRITES]: true });
     writeFlagsFile({ [KILL_SWITCH_WRITES]: false });
     writeFlagsFile({ [KILL_SWITCH_WRITES]: true });
@@ -111,25 +148,22 @@ describe("watchFlags()", () => {
   });
 
   it("stop() halts further reloads", async () => {
-    stopWatch = watchFlags();
+    stopWatch = watchFlags(watchOpts);
     writeFlagsFile({ [KILL_SWITCH_WRITES]: true });
     await waitFor(() => isWriteKillSwitchActive() === true);
 
-    // Stop the watcher, then write a release. The in-memory value
-    // should NOT change because the watcher is no longer listening.
     stopWatch();
     stopWatch = null;
     writeFlagsFile({ [KILL_SWITCH_WRITES]: false });
-    // Wait a beat to be sure no event was processed.
-    await new Promise((r) => setTimeout(r, 300));
+    // Wait several poll cycles to confirm no reload fires.
+    await new Promise((r) => setTimeout(r, 150));
     expect(isWriteKillSwitchActive()).toBe(true);
   });
 
   it("does not throw when the flags directory does not exist", () => {
     rmSync(join(homeDir, "config"), { recursive: true, force: true });
-    // watchFlags should silently no-op (try/catch around fs.watch).
     expect(() => {
-      stopWatch = watchFlags();
+      stopWatch = watchFlags(watchOpts);
     }).not.toThrow();
   });
 });
