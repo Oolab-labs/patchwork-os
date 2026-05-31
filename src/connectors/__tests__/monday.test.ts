@@ -21,6 +21,12 @@ vi.stubGlobal("fetch", mockFetch);
 
 import * as fs from "node:fs";
 import {
+  changeItemColumn,
+  createItem,
+  createUpdate,
+  createWebhook,
+  deleteItem,
+  deleteWebhook,
   getBoard,
   getItem,
   getStatus,
@@ -35,9 +41,12 @@ import {
   listItems,
   loadTokens,
   me,
+  moveItemToGroup,
   normalizeError,
   normalizeGraphQLError,
   searchByName,
+  updateColumnValue,
+  verifyMondayWebhook,
 } from "../monday.js";
 
 const ONE_HOUR = 60 * 60 * 1000;
@@ -524,5 +533,214 @@ describe("handleMondayDisconnect", () => {
     const r = await handleMondayDisconnect();
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body)).toEqual({ ok: true });
+  });
+});
+
+// ── Write mutations ───────────────────────────────────────────────────────────
+
+describe("createItem", () => {
+  it("sends create_item mutation with boardId, groupId, itemName", async () => {
+    mockTokens();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: { create_item: { id: "i99", name: "New Item" } },
+      }),
+    );
+    const result = await createItem("b1", "topics", "New Item");
+    expect(result).toEqual({ id: "i99", name: "New Item" });
+    const call0 = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call0[1].body as string) as { query: string };
+    expect(body.query).toContain("create_item");
+    expect(body.query).toContain('"b1"');
+    expect(body.query).toContain('"topics"');
+    expect(body.query).toContain('"New Item"');
+  });
+
+  it("includes column_values when provided", async () => {
+    mockTokens();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: { create_item: { id: "i100", name: "With Cols" } },
+      }),
+    );
+    const colVals = JSON.stringify({ status: { label: "Done" } });
+    await createItem("b1", "g1", "With Cols", colVals);
+    const call0 = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call0[1].body as string) as { query: string };
+    expect(body.query).toContain("column_values");
+  });
+});
+
+describe("updateColumnValue", () => {
+  it("sends change_column_value mutation", async () => {
+    mockTokens();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ data: { change_column_value: { id: "i1" } } }),
+    );
+    const result = await updateColumnValue(
+      "b1",
+      "i1",
+      "status",
+      JSON.stringify({ label: "Done" }),
+    );
+    expect(result).toEqual({ id: "i1" });
+    const call0 = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call0[1].body as string) as { query: string };
+    expect(body.query).toContain("change_column_value");
+    expect(body.query).toContain('"status"');
+  });
+});
+
+describe("changeItemColumn", () => {
+  it("sends change_simple_column_value mutation", async () => {
+    mockTokens();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ data: { change_simple_column_value: { id: "i1" } } }),
+    );
+    const result = await changeItemColumn("b1", "i1", "text_col", "hello");
+    expect(result).toEqual({ id: "i1" });
+    const call0 = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call0[1].body as string) as { query: string };
+    expect(body.query).toContain("change_simple_column_value");
+    expect(body.query).toContain('"hello"');
+  });
+});
+
+describe("moveItemToGroup", () => {
+  it("sends move_item_to_group mutation", async () => {
+    mockTokens();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ data: { move_item_to_group: { id: "i1" } } }),
+    );
+    const result = await moveItemToGroup("i1", "new_group");
+    expect(result).toEqual({ id: "i1" });
+    const call0 = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call0[1].body as string) as { query: string };
+    expect(body.query).toContain("move_item_to_group");
+    expect(body.query).toContain('"new_group"');
+  });
+});
+
+describe("deleteItem", () => {
+  it("sends delete_item mutation", async () => {
+    mockTokens();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ data: { delete_item: { id: "i1" } } }),
+    );
+    const result = await deleteItem("i1");
+    expect(result).toEqual({ id: "i1" });
+    const call0 = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call0[1].body as string) as { query: string };
+    expect(body.query).toContain("delete_item");
+    expect(body.query).toContain('"i1"');
+  });
+});
+
+describe("createUpdate", () => {
+  it("sends create_update mutation and returns id, body, created_at", async () => {
+    mockTokens();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          create_update: {
+            id: "u1",
+            body: "Hello world",
+            created_at: "2026-05-31T00:00:00Z",
+          },
+        },
+      }),
+    );
+    const result = await createUpdate("i1", "Hello world");
+    expect(result.id).toBe("u1");
+    expect(result.body).toBe("Hello world");
+    const call0 = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call0[1].body as string) as { query: string };
+    expect(body.query).toContain("create_update");
+    expect(body.query).toContain('"Hello world"');
+    expect(body.query).toContain("id body created_at");
+  });
+});
+
+describe("createWebhook", () => {
+  it("sends create_webhook mutation with event and returns id + board_id", async () => {
+    mockTokens();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          create_webhook: { id: "wh1", board_id: "b1" },
+        },
+      }),
+    );
+    const result = await createWebhook(
+      "b1",
+      "https://example.com/hook",
+      "create_item",
+    );
+    expect(result).toEqual({ id: "wh1", board_id: "b1" });
+    const call0 = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call0[1].body as string) as { query: string };
+    expect(body.query).toContain("create_webhook");
+    expect(body.query).toContain("create_item");
+    expect(body.query).toContain('"https://example.com/hook"');
+  });
+
+  it("includes config with columnId when provided", async () => {
+    mockTokens();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: { create_webhook: { id: "wh2", board_id: "b1" } },
+      }),
+    );
+    await createWebhook(
+      "b1",
+      "https://example.com/hook",
+      "change_column_value",
+      "status_col",
+    );
+    const call0 = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call0[1].body as string) as { query: string };
+    expect(body.query).toContain("config");
+    expect(body.query).toContain("status_col");
+  });
+});
+
+describe("deleteWebhook", () => {
+  it("sends delete_webhook mutation", async () => {
+    mockTokens();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ data: { delete_webhook: { id: "wh1" } } }),
+    );
+    const result = await deleteWebhook("wh1");
+    expect(result).toEqual({ id: "wh1" });
+    const call0 = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(call0[1].body as string) as { query: string };
+    expect(body.query).toContain("delete_webhook");
+    expect(body.query).toContain('"wh1"');
+  });
+});
+
+// ── Webhook verification ──────────────────────────────────────────────────────
+
+describe("verifyMondayWebhook", () => {
+  it("returns true when Authorization header matches signing secret", () => {
+    expect(verifyMondayWebhook("{}", "my-secret", "my-secret")).toBe(true);
+  });
+
+  it("returns false when Authorization header does not match", () => {
+    expect(verifyMondayWebhook("{}", "wrong-secret", "my-secret")).toBe(false);
+  });
+
+  it("returns false when Authorization header is absent (null)", () => {
+    expect(verifyMondayWebhook("{}", null, "my-secret")).toBe(false);
+  });
+
+  it("returns false when Authorization header is undefined", () => {
+    expect(verifyMondayWebhook("{}", undefined, "my-secret")).toBe(false);
+  });
+
+  it("returns false when lengths differ", () => {
+    expect(verifyMondayWebhook("{}", "short", "a-much-longer-secret")).toBe(
+      false,
+    );
   });
 });

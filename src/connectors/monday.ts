@@ -1,5 +1,5 @@
 /**
- * Monday.com connector — OAuth 2.0 + GraphQL v2 (READ-ONLY).
+ * Monday.com connector — OAuth 2.0 + GraphQL v2.
  *
  * Endpoint: https://api.monday.com/v2 (single GraphQL endpoint).
  * Auth:     OAuth 2.0 via auth.monday.com (MONDAY_CLIENT_ID / MONDAY_CLIENT_SECRET).
@@ -25,7 +25,9 @@ import {
 const SCOPES = [
   "me:read",
   "boards:read",
+  "boards:write",
   "updates:read",
+  "updates:write",
   "users:read",
   "tags:read",
 ];
@@ -636,6 +638,242 @@ export async function searchByName(
   }>(SEARCH_BY_NAME_QUERY, { boardId, query }, fetchFn);
   const page = data.boards?.[0]?.items_page;
   return page ?? { cursor: null, items: [] };
+}
+
+// ── Write mutations ──────────────────────────────────────────────────────────
+
+export interface MondayCreatedItem {
+  id: string;
+  name: string;
+}
+
+export interface MondayMutationId {
+  id: string;
+}
+
+export interface MondayCreatedUpdate {
+  id: string;
+  body: string;
+  created_at: string;
+}
+
+export interface MondayWebhook {
+  id: string;
+  board_id: string;
+}
+
+export type MondayWebhookEvent =
+  | "create_item"
+  | "change_column_value"
+  | "change_status_column_value"
+  | "create_update"
+  | "move_item_to_group";
+
+/**
+ * Create a new item on a board.
+ * `columnValues` is a JSON-encoded string of column values
+ * (e.g. `JSON.stringify({ status: { label: "Done" } })`).
+ */
+export async function createItem(
+  boardId: string,
+  groupId: string,
+  itemName: string,
+  columnValues?: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<MondayCreatedItem> {
+  const colValPart = columnValues
+    ? `, column_values: ${JSON.stringify(columnValues)}`
+    : "";
+  const query = `mutation {
+    create_item(board_id: ${JSON.stringify(boardId)}, group_id: ${JSON.stringify(groupId)}, item_name: ${JSON.stringify(itemName)}${colValPart}) {
+      id name
+    }
+  }`;
+  const data = await graphqlCall<{ create_item: MondayCreatedItem }>(
+    query,
+    undefined,
+    fetchFn,
+  );
+  return data.create_item;
+}
+
+/**
+ * Update a column value using the JSON-based mutation (complex column types).
+ * `value` must be a JSON-encoded string (e.g. `JSON.stringify({ label: "Done" })`).
+ */
+export async function updateColumnValue(
+  boardId: string,
+  itemId: string,
+  columnId: string,
+  value: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<MondayMutationId> {
+  const query = `mutation {
+    change_column_value(board_id: ${JSON.stringify(boardId)}, item_id: ${JSON.stringify(itemId)}, column_id: ${JSON.stringify(columnId)}, value: ${JSON.stringify(value)}) {
+      id
+    }
+  }`;
+  const data = await graphqlCall<{ change_column_value: MondayMutationId }>(
+    query,
+    undefined,
+    fetchFn,
+  );
+  return data.change_column_value;
+}
+
+/**
+ * Update a column using simple string/number values
+ * (no JSON encoding required for the value itself).
+ */
+export async function changeItemColumn(
+  boardId: string,
+  itemId: string,
+  columnId: string,
+  value: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<MondayMutationId> {
+  const query = `mutation {
+    change_simple_column_value(board_id: ${JSON.stringify(boardId)}, item_id: ${JSON.stringify(itemId)}, column_id: ${JSON.stringify(columnId)}, value: ${JSON.stringify(value)}) {
+      id
+    }
+  }`;
+  const data = await graphqlCall<{
+    change_simple_column_value: MondayMutationId;
+  }>(query, undefined, fetchFn);
+  return data.change_simple_column_value;
+}
+
+/** Move an item to a different group on the same board. */
+export async function moveItemToGroup(
+  itemId: string,
+  groupId: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<MondayMutationId> {
+  const query = `mutation {
+    move_item_to_group(item_id: ${JSON.stringify(itemId)}, group_id: ${JSON.stringify(groupId)}) {
+      id
+    }
+  }`;
+  const data = await graphqlCall<{ move_item_to_group: MondayMutationId }>(
+    query,
+    undefined,
+    fetchFn,
+  );
+  return data.move_item_to_group;
+}
+
+/** Permanently delete an item. */
+export async function deleteItem(
+  itemId: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<MondayMutationId> {
+  const query = `mutation {
+    delete_item(item_id: ${JSON.stringify(itemId)}) {
+      id
+    }
+  }`;
+  const data = await graphqlCall<{ delete_item: MondayMutationId }>(
+    query,
+    undefined,
+    fetchFn,
+  );
+  return data.delete_item;
+}
+
+/** Post a text update (comment) on an item. */
+export async function createUpdate(
+  itemId: string,
+  body: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<MondayCreatedUpdate> {
+  const query = `mutation {
+    create_update(item_id: ${JSON.stringify(itemId)}, body: ${JSON.stringify(body)}) {
+      id body created_at
+    }
+  }`;
+  const data = await graphqlCall<{ create_update: MondayCreatedUpdate }>(
+    query,
+    undefined,
+    fetchFn,
+  );
+  return data.create_update;
+}
+
+/**
+ * Register a Monday.com webhook on a board.
+ * `event` must be one of the MondayWebhookEvent values.
+ * `columnId` is required for `change_column_value` / `change_status_column_value` events.
+ */
+export async function createWebhook(
+  boardId: string,
+  url: string,
+  event: MondayWebhookEvent,
+  columnId?: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<MondayWebhook> {
+  const configPart = columnId
+    ? `, config: ${JSON.stringify(JSON.stringify({ columnId }))}`
+    : "";
+  const query = `mutation {
+    create_webhook(board_id: ${JSON.stringify(boardId)}, url: ${JSON.stringify(url)}, event: ${event}${configPart}) {
+      id board_id
+    }
+  }`;
+  const data = await graphqlCall<{ create_webhook: MondayWebhook }>(
+    query,
+    undefined,
+    fetchFn,
+  );
+  return data.create_webhook;
+}
+
+/** Delete a Monday.com webhook by its ID. */
+export async function deleteWebhook(
+  webhookId: string,
+  fetchFn: typeof fetch = globalThis.fetch,
+): Promise<MondayMutationId> {
+  const query = `mutation {
+    delete_webhook(id: ${JSON.stringify(webhookId)}) {
+      id
+    }
+  }`;
+  const data = await graphqlCall<{ delete_webhook: MondayMutationId }>(
+    query,
+    undefined,
+    fetchFn,
+  );
+  return data.delete_webhook;
+}
+
+// ── Webhook verification ─────────────────────────────────────────────────────
+
+/**
+ * Verify an incoming Monday.com webhook request.
+ *
+ * Monday sends the signing secret directly in the `Authorization` header
+ * (no "Bearer" prefix). Compare with constant-time equality to prevent
+ * timing attacks.
+ *
+ * @param rawBody          - Raw request body string (before JSON.parse).
+ * @param authorizationHeader - Value of the `Authorization` header from the
+ *                           incoming request (may be undefined/null).
+ * @param signingSecret    - The webhook signing secret configured on Monday.
+ * @returns true when the header matches the secret.
+ */
+export function verifyMondayWebhook(
+  _rawBody: string,
+  authorizationHeader: string | null | undefined,
+  signingSecret: string,
+): boolean {
+  if (!authorizationHeader) return false;
+  const a = Buffer.from(authorizationHeader);
+  const b = Buffer.from(signingSecret);
+  if (a.length !== b.length) return false;
+  try {
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }
 
 // ── HTTP handlers ────────────────────────────────────────────────────────────
