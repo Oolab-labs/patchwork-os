@@ -268,7 +268,7 @@ When the extension is connected, LSP and editor tools become functional. When di
 - These tools still appear in `tools/list` — clients should not hide them
 - The bridge's `getBridgeStatus` tool reports connection state
 
-**Slim mode:** If the bridge started with `--slim`, only ~60 tools are registered (all LSP/editor tools, no shell/git/orchestration). Extension connection still enables LSP functionality within that set. Full mode (the default since v2.43.0) registers ~140 tools.
+**Slim mode:** If the bridge started with `--slim`, only ~61 tools are registered (all LSP/editor tools, no shell/git/orchestration). Extension connection still enables LSP functionality within that set. Full mode (the default since v2.43.0) registers 177 tools.
 
 ---
 

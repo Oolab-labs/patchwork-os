@@ -1,4 +1,4 @@
-# ADR-0011: /tasks pagination over virtualization
+# ADR-0014: /tasks pagination over virtualization
 
 **Status:** Accepted
 **Date:** 2026-05-19

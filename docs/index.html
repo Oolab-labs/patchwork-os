@@ -874,7 +874,7 @@
   <p class="hero-sub">
     Your laptop stays home, plugged in, IDE open. You're on the couch, at a caf&eacute;, on a train &mdash;
     <strong>telling Claude to fix tests, push code, and open PRs</strong> from your phone.
-    115+ MCP tools. Full IDE control. Zero presence required.
+    177+ MCP tools. Full IDE control. Zero presence required.
   </p>
 
   <div class="hero-cta">
@@ -884,7 +884,7 @@
 
   <div class="hero-stats">
     <div class="stat-badge">
-      <div class="stat-num">115+</div>
+      <div class="stat-num">177+</div>
       <div class="stat-label">MCP Tools</div>
     </div>
     <div class="stat-badge">
@@ -921,7 +921,7 @@
     <div class="arch-node">
       <span class="arch-icon">&#9881;&#65039;</span>
       <div class="arch-name">Bridge Server</div>
-      <div class="arch-detail">MCP over WebSocket<br>115+ tools<br>runs on your machine</div>
+      <div class="arch-detail">MCP over WebSocket<br>177+ tools<br>runs on your machine</div>
     </div>
     <div class="arch-arrow">
       <span class="arrow-line">&harr;</span>
@@ -973,17 +973,17 @@
         <strong>evaluates expressions</strong> at the breakpoint, finds the null reference,
         fixes it, runs the full suite. PR opened before your stop.
       </div>
-      <div class="scenario-tools">setDebugBreakpoints &rarr; startDebugSession &rarr; evaluateInDebugger &rarr; editText &rarr; runTests</div>
+      <div class="scenario-tools">setDebugBreakpoints &rarr; startDebugging &rarr; evaluateInDebugger &rarr; editText &rarr; runTests</div>
     </div>
     <div class="scenario-card reveal">
       <div class="scenario-where">At a caf&eacute;</div>
       <div class="scenario-title">"Refactor the payment module"</div>
       <div class="scenario-body">
-        Claude creates a <strong>workspace snapshot</strong> first (safety net), then uses <strong>getCallHierarchy</strong>
+        Claude opens a <strong>transaction</strong> first (safety net), then uses <strong>getCallHierarchy</strong>
         and <strong>findReferences</strong> to understand the dependency graph. Renames symbols, moves functions,
-        runs linter + tests. If anything breaks &mdash; one-command <strong>rollback</strong>.
+        runs lint + tests. If anything breaks &mdash; one-command <strong>rollback</strong>.
       </div>
-      <div class="scenario-tools">createSnapshot &rarr; getCallHierarchy &rarr; findReferences &rarr; renameSymbol &rarr; runLinter &rarr; runTests</div>
+      <div class="scenario-tools">beginTransaction &rarr; getCallHierarchy &rarr; findReferences &rarr; renameSymbol &rarr; fixAllLintErrors &rarr; runTests</div>
     </div>
     <div class="scenario-card reveal">
       <div class="scenario-where">Walking the dog</div>
@@ -991,9 +991,9 @@
       <div class="scenario-body">
         Claude checks <strong>githubListRuns</strong> &mdash; CI failed on lint.
         Reads the logs with <strong>githubGetRunLogs</strong>, runs <strong>fixAllLintErrors</strong> locally,
-        verifies with <strong>runLinter</strong>, pushes the fix. CI goes green.
+        verifies with <strong>getDiagnostics</strong>, pushes the fix. CI goes green.
       </div>
-      <div class="scenario-tools">githubListRuns &rarr; githubGetRunLogs &rarr; fixAllLintErrors &rarr; runLinter &rarr; gitCommit &rarr; gitPush</div>
+      <div class="scenario-tools">githubListRuns &rarr; githubGetRunLogs &rarr; fixAllLintErrors &rarr; getDiagnostics &rarr; gitCommit &rarr; gitPush</div>
     </div>
   </div>
 </section>
@@ -1001,7 +1001,7 @@
 <!-- =================== CAPABILITIES =================== -->
 <section class="cap-section">
   <div class="section-label">What Claude Can Do In Your IDE</div>
-  <h2 class="section-title reveal">115+ tools.<br>All remote.</h2>
+  <h2 class="section-title reveal">177+ tools.<br>All remote.</h2>
 
   <div class="cap-grid">
     <div class="cap-card reveal">
@@ -1015,7 +1015,7 @@
       <span class="cap-icon">&#128027;</span>
       <div class="cap-name">Live Debugger</div>
       <div class="cap-desc">Set conditional breakpoints, start debug sessions, evaluate expressions, inspect variables, step through code. No other AI tool touches the actual debugger.</div>
-      <div class="cap-tools">setDebugBreakpoints, startDebugSession, evaluateInDebugger</div>
+      <div class="cap-tools">setDebugBreakpoints, startDebugging, evaluateInDebugger</div>
     </div>
     <div class="cap-card reveal">
       <span class="cap-icon">&#128736;&#65039;</span>
@@ -1026,9 +1026,9 @@
     <div class="cap-card reveal">
       <div class="cap-tag">UNIQUE</div>
       <span class="cap-icon">&#128248;</span>
-      <div class="cap-name">Workspace Snapshots</div>
-      <div class="cap-desc">Named checkpoints before risky changes. Instant diff against current state. One-command rollback. Your safety net for every refactor.</div>
-      <div class="cap-tools">createSnapshot, listSnapshots, diffSnapshot, restoreSnapshot</div>
+      <div class="cap-name">Edit Transactions</div>
+      <div class="cap-desc">Open a transaction before risky changes, stage edits, then commit or roll back atomically. One-command rollback. Your safety net for every refactor.</div>
+      <div class="cap-tools">beginTransaction, stageEdit, commitTransaction, rollbackTransaction</div>
     </div>
     <div class="cap-card reveal">
       <span class="cap-icon">&#128640;</span>
@@ -1053,7 +1053,7 @@
       <span class="cap-icon">&#128270;</span>
       <div class="cap-name">Polyglot Linting</div>
       <div class="cap-desc">Auto-detects your stack. TypeScript gets tsc + biome. Python gets ruff. Runs linters, auto-fixes, formats &mdash; all in one remote pass.</div>
-      <div class="cap-tools">runLinter, fixAllLintErrors, formatDocument, organizeImports</div>
+      <div class="cap-tools">getDiagnostics, fixAllLintErrors, formatDocument, organizeImports</div>
     </div>
     <div class="cap-card reveal">
       <div class="cap-tag">UNIQUE</div>
@@ -1158,7 +1158,7 @@
     <div class="tool-cat reveal">
       <div class="tool-cat-count">15</div>
       <div class="tool-cat-name">Git</div>
-      <div class="tool-cat-list">getGitStatus, getGitDiff, getGitLog, gitCommit, gitPush, gitPull, gitFetch, gitCheckout, gitListBranches, gitStash, gitStashPop, gitStashList, gitHistory, editText, replaceBlock</div>
+      <div class="tool-cat-list">getGitStatus, getGitDiff, getGitLog, gitCommit, gitPush, gitPull, gitFetch, gitCheckout, gitListBranches, gitStash, gitStashPop, gitStashList, gitBlame, editText, replaceBlock</div>
     </div>
     <div class="tool-cat reveal">
       <div class="tool-cat-count">11</div>
@@ -1173,12 +1173,12 @@
     <div class="tool-cat reveal">
       <div class="tool-cat-count">7</div>
       <div class="tool-cat-name">Lint &amp; Format</div>
-      <div class="tool-cat-list">runLinter, fixAllLintErrors, formatFile, formatDocument, organizeImports, diffDebugger, searchAndReplace</div>
+      <div class="tool-cat-list">getDiagnostics, fixAllLintErrors, formatRange, formatDocument, organizeImports, formatAndSave, searchAndReplace</div>
     </div>
     <div class="tool-cat reveal">
       <div class="tool-cat-count">12</div>
       <div class="tool-cat-name">Workspace &amp; Debug</div>
-      <div class="tool-cat-list">createSnapshot, listSnapshots, diffSnapshot, restoreSnapshot, setDebugBreakpoints, startDebugSession, evaluateInDebugger, getAIComments, watchFiles, unwatchFiles, decorations, workspaceSettings</div>
+      <div class="tool-cat-list">beginTransaction, stageEdit, commitTransaction, rollbackTransaction, setDebugBreakpoints, startDebugging, evaluateInDebugger, getAIComments, watchFiles, unwatchFiles, setEditorDecorations, getWorkspaceSettings</div>
     </div>
   </div>
 </section>
@@ -1250,7 +1250,7 @@
       </tr>
       <tr>
         <td class="feature">Total MCP tools</td>
-        <td><span class="check">&#10004; 115+</span></td>
+        <td><span class="check">&#10004; 177+</span></td>
         <td><span class="partial">~20</span></td>
         <td><span class="partial">~15</span></td>
         <td><span class="partial">~10</span></td>
@@ -1269,9 +1269,7 @@
       <div class="setup-num">1</div>
       <div class="setup-title">Install the bridge</div>
       <div class="setup-code">
-        git clone &lt;repo&gt;<br>
-        cd claude-ide-bridge<br>
-        npm install && npm run build
+        npm install -g patchwork-os
       </div>
       <div class="setup-note">Node.js 18+ required. Runs on macOS and Linux.</div>
     </div>
@@ -1290,7 +1288,7 @@
       <div class="setup-num">3</div>
       <div class="setup-title">Start everything</div>
       <div class="setup-code">
-        npm run start-all -- --workspace .<br>
+        claude-ide-bridge start-all --workspace .<br>
         <br>
         # Scan the QR code with Claude app<br>
         # Or SSH in and run: claude
@@ -1307,7 +1305,7 @@
     LAPTOP HOME.<br>
     <span class="acid">YOU SHIP.</span>
   </h2>
-  <p class="cta-sub">Windsurf. Cursor. VS Code. Google Antigravity. 115+ tools. Full remote. No desk required.</p>
+  <p class="cta-sub">Windsurf. Cursor. VS Code. Google Antigravity. 177+ tools. Full remote. No desk required.</p>
   <div class="cta-buttons reveal">
     <a href="https://github.com/Oolab-labs/claude-ide-bridge" class="btn-primary">View on GitHub &rarr;</a>
     <a href="#how" class="btn-ghost">Read the docs</a>
@@ -1335,10 +1333,10 @@
   // ---- MARQUEE ----
   const items = [
     'phone \u2192 IDE', 'getDiagnostics', 'setDebugBreakpoints', 'runTests',
-    'githubCreatePR', 'createSnapshot', 'renameSymbol', 'getCallHierarchy',
+    'githubCreatePR', 'beginTransaction', 'renameSymbol', 'getCallHierarchy',
     'waitForTerminalOutput', 'fixAllLintErrors', 'evaluateInDebugger',
     'gitCommit', 'githubListRuns', 'goToDefinition', 'findReferences',
-    'editText', 'runLinter', 'githubPostPRReview', 'getAIComments',
+    'editText', 'getDiagnostics', 'githubPostPRReview', 'getAIComments',
     'remote control active'
   ];
   const track = document.getElementById('marquee');

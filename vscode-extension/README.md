@@ -236,8 +236,8 @@ A companion IntelliJ plugin (v1.0.0) is available on the JetBrains Marketplace. 
 
 | | |
 |---|---|
-| Extension version | 1.4.17 |
-| Bridge version | `0.2.0-beta.5` |
+| Extension version | 1.4.20 |
+| Bridge version | `0.2.0-beta.9` |
 | npm package | `patchwork-os` (binaries: `claude-ide-bridge`, `patchwork`, `patchwork-os`) |
 | VS Code requirement | 1.93+ |
 | Compatible editors | VS Code, Cursor, Windsurf, Google Antigravity |

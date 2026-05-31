@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/Oolab-labs/claude-ide-bridge/main/d
 Or manually:
 
 ```bash
-npm install -g claude-ide-bridge
+npm install -g patchwork-os
 claude-ide-bridge install-extension  # if VS Code is available on the remote
 ```
 

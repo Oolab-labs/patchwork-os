@@ -6,7 +6,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ## Status (2026-05-16)
 
-Current: `0.2.0-beta.3` (bridge), `1.4.16` (extension). 177 tools registered. Recent waves:
+Current: `0.2.0-beta.9` (bridge), `1.4.20` (extension). 177 tools registered. Recent waves:
 
 - **Native Windows support** — smoke harness + extension suites green on `windows-latest` CI; advisory→blocking flip in PR #537. Helpers: `winShim`, `processTree`, `fsWatchWithFallback`. ADRs 0010-0012.
 - **Write-tier kill-switch** — `patchwork kill-switch engage|release|status` + `panic` alias, multi-bridge HTTP fan-out, dashboard toggle, fs.watch convergence. Issue #422 design; ADR 0013.
@@ -100,15 +100,13 @@ All four "phantom tools" previously advertised in the MCP handshake (`ctxGetTask
 
 **Design principle:** Thin abstraction, provider-neutral. Drivers adapt to a common `ModelDriver` interface; bridge internals never import provider-specific SDKs directly.
 
-**Planned drivers and rough estimates:**
+**Status: SHIPPED.** All three drivers are implemented and live under `src/drivers/`:
 
-| Provider | Estimate | Notes |
+| Provider | Status | Notes |
 |---|---|---|
-| Gemini | ~2–3 days | Google AI SDK; streaming + tool-use parity needed |
-| OpenAI | ~3–5 days | Responses API + function calling; highest compat surface |
-| Grok (xAI) | ~1 week | OpenAI-compatible endpoint; auth + rate-limit quirks |
-
-**Timeline:** Phase 1 item — target before Phase 2 recipe system ships.
+| Gemini | Shipped (`src/drivers/gemini`) | Google AI SDK; streaming + tool-use parity |
+| OpenAI | Shipped (`src/drivers/openai`) | Responses API + function calling |
+| Grok (xAI) | Shipped (`src/drivers/grok`) | OpenAI-compatible endpoint |
 
 **Full design:** [`docs/plans/multi-provider-drivers.md`](../docs/plans/multi-provider-drivers.md)
 
@@ -144,10 +142,10 @@ All four "phantom tools" previously advertised in the MCP handshake (`ctxGetTask
 - v2.25.5: Removed 5 redundant notify MCP tools — `claude-ide-bridge notify <Event>` → `POST /notify` is the sole path.
 - v2.25.6: `onInstructionsLoaded` now surfaces in `getBridgeStatus` automation block.
 
-- **Full mode default** (v2.43.0): all ~140 tools registered by default; pass `--slim` to restrict to ~60 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection, `watchActivityLog`, `contextBundle`); plugin tools always bypass the slim filter; `--full` retained as no-op for backward compatibility
+- **Full mode default** (v2.43.0): all 177 tools registered by default; pass `--slim` to restrict to ~61 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection, `watchActivityLog`, `contextBundle`); plugin tools always bypass the slim filter; `--full` retained as no-op for backward compatibility
 - **Token-efficient `tools/list`**: all tool descriptions ≤200 chars (slim ≤160), CI audit check #6 enforces limit; `scripts/measure-tools-list.mjs` tracks payload size
 - **2,184 bridge tests / 148 files + 564 extension tests / 35 files = 2,748 total**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
-- **31 MCP prompts** (slash commands): 15 general/Dispatch + 13 LSP-composition + 3 visual skills (`/ide-coverage`, `/ide-deps`, `/ide-diagnostics-board`)
+- **36 MCP prompts** (slash commands): 15 general/Dispatch + 13 LSP-composition + 3 visual skills (`/ide-coverage`, `/ide-deps`, `/ide-diagnostics-board`)
 - **12 plugin skills**, **4 subagents** (including `ide-architect`)
 - **59 tools with `outputSchema`/`structuredContent`**; CI audit enforces coverage
 - **`promptName`/`promptArgs` in automation policy**: all 15 hooks can reference named MCP prompts instead of inline strings; `{{placeholder}}` substitution works inside `promptArgs` values

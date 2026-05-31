@@ -151,7 +151,7 @@ FROM node:20-alpine
 
 RUN apk add --no-cache tini ctags ripgrep git curl bash
 
-RUN npm install -g claude-ide-bridge typescript-language-server typescript
+RUN npm install -g patchwork-os typescript-language-server typescript
 
 WORKDIR /workspace
 
@@ -212,7 +212,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install bridge
-        run: npm install -g claude-ide-bridge typescript-language-server typescript
+        run: npm install -g patchwork-os typescript-language-server typescript
 
       - name: Install probes
         run: sudo apt-get install -y ripgrep universal-ctags
@@ -310,7 +310,7 @@ For a persistent headless deployment on a VPS:
 
 ```bash
 # Install
-npm install -g claude-ide-bridge
+npm install -g patchwork-os
 
 # Start with fixed token (prevents rotation on restart)
 claude-ide-bridge \

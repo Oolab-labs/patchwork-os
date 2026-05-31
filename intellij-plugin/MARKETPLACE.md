@@ -24,7 +24,7 @@ Artifact: `build/distributions/patchwork-bridge-1.0.0.zip`
 
 1. Patchwork bridge running locally: `npx patchwork start` or `npm start` in the bridge repo
 2. Lock file at `~/.claude/ide/<port>.lock` with `isBridge: true`
-3. Bridge v0.2.0-alpha.18 or later (protocol `1.1.0`)
+3. Bridge v0.2.0-beta.9 or later (protocol `1.1.0`)
 
 ---
 
@@ -48,13 +48,13 @@ Search "Patchwork Bridge" in **Settings → Plugins → Marketplace**.
 | LSP | 18 | goToDefinition, findReferences, findImplementations, goToTypeDefinition, goToDeclaration, getHover, getCodeActions, applyCodeAction, previewCodeAction, renameSymbol, searchSymbols, getDocumentSymbols, getCallHierarchy, prepareRename, formatRange, signatureHelp, foldingRanges, selectionRanges |
 | Debug | 5 | getDebugState, evaluateInDebugger, setDebugBreakpoints, startDebugging, stopDebugging |
 | Code style | 3 | formatDocument, organizeImports, fixAllLintErrors |
-| **Total** | **49** | |
+| **Total** | **66** | 66 registered: 49 fully implemented + 17 stubs |
 
 ---
 
 ## Platform limitations (stubs)
 
-These 18 methods return `{ "success": false, "error": "Not implemented in JetBrains plugin MVP" }`.
+These 17 methods return `{ "success": false, "error": "Not implemented in JetBrains plugin MVP" }`.
 
 | Method | Reason |
 |--------|--------|

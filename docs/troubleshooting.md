@@ -1,4 +1,4 @@
-# Troubleshooting — claude-ide-bridge v2.30.1
+# Troubleshooting — patchwork-os 0.2.0-beta.9
 
 ---
 
@@ -27,12 +27,12 @@ Run these five checks before reading further. They catch 90% of issues.
    ```
    No lock file means the bridge hasn't started successfully or is writing to the wrong directory.
 
-5. **Is Node.js version 20 or higher?**
+5. **Is Node.js version 22 or higher?**
    ```bash
    node --version
-   # Must be v20.x or higher
+   # Must be v22.x or higher
    ```
-   Upgrade if needed: `nvm install 20 && nvm use 20`
+   Upgrade if needed: `nvm install 22 && nvm use 22`
 
 ---
 
@@ -86,7 +86,7 @@ Ask Claude to call `bridgeDoctor` for a full health check — it reports lock fi
 claude-ide-bridge --watch
 ```
 
-Full mode has been the default since v2.43.0 — all ~140 tools are registered automatically. To confirm which mode is active and which tools are registered, ask Claude to call `getToolCapabilities`.
+Full mode has been the default since v2.43.0 — all 177 tools are registered automatically. To confirm which mode is active and which tools are registered, ask Claude to call `getToolCapabilities`.
 
 ---
 
@@ -343,7 +343,7 @@ If you see the delay stuck at 30s and cycling, the bridge has a persistent crash
 | Port already bound | `EADDRINUSE` in logs | Use a different port or stop the conflicting process |
 | Workspace path not found | `ENOENT: workspace` | Pass `--workspace /absolute/path` |
 | `package.json` parse error | `SyntaxError` at startup | Fix malformed `package.json` in workspace |
-| Node.js below v20 | Various failures | `nvm install 20 && nvm use 20` |
+| Node.js below v22 | Various failures | `nvm install 22 && nvm use 22` |
 
 ### Getting crash logs
 
@@ -415,7 +415,7 @@ If HTTP works but WebSocket fails, the firewall or proxy is blocking the `Upgrad
 
 **Cause:** The bridge allows a maximum of 5 concurrent HTTP sessions. When all 5 are active, new connections receive `503 Service Unavailable`.
 
-The bridge automatically evicts the oldest idle session (idle > 60s). Sessions expire after 10 minutes of inactivity.
+The bridge automatically evicts the oldest idle session (idle > 60s). Sessions expire after 2 hours of inactivity.
 
 **Fix:** Wait for sessions to expire, or restart the bridge to clear all sessions. For high-traffic setups, run one bridge instance per user.
 

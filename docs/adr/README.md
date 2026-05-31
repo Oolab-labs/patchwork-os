@@ -17,3 +17,4 @@ This directory contains Architecture Decision Records (ADRs) for claude-ide-brid
 - [ADR-0011: HTTP `/shutdown` Endpoint](0011-http-shutdown-endpoint.md) — clean exit on Windows where SIGTERM is `TerminateProcess`
 - [ADR-0012: `windows-latest` CI Blocking](0012-windows-ci-blocking.md) — graduate Windows matrix from advisory to required check
 - [ADR-0013: Write-Tier Kill-Switch](0013-kill-switch.md) — `/kill-switch` endpoint, multi-bridge CLI fan-out, fs.watch convergence, SSE
+- [ADR-0014: /tasks Pagination over Virtualization](0014-tasks-pagination-over-virtualization.md) — capped row render + "show more" instead of `react-virtual`

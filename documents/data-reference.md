@@ -49,7 +49,7 @@ Domain data connections, state management, and protocol flows that are not expre
 | `id` | `string` | Unique 8-char hex per connection |
 | `openedFiles` | `Set<string>` | Preserved during grace period; cleared on new session or grace expiry |
 | `currentWs` | `WebSocket \| null` | Active WebSocket for this session |
-| `graceTimer` | `setTimeout \| null` | Grace period timer (config.gracePeriodMs, default 30s) before full cleanup |
+| `graceTimer` | `setTimeout \| null` | Grace period timer (config.gracePeriodMs, default 120s) before full cleanup |
 | `terminalPrefix` | `string` | Session-scoped terminal name prefix (agent teams) |
 | `connectedAt` | `number` | Unix timestamp of initial connection |
 
@@ -239,7 +239,7 @@ Extension → Bridge (notifications, no id):
 | `extension/aiCommentsChanged` | `{ comments[] }` | `// AI:` comment scan results |
 | `extension/fileChanged` | `{ id, type, file }` | Watched file change event |
 | `extension/debugSessionChanged` | `{ hasActiveSession, ... }` | Debug session start/stop/pause |
-| `extension/hello` | `{ extensionVersion }` | On connect (version handshake) |
+| `extension/hello` | `{ extensionVersion, packageVersion }` | On connect (version handshake) |
 | `extension/fileSaved` | `{}` | File save event (currently unused) |
 
 **Circuit breaker behavior:**
@@ -446,6 +446,7 @@ AutomationHooks (src/automation.ts)        runClaudeTask MCP tool
 pending ──► running ──► done
                    └──► error
                    └──► cancelled  (via cancelClaudeTask or AbortController)
+                   └──► interrupted
 ```
 
 | State | Description |
@@ -455,6 +456,7 @@ pending ──► running ──► done
 | `done` | Subprocess exited with code 0; `output` contains full stdout |
 | `error` | Subprocess exited non-zero, timed out, or threw; `error` field contains message |
 | `cancelled` | Cancelled before or during execution |
+| `interrupted` | Execution interrupted (e.g. bridge restart / signal) before completion |
 
 ### Orchestrator Limits
 
@@ -462,7 +464,7 @@ pending ──► running ──► done
 |---------|-------|
 | Max concurrent tasks | 10 (`MAX_CONCURRENT`) |
 | Max queue depth | 20 (`MAX_QUEUE`) — enqueue() rejects beyond this |
-| Max task history | 100 (`MAX_HISTORY`) — oldest completed tasks evicted |
+| Max task history | 500 (`MAX_HISTORY`) — oldest completed tasks evicted |
 | Default task timeout | 60 000 ms |
 | Min task timeout | 5 000 ms |
 | Max task timeout | 600 000 ms |
@@ -480,6 +482,8 @@ Loaded from `--automation-policy <path>` at startup. Two hook types:
 | Hook | Trigger | Template placeholders |
 |------|---------|----------------------|
 | `onDiagnosticsError` | Extension `diagnosticsChanged` notification with severity ≥ `minSeverity` | `{{file}}`, `{{diagnostics}}` |
+
+> **Deprecated since v2.43.0:** `onDiagnosticsError` is superseded by the unified `onDiagnosticsStateChange` hook (`state: "error"` / `state: "cleared"`). The legacy name still works but emits a deprecation warning.
 | `onFileSave` | Extension `fileSaved` notification matching `patterns` glob list | `{{file}}` |
 
 Cooldown enforcement: each hook tracks `lastFiredAt` per file. A cooldown of at minimum 5 000 ms must elapse before the same file re-triggers. `{{diagnostics}}` is rendered as a severity-filtered list with each message capped at 500 chars and delimited by `--- BEGIN/END DIAGNOSTIC DATA ---` to prevent prompt injection.

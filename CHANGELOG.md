@@ -6,6 +6,64 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-beta.9] — 2026-05-29
+
+Perf hot-path sweep · recipe template repairs · transport hardening · Node 22 baseline (#818–#828).
+
+### Security
+
+- **Global rate-limit slot deferred past AJV** (#821) — the global rate-limit token was consumed before argument validation, so a flood of malformed requests could self-DoS the bridge. The slot is now reserved only after AJV passes.
+- **SSRF predicate drift, traces-import path traversal, recipe spawn env leak** (#818) — three hardening fixes: realigned the SSRF hostname predicate that had drifted from the blocklist, blocked path traversal in `traces import`, and stopped leaking parent-process env into recipe-runner subprocesses.
+
+### Added
+
+- **`sentry-to-linear` recipe template** (#827) — polished template plus a marketplace catalog entry.
+- **`weekly-commit-report`** (#825) — new scheduled-report recipe.
+
+### Changed
+
+- **Dockerfile base image** `node:20-alpine` → `node:22-alpine` (f03ff99d).
+- **CI matrix drops Node 20** (#828) — Node 20 is EOL April 2026 (runner removal Sept 2026); CI now builds/tests on Node 22 only.
+
+### Performance
+
+- **Hot-path allocation elimination** (waves 28–35) — removed intermediate-array and per-iteration allocations on hot paths across the engine; mobile/dashboard polish and assorted bug fixes (#825, #826).
+
+### Fixed
+
+- **Four shipped recipe templates referencing unregistered tools** (#820) — repaired template tool references that failed preflight.
+- **`connectorPreflight` namespace match** (#819) — preflight now accepts dot-form tool IDs.
+
+---
+
+## [0.2.0-beta.8] — 2026-05-24
+
+Dashboard visual overhaul · mobile responsive sweep · connector catalog complete · Windows/macOS hardening (#806–#814).
+
+### Security
+
+- **Push-relay Express hardening** (#815) — added helmet, rate limiting, body-size cap, and request timeouts to the optional push relay.
+- **Dashboard security hardening + stability fixes** (#806) — assorted hardening with added test coverage.
+- **Windows smoke timeout + uuid vulnerability** — fixed a hanging Windows smoke test and bumped a vulnerable `uuid` transitive dependency.
+
+### Added
+
+- **Connector catalog complete** (#814) — Monday, Salesforce, Shopify, and Snowflake connectors land, completing the catalog; includes driver and docs fixes.
+- **`ctxGetTaskContext` `mode: "summary"` default** (#816) — task context now returns a compact summary by default.
+- **Dashboard UI components** (#811, #812, #813) — recipe flow-editor SVG components, connector brand icons, and 8 new UI components.
+
+### Changed
+
+- **Node 22 upgrade across all workflows** — CI/publish workflows moved to Node 22; dist-tag auth fix.
+
+### Fixed
+
+- **Windows + macOS compatibility hardening** (#808) — platform-specific path, process, and filesystem fixes.
+- **Dashboard mobile responsive sweeps** (#809, #810, #811) — multiple 375px-audit passes across recipes, tasks, runs, decisions, inbox, settings, sessions, and marketplace.
+- **`DASHBOARD_ALLOW_UNAUTHENTICATED` honoured when password is set** — local-dev bypass flag now works even with a password configured.
+
+---
+
 ## [0.2.0-beta.7] — 2026-05-23
 
 Connector catalog complete · Recipe AI repair · Halts overhaul · 3-wave security audit (#775–#804).
