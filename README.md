@@ -1,15 +1,27 @@
 # Patchwork OS
 
 [![npm beta](https://img.shields.io/npm/v/patchwork-os/beta.svg?label=npm%20%40beta)](https://www.npmjs.com/package/patchwork-os)
+[![CI](https://github.com/Oolab-labs/patchwork-os/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/patchwork-os/actions/workflows/ci.yml)
+[![npm downloads](https://img.shields.io/npm/dm/patchwork-os.svg)](https://www.npmjs.com/package/patchwork-os)
 [![license](https://img.shields.io/npm/l/patchwork-os.svg)](LICENSE)
 
 ### Your personal AI runtime, local-first.
 
-> ⭐ If this saves you a config file or a debug session, drop a star — it's the only signal I get that it's helping.
+**You decide which model. You decide which actions need a human nod. You own the credentials, the logs, and the deployment.** Nothing phones home unless you [opt in to anonymous analytics](#telemetry).
+
+![Patchwork OS dashboard — connected bridge, live telemetry, and a 45-recipe library](docs/images/dashboard-overview.png)
 
 > Patchwork OS is a local-first personal AI runtime: pluggable model providers, hot-reloadable tools, YAML recipes, a delegation policy with approval queue, and a durable trace memory — all running on your machine, all under your policy.
 
-You decide which model. You decide which actions need a human nod. You own the credentials, the logs, and the deployment. Nothing phones home unless you [opt in to anonymous analytics](#telemetry).
+## Contents
+
+- [Two ways to use it](#the-same-codebase-ships-two-ways-to-use-it)
+- [Dashboard only — no editor required](#dashboard-only--no-code-editor-required)
+- [Claude IDE Bridge — quick start](#-claude-ide-bridge--quick-start)
+- [Windows](#windows)
+- [Architecture](#architecture)
+- [Telemetry](#telemetry)
+- [Contributing & support](#support)
 
 **Five primitives, one runtime:**
 
@@ -25,7 +37,9 @@ You decide which model. You decide which actions need a human nod. You own the c
 
 ---
 
-The same codebase ships **two ways to use it.** Pick the layer you need.
+## The same codebase ships two ways to use it
+
+Pick the layer you need.
 
 | | What you get | Install | Best for |
 |---|---|---|---|
@@ -75,10 +89,15 @@ claude-ide-bridge install-extension
 claude-ide-bridge --workspace .
 
 # 4. Connect Claude Code (in another terminal)
+#    The env var skips Claude Code's built-in IDE-detection check — the bridge
+#    manages this connection itself. Add `export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true`
+#    to your shell profile so `claude --ide` is all you need going forward.
 CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide
 ```
 
 Type `/ide` in Claude Code to confirm the connection. That's it — Claude now sees your diagnostics, open files, and editor state, and can call 177 tools to act on them.
+
+> ⭐ If this saves you a config file or a debug session, drop a star — it's the only signal I get that it's helping.
 
 **What the bridge gives Claude:**
 
@@ -126,82 +145,13 @@ Bridge-only docs: [documents/platform-docs.md](documents/platform-docs.md)
 
 ---
 
-## 🪟 Windows Quick Start
+## Windows
 
-The bridge, VS Code extension, and full Patchwork OS orchestrator (`patchwork start`) all work natively on Windows — no WSL required. A PowerShell-native orchestrator is also available as `npm run start-all:win`. For architecture details, troubleshooting, and contribution patterns, see [docs/windows.md](docs/windows.md).
+The bridge, VS Code extension, and orchestrator all run **natively on Windows — no WSL required**. Install the same way (`npm install -g patchwork-os`), then start the bridge with `npm run start:bridge` or the full stack with `npm run start-all:node` (cross-platform) / `npm run start-all:win` (PowerShell-native).
 
-### Prerequisites
+A few bash+tmux entry points (`patchwork start`, `npm run remote`) still need WSL2 or Git Bash. Credential storage uses Windows DPAPI.
 
-- Node.js 22+ (from [nodejs.org](https://nodejs.org))
-- VS Code, Cursor, or Windsurf
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
-- PowerShell 5.1+ (built into Windows 10/11) or PowerShell 7+ (`pwsh`)
-
-### Bridge-only (recommended starting point)
-
-Open **PowerShell** or **cmd.exe**:
-
-```powershell
-# 1. Install
-npm install -g patchwork-os
-
-# 2. Install the VS Code extension
-claude-ide-bridge install-extension
-
-# 3. Start the bridge (bash-free entry point)
-npm run start:bridge
-# or equivalently:
-node "$(npm root -g)/patchwork-os/dist/index.js" --workspace .
-
-# 4. Connect Claude Code (new terminal)
-claude --ide
-```
-
-Type `/ide` in Claude Code to confirm the connection.
-
-### Full orchestrator (bridge + Claude + dashboard)
-
-Two options — both work on Windows, macOS, and Linux:
-
-```powershell
-# Option A: cross-platform Node.js orchestrator (recommended)
-npm run start-all:node
-npm run start-all:node -- --workspace C:\myproj --full --no-dashboard
-
-# Option B: PowerShell-native orchestrator (Windows only, no Node wrapper overhead)
-npm run start-all:win
-npm run start-all:win -- -NoDashboard -Workspace C:\myproj -Full
-```
-
-Both start the bridge, wait for the lock file, launch `claude --ide` and `remote-control`, start the Next.js dashboard on `http://localhost:3200`, poll until it's ready, then open it in your default browser. The health monitor restarts the bridge automatically if it crashes, with exponential backoff.
-
-```powershell
-# Node orchestrator options (--key value form)
-npm run start-all:node -- --full               # all 177 tools
-npm run start-all:node -- --no-dashboard       # skip dashboard
-npm run start-all:node -- --dashboard-port 3300
-npm run start-all:node -- --no-remote          # skip remote-control
-npm run start-all:node -- --notify my-topic    # ntfy.sh push notifications
-```
-
-### Known limitations on native Windows
-
-| Feature | Status |
-|---|---|
-| Bridge + extension (LSP, debugger, editor state) | ✅ Full support |
-| `npm run start:bridge` | ✅ Supported |
-| `npm run start-all:node` (Node.js orchestrator) | ✅ Supported — cross-platform |
-| `npm run start-all:win` (PS1 orchestrator) | ✅ Supported — Windows-native |
-| Dashboard (`http://localhost:3200`) | ✅ Opens automatically |
-| `patchwork start` / `npm run start-all` | ⚠️ Requires WSL2 or Git Bash (uses bash + tmux) |
-| `npm run remote:node` | ✅ Supported — cross-platform Node auto-restart wrapper |
-| `npm run remote` / `npm run vps` | ⚠️ Requires WSL2 or Git Bash |
-| Screenshot capture (standalone bridge) | ⚠️ Not yet supported; extension screenshot works via VS Code |
-| Credential storage | ✅ Uses DPAPI (Windows Data Protection API) via PowerShell |
-
-### WSL2 alternative
-
-For full Patchwork OS functionality including orchestrator, recipes, and morning-brief, run everything inside WSL2 and install the VS Code Remote-WSL extension. The bridge extension loads on the WSL side automatically (`extensionKind: ["workspace"]`), giving full tool coverage.
+**Full setup, the orchestrator flag reference, and the native-Windows limitations table:** [docs/windows.md](docs/windows.md).
 
 ---
 
@@ -558,6 +508,7 @@ Patchwork ships an **opt-in** anonymous usage summary. It is **disabled by defau
 
 - **Bugs & feature requests:** [GitHub Issues](https://github.com/Oolab-labs/patchwork-os/issues)
 - **Questions & community:** [GitHub Discussions](https://github.com/Oolab-labs/patchwork-os/discussions)
+- **Contributing:** see [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
