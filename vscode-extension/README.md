@@ -1,5 +1,9 @@
 # Claude IDE Bridge
 
+[![VS Marketplace version](https://img.shields.io/visual-studio-marketplace/v/oolab-labs.claude-ide-bridge-extension?label=VS%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=oolab-labs.claude-ide-bridge-extension)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/oolab-labs.claude-ide-bridge-extension)](https://marketplace.visualstudio.com/items?itemName=oolab-labs.claude-ide-bridge-extension)
+[![Open VSX version](https://img.shields.io/open-vsx/v/oolab-labs/claude-ide-bridge-extension?label=Open%20VSX)](https://open-vsx.org/extension/oolab-labs/claude-ide-bridge-extension)
+
 > **MCP bridge between Claude Code and your IDE.** 177 tools — diagnostics, LSP, debugger, terminal, git. Works in VS Code, Cursor, Windsurf, and Google Antigravity.
 
 Give Claude Code real-time visibility into your editor. Claude sees your open files, diagnostics, terminal output, and editor state — and can act on all of it.
@@ -9,12 +13,10 @@ Fix a bug from your phone. Let Claude run your tests and commit the result. Ask 
 ![Patchwork OS dashboard — connected bridge, live telemetry, and recipe library](https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/docs/images/dashboard-overview.png)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/vscode-extension/screenshots/02-recipes.png" width="32%" alt="Recipe library" />
-  <img src="https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/vscode-extension/screenshots/03-approvals.png" width="32%" alt="Approval queue" />
-  <img src="https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/vscode-extension/screenshots/05-traces.png" width="32%" alt="Decision traces" />
+  <img src="https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/docs/images/02-recipes.png" width="32%" alt="Recipe library" />
+  <img src="https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/docs/images/03-approvals.png" width="32%" alt="Approval queue" />
+  <img src="https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/docs/images/05-traces.png" width="32%" alt="Decision traces" />
 </p>
-
-> Images render on the Marketplace and OpenVSX once this README is published from `main`.
 
 ## Walkthrough
 
