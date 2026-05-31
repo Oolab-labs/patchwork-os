@@ -6,9 +6,15 @@ Give Claude Code real-time visibility into your editor. Claude sees your open fi
 
 Fix a bug from your phone. Let Claude run your tests and commit the result. Ask Claude what lint errors are in your workspace without copy-pasting anything. This extension makes all of that work.
 
-## Screenshots
+![Patchwork OS dashboard — connected bridge, live telemetry, and recipe library](https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/docs/images/dashboard-overview.png)
 
-<!-- TODO: screenshots of analytics panel, walkthrough, status bar — Marketplace strongly privileges visuals. Tracked separately. -->
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/vscode-extension/screenshots/02-recipes.png" width="32%" alt="Recipe library" />
+  <img src="https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/vscode-extension/screenshots/03-approvals.png" width="32%" alt="Approval queue" />
+  <img src="https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/vscode-extension/screenshots/05-traces.png" width="32%" alt="Decision traces" />
+</p>
+
+> Images render on the Marketplace and OpenVSX once this README is published from `main`.
 
 ## Walkthrough
 
@@ -35,13 +41,19 @@ The extension detects whether `claude-ide-bridge` is installed globally, install
 
 **Step 2 — Connect Claude Code.**
 
-In your project directory:
+Add the connection flag to your shell profile once (`~/.zshrc` or `~/.bashrc`):
 
 ```bash
-CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide
+export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true
 ```
 
-> **Why the env var?** Claude Code normally validates that `--ide` is launched from within a recognized IDE (VS Code, Cursor, etc.). Since the bridge manages this connection independently, this check can be skipped. Add `export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true` to your shell profile (`~/.zshrc` or `~/.bashrc`) so `claude --ide` is all you need going forward.
+Then, in any project directory, `claude --ide` is all you need:
+
+```bash
+claude --ide
+```
+
+> **Why the env var?** Claude Code normally validates that `--ide` is launched from within a recognized IDE (VS Code, Cursor, etc.). The bridge manages this connection itself, so the check is skipped. Prefer a one-off? Run `CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide` inline instead.
 
 **Step 3 — Confirm the connection.**
 
@@ -90,7 +102,7 @@ The bridge starts in **full mode by default** (177 tools). Pass `--slim` to rest
 ## Requirements
 
 - VS Code 1.93+ (or a compatible fork: Cursor, Windsurf, Google Antigravity)
-- Node.js 20+ on `PATH` (for auto-install)
+- Node.js 22+ on `PATH` (for auto-install)
 
 ## Commands
 
@@ -221,7 +233,7 @@ Approve or reject risky Claude actions from your phone. Install the Patchwork OS
 
 ### JetBrains companion
 
-A companion IntelliJ plugin (v1.0.0) is available on the JetBrains Marketplace. It covers 49 handlers: core tools, PSI-based LSP (goto, references, hover, rename, symbols, format), XDebugger integration, and code style tools. Use the same bridge from VS Code, IntelliJ IDEA, PyCharm, GoLand, and other JetBrains IDEs simultaneously.
+A companion IntelliJ plugin (v1.0.0) is available on the JetBrains Marketplace. It registers 66 handlers (49 fully implemented + 17 stubs): core tools, PSI-based LSP (goto, references, hover, rename, symbols, format), XDebugger integration, and code style tools. Use the same bridge from VS Code, IntelliJ IDEA, PyCharm, GoLand, and other JetBrains IDEs simultaneously.
 
 ---
 
@@ -236,10 +248,10 @@ A companion IntelliJ plugin (v1.0.0) is available on the JetBrains Marketplace. 
 
 | | |
 |---|---|
-| Extension version | 1.4.20 |
-| Bridge version | `0.2.0-beta.9` |
+| Extension version | shown in the Marketplace header above |
+| Bridge version | [latest on npm](https://www.npmjs.com/package/patchwork-os) · [GitHub releases](https://github.com/Oolab-labs/patchwork-os/releases) |
 | npm package | `patchwork-os` (binaries: `claude-ide-bridge`, `patchwork`, `patchwork-os`) |
 | VS Code requirement | 1.93+ |
 | Compatible editors | VS Code, Cursor, Windsurf, Google Antigravity |
-| Node.js requirement | 20+ (for bridge auto-install) |
+| Node.js requirement | 22+ (for bridge auto-install) |
 | Test suite | 1000+ tests across bridge + extension |

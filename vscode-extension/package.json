@@ -28,25 +28,22 @@
   "categories": [
     "AI",
     "Programming Languages",
-    "Debuggers"
+    "Debuggers",
+    "Linters",
+    "Testing"
   ],
   "keywords": [
     "claude",
-    "claude-code",
     "mcp",
-    "mcp-server",
-    "ide",
-    "lsp",
-    "ai",
-    "agent",
-    "automation",
-    "patchwork",
-    "patchwork-os",
+    "claude-code",
     "anthropic",
-    "copilot",
-    "jetbrains",
-    "cowork",
-    "windsurf"
+    "ai-agent",
+    "lsp",
+    "ide",
+    "automation",
+    "mcp-server",
+    "windsurf",
+    "patchwork-os"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
