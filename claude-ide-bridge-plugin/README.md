@@ -1,8 +1,10 @@
 # Claude IDE Bridge Plugin
 
-If you're using this, a star helps more people find it — [github.com/Oolab-labs/claude-ide-bridge](https://github.com/Oolab-labs/claude-ide-bridge)
+If you're using this, a star helps more people find it — [github.com/Oolab-labs/patchwork-os](https://github.com/Oolab-labs/patchwork-os)
 
 A Claude Code plugin that provides full IDE integration — 177 tools for LSP, debugging, terminals, Git, GitHub, diagnostics, OAuth 2.0, and more.
+
+![Patchwork OS dashboard — connected bridge, live telemetry, and recipe library](https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/docs/images/dashboard-overview.png)
 
 ## Quick Start
 
@@ -22,12 +24,12 @@ export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true
 claude-ide-bridge --watch --workspace /path/to/your/project
 
 # 5. In a new terminal, open Claude Code with the plugin
-claude --plugin-dir $(npm root -g)/claude-ide-bridge/claude-ide-bridge-plugin
+claude --plugin-dir $(npm root -g)/patchwork-os/claude-ide-bridge-plugin
 ```
 
 ### Verify it's working
 
-Inside Claude Code, type `/ide` and select the bridge from the list. You should see a confirmation with the tool count (177 tools when the extension is connected, ~111 without it).
+Inside Claude Code, type `/ide` and select the bridge from the list. You should see a confirmation with the tool count — 177 tools when the extension is connected. Tools that require the extension (terminal, debugger, LSP, editor state) are automatically hidden when it's not connected and reappear on reconnect.
 
 The session start hook also prints bridge status automatically — look for a summary line at the top of each new conversation.
 
@@ -36,7 +38,7 @@ The session start hook also prints bridge status automatically — look for a su
 ## Prerequisites
 
 - [Claude Code](https://code.claude.com) v1.0.33+
-- Node.js 18+
+- Node.js 22+
 - A VS Code-compatible editor: VS Code, Windsurf, Cursor, or Google Antigravity
 - The companion VS Code extension (installed via `claude-ide-bridge install-extension` or from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=oolab-labs.claude-ide-bridge-extension))
 
@@ -54,8 +56,8 @@ claude --plugin-dir $(npm root -g)/patchwork-os/claude-ide-bridge-plugin
 ### Option 2: Local plugin (development)
 
 ```bash
-git clone https://github.com/Oolab-labs/claude-ide-bridge
-cd claude-ide-bridge
+git clone https://github.com/Oolab-labs/patchwork-os
+cd patchwork-os
 npm install && npm run build
 claude --plugin-dir ./claude-ide-bridge-plugin
 ```
@@ -80,7 +82,7 @@ No CLI flags needed — Claude Code loads the plugin from the project root on st
 
 ### Install the extension
 
-The VS Code extension provides LSP, debugging, terminal, and editor tools. Without it, ~27 tools are unavailable.
+The VS Code extension provides LSP, debugging, terminal, and editor tools. Without it, the extension-required tools (see the Extension Required column in [Tool Categories](#tool-categories-quick-reference)) are hidden until it reconnects.
 
 ```bash
 # Install via subcommand (detects your IDE automatically)
@@ -284,7 +286,7 @@ See [docs/remote-access.md](../docs/remote-access.md) for full setup instruction
 
 ## Links
 
-- [GitHub Repository](https://github.com/Oolab-labs/claude-ide-bridge)
-- [Setup Guide](../SETUP.md)
+- [GitHub Repository](https://github.com/Oolab-labs/patchwork-os)
+- [Platform Docs](../documents/platform-docs.md)
 - [Changelog](../CHANGELOG.md)
 - [Plugin Authoring Docs](../documents/plugin-authoring.md)
