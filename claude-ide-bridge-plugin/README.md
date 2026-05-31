@@ -2,7 +2,7 @@
 
 If you're using this, a star helps more people find it — [github.com/Oolab-labs/claude-ide-bridge](https://github.com/Oolab-labs/claude-ide-bridge)
 
-A Claude Code plugin that provides full IDE integration — 136+ tools for LSP, debugging, terminals, Git, GitHub, diagnostics, OAuth 2.0, and more.
+A Claude Code plugin that provides full IDE integration — 177 tools for LSP, debugging, terminals, Git, GitHub, diagnostics, OAuth 2.0, and more.
 
 ## Quick Start
 
@@ -10,7 +10,7 @@ The fastest path from zero to working:
 
 ```bash
 # 1. Install the bridge
-npm install -g claude-ide-bridge
+npm install -g patchwork-os
 
 # 2. Install the VS Code extension (auto-installs, or use the command below)
 claude-ide-bridge install-extension
@@ -27,7 +27,7 @@ claude --plugin-dir $(npm root -g)/claude-ide-bridge/claude-ide-bridge-plugin
 
 ### Verify it's working
 
-Inside Claude Code, type `/ide` and select the bridge from the list. You should see a confirmation with the tool count (136+ tools when the extension is connected, ~111 without it).
+Inside Claude Code, type `/ide` and select the bridge from the list. You should see a confirmation with the tool count (177 tools when the extension is connected, ~111 without it).
 
 The session start hook also prints bridge status automatically — look for a summary line at the top of each new conversation.
 
@@ -47,8 +47,8 @@ The session start hook also prints bridge status automatically — look for a su
 ### Option 1: npm (recommended)
 
 ```bash
-npm install -g claude-ide-bridge
-claude --plugin-dir $(npm root -g)/claude-ide-bridge/claude-ide-bridge-plugin
+npm install -g patchwork-os
+claude --plugin-dir $(npm root -g)/patchwork-os/claude-ide-bridge-plugin
 ```
 
 ### Option 2: Local plugin (development)
@@ -175,7 +175,7 @@ All agents have `memory: project` enabled — they learn codebase patterns acros
 
 ### MCP Server
 
-The plugin configures the bridge as an MCP server, providing 136+ tools:
+The plugin configures the bridge as an MCP server, providing 177 tools:
 
 - **LSP** (13 tools): goToDefinition, findReferences, getHover, renameSymbol, getCallHierarchy, getTypeHierarchy, getInlayHints, ...
 - **Debugging** (5 tools): setDebugBreakpoints, startDebugging, evaluateInDebugger, getDebugState, stopDebugging
@@ -265,7 +265,7 @@ Create `mcp-bridge.json`:
 | VS Code Integration | 8 | Yes |
 | Notebooks | 3 | Yes |
 | Activity & OAuth | 4 | No |
-| **Total** | **~138** | |
+| **Total** | **177** | |
 
 ---
 

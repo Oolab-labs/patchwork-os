@@ -2,213 +2,140 @@
 
 ## Overview
 
-MCP prompts are reusable prompt templates invocable via `prompts/get` or `/name` in Claude Desktop. The bridge currently ships **36** prompts in `src/prompts.ts`; this document catalogs both shipped and *proposed* prompts across four categories. The runtime `prompts/list` call is the authoritative list of what's actually invocable. Invoke shipped prompts with `/prompt-name` in any chat session.
+MCP prompts are reusable prompt templates invocable via `prompts/get`, or as `/prompt-name` in Claude Code and the Claude Desktop `/` picker. The bridge ships **36** prompts, all defined in [`src/prompts.ts`](../src/prompts.ts).
 
-Prompts appear in the Claude Desktop prompt picker automatically when the bridge is connected. In Claude Code CLI, use `/prompt-name args`.
+This document catalogs every shipped prompt. The runtime `prompts/list` call is the authoritative source — if a name here ever disagrees with `prompts/list`, trust `prompts/list`. Prompts appear in the picker automatically when the bridge is connected.
 
----
+> **Counts:** 9 core · 5 Dispatch · 2 agent/scheduled · 1 setup · 16 LSP composition · 3 edit workflow = **36**. The sections below mirror the grouping in `src/prompts.ts`.
 
-## Core Prompts (28)
-
-### Status & Context
-
-| Prompt | What it does | Tools called | Notes |
-|--------|-------------|--------------|-------|
-| `project-status` | Git status + diagnostics summary → workspace health report | `getGitStatus`, `getDiagnostics` | Also a Dispatch prompt |
-| `recent-activity` | Git log + git status → what changed recently | `getGitLog`, `getGitStatus` | Also a Dispatch prompt |
-| `build-check` | Project info + diagnostics + build command → pass/fail | `getProjectInfo`, `getDiagnostics`, `runCommand` | Also a Dispatch prompt |
-| `quick-review` | Git status + diff + diagnostics → change quality summary | `getGitStatus`, `getGitDiff`, `getDiagnostics` | Also a Dispatch prompt |
-| `context-bundle` | Captures full IDE snapshot for handoff | `contextBundle` | Slim mode |
-| `health-check` | Diagnostics + security advisories + git status + tests → full health report | `getDiagnostics`, `getSecurityAdvisories`, `getGitStatus`, `runTests` | Scheduled task variant available |
-
-### Code Quality
-
-| Prompt | What it does | Tools called | Notes |
-|--------|-------------|--------------|-------|
-| `code-review` | Diff + diagnostics → inline review with severity ratings | `getGitDiff`, `getDiagnostics` | Full mode |
-| `review-changes` | Staged/unstaged diff + diagnostics → diff review | `getGitDiff`, `getDiagnostics` | Full mode |
-| `lint-fix` | Fix all lint errors and format document | `fixAllLintErrors`, `formatDocument` | Also a Dispatch prompt |
-| `security-audit` | CVEs + outdated packages → vulnerability report | `getSecurityAdvisories`, `auditDependencies` | Full mode |
-| `unused-code` | Dead code report for workspace | `detectUnusedCode` | Full mode |
-| `coverage-report` | Test coverage summary | `getCodeCoverage` | Full mode; parses lcov/clover |
-
-### Git & Releases
-
-| Prompt | What it does | Tools called | Notes |
-|--------|-------------|--------------|-------|
-| `stage-and-commit` | Stage all changes and commit with message | `gitAdd`, `gitCommit` | Also a Dispatch prompt |
-| `push-and-pr` | Push branch and open pull request | `gitPush`, `githubCreatePR` | Also a Dispatch prompt |
-| `release-notes` | Changelog for version bump from git history | `getGitLog`, `getGitDiff` | Full mode |
-
-### Navigation
-
-| Prompt | What it does | Tools called | Notes |
-|--------|-------------|--------------|-------|
-| `find-symbol` | Locate definition of named symbol | `searchWorkspaceSymbols` | Slim mode |
-| `explain-file` | File purpose + exports overview | `getDocumentSymbols`, `explainSymbol` | Slim mode |
-| `trace-call` | Who calls this function (incoming call hierarchy) | `getCallHierarchy` | Slim mode; direction: incoming |
-| `find-tests` | Test files related to current source file | `findRelatedTests` | Full mode |
-
-### Refactoring
-
-| Prompt | What it does | Tools called | Notes |
-|--------|-------------|--------------|-------|
-| `refactor-safe` | Risk level + exact edit preview before committing | `refactorAnalyze`, `refactorPreview` | Slim mode |
-| `rename-symbol` | Safe rename workflow with impact analysis | `refactorAnalyze`, `renameSymbol` | Slim mode |
-| `extract-function` | Extract selected code range to a named function | `refactorExtractFunction` | Slim mode |
-
-### Debugging
-
-| Prompt | What it does | Tools called | Notes |
-|--------|-------------|--------------|-------|
-| `debug-session` | Set breakpoints and launch debugger | `setDebugBreakpoints`, `startDebugging` | Slim mode |
-| `diagnose-errors` | All current errors (error severity only) | `getDiagnostics` | Slim mode; also a Dispatch prompt |
-| `watch-diagnostics` | Live error stream (long-poll) | `watchDiagnostics` | Slim mode |
-
-### Miscellaneous
-
-| Prompt | What it does | Tools called | Notes |
-|--------|-------------|--------------|-------|
-| `scaffold-tests` | Generate test stubs for current file | `generateTests` | Full mode |
-| `pr-template` | Fill PR description template | `getPRTemplate` | Full mode |
-| `cowork-handoff` | Bundle IDE context and write handoff note before switching to Cowork | `contextBundle`, `setHandoffNote` | Alias: `mcp__bridge__cowork` |
+Arguments are passed as `key=value` pairs after the name. Prompts that take no arguments are invoked with just `/prompt-name`. Required arguments are marked **(required)**.
 
 ---
 
-## Dispatch Prompts (8)
+## Core prompts (9)
 
-Short prompts designed for mobile use via Claude Desktop Dispatch or Siri. Responses are capped at 20 lines. All require `--full` mode.
+Review, context, and setup helpers for everyday IDE work.
 
-Invoke by voice phrase or by typing the prompt name in any Claude chat.
-
-| Prompt | Phone phrase | Tools called |
-|--------|-------------|--------------|
-| `project-status` | "How's the build?" | `getGitStatus`, `getDiagnostics` |
-| `quick-review` | "Review my changes" | `getGitStatus`, `getGitDiff`, `getDiagnostics` |
-| `build-check` | "Does it build?" | `getProjectInfo`, `getDiagnostics`, `runCommand` |
-| `recent-activity` | "What changed?" | `getGitLog`, `getGitStatus` |
-| `lint-fix` | "Fix lint errors" | `fixAllLintErrors`, `formatDocument` |
-| `push-and-pr` | "Push and open PR" | `gitPush`, `githubCreatePR` |
-| `diagnose-errors` | "Any errors?" | `getDiagnostics` (error filter) |
-| `stage-and-commit` | "Commit everything" | `gitAdd`, `gitCommit` |
-
----
-
-## LSP Composition Prompts (13)
-
-Deep code intelligence prompts combining multiple LSP tools. All available in slim mode unless noted.
-
-| Prompt | What it does | Tools used |
-|--------|-------------|-----------|
-| `explain-symbol` | Full symbol analysis: hover + definition + refs + type hierarchy | `explainSymbol` |
-| `find-usages` | All call sites and test files that use a symbol | `findReferences`, `findRelatedTests` |
-| `impact-analysis` | Blast radius for a proposed change: ref counts + diagnostics | `getChangeImpact`, `getDiagnostics` |
-| `type-hierarchy` | Supertypes and subtypes of a class or interface | `getTypeHierarchy` |
-| `call-chain` | Full incoming and outgoing call graph for a function | `getCallHierarchy` (both directions) |
-| `import-tree` | What this file imports and the signatures of those imports | `getImportedSignatures` |
-| `refactor-preview` | Analyze rename/extract risk then show exact edits | `refactorAnalyze`, `refactorPreview` |
-| `annotate-code-review` | Apply inline warning/error review decorations to open editor | `setEditorDecorations` |
-| `code-lens-summary` | Test run counts and reference counts for all symbols in file | `getCodeLens` |
-| `semantic-map` | Semantic token types and modifiers across the current file | `getSemanticTokens` |
-| `inlay-hints` | Inline type annotations and parameter name hints | `getInlayHints` |
-| `symbol-history` | Definition origin + blame + git log follow for a symbol | `getSymbolHistory` |
-| `screenshot-plan` | Derive dev URL + gather diagnostics + diff → Playwright action plan | `screenshotAndAnnotate` |
+| Prompt | What it does | Arguments |
+|--------|--------------|-----------|
+| `review-changes` | Review uncommitted changes to a specific file: diff, diagnostics, churn risk, and architectural context. | `file` **(required)** |
+| `review-file` | Code review of a file: correctness, style, performance, security, and coverage gaps. | `file` **(required)** |
+| `explain-diagnostics` | Explain diagnostics (errors/warnings) for a file and suggest fixes. | `file` **(required)** |
+| `generate-tests` | Generate missing unit tests for a file using the project's test conventions. | `file` **(required)** |
+| `debug-context` | Snapshot IDE state (open editors, diagnostics, recent terminal output) as debugging context. | — |
+| `git-review` | Review uncommitted changes (staged + unstaged) against a base branch before commit or PR. | `base` (default: `main`) |
+| `cowork` | Load IDE context (open files, diagnostics, git status, project info, handoff note) and propose a Cowork action plan. Run before any computer-use task. | `task` (optional focus) |
+| `gen-claude-md` | Generate bridge workflow rules and quick-reference table, then write them into `CLAUDE.md`. | — |
+| `set-effort` | Prepend a model-effort instruction to the next task. `low`=quick, `medium`=normal, `high`=complex refactors/deep analysis. | `level` (default: `medium`) |
 
 ---
 
-## Agent & Scheduled Prompts (23)
+## Dispatch prompts (5)
 
-Prompts designed for automated or orchestrated use. Most require `--full` mode.
+Short, terse prompts designed for mobile use via Claude Desktop Dispatch or Siri. Invoke by the phone phrase or by typing the name in any chat. These read git/build state, so they require **full mode** (the default).
 
-### Agent Coordination
-
-| Prompt | What it does | Tools called | Notes |
-|--------|-------------|--------------|-------|
-| `team-status` | Workspace state + active tasks + recent activity across all connected sessions | `getGitStatus`, `listClaudeTasks`, `getActivityLog` | Requires multiple Claude Code sessions connected simultaneously |
-| `task-report` | List all Claude subprocess tasks with current status | `listClaudeTasks` | Full mode |
-| `handoff-summary` | Read handoff note + git status → session transition brief | `getHandoffNote`, `getGitStatus` | Use at session start to recover prior context |
-
-### Scheduled Tasks
-
-These prompts are designed to be run on a timer. Copy templates from `templates/scheduled-tasks/` to `~/.claude/scheduled-tasks/` and restart Claude Desktop.
-
-| Prompt | Cadence | What it does | Tools called |
-|--------|---------|-------------|--------------|
-| `nightly-review` | Nightly | Full review: tests + coverage + security + git hotspots | `runTests`, `getCodeCoverage`, `getSecurityAdvisories`, `getGitHotspots` |
-| `health-check` | Hourly | Lighter check: diagnostics + advisories + git status | `getDiagnostics`, `getSecurityAdvisories`, `getGitStatus` |
-| `dependency-audit` | Weekly | Outdated packages + CVE report | `auditDependencies`, `getSecurityAdvisories` |
-
-### Automation Policy Prompts
-
-Invoked automatically by automation hooks when configured with `promptName`. Each maps to a hook event.
-
-| Prompt | Triggered by | What it does | Tools called |
-|--------|-------------|-------------|--------------|
-| `on-save-lint` | `onFileSave` | Run lint and format on the saved file | `fixAllLintErrors`, `formatDocument` |
-| `on-error-fix` | `onDiagnosticsError` | Attempt to auto-fix newly introduced errors | `getDiagnostics`, `getCodeActions` |
-| `on-commit-review` | `onGitCommit` | Post-commit review of staged changes | `getGitDiff`, `getDiagnostics` |
-| `on-test-failure` | `onTestRun` (failure only) | Diagnose test failures and suggest fixes | `getDiagnostics`, `findReferences` |
-| `on-pr-opened` | `onPullRequest` | Auto-review pull request on open | `getGitDiff`, `getDiagnostics`, `getPRTemplate` |
-| `on-branch-checkout` | `onBranchCheckout` | Context brief for newly checked-out branch | `getGitStatus`, `getGitLog`, `contextBundle` |
-| `on-debug-end` | `onDebugSessionEnd` | Post-debug summary: what ran, what failed | `getDiagnostics`, `getGitStatus` |
-| `on-git-push` | `onGitPush` | Post-push summary for remote branch | `getGitLog`, `getGitStatus` |
-| `on-git-pull` | `onGitPull` | Summarize incoming changes after pull | `getGitLog`, `getGitDiff` |
-| `on-permission-denied` | `onPermissionDenied` | Log and explain denied tool call | — |
-| `on-task-created` | `onTaskCreated` | Log new Claude subprocess task | `listClaudeTasks` |
-| `on-task-success` | `onTaskSuccess` | Summarize completed task output | — |
-| `on-cwd-changed` | `onCwdChanged` | Brief context refresh after working directory change | `getGitStatus`, `getDiagnostics` |
+| Prompt | Phone phrase | What it does | Arguments |
+|--------|--------------|--------------|-----------|
+| `project-status` | "How's the build?" | Quick health check: git status, diagnostics, and test results. Terse output. | — |
+| `quick-tests` | "Run the tests" | Run tests and return a concise pass/fail summary with failure details. | `filter` (optional) |
+| `quick-review` | "Review my changes" | Git diff summary plus diagnostics for changed files. Concise output. | — |
+| `build-check` | "Does it build?" | Check if the project builds successfully. Returns pass/fail with error summary. | — |
+| `recent-activity` | "What changed?" | Last N git log entries plus uncommitted changes summary. | `count` (default: `10`) |
 
 ---
 
-## Using Named Prompts in Automation Policy
+## Agent teams & scheduled prompts (2)
 
-Instead of inline `prompt` strings, reference a prompt by name using `promptName` and pass arguments with `promptArgs`:
+| Prompt | What it does | Arguments | Notes |
+|--------|--------------|-----------|-------|
+| `team-status` | Active agent sessions and recent tool activity. For team leads coordinating parallel agents. | — | Requires multiple Claude Code sessions connected simultaneously. |
+| `health-check` | Full health check: tests, diagnostics, security advisories, git status, dependency audit. | — | Suited to scheduled nightly/hourly runs. |
+
+---
+
+## Setup prompt (1)
+
+| Prompt | What it does | Arguments |
+|--------|--------------|-----------|
+| `orient-project` | Set up a project for Claude IDE Bridge: detects project type, generates/updates `CLAUDE.md`, scaffolds docs, and verifies connectivity. Idempotent. | `style` — `minimal` (CLAUDE.md only), `standard` (+ `documents/`, `docs/adr/`, `.claude/rules/`), `full` (+ commands, agents, use-cases). Default: `standard`. |
+
+---
+
+## LSP composition prompts (16)
+
+These wrap the bridge's LSP primitives and composites (`getChangeImpact`, `explainSymbol`, `refactorAnalyze`, etc.) into one-call developer workflows. Available in slim mode unless the description says otherwise.
+
+| Prompt | What it does | Arguments |
+|--------|--------------|-----------|
+| `find-callers` | Find every caller of a symbol with file:line locations. Wraps `searchWorkspaceSymbols` + `getCallHierarchy(incoming)` + `findReferences`. | `symbol` **(required)** |
+| `blast-radius` | Blast radius at a position: diagnostics + reference counts + risk badge. Wraps `getChangeImpact`. | `file`, `line`, `column` **(all required)** |
+| `why-error` | Explain a diagnostic in plain English with surrounding type context. Wraps `getDiagnostics` + `explainSymbol`. | `file` **(required)**, `line` (default: first error) |
+| `unused-in` | List unused exports, parameters, and imports in a file. Wraps `detectUnusedCode` + `findReferences`. | `file` **(required)** |
+| `trace-to` | Trace call chain to a target symbol with type signatures at each hop. Wraps `getCallHierarchy(outgoing)` + `getImportedSignatures`. | `symbol` **(required)** |
+| `imports-of` | List files importing a symbol with reference counts. Wraps `findReferences` + `getImportTree`. | `symbol` **(required)** |
+| `circular-deps` | Detect circular import dependencies. Wraps `getImportTree` with cycle detection. | — |
+| `refactor-preview` | Preview the exact edits a rename would make plus blast-radius risk. Wraps `refactorAnalyze` + `refactorPreview`. | `file`, `line`, `column`, `newName` **(all required)** |
+| `module-exports` | List exported symbols with type signatures as Markdown. Wraps `getDocumentSymbols` + `getHover`. | `file` **(required)** |
+| `type-of` | Type signature at a position (no docs). Wraps `getHoverAtCursor` + `getTypeSignature`. | `file`, `line`, `column` **(all required)** |
+| `deprecations` | Find `@deprecated` APIs and count callers. Wraps `searchWorkspace` + `findReferences`. | — |
+| `coverage-gap` | Identify untested functions by correlating coverage with document symbols. Wraps `getCodeCoverage` + `getDocumentSymbols`. | `file` **(required)** |
+| `explore-type` | Explore a type: declaration, definition, and all implementations. Wraps `getHover` + `goToDeclaration` + `goToTypeDefinition` + `findImplementations`. | `file`, `line`, `column` **(all required)** |
+| `ide-coverage` | Generate an HTML coverage heatmap and open it in the browser. **Requires full mode** (`getCodeCoverage` + `openInBrowser`). | — |
+| `ide-deps` | D3 force-directed dependency graph for an entry point, opened in the browser. **Requires full mode.** | `file`, `line`, `column` **(all required)** |
+| `ide-diagnostics-board` | Workspace diagnostics grouped by severity/file, rendered as a sortable HTML table in the browser. | — |
+
+---
+
+## Edit workflow prompts (3)
+
+| Prompt | What it does | Arguments |
+|--------|--------------|-----------|
+| `safe-refactor` | Multi-file refactor with preview-before-apply: shows a unified diff per file, asks for confirmation, then applies atomically via transaction. | `description` **(required)**, `files` (optional, scopes the refactor) |
+| `diagnose-and-fix` | Explain the first diagnostic error, propose and preview a fix, apply it, then re-check diagnostics. | `filePath` (optional; omit for workspace-wide first error) |
+| `session-delta` | Orient at session start: diff + diagnostic changes since last handoff note, with a suggested next action. | — |
+
+---
+
+## Referencing prompts from automation policy
+
+Automation hooks can invoke any of these prompts by name instead of carrying an inline `prompt` string. Use `promptName` and pass arguments with `promptArgs`:
 
 ```json
 {
   "onFileSave": {
     "enabled": true,
-    "promptName": "on-save-lint",
+    "promptName": "review-changes",
     "promptArgs": { "file": "{{file}}" }
   }
 }
 ```
 
-`promptArgs` values are substituted into the named prompt's template. Bridge placeholder expansion happens first — `{{file}}` is replaced with the actual file path before being passed to the prompt.
-
-This keeps automation policy files clean and avoids duplicating long prompt strings across multiple hook entries.
+Bridge placeholder expansion happens first — `{{file}}` is replaced with the actual file path before being passed to the prompt. This keeps automation policy files clean and avoids duplicating long prompt strings across hook entries. See [automation.md](../docs/automation.md) for the full hook list.
 
 ---
 
-## Invoking Prompts from Claude Code
+## Invoking prompts from Claude Code
 
 ```
 /project-status
-/explain-symbol symbolName=MyClass file=src/foo.ts
-/find-tests file=src/utils.ts
-/code-review
-/refactor-safe symbol=processPayment file=src/billing.ts
+/explore-type file=src/foo.ts line=42 column=8
+/generate-tests file=src/utils.ts
+/review-changes file=src/billing.ts
+/safe-refactor description="rename UserService to AccountService"
 ```
 
-Arguments are passed as `key=value` pairs after the prompt name. Prompts that take no arguments can be invoked with just `/prompt-name`.
-
-In Claude Desktop, prompts appear in the `/` picker. Typing the first few characters filters the list.
+In Claude Desktop, prompts appear in the `/` picker; typing the first few characters filters the list.
 
 ---
 
-## Prompt Availability by Mode
+## Availability by mode
 
-| Category | Slim mode | Full mode required |
-|----------|-----------|-------------------|
-| Status & Context | `context-bundle` | All others |
-| Code Quality | — | All |
-| Git & Releases | — | All |
-| Navigation | `find-symbol`, `explain-file`, `trace-call` | `find-tests` |
-| Refactoring | `refactor-safe`, `rename-symbol`, `extract-function` | — |
-| Debugging | `debug-session`, `diagnose-errors`, `watch-diagnostics` | — |
-| Miscellaneous | — | `scaffold-tests`, `pr-template`, `cowork-handoff` |
-| Dispatch | — | All (require `--full`) |
-| LSP Composition | All 13 | — |
-| Agent & Scheduled | — | All |
+Most prompts run in **slim mode**. The few that require **full mode** (the default since v2.43.0) are those that shell out, touch git, or open a browser:
 
-Call `getToolCapabilities` at session start to confirm which tools (and therefore which prompts) are active in the current mode.
+| Requires full mode | Reason |
+|--------------------|--------|
+| All 5 Dispatch prompts | read git status / run tests / build |
+| `git-review`, `health-check`, `coverage-gap` | git / test / coverage tooling |
+| `ide-coverage`, `ide-deps` | open rendered HTML in the browser |
+
+Call `getToolCapabilities` at session start to confirm which tools — and therefore which prompts — are active in the current mode.

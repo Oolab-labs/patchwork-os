@@ -31,7 +31,7 @@ DOMAIN=bridge.example.com bash deploy/bootstrap-new-vps.sh
 ```
 
 The bootstrap script handles everything end-to-end:
-1. Installs Node.js 20, nginx, certbot
+1. Installs Node.js 22, nginx, certbot
 2. Creates a dedicated `claude-bridge` system user (non-root)
 3. Clones the repo to `/opt/claude-ide-bridge`
 4. Runs `npm ci && npm run build`

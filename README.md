@@ -42,7 +42,7 @@ Same codebase. Bridge is the foundation; Patchwork OS is the optional layer on t
 
 The dashboard is a standalone Next.js app that communicates with the bridge over HTTP. No editor extension required.
 
-**Prereqs:** [Node.js 20+](https://nodejs.org) · tmux on macOS/Linux (`brew install tmux` / `apt install tmux`) — auto-detected, falls back to background mode if absent. **Windows:** natively supported — no WSL required.
+**Prereqs:** [Node.js 22+](https://nodejs.org) · tmux on macOS/Linux (`brew install tmux` / `apt install tmux`) — auto-detected, falls back to background mode if absent. **Windows:** natively supported — no WSL required.
 
 ```bash
 npx patchwork-os@beta init   # scaffolds ~/.patchwork and generates a dashboard login (no install needed)
@@ -61,7 +61,7 @@ Open **http://localhost:3200** — that's it. `npx patchwork-os@beta init` auto-
 
 > Developers only — skip to [Dashboard Only](#dashboard-only--no-code-editor-required) above if you just want the web dashboard.
 
-**Prerequisites:** a supported code editor — **VS Code, Cursor, Windsurf, or Google Antigravity** (or JetBrains via the [companion plugin](#jetbrains-plugin)) — plus Node.js 20+ and the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code). The bridge's LSP, debugger, and editor-state tools run through the editor extension; without one you're limited to the headless CLI subset.
+**Prerequisites:** a supported code editor — **VS Code, Cursor, Windsurf, or Google Antigravity** (or JetBrains via the [companion plugin](#jetbrains-plugin)) — plus Node.js 22+ and the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code). The bridge's LSP, debugger, and editor-state tools run through the editor extension; without one you're limited to the headless CLI subset.
 
 ```bash
 # 1. Install the npm package
@@ -132,7 +132,7 @@ The bridge, VS Code extension, and full Patchwork OS orchestrator (`patchwork st
 
 ### Prerequisites
 
-- Node.js 20+ (from [nodejs.org](https://nodejs.org))
+- Node.js 22+ (from [nodejs.org](https://nodejs.org))
 - VS Code, Cursor, or Windsurf
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
 - PowerShell 5.1+ (built into Windows 10/11) or PowerShell 7+ (`pwsh`)
@@ -327,7 +327,7 @@ The package ships these in `templates/recipes/`. Recipes that need API keys are 
 
 **Delegation policy presets** ([`templates/policies/`](templates/policies/)): five persona starters — conservative, developer, headless-CI, regulated-industry, personal-assistant. Copy one into `~/.patchwork/config.json` and restart.
 
-**Webhook recipe starters** ([`templates/recipes/webhook/`](templates/recipes/webhook/)): five webhook-triggered recipes — capture-thought, morning-brief (on-demand), meeting-prep, incident-intake, customer-escalation. Anything that can POST HTTP can drive these — iPhone Shortcut, Stream Deck, Home Assistant, NFC tag, monitoring tool.
+**Webhook recipe starters** ([`templates/recipes/webhook/`](templates/recipes/webhook/)): six webhook-triggered recipes — capture-thought, morning-brief (on-demand), meeting-prep, incident-intake, customer-escalation, apple-watch-health-log. Anything that can POST HTTP can drive these — iPhone Shortcut, Stream Deck, Home Assistant, NFC tag, monitoring tool.
 
 ### Automation hooks
 
@@ -419,7 +419,7 @@ Use whichever fits your mental model.
 
 | Category | Tools |
 |---|---|
-| LSP / Code Intelligence | `getDiagnostics`, `goToDefinition`, `findReferences`, `getCallHierarchy`, `renameSymbol`, `refactorAnalyze`, `explainSymbol`, … (37 tools) |
+| LSP / Code Intelligence | `getDiagnostics`, `goToDefinition`, `findReferences`, `getCallHierarchy`, `renameSymbol`, `refactorAnalyze`, `explainSymbol`, … (34 tools) |
 | Git | `getGitStatus`, `getGitDiff`, `gitCommit`, `gitPush`, `gitCheckout`, `gitBlame`, … (16 tools) |
 | GitHub | `githubCreatePR`, `githubListPRs`, `githubCreateIssue`, `githubPostPRReview`, … (13 tools) |
 | Terminal | `runInTerminal`, `createTerminal`, `getTerminalOutput`, `waitForTerminalOutput` |

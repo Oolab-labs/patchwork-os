@@ -15,7 +15,7 @@ https://github.com/user-attachments/assets/a81a8d11-2cc3-46f3-88ad-6a905a221a2c
 ## 1. Install the bridge
 
 ```bash
-npm install -g claude-ide-bridge
+npm install -g patchwork-os
 ```
 
 Verify:

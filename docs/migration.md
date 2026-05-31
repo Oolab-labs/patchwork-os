@@ -1,6 +1,6 @@
 # Migration Guide
 
-## v2.x → v2.30 (current)
+## v2.x → 0.2.0-beta.9 (current)
 
 ### Breaking Changes
 None. All changes in v2.x are additive.
@@ -12,7 +12,7 @@ None. All changes in v2.x are additive.
 - **Headless LSP fallback**: `goToDefinition`, `findReferences`, `getTypeSignature` now work without VS Code via `typescript-language-server`
 
 ### New in v2.29
-- **Docker**: Official image at `ghcr.io/oolab-labs/claude-ide-bridge`; `docker-compose.yml` included
+- **Docker**: Official image at `ghcr.io/oolab-labs/patchwork-os`; `docker-compose.yml` included
 - **Alpine Docker**: `ctags` package (was `universal-ctags`)
 
 ### New in v2.28
@@ -43,17 +43,17 @@ None. All changes in v2.x are additive.
 
 ### npm (global install)
 ```bash
-npm update -g claude-ide-bridge
+npm update -g patchwork-os
 ```
 Always use `@latest` — `npm update -g` may not fetch the latest if the semver range is already satisfied:
 ```bash
-npm install -g claude-ide-bridge@latest
+npm install -g patchwork-os@latest
 ```
 
 ### VS Code Extension
 The extension updates automatically via VS Code Marketplace. To force an update: Extensions panel → claude-ide-bridge → Update.
 
-Check version compatibility: bridge `getBridgeStatus` reports `extensionPackageVersion`. Extension v1.3.x works with bridge v2.25+.
+Check version compatibility: bridge `getBridgeStatus` reports `extensionPackageVersion`. Extension v1.4.x works with bridge v2.25+.
 
 ### Docker
 ```bash
@@ -86,18 +86,15 @@ rm ~/.claude/ide/*.lock
 | `writeFile` | `editText` |
 | `listFiles` | `getFileTree` |
 
-**Slim mode**: v2 introduced slim mode (default in v2.0–v2.42). **v2.43.0 flipped the default back to full mode** — all ~140 tools are now registered by default. Pass `--slim` to opt into the IDE-exclusive subset. The `--full` flag is retained as a no-op for backward compatibility with older start commands.
+**Slim mode**: v2 introduced slim mode (default in v2.0–v2.42). **v2.43.0 flipped the default back to full mode** — all 177 tools are now registered by default. Pass `--slim` to opt into the IDE-exclusive subset. The `--full` flag is retained as a no-op for backward compatibility with older start commands.
 
-**MCP config**: Regenerate after upgrade:
-```bash
-claude-ide-bridge gen-mcp-config > ~/.claude/mcp-config.json
-```
+**MCP config**: No manual regeneration needed — the bridge writes its own lock file (`~/.claude/ide/<port>.lock`) on start, and the MCP server is registered via `claude mcp add` or the `claude-ide-bridge init` install flow. Use `claude-ide-bridge print-token` to retrieve the auth token for a remote MCP client.
 
 ### Migration Steps (v1 → v2)
-1. `npm install -g claude-ide-bridge@latest`
+1. `npm install -g patchwork-os@latest`
 2. `rm ~/.claude/ide/*.lock` — clear stale lock files
 3. Update start command: drop `--full` (now the default); add `--slim` only if you want the IDE-exclusive subset
-4. Regenerate MCP config: `claude-ide-bridge gen-mcp-config`
+4. Re-register the MCP server if needed: `claude mcp add` or `claude-ide-bridge init` (config is auto-generated from the lock file on start)
 5. Re-install VS Code extension (v2 extension required; v1 extension is incompatible)
 6. Update any tool names in scripts (see table above)
 
@@ -184,7 +181,7 @@ rm ~/.claude/ide/*.lock
 Then restart. Lock files are created with `O_EXCL` to prevent concurrent bridge instances on the same port.
 
 ### Docker: extension tools unavailable
-The Docker image runs the bridge in headless mode — VS Code extension tools require a connected VS Code instance. CLI-only tools (file I/O, git, terminal, LSP fallback) work fully headless. See `documents/headless-quickstart.md` for what works without VS Code.
+The Docker image runs the bridge in headless mode — VS Code extension tools require a connected VS Code instance. CLI-only tools (file I/O, git, terminal, LSP fallback) work fully headless. See `../documents/headless-quickstart.md` for what works without VS Code.
 
 ---
 
@@ -192,9 +189,9 @@ The Docker image runs the bridge in headless mode — VS Code extension tools re
 
 | Bridge version | Extension version | Claude Code minimum |
 |---|---|---|
-| v2.30.x | v1.3.x | v2.1.84+ (for TaskCreated hook) |
-| v2.29.x | v1.3.x | v2.1.77+ |
-| v2.28.x | v1.3.x | v2.1.77+ |
+| v2.30.x | v1.4.x | v2.1.84+ (for TaskCreated hook) |
+| v2.29.x | v1.4.x | v2.1.77+ |
+| v2.28.x | v1.4.x | v2.1.77+ |
 | v2.25.x | v1.3.x | v2.1.77+ |
 | v2.23.x | v1.2.x | v2.1.0+ |
 | v2.x | v1.0.x | any |

@@ -5,7 +5,7 @@ Steps to complete before tagging a new version.
 ## Code
 
 - [ ] `npm run build` passes (bridge)
-- [ ] `npm test` passes — all tests green on Node 20 + 22
+- [ ] `npm test` passes — all tests green on Node 22
 - [ ] `npm run typecheck` passes — zero type errors
 - [ ] `npx biome check .` passes — zero lint errors
 - [ ] `cd vscode-extension && npm run build && npm test` passes

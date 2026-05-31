@@ -12,7 +12,7 @@ claude-ide-bridge start-all
 claude-ide-bridge start-all
 ```
 
-`start-all` launches the bridge plus the dashboard, then keeps them alive.
+`start-all` launches the bridge, Claude (--ide), and the dashboard, then keeps them alive.
 
 ### How to tell it's working
 

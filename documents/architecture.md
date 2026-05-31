@@ -17,7 +17,7 @@ flowchart LR
     %% Bridge runtime — the heart
     subgraph Bridge["Patchwork Bridge Runtime"]
         direction TB
-        ToolRegistry["<b>Tool Registry</b><br/>170+ built-in + plugins<br/><i>hot reload via --plugin-watch</i>"]
+        ToolRegistry["<b>Tool Registry</b><br/>177+ built-in + plugins<br/><i>hot reload via --plugin-watch</i>"]
         RecipeEngine["<b>Recipe Engine</b><br/>RecipeOrchestrator · parser · scheduler"]
         Policy{{"<b>Delegation Policy</b><br/>risk tiers · 4-source precedence<br/>(managed → project-local<br/>→ project → user)<br/>+ approval queue"}}
         Trace[("<b>Trace Memory</b><br/>decision_traces.jsonl<br/>RecipeRunLog · ActivityLog<br/>ctxQueryTraces")]
@@ -80,7 +80,7 @@ The five primitives from the [canonical positioning sentence](../README.md) line
 
 1. **Every outbound action passes through the policy gate.** The arrow from Tool Registry to External Targets does *not* exist as a direct edge — it goes through Delegation Policy first. This is the structural invariant that makes "delegation policy" load-bearing rather than decorative. See [src/approvalHttp.ts](../src/approvalHttp.ts) for the implementation.
 
-2. **Trace Memory is the only multi-source sink.** Tool calls, policy decisions, and recipe runs all write to the same trace store. That's what makes [`patchwork traces export`](../src/commands/tracesExport.ts) a single bundle and what makes the (planned) Decision Replay Debugger possible.
+2. **Trace Memory is the only multi-source sink.** Tool calls, policy decisions, and recipe runs all write to the same trace store. That's what makes [`patchwork traces export`](../src/commands/tracesExport.ts) a single bundle and what makes the Decision Replay Debugger possible.
 
 3. **Triggers are inputs, not outputs.** Cron, file save, git, test run, webhook, CLI, and the mobile PWA all enter at the same point — the Recipe Engine. The trigger surface is the *non-developer onboarding* story; recipes don't care which trigger fired them.
 

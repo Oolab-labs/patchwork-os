@@ -63,7 +63,7 @@ Currently, full tool support (LSP, debugger, editor state) requires the VS Code 
 - `navigateToSymbolByName` → `rg` declaration-pattern fallback
 - `findFiles`, `searchWorkspace`, `getFileTree` → filesystem directly
 
-See [headless-quickstart.md](headless-quickstart.md) for the full probe table.
+See [headless-quickstart.md](../documents/headless-quickstart.md) for the full probe table.
 
 ## Cursor IDE
 

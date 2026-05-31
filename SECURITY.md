@@ -1,6 +1,6 @@
 # Security Policy
 
-Patchwork OS ships an npm package, IDE extensions, a Docker image, an OAuth 2.0 server for remote MCP connectors, and 19+ connectors that handle credentials and personal data (Slack, Stripe, GitHub, Gmail, calendar, etc.). We take vulnerability reports seriously.
+Patchwork OS ships an npm package, IDE extensions, a Docker image, an OAuth 2.0 server for remote MCP connectors, and 40+ connectors that handle credentials and personal data (Slack, Stripe, GitHub, Gmail, calendar, etc.). We take vulnerability reports seriously.
 
 ## Supported Versions
 

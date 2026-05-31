@@ -133,7 +133,7 @@ Key points for contributors:
 ## CI Pipeline
 
 Three jobs run on every push:
-- **ci** — lint + typecheck + build + test (Node 20 + 22 matrix) + schema audit + description length gate
+- **ci** — lint + typecheck + build + test (Node 22) + schema audit + description length gate
 - **smoke** — integration smoke suite (`needs: ci`)
 - **publish-docker** — builds and pushes to ghcr.io on `v*` tags
 

@@ -4,7 +4,8 @@ Add this to your `automation-policy.json` to auto-fix errors when Claude detects
 
 ```json
 {
-  "onDiagnosticsError": {
+  "onDiagnosticsStateChange": {
+    "state": "error",
     "enabled": true,
     "prompt": "Fix the TypeScript error in {{file}}: {{diagnostics}}",
     "cooldownMs": 30000
@@ -14,4 +15,4 @@ Add this to your `automation-policy.json` to auto-fix errors when Claude detects
 
 Run `claude-ide-bridge init --workspace .` to create a starter policy file.
 
-See the [full automation docs](https://github.com/Oolab-labs/claude-ide-bridge/blob/main/documents/automation.md) for all available hooks.
+See the [full automation docs](https://github.com/Oolab-labs/patchwork-os/blob/main/documents/automation.md) for all available hooks.

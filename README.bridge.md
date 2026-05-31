@@ -21,11 +21,11 @@ https://github.com/user-attachments/assets/a81a8d11-2cc3-46f3-88ad-6a905a221a2c
 
 ## Quick Start
 
-**Prerequisites:** [Claude Code CLI](https://claude.ai/code), Node.js ≥ 20
+**Prerequisites:** [Claude Code CLI](https://claude.ai/code), Node.js ≥ 22
 
 ```bash
 # 1. Install the bridge
-npm install -g claude-ide-bridge
+npm install -g patchwork-os
 
 # 2. One-command setup (installs extension, writes CLAUDE.md, registers MCP server)
 cd /your/project
@@ -38,7 +38,7 @@ claude-ide-bridge --watch
 claude --ide
 ```
 
-> **Updating?** Use `npm install -g claude-ide-bridge@latest` — `npm update -g` may lag the registry cache after a new release.
+> **Updating?** Use `npm install -g patchwork-os@latest` — `npm update -g` may lag the registry cache after a new release.
 
 > **macOS LaunchAgent users:** always install from the registry (`npm install -g patchwork-os`) or
 > from a tarball (`npm pack && npm install -g patchwork-os-*.tgz`).
@@ -81,7 +81,7 @@ Or search **Claude IDE Bridge** in the VS Code / Cursor / Windsurf marketplace.
 
 ## Slim vs Full Mode
 
-The bridge starts in **full mode** by default (changed in v2.43.0) — all ~140 tools, covering LSP/debugger/refactoring plus git, GitHub, terminal, file tree, and orchestration.
+The bridge starts in **full mode** by default (changed in v2.43.0) — all 177 tools, covering LSP/debugger/refactoring plus git, GitHub, terminal, file tree, and orchestration.
 
 Pass `--slim` to restrict to the ~60 IDE-exclusive tools (LSP, debugger, editor state only) — useful when you want Claude to use its native Read/Write/Bash tools for everything else:
 
@@ -144,7 +144,7 @@ Claude calls `refactorAnalyze` (checks blast radius and risk), `refactorPreview`
 Standard setup. Extension connects automatically. Full LSP, debugger, and editor state available.
 
 ### Remote SSH
-VS Code Remote-SSH and Cursor SSH load the extension on the VPS side (`extensionKind: ["workspace"]`). Start the bridge on the remote machine. All ~140 tools work over SSH.
+VS Code Remote-SSH and Cursor SSH load the extension on the VPS side (`extensionKind: ["workspace"]`). Start the bridge on the remote machine. All 177 tools work over SSH.
 
 ```bash
 # On the remote machine
@@ -274,7 +274,7 @@ claude-ide-bridge install claude-mem
 |---|---|
 | `claude-ide-bridge init` | One-command setup: install extension + write CLAUDE.md + register MCP server |
 | `claude-ide-bridge --watch` | Start bridge with auto-restart on crash (2s → 30s backoff) |
-| `claude-ide-bridge --slim` | Restrict to ~60 IDE-exclusive tools (default: ~140 full tools) |
+| `claude-ide-bridge --slim` | Restrict to ~60 IDE-exclusive tools (default: 177 full tools) |
 | `claude-ide-bridge install-extension` | Install companion VS Code extension |
 | `claude-ide-bridge gen-claude-md --write` | Add bridge section to existing CLAUDE.md |
 | `claude-ide-bridge print-token` | Print auth token from active lock file |
@@ -291,7 +291,7 @@ claude-ide-bridge install claude-mem
 
 | Flag | Default | Description |
 |---|---|---|
-| `--slim` | off | Restrict to IDE-exclusive tools (default: full, ~140 tools) |
+| `--slim` | off | Restrict to IDE-exclusive tools (default: full, 177 tools) |
 | `--full` | on | No-op (retained for backward compat — full is the default since v2.43.0) |
 | `--watch` | off | Auto-restart on crash |
 | `--bind <host>` | `127.0.0.1` | Bind address (`0.0.0.0` for remote access) |
@@ -315,7 +315,7 @@ claude-ide-bridge install claude-mem
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System topology, request lifecycle, component map, design decisions |
 | [documents/platform-docs.md](documents/platform-docs.md) | Full tool reference — all 170+ tools with parameters and examples |
-| [documents/prompts-reference.md](documents/prompts-reference.md) | All MCP prompts (31 prompts, 12 plugin skills, 4 subagents) |
+| [documents/prompts-reference.md](documents/prompts-reference.md) | All MCP prompts (36 prompts, 12 plugin skills, 4 subagents) |
 | [docs/automation.md](docs/automation.md) | Automation hooks reference — all 18 events, policy schema, condition filters |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Diagnostics, common errors, and fixes |
 | [docs/remote-access.md](docs/remote-access.md) | VPS setup, OAuth 2.0, nginx/Caddy reverse proxy |
@@ -333,7 +333,7 @@ claude-ide-bridge install claude-mem
 
 ## Requirements
 
-- **Node.js ≥ 20** (bridge)
+- **Node.js ≥ 22** (bridge)
 - **VS Code, Cursor, or Windsurf** — optional. Headless mode covers git, terminals, GitHub, and LSP via `typescript-language-server`. Extension required for debugger, editor decorations, and live editor state.
 - **Claude Code CLI** — for local use. Remote MCP clients (claude.ai, Codex CLI) work via Streamable HTTP transport with OAuth 2.0.
 
