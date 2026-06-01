@@ -141,14 +141,14 @@
     "@types/node": "^22.0.0",
     "@types/node-cron": "^3.0.11",
     "@types/ws": "^8.5.0",
-    "@vitest/coverage-v8": "^3.0.0",
+    "@vitest/coverage-v8": "^4.1.8",
     "@vscode/ripgrep": "^1.17.1",
     "fast-check": "^4.6.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "tsx": "^4.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.8"
   },
   "lint-staged": {
     "{src,vscode-extension/src,scripts,deploy}/**/*.{ts,js,mjs,cjs,json}": "biome check --no-errors-on-unmatched"
