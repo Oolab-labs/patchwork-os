@@ -199,6 +199,41 @@ describe("redis allowlist", () => {
     // DEBUG alone (without OBJECT subcommand) is not in the set
     expect(isReadOnlyCommand("DEBUG")).toBe(false);
   });
+
+  // Regression: bare "CLIENT"/"MEMORY" were in the allowlist, so mutating
+  // subcommands (CLIENT KILL/SETNAME/NO-EVICT/UNPAUSE, MEMORY PURGE) all
+  // passed as "read-only". Only the safe two-word forms should be allowed.
+  it("rejects bare CLIENT (no read-only subcommand)", () => {
+    expect(isReadOnlyCommand("CLIENT")).toBe(false);
+  });
+
+  it("rejects bare MEMORY (no read-only subcommand)", () => {
+    expect(isReadOnlyCommand("MEMORY")).toBe(false);
+  });
+
+  it("rejects mutating CLIENT subcommands", () => {
+    expect(isReadOnlyCommand("CLIENT", ["KILL", "ID", "5"])).toBe(false);
+    expect(isReadOnlyCommand("CLIENT", ["SETNAME", "x"])).toBe(false);
+    expect(isReadOnlyCommand("CLIENT", ["NO-EVICT", "ON"])).toBe(false);
+    expect(isReadOnlyCommand("CLIENT", ["UNPAUSE"])).toBe(false);
+  });
+
+  it("rejects MEMORY PURGE", () => {
+    expect(isReadOnlyCommand("MEMORY", ["PURGE"])).toBe(false);
+  });
+
+  it("still allows safe CLIENT subcommands", () => {
+    expect(isReadOnlyCommand("CLIENT", ["GETNAME"])).toBe(true);
+    expect(isReadOnlyCommand("CLIENT", ["ID"])).toBe(true);
+    expect(isReadOnlyCommand("CLIENT", ["INFO"])).toBe(true);
+    expect(isReadOnlyCommand("CLIENT", ["LIST"])).toBe(true);
+  });
+
+  it("still allows safe MEMORY subcommands", () => {
+    expect(isReadOnlyCommand("MEMORY", ["USAGE", "key"])).toBe(true);
+    expect(isReadOnlyCommand("MEMORY", ["STATS"])).toBe(true);
+    expect(isReadOnlyCommand("MEMORY", ["DOCTOR"])).toBe(true);
+  });
 });
 
 describe("RedisConnector.command_run", () => {
@@ -238,6 +273,34 @@ describe("RedisConnector.command_run", () => {
     expect(out).toBe("pong-ish");
     const lastSend = calls.find((c) => c.method === "sendCommand");
     expect(lastSend?.args[0]).toEqual(["PING"]);
+  });
+
+  it("rejects CLIENT KILL / MEMORY PURGE before reaching the wire", async () => {
+    seed();
+    const { client } = makeFakeClient();
+    __setRedisModuleForTest(makeFakeModule(client));
+    const conn = new RedisConnector();
+    await expect(
+      conn.command_run("CLIENT", ["KILL", "ID", "5"]),
+    ).rejects.toThrow(/not in the read-only allowlist/i);
+    await expect(conn.command_run("MEMORY", ["PURGE"])).rejects.toThrow(
+      /not in the read-only allowlist/i,
+    );
+    expect(client.sendCommand).not.toHaveBeenCalled();
+  });
+
+  it("allows CLIENT LIST / MEMORY USAGE through command_run", async () => {
+    seed();
+    const { client, calls } = makeFakeClient({
+      sendCommandImpl: async (args) => args.join(" "),
+    });
+    __setRedisModuleForTest(makeFakeModule(client));
+    const conn = new RedisConnector();
+    expect(await conn.command_run("CLIENT", ["LIST"])).toBe("CLIENT LIST");
+    expect(await conn.command_run("MEMORY", ["USAGE", "k"])).toBe(
+      "MEMORY USAGE k",
+    );
+    expect(calls.filter((c) => c.method === "sendCommand")).toHaveLength(2);
   });
 });
 

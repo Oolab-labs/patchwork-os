@@ -60,7 +60,28 @@ export function createGetToolCapabilitiesTool(
     handler: async (params: { verbose?: boolean } = {}) => {
       const connected = extensionClient.isConnected();
       const verbose = params.verbose === true;
-      return successStructured({
+
+      // Headless CLI fallbacks: several LSP-category tools still work without the
+      // VS Code extension by shelling out to a language server / ctags probe.
+      //   - typescript-language-server backs goToDefinition / findReferences /
+      //     getTypeSignature
+      //   - universal-ctags backs searchWorkspaceSymbols
+      // When the extension is disconnected but a probe is present, report a
+      // "headless-cli" degraded tier instead of "unavailable" / 0.
+      const headlessLspTools: string[] = [
+        ...(probes.typescriptLanguageServer
+          ? ["goToDefinition", "findReferences", "getTypeSignature"]
+          : []),
+        ...(probes.universalCtags ? ["searchWorkspaceSymbols"] : []),
+      ];
+      const hasHeadlessLsp = headlessLspTools.length > 0;
+      const lspFeature = connected
+        ? "vscode"
+        : hasHeadlessLsp
+          ? "headless-cli"
+          : "unavailable";
+
+      const data = {
         extensionConnected: connected,
         tier: connected ? "full" : "basic",
         editor: config.editorCommand ?? "none",
@@ -119,7 +140,7 @@ export function createGetToolCapabilitiesTool(
             : config.editorCommand
               ? "editor-cli"
               : "no-op",
-          lsp: connected ? "vscode" : "unavailable",
+          lsp: lspFeature,
           terminalOutput: connected ? "available" : "unavailable",
         },
         commandAllowlist: config.commandAllowlist,
@@ -131,6 +152,9 @@ export function createGetToolCapabilitiesTool(
           git: 16,
           diagnostics: connected ? 3 : 2,
           search: 2,
+          // Connected tier only. The disconnected headless-cli tier is applied
+          // as a post-construction override below so this inline array stays
+          // cross-validated against SLIM_TOOL_NAMES (audit-lsp-tools.mjs).
           lsp: verbose
             ? connected
               ? [
@@ -177,10 +201,25 @@ export function createGetToolCapabilitiesTool(
           debug: connected ? 5 : 0,
           http: 2,
           analysis: 8 + (probes.gh ? 1 : 0),
-          ...(probes.gh ? { github: 11 } : {}),
+          // 16 github* tools + 2 AI-comment tools, all gated behind the gh probe
+          // (see the probes.gh block in src/tools/index.ts).
+          ...(probes.gh ? { github: 18 } : {}),
           other: connected ? 23 : 10,
         },
-      });
+      };
+
+      // Headless-cli LSP tier override. When the extension is disconnected but a
+      // language-server / ctags probe is present, the inline array above resolved
+      // to [] / 0 (so it stays cross-validated against SLIM_TOOL_NAMES). Replace
+      // it here with the fallback-capable tool names / count. verbose → name
+      // array, otherwise the count; count === array length by construction.
+      if (!connected && hasHeadlessLsp) {
+        data.availableTools.lsp = verbose
+          ? headlessLspTools
+          : headlessLspTools.length;
+      }
+
+      return successStructured(data);
     },
   };
 }

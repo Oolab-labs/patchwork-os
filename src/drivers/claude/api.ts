@@ -47,14 +47,37 @@ export class ApiDriver implements ProviderDriver {
 
     this.log("[ApiDriver] sending request to Anthropic API");
 
-    const message = await client.messages.create(
-      {
-        model: input.model ?? "claude-haiku-4-5-20251001",
-        max_tokens: 4096,
-        messages: [{ role: "user", content: input.prompt + contextNote }],
-      },
-      { signal: input.signal },
-    );
+    // ProviderDriver contract (types.ts): run() must resolve, never reject —
+    // swallow auth/429/network/abort errors into the result. messages.create
+    // rejects on all of these, so wrap it and translate into an errorMessage
+    // (or wasAborted for an abort/cancellation), mirroring OpenAIApiDriver.run.
+    let message: unknown;
+    try {
+      message = await client.messages.create(
+        {
+          model: input.model ?? "claude-haiku-4-5-20251001",
+          max_tokens: 4096,
+          messages: [{ role: "user", content: input.prompt + contextNote }],
+        },
+        { signal: input.signal },
+      );
+    } catch (err) {
+      const isAbort =
+        (err instanceof Error && err.name === "AbortError") ||
+        input.signal.aborted;
+      if (isAbort) {
+        return {
+          text: "",
+          durationMs: Date.now() - start,
+          wasAborted: true,
+        };
+      }
+      return {
+        text: "",
+        durationMs: Date.now() - start,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      };
+    }
 
     // biome-ignore lint/suspicious/noExplicitAny: message is from dynamically imported optional dep
     const content = (message as any).content as Array<{

@@ -229,7 +229,9 @@ describe("parsePolicy", () => {
       expect(top._tag).toBe("WithCooldown");
       if (top._tag === "WithCooldown") {
         expect(top.cooldownMs).toBe(15_000);
-        expect(top.key).toBe("recipesave:*");
+        // Per-file cooldown bucket: the `{{file}}` template is resolved at
+        // interpret time so one saved recipe doesn't cool down all of them.
+        expect(top.key).toBe("recipesave:{{file}}");
         if (top.program._tag === "Hook") {
           expect(top.program.hookType).toBe("onRecipeSave");
           const src = top.program.promptSource;
@@ -238,6 +240,26 @@ describe("parsePolicy", () => {
             expect(src.prompt).toBe("recipe saved: {{file}}");
           }
         }
+      }
+    });
+
+    it("uses a per-file cooldown key template, not a global bucket", () => {
+      // Regression: onRecipeSave previously emitted the constant cooldown key
+      // `recipesave:*`, so saving one recipe cooled down ALL recipes. The
+      // parser now emits the per-file template `recipesave:{{file}}` which the
+      // interpreter resolves against ctx.eventData.file at runtime.
+      const policy = minPolicy({
+        onRecipeSave: { enabled: true, cooldownMs: 10_000 },
+      });
+      const result = parsePolicy(policy);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const top = result.value[0];
+      if (!top) throw new Error("expected first node");
+      expect(top._tag).toBe("WithCooldown");
+      if (top._tag === "WithCooldown") {
+        expect(top.key).toBe("recipesave:{{file}}");
+        expect(top.key).not.toBe("recipesave:*");
       }
     });
 

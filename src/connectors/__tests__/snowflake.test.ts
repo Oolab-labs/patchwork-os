@@ -339,6 +339,44 @@ describe("executeQuery", () => {
     expect(body.warehouse).toBe("COMPUTE_WH");
   });
 
+  // Regression: SQL API v2 returns HTTP 202 (still in 2xx) with a
+  // statementHandle and no data when a query exceeds the sync window.
+  // postStatement only checked res.ok, so it silently returned rows:[].
+  it("throws (not silent empty) when the statement is still executing async (202)", async () => {
+    process.env.SNOWFLAKE_ACCOUNT = "xy12345";
+    process.env.SNOWFLAKE_USER = "alice";
+    process.env.SNOWFLAKE_PAT = "pat";
+    installFetchMock(() =>
+      mockFetchResponse({
+        status: 202,
+        body: {
+          statementHandle: "01b2-async-handle",
+          message: "Asynchronous execution in progress.",
+        },
+      }),
+    );
+    const { getSnowflakeConnector } = await import("../snowflake.js");
+    const c = getSnowflakeConnector();
+    await expect(c.executeQuery("SELECT 1")).rejects.toThrow(
+      /still (executing|running)|async/i,
+    );
+  });
+
+  it("async 202 error mentions the statementHandle so the user can poll", async () => {
+    process.env.SNOWFLAKE_ACCOUNT = "xy12345";
+    process.env.SNOWFLAKE_USER = "alice";
+    process.env.SNOWFLAKE_PAT = "pat";
+    installFetchMock(() =>
+      mockFetchResponse({
+        status: 202,
+        body: { statementHandle: "handle-xyz-123" },
+      }),
+    );
+    const { getSnowflakeConnector } = await import("../snowflake.js");
+    const c = getSnowflakeConnector();
+    await expect(c.executeQuery("SELECT 1")).rejects.toThrow(/handle-xyz-123/);
+  });
+
   it("truncates result rows above the row limit", async () => {
     process.env.SNOWFLAKE_ACCOUNT = "xy12345";
     process.env.SNOWFLAKE_USER = "alice";

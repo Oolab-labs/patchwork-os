@@ -303,6 +303,29 @@ function buildFinalPrompt(
   return truncatePrompt(meta + resolved);
 }
 
+/**
+ * Resolve `{{placeholder}}` tokens in a WithCooldown key against the live
+ * `eventData` at interpret time. Lets a hook scope its cooldown bucket per
+ * dynamic value — e.g. `recipesave:{{file}}` cools down only the saved file,
+ * not every recipe. Keys without any `{{…}}` token pass through unchanged, so
+ * every other hook's cooldown behaviour is untouched.
+ *
+ * Sanitised to a stable map-key shape: control chars stripped, length capped,
+ * unresolved placeholders collapse to `*` so a missing value still produces a
+ * deterministic bucket (rather than leaking the raw `{{file}}` literal).
+ */
+function resolveCooldownKey(
+  key: string,
+  eventData: Readonly<Record<string, string>>,
+): string {
+  if (!key.includes("{{")) return key;
+  return key.replace(/\{\{(\w+)\}\}/g, (_m, name: string) => {
+    const val = eventData[name];
+    if (val === undefined || val === "") return "*";
+    return val.replace(/[\x00-\x1F\x7F]/g, "").slice(0, 256);
+  });
+}
+
 // ── Interpreter ───────────────────────────────────────────────────────────────
 
 async function interpret(
@@ -587,16 +610,20 @@ async function interpret(
     }
 
     case "WithCooldown": {
-      if (isOnCooldown(acc.state, program.key, ctx.now, program.cooldownMs)) {
+      // Resolve any `{{placeholder}}` in the cooldown key against the live
+      // event so a per-file hook (e.g. onRecipeSave → `recipesave:{{file}}`)
+      // gets its OWN cooldown bucket. Static keys pass through unchanged.
+      const cooldownKey = resolveCooldownKey(program.key, ctx.eventData);
+      if (isOnCooldown(acc.state, cooldownKey, ctx.now, program.cooldownMs)) {
         const hookLabel =
           program.program._tag === "Hook"
             ? program.program.hookType
-            : program.key;
+            : cooldownKey;
         return {
           ...acc,
           skipped: [
             ...acc.skipped,
-            { reason: `cooldown:${program.key}`, hook: hookLabel },
+            { reason: `cooldown:${cooldownKey}`, hook: hookLabel },
           ],
         };
       }
@@ -625,7 +652,7 @@ async function interpret(
         const lastTaskId = newTaskIds[newTaskIds.length - 1] ?? "";
         const newState = recordTrigger(
           innerAcc.state,
-          program.key,
+          cooldownKey,
           lastTaskId,
           ctx.now,
         );
@@ -634,7 +661,7 @@ async function interpret(
       if (webhookFired) {
         const newState = recordTrigger(
           innerAcc.state,
-          program.key,
+          cooldownKey,
           "webhook",
           ctx.now,
         );
@@ -707,8 +734,17 @@ async function interpret(
           const nextAttempt = attempt + 1;
           const nextRetryAt = ctx.now + program.retryDelayMs;
 
-          // Schedule retry: re-run the wrapped program when the timer
-          // fires. The work runs INSIDE AutomationHooks' mutation lock
+          // Schedule retry: re-run the WithRetry NODE (not just its wrapped
+          // child) when the timer fires. Re-entering the WithRetry case is
+          // what lets each successive failure re-check `attempt < maxRetries`
+          // and schedule the next retry — running only `program.program`
+          // capped retries at 1 because the inner program never re-enters
+          // this branch. The interpret() result already carries the
+          // pendingRetries bookkeeping the node performs (record on
+          // re-schedule, clear on success/exhaustion), so the retry returns
+          // it as-is rather than force-clearing.
+          //
+          // The work runs INSIDE AutomationHooks' mutation lock
           // (`runRetryUnderLock`) so:
           //   1. Read of live state is atomic w.r.t. concurrent _runInterpreter
           //      calls — the retry sees their cooldown / dedup / rateLimit
@@ -716,15 +752,14 @@ async function interpret(
           //   2. Write of post-retry state is atomic w.r.t. the same chain,
           //      so the retry's effects can't be lost to a concurrent run
           //      that started between scheduling and merge.
-          //   3. `clearPendingRetry` is in a try/finally so the
-          //      pendingRetries entry is dropped even if the inner
+          //   3. The catch clears the pendingRetries entry even if the inner
           //      interpret() throws (otherwise the retry leaks the entry
           //      forever).
           //
           // TestBackend records the call but does not actually fire the timer.
           // Tests that exercise retry dispatch synchronously override
           // `scheduleRetry`.
-          const wrappedProgram = program.program;
+          const retryProgram = program;
           const retrySnapshot = innerAcc.state;
           const liveStateFn = ctx.getLiveState;
           const runUnderLock = ctx.runRetryUnderLock;
@@ -741,12 +776,16 @@ async function interpret(
                   state: live,
                   now: Date.now(),
                 };
+                // Re-enter the WithRetry node so a repeated failure can
+                // schedule the next attempt (up to maxRetries). The node
+                // owns the pendingRetries lifecycle — return its state
+                // directly so a re-scheduled attempt isn't force-cleared.
                 const retryResult = await interpret(
-                  wrappedProgram,
+                  retryProgram,
                   retryCtx,
                   emptyAcc(live),
                 );
-                return clearPendingRetry(retryResult.state, program.key);
+                return retryResult.state;
               } catch (e) {
                 const m = e instanceof Error ? e.message : String(e);
                 ctx.log(`[interpreter] retry ${program.key} failed: ${m}`);
@@ -778,6 +817,15 @@ async function interpret(
           );
           return { ...innerAcc, state: newState };
         }
+
+        // Retries exhausted (attempt >= maxRetries): the inner program still
+        // failed but no further retry is scheduled. Drop the pendingRetries
+        // entry so it doesn't leak and block a future, unrelated retry for
+        // the same key.
+        return {
+          ...innerAcc,
+          state: clearPendingRetry(innerAcc.state, program.key),
+        };
       }
 
       return innerAcc;

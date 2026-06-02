@@ -56,6 +56,11 @@ export class OrchestratorBridge {
   private authToken: string;
   private startedAt = Date.now();
   private healthTimer: ReturnType<typeof setInterval> | null = null;
+  /** Re-entrancy guard for the health-probe loop. A single probe (ping +
+   *  listTools across every child) can outlast healthIntervalMs; without this
+   *  guard a fresh interval tick would start a second probe that races on the
+   *  shared registry/clients state. Overlapping ticks are skipped. */
+  private probing = false;
 
   constructor(private config: OrchestratorConfig) {
     this.logger = new Logger(config.verbose, config.jsonl);
@@ -81,12 +86,10 @@ export class OrchestratorBridge {
     await this.probeAll();
 
     // Start health probe loop
-    this.healthTimer = setInterval(() => {
-      this.registry.refresh();
-      this.probeAll().catch((err) =>
-        this.logger.error("orchestrator health probe failed", { err }),
-      );
-    }, this.config.healthIntervalMs);
+    this.healthTimer = setInterval(
+      () => this.runHealthTick(),
+      this.config.healthIntervalMs,
+    );
     this.healthTimer.unref();
 
     // Start HTTP/WS server
@@ -149,6 +152,26 @@ export class OrchestratorBridge {
     }
   }
 
+  /**
+   * One health-probe tick: refresh the lock-file registry, then probe every
+   * child bridge. Guarded against re-entrancy — if the previous tick's
+   * probeAll() is still in flight (a slow ping + listTools across many bridges
+   * can outlast healthIntervalMs), this tick is skipped rather than racing on
+   * the shared registry/clients state.
+   */
+  private runHealthTick(): void {
+    if (this.probing) return;
+    this.probing = true;
+    this.registry.refresh();
+    this.probeAll()
+      .catch((err) =>
+        this.logger.error("orchestrator health probe failed", { err }),
+      )
+      .finally(() => {
+        this.probing = false;
+      });
+  }
+
   private async probeAll(): Promise<void> {
     const bridges = this.registry.getAll();
 
@@ -183,12 +206,17 @@ export class OrchestratorBridge {
           const prevToolNames = b.tools.map((t) => t.name).join(",");
           const tools = await client.listTools();
 
-          // If listTools() returned empty, the HTTP session init likely failed silently.
-          // Don't mark the bridge healthy yet — keep it warming so the next probe retries.
-          // A real bridge always has at least one tool registered.
-          if (tools.length === 0 && !b.healthy) {
+          // If listTools() returned empty, the HTTP session init likely failed
+          // silently (e.g. the child's HTTP session expired and listTools
+          // swallowed the error returning []). A real bridge always has at least
+          // one tool registered, so treat ANY empty result as a probe miss —
+          // regardless of current health. Crucially we must NOT fall through to
+          // markHealthy(port, []) for an already-healthy bridge: that would wipe
+          // b.tools and deregister every proxied tool. Return early and let the
+          // next probe retry; the existing tool list is preserved.
+          if (tools.length === 0) {
             this.logger.debug(
-              `Bridge port ${b.port} (${b.ideName}) pinged alive but returned 0 tools — retrying next cycle`,
+              `Bridge port ${b.port} (${b.ideName}) pinged alive but returned 0 tools — keeping previous tools, retrying next cycle`,
             );
             this.registry.keepWarm(b.port);
             return;

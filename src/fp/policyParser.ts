@@ -66,7 +66,11 @@ function cooldownKey(hookType: HookType, condition?: string): string {
     case "onDebugSessionEnd":
       return "debugend";
     case "onRecipeSave":
-      return `recipesave:${condition ?? "*"}`;
+      // Per-file cooldown bucket. The `{{file}}` template is resolved at
+      // interpret time from `ctx.eventData.file` (see resolveCooldownKey in
+      // automationInterpreter) so one saved recipe doesn't cool down all of
+      // them. Documented as "Cooldown key: per-file" in automation.md.
+      return condition ? `recipesave:${condition}` : "recipesave:{{file}}";
   }
 }
 

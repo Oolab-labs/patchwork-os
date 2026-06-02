@@ -133,6 +133,72 @@ describe("transaction tools", () => {
     expect(afterRollback).toBe(originalContent);
   });
 
+  it("commitTransaction returns a conflict error when a staged file is modified on disk between stage and commit", async () => {
+    const conflictFile = path.join(workspace, "conflict.ts");
+    fs.writeFileSync(conflictFile, "original\ncontent\n");
+
+    const { beginTransaction, stageEdit, commitTransaction } =
+      createTransactionTools(workspace);
+
+    const { transactionId } = parse(
+      await beginTransaction.handler({ transactionId: "conflict-tx" }),
+    );
+
+    await stageEdit.handler({
+      transactionId,
+      filePath: "conflict.ts",
+      operation: "lineRange",
+      startLine: 1,
+      endLine: 1,
+      newContent: "TX_EDIT",
+    });
+
+    // Simulate an intervening edit on disk after stage but before commit.
+    // Bump mtime explicitly so the change is observable even if the write
+    // lands within the same millisecond as the stage stat.
+    fs.writeFileSync(conflictFile, "intervening\nedit\n");
+    const future = new Date(Date.now() + 5000);
+    fs.utimesSync(conflictFile, future, future);
+
+    const result = await commitTransaction.handler({ transactionId });
+
+    // The transaction must NOT clobber the intervening edit.
+    const onDisk = fs.readFileSync(conflictFile, "utf-8");
+    expect(onDisk).toBe("intervening\nedit\n");
+
+    // The conflict must surface as a per-file error, not a silent overwrite.
+    const parsed = parse(result);
+    expect(parsed.committed).toBe(0);
+    expect(parsed.errors?.length).toBe(1);
+    expect(parsed.errors[0].file).toContain("conflict.ts");
+    expect(parsed.errors[0].error).toMatch(/modified|conflict/i);
+  });
+
+  it("commitTransaction still writes when the staged file is untouched on disk", async () => {
+    const cleanFile = path.join(workspace, "clean-commit.ts");
+    fs.writeFileSync(cleanFile, "keep\nme\n");
+
+    const { beginTransaction, stageEdit, commitTransaction } =
+      createTransactionTools(workspace);
+
+    const { transactionId } = parse(
+      await beginTransaction.handler({ transactionId: "clean-commit-tx" }),
+    );
+
+    await stageEdit.handler({
+      transactionId,
+      filePath: "clean-commit.ts",
+      operation: "lineRange",
+      startLine: 1,
+      endLine: 1,
+      newContent: "WRITTEN",
+    });
+
+    const result = parse(await commitTransaction.handler({ transactionId }));
+    expect(result.committed).toBe(1);
+    expect(fs.readFileSync(cleanFile, "utf-8")).toContain("WRITTEN");
+  });
+
   it("beginTransaction errors on duplicate id", async () => {
     const { beginTransaction } = createTransactionTools(workspace);
     await beginTransaction.handler({ transactionId: "dup-tx-2" });

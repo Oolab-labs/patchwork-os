@@ -30,6 +30,30 @@ describe("parseRecipe", () => {
     expect(() => parseRecipe({ ...VALID, name: "" })).toThrow(RecipeParseError);
   });
 
+  // Regression: parseRecipe hard-rejected a version-less recipe with
+  // "missing or empty 'version'", but the JSON schema marks version
+  // optional with default "1.0.0" and neither validateRecipeDefinition
+  // nor the yaml runner check it. A version-less recipe linted + ran but
+  // failed at install with a confusing error. version is optional and
+  // defaults to "1.0.0" at the parse boundary.
+  describe("version is optional (parity with schema default)", () => {
+    it("defaults version to 1.0.0 when omitted", () => {
+      const { version: _omit, ...noVersion } = VALID;
+      const r = parseRecipe(noVersion);
+      expect(r.version).toBe("1.0.0");
+    });
+
+    it("defaults version to 1.0.0 when empty", () => {
+      const r = parseRecipe({ ...VALID, version: "" });
+      expect(r.version).toBe("1.0.0");
+    });
+
+    it("preserves an explicit version string", () => {
+      const r = parseRecipe({ ...VALID, version: "2.3.1" });
+      expect(r.version).toBe("2.3.1");
+    });
+  });
+
   it("rejects empty steps", () => {
     expect(() => parseRecipe({ ...VALID, steps: [] })).toThrow(/non-empty/);
   });

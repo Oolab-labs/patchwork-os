@@ -117,6 +117,36 @@ describe("handleNotionConnect", () => {
     expect(JSON.parse(result.body).ok).toBe(false);
   });
 
+  it("accepts an ntn_-prefixed token (Notion's newer token format)", async () => {
+    const tmpDirN = join(os.tmpdir(), `patchwork-notion-ntn-${Date.now()}`);
+    const homeDirN = join(tmpDirN, "home");
+    const patchworkHomeN = join(homeDirN, ".patchwork");
+    mkdirSync(join(patchworkHomeN, "tokens"), { recursive: true });
+    process.env.HOME = homeDirN;
+    process.env.PATCHWORK_HOME = patchworkHomeN;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        bot: { workspace_name: "NtnWS", owner: { workspace_id: "ws-ntn" } },
+      }),
+    }) as unknown as typeof fetch;
+
+    const { handleNotionConnect, loadTokens } = await import("../notion.js");
+    const result = await handleNotionConnect(
+      JSON.stringify({ token: "ntn_abc123def456" }),
+    );
+    expect(result.status).toBe(200);
+    expect(JSON.parse(result.body).ok).toBe(true);
+    expect(loadTokens()?.accessToken).toBe("ntn_abc123def456");
+
+    rmSync(tmpDirN, { recursive: true, force: true });
+    delete process.env.HOME;
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+  });
+
   it("returns 401 when Notion API rejects the token", async () => {
     global.fetch = vi.fn().mockResolvedValueOnce({
       ok: false,

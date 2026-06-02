@@ -475,7 +475,7 @@ export interface ConnectorHandlerResult {
 }
 
 /**
- * POST /connections/notion/connect  { token: "secret_..." }
+ * POST /connections/notion/connect  { token: "secret_..." | "ntn_..." }
  * Stores the integration token and verifies it by calling /users/me.
  */
 export async function handleNotionConnect(
@@ -486,7 +486,7 @@ export async function handleNotionConnect(
     const parsed = JSON.parse(body) as { token?: unknown };
     if (
       typeof parsed.token !== "string" ||
-      !parsed.token.startsWith("secret_")
+      !(parsed.token.startsWith("secret_") || parsed.token.startsWith("ntn_"))
     ) {
       return {
         status: 400,
@@ -494,7 +494,7 @@ export async function handleNotionConnect(
         body: JSON.stringify({
           ok: false,
           error:
-            'Notion integration token must start with "secret_". Find it at https://www.notion.so/my-integrations',
+            'Notion integration token must start with "secret_" or "ntn_". Find it at https://www.notion.so/my-integrations',
         }),
       };
     }

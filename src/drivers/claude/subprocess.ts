@@ -17,6 +17,38 @@ import { createSubprocessSettings } from "./subprocessSettings.js";
 const OUTPUT_CAP = 50 * 1024; // 50KB
 
 /**
+ * Truncate `text` to at most `cap` UTF-8 bytes without splitting a multi-byte
+ * codepoint mid-sequence. `String.slice(0, cap)` operates on UTF-16 code
+ * units, so a 50K cap can store ~50K code points but emit up to ~200KB of
+ * UTF-8 wire bytes for CJK / emoji content — and may produce a lone surrogate
+ * at the boundary. `Buffer.toString("utf8")` substitutes U+FFFD for incomplete
+ * trailing sequences instead.
+ */
+function truncateUtf8Bytes(text: string, cap: number): string {
+  const buf = Buffer.from(text, "utf8");
+  if (buf.length <= cap) return text;
+  return buf.subarray(0, cap).toString("utf8");
+}
+
+/**
+ * Truncate `text` so it adds at most `remaining` UTF-8 bytes to the stream and
+ * never splits a multi-byte codepoint mid-sequence. Returns the safely-
+ * truncated slice plus its actual byte length so the running byte total can be
+ * advanced correctly.
+ */
+function truncateToBytes(
+  text: string,
+  remaining: number,
+): { send: string; bytes: number } {
+  const buf = Buffer.from(text, "utf8");
+  if (buf.length <= remaining) return { send: text, bytes: buf.length };
+  // Buffer.toString("utf8") substitutes U+FFFD for incomplete trailing
+  // sequences, which is the correct UTF-8 truncation behavior.
+  const sliced = buf.subarray(0, remaining).toString("utf8");
+  return { send: sliced, bytes: Buffer.byteLength(sliced, "utf8") };
+}
+
+/**
  * Write a single-server MCP config to a 0600 temp file, return the path.
  * Caller passes path via `--mcp-config <path>` to claude -p.
  *
@@ -218,10 +250,13 @@ export class SubprocessDriver implements ProviderDriver {
         if (parsed.kind === "raw") {
           accumulated += parsed.text;
           if (outputBytesSent < OUTPUT_CAP) {
-            const send = parsed.text.slice(0, OUTPUT_CAP - outputBytesSent);
-            if (send.length > 0) {
+            const { send, bytes } = truncateToBytes(
+              parsed.text,
+              OUTPUT_CAP - outputBytesSent,
+            );
+            if (bytes > 0) {
               input.onChunk?.(send);
-              outputBytesSent += send.length;
+              outputBytesSent += bytes;
             }
           }
           continue;
@@ -233,10 +268,13 @@ export class SubprocessDriver implements ProviderDriver {
           if (text.length > 0) {
             accumulated += text;
             if (outputBytesSent < OUTPUT_CAP) {
-              const send = text.slice(0, OUTPUT_CAP - outputBytesSent);
-              if (send.length > 0) {
+              const { send, bytes } = truncateToBytes(
+                text,
+                OUTPUT_CAP - outputBytesSent,
+              );
+              if (bytes > 0) {
                 input.onChunk?.(send);
-                outputBytesSent += send.length;
+                outputBytesSent += bytes;
               }
             }
           }
@@ -251,9 +289,15 @@ export class SubprocessDriver implements ProviderDriver {
     let stderr = "";
     child.stderr.setEncoding("utf-8");
     child.stderr.on("data", (chunk: string) => {
-      if (stderr.length < OUTPUT_CAP) {
+      // Apply the same byte-budget cap to stderr to prevent unbounded memory
+      // growth on multi-byte UTF-8 output. Counting via Buffer.byteLength /
+      // truncateUtf8Bytes keeps the cap a true byte budget rather than a
+      // UTF-16 code-unit budget.
+      if (Buffer.byteLength(stderr, "utf8") < OUTPUT_CAP) {
         stderr += chunk;
-        if (stderr.length > OUTPUT_CAP) stderr = stderr.slice(0, OUTPUT_CAP);
+        if (Buffer.byteLength(stderr, "utf8") > OUTPUT_CAP) {
+          stderr = truncateUtf8Bytes(stderr, OUTPUT_CAP);
+        }
       }
     });
 
@@ -283,7 +327,7 @@ export class SubprocessDriver implements ProviderDriver {
       if (startupHandle) clearTimeout(startupHandle);
       if (doneFromResult) {
         return {
-          text: resultText.slice(0, OUTPUT_CAP),
+          text: truncateUtf8Bytes(resultText, OUTPUT_CAP),
           exitCode: resultIsError ? 1 : 0,
           durationMs: Date.now() - start,
           stderrTail: stderrTailOf(stderr),
@@ -295,7 +339,7 @@ export class SubprocessDriver implements ProviderDriver {
         input.signal.aborted;
       if (isAbort) {
         return {
-          text: accumulated.slice(0, OUTPUT_CAP),
+          text: truncateUtf8Bytes(accumulated, OUTPUT_CAP),
           exitCode: -1,
           durationMs: Date.now() - start,
           stderrTail: stderrTailOf(stderr),
@@ -316,7 +360,7 @@ export class SubprocessDriver implements ProviderDriver {
 
     if (startupTimedOut) {
       return {
-        text: accumulated.slice(0, OUTPUT_CAP),
+        text: truncateUtf8Bytes(accumulated, OUTPUT_CAP),
         exitCode: -1,
         durationMs: Date.now() - start,
         stderrTail: stderrTailOf(stderr),
@@ -330,7 +374,7 @@ export class SubprocessDriver implements ProviderDriver {
     }
 
     return {
-      text: finalText.slice(0, OUTPUT_CAP),
+      text: truncateUtf8Bytes(finalText, OUTPUT_CAP),
       exitCode: effectiveExitCode,
       durationMs: Date.now() - start,
       stderrTail: stderrTailOf(stderr),

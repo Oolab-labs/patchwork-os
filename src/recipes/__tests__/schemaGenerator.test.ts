@@ -1,5 +1,6 @@
 import { Ajv } from "ajv";
 import { beforeEach, describe, expect, it } from "vitest";
+import { RECIPE_NAME_RE } from "../names.js";
 import {
   generateDryRunPlanSchema,
   generateSchemaSet,
@@ -68,6 +69,48 @@ describe("schemaGenerator", () => {
     expect((schemas.namespaces.test as Record<string, unknown>).title).toBe(
       "Test Tools",
     );
+  });
+
+  // Regression: the generator hardcoded the name pattern as
+  // "^[a-z0-9-]+$" — weaker than RECIPE_NAME_RE (allowed a leading "-",
+  // no 64-char cap, no @scope/name form) and divergent from the
+  // corrected committed schemas/recipe.v1.json. Re-running the generator
+  // silently clobbered the strict committed pattern. The generated
+  // pattern is now derived from RECIPE_NAME_RE so regen is idempotent.
+  describe("recipe name pattern matches RECIPE_NAME_RE (idempotent regen)", () => {
+    // The committed schema accepts an optional @scope/ prefix (stripped
+    // by stripRecipeScope before validation) followed by the canonical
+    // RECIPE_NAME_RE body.
+    const expectedPattern = `^(@[a-z0-9-]+/)?${RECIPE_NAME_RE.source.replace(
+      /^\^/,
+      "",
+    )}`;
+
+    it("emits the RECIPE_NAME_RE-derived pattern, not the weak hardcoded one", () => {
+      const schemas = generateSchemaSet();
+      const recipeSchema = schemas.recipe as {
+        properties?: { name?: { pattern?: string } };
+      };
+      const pattern = recipeSchema.properties?.name?.pattern;
+      expect(pattern).toBe(expectedPattern);
+      // The old weak pattern must be gone.
+      expect(pattern).not.toBe("^[a-z0-9-]+$");
+    });
+
+    it("rejects a leading-dash name and an over-long name", () => {
+      const schemas = generateSchemaSet();
+      const recipeSchema = schemas.recipe as {
+        properties?: { name?: { pattern?: string } };
+      };
+      const pattern = recipeSchema.properties?.name?.pattern as string;
+      const re = new RegExp(pattern);
+
+      expect(re.test("-bad")).toBe(false);
+      expect(re.test("a".repeat(65))).toBe(false);
+      // Sanity: well-formed names (bare + scoped) still pass.
+      expect(re.test("sprint-review-prep")).toBe(true);
+      expect(re.test("@patchworkos/sprint-review-prep")).toBe(true);
+    });
   });
 
   it("generates tool schema with merged properties", () => {

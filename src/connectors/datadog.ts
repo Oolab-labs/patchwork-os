@@ -323,10 +323,18 @@ export function loadTokens(): DatadogTokens | null {
   const envApiKey = process.env.DATADOG_API_KEY;
   const envAppKey = process.env.DATADOG_APP_KEY;
   if (envApiKey && envAppKey) {
+    // Defend against authenticated SSRF: site flows into baseUrl()
+    // (`https://api.${site}`), so an unvalidated env value would redirect
+    // Datadog credentials to an attacker-chosen host. Mirror the
+    // connect-handler enum check — fall back to the default if the env
+    // value isn't an allowlisted Datadog site. Audit 2026-06-02.
+    const envSite = process.env.DATADOG_SITE;
+    const site =
+      envSite && DATADOG_ALLOWED_SITES.has(envSite) ? envSite : "datadoghq.com";
     return {
       apiKey: envApiKey,
       appKey: envAppKey,
-      site: process.env.DATADOG_SITE ?? "datadoghq.com",
+      site,
       connected_at: new Date().toISOString(),
     };
   }

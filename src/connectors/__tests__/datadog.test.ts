@@ -47,6 +47,44 @@ describe("datadog token helpers", () => {
     expect(loadTokens()).toBeNull();
   });
 
+  // Regression: DATADOG_SITE env var bypassed the SSRF allowlist that the
+  // connect handler enforces. baseUrl() interpolates site into
+  // `https://api.${site}` so an unvalidated env value redirects credentials.
+  it("loadTokens rejects a non-allowlisted DATADOG_SITE (falls back to default)", async () => {
+    process.env.DATADOG_API_KEY = "api-key-123";
+    process.env.DATADOG_APP_KEY = "app-key-456";
+    process.env.DATADOG_SITE = "evil.com";
+    const { loadTokens } = await import("../datadog.js");
+    const tokens = loadTokens();
+    expect(tokens).not.toBeNull();
+    // Must NOT carry the attacker-supplied site through to baseUrl().
+    expect(tokens!.site).not.toBe("evil.com");
+    expect(tokens!.site).toBe("datadoghq.com");
+  });
+
+  it("loadTokens rejects SSRF-shaped DATADOG_SITE values", async () => {
+    process.env.DATADOG_API_KEY = "k";
+    process.env.DATADOG_APP_KEY = "k";
+    const { loadTokens } = await import("../datadog.js");
+    for (const bad of [
+      "127.0.0.1:9091/x",
+      "169.254.169.254",
+      "evil.com/datadoghq.com",
+    ]) {
+      process.env.DATADOG_SITE = bad;
+      const tokens = loadTokens();
+      expect(tokens!.site).toBe("datadoghq.com");
+    }
+  });
+
+  it("loadTokens preserves an allowlisted DATADOG_SITE", async () => {
+    process.env.DATADOG_API_KEY = "k";
+    process.env.DATADOG_APP_KEY = "k";
+    process.env.DATADOG_SITE = "us3.datadoghq.com";
+    const { loadTokens } = await import("../datadog.js");
+    expect(loadTokens()!.site).toBe("us3.datadoghq.com");
+  });
+
   it("saveTokens + loadTokens round-trips", async () => {
     const { loadTokens, saveTokens } = await import("../datadog.js");
     const tokens = {

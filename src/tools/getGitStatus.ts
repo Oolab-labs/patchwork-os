@@ -100,7 +100,13 @@ export function createGetGitStatusTool(workspace: string) {
         if (!line) continue;
         const x = line[0] ?? " ";
         const y = line[1] ?? " ";
-        const file = line.slice(3);
+        let file = line.slice(3);
+
+        // Renames (R) and copies (C) render as `old -> new` in porcelain v1.
+        // Extract the destination path so the arrow string never leaks through.
+        if ((x === "R" || x === "C") && file.includes(" -> ")) {
+          file = file.split(" -> ").pop() ?? file;
+        }
 
         // Conflict markers
         if (

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   error,
+  hasNestedQuantifier,
   optionalBool,
   optionalInt,
   optionalString,
@@ -9,6 +10,9 @@ import {
   resolveFilePath,
   successStructured,
 } from "./utils.js";
+
+/** Max content size for a single searchReplace pass — matches searchAndReplace's 2MB per-file cap. */
+const MAX_SEARCH_REPLACE_SIZE = 2 * 1024 * 1024;
 
 /**
  * Compute a simple unified diff between two arrays of lines.
@@ -146,7 +150,24 @@ export function applySearchReplace(
   useRegex: boolean,
   caseSensitive = true,
 ): string {
+  // File-size bound — applied to both regex and literal modes. A multi-MB
+  // String.prototype.replace / split is itself a denial-of-service vector even
+  // without a pathological regex. Matches searchAndReplace's 2MB per-file cap.
+  if (Buffer.byteLength(content, "utf-8") > MAX_SEARCH_REPLACE_SIZE) {
+    throw new Error(
+      `Content exceeds the ${MAX_SEARCH_REPLACE_SIZE / (1024 * 1024)}MB searchReplace size limit — split the edit or use a line-range operation.`,
+    );
+  }
   if (useRegex) {
+    // ReDoS guard — reject nested quantifiers (e.g. (a+)+) before they reach
+    // new RegExp + content.replace on the full file. Shared with
+    // searchAndReplace via hasNestedQuantifier.
+    if (hasNestedQuantifier(search)) {
+      throw new Error(
+        "Pattern contains nested quantifiers (e.g. (a+)+) which can cause catastrophic backtracking. " +
+          "Simplify the regex — use a literal string match or a non-nested quantifier.",
+      );
+    }
     const flags = caseSensitive ? "g" : "gi";
     const re = new RegExp(search, flags);
     return content.replace(re, replace);

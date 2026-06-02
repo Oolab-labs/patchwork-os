@@ -365,6 +365,25 @@ export class SnowflakeConnector extends BaseConnector {
       }
       throw new SnowflakeHttpError(res.status, detail);
     }
+    // HTTP 202 is in the 2xx range (res.ok === true) but carries NO data:
+    // the SQL API moved the statement to asynchronous execution because it
+    // exceeded the synchronous window. Returning here would silently yield
+    // rows:[]. Surface a clear error with the handle so the caller can poll
+    // GET /api/v2/statements/<handle> instead of assuming an empty result.
+    if (res.status === 202) {
+      let handle: string | undefined;
+      try {
+        const partial = (await res.json()) as SnowflakeStatementResponse;
+        handle = partial.statementHandle;
+      } catch {
+        // ignore — fall back to a handle-less message
+      }
+      throw new Error(
+        handle
+          ? `Snowflake statement is still executing asynchronously (statementHandle "${handle}"); it exceeded the synchronous window. Poll GET /api/v2/statements/${handle} for results.`
+          : "Snowflake statement is still executing asynchronously; it exceeded the synchronous window. Poll GET /api/v2/statements/<statementHandle> for results.",
+      );
+    }
     return (await res.json()) as SnowflakeStatementResponse;
   }
 }

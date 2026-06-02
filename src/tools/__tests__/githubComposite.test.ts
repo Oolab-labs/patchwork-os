@@ -193,6 +193,119 @@ describe("githubPR", () => {
 });
 
 // ---------------------------------------------------------------------------
+// githubPR composite — configured defaultRepo threading
+// ---------------------------------------------------------------------------
+describe("githubPR defaultRepo", () => {
+  const DEFAULT_REPO = "octo/configured";
+
+  function ghArgsOf(callIndex: number): string[] {
+    return mockExecSafe.mock.calls[callIndex]?.[1] as string[];
+  }
+
+  it("list — uses the configured defaultRepo when no repo arg given", async () => {
+    const tool = createGithubPRTool(ws, undefined, DEFAULT_REPO);
+    mockExecSafe.mockResolvedValueOnce(ok(JSON.stringify([{ number: 1 }])));
+    await tool.handler({ operation: "list" });
+
+    const args = ghArgsOf(0);
+    expect(args).toContain("--repo");
+    expect(args[args.indexOf("--repo") + 1]).toBe(DEFAULT_REPO);
+  });
+
+  it("view — uses the configured defaultRepo when no repo arg given", async () => {
+    const tool = createGithubPRTool(ws, undefined, DEFAULT_REPO);
+    mockExecSafe.mockResolvedValueOnce(
+      ok(JSON.stringify({ number: 7, title: "t", state: "OPEN", url: "u" })),
+    );
+    await tool.handler({ operation: "view", number: 7 });
+
+    const args = ghArgsOf(0);
+    expect(args).toContain("--repo");
+    expect(args[args.indexOf("--repo") + 1]).toBe(DEFAULT_REPO);
+  });
+
+  it("getDiff — falls back to defaultRepo when no repo arg given", async () => {
+    const tool = createGithubPRTool(ws, undefined, DEFAULT_REPO);
+    const metaJson = JSON.stringify({
+      number: 3,
+      title: "Diff PR",
+      changedFiles: 0,
+      files: [],
+    });
+    mockExecSafe
+      .mockResolvedValueOnce(ok(metaJson)) // pr view --json
+      .mockResolvedValueOnce(ok("diff --git a b\n")); // pr diff
+    await tool.handler({ operation: "getDiff", prNumber: 3 });
+
+    // Both the meta (call 0) and diff (call 1) invocations must carry --repo.
+    for (const call of [0, 1]) {
+      const args = ghArgsOf(call);
+      expect(args).toContain("--repo");
+      expect(args[args.indexOf("--repo") + 1]).toBe(DEFAULT_REPO);
+    }
+  });
+
+  it("getDiff — explicit repo arg overrides the configured defaultRepo", async () => {
+    const tool = createGithubPRTool(ws, undefined, DEFAULT_REPO);
+    const metaJson = JSON.stringify({
+      number: 3,
+      title: "Diff PR",
+      changedFiles: 0,
+      files: [],
+    });
+    mockExecSafe
+      .mockResolvedValueOnce(ok(metaJson))
+      .mockResolvedValueOnce(ok("diff --git a b\n"));
+    await tool.handler({
+      operation: "getDiff",
+      prNumber: 3,
+      repo: "other/repo",
+    });
+
+    const args = ghArgsOf(0);
+    expect(args[args.indexOf("--repo") + 1]).toBe("other/repo");
+  });
+
+  it("postReview — uses defaultRepo without calling gh repo view", async () => {
+    const tool = createGithubPRTool(ws, undefined, DEFAULT_REPO);
+    // Only the review API call should run — no resolveRepo `gh repo view`.
+    mockExecSafe.mockResolvedValueOnce(ok(JSON.stringify({ id: 99 })));
+    await tool.handler({
+      operation: "postReview",
+      prNumber: 5,
+      body: "LGTM",
+      event: "COMMENT",
+    });
+
+    expect(mockExecSafe).toHaveBeenCalledTimes(1);
+    const args = ghArgsOf(0);
+    expect(args).toContain(`repos/${DEFAULT_REPO}/pulls/5/reviews`);
+  });
+
+  it("approve — uses defaultRepo without calling gh repo view", async () => {
+    const tool = createGithubPRTool(ws, undefined, DEFAULT_REPO);
+    mockExecSafe.mockResolvedValueOnce(ok(JSON.stringify({ id: 55 })));
+    await tool.handler({ operation: "approve", prNumber: 6 });
+
+    expect(mockExecSafe).toHaveBeenCalledTimes(1);
+    const args = ghArgsOf(0);
+    expect(args).toContain(`repos/${DEFAULT_REPO}/pulls/6/reviews`);
+  });
+
+  it("merge — uses defaultRepo without calling gh repo view", async () => {
+    const tool = createGithubPRTool(ws, undefined, DEFAULT_REPO);
+    mockExecSafe.mockResolvedValueOnce(
+      ok(JSON.stringify({ merged: true, sha: "abc", message: "Merged" })),
+    );
+    await tool.handler({ operation: "merge", prNumber: 8 });
+
+    expect(mockExecSafe).toHaveBeenCalledTimes(1);
+    const args = ghArgsOf(0);
+    expect(args).toContain(`repos/${DEFAULT_REPO}/pulls/8/merge`);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // githubIssue composite
 // ---------------------------------------------------------------------------
 describe("githubIssue", () => {

@@ -5,6 +5,7 @@ import { writeFileAtomic } from "../writeFileAtomic.js";
 import {
   error,
   execSafe,
+  hasNestedQuantifier,
   optionalBool,
   optionalString,
   requireString,
@@ -117,12 +118,9 @@ export function createSearchAndReplaceTool(workspace: string) {
       let regex: RegExp | null = null;
       if (isRegex) {
         // Reject patterns with nested quantifiers — these can cause catastrophic
-        // backtracking (ReDoS) when applied to large files. Same guard as waitForTerminalOutput.
-        if (
-          /\([^)]*[+*]\)[+*?]/.test(pattern) ||
-          /\([^)]*\{[^}]+\}\)[+*{?]/.test(pattern) ||
-          /[+*][+*]|\{[^}]+\}[+*]/.test(pattern)
-        ) {
+        // backtracking (ReDoS) when applied to large files. Shared guard
+        // (hasNestedQuantifier) is also used by applySearchReplace.
+        if (hasNestedQuantifier(pattern)) {
           return error(
             "Pattern contains nested quantifiers (e.g. (a+)+) which can cause catastrophic backtracking. " +
               "Simplify the regex — use a literal string match or a non-nested quantifier.",
