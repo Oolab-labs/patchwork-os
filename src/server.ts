@@ -26,9 +26,11 @@ import { isLoopbackOrPrivateEndpoint } from "./drivers/local/index.js";
 import {
   EnvLockedFlagError,
   getEnvLockedValue,
+  isEnabled,
   isEnvLockedFor,
   isWriteKillSwitchActive,
   KILL_SWITCH_WRITES,
+  listFlags,
   setFlag,
 } from "./featureFlags.js";
 import { respondIfUnknownBodyKeys } from "./httpBodyValidation.js";
@@ -2234,6 +2236,112 @@ export class Server extends EventEmitter<ServerEvents> {
               engaged: next,
               changed,
               locked: false,
+            }),
+          );
+          return;
+        }
+      }
+
+      // /feature-flags — list + toggle USER-OPT-IN UI flags only.
+      //
+      // Deliberately scoped: this endpoint can ONLY flip flags where
+      //   category === "ui" && requiresOptIn === true && !isKillSwitch
+      // so it can never be used to disable a safety kill-switch (those go
+      // through the audited /kill-switch route) or enable an experimental
+      // flag. The motivating use is the recipe-editor "Enable & retry"
+      // affordance for `recipe.repair-ai` (default-off, opt-in, costs API
+      // tokens — see featureFlags.ts FLAG_REPAIR_AI).
+      //
+      // POST {id: string, value: boolean}
+      //   200 {id, value, changed}                 — accepted
+      //   400 {error: "invalid_request"}           — malformed body
+      //   404 {error: "unknown_flag"}              — not registered
+      //   403 {error: "not_user_toggleable"}       — flag not in the opt-in/ui set
+      //   409 {error: "env_override", envVar}      — PATCHWORK_FLAG_* pins the
+      //        value; the write persisted to config but isEnabled() still
+      //        resolves to the env value, so the toggle won't take effect.
+      if (parsedUrl.pathname === "/feature-flags") {
+        const isUserToggleable = (
+          f: ReturnType<typeof listFlags>[number],
+        ): boolean =>
+          f.category === "ui" && f.requiresOptIn && f.isKillSwitch !== true;
+        if (req.method === "POST") {
+          const FF_BODY_CAP = 1 * 1024;
+          const parsed = await readJsonBody<{
+            id?: unknown;
+            value?: unknown;
+          }>(req, FF_BODY_CAP);
+          if (!parsed.ok) {
+            if (parsed.code === "too_large") {
+              respond413(res, FF_BODY_CAP);
+              return;
+            }
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({ error: "invalid_request", reason: "bad_json" }),
+            );
+            return;
+          }
+          const body = parsed.value ?? {};
+          if (respondIfUnknownBodyKeys(res, body, ["id", "value"])) {
+            return;
+          }
+          if (typeof body.id !== "string" || typeof body.value !== "boolean") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: "invalid_request",
+                reason: "id must be string and value must be boolean",
+              }),
+            );
+            return;
+          }
+          const flagId = body.id;
+          const flag = listFlags().find((f) => f.id === flagId);
+          if (!flag) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "unknown_flag", id: flagId }));
+            return;
+          }
+          if (!isUserToggleable(flag)) {
+            res.writeHead(403, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({ error: "not_user_toggleable", id: flagId }),
+            );
+            return;
+          }
+          const prev = isEnabled(flagId);
+          setFlag(flagId, body.value, true);
+          // Non-kill-switch flags read PATCHWORK_FLAG_* dynamically with
+          // precedence over the config we just wrote. If a sysadmin pinned
+          // the flag via env, the write won't take effect — surface that as
+          // a 409 instead of a misleading 200 (the editor would otherwise
+          // "Enable & retry" straight into another 503).
+          const effective = isEnabled(flagId);
+          if (effective !== body.value) {
+            const envVar = `PATCHWORK_FLAG_${flagId
+              .replace(/[.-]/g, "_")
+              .toUpperCase()}`;
+            res.writeHead(409, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: "env_override",
+                id: flagId,
+                envVar,
+                effectiveValue: effective,
+              }),
+            );
+            return;
+          }
+          this.logger.info(
+            `[feature-flags] ${flagId} = ${body.value} — actor=http`,
+          );
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              id: flagId,
+              value: body.value,
+              changed: prev !== body.value,
             }),
           );
           return;

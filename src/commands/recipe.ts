@@ -20,6 +20,11 @@ import "../recipes/tools/index.js";
 import { loadFixtureLibrary } from "../connectors/fixtureLibrary.js";
 import { MockConnector } from "../connectors/mockConnector.js";
 import {
+  HALT_CATEGORY_HINTS,
+  HALT_CATEGORY_LABELS,
+  type HaltCategory,
+} from "../recipes/haltCategory.js";
+import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
 } from "../recipes/migrations/index.js";
@@ -1813,6 +1818,190 @@ export function runPreflightWatch(options: PreflightWatchOptions): () => void {
   };
 
   return runWatch(watchOptions);
+}
+
+/** Recent runtime halts for one recipe — the shape of `/runs/halt-summary`. */
+export interface DoctorRuntimeHalts {
+  total: number;
+  byCategory: Partial<Record<HaltCategory, number>>;
+  recent: Array<{ reason: string; category: string; runSeq: number }>;
+}
+
+export interface RecipeDoctorOptions extends PreflightOptions {
+  /**
+   * Fetches recent runtime halts for the recipe by name. Returns null when
+   * no bridge is reachable (doctor degrades to static-only). Injected so
+   * the bridge walk lives in the CLI layer and the command stays testable.
+   */
+  fetchHalts?: (recipeName: string) => Promise<DoctorRuntimeHalts | null>;
+}
+
+/**
+ * Static half of the doctor report. A lighter projection of
+ * `PreflightResult` (drops the plan, which the report doesn't render) so
+ * doctor can also represent the lint-only fallback path — when a recipe
+ * is too broken to even load/plan, `runPreflight` throws, and we still
+ * want a clean diagnosis rather than a stack trace.
+ */
+export interface DoctorStaticResult {
+  ok: boolean;
+  recipe: string;
+  issues: PreflightIssue[];
+  /** True when the recipe couldn't be planned (load threw) — lint-only. */
+  planSkipped?: boolean;
+}
+
+export interface RecipeDoctorResult {
+  recipe: string;
+  recipePath: string;
+  /** Static analysis: lint + write-policy + dry-plan (lint-only on load failure). */
+  static: DoctorStaticResult;
+  /** Recent runtime halts, or null when no bridge was reachable. */
+  runtime: DoctorRuntimeHalts | null;
+  /** Why runtime is null (e.g. "no running bridge"), when applicable. */
+  runtimeNote?: string;
+  /** True when static passed AND no runtime halts were seen. */
+  ok: boolean;
+}
+
+/**
+ * `recipe doctor` — one-screen "why is this recipe unhealthy + how do I
+ * fix it" diagnosis. Composes the static `preflight` check (lint + policy
+ * + plan) with the recipe-scoped runtime halt summary, mapping every
+ * finding to an actionable hint. Fail-soft: a missing bridge degrades to
+ * static-only rather than erroring.
+ */
+export async function runRecipeDoctor(
+  recipeRef: string,
+  options: RecipeDoctorOptions = {},
+): Promise<RecipeDoctorResult> {
+  const { fetchHalts, ...preflightOptions } = options;
+  const recipePath = resolveRecipePath(recipeRef);
+
+  // Lint first — it never throws and returns structured issues even for
+  // recipes that can't load. Then attempt the fuller preflight (policy +
+  // plan); if the recipe is too broken to load/plan, `runPreflight`
+  // throws — fall back to a lint-only static result so doctor still
+  // produces a clean diagnosis instead of a stack trace.
+  const lint = runLint(recipePath);
+  let staticResult: DoctorStaticResult;
+  try {
+    const pf = await runPreflight(recipePath, preflightOptions);
+    staticResult = { ok: pf.ok, recipe: pf.recipe, issues: pf.issues };
+  } catch (err) {
+    const issues: PreflightIssue[] = lint.issues.map((i) => ({
+      level: i.level,
+      code: i.level === "error" ? "lint-error" : "lint-warning",
+      message: i.message,
+    }));
+    // Guarantee at least one error so the verdict is unhealthy — the
+    // load failure itself is the signal even if lint surfaced only
+    // warnings (or nothing it could attribute to a line).
+    if (!issues.some((i) => i.level === "error")) {
+      issues.push({
+        level: "error",
+        code: "lint-error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+    staticResult = {
+      ok: false,
+      recipe: basename(recipePath).replace(/\.(ya?ml|json)$/i, ""),
+      issues,
+      planSkipped: true,
+    };
+  }
+  const recipeName = staticResult.recipe;
+
+  let runtime: DoctorRuntimeHalts | null = null;
+  let runtimeNote: string | undefined;
+  if (fetchHalts) {
+    try {
+      runtime = await fetchHalts(recipeName);
+      if (runtime === null) {
+        runtimeNote = "no running bridge — runtime halt check skipped";
+      }
+    } catch (err) {
+      runtime = null;
+      runtimeNote = `runtime halt check failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`;
+    }
+  } else {
+    runtimeNote = "runtime halt check not requested";
+  }
+
+  const ok = staticResult.ok && (runtime?.total ?? 0) === 0;
+  return {
+    recipe: recipeName,
+    recipePath,
+    static: staticResult,
+    runtime,
+    runtimeNote,
+    ok,
+  };
+}
+
+/**
+ * Render a `RecipeDoctorResult` as a one-screen human report. Returns the
+ * text so the CLI handler can write it (and tests can assert on it)
+ * without coupling to process.stdout.
+ */
+export function formatRecipeDoctorReport(result: RecipeDoctorResult): string {
+  const lines: string[] = [];
+  const verdict = result.ok ? "✓ healthy" : "✗ needs attention";
+  lines.push(`Recipe doctor — ${result.recipe}  (${verdict})`);
+  lines.push(`  ${result.recipePath}`);
+  lines.push("");
+
+  // --- Static: lint + policy + plan ---
+  const s = result.static;
+  const staticErrors = s.issues.filter((i) => i.level === "error");
+  const staticWarnings = s.issues.filter((i) => i.level === "warning");
+  if (s.issues.length === 0) {
+    lines.push("Static checks: ✓ lint + policy clean");
+  } else {
+    const planNote = s.planSkipped
+      ? " (could not plan — lint-only; fix the errors below first)"
+      : "";
+    lines.push(
+      `Static checks: ${staticErrors.length} error(s), ${staticWarnings.length} warning(s)${planNote}`,
+    );
+    for (const issue of s.issues) {
+      const icon = issue.level === "error" ? "✗" : "⚠";
+      const where = issue.stepId ? ` [step "${issue.stepId}"]` : "";
+      lines.push(`  ${icon} (${issue.code})${where} ${issue.message}`);
+    }
+  }
+  lines.push("");
+
+  // --- Runtime: recent halts ---
+  if (result.runtime === null) {
+    lines.push(`Runtime halts: — (${result.runtimeNote ?? "unavailable"})`);
+  } else if (result.runtime.total === 0) {
+    lines.push("Runtime halts: ✓ none in the recent window");
+  } else {
+    lines.push(`Runtime halts: ${result.runtime.total} in the recent window`);
+    const entries = Object.entries(result.runtime.byCategory).sort(
+      ([, a], [, b]) => (b ?? 0) - (a ?? 0),
+    );
+    for (const [cat, count] of entries) {
+      const category = cat as HaltCategory;
+      const label = HALT_CATEGORY_LABELS[category] ?? cat;
+      const hint = HALT_CATEGORY_HINTS[category] ?? "open run trace";
+      lines.push(`  ✗ ${label}: ${count}  → ${hint}`);
+    }
+    if (result.runtime.recent.length > 0) {
+      lines.push("  most recent:");
+      for (const r of result.runtime.recent.slice(0, 5)) {
+        const reason =
+          r.reason.length > 100 ? `${r.reason.slice(0, 99)}…` : r.reason;
+        lines.push(`    · [run #${r.runSeq}] ${reason}`);
+      }
+    }
+  }
+
+  return `${lines.join("\n")}\n`;
 }
 
 /**
