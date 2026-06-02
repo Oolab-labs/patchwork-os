@@ -78,6 +78,20 @@ const CATALOG: ConnectorDef[] = [
   { id: "mongodb",          name: "MongoDB",          initials: "MG", category: "Data",       wave: 3, tools: 4,  bg: "#47A248" },
   { id: "redis",            name: "Redis",            initials: "RD", category: "Data",       wave: 3, tools: 3,  bg: "#DC382D" },
   { id: "elasticsearch",    name: "Elasticsearch",    initials: "ES", category: "Data",       wave: 3, tools: 4,  bg: "#FEC514" },
+  // Wave 4 — new connectors 2026-06-02
+  { id: "resend",           name: "Resend",           initials: "RS", category: "Email",      wave: 4, tools: 7,  bg: "#1C1C1C" },
+  { id: "obsidian",         name: "Obsidian",         initials: "OB", category: "Docs",       wave: 4, tools: 10, bg: "#7C3AED" },
+  { id: "todoist",          name: "Todoist",          initials: "TD", category: "Project",    wave: 4, tools: 10, bg: "#DB4035" },
+  { id: "vercel",           name: "Vercel",           initials: "VC", category: "Dev",        wave: 4, tools: 9,  bg: "#171717" },
+  { id: "paystack",         name: "Paystack",         initials: "PS", category: "Payments",   wave: 4, tools: 11, bg: "#009688" },
+  { id: "pipedrive",        name: "Pipedrive",        initials: "PD", category: "CRM",        wave: 4, tools: 12, bg: "#0A2463" },
+  { id: "caldiy",           name: "Cal.diy",          initials: "CL", category: "Calendar",   wave: 4, tools: 9,  bg: "#111827" },
+  { id: "grafana",          name: "Grafana",          initials: "GF", category: "Monitoring", wave: 4, tools: 10, bg: "#F46800" },
+  { id: "posthog",          name: "PostHog",          initials: "PH", category: "Analytics",  wave: 4, tools: 11, bg: "#1D4AFF" },
+  { id: "cloudflare",       name: "Cloudflare",       initials: "CF", category: "Dev",        wave: 4, tools: 12, bg: "#F38020" },
+  { id: "circleci",         name: "CircleCI",         initials: "CI", category: "Dev",        wave: 4, tools: 13, bg: "#161616" },
+  { id: "woocommerce",      name: "WooCommerce",      initials: "WC", category: "Commerce",   wave: 4, tools: 13, bg: "#7F54B3" },
+  { id: "supabase",         name: "Supabase",         initials: "SB", category: "Data",       wave: 4, tools: 12, bg: "#1C1C1C" },
 ];
 
 
@@ -335,6 +349,20 @@ const SUPPORTED_CONNECTORS = new Set([
   "salesforce",
   "shopify",
   "snowflake",
+  // Wave 3
+  "resend",
+  "obsidian",
+  "todoist",
+  "vercel",
+  "paystack",
+  "pipedrive",
+  "caldiy",
+  "grafana",
+  "posthog",
+  "cloudflare",
+  "circleci",
+  "woocommerce",
+  "supabase",
 ]);
 
 const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
@@ -659,6 +687,234 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
       { key: "role", label: "Default role (optional)", placeholder: "READ_ONLY", type: "text", required: false },
     ],
   },
+  // Wave 3 connectors
+  resend: {
+    name: "Resend",
+    icon: <IconEnvelope />,
+    instructions: (
+      <>
+        Create an API key in{" "}
+        <a href="https://resend.com/api-keys" target="_blank" rel="noreferrer" className="conn-modal-link">
+          Resend → API Keys
+        </a>
+        . A &ldquo;Sending access&rdquo; key is sufficient for transactional email.
+      </>
+    ),
+    placeholder: "re_… Resend API key",
+    tokenKey: "apiKey",
+  },
+  obsidian: {
+    name: "Obsidian",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Install the{" "}
+        <a href="https://github.com/coddingtonbear/obsidian-local-rest-api" target="_blank" rel="noreferrer" className="conn-modal-link">
+          Local REST API
+        </a>{" "}
+        plugin in Obsidian, then copy the API key from Settings → Local REST API.
+        The bridge connects to <code>https://127.0.0.1:27124</code> by default.
+      </>
+    ),
+    placeholder: "Obsidian Local REST API key",
+    tokenKey: "apiKey",
+    extraFields: [
+      { key: "baseUrl", label: "Base URL (optional, default: https://127.0.0.1:27124)", placeholder: "https://127.0.0.1:27124", type: "url", required: false },
+    ],
+  },
+  todoist: {
+    name: "Todoist",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Copy your API token from{" "}
+        <a href="https://app.todoist.com/app/settings/integrations/developer" target="_blank" rel="noreferrer" className="conn-modal-link">
+          Todoist → Settings → Integrations → Developer
+        </a>
+        .
+      </>
+    ),
+    placeholder: "Todoist API token",
+    tokenKey: "apiToken",
+  },
+  vercel: {
+    name: "Vercel",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Create a token in{" "}
+        <a href="https://vercel.com/account/tokens" target="_blank" rel="noreferrer" className="conn-modal-link">
+          Vercel → Account Settings → Tokens
+        </a>
+        . Optionally add your Team ID to scope requests to a team.
+      </>
+    ),
+    placeholder: "Vercel access token",
+    tokenKey: "accessToken",
+    extraFields: [
+      { key: "teamId", label: "Team ID (optional)", placeholder: "team_xxxx", type: "text", required: false },
+    ],
+  },
+  paystack: {
+    name: "Paystack",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Copy your Secret Key from{" "}
+        <a href="https://dashboard.paystack.com/#/settings/developer" target="_blank" rel="noreferrer" className="conn-modal-link">
+          Paystack Dashboard → Settings → API Keys & Webhooks
+        </a>
+        . Use the live key for production, test key for development.
+      </>
+    ),
+    placeholder: "sk_live_… or sk_test_… Paystack secret key",
+    tokenKey: "secretKey",
+  },
+  pipedrive: {
+    name: "Pipedrive",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Find your API token in{" "}
+        <a href="https://app.pipedrive.com/settings/api" target="_blank" rel="noreferrer" className="conn-modal-link">
+          Pipedrive → Settings → Personal preferences → API
+        </a>
+        . Also enter your company domain (e.g. <code>your-company</code> from <code>your-company.pipedrive.com</code>).
+      </>
+    ),
+    placeholder: "Pipedrive API token (40 hex chars)",
+    tokenKey: "apiToken",
+    extraFields: [
+      { key: "companyDomain", label: "Company domain (from your-company.pipedrive.com)", placeholder: "your-company", type: "text", required: true },
+    ],
+  },
+  caldiy: {
+    name: "Cal.diy",
+    icon: <IconCalendar />,
+    instructions: (
+      <>
+        Create an API key in{" "}
+        <a href="https://app.cal.com/settings/developer/api-keys" target="_blank" rel="noreferrer" className="conn-modal-link">
+          Cal.com / Cal.diy → Settings → Developer → API Keys
+        </a>
+        . For self-hosted Cal.diy, enter your instance URL below.
+      </>
+    ),
+    placeholder: "cal_… API key",
+    tokenKey: "apiKey",
+    extraFields: [
+      { key: "baseUrl", label: "Base URL (optional, default: https://api.cal.com/v2)", placeholder: "https://api.cal.com/v2", type: "url", required: false },
+    ],
+  },
+  grafana: {
+    name: "Grafana",
+    icon: <IconSearch />,
+    instructions: (
+      <>
+        Create a Service Account token in{" "}
+        <a href="https://grafana.com/docs/grafana/latest/administration/service-accounts/" target="_blank" rel="noreferrer" className="conn-modal-link">
+          Grafana → Administration → Service Accounts
+        </a>
+        . Viewer role is sufficient for reading; Editor role needed for annotations.
+        Enter your Grafana instance URL below.
+      </>
+    ),
+    placeholder: "Grafana service account token (glsa_…)",
+    tokenKey: "apiKey",
+    extraFields: [
+      { key: "baseUrl", label: "Grafana instance URL", placeholder: "https://grafana.your-org.com", type: "url", required: true },
+    ],
+  },
+  posthog: {
+    name: "PostHog",
+    icon: <IconSearch />,
+    instructions: (
+      <>
+        Create a Personal API key in{" "}
+        <a href="https://app.posthog.com/settings/user-api-keys" target="_blank" rel="noreferrer" className="conn-modal-link">
+          PostHog → Settings → Personal API keys
+        </a>
+        . For self-hosted PostHog, enter your instance URL. Optionally add your Project API key to enable event capture.
+      </>
+    ),
+    placeholder: "PostHog personal API key (phx_…)",
+    tokenKey: "apiKey",
+    extraFields: [
+      { key: "host", label: "PostHog host (optional, default: https://us.posthog.com)", placeholder: "https://us.posthog.com", type: "url", required: false },
+      { key: "projectApiKey", label: "Project API key for event capture (optional)", placeholder: "phc_…", type: "text", required: false },
+    ],
+  },
+  cloudflare: {
+    name: "Cloudflare",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Create an API token in{" "}
+        <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer" className="conn-modal-link">
+          Cloudflare → My Profile → API Tokens
+        </a>
+        . Use &ldquo;Edit zone DNS&rdquo; template or create a custom token with the scopes you need. Optionally add your Account ID.
+      </>
+    ),
+    placeholder: "Cloudflare API token",
+    tokenKey: "apiToken",
+    extraFields: [
+      { key: "accountId", label: "Account ID (optional — auto-detected if omitted)", placeholder: "abc123…", type: "text", required: false },
+    ],
+  },
+  circleci: {
+    name: "CircleCI",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Create a Personal API token in{" "}
+        <a href="https://app.circleci.com/settings/user/tokens" target="_blank" rel="noreferrer" className="conn-modal-link">
+          CircleCI → User Settings → Personal API Tokens
+        </a>
+        .
+      </>
+    ),
+    placeholder: "CircleCI personal API token",
+    tokenKey: "apiToken",
+  },
+  woocommerce: {
+    name: "WooCommerce",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Generate REST API keys in your WordPress admin under{" "}
+        <a href="#" target="_blank" rel="noreferrer" className="conn-modal-link">
+          WooCommerce → Settings → Advanced → REST API
+        </a>
+        . Create a key with Read/Write permissions. Also enter your store URL.
+      </>
+    ),
+    placeholder: "WooCommerce Consumer Key (ck_…)",
+    tokenKey: "consumerKey",
+    extraFields: [
+      { key: "consumerSecret", label: "Consumer Secret (cs_…)", placeholder: "cs_…", type: "text", required: true },
+      { key: "storeUrl", label: "Store URL", placeholder: "https://your-store.com", type: "url", required: true },
+    ],
+  },
+  supabase: {
+    name: "Supabase",
+    icon: <IconDatabase />,
+    instructions: (
+      <>
+        Find your Project URL and Service Role Key in{" "}
+        <a href="https://supabase.com/dashboard/project/_/settings/api" target="_blank" rel="noreferrer" className="conn-modal-link">
+          Supabase → Project Settings → API
+        </a>
+        . The service role key bypasses Row Level Security — store it securely.
+      </>
+    ),
+    placeholder: "Supabase service role key (eyJ…)",
+    tokenKey: "serviceRoleKey",
+    extraFields: [
+      { key: "url", label: "Project URL", placeholder: "https://xyzabc.supabase.co", type: "url", required: true },
+      { key: "anonKey", label: "Anon/public key (optional)", placeholder: "eyJ…", type: "text", required: false },
+    ],
+  },
 };
 
 // ------------------------------------------------------------------ providers array (kept for AddConnectionModal)
@@ -734,6 +990,20 @@ function logoUrl(id: string): string | null {
     mongodb:          `${SI_CDN}/mongodb/ffffff`,
     redis:            `${SI_CDN}/redis/ffffff`,
     elasticsearch:    `${SI_CDN}/elasticsearch/ffffff`,
+    // Wave 4
+    resend:           `${SI_CDN}/resend/ffffff`,
+    obsidian:         `${SI_CDN}/obsidian/ffffff`,
+    todoist:          `${SI_CDN}/todoist/ffffff`,
+    vercel:           `${SI_CDN}/vercel/ffffff`,
+    // paystack: not in SimpleIcons — falls back to initials + brand color
+    // pipedrive: not in SimpleIcons — falls back to initials + brand color
+    caldiy:           `${SI_CDN}/caldotcom/ffffff`,
+    grafana:          `${SI_CDN}/grafana/ffffff`,
+    posthog:          `${SI_CDN}/posthog/ffffff`,
+    cloudflare:       `${SI_CDN}/cloudflare/ffffff`,
+    circleci:         `${SI_CDN}/circleci/ffffff`,
+    woocommerce:      `${SI_CDN}/woocommerce/ffffff`,
+    supabase:         `${SI_CDN}/supabase/ffffff`,
   };
   return cdnMap[id] ?? null;
 }
