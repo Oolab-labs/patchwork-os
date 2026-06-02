@@ -434,6 +434,14 @@ function RecipeDetailPanel({
         <span className="rdp-title" title={recipe.name}>{recipe.name}</span>
         {isLive && <LivePill tone="ok" />}
         <button type="button" onClick={onRun} className="btn sm primary">▶ Run</button>
+        <Link
+          href={`/recipes/${encodeURIComponent(recipe.name)}?diagnose=1#doctor`}
+          className="btn sm ghost"
+          style={{ textDecoration: "none" }}
+          title="Run the Doctor: lint + write-policy + recent halts, with fix hints"
+        >
+          Diagnose
+        </Link>
         <button
           type="button"
           onClick={onClose}

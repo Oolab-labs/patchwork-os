@@ -20,7 +20,7 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DoctorPanel } from "./_components/DoctorPanel";
 import RecipeEditPage from "./_edit/page";
 import RecipePlanPage from "./_plan/page";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiPath } from "@/lib/api";
 import { canonicalRecipeKey, inboxItemKey } from "@/lib/entityKey";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
@@ -277,6 +277,9 @@ function RunModal({
 function RecipeHubOverviewPage({ name }: { name: string }) {
   const toast = useToast();
   const router = useRouter();
+  // Deep-link: `?diagnose=1` (from the recipes list / failed-run views)
+  // auto-runs the Doctor panel and scrolls to it.
+  const autoDiagnose = useSearchParams().get("diagnose") === "1";
 
   // Reusable list fetch for the recipe row (matches layout's data source).
   const { data: recipes, refetch: refetchRecipes } = useBridgeFetch<Recipe[]>(
@@ -856,11 +859,14 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
         </div>
       </PatchCard>
 
-      {/* DOCTOR — composed health diagnosis (lint + policy + recent halts) */}
+      {/* DOCTOR — composed health diagnosis (lint + policy + recent halts).
+          The wrapping `#doctor` div is the scroll target for deep-links. */}
+      <div id="doctor">
       <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 260ms 160ms ease both", animationFillMode: "both" }}>
         <SectionHeader>Doctor</SectionHeader>
-        <DoctorPanel recipeName={name} />
+        <DoctorPanel recipeName={name} autoRun={autoDiagnose} />
       </PatchCard>
+      </div>
       </div>{/* end main column */}
 
       {/* related panel column */}

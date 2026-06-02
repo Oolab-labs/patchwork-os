@@ -1263,6 +1263,19 @@ export default function RunDetailPage() {
                   href: `/runs?recipe=${encodeURIComponent(run.recipeName)}`,
                   title: `Other runs of ${run.recipeName}`,
                 },
+                // Surface the recipe Doctor from a failed run — deep-link
+                // auto-runs the diagnosis (lint + policy + recent halts).
+                ...(run.status === "error" ||
+                (run.stepResults ?? []).some((s) => s.status === "error")
+                  ? [
+                      {
+                        label: "Diagnose",
+                        href: `/recipes/${encodeURIComponent(run.recipeName)}?diagnose=1#doctor`,
+                        tone: "accent" as const,
+                        title: `Run the Doctor on ${run.recipeName} — why it's failing + how to fix`,
+                      },
+                    ]
+                  : []),
                 {
                   label: "Activity",
                   href: "/activity",

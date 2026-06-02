@@ -9,7 +9,7 @@
  * renders it.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import {
   HALT_CATEGORY_HINT,
@@ -44,7 +44,15 @@ export interface DoctorResult {
   ok: boolean;
 }
 
-export function DoctorPanel({ recipeName }: { recipeName: string }) {
+export function DoctorPanel({
+  recipeName,
+  autoRun = false,
+}: {
+  recipeName: string;
+  /** Run the diagnosis immediately on mount — used by deep-links
+   *  (`?diagnose=1`) from the recipes list and failed-run views. */
+  autoRun?: boolean;
+}) {
   const [result, setResult] = useState<DoctorResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +86,16 @@ export function DoctorPanel({ recipeName }: { recipeName: string }) {
       setBusy(false);
     }
   }, [recipeName]);
+
+  // Auto-run once on mount when deep-linked (?diagnose=1). The ref guard
+  // keeps it to a single run even if React re-mounts in StrictMode dev.
+  const autoRanRef = useRef(false);
+  useEffect(() => {
+    if (autoRun && !autoRanRef.current) {
+      autoRanRef.current = true;
+      void runDoctor();
+    }
+  }, [autoRun, runDoctor]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
