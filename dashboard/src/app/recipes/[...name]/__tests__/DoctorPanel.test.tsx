@@ -66,6 +66,19 @@ describe("DoctorPanel", () => {
     expect(screen.getByText(/Reconnect from \/connections/)).toBeInTheDocument();
   });
 
+  it("auto-runs on mount when autoRun is set (deep-link)", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => HEALTHY,
+    }));
+    vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+    render(<DoctorPanel recipeName="demo" autoRun />);
+    // No click — the result should appear on its own.
+    await waitFor(() => expect(screen.getByText(/✓ healthy/)).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("surfaces a recipe_not_found error", async () => {
     mockFetchOnce({ error: "recipe_not_found", message: "recipe x not found" }, false, 404);
     render(<DoctorPanel recipeName="x" />);
