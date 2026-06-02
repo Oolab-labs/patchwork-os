@@ -106,7 +106,7 @@ export function DoctorPanel({ recipeName }: { recipeName: string }) {
 
       {error && (
         <div style={{ fontSize: "var(--fs-xs)", color: "var(--err)" }}>
-          Couldn't run diagnosis: {error}
+          Couldn&apos;t run diagnosis: {error}
         </div>
       )}
 
