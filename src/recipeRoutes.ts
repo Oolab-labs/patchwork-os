@@ -771,11 +771,19 @@ export function tryHandleRecipeRoute(
         res.end(JSON.stringify(result));
       } catch (err) {
         // resolveRecipePath throws "recipe ... not found" for unknown
-        // names — map that to 404; anything else is a real 500.
+        // names — map that to 404; anything else is a real 500. Never echo
+        // err.message back to the client: it embeds the absolute recipes
+        // path (info-exposure / js/stack-trace-exposure). Return a static
+        // message; respond500 handles logging the detail server-side.
         const msg = err instanceof Error ? err.message : String(err);
         if (/not found/i.test(msg)) {
           res.writeHead(404, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "recipe_not_found", message: msg }));
+          res.end(
+            JSON.stringify({
+              error: "recipe_not_found",
+              message: "recipe not found",
+            }),
+          );
           return;
         }
         respond500(res, err);
