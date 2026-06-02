@@ -16,6 +16,10 @@ const KNOWN_CONNECTOR_IDS = new Set([
   "stripe", "zendesk", "postgres", "mongodb", "redis", "elasticsearch",
   "sendgrid", "twilio", "figma", "airtable", "webflow", "monday",
   "salesforce", "shopify", "snowflake",
+  // Wave 3
+  "resend", "obsidian", "todoist", "vercel", "paystack", "pipedrive",
+  "caldiy", "grafana", "posthog", "cloudflare", "circleci", "woocommerce",
+  "supabase",
 ]);
 
 function namespaceToConnector(ns: string): string | null {

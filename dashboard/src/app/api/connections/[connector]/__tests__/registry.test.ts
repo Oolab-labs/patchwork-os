@@ -37,6 +37,10 @@ const EXPECTED_CONNECT = new Set([
   "figma", "airtable", "webflow",
   // Wave final — Shopify (Admin API access token) + Snowflake (PAT).
   "shopify", "snowflake",
+  // Wave 4 — new PAT connectors.
+  "resend", "obsidian", "todoist", "vercel", "paystack", "pipedrive",
+  "caldiy", "grafana", "posthog", "cloudflare", "circleci", "woocommerce",
+  "supabase",
 ]);
 const EXPECTED_TEST = new Set([
   "gmail", "github", "linear", "sentry", "google-calendar", "google-drive",
@@ -53,6 +57,10 @@ const EXPECTED_TEST = new Set([
   "google-docs",
   // Wave final — Monday + Salesforce (OAuth) + Shopify + Snowflake (PAT).
   "monday", "salesforce", "shopify", "snowflake",
+  // Wave 4 — new PAT connectors.
+  "resend", "obsidian", "todoist", "vercel", "paystack", "pipedrive",
+  "caldiy", "grafana", "posthog", "cloudflare", "circleci", "woocommerce",
+  "supabase",
 ]);
 const EXPECTED_DELETE = EXPECTED_TEST;
 

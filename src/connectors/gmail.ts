@@ -344,6 +344,20 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
     salesforce: () => import("./salesforce.js"),
     shopify: () => import("./shopify.js"),
     snowflake: () => import("./snowflake.js"),
+    // Wave 3 connectors (2026-05-31)
+    resend: () => import("./resend.js"),
+    obsidian: () => import("./obsidian.js"),
+    todoist: () => import("./todoist.js"),
+    vercel: () => import("./vercel.js"),
+    paystack: () => import("./paystack.js"),
+    pipedrive: () => import("./pipedrive.js"),
+    caldiy: () => import("./caldiy.js"),
+    grafana: () => import("./grafana.js"),
+    posthog: () => import("./posthog.js"),
+    cloudflare: () => import("./cloudflare.js"),
+    circleci: () => import("./circleci.js"),
+    woocommerce: () => import("./woocommerce.js"),
+    supabase: () => import("./supabase.js"),
   };
   const tokenPasteProbes = CONNECTORS.filter(
     (c) => !EXPLICIT_IDS.has(c.id),

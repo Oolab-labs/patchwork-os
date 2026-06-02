@@ -265,6 +265,85 @@ export const CONNECTORS: readonly ConnectorDescriptor[] = [
   // routes exist; flipping them in this file is the one-line change
   // that opens jira up to the dashboard surfaces.
   { id: "jira", label: "Jira", authKind: "pat", supports: {} },
+  // Wave 3 — new connectors (2026-05-31).
+  {
+    id: "resend",
+    label: "Resend",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "obsidian",
+    label: "Obsidian",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "todoist",
+    label: "Todoist",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "vercel",
+    label: "Vercel",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "paystack",
+    label: "Paystack",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "pipedrive",
+    label: "Pipedrive",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "caldiy",
+    label: "Cal.diy",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "grafana",
+    label: "Grafana",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "posthog",
+    label: "PostHog",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "cloudflare",
+    label: "Cloudflare",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "circleci",
+    label: "CircleCI",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "woocommerce",
+    label: "WooCommerce",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
+  {
+    id: "supabase",
+    label: "Supabase",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
 ];
 
 /** All connector ids — useful for the bridge's list endpoint. */
