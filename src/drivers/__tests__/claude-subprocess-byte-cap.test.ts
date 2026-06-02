@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 class MockChild extends EventEmitter {
@@ -46,7 +48,7 @@ function makeInput(
 ): ProviderTaskInput {
   return {
     prompt: "hello",
-    workspace: "/tmp/test",
+    workspace: join(tmpdir(), "claude-subprocess-byte-cap-test"),
     timeoutMs: 5000,
     signal: new AbortController().signal,
     ...overrides,
