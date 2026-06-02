@@ -131,19 +131,6 @@ jobs:
         if: steps.npm_check.outputs.skip != 'true'
         run: npm publish --access public --tag beta
 
-      # Beta is the active release line; keep `latest` in sync so
-      # `npm i patchwork-os` and the npmjs.com page stay current.
-      # When a stable (non-prerelease) version ships, remove this step.
-      # Note: OIDC trusted publishing only covers `npm publish`; dist-tag
-      # operations require a real token (NPM_TOKEN secret).
-      - name: Point latest dist-tag to this beta
-        if: steps.npm_check.outputs.skip != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          npm config set //registry.npmjs.org/:_authToken "$NODE_AUTH_TOKEN"
-          V=$(node -p "require('./package.json').version")
-          npm dist-tag add patchwork-os@$V latest
 
       - name: Create GitHub pre-release
         env:
