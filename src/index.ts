@@ -179,6 +179,7 @@ const KNOWN_SUBCOMMANDS = [
   "status",
   "shim",
   "recipe",
+  "connect",
   "traces",
   "suggest",
   "dashboard",
@@ -257,6 +258,11 @@ if (
       `  recipe run <name> [--vars k=v]            Run a recipe by name\n` +
       `  recipe install <source>                   Install from a path or GitHub source\n` +
       `  recipe --help                             Full recipe subcommand index\n\n` +
+      `Connectors\n` +
+      `  connect [list]                            List connectors + connection status\n` +
+      `  connect <vendor>                          OAuth: print authorize URL / PAT: connect\n` +
+      `  connect test <vendor>                     Health-probe a connector\n` +
+      `  connect disconnect <vendor>               Revoke a connector\n\n` +
       `Operate\n` +
       `  start [--port N] [--workspace <dir>]      Start a single bridge (no tmux)\n` +
       `  status                                    One-line bridge status (port, uptime)\n` +
@@ -2339,6 +2345,21 @@ if (process.argv[2] === "halts") {
       );
       process.exit(1);
     }
+  })();
+}
+
+// `patchwork connect` — connector front-door. Thin CLI→HTTP shim over the
+// bridge's `/connections/*` routes (list / OAuth auth / PAT connect / test /
+// disconnect). This is the command the 23 connector "Run: patchwork connect
+// <vendor>" error messages point at. Lock discovery reuses the same
+// isBridge:true + live-PID selector as `recipe run`, `quick-task`, etc.
+if (process.argv[2] === "connect") {
+  (async () => {
+    const { runConnect } = await import("./commands/connect.js");
+    const { findBridgeLockForTask } = await import("./commands/task.js");
+    await runConnect(process.argv.slice(3), {
+      findBridgeLock: (port?: number) => findBridgeLockForTask(port),
+    });
   })();
 }
 
