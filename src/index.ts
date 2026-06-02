@@ -51,6 +51,11 @@ import { fileURLToPath } from "node:url";
 import { getAnalyticsPref, setAnalyticsPref } from "./analyticsPrefs.js";
 import { Bridge } from "./bridge.js";
 import {
+  type BridgeLockInfo,
+  findAllLiveBridges,
+  findBridgeLock,
+} from "./bridgeLockDiscovery.js";
+import {
   isBridgeToolsFileValid,
   repairBridgeToolsRulesIfStale,
 } from "./bridgeToolsRules.js";
@@ -618,57 +623,40 @@ Options:
     "ide",
   );
 
-  let lockFile: string | undefined;
-
+  // Select a *running bridge* lock (isBridge:true + live PID) rather than the
+  // most-recently-touched lock in ~/.claude/ide, which can be an IDE-owned
+  // lock or a dead bridge.
+  let bridgeLock: BridgeLockInfo | null;
   if (portArg) {
-    lockFile = path.join(lockDir, `${portArg}.lock`);
-    if (!existsSync(lockFile)) {
+    const port = Number(portArg);
+    bridgeLock = findAllLiveBridges().find((b) => b.port === port) ?? null;
+    if (!bridgeLock) {
       process.stderr.write(
-        `Error: No lock file found for port ${portArg} at ${lockFile}\n`,
+        `Error: No running bridge found for port ${portArg} (no lock file for that port, the lock is IDE-owned, or its process is not alive).\n`,
       );
       process.exit(1);
     }
   } else {
-    // Find the most recently modified lock file
-    let bestMtime = 0;
-    try {
-      for (const f of readdirSync(lockDir)) {
-        if (!f.endsWith(".lock")) continue;
-        const full = path.join(lockDir, f);
-        const mtime = statSync(full).mtimeMs;
-        if (mtime > bestMtime) {
-          bestMtime = mtime;
-          lockFile = full;
-        }
-      }
-    } catch {
-      // lock dir doesn't exist — handled below
-    }
+    bridgeLock = findBridgeLock();
   }
 
-  if (!lockFile) {
-    process.stderr.write(`Error: No bridge lock file found in ${lockDir}\n`);
+  if (!bridgeLock) {
+    process.stderr.write(
+      `Error: No running bridge lock file found in ${lockDir}\n`,
+    );
     process.stderr.write(
       "Make sure the bridge is running first, or pass --port <port>.\n",
     );
     process.exit(1);
   }
 
-  try {
-    const data = JSON.parse(readFileSync(lockFile, "utf-8")) as {
-      authToken?: string;
-    };
-    if (!data.authToken) {
-      process.stderr.write(
-        `Error: Lock file ${lockFile} has no authToken field\n`,
-      );
-      process.exit(1);
-    }
-    process.stdout.write(`${data.authToken}\n`);
-  } catch {
-    process.stderr.write(`Error: Could not read lock file ${lockFile}\n`);
+  if (!bridgeLock.authToken) {
+    process.stderr.write(
+      `Error: Bridge lock for port ${bridgeLock.port} has no authToken field\n`,
+    );
     process.exit(1);
   }
+  process.stdout.write(`${bridgeLock.authToken}\n`);
   process.exit(0);
 }
 
@@ -710,58 +698,37 @@ if (process.argv[2] === "notify") {
     "ide",
   );
 
-  let notifyLockFile: string | undefined;
+  // Select a *running bridge* lock (isBridge:true + live PID) rather than the
+  // most-recently-touched lock, which can be an IDE-owned or dead-bridge lock.
   let notifyPort: number | undefined;
+  let notifyToken: string | undefined;
 
   if (namedArgs.port) {
-    notifyPort = Number(namedArgs.port);
-    notifyLockFile = path.join(notifyLockDir, `${notifyPort}.lock`);
-    if (!existsSync(notifyLockFile)) {
+    const port = Number(namedArgs.port);
+    const lock = findAllLiveBridges().find((b) => b.port === port);
+    if (!lock) {
       process.stderr.write(
-        `Error: No lock file found for port ${notifyPort}\n`,
+        `Error: No running bridge found for port ${namedArgs.port} (no lock for that port, the lock is IDE-owned, or its process is not alive).\n`,
       );
       process.exit(1);
     }
+    notifyPort = lock.port;
+    notifyToken = lock.authToken;
   } else {
-    let bestMtime = 0;
-    try {
-      for (const f of readdirSync(notifyLockDir)) {
-        if (!f.endsWith(".lock")) continue;
-        const full = path.join(notifyLockDir, f);
-        const mtime = statSync(full).mtimeMs;
-        if (mtime > bestMtime) {
-          bestMtime = mtime;
-          notifyLockFile = full;
-          notifyPort = Number(path.basename(f, ".lock"));
-        }
-      }
-    } catch {
-      // lock dir doesn't exist
+    const lock = findBridgeLock();
+    if (lock) {
+      notifyPort = lock.port;
+      notifyToken = lock.authToken;
     }
   }
 
-  if (!notifyLockFile || !notifyPort) {
+  if (!notifyPort || !notifyToken) {
     process.stderr.write(
-      `Error: No bridge lock file found in ${notifyLockDir}\n`,
+      `Error: No running bridge lock file found in ${notifyLockDir}\n`,
     );
     process.stderr.write(
       "Make sure the bridge is running first (claude-ide-bridge --watch ...).\n",
     );
-    process.exit(1);
-  }
-
-  let notifyToken: string;
-  try {
-    const data = JSON.parse(readFileSync(notifyLockFile, "utf-8")) as {
-      authToken?: string;
-    };
-    if (!data.authToken) {
-      process.stderr.write(`Error: Lock file has no authToken field\n`);
-      process.exit(1);
-    }
-    notifyToken = data.authToken;
-  } catch {
-    process.stderr.write(`Error: Could not read lock file ${notifyLockFile}\n`);
     process.exit(1);
   }
 
