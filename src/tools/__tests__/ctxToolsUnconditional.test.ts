@@ -1,6 +1,10 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { makeConfig as buildConfig } from "../../__tests__/helpers/fixtures.js";
 import { registerAllTools } from "../index.js";
+
+const TEST_WORKSPACE = join(tmpdir(), "ctx-tools-test");
 
 /**
  * Regression test for the "ctx WRITE/reverse-lookup tools missing on a stock
@@ -75,8 +79,8 @@ describe("ctx tools register unconditionally (no log args)", () => {
     registerAllTools(
       transport as never,
       buildConfig({
-        workspace: "/tmp/test",
-        workspaceFolders: ["/tmp/test"],
+        workspace: TEST_WORKSPACE,
+        workspaceFolders: [TEST_WORKSPACE],
         fullMode: true,
       }),
       new Set(),
