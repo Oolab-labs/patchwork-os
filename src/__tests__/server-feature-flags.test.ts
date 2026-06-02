@@ -13,6 +13,8 @@
  */
 
 import http from "node:http";
+import os from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   _resetEnvLockForTesting,
@@ -40,7 +42,9 @@ vi.mock("../patchworkConfig.js", async (importOriginal) => {
       approvalGate: "high",
     }),
     saveConfig: vi.fn(),
-    defaultConfigPath: vi.fn().mockReturnValue("/tmp/patchwork-stub.json"),
+    defaultConfigPath: vi
+      .fn()
+      .mockReturnValue(join(os.tmpdir(), "patchwork-stub.json")),
   };
 });
 
