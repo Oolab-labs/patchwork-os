@@ -30,6 +30,12 @@ export class ChildBridgeClient {
     });
   }
 
+  /** The authToken this client was constructed with. Used by the orchestrator
+   *  to detect PID/port reuse with a rotated token and recreate the client. */
+  get token(): string {
+    return this.authToken;
+  }
+
   get isHealthy(): boolean {
     if (this.circuitState === "open") {
       if (Date.now() - this.circuitOpenedAt >= CIRCUIT_RESET_MS) {
@@ -116,7 +122,11 @@ export class ChildBridgeClient {
     name: string,
     args: Record<string, unknown>,
     signal?: AbortSignal,
-  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+  ): Promise<{
+    content: Array<{ type: string; text: string }>;
+    isError?: boolean;
+    structuredContent?: unknown;
+  }> {
     if (!this.isHealthy) {
       throw bridgeUnavailableError(this.port, "circuit open");
     }
@@ -168,6 +178,7 @@ export class ChildBridgeClient {
         result?: {
           content?: Array<{ type: string; text: string }>;
           isError?: boolean;
+          structuredContent?: unknown;
         };
         error?: { code: number; message: string; data?: unknown };
       };
@@ -182,8 +193,18 @@ export class ChildBridgeClient {
       }
 
       this.onSuccess();
+      // Per ADR-0004, child bridges signal tool-level failures with
+      // `isError: true` in the result (NOT a JSON-RPC error). Propagate it —
+      // and any structuredContent — so a failed child tool call is not
+      // misreported to the MCP client as a success.
       return {
         content: json.result?.content ?? [{ type: "text", text: "" }],
+        ...(json.result?.isError !== undefined
+          ? { isError: json.result.isError }
+          : {}),
+        ...(json.result?.structuredContent !== undefined
+          ? { structuredContent: json.result.structuredContent }
+          : {}),
       };
     } catch (err) {
       if ((err as { bridgeError?: unknown }).bridgeError) throw err;

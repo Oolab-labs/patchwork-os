@@ -515,7 +515,7 @@ export function getResendConnector(): ResendConnector {
 export { getResendConnector as resend };
 
 // ── HTTP Handlers ─────────────────────────────────────────────────────────────
-// Wired in src/server.ts under /connections/resend/*
+// Wired in src/connectorRoutes.ts under /connections/resend/*
 
 export interface ConnectorHandlerResult {
   status: number;

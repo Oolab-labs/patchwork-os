@@ -35,23 +35,24 @@ export async function handleGetDiagnostics(
     const diags = vscode.languages.getDiagnostics(uri);
     return diags.map(diagnosticToJson);
   }
-  // Return all diagnostics (capped to prevent oversized payloads)
+  // Return all diagnostics as a FLAT list (capped to prevent oversized
+  // payloads). Each entry carries its own `file` field so it matches the
+  // `extensionClient.Diagnostic` shape that bridge consumers expect — they
+  // do `Array.isArray(result)` + read `d.file`/`d.severity`. Returning a
+  // grouped wrapper here silently broke contextBundle / getProjectContext /
+  // screenshotAndAnnotate (all reported zero diagnostics).
   const allDiags = vscode.languages.getDiagnostics();
-  const result: Array<{ file: string; diagnostics: unknown[] }> = [];
+  const result: Array<{ file: string } & ReturnType<typeof diagnosticToJson>> =
+    [];
   let totalCount = 0;
   for (const [uri, diags] of allDiags) {
-    if (diags.length > 0) {
-      const capped = diags.slice(0, MAX_ALL_DIAGNOSTICS - totalCount);
-      result.push({
-        file: uri.fsPath,
-        diagnostics: capped.map(diagnosticToJson),
-      });
-      totalCount += capped.length;
-      if (totalCount >= MAX_ALL_DIAGNOSTICS) break;
+    if (diags.length === 0) continue;
+    const capped = diags.slice(0, MAX_ALL_DIAGNOSTICS - totalCount);
+    for (const d of capped) {
+      result.push({ file: uri.fsPath, ...diagnosticToJson(d) });
     }
+    totalCount += capped.length;
+    if (totalCount >= MAX_ALL_DIAGNOSTICS) break;
   }
-  return {
-    diagnostics: result,
-    truncated: totalCount >= MAX_ALL_DIAGNOSTICS,
-  };
+  return result;
 }

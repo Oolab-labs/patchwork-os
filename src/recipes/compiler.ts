@@ -106,9 +106,14 @@ function normalizeToolString(raw: string): string {
 function bucketForRisk(
   risk: Recipe["steps"][number]["risk"],
 ): "allow" | "ask" | "deny" {
-  if (risk === "high") return "ask";
-  if (risk === "medium") return "ask";
-  return "allow";
+  // Fail CLOSED: only an explicit `low` (or no risk declared, i.e. the
+  // author trusts it) auto-allows. EVERY other value — `medium`, `high`,
+  // and any typo like `hgh` — routes to `ask`. The previous fall-through
+  // to `allow` defeated the documented "never auto-allow high-risk"
+  // guarantee for unrecognised values. `validateRecipeDefinition` flags
+  // out-of-enum risk values so authors see the typo at lint time.
+  if (risk === undefined || risk === "low") return "allow";
+  return "ask";
 }
 
 export function compileRecipe(recipe: Recipe): AutomationProgram {

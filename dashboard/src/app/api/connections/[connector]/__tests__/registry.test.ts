@@ -41,6 +41,8 @@ const EXPECTED_CONNECT = new Set([
   "resend", "obsidian", "todoist", "vercel", "paystack", "pipedrive",
   "caldiy", "grafana", "posthog", "cloudflare", "circleci", "woocommerce",
   "supabase",
+  // Jira (PAT) — bridge routes wired in src/connectorRoutes.ts.
+  "jira",
 ]);
 const EXPECTED_TEST = new Set([
   "gmail", "github", "linear", "sentry", "google-calendar", "google-drive",
@@ -61,6 +63,8 @@ const EXPECTED_TEST = new Set([
   "resend", "obsidian", "todoist", "vercel", "paystack", "pipedrive",
   "caldiy", "grafana", "posthog", "cloudflare", "circleci", "woocommerce",
   "supabase",
+  // Jira (PAT) — bridge routes wired in src/connectorRoutes.ts.
+  "jira",
 ]);
 const EXPECTED_DELETE = EXPECTED_TEST;
 

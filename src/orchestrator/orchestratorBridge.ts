@@ -109,8 +109,57 @@ export class OrchestratorBridge {
     );
   }
 
+  /**
+   * Reconcile a client map against the current registry bridges.
+   *
+   * Two leaks/correctness hazards are closed here:
+   *  1. Leaked clients — when a child's lock disappears, the registry drops it
+   *     but its ChildBridgeClient (with live keepAlive http.Agent sockets)
+   *     would otherwise linger in `clients` forever. Destroy + remove it.
+   *  2. Stale-token reuse — on PID/port reuse a child re-appears on the same
+   *     port with a NEW authToken. The cached client still holds the old token
+   *     and would authenticate wrong → the bridge is marked unhealthy forever.
+   *     Destroy + recreate the client with the fresh token.
+   *
+   * Static + dependency-injected (createClient factory) so it can be unit
+   * tested without standing up an OrchestratorBridge.
+   */
+  static reconcileClients(
+    clients: Map<number, ChildBridgeClient>,
+    bridges: Array<{ port: number; authToken: string }>,
+    createClient: (port: number, authToken: string) => ChildBridgeClient,
+  ): void {
+    const livePorts = new Set(bridges.map((b) => b.port));
+
+    // (1) Drop clients whose port left the registry.
+    for (const [port, client] of clients) {
+      if (!livePorts.has(port)) {
+        client.destroy();
+        clients.delete(port);
+      }
+    }
+
+    // (2) Recreate clients whose authToken changed (PID/port reuse).
+    for (const b of bridges) {
+      const existing = clients.get(b.port);
+      if (existing && existing.token !== b.authToken) {
+        existing.destroy();
+        clients.set(b.port, createClient(b.port, b.authToken));
+      }
+    }
+  }
+
   private async probeAll(): Promise<void> {
     const bridges = this.registry.getAll();
+
+    // Reconcile clients before probing: drop leaked clients for vanished
+    // bridges and recreate any whose authToken changed under PID/port reuse.
+    OrchestratorBridge.reconcileClients(
+      this.clients,
+      bridges,
+      (port, authToken) => new ChildBridgeClient(port, authToken),
+    );
+
     await Promise.all(
       bridges.map(async (b) => {
         let client = this.clients.get(b.port);
@@ -358,7 +407,11 @@ export class OrchestratorBridge {
     session: OrchestratorSession | null,
     signal?: AbortSignal,
     preferredPort?: number,
-  ): Promise<{ content: Array<{ type: string; text: string }> }> {
+  ): Promise<{
+    content: Array<{ type: string; text: string }>;
+    isError?: boolean;
+    structuredContent?: unknown;
+  }> {
     // Determine target bridge
     let targetPort = preferredPort ?? session?.stickyBridgePort ?? null;
 

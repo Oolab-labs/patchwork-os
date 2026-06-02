@@ -62,6 +62,40 @@ describe("buildDependencyGraph", () => {
     expect(order.indexOf("b")).toBeLessThan(order.indexOf("d"));
     expect(order.indexOf("c")).toBeLessThan(order.indexOf("d"));
   });
+
+  // Regression: a phantom `awaits:` target (one matching no real step) is
+  // skipped by the cycle-detection DFS (so hasCycles stays false) but is
+  // counted in Kahn's inDegree and never decremented — so the step that
+  // awaits it AND all its transitive dependents drop out of
+  // topologicalOrder silently and never run, while the run reports success.
+  describe("unknown awaits targets", () => {
+    it("reports unknownAwaitTargets when an awaits target does not exist", () => {
+      const g = buildDependencyGraph([
+        { id: "a" },
+        { id: "b", awaits: ["ghost"] },
+      ]);
+      expect(g.unknownAwaitTargets).toContain("ghost");
+    });
+
+    it("does NOT silently drop the awaiting step from topologicalOrder", () => {
+      // Before the fix `b` (inDegree 1, never decremented) was dropped.
+      const g = buildDependencyGraph([
+        { id: "a" },
+        { id: "b", awaits: ["ghost"] },
+        { id: "c", awaits: ["b"] },
+      ]);
+      // The graph is invalid (caller rejects the run), but the order must
+      // still include every declared step so the failure is visible rather
+      // than masquerading as a silent skip.
+      expect(g.topologicalOrder).toContain("b");
+      expect(g.topologicalOrder).toContain("c");
+    });
+
+    it("leaves unknownAwaitTargets empty for a valid graph", () => {
+      const g = buildDependencyGraph([{ id: "a" }, { id: "b", awaits: ["a"] }]);
+      expect(g.unknownAwaitTargets).toEqual([]);
+    });
+  });
 });
 
 describe("executeWithDependencies", () => {

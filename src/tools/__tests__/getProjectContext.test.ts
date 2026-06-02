@@ -124,6 +124,28 @@ describe("createGetProjectContextTool", () => {
     expect(result.brief.activeFile).toBe("/workspace/src/main.ts");
   });
 
+  // Regression for the two-shape getDiagnostics bug: the no-file branch of the
+  // extension handler now returns a FLAT Diagnostic[] (each entry has `file`).
+  // getProjectContext does `Array.isArray(diagnosticsResult.value)` + reads
+  // `d.file`/`d.severity`/`d.message`. With the old grouped wrapper this branch
+  // never ran and the tool reported "No errors or warnings".
+  it("counts errors/warnings from the flat getDiagnostics array", async () => {
+    const client = makeClient({
+      isConnected: () => true,
+      getDiagnostics: vi.fn().mockResolvedValue([
+        { file: "/ws/a.ts", severity: "error", message: "boom", line: 1 },
+        { file: "/ws/a.ts", severity: "warning", message: "meh", line: 2 },
+        { file: "/ws/b.ts", severity: "error", message: "kaboom", line: 3 },
+      ]),
+    });
+    const tool = createGetProjectContextTool(tmpDir, client, NO_PROBES);
+    const result = parse(await tool.handler({ force: true }));
+
+    expect(result.brief.diagnosticSummary).toBe("2 error(s), 1 warning(s)");
+    expect(result.brief.recentErrors).toHaveLength(3);
+    expect(result.brief.recentErrors[0].file).toBe("/ws/a.ts");
+  });
+
   it("includes suggestedPrompt string in output", async () => {
     const tool = createGetProjectContextTool(tmpDir, makeClient(), NO_PROBES);
     const result = parse(await tool.handler({}));

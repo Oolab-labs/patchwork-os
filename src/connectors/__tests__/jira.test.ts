@@ -183,6 +183,82 @@ describe("handleJiraConnect", () => {
   });
 });
 
+describe("buildHeaders auth scheme (cloud + email API token)", () => {
+  const tmpDir = join(os.tmpdir(), `patchwork-jira-bh-${Date.now()}`);
+  const homeDir = join(tmpDir, "home");
+  const patchworkHome = join(homeDir, ".patchwork");
+  const tokensDir = join(patchworkHome, "tokens");
+
+  beforeEach(() => {
+    process.env.HOME = homeDir;
+    process.env.PATCHWORK_HOME = patchworkHome;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    mkdirSync(tokensDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    delete process.env.HOME;
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    delete process.env.JIRA_API_TOKEN;
+    delete process.env.JIRA_INSTANCE_URL;
+    delete process.env.JIRA_EMAIL;
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  function captureAuthHeader(): { current: string | undefined } {
+    const captured: { current: string | undefined } = { current: undefined };
+    global.fetch = vi.fn().mockImplementation((_url, init) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      captured.current = headers.Authorization;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({ id: "1", key: "ABC-1", fields: {} }),
+      });
+    }) as unknown as typeof fetch;
+    return captured;
+  }
+
+  it("uses Basic base64(email:token) for cloud + email API token (NOT Bearer)", async () => {
+    const { saveTokens, getJiraConnector } = await import("../jira.js");
+    saveTokens({
+      accessToken: "api-token-123",
+      email: "dev@acme.com",
+      instanceUrl: "https://acme.atlassian.net",
+      isCloud: true,
+      connected_at: "2026-06-02T00:00:00.000Z",
+    });
+
+    const captured = captureAuthHeader();
+    await getJiraConnector().fetchIssue("ABC-1");
+
+    const expectedBasic = Buffer.from("dev@acme.com:api-token-123").toString(
+      "base64",
+    );
+    expect(captured.current).toBe(`Basic ${expectedBasic}`);
+    expect(captured.current).not.toMatch(/^Bearer /);
+  });
+
+  it("uses Bearer for cloud token WITHOUT email (real OAuth access token)", async () => {
+    const { saveTokens, getJiraConnector } = await import("../jira.js");
+    saveTokens({
+      accessToken: "oauth-access-token",
+      instanceUrl: "https://acme.atlassian.net",
+      isCloud: true,
+      connected_at: "2026-06-02T00:00:00.000Z",
+    });
+
+    const captured = captureAuthHeader();
+    await getJiraConnector().fetchIssue("ABC-1");
+
+    expect(captured.current).toBe("Bearer oauth-access-token");
+  });
+});
+
 describe("connectorRoutes /connections/jira/connect wiring", () => {
   it("connectorRoutes.ts references handleJiraConnect (regression: was 404)", async () => {
     const { readFileSync } = await import("node:fs");

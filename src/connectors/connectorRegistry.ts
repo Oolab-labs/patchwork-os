@@ -46,9 +46,6 @@ export interface ConnectorDescriptor {
  * - `connect` allowlist is the narrow PAT-only set.
  * - `test` and `delete` allowlists are identical and cover every
  *   connector that has a corresponding bridge route.
- * - `jira` is intentionally absent from the dashboard surfaces today
- *   (concurrent work is wiring its bridge routes). When that lands,
- *   flip its `supports` flags here and the dashboard picks it up.
  */
 export const CONNECTORS: readonly ConnectorDescriptor[] = [
   // OAuth connectors
@@ -260,11 +257,14 @@ export const CONNECTORS: readonly ConnectorDescriptor[] = [
     authKind: "pat",
     supports: { connect: true, test: true, delete: true },
   },
-  // jira: PAT. Concurrent work is wiring the bridge routes. The
-  // `supports` capabilities here are deliberately empty until those
-  // routes exist; flipping them in this file is the one-line change
-  // that opens jira up to the dashboard surfaces.
-  { id: "jira", label: "Jira", authKind: "pat", supports: {} },
+  // jira: PAT. Bridge routes (connect / test / DELETE) live in
+  // src/connectorRoutes.ts.
+  {
+    id: "jira",
+    label: "Jira",
+    authKind: "pat",
+    supports: { connect: true, test: true, delete: true },
+  },
   // Wave 3 — new connectors (2026-05-31).
   {
     id: "resend",

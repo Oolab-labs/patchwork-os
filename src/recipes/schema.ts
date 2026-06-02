@@ -13,7 +13,10 @@ export type TriggerType =
   | "cron"
   | "file_watch"
   | "git_hook"
-  | "manual";
+  | "manual"
+  | "chained"
+  | "on_file_save"
+  | "on_test_run";
 
 export interface WebhookTrigger {
   type: "webhook";
@@ -35,12 +38,44 @@ export interface ManualTrigger {
   type: "manual";
 }
 
+/**
+ * `chained` recipes route to the ChainedRecipeRunner (dispatchRecipe in
+ * yamlRunner.ts). They carry no required trigger fields of their own —
+ * step-level `awaits`/`parallel`/`vars` drive execution. Modeled here so
+ * the install path (parseRecipe) accepts them with parity to the JSON
+ * schema and validateRecipeDefinition. Extra trigger fields (vars/inputs)
+ * survive the JSON round-trip on install.
+ */
+export interface ChainedTrigger {
+  type: "chained";
+}
+
+/**
+ * `on_file_save` / `on_test_run` are the runtime-facing names for the
+ * file-save and test-run triggers (yamlRunner injects `{{file}}` /
+ * `{{runner}}`+`{{failed}}`+… context respectively). `glob`/`filter` are
+ * optional; the bridge wires these via its own automation hooks rather
+ * than the recipe compiler.
+ */
+export interface OnFileSaveTrigger {
+  type: "on_file_save";
+  glob?: string;
+  filter?: string;
+}
+export interface OnTestRunTrigger {
+  type: "on_test_run";
+  filter?: string;
+}
+
 export type Trigger =
   | WebhookTrigger
   | CronTrigger
   | FileWatchTrigger
   | GitHookTrigger
-  | ManualTrigger;
+  | ManualTrigger
+  | ChainedTrigger
+  | OnFileSaveTrigger
+  | OnTestRunTrigger;
 
 export interface FileContext {
   type: "file";

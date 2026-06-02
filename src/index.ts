@@ -1744,6 +1744,8 @@ if (process.argv[2] === "traces" && process.argv[3] === "export") {
       let output: string | undefined;
       let patchworkDir: string | undefined;
       let activityDir: string | undefined;
+      let mode: "public" | "keyed" | undefined;
+      let passphrase: string | undefined;
       for (let i = 0; i < args.length; i++) {
         const a = args[i];
         if (a === "--output" || a === "-o") {
@@ -1755,11 +1757,31 @@ if (process.argv[2] === "traces" && process.argv[3] === "export") {
         } else if (a === "--activity-dir") {
           activityDir = args[i + 1];
           i++;
+        } else if (a === "--mode") {
+          const m = args[i + 1];
+          if (m !== "public" && m !== "keyed") {
+            process.stderr.write(
+              `Error: --mode must be "public" or "keyed" (got: ${m})\n`,
+            );
+            process.exit(1);
+          }
+          mode = m;
+          i++;
+        } else if (a === "--passphrase") {
+          passphrase = args[i + 1];
+          i++;
         } else if (a === "--help" || a === "-h") {
           process.stdout.write(
-            "patchwork traces export [--output <path>] [--patchwork-dir <dir>] [--activity-dir <dir>]\n\n" +
+            "patchwork traces export [--output <path>] [--mode public|keyed]\n" +
+              "                        [--passphrase <phrase>]\n" +
+              "                        [--patchwork-dir <dir>] [--activity-dir <dir>]\n\n" +
               "Bundles ~/.patchwork/{runs,decision_traces,commit_issue_links}.jsonl\n" +
               "and ~/.claude/ide/activity-*.jsonl into a single gzipped JSONL file.\n\n" +
+              "Modes:\n" +
+              "  public  (default) Plain gzip bundle (.jsonl.gz). Anyone with the file\n" +
+              "          can read it.\n" +
+              "  keyed   AES-256-GCM encrypted bundle (.enc). Requires --passphrase;\n" +
+              "          auto-detected and decrypted by `traces import --passphrase`.\n\n" +
               "Output is a manifest line followed by one envelope per row:\n" +
               '  {"type":"manifest", ...}\n' +
               '  {"source":"runs", "entry":{...}}\n' +
@@ -1770,11 +1792,19 @@ if (process.argv[2] === "traces" && process.argv[3] === "export") {
           process.exit(0);
         }
       }
+      if (mode === "keyed" && !passphrase) {
+        process.stderr.write(
+          "Error: --mode keyed requires --passphrase <phrase>\n",
+        );
+        process.exit(1);
+      }
       const { runTracesExport } = await import("./commands/tracesExport.js");
       const result = await runTracesExport({
         ...(output !== undefined && { output }),
         ...(patchworkDir !== undefined && { patchworkDir }),
         ...(activityDir !== undefined && { activityDir }),
+        ...(mode !== undefined && { mode }),
+        ...(passphrase !== undefined && { passphrase }),
       });
       process.stdout.write(`  ✓ Wrote ${result.outputPath}\n`);
       process.stdout.write(

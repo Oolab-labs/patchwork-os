@@ -759,7 +759,19 @@ export async function runChainedRecipe(
     }
   }
 
-  if (depGraph.hasCycles) {
+  // A phantom `awaits:` target (one matching no real step) is invisible to
+  // cycle detection but would silently drop the awaiting step and its
+  // dependents from execution while the run still reports success. Reject
+  // the run with a descriptive error BEFORE executing any step, mirroring
+  // the circular-dependency guard below.
+  const fatalGraphError =
+    depGraph.unknownAwaitTargets.length > 0
+      ? `Recipe has steps that await unknown step(s): ${depGraph.unknownAwaitTargets.join(", ")}`
+      : depGraph.hasCycles
+        ? "Recipe has circular dependencies"
+        : undefined;
+
+  if (fatalGraphError) {
     if (depth === 0) {
       const doneAt = Date.now();
       const durationMs = doneAt - runStartedAt;
@@ -770,7 +782,7 @@ export async function runChainedRecipe(
             doneAt,
             durationMs,
             stepResults: [],
-            errorMessage: "Recipe has circular dependencies",
+            errorMessage: fatalGraphError,
           });
         } else if (options.runLogDir) {
           const { RecipeRunLog } = await import("../runLog.js");
@@ -784,7 +796,7 @@ export async function runChainedRecipe(
             startedAt: runStartedAt,
             doneAt,
             durationMs,
-            errorMessage: "Recipe has circular dependencies",
+            errorMessage: fatalGraphError,
             stepResults: [],
           });
         }
@@ -796,7 +808,7 @@ export async function runChainedRecipe(
       success: false,
       stepResults: new Map(),
       summary: { total: 0, succeeded: 0, failed: 0, skipped: 0 },
-      errorMessage: "Recipe has circular dependencies",
+      errorMessage: fatalGraphError,
       context: {},
     };
   }

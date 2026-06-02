@@ -31,7 +31,10 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   statSync,
+  unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -51,13 +54,28 @@ export type TraceSource =
   | "commit_issue_links"
   | "activity";
 
+/**
+ * Export confidentiality mode.
+ *
+ * - `public` (default): plain gzipped JSONL. Anyone with the file can read
+ *   it. Round-trips with `gunzip -c`.
+ * - `keyed`: the gzipped JSONL is wrapped in an AES-256-GCM envelope
+ *   (see `src/traceEncryption.ts`). Requires a `passphrase`. The output
+ *   defaults to a `.enc` filename and is auto-detected by `traces import`.
+ */
+export type TracesExportMode = "public" | "keyed";
+
 export interface TracesExportOptions {
-  /** Where to write the bundle. Default: `${patchworkDir}/traces-export-{ISO}.jsonl.gz`. */
+  /** Where to write the bundle. Default: `${patchworkDir}/traces-export-{ISO}.jsonl.gz` (or `.enc` for keyed mode). */
   output?: string;
   /** Directory containing runs.jsonl / decision_traces.jsonl / commit_issue_links.jsonl. Default: `~/.patchwork/`. */
   patchworkDir?: string;
   /** Directory containing `activity-{port}.jsonl` files. Default: `~/.claude/ide/`. */
   activityDir?: string;
+  /** Confidentiality mode. Default: `public` (plain gzip). `keyed` requires `passphrase`. */
+  mode?: TracesExportMode;
+  /** Passphrase for `keyed` mode. Required when `mode === "keyed"`; ignored otherwise. */
+  passphrase?: string;
 }
 
 export interface TracesExportSourceFile {
@@ -201,13 +219,25 @@ export async function runTracesExport(
   const exportedAt = new Date().toISOString();
   const patchworkDir = opts.patchworkDir ?? defaultPatchworkDir();
   const activityDir = opts.activityDir ?? defaultActivityDir();
+  const mode: TracesExportMode = opts.mode ?? "public";
 
-  // Default output: `<patchworkDir>/traces-export-<safeIso>.jsonl.gz`. ISO
-  // colons are filename-hostile on Windows so swap them for hyphens.
+  // Reject keyed mode without a passphrase up-front — before we touch the
+  // filesystem — so the caller gets a clear, actionable error and no
+  // half-written intermediate file is left behind.
+  if (mode === "keyed" && !opts.passphrase) {
+    throw new Error(
+      "traces export: --mode keyed requires a --passphrase (none provided)",
+    );
+  }
+
+  // Default output: `<patchworkDir>/traces-export-<safeIso>.jsonl.gz` (or
+  // `.enc` for keyed mode). ISO colons are filename-hostile on Windows so
+  // swap them for hyphens.
   const safeStamp = exportedAt.replace(/:/g, "-").replace(/\..+$/, "");
+  const defaultExt = mode === "keyed" ? "jsonl.gz.enc" : "jsonl.gz";
   const outputPath =
     opts.output ??
-    path.join(patchworkDir, `traces-export-${safeStamp}.jsonl.gz`);
+    path.join(patchworkDir, `traces-export-${safeStamp}.${defaultExt}`);
 
   // Discover sources.
   const files: Array<{
@@ -265,6 +295,12 @@ export async function runTracesExport(
   // Use a Readable source so pipeline() owns backpressure end-to-end —
   // writing directly to gzip outside the pipeline ignores the drain signal
   // and silently buffers everything in memory on large exports.
+  //
+  // For keyed mode we first write the plain gzip to an intermediate path,
+  // then read it back, AES-256-GCM-wrap it, write the `.enc` to the real
+  // outputPath, and unlink the intermediate. The encryption helper operates
+  // on a whole Buffer, so the intermediate file is the streaming boundary.
+  const gzipTarget = mode === "keyed" ? `${outputPath}.plain.tmp` : outputPath;
   const { Readable } = await import("node:stream");
   const source = Readable.from(
     (function* () {
@@ -279,8 +315,26 @@ export async function runTracesExport(
     })(),
     { objectMode: false },
   );
-  const sink = createWriteStream(outputPath, { mode: 0o600 });
+  const sink = createWriteStream(gzipTarget, { mode: 0o600 });
   await pipeline(source, createGzip(), sink);
+
+  if (mode === "keyed") {
+    // opts.passphrase is guaranteed non-empty by the early guard above.
+    const passphrase = opts.passphrase as string;
+    const { encryptTraceBundle } = await import("../traceEncryption.js");
+    try {
+      const plain = readFileSync(gzipTarget);
+      const encrypted = encryptTraceBundle(plain, passphrase);
+      writeFileSync(outputPath, encrypted, { mode: 0o600 });
+    } finally {
+      // Always remove the plaintext intermediate, even if encryption threw.
+      try {
+        unlinkSync(gzipTarget);
+      } catch {
+        // Intermediate already gone or never created — nothing to clean.
+      }
+    }
+  }
 
   return {
     outputPath,

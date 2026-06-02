@@ -300,3 +300,109 @@ describe("ChildBridgeClient 404 session-expiry recovery", () => {
     );
   });
 });
+
+// ── isError / structuredContent passthrough (ADR-0004) ────────────────────────
+
+describe("ChildBridgeClient isError passthrough", () => {
+  let server: http.Server;
+  let client: ChildBridgeClient;
+
+  afterEach(async () => {
+    client.destroy();
+    await closeServer(server);
+  });
+
+  it("propagates isError:true and structuredContent from the child tool result", async () => {
+    ({ server } = await startMockBridge((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        const body = JSON.parse(
+          Buffer.concat(chunks).toString("utf-8"),
+        ) as Record<string, unknown>;
+        const id = body.id;
+
+        if (body.method === "initialize") {
+          res.setHeader("mcp-session-id", "sess-err");
+          res.writeHead(200, { "content-type": "application/json" }).end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id,
+              result: { protocolVersion: "2025-11-25", capabilities: {} },
+            }),
+          );
+        } else if (body.method === "notifications/initialized") {
+          res.writeHead(204).end();
+        } else if (body.method === "tools/call") {
+          // Child signals a tool-level failure per ADR-0004: isError:true in result.
+          res.writeHead(200, { "content-type": "application/json" }).end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id,
+              result: {
+                content: [{ type: "text", text: "tool failed" }],
+                isError: true,
+                structuredContent: { code: "BOOM", detail: 42 },
+              },
+            }),
+          );
+        } else {
+          res.writeHead(200).end("{}");
+        }
+      });
+    }));
+
+    const { port } = server.address() as { port: number };
+    client = new ChildBridgeClient(port, AUTH_TOKEN);
+
+    const result = await client.callTool("myTool", {});
+    // Must NOT throw — isError is a tool-level signal carried in the result.
+    expect(result.content[0]?.text).toBe("tool failed");
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toEqual({ code: "BOOM", detail: 42 });
+  });
+
+  it("leaves isError undefined for a normal successful result", async () => {
+    ({ server } = await startMockBridge((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        const body = JSON.parse(
+          Buffer.concat(chunks).toString("utf-8"),
+        ) as Record<string, unknown>;
+        const id = body.id;
+
+        if (body.method === "initialize") {
+          res.setHeader("mcp-session-id", "sess-ok");
+          res.writeHead(200, { "content-type": "application/json" }).end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id,
+              result: { protocolVersion: "2025-11-25", capabilities: {} },
+            }),
+          );
+        } else if (body.method === "notifications/initialized") {
+          res.writeHead(204).end();
+        } else if (body.method === "tools/call") {
+          res.writeHead(200, { "content-type": "application/json" }).end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id,
+              result: { content: [{ type: "text", text: "ok" }] },
+            }),
+          );
+        } else {
+          res.writeHead(200).end("{}");
+        }
+      });
+    }));
+
+    const { port } = server.address() as { port: number };
+    client = new ChildBridgeClient(port, AUTH_TOKEN);
+
+    const result = await client.callTool("myTool", {});
+    expect(result.content[0]?.text).toBe("ok");
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toBeUndefined();
+  });
+});

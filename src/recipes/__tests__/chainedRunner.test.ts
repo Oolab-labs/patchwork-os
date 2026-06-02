@@ -566,6 +566,24 @@ describe("runChainedRecipe", () => {
     expect(result.success).toBe(false);
     expect(result.errorMessage).toMatch(/circular/);
   });
+
+  // Regression: a step awaiting a non-existent target was silently dropped
+  // from the topological order (it AND its dependents never ran), but the
+  // run still reported success:true / failed:0. The runner must now reject
+  // the run with success:false and a descriptive error.
+  it("rejects a recipe whose awaits target does not exist", async () => {
+    const recipe: ChainedRecipe = {
+      name: "r",
+      steps: [
+        { id: "a", tool: "t" },
+        { id: "b", tool: "t", awaits: ["ghost"] },
+      ],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, noopDeps);
+    expect(result.success).toBe(false);
+    expect(result.errorMessage).toMatch(/ghost/);
+    expect(result.errorMessage).toMatch(/await/i);
+  });
 });
 
 describe("generateExecutionPlan", () => {

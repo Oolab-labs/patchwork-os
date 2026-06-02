@@ -174,6 +174,81 @@ describe("WriteEffectLedger.getOrExecute", () => {
     expect(calls).toBe(2);
     expect(ledger.size()).toBe(1);
   });
+
+  it("does not cache a resolved {ok:false} result — retry re-executes", async () => {
+    // Connector write tools (e.g. asana.create_task) catch transient
+    // errors and RETURN `JSON.stringify({ok:false,error})` rather than
+    // throwing. A resolved {ok:false} must be treated as a failure: NOT
+    // cached, so the next retry re-executes instead of silently replaying
+    // the cached failure as a no-op.
+    const ledger = new WriteEffectLedger();
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      if (calls === 1) {
+        return JSON.stringify({ ok: false, error: "x" });
+      }
+      return JSON.stringify({ ok: true, id: "task_1" });
+    };
+
+    const first = await ledger.getOrExecute("k", fn);
+    expect(JSON.parse(first as string).ok).toBe(false);
+    // Failure must not have been cached.
+    expect(ledger.has("k")).toBe(false);
+    expect(ledger.size()).toBe(0);
+
+    // Retry: fn must run AGAIN (not serve the cached failure).
+    const second = await ledger.getOrExecute("k", fn);
+    expect(JSON.parse(second as string).ok).toBe(true);
+    expect(calls).toBe(2);
+    expect(ledger.has("k")).toBe(true);
+    expect(ledger.size()).toBe(1);
+  });
+
+  it("caches a genuine {ok:true} success — fn runs once", async () => {
+    const ledger = new WriteEffectLedger();
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      return JSON.stringify({ ok: true, id: "task_1" });
+    };
+    const first = await ledger.getOrExecute("k", fn);
+    const second = await ledger.getOrExecute("k", fn);
+    expect(first).toBe(second);
+    expect(calls).toBe(1);
+    expect(ledger.has("k")).toBe(true);
+  });
+
+  it("caches non-JSON string results (genuine successes) once", async () => {
+    // A bare string output (e.g. "Posted to #general") is a success, not
+    // a structured failure — JSON.parse throws (SyntaxError) and it must
+    // still cache as before.
+    const ledger = new WriteEffectLedger();
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      return "Posted to #general";
+    };
+    await ledger.getOrExecute("k", fn);
+    const second = await ledger.getOrExecute("k", fn);
+    expect(second).toBe("Posted to #general");
+    expect(calls).toBe(1);
+    expect(ledger.has("k")).toBe(true);
+  });
+
+  it("caches a null result (genuine success) once", async () => {
+    const ledger = new WriteEffectLedger();
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      return null;
+    };
+    await ledger.getOrExecute("k", fn);
+    const second = await ledger.getOrExecute("k", fn);
+    expect(second).toBeNull();
+    expect(calls).toBe(1);
+    expect(ledger.has("k")).toBe(true);
+  });
 });
 
 describe("WriteEffectLedger — disk-backed (PR5b)", () => {

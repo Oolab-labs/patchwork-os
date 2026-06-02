@@ -435,13 +435,18 @@ export class JiraConnector extends BaseConnector {
   }
 
   private buildHeaders(token: string): Record<string, string> {
-    if (this.tokens?.isCloud) {
+    // Bearer is only valid for a real OAuth 3LO access token, which has no
+    // associated email. Atlassian Cloud API tokens (the dashboard connect
+    // path) come with an email and require Basic base64(email:token) — Bearer
+    // 401s. Mirror the guard in handleJiraTest. Server/Data Center always
+    // uses Basic. See the cloud+email regression in jira.test.ts.
+    if (this.tokens?.isCloud && !this.tokens?.email) {
       return {
         Authorization: `Bearer ${token}`,
         Accept: "application/json",
       };
     } else {
-      // Server/Data Center uses Basic auth with email:token
+      // API token (cloud) or server/Data Center: Basic auth with email:token
       const email = this.tokens?.email ?? "api";
       const basic = Buffer.from(`${email}:${token}`).toString("base64");
       return {

@@ -39,6 +39,7 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { sanitizeEnv } from "../drivers/claude/envSanitizer.js";
+import { isLoopbackOrPrivateEndpoint } from "../localEndpointGuard.js";
 import { loadConfig as loadPatchworkConfigSync } from "../patchworkConfig.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
 import type { RecipeRunLog } from "../runLog.js";
@@ -2137,7 +2138,7 @@ async function defaultClaudeFn(
   }
 }
 
-async function defaultLocalFn(
+export async function defaultLocalFn(
   prompt: string,
   model: string,
 ): Promise<AgentResult> {
@@ -2147,6 +2148,20 @@ async function defaultLocalFn(
       "../patchworkConfig.js"
     );
     const cfg = loadPatchworkConfig();
+    // Anti-SSRF: the local adapter streams the prompt to `cfg.localEndpoint`
+    // (dashboard/config-controlled). A `driver: local` recipe must not be
+    // able to POST the prompt to an arbitrary public host. Mirror the
+    // LocalApiDriver gate (src/drivers/local/index.ts): reject any non
+    // loopback/private endpoint unless LOCAL_ENDPOINT_ALLOW_REMOTE=1.
+    if (
+      cfg.localEndpoint &&
+      process.env.LOCAL_ENDPOINT_ALLOW_REMOTE !== "1" &&
+      !isLoopbackOrPrivateEndpoint(cfg.localEndpoint)
+    ) {
+      return {
+        text: "[agent step failed: localEndpoint is a public host; set LOCAL_ENDPOINT_ALLOW_REMOTE=1 to override]",
+      };
+    }
     const adapter = createLocalAdapter({
       endpoint: cfg.localEndpoint,
       defaultModel: cfg.localModel ?? model,

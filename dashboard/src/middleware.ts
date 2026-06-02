@@ -20,6 +20,28 @@ import { SESSION_COOKIE_NAME, verifySession } from "@/lib/session";
 const ALLOW_UNAUTHENTICATED =
   process.env.DASHBOARD_ALLOW_UNAUTHENTICATED === "1";
 
+/**
+ * The negative-lookahead matcher that decides which paths the session gate
+ * runs on. Exported so it can be unit-tested against concrete request paths
+ * (Next.js consumes `config.matcher` at build time, not at runtime, so the
+ * lookahead is not exercised inside `middleware()`).
+ *
+ * `connections/[^/]+/callback` exempts the OAuth callback PAGE routes
+ * (`/connections/<name>/callback`). On authenticated deployments
+ * (PATCHWORK_DASHBOARD_URL + DASHBOARD_PASSWORD) the provider redirects the
+ * browser to this path as a CROSS-SITE top-level navigation, so the
+ * SameSite=Strict session cookie is NOT sent on that hop. Without the
+ * exemption the middleware sees no session, treats it as an HTML nav, and
+ * 302s to /login — dropping the OAuth code/state and silently breaking every
+ * connector. The OAuth `state` parameter is the CSRF defense here, so
+ * skipping the session redirect is safe. `[^/]+` matches a single path
+ * segment, including hyphenated connector names (`google-calendar`,
+ * `google-drive`). The same-origin API route is also exempted for
+ * defense-in-depth.
+ */
+export const SESSION_GATE_MATCHER =
+  "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace|api/login|api/relay/push|api/relay/halt|sw\\.js|icons/|api/push/vapid-key|connections/[^/]+/callback|api/connections/[^/]+/callback).*)";
+
 function unauthenticated(req: NextRequest): NextResponse {
   // For HTML navigations: redirect to /dashboard/login with the original
   // path as `next` so the user can come back after authenticating.
@@ -115,10 +137,16 @@ export const config = {
     // mutation endpoints unauthenticated. Removed 2026-05-17 (#600).
     // Defense-in-depth: those handlers also re-check the session.
     //
+    // connections/<name>/callback: OAuth callback PAGE routes. The
+    // provider redirects the browser here cross-site, so the
+    // SameSite=Strict session cookie isn't sent; exempting them keeps
+    // the OAuth code/state from being dropped by a /login redirect.
+    // See SESSION_GATE_MATCHER above for the full rationale.
+    //
     // Root path (basePath bare) explicitly — the negative-lookahead
     // matcher below doesn't reliably catch `/` alone in Next.js, which
     // means the dashboard's overview page would otherwise be unprotected.
     "/",
-    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace|api/login|api/relay/push|api/relay/halt|sw\\.js|icons/|api/push/vapid-key).*)",
+    SESSION_GATE_MATCHER,
   ],
 };

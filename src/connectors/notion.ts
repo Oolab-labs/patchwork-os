@@ -19,7 +19,11 @@ import {
   type ConnectorError,
   type ConnectorStatus,
 } from "./baseConnector.js";
-import { getSecretJsonSync, storeSecretJsonSync } from "./tokenStorage.js";
+import {
+  deleteSecretJsonSync,
+  getSecretJsonSync,
+  storeSecretJsonSync,
+} from "./tokenStorage.js";
 
 const NOTION_API = "https://api.notion.com/v1";
 const NOTION_VERSION = "2022-06-28";
@@ -135,6 +139,14 @@ export function saveTokens(tokens: NotionTokens): void {
 }
 
 export function clearTokens(): void {
+  // Primary: remove the token from secure storage (keychain or encrypted .enc).
+  // This is where saveTokens() actually persists the token.
+  try {
+    deleteSecretJsonSync("notion");
+  } catch {
+    /* ignore — best effort */
+  }
+  // Best-effort cleanup of any legacy plaintext token file.
   try {
     const p = path.join(homedir(), ".patchwork", "tokens", "notion.json");
     unlinkSync(p);

@@ -1,7 +1,11 @@
+import os from "node:os";
+import path from "node:path";
 import type { ActivityLog } from "../activityLog.js";
 import type { AutomationHooks } from "../automation.js";
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
+import { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
 import type { Config } from "../config.js";
+import { DecisionTraceLog } from "../decisionTraceLog.js";
 import type { ExtensionClient } from "../extensionClient.js";
 import type { FileLock } from "../fileLock.js";
 import type { LoadedPluginTool } from "../pluginLoader.js";
@@ -425,9 +429,17 @@ export function registerAllTools(
   const getDisconnectInfo = getDisconnectInfoArg;
   const onContextCacheUpdated = onContextCacheUpdatedArg;
   const getExtensionDisconnectCount = getExtensionDisconnectCountArg;
-  const commitIssueLinkLog = commitIssueLinkLogArg;
   const recipeRunLog = recipeRunLogArg;
-  const decisionTraceLog = decisionTraceLogArg;
+  // The ctx WRITE / reverse-lookup tools (ctxSaveTrace, getCommitsForIssue)
+  // are advertised as standard full-mode tools (CLAUDE.md). They must register
+  // unconditionally, even on a stock `driver: "none"` bridge that doesn't wire
+  // these logs. Fall back to a default ~/.patchwork-backed store so the tools
+  // are always available — the bridge normally passes its own shared instances.
+  const patchworkDir = path.join(os.homedir(), ".patchwork");
+  const commitIssueLinkLog =
+    commitIssueLinkLogArg ?? new CommitIssueLinkLog({ dir: patchworkDir });
+  const decisionTraceLog =
+    decisionTraceLogArg ?? new DecisionTraceLog({ dir: patchworkDir });
 
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
@@ -776,18 +788,12 @@ export function registerAllTools(
       workspace,
       commitIssueLinkLog: commitIssueLinkLog ?? null,
     }),
-    ...(decisionTraceLog
-      ? [
-          createCtxSaveTraceTool(
-            workspace,
-            decisionTraceLog,
-            sessionId ? () => sessionId : undefined,
-          ),
-        ]
-      : []),
-    ...(commitIssueLinkLog
-      ? [createGetCommitsForIssueTool(workspace, commitIssueLinkLog)]
-      : []),
+    createCtxSaveTraceTool(
+      workspace,
+      decisionTraceLog,
+      sessionId ? () => sessionId : undefined,
+    ),
+    createGetCommitsForIssueTool(workspace, commitIssueLinkLog),
     createGetCodeCoverageTool(workspace),
     createGenerateTestsTool(workspace),
     ...(probes.gh
