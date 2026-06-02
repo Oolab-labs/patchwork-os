@@ -178,6 +178,10 @@ const KNOWN_SUBCOMMANDS = [
   "install",
   "status",
   "shim",
+  "quick-task",
+  "start-task",
+  "continue-handoff",
+  "token-efficiency",
   "recipe",
   "traces",
   "suggest",
@@ -2967,7 +2971,47 @@ if (process.argv[2] === "recipe" && process.argv[3] === "doctor") {
             return null;
           };
 
-      const result = await runRecipeDoctor(ref as string, { fetchHalts });
+      // Connector auth fetcher: walk live bridges, GET /connections to read
+      // each connector's status. Returns null when no bridge is reachable so
+      // doctor degrades to static-only (lists required connectors, no auth).
+      const fetchConnections = localOnly
+        ? undefined
+        : async () => {
+            const { findAllLiveBridges } = await import(
+              "./bridgeLockDiscovery.js"
+            );
+            const liveLocks = findAllLiveBridges();
+            if (liveLocks.length === 0) return null;
+            for (const lock of liveLocks) {
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 10_000);
+              try {
+                const res = await fetch(
+                  `http://127.0.0.1:${lock.port}/connections`,
+                  {
+                    headers: { Authorization: `Bearer ${lock.authToken}` },
+                    signal: controller.signal,
+                  },
+                );
+                if (res.ok) {
+                  const body = (await res.json()) as {
+                    connectors?: Array<{ id?: string; status?: string }>;
+                  };
+                  return body.connectors ?? [];
+                }
+              } catch {
+                /* unreachable lock — try next */
+              } finally {
+                clearTimeout(timer);
+              }
+            }
+            return null;
+          };
+
+      const result = await runRecipeDoctor(ref as string, {
+        fetchHalts,
+        fetchConnections,
+      });
 
       if (wantJson) {
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

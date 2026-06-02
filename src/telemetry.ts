@@ -37,7 +37,7 @@ export function initTelemetry(): void {
   ])
     .then(
       ([
-        { NodeTracerProvider, SimpleSpanProcessor },
+        { NodeTracerProvider, BatchSpanProcessor },
         { resourceFromAttributes },
         { OTLPTraceExporter },
       ]) => {
@@ -45,20 +45,31 @@ export function initTelemetry(): void {
           process.env.OTEL_SERVICE_NAME ?? "claude-ide-bridge";
         const provider = new NodeTracerProvider({
           resource: resourceFromAttributes({ "service.name": serviceName }),
+          // BatchSpanProcessor batches spans and exports them asynchronously on
+          // an interval, rather than exporting synchronously on every span end
+          // (SimpleSpanProcessor). That removes per-call export latency from the
+          // hot path in production. Batch tuning (schedule delay, queue size,
+          // max batch size, export timeout) is read from the standard OTEL_BSP_*
+          // env vars by the SDK itself when no options are passed, so deployments
+          // can tune without code changes. Spans still flush on shutdown via
+          // provider.shutdown()/forceFlush() (see teardown below + shutdownTelemetry).
           spanProcessors: [
-            new SimpleSpanProcessor(
+            new BatchSpanProcessor(
               new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
             ),
           ],
         });
         provider.register();
-        // Flush spans on process exit. We hook `beforeExit` / `exit` rather than
-        // SIGTERM/SIGINT to avoid racing with the bridge.ts signal handlers that
-        // also call process.exit(). Using `exit` (synchronous) is not ideal for async
-        // flush, but `beforeExit` fires before the bridge's signal handler calls
-        // process.exit(0), giving the SDK a chance to flush in-flight spans.
-        // If OTEL_EXPORTER_OTLP_ENDPOINT is set, the bridge's own SIGTERM handler
-        // should await sdk.shutdown() via the exported `shutdownTelemetry` function.
+        // Flush batched spans on process exit. With BatchSpanProcessor spans are
+        // held in an in-memory queue until the next flush interval, so a clean
+        // shutdown MUST flush or short-lived CLI invocations lose every span they
+        // emitted. provider.shutdown() drains the processor (forceFlush + export)
+        // before resolving. We hook `beforeExit` rather than SIGTERM/SIGINT to
+        // avoid racing with the bridge.ts signal handlers that also call
+        // process.exit(); `beforeExit` fires before the bridge's signal handler
+        // calls process.exit(0), giving the SDK a chance to flush in-flight spans.
+        // The bridge's own SIGTERM handler should also await the exported
+        // `shutdownTelemetry` function for a deterministic flush.
         let _provider: typeof provider | null = provider;
         (globalThis as Record<string, unknown>).__otelSdk = provider;
         process.once("beforeExit", () => {
