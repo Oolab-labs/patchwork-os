@@ -36,7 +36,7 @@ interface ConnectorDef {
   name: string;
   initials: string;
   category: string;
-  wave: 1 | 2 | 3;
+  wave: 1 | 2 | 3 | 4;
   tools: number;
   bg: string;
 }
