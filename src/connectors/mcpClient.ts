@@ -114,30 +114,50 @@ export class McpClient {
     body: unknown,
     opts: McpCallOptions = {},
   ): Promise<unknown> {
-    const token = await this.getAccessToken();
-    const signal = withTimeout(opts.signal, opts.timeoutMs ?? DEFAULT_TIMEOUT);
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-      Authorization: `Bearer ${token}`,
-    };
-    if (this.sessionId) headers["Mcp-Session-Id"] = this.sessionId;
+    // On a 401 the upstream rejected our (possibly stale) access token. Re-fetch
+    // the token — which re-enters refreshIfNeeded in mcpOAuth (with refreshInflight
+    // dedup) — and retry the POST exactly once. The `retried` guard prevents a
+    // refresh/retry loop when the refreshed token is also rejected.
+    const serialized = JSON.stringify(body);
+    let retried = false;
+    for (;;) {
+      const token = await this.getAccessToken();
+      const signal = withTimeout(
+        opts.signal,
+        opts.timeoutMs ?? DEFAULT_TIMEOUT,
+      );
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        Authorization: `Bearer ${token}`,
+      };
+      if (this.sessionId) headers["Mcp-Session-Id"] = this.sessionId;
 
-    const res = await fetch(this.endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal,
-    });
-    // Pick up session id if server issued one
-    const sid = res.headers.get("mcp-session-id");
-    if (sid) this.sessionId = sid;
+      const res = await fetch(this.endpoint, {
+        method: "POST",
+        headers,
+        body: serialized,
+        signal,
+      });
+      // Pick up session id if server issued one
+      const sid = res.headers.get("mcp-session-id");
+      if (sid) this.sessionId = sid;
 
-    if (!res.ok) {
-      const snippet = (await res.text()).slice(0, 300);
-      throw new Error(`MCP HTTP ${res.status} at ${this.endpoint}: ${snippet}`);
+      if (res.status === 401 && !retried) {
+        retried = true;
+        // Drain the body so the connection can be reused, then loop to refresh.
+        await res.text().catch(() => {});
+        continue;
+      }
+
+      if (!res.ok) {
+        const snippet = (await res.text()).slice(0, 300);
+        throw new Error(
+          `MCP HTTP ${res.status} at ${this.endpoint}: ${snippet}`,
+        );
+      }
+      return parseMcpResponse(res);
     }
-    return parseMcpResponse(res);
   }
 
   private async ensureInitialized(opts: McpCallOptions = {}): Promise<void> {

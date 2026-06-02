@@ -16,6 +16,44 @@ const BLOCKED_KEY_PREFIXES = new Set([
   "terminal.integrated.defaultProfile",
 ]);
 
+// Plain-object check that excludes arrays and null. Used to decide whether a
+// setting value carries nested leaf keys we need to vet against the blocklist.
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// Recursively enumerate the dotted leaf paths of a plain object. Arrays and
+// primitive values terminate a branch; only nested plain objects recurse, since
+// VS Code settings keys are dotted object paths.
+function enumerateLeafPaths(value: Record<string, unknown>): string[] {
+  const paths: string[] = [];
+  for (const segment of Object.keys(value)) {
+    // Skip prototype-polluting keys; they're rejected separately.
+    if (
+      segment === "__proto__" ||
+      segment === "constructor" ||
+      segment === "prototype"
+    ) {
+      paths.push(segment);
+      continue;
+    }
+    const child = value[segment];
+    if (isPlainObject(child)) {
+      const childPaths = enumerateLeafPaths(child);
+      if (childPaths.length === 0) {
+        paths.push(segment);
+      } else {
+        for (const childPath of childPaths) {
+          paths.push(`${segment}.${childPath}`);
+        }
+      }
+    } else {
+      paths.push(segment);
+    }
+  }
+  return paths;
+}
+
 export async function handleGetWorkspaceSettings(
   params: Record<string, unknown>,
 ): Promise<unknown> {
@@ -61,6 +99,36 @@ export async function handleSetWorkspaceSetting(
     (prefix) => key === prefix || key.startsWith(`${prefix}.`),
   );
   if (isBlocked) {
+    throw new Error(`Writing to "${key}" settings is blocked for safety`);
+  }
+
+  // Shell-hijack bypass guard. config.update(section, value) writes value into
+  // the section, so an agent can target an ANCESTOR of a blocked prefix
+  // (e.g. key="terminal.integrated") and smuggle blocked leaf keys via a nested
+  // object value, sidestepping the exact/sub-key match above. When the key is
+  // an ancestor of a blocked prefix:
+  //   - If value is a plain object, enumerate its leaf paths and reject only
+  //     when a resolved path lands on a blocked prefix — legitimate unrelated
+  //     writes to the same section still succeed.
+  //   - Otherwise (non-object value), we can't introspect leaves, so block the
+  //     write outright: there is no legitimate reason to overwrite a whole
+  //     security-sensitive section with a scalar.
+  const keyIsAncestorOfBlocked = [...BLOCKED_KEY_PREFIXES].some((prefix) =>
+    prefix.startsWith(`${key}.`),
+  );
+  if (isPlainObject(value)) {
+    for (const leafPath of enumerateLeafPaths(value)) {
+      const resolved = `${key}.${leafPath}`;
+      const leafBlocked = [...BLOCKED_KEY_PREFIXES].some(
+        (prefix) => resolved === prefix || resolved.startsWith(`${prefix}.`),
+      );
+      if (leafBlocked) {
+        throw new Error(
+          `Writing to "${resolved}" settings is blocked for safety`,
+        );
+      }
+    }
+  } else if (keyIsAncestorOfBlocked) {
     throw new Error(`Writing to "${key}" settings is blocked for safety`);
   }
 

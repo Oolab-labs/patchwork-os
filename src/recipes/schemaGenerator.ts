@@ -6,7 +6,25 @@
  *   - schemas/tools/<namespace>.json — per-namespace tool param schemas
  */
 
+import { RECIPE_NAME_RE } from "./names.js";
 import { getNamespaces, listTools, type ToolMetadata } from "./toolRegistry.js";
+
+/**
+ * JSON-Schema `pattern` for a recipe `name`, derived from the canonical
+ * RECIPE_NAME_RE (`src/recipes/names.ts`) so the generated schema can
+ * never silently weaken the committed strict pattern on regen.
+ *
+ * RECIPE_NAME_RE is the bare kebab slug (`^[a-z0-9][a-z0-9-]{0,63}$`).
+ * The schema additionally accepts an optional `@scope/` prefix because
+ * marketplace registry recipes ship a scoped name (`@patchworkos/foo`)
+ * which `stripRecipeScope` normalizes to the bare slug before the
+ * RECIPE_NAME_RE check runs. We inject that prefix group right after the
+ * leading `^` of RECIPE_NAME_RE.source.
+ */
+const RECIPE_NAME_SCHEMA_PATTERN = `^(@[a-z0-9-]+/)?${RECIPE_NAME_RE.source.replace(
+  /^\^/,
+  "",
+)}`;
 
 export interface SchemaSet {
   /** Top-level recipe schema */
@@ -357,8 +375,9 @@ function generateRecipeSchema(
     properties: {
       name: {
         type: "string",
-        description: "Recipe name (kebab-case recommended)",
-        pattern: "^[a-z0-9-]+$",
+        description:
+          "Recipe name (kebab-case, 1-64 chars). Scoped names like @scope/name are accepted for registry recipes.",
+        pattern: RECIPE_NAME_SCHEMA_PATTERN,
       },
       description: {
         type: "string",

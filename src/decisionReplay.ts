@@ -35,10 +35,10 @@ export interface ReplayRow {
   /** True when original === replay. */
   unchanged: boolean;
   /**
-   * Direction of change for changed rows:
-   *   "now_allowed"  — was deny/ask, would now be allow
-   *   "now_denied"   — was allow, would now be deny/ask
-   *   "now_asked"    — was allow/deny, would now be ask
+   * Direction of change for changed rows, keyed off the NEW (replay) outcome:
+   *   "now_allowed"  — would now be allow (was deny/ask/none)
+   *   "now_denied"   — would now be deny or none/blocked (was allow/ask/none)
+   *   "now_asked"    — would now be ask (was allow/deny/none)
    */
   changeKind?: "now_allowed" | "now_denied" | "now_asked";
   /**
@@ -58,23 +58,50 @@ export interface DecisionReplayResult {
   totalRows: number;
   /** Rows where the decision would have changed. */
   changedCount: number;
-  /** Rows that would flip from deny/ask → allow under current policy. */
+  /** Rows that would flip to allow under current policy. */
   nowAllowedCount: number;
-  /** Rows that would flip from allow → deny/ask under current policy. */
+  /** Rows that would flip to deny/none (effectively blocked) under current policy. */
   nowDeniedCount: number;
+  /** Rows that would flip to ask under current policy. */
+  nowAskedCount: number;
   /** Workspace path used to load current rules. */
   workspace: string;
 }
 
+/**
+ * Decide whether two decisions are equivalent for replay purposes.
+ *
+ * A `replay` of "none" (no current rule matched) is treated as unchanged when
+ * the original was "allow" or "deny" — absence of an explicit rule defaults to
+ * the same effective outcome the user already saw, so it is not a real flip.
+ */
+function isUnchanged(original: string, replay: ReplayDecision): boolean {
+  return (
+    replay === original ||
+    (replay === "none" && original === "allow") ||
+    (replay === "none" && original === "deny")
+  );
+}
+
+/**
+ * Bucket a CHANGED row by its NEW (replay) outcome. Keyed purely off the replay
+ * direction so every changed row maps to exactly one bucket and the three
+ * bucket counts always sum to changedCount:
+ *   - replay "allow"        → now_allowed
+ *   - replay "ask"          → now_asked
+ *   - replay "deny"/"none"  → now_denied (effectively blocked)
+ *
+ * Returns undefined for unchanged rows (no bucket).
+ */
 function changeKind(
   original: string,
   replay: ReplayDecision,
 ): ReplayRow["changeKind"] | undefined {
-  if (replay === "allow" && original !== "allow") return "now_allowed";
-  if ((replay === "deny" || replay === "none") && original === "allow")
-    return "now_denied";
-  if (replay === "ask" && original !== "ask") return "now_asked";
-  return undefined;
+  if (isUnchanged(original, replay)) return undefined;
+  if (replay === "allow") return "now_allowed";
+  if (replay === "ask") return "now_asked";
+  // A changed row whose replay is "deny" or "none" is effectively now blocked.
+  return "now_denied";
 }
 
 export function computeDecisionReplay(
@@ -132,10 +159,8 @@ export function computeDecisionReplay(
     const incomplete = specifier === undefined;
     const replay = evaluateRules(toolName, specifier, rules);
 
-    const unchanged =
-      replay === originalDecision ||
-      (replay === "none" && originalDecision === "allow") ||
-      (replay === "none" && originalDecision === "deny");
+    const unchanged = isUnchanged(originalDecision, replay);
+    const kind = changeKind(originalDecision, replay);
 
     rows.push({
       timestamp: entry.timestamp,
@@ -144,9 +169,7 @@ export function computeDecisionReplay(
       originalDecision,
       replayDecision: replay,
       unchanged,
-      ...(changeKind(originalDecision, replay) !== undefined && {
-        changeKind: changeKind(originalDecision, replay),
-      }),
+      ...(kind !== undefined && { changeKind: kind }),
       ...(incomplete && { incomplete: true }),
     });
   }
@@ -154,11 +177,13 @@ export function computeDecisionReplay(
   let changedCount = 0;
   let nowAllowedCount = 0;
   let nowDeniedCount = 0;
+  let nowAskedCount = 0;
   for (const r of rows) {
     if (r.unchanged) continue;
     changedCount++;
     if (r.changeKind === "now_allowed") nowAllowedCount++;
     else if (r.changeKind === "now_denied") nowDeniedCount++;
+    else if (r.changeKind === "now_asked") nowAskedCount++;
   }
 
   return {
@@ -168,6 +193,7 @@ export function computeDecisionReplay(
     changedCount,
     nowAllowedCount,
     nowDeniedCount,
+    nowAskedCount,
     workspace,
   };
 }

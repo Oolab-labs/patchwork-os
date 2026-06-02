@@ -24,8 +24,10 @@ async function resolveRepo(
   workspace: string,
   repoArg: string | undefined,
   signal?: AbortSignal,
+  defaultRepo?: string | null,
 ): Promise<string | null> {
   if (repoArg) return repoArg;
+  if (defaultRepo) return defaultRepo;
   const result = await execSafe(
     "gh",
     ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner", "--"],
@@ -166,7 +168,10 @@ export function createGithubCreatePRTool(
   };
 }
 
-export function createGithubListPRsTool(workspace: string) {
+export function createGithubListPRsTool(
+  workspace: string,
+  defaultRepo: string | null = null,
+) {
   return {
     schema: {
       name: "githubListPRs",
@@ -241,6 +246,7 @@ export function createGithubListPRsTool(workspace: string) {
         "number,title,state,url,headRefName,baseRefName,author,createdAt,isDraft",
       ];
       if (author) listArgs.push("--author", author);
+      if (defaultRepo) listArgs.push("--repo", defaultRepo);
 
       const result = await execSafe("gh", listArgs, {
         cwd: workspace,
@@ -270,7 +276,10 @@ export function createGithubListPRsTool(workspace: string) {
   };
 }
 
-export function createGithubViewPRTool(workspace: string) {
+export function createGithubViewPRTool(
+  workspace: string,
+  defaultRepo: string | null = null,
+) {
   return {
     schema: {
       name: "githubViewPR",
@@ -322,6 +331,7 @@ export function createGithubViewPRTool(workspace: string) {
         "number,title,state,url,body,author,createdAt,updatedAt,baseRefName,headRefName,isDraft,mergeable,reviewDecision,reviews",
       ];
       if (number !== undefined) viewArgs.splice(2, 0, String(number));
+      if (defaultRepo) viewArgs.push("--repo", defaultRepo);
 
       const result = await execSafe("gh", viewArgs, {
         cwd: workspace,
@@ -358,7 +368,10 @@ export function createGithubViewPRTool(workspace: string) {
   };
 }
 
-export function createGithubGetPRDiffTool(workspace: string) {
+export function createGithubGetPRDiffTool(
+  workspace: string,
+  defaultRepo: string | null = null,
+) {
   return {
     schema: {
       name: "githubGetPRDiff",
@@ -413,7 +426,8 @@ export function createGithubGetPRDiffTool(workspace: string) {
       const prNumber = requireInt(args, "prNumber", 1);
       const repoArg = optionalString(args, "repo", 256);
 
-      const repoFlags = repoArg ? ["--repo", repoArg] : [];
+      const repoForFlags = repoArg ?? defaultRepo ?? undefined;
+      const repoFlags = repoForFlags ? ["--repo", repoForFlags] : [];
 
       const [metaResult, diffResult] = await Promise.all([
         execSafe(
@@ -496,7 +510,10 @@ export function createGithubGetPRDiffTool(workspace: string) {
   };
 }
 
-export function createGithubPostPRReviewTool(workspace: string) {
+export function createGithubPostPRReviewTool(
+  workspace: string,
+  defaultRepo: string | null = null,
+) {
   return {
     schema: {
       name: "githubPostPRReview",
@@ -627,7 +644,7 @@ export function createGithubPostPRReviewTool(workspace: string) {
         }
       }
 
-      const repo = await resolveRepo(workspace, repoArg, signal);
+      const repo = await resolveRepo(workspace, repoArg, signal, defaultRepo);
       if (!repo) {
         return error(
           "Could not determine repository. Pass 'repo' as owner/repo or run from inside a git repository.",
@@ -709,7 +726,10 @@ export function createGithubPostPRReviewTool(workspace: string) {
   };
 }
 
-export function createGithubApprovePRTool(workspace: string) {
+export function createGithubApprovePRTool(
+  workspace: string,
+  defaultRepo: string | null = null,
+) {
   return {
     schema: {
       name: "githubApprovePR",
@@ -751,7 +771,7 @@ export function createGithubApprovePRTool(workspace: string) {
       const body = optionalString(args, "body", 65_535) ?? "";
       const repoArg = optionalString(args, "repo", 256);
 
-      const repo = await resolveRepo(workspace, repoArg, signal);
+      const repo = await resolveRepo(workspace, repoArg, signal, defaultRepo);
       if (!repo) {
         return error(
           "Could not determine repository. Pass 'repo' as owner/repo or run from inside a git repository.",
@@ -804,7 +824,10 @@ export function createGithubApprovePRTool(workspace: string) {
   };
 }
 
-export function createGithubMergePRTool(workspace: string) {
+export function createGithubMergePRTool(
+  workspace: string,
+  defaultRepo: string | null = null,
+) {
   return {
     schema: {
       name: "githubMergePR",
@@ -864,7 +887,7 @@ export function createGithubMergePRTool(workspace: string) {
         );
       }
 
-      const repo = await resolveRepo(workspace, repoArg, signal);
+      const repo = await resolveRepo(workspace, repoArg, signal, defaultRepo);
       if (!repo) {
         return error(
           "Could not determine repository. Pass 'repo' as owner/repo or run from inside a git repository.",

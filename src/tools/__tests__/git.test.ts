@@ -77,6 +77,24 @@ describe("git tools", () => {
 
       expect(data.unstaged).toContain("hello.txt");
     });
+
+    it("reports the destination path for a staged rename", async () => {
+      // Porcelain v1 renders renames as `R  old.txt -> new.txt`. The parser
+      // must extract the destination path, not the literal arrow string.
+      execSync("git mv hello.txt renamed.txt", {
+        cwd: tmpDir,
+        stdio: "ignore",
+      });
+      const tool = createGetGitStatusTool(tmpDir);
+      const result = await tool.handler({});
+      const data = parse(result);
+
+      expect(data.staged).toContain("renamed.txt");
+      // The literal arrow string must NOT leak through as a path.
+      for (const p of data.staged) {
+        expect(p).not.toContain(" -> ");
+      }
+    });
   });
 
   describe("getGitStatus on non-git directory", () => {

@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,6 +14,26 @@ const tsxBin = path.join(workspaceRoot, "node_modules", ".bin", "tsx");
 
 const tmpDirs: string[] = [];
 const childProcs = new Set<ChildProcess>();
+const servers = new Set<net.Server>();
+
+/**
+ * Accept TCP connections but never write a byte back — simulates a bridge
+ * whose PID is alive (so findBridgeLock accepts it) but whose HTTP server
+ * is wedged. Resolves with the bound port.
+ */
+function startWedgedServer(): Promise<{ port: number; server: net.Server }> {
+  return new Promise((resolve) => {
+    const server = net.createServer(() => {
+      /* hold the socket open, never respond */
+    });
+    servers.add(server);
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      const port = typeof addr === "object" && addr ? addr.port : 0;
+      resolve({ port, server });
+    });
+  });
+}
 
 function makeTmpDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "patchwork-recipe-cli-"));
@@ -90,6 +111,11 @@ afterEach(async () => {
   }
   childProcs.clear();
 
+  for (const server of servers) {
+    server.close();
+  }
+  servers.clear();
+
   for (const dir of tmpDirs.splice(0)) {
     try {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -125,6 +151,46 @@ describe.skipIf(process.platform === "win32")("recipe CLI integration", () => {
     expect(result.stdout).toContain(outputPath);
     expect(fs.readFileSync(outputPath, "utf-8")).toBe("run cli");
   });
+
+  it("recipe run aborts and exits non-zero when the bridge is wedged on HTTP", async () => {
+    // A bridge whose PID is alive (findBridgeLock accepts it) but whose
+    // HTTP server never responds. Before the AbortController fix the CLI
+    // would block forever; now it must abort after the 30s deadline and
+    // exit non-zero with a clear "did not respond" error.
+    const { port } = await startWedgedServer();
+
+    const configDir = makeTmpDir();
+    const ideDir = path.join(configDir, "ide");
+    fs.mkdirSync(ideDir, { recursive: true });
+    // PID = this test process: guaranteed live, so the lock survives the
+    // process.kill(pid, 0) check inside findBridgeLock.
+    fs.writeFileSync(
+      path.join(ideDir, `${port}.lock`),
+      JSON.stringify({
+        pid: process.pid,
+        authToken: "test-token",
+        workspace: workspaceRoot,
+        isBridge: true,
+      }),
+    );
+
+    const proc = spawn(tsxBin, [srcIndex, "recipe", "run", "some-recipe"], {
+      cwd: workspaceRoot,
+      env: { ...process.env, CLAUDE_CONFIG_DIR: configDir },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    childProcs.add(proc);
+
+    const stderrLines: string[] = [];
+    collectStream(proc.stderr, stderrLines);
+
+    // Allow generous headroom over the 30s in-CLI deadline.
+    const exitCode = await waitForExit(proc, 45_000);
+    childProcs.delete(proc);
+
+    expect(exitCode).not.toBe(0);
+    expect(stderrLines.join("\n")).toMatch(/did not respond within 30s/);
+  }, 50_000);
 
   it("recipe watch reruns the recipe on save and prints run output", async () => {
     const homeDir = makeTmpDir();

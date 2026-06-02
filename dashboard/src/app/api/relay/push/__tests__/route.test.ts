@@ -19,12 +19,17 @@ vi.mock("web-push", () => ({
 
 vi.mock("@/lib/pushStore", () => ({
   getSubscriptions: vi.fn(() => []),
+  getSubscriptionsFor: vi.fn(() => []),
   removeSubscription: vi.fn(),
 }));
 
 import webpush from "web-push";
 import { POST } from "@/app/api/relay/push/route";
-import { getSubscriptions, removeSubscription } from "@/lib/pushStore";
+import {
+  getSubscriptions,
+  getSubscriptionsFor,
+  removeSubscription,
+} from "@/lib/pushStore";
 
 const TOKEN = "relay-test-token-1234567890abcdef";
 
@@ -69,6 +74,7 @@ beforeEach(() => {
   process.env.VAPID_PRIVATE_KEY = "test-vapid-private";
   process.env.VAPID_SUBJECT = "mailto:test@example.com";
   vi.mocked(getSubscriptions).mockReturnValue([validSub]);
+  vi.mocked(getSubscriptionsFor).mockReturnValue([validSub]);
   vi.mocked(removeSubscription).mockClear();
   vi.mocked(webpush.sendNotification).mockClear();
   vi.mocked(webpush.setVapidDetails).mockClear();
@@ -153,7 +159,7 @@ describe("POST /api/relay/push — payload validation", () => {
 
 describe("POST /api/relay/push — fan-out", () => {
   it("404 when no subscriptions registered (informational, not an error)", async () => {
-    vi.mocked(getSubscriptions).mockReturnValue([]);
+    vi.mocked(getSubscriptionsFor).mockReturnValue([]);
     const r = await POST(req({ authorization: `Bearer ${TOKEN}` }, validBody));
     expect(r.status).toBe(404);
     expect(webpush.sendNotification).not.toHaveBeenCalled();
@@ -165,7 +171,7 @@ describe("POST /api/relay/push — fan-out", () => {
       { endpoint: "https://e2.com/p", keys: { p256dh: "k1", auth: "k2" } },
       { endpoint: "https://e3.com/p", keys: { p256dh: "k3", auth: "k4" } },
     ];
-    vi.mocked(getSubscriptions).mockReturnValue(subs);
+    vi.mocked(getSubscriptionsFor).mockReturnValue(subs);
     // Make the 2nd subscription fail — sent should be 2/3.
     vi.mocked(webpush.sendNotification).mockImplementation(async (sub) => {
       if (sub.endpoint === subs[1].endpoint) throw new Error("410 gone");
@@ -193,7 +199,7 @@ describe("POST /api/relay/push — fan-out", () => {
       { endpoint: "https://e2.com/p", keys: { p256dh: "k1", auth: "k2" } },
       { endpoint: "https://e3.com/p", keys: { p256dh: "k3", auth: "k4" } },
     ];
-    vi.mocked(getSubscriptions).mockReturnValue(subs);
+    vi.mocked(getSubscriptionsFor).mockReturnValue(subs);
     vi.mocked(webpush.sendNotification).mockImplementation(async (sub) => {
       if (sub.endpoint === subs[1].endpoint) {
         // web-push throws WebPushError with statusCode 410 for expired
@@ -214,7 +220,7 @@ describe("POST /api/relay/push — fan-out", () => {
   });
 
   it("evicts subscriptions that 404 from the push service", async () => {
-    vi.mocked(getSubscriptions).mockReturnValue([validSub]);
+    vi.mocked(getSubscriptionsFor).mockReturnValue([validSub]);
     vi.mocked(webpush.sendNotification).mockImplementation(async () => {
       const err = new Error("Not Found") as Error & { statusCode: number };
       err.statusCode = 404;
@@ -228,7 +234,7 @@ describe("POST /api/relay/push — fan-out", () => {
   });
 
   it("does NOT evict on transient 5xx failures", async () => {
-    vi.mocked(getSubscriptions).mockReturnValue([validSub]);
+    vi.mocked(getSubscriptionsFor).mockReturnValue([validSub]);
     vi.mocked(webpush.sendNotification).mockImplementation(async () => {
       const err = new Error("Service Unavailable") as Error & {
         statusCode: number;
@@ -269,5 +275,51 @@ describe("POST /api/relay/push — fan-out", () => {
     const [, payloadStr] = vi.mocked(webpush.sendNotification).mock.calls[0]!;
     const payload = JSON.parse(payloadStr as string) as { approveUrl: string };
     expect(payload.approveUrl).toBe("https://bridge.example.com/approve/call-123");
+  });
+});
+
+// ─── per-subscription `approvals` opt-out — audit 2026-06-02 ────────────────
+// Pre-fix the approval relay fanned out via the unfiltered getSubscriptions(),
+// so a subscription that set approvals:false (persisted by /api/push/prefs)
+// still received every approval push. The halt relay already filtered via
+// getSubscriptionsFor("halts"); this asserts the approval relay does the same
+// with the "approvals" event class.
+describe("POST /api/relay/push — respects approvals opt-out", () => {
+  it("filters via getSubscriptionsFor('approvals'), not the unfiltered getSubscriptions()", async () => {
+    await POST(req({ authorization: `Bearer ${TOKEN}` }, validBody));
+    expect(getSubscriptionsFor).toHaveBeenCalledWith("approvals");
+    expect(getSubscriptions).not.toHaveBeenCalled();
+  });
+
+  it("excludes a subscription with approvals:false from the recipient set", async () => {
+    const optedIn = validSub;
+    const optedOut = {
+      endpoint: "https://opted-out.example.com/p",
+      keys: { p256dh: "k1", auth: "k2" },
+    };
+    // getSubscriptionsFor('approvals') is the store-level filter: it only
+    // returns the opted-in subscription. The opted-out one must never be
+    // sent to.
+    vi.mocked(getSubscriptionsFor).mockImplementation((kind) =>
+      kind === "approvals" ? [optedIn] : [optedIn, optedOut],
+    );
+
+    const r = await POST(req({ authorization: `Bearer ${TOKEN}` }, validBody));
+    expect(r.status).toBe(200);
+    expect(webpush.sendNotification).toHaveBeenCalledTimes(1);
+    const sentEndpoints = vi
+      .mocked(webpush.sendNotification)
+      .mock.calls.map((c) => (c[0] as { endpoint: string }).endpoint);
+    expect(sentEndpoints).toEqual([optedIn.endpoint]);
+    expect(sentEndpoints).not.toContain(optedOut.endpoint);
+  });
+
+  it("404 'no approval subscribers' when no subscription opted in to approvals", async () => {
+    vi.mocked(getSubscriptionsFor).mockReturnValue([]);
+    const r = await POST(req({ authorization: `Bearer ${TOKEN}` }, validBody));
+    expect(r.status).toBe(404);
+    const body = (await r.json()) as { error: string; total: number };
+    expect(body.error).toMatch(/approval subscribers/i);
+    expect(webpush.sendNotification).not.toHaveBeenCalled();
   });
 });

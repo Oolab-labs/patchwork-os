@@ -143,8 +143,16 @@ export const READ_ONLY_COMMANDS: ReadonlySet<string> = new Set([
   "DBSIZE",
   "INFO",
   "PING",
-  "CLIENT",
-  "MEMORY",
+  // CLIENT / MEMORY are containers for both read-only AND mutating
+  // subcommands (CLIENT KILL/SETNAME/NO-EVICT/UNPAUSE, MEMORY PURGE).
+  // Allowlist only the safe two-word forms — never the bare command.
+  "CLIENT GETNAME",
+  "CLIENT ID",
+  "CLIENT INFO",
+  "CLIENT LIST",
+  "MEMORY USAGE",
+  "MEMORY STATS",
+  "MEMORY DOCTOR",
   "DEBUG OBJECT",
 ]);
 

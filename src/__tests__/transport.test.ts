@@ -1569,4 +1569,58 @@ describe("setDenyTools", () => {
     const resp = await waitFor(ws, (m) => m.id === 12);
     expect(resp.result.isError).toBeUndefined();
   });
+
+  it("denies a dynamic-dispatch (unregistered) tool when it is in the deny list", async () => {
+    let dispatched = false;
+    const { ws } = await setup("deny-tools-test-token-dyn000000000", (t) => {
+      // No static tool with this name — it routes through dynamicToolDispatch.
+      t.setDynamicToolDispatch(async () => {
+        dispatched = true;
+        return { content: [{ type: "text", text: "should not run" }] };
+      });
+      t.setDenyTools(new Set(["proxiedTool"]));
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 13,
+      method: "tools/call",
+      params: { name: "proxiedTool", arguments: {} },
+    });
+    // The denied response is an isError:true result mentioning "denied".
+    const resp = await waitFor(
+      ws,
+      (m) => m.id === 13 && m.result?.isError === true,
+    );
+    expect(resp.result.content[0].text).toMatch(/denied/);
+    // Give any (incorrectly) scheduled dynamic dispatch a tick to run.
+    await new Promise((r) => setTimeout(r, 30));
+    // The proxy handler must never have been invoked for a denied tool.
+    expect(dispatched).toBe(false);
+  });
+
+  it("allows a dynamic-dispatch tool when it is not in the deny list", async () => {
+    let dispatched = false;
+    const { ws } = await setup("deny-tools-test-token-dyn111111111", (t) => {
+      t.setDynamicToolDispatch(async () => {
+        dispatched = true;
+        return { content: [{ type: "text", text: "dynamic ok" }] };
+      });
+      t.setDenyTools(new Set(["somethingElse"]));
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 14,
+      method: "tools/call",
+      params: { name: "proxiedTool", arguments: {} },
+    });
+    // The proxy result carries the dispatch handler's content.
+    const resp = await waitFor(
+      ws,
+      (m) => m.id === 14 && m.result?.content?.[0]?.text === "dynamic ok",
+    );
+    expect(resp.result.content[0].text).toBe("dynamic ok");
+    expect(dispatched).toBe(true);
+  });
 });

@@ -8,6 +8,7 @@ import {
   computeUnifiedDiff,
   createPreviewEditTool,
 } from "../previewEdit.js";
+import { hasNestedQuantifier } from "../utils.js";
 
 function parse(r: { content: Array<{ text: string }> }) {
   return JSON.parse(r.content[0]?.text ?? "{}");
@@ -108,6 +109,44 @@ describe("applySearchReplace", () => {
       false,
     );
     expect(result).toBe("bar bar bar");
+  });
+
+  it("rejects nested-quantifier regex (ReDoS guard)", () => {
+    // A catastrophic-backtracking pattern like (a+)+$ must be rejected before
+    // it ever reaches new RegExp + content.replace on the full file.
+    expect(() =>
+      applySearchReplace("aaaaaaaaaaaaaaaaaaaaaaaa!", "(a+)+$", "X", true),
+    ).toThrow(/nested quantifier/i);
+  });
+
+  it("allows a simple non-nested quantifier regex", () => {
+    expect(applySearchReplace("aaa bbb", "a+", "X", true)).toBe("X bbb");
+  });
+
+  it("does not apply the ReDoS guard to literal (non-regex) searches", () => {
+    // Literal mode must accept any string verbatim, including text that would
+    // look like a nested quantifier if interpreted as a regex.
+    expect(applySearchReplace("(a+)+ literal", "(a+)+", "X", false)).toBe(
+      "X literal",
+    );
+  });
+});
+
+describe("hasNestedQuantifier", () => {
+  it("flags nested quantifiers", () => {
+    expect(hasNestedQuantifier("(a+)+")).toBe(true);
+    expect(hasNestedQuantifier("(a+)+$")).toBe(true);
+    expect(hasNestedQuantifier("(ab*)*")).toBe(true);
+    expect(hasNestedQuantifier("(a{1,3})+")).toBe(true);
+    expect(hasNestedQuantifier("a++")).toBe(true);
+    expect(hasNestedQuantifier("a{2,4}+")).toBe(true);
+  });
+
+  it("allows non-nested quantifiers", () => {
+    expect(hasNestedQuantifier("a+")).toBe(false);
+    expect(hasNestedQuantifier("\\w+")).toBe(false);
+    expect(hasNestedQuantifier("foo|bar")).toBe(false);
+    expect(hasNestedQuantifier("[a-z]{2,4}")).toBe(false);
   });
 });
 

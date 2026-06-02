@@ -892,6 +892,15 @@ export async function runYamlRecipe(
   const stepResults: StepResult[] = [];
   let stepsRun = 0;
   let runError: string | undefined;
+  // Bug (2): the flat runner historically recorded the first non-optional
+  // failure in `runError` but kept executing later steps — diverging from
+  // chainedRunner, which aborts on a fatal failure. This flag is set ONLY
+  // when a failure is fatal (non-optional AND fail-open semantics do not
+  // apply via step.optional / on_error.fallback=log_only|deliver_original).
+  // The loop checks it at the top and breaks, matching chainedRunner's
+  // abort-on-failure contract. Fail-open failures never set it, so
+  // log_only/deliver_original/optional steps still let the run continue.
+  let haltAfterFailure = false;
 
   // Live-tail SSE broadcaster. Wrapped in a try/catch on every call so a
   // misbehaving listener can never break the run (mirrors chainedRunner).
@@ -976,6 +985,13 @@ export async function runYamlRecipe(
   // finalization path, which marks the run "error".
   try {
     for (const step of recipe.steps) {
+      // Bug (2): abort on a prior fatal failure. chainedRunner throws (and
+      // stops) when a non-optional step fails; the flat runner used to keep
+      // going. Break here so later steps don't run on top of a failed
+      // dependency. Fail-open failures (step.optional / on_error.fallback=
+      // log_only|deliver_original) never set `haltAfterFailure`, so they
+      // still let the run continue exactly as before.
+      if (haltAfterFailure) break;
       const stepIdForEmit = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
       const stepTs = Date.now();
       stepStartTs.set(stepIdForEmit, stepTs);
@@ -1023,6 +1039,38 @@ export async function runYamlRecipe(
         }
       }
 
+      // Bug (3): per-recipe token budget gates ALL step types, not just
+      // agent steps. The admission check used to live inside the
+      // `if (step.agent)` branch, so once the budget was breached the run
+      // kept executing tool steps unbounded. Gate here — after the `when:`
+      // guard resolves truthy, before the agent/tool split — so a breach
+      // halts the run regardless of the next step's kind. Subscription
+      // drivers report no usage and fail open inside RunBudget, so this is
+      // a no-op until a measured agent step actually breaches the cap.
+      const budgetAdmission = runBudget.admit();
+      if (!budgetAdmission.admitted) {
+        const reason =
+          budgetAdmission.reason ??
+          "Run exceeded its token budget — budget_exceeded.";
+        runError = runError ?? reason;
+        haltAfterFailure = true;
+        const budgetStepId =
+          step.into ?? step.agent?.into ?? `step_${stepsRun}`;
+        stepResults.push({
+          id: budgetStepId,
+          tool: step.agent ? "agent" : step.tool,
+          status: "error",
+          error: reason,
+          haltReason: reason,
+          haltCategory: "budget_exceeded",
+          durationMs: 0,
+        });
+        stepsRun++;
+        persistLiveStepResults();
+        emitStepDone(stepIdForEmit);
+        continue;
+      }
+
       // Handle agent steps separately
       if (step.agent) {
         const agentCfg = step.agent;
@@ -1041,31 +1089,22 @@ export async function runYamlRecipe(
         const stepId = intoKey;
         const stepStart = Date.now();
         let agentResult: string;
-        // PR2b: per-recipe token budget. Admission check before dispatch;
-        // reconcile actual consumption after. Subscription drivers
-        // (Claude CLI, provider subprocess) report `usage === undefined`
-        // — `RunBudget.reconcile` records a fail-open warning per driver
-        // per run and continues.
-        const admission = runBudget.admit();
-        if (!admission.admitted) {
-          const reason =
-            admission.reason ??
-            "Run exceeded its token budget — budget_exceeded.";
-          runError = runError ?? reason;
-          stepResults.push({
-            id: stepId,
-            tool: "agent",
-            status: "error",
-            error: reason,
-            haltReason: reason,
-            haltCategory: "budget_exceeded",
-            durationMs: 0,
-          });
-          stepsRun++;
-          persistLiveStepResults();
-          emitStepDone(stepIdForEmit);
-          continue;
-        }
+        // Bug (2): fail-open semantics for THIS agent step. Mirrors the
+        // tool-branch `failOpen` (step.optional OR recipe-level
+        // on_error.fallback=log_only|deliver_original). Used to decide
+        // whether an agent failure is fatal (sets `haltAfterFailure`, which
+        // aborts the run at the next loop top) or fail-open (records the
+        // error but lets the run continue, as before).
+        const agentFallback = recipe.on_error?.fallback;
+        const agentFallbackFailOpen =
+          agentFallback === "log_only" || agentFallback === "deliver_original";
+        const failOpenAgent = step.optional === true || agentFallbackFailOpen;
+        // PR2b: per-recipe token budget. Admission is now checked once at the
+        // top of the loop (Bug (3)) so it gates tool steps too; here we only
+        // reconcile actual consumption after the call. Subscription drivers
+        // (Claude CLI, provider subprocess) report `usage === undefined` —
+        // `RunBudget.reconcile` records a fail-open warning per driver per
+        // run and continues.
         try {
           const agentReturn = await _executeAgent(
             {
@@ -1100,6 +1139,7 @@ export async function runYamlRecipe(
               ? `silent-fail detected (${agentSilentFail.reason}): ${agentSilentFail.matched}`
               : agentResult;
             runError = runError ?? reason;
+            if (!failOpenAgent) haltAfterFailure = true;
             stepResults.push({
               id: stepId,
               tool: "agent",
@@ -1116,6 +1156,7 @@ export async function runYamlRecipe(
             if (!stripped.trim()) {
               const errMsg = `[agent step failed: ${agentCfg.driver ?? "agent"} returned only narration or whitespace — no content]`;
               runError = runError ?? errMsg;
+              if (!failOpenAgent) haltAfterFailure = true;
               stepResults.push({
                 id: stepId,
                 tool: "agent",
@@ -1171,12 +1212,9 @@ export async function runYamlRecipe(
                       last.error = `expect_failed: ${failures.join("; ")}`;
                       last.haltReason = `expect_failed in step "${stepId}": ${failures.join("; ")}`;
                       last.haltCategory = "expect_failed";
-                      const fbk = recipe.on_error?.fallback;
-                      const fbkOpen =
-                        fbk === "log_only" || fbk === "deliver_original";
-                      const failOpenAgent = step.optional === true || fbkOpen;
                       if (!failOpenAgent) {
                         runError = runError ?? last.haltReason;
+                        haltAfterFailure = true;
                       }
                       delete ctx[intoKey];
                     } else {
@@ -1190,6 +1228,7 @@ export async function runYamlRecipe(
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           runError = runError ?? `agent step "${stepId}" failed: ${msg}`;
+          if (!failOpenAgent) haltAfterFailure = true;
           stepResults.push({
             id: stepId,
             tool: "agent",
@@ -1214,6 +1253,16 @@ export async function runYamlRecipe(
         step.retryDelay ?? recipe.on_error?.retryDelay ?? 1000;
       let result: string | null = null;
       let stepError: string | undefined;
+      // Bug (2): distinguish a HARD tool error (a thrown error or a
+      // `{ok:false}` JSON envelope) from a SOFT silent-fail detection
+      // (`{count:0,error}` connector envelopes, string placeholders). Only
+      // hard failures abort the run; soft silent-fail detections keep the
+      // run going so connector health-check recipes can still deliver the
+      // degraded payload downstream (a long-standing, tested contract —
+      // see "linear.list_issues — returns error payload" tests). Silent-fail
+      // detection is an observability augment; it was never meant to gate
+      // delivery for these envelopes.
+      let stepErrorIsSilentFail = false;
       let thrownError: string | undefined;
       let thrownErrorCode: string | undefined;
       for (let attempt = 0; attempt <= retryCount; attempt++) {
@@ -1221,6 +1270,7 @@ export async function runYamlRecipe(
           await new Promise((r) => setTimeout(r, retryDelayMs));
         }
         stepError = undefined;
+        stepErrorIsSilentFail = false;
         thrownError = undefined;
         thrownErrorCode = undefined;
         try {
@@ -1280,6 +1330,7 @@ export async function runYamlRecipe(
             const detected = detectSilentFail(result);
             if (detected) {
               stepError = `silent-fail detected (${detected.reason}): ${detected.matched}`;
+              stepErrorIsSilentFail = true;
             }
           }
         } catch (err) {
@@ -1319,6 +1370,7 @@ export async function runYamlRecipe(
         });
         if (!failOpen) {
           runError = runError ?? `${step.tool} failed: ${thrownError}`;
+          haltAfterFailure = true;
         } else if (fallbackFailOpen && !step.optional) {
           console.warn(
             `step ${stepId} failed but on_error.fallback=${fallback} — treating as non-fatal: ${thrownError}`,
@@ -1345,6 +1397,10 @@ export async function runYamlRecipe(
         if (stepError) {
           if (!failOpen) {
             runError = runError ?? `${step.tool} failed: ${stepError}`;
+            // Soft silent-fail detections (connector error envelopes) record
+            // the error but must NOT abort the run — see the
+            // `stepErrorIsSilentFail` note above. Hard `{ok:false}` errors do.
+            if (!stepErrorIsSilentFail) haltAfterFailure = true;
           } else if (fallbackFailOpen && !step.optional) {
             console.warn(
               `step ${stepId} failed but on_error.fallback=${fallback} — treating as non-fatal: ${stepError}`,
@@ -1383,6 +1439,7 @@ export async function runYamlRecipe(
                 last.haltCategory = "expect_failed";
                 if (!failOpen) {
                   runError = runError ?? last.haltReason;
+                  haltAfterFailure = true;
                 }
                 result = null;
               } else {
@@ -2029,7 +2086,7 @@ export function defaultClaudeCodeFn(
 }
 
 /** Returns a providerDriverFn with a per-run driver cache (not shared across runs). */
-function makeProviderDriverFn(): (
+export function makeProviderDriverFn(): (
   driverName: "openai" | "grok" | "gemini",
   prompt: string,
   model: string | undefined,
@@ -2071,6 +2128,16 @@ function makeProviderDriverFn(): (
         if (result.exitCode !== undefined && result.exitCode !== 0) {
           const detail = result.stderrTail ?? result.text ?? "";
           return `[agent step failed: ${driverName} exited ${result.exitCode}${detail ? ` — ${detail.slice(0, 200)}` : ""}]`;
+        }
+        // API drivers (OpenAI / Grok) never set exitCode. On failure they
+        // resolve with `{ text: "", wasAborted?/errorMessage }` — surface the
+        // real cause (timeout / 401 / 429) instead of the generic
+        // "empty output" branch below, which swallows the actual reason.
+        if (result.wasAborted) {
+          return `[agent step failed: ${driverName} timed out or was cancelled]`;
+        }
+        if (result.errorMessage) {
+          return `[agent step failed: ${driverName} — ${result.errorMessage.slice(0, 200)}]`;
         }
         if (!result.text) {
           return `[agent step failed: ${driverName} returned empty output (possible timeout or auth error)]`;

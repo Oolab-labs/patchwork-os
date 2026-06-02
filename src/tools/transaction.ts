@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import type { FileLock } from "../fileLock.js";
 import { writeFileAtomic } from "../writeFileAtomic.js";
 import { applyLineRange, applySearchReplace } from "./previewEdit.js";
 import {
@@ -16,6 +17,14 @@ interface StagedEdit {
   filePath: string; // absolute resolved path
   originalContent: string;
   newContent: string;
+  /**
+   * mtimeMs of the file at stage time. Used for optimistic-concurrency
+   * detection at commit — if the file's mtime changed since staging, an
+   * intervening edit (editText/replaceBlock/external) happened and we refuse
+   * to clobber it. `undefined` when the file could not be stat'd at stage
+   * time (rare; check is then skipped for that edit).
+   */
+  originalMtimeMs?: number;
 }
 
 interface Transaction {
@@ -106,13 +115,32 @@ _ttlInterval.unref();
 function resolveAndRead(
   rawPath: string,
   workspace: string,
-): { resolved: string; content: string } {
+): { resolved: string; content: string; mtimeMs?: number } {
   const resolved = resolveFilePath(rawPath, workspace, { write: true });
+  // stat before read so we capture the mtime as of the staged snapshot. If the
+  // stat fails for any reason, fall through with mtimeMs undefined — the commit
+  // conflict check is skipped for that edit rather than blocking the stage.
+  let mtimeMs: number | undefined;
+  try {
+    mtimeMs = fs.statSync(resolved).mtimeMs;
+  } catch {
+    mtimeMs = undefined;
+  }
   const content = fs.readFileSync(resolved, "utf-8");
-  return { resolved, content };
+  return { resolved, content, mtimeMs };
 }
 
-export function createTransactionTools(workspace: string) {
+/**
+ * @param fileLock - Optional per-file lock. Reserved for future commit-time
+ *   serialization plumbing (see follow-up: wire from src/tools/index.ts). The
+ *   mtime-based optimistic-concurrency check works WITHOUT a lock and stands
+ *   alone — the lock would only narrow the (already-small) window between the
+ *   commit-time re-stat and the atomic write.
+ */
+export function createTransactionTools(workspace: string, fileLock?: FileLock) {
+  // Referenced so the optional param is retained for future wiring without a
+  // lint error; the mtime check below is independent of it.
+  void fileLock;
   const beginTransaction = {
     schema: {
       name: "beginTransaction",
@@ -245,11 +273,13 @@ export function createTransactionTools(workspace: string) {
 
       let resolved: string;
       let originalContent: string;
+      let originalMtimeMs: number | undefined;
       try {
-        ({ resolved, content: originalContent } = resolveAndRead(
-          rawPath,
-          workspace,
-        ));
+        ({
+          resolved,
+          content: originalContent,
+          mtimeMs: originalMtimeMs,
+        } = resolveAndRead(rawPath, workspace));
       } catch (e) {
         return error(
           `Cannot read file: ${e instanceof Error ? e.message : String(e)}`,
@@ -299,7 +329,12 @@ export function createTransactionTools(workspace: string) {
         }
       }
 
-      tx.edits.push({ filePath: resolved, originalContent, newContent });
+      tx.edits.push({
+        filePath: resolved,
+        originalContent,
+        newContent,
+        originalMtimeMs,
+      });
       return successStructured({
         staged: tx.edits.length,
         transactionId: txId,
@@ -367,6 +402,33 @@ export function createTransactionTools(workspace: string) {
 
       for (const edit of tx.edits) {
         try {
+          // Optimistic-concurrency check: re-stat the file and compare against
+          // the mtime captured at stage time. If it changed, an intervening
+          // edit happened (editText/replaceBlock/external) — refuse to clobber
+          // it. Matches the mtime guard in editText's native write path.
+          if (edit.originalMtimeMs !== undefined) {
+            let currentMtimeMs: number | undefined;
+            try {
+              currentMtimeMs = fs.statSync(edit.filePath).mtimeMs;
+            } catch {
+              // File was deleted between stage and commit.
+              errors.push({
+                file: edit.filePath,
+                error:
+                  "File was deleted after staging — commit aborted to avoid recreating a removed file",
+              });
+              continue;
+            }
+            if (currentMtimeMs !== edit.originalMtimeMs) {
+              errors.push({
+                file: edit.filePath,
+                error:
+                  "File was modified concurrently after staging — commit aborted to avoid clobbering the intervening edit. Re-stage this file.",
+              });
+              continue;
+            }
+          }
+
           await writeFileAtomic(edit.filePath, edit.newContent, {
             encoding: "utf-8",
           });

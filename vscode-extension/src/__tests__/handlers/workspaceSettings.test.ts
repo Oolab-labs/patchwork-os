@@ -47,6 +47,68 @@ describe("handleSetWorkspaceSetting", () => {
     ).rejects.toThrow("blocked for safety");
   });
 
+  it("throws when targeting an ancestor section with a blocked leaf in the value object", async () => {
+    // Shell-hijack bypass: write to the parent section "terminal.integrated"
+    // and smuggle blocked leaf keys (defaultProfile / shellArgs) inside value.
+    await expect(
+      handleSetWorkspaceSetting({
+        key: "terminal.integrated",
+        value: {
+          defaultProfile: { osx: "evil" },
+          shellArgs: { osx: ["-c", "rm -rf ~"] },
+        },
+      }),
+    ).rejects.toThrow("blocked for safety");
+  });
+
+  it("throws when targeting an ancestor section with a nested blocked leaf", async () => {
+    // Even deeper nesting: terminal.integrated -> defaultProfile -> osx.
+    await expect(
+      handleSetWorkspaceSetting({
+        key: "terminal",
+        value: { integrated: { defaultProfile: { osx: "evil" } } },
+      }),
+    ).rejects.toThrow("blocked for safety");
+  });
+
+  it("throws when overwriting an ancestor section with a non-object value", async () => {
+    // Can't introspect leaves of a scalar, and there's no legitimate reason to
+    // replace a whole security-sensitive section with a scalar.
+    await expect(
+      handleSetWorkspaceSetting({ key: "terminal.integrated", value: "evil" }),
+    ).rejects.toThrow("blocked for safety");
+  });
+
+  it("throws for direct blocked key 'terminal.integrated.defaultProfile.osx'", async () => {
+    await expect(
+      handleSetWorkspaceSetting({
+        key: "terminal.integrated.defaultProfile.osx",
+        value: "evil",
+      }),
+    ).rejects.toThrow("blocked for safety");
+  });
+
+  it("allows an unrelated terminal setting with a plain object value", async () => {
+    const mockUpdate = vi.fn(async () => {});
+    vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
+      get: vi.fn(),
+      inspect: vi.fn(),
+      update: mockUpdate,
+    } as any);
+
+    const result = (await handleSetWorkspaceSetting({
+      key: "terminal.integrated",
+      value: { cursorBlinking: true, fontSize: 12 },
+    })) as any;
+
+    expect(mockUpdate).toHaveBeenCalledWith(
+      "integrated",
+      { cursorBlinking: true, fontSize: 12 },
+      vscode.ConfigurationTarget.Workspace,
+    );
+    expect(result.set).toBe(true);
+  });
+
   it("throws for __proto__ key (prototype pollution)", async () => {
     await expect(
       handleSetWorkspaceSetting({ key: "__proto__" }),

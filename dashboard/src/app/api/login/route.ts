@@ -50,12 +50,22 @@ export async function POST(req: NextRequest) {
   }
 
   const ip = clientKey(req.headers);
-  const lock = checkLocked(ip);
-  if (lock.locked) {
-    return NextResponse.json(
-      { error: "too many attempts" },
-      { status: 429, headers: { "Retry-After": String(lock.retryAfterSec) } },
-    );
+  // When no trusted reverse proxy is configured, clientKey() returns the
+  // literal "unknown" for EVERY request — so a shared lockout keyed on it
+  // would let 5 bad passwords from anyone lock out ALL users for the
+  // lockout window (the common local / direct-deploy case). Only apply the
+  // per-IP brute-force lockout when we have a real, attributable client key
+  // (i.e. BRIDGE_TRUST_PROXY=true + a forwarded IP). Without it we rely on
+  // the timing-safe password compare below as the sole gate. Audit 2026-06-02.
+  const trackable = ip !== "unknown";
+  if (trackable) {
+    const lock = checkLocked(ip);
+    if (lock.locked) {
+      return NextResponse.json(
+        { error: "too many attempts" },
+        { status: 429, headers: { "Retry-After": String(lock.retryAfterSec) } },
+      );
+    }
   }
 
   const parsed = await readJsonWithCap<LoginBody>(
@@ -70,7 +80,7 @@ export async function POST(req: NextRequest) {
   const next = parsed.value?.next;
 
   if (typeof password !== "string") {
-    recordFailure(ip);
+    if (trackable) recordFailure(ip);
     return NextResponse.json({ error: "missing password" }, { status: 400 });
   }
 
@@ -94,20 +104,25 @@ export async function POST(req: NextRequest) {
   const equal = bytesEqual && a.length === b.length;
 
   if (!equal) {
-    const result = recordFailure(ip);
-    if (result.locked) {
-      return NextResponse.json(
-        { error: "too many attempts" },
-        {
-          status: 429,
-          headers: { "Retry-After": String(result.retryAfterSec) },
-        },
-      );
+    // Only track failures against a real, attributable client key. The
+    // "unknown" bucket (no trusted proxy) must not accumulate a shared
+    // lockout — see the trackable guard above.
+    if (trackable) {
+      const result = recordFailure(ip);
+      if (result.locked) {
+        return NextResponse.json(
+          { error: "too many attempts" },
+          {
+            status: 429,
+            headers: { "Retry-After": String(result.retryAfterSec) },
+          },
+        );
+      }
     }
     return NextResponse.json({ error: "invalid password" }, { status: 401 });
   }
 
-  recordSuccess(ip);
+  if (trackable) recordSuccess(ip);
   const cookie = await signSession();
   const redirect = isSafeRedirect(next) ? next : "/dashboard";
   return NextResponse.json(

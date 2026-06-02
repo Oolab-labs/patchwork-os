@@ -41,7 +41,13 @@ export function parseRecipe(raw: unknown): Recipe {
       ["name"],
     );
   }
-  const version = requireString(r, "version");
+  // version is optional at the parse boundary: the JSON schema marks it
+  // optional with default "1.0.0", and neither validateRecipeDefinition
+  // nor the yaml runner require it. Hard-rejecting a version-less recipe
+  // here meant a recipe that lints + runs still failed at install with a
+  // confusing "missing or empty 'version'". Default to "1.0.0" to match.
+  const version =
+    typeof r.version === "string" && r.version ? r.version : "1.0.0";
   const trigger = parseTrigger(r.trigger);
   const stepsRaw = r.steps;
   if (!Array.isArray(stepsRaw) || stepsRaw.length === 0) {

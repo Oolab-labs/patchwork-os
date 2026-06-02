@@ -143,7 +143,8 @@ describe("createGetToolCapabilitiesTool — extension connected", () => {
       cfg(),
     );
     const data = parse(await tool.handler());
-    expect(data.availableTools.github).toBe(11);
+    // 16 github* tools + 2 AI-comment tools, all gated behind the gh probe.
+    expect(data.availableTools.github).toBe(18);
   });
 });
 
@@ -338,5 +339,110 @@ describe("LSP tool list consistency", () => {
       lspSet.has(t),
     ).length;
     expect(lspTools.length).toBe(slimLspCount);
+  });
+
+  it("verbose connected lsp array length equals the non-verbose lsp count", async () => {
+    const tool = createGetToolCapabilitiesTool(
+      fullProbes,
+      makeClient(true),
+      cfg(),
+    );
+    const verboseData = parse(await tool.handler({ verbose: true }));
+    const countData = parse(await tool.handler());
+    expect(verboseData.availableTools.lsp.length).toBe(
+      countData.availableTools.lsp,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Headless-cli LSP tier: when the extension is disconnected but a
+// language-server / ctags probe is present, several LSP tools still work via
+// CLI fallbacks. The feature must report "headless-cli" (not "unavailable")
+// and the lsp count/array must reflect the fallback-capable tools.
+// ---------------------------------------------------------------------------
+
+describe("LSP headless-cli fallback tier (extension disconnected)", () => {
+  const tlsProbes = {
+    ...minimalProbes,
+    typescriptLanguageServer: true,
+  } as any;
+  const ctagsProbes = {
+    ...minimalProbes,
+    universalCtags: true,
+  } as any;
+  const bothProbes = {
+    ...minimalProbes,
+    typescriptLanguageServer: true,
+    universalCtags: true,
+  } as any;
+
+  it("reports lsp feature 'headless-cli' when typescript-language-server is present", async () => {
+    const tool = createGetToolCapabilitiesTool(
+      tlsProbes,
+      makeClient(false),
+      cfg(),
+    );
+    const data = parse(await tool.handler());
+    expect(data.features.lsp).toBe("headless-cli");
+  });
+
+  it("lists the typescript-language-server-backed fallback tools", async () => {
+    const tool = createGetToolCapabilitiesTool(
+      tlsProbes,
+      makeClient(false),
+      cfg(),
+    );
+    const data = parse(await tool.handler({ verbose: true }));
+    expect(data.availableTools.lsp).toEqual([
+      "goToDefinition",
+      "findReferences",
+      "getTypeSignature",
+    ]);
+  });
+
+  it("lists the ctags-backed fallback tool (searchWorkspaceSymbols)", async () => {
+    const tool = createGetToolCapabilitiesTool(
+      ctagsProbes,
+      makeClient(false),
+      cfg(),
+    );
+    const data = parse(await tool.handler({ verbose: true }));
+    expect(data.features.lsp).toBe("headless-cli");
+    expect(data.availableTools.lsp).toEqual(["searchWorkspaceSymbols"]);
+  });
+
+  it("merges both probes' fallback tools and count matches array length", async () => {
+    const tool = createGetToolCapabilitiesTool(
+      bothProbes,
+      makeClient(false),
+      cfg(),
+    );
+    const verboseData = parse(await tool.handler({ verbose: true }));
+    const countData = parse(await tool.handler());
+    expect(verboseData.availableTools.lsp).toEqual([
+      "goToDefinition",
+      "findReferences",
+      "getTypeSignature",
+      "searchWorkspaceSymbols",
+    ]);
+    // Internal consistency: non-verbose count === verbose array length.
+    expect(countData.availableTools.lsp).toBe(
+      verboseData.availableTools.lsp.length,
+    );
+    expect(countData.availableTools.lsp).toBe(4);
+  });
+
+  it("stays 'unavailable' with empty/zero lsp when no fallback probe present", async () => {
+    const tool = createGetToolCapabilitiesTool(
+      minimalProbes,
+      makeClient(false),
+      cfg(),
+    );
+    const verboseData = parse(await tool.handler({ verbose: true }));
+    const countData = parse(await tool.handler());
+    expect(verboseData.features.lsp).toBe("unavailable");
+    expect(verboseData.availableTools.lsp).toEqual([]);
+    expect(countData.availableTools.lsp).toBe(0);
   });
 });

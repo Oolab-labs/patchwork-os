@@ -8,6 +8,28 @@ import { ensureCmdShimIfKnown } from "../winShim.js";
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * Detect regex patterns with nested quantifiers that can trigger catastrophic
+ * backtracking (ReDoS) — e.g. `(a+)+`, `(ab*)*`, `(a{1,3})+`, `a++`, `a{2,4}+`.
+ *
+ * Shared guard used by `searchAndReplace` and `applySearchReplace`
+ * (previewEdit / stageEdit / transaction commit). Callers should reject the
+ * pattern before passing it to `new RegExp(...)` + `String.prototype.replace`,
+ * which would otherwise run unbounded on the full file content.
+ *
+ * This is a heuristic (string-level, not a full regex parser). It is
+ * deliberately conservative: it flags the common nesting shapes and may reject
+ * a small number of safe-but-unusual patterns. Literal (non-regex) searches
+ * must NOT be passed here.
+ */
+export function hasNestedQuantifier(pattern: string): boolean {
+  return (
+    /\([^)]*[+*]\)[+*?]/.test(pattern) ||
+    /\([^)]*\{[^}]+\}\)[+*{?]/.test(pattern) ||
+    /[+*][+*]|\{[^}]+\}[+*]/.test(pattern)
+  );
+}
+
 export function requireString(
   args: Record<string, unknown>,
   key: string,

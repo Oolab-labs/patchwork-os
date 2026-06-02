@@ -30,6 +30,13 @@ export interface ParsedGithubInstallSource {
   repo: string;
   /** Recipe name (single basename) or bundle name. */
   name: string;
+  /**
+   * Optional git ref (branch / tag / commit SHA) parsed from a trailing
+   * `@<ref>` on the name segment. Mirrors the CLI install path
+   * (`github:owner/repo[@ref]`). When absent, the URL builders default to
+   * `main`. Refs are NOT lowercased — tags/SHAs are case-sensitive.
+   */
+  ref?: string;
 }
 
 export type GithubInstallParseResult =
@@ -113,10 +120,37 @@ export function parseGithubInstallSource(
       error: "third path segment must be 'recipes' or 'bundles'",
     };
   }
+  // Extract an optional trailing `@<ref>` from the name segment so dashboard /
+  // HTTP installs can pin a branch / tag / commit SHA, matching the CLI path
+  // (`github:owner/repo[@ref]`). The ref is opaque to us — git accepts
+  // branches, tags, and SHAs in the same slot — but we apply the same charset
+  // guard recipeInstall.ts uses so it can't smuggle URL syntax into the
+  // constructed raw / api URLs.
+  let name = nameRaw;
+  let ref: string | undefined;
+  const atIdx = nameRaw.lastIndexOf("@");
+  if (atIdx !== -1) {
+    ref = nameRaw.slice(atIdx + 1);
+    name = nameRaw.slice(0, atIdx);
+    if (!ref) {
+      return {
+        ok: false,
+        code: "bad_segment",
+        error: "ref after '@' must not be empty",
+      };
+    }
+    if (/[@:?#\s]/.test(ref) || ref.includes("..")) {
+      return {
+        ok: false,
+        code: "bad_segment",
+        error: "ref contains disallowed characters",
+      };
+    }
+  }
   // Reuse the strict basename predicate inline rather than importing
   // recipeInstall.ts here (circular deps), but match its rules:
   // single segment, no `..`, no slashes, conservative charset, ≤100.
-  if (!SEGMENT_RE.test(nameRaw.toLowerCase())) {
+  if (!SEGMENT_RE.test(name.toLowerCase())) {
     return {
       ok: false,
       code: "bad_segment",
@@ -137,7 +171,8 @@ export function parseGithubInstallSource(
       kind: kindRaw === "recipes" ? "recipe" : "bundle",
       owner,
       repo,
-      name: nameRaw,
+      name,
+      ...(ref ? { ref } : {}),
     },
   };
 }
@@ -155,11 +190,12 @@ function repoRelativePath(parsed: ParsedGithubInstallSource): string {
 
 /**
  * Build the raw.githubusercontent URL for a parsed install source.
- * Always pulls `main` branch HEAD — version pinning is on the
- * deferred audit backlog.
+ * Uses the pinned `parsed.ref` (branch / tag / commit SHA) when present,
+ * else defaults to the `main` branch HEAD.
  */
 export function buildGithubRawUrl(parsed: ParsedGithubInstallSource): string {
-  return `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/main/${repoRelativePath(parsed)}`;
+  const ref = parsed.ref ?? "main";
+  return `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/${ref}/${repoRelativePath(parsed)}`;
 }
 
 /**
@@ -172,7 +208,8 @@ export function buildGithubRawUrl(parsed: ParsedGithubInstallSource): string {
  * directly — no base64 decode needed. Public repos work unauthenticated.
  */
 export function buildGithubApiUrl(parsed: ParsedGithubInstallSource): string {
-  return `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${repoRelativePath(parsed)}?ref=main`;
+  const ref = parsed.ref ?? "main";
+  return `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${repoRelativePath(parsed)}?ref=${ref}`;
 }
 
 /**

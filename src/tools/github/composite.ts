@@ -23,15 +23,15 @@ import {
 export function createGithubPRTool(
   workspace: string,
   onPullRequest?: (result: PullRequestCallbackResult) => void,
-  _defaultRepo: string | null = null,
+  defaultRepo: string | null = null,
 ) {
   const createPR = createGithubCreatePRTool(workspace, onPullRequest);
-  const viewPR = createGithubViewPRTool(workspace);
-  const listPRs = createGithubListPRsTool(workspace);
-  const getDiff = createGithubGetPRDiffTool(workspace);
-  const postReview = createGithubPostPRReviewTool(workspace);
-  const approvePR = createGithubApprovePRTool(workspace);
-  const mergePR = createGithubMergePRTool(workspace);
+  const viewPR = createGithubViewPRTool(workspace, defaultRepo);
+  const listPRs = createGithubListPRsTool(workspace, defaultRepo);
+  const getDiff = createGithubGetPRDiffTool(workspace, defaultRepo);
+  const postReview = createGithubPostPRReviewTool(workspace, defaultRepo);
+  const approvePR = createGithubApprovePRTool(workspace, defaultRepo);
+  const mergePR = createGithubMergePRTool(workspace, defaultRepo);
 
   return {
     schema: {

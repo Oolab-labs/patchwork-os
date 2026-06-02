@@ -180,6 +180,82 @@ describe("parseGithubInstallSource", () => {
       ).ok,
     ).toBe(true);
   });
+
+  it("extracts a trailing @ref from the name segment", () => {
+    const result = parseGithubInstallSource(
+      "github:patchworkos/recipes/recipes/morning-brief@v1.2.0",
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.parsed.name).toBe("morning-brief");
+      expect(result.parsed.ref).toBe("v1.2.0");
+    }
+  });
+
+  it("leaves ref undefined when no @ref is present", () => {
+    const result = parseGithubInstallSource(
+      "github:patchworkos/recipes/recipes/morning-brief",
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.parsed.ref).toBeUndefined();
+    }
+  });
+
+  it("preserves ref case (refs are not lowercased)", () => {
+    const result = parseGithubInstallSource(
+      "github:patchworkos/recipes/recipes/morning-brief@Release-2.0",
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.parsed.ref).toBe("Release-2.0");
+    }
+  });
+
+  it("accepts a commit SHA as a ref", () => {
+    const result = parseGithubInstallSource(
+      "github:patchworkos/recipes/recipes/morning-brief@abc123def456",
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.parsed.ref).toBe("abc123def456");
+    }
+  });
+
+  it("rejects an empty ref (trailing @)", () => {
+    const result = parseGithubInstallSource(
+      "github:patchworkos/recipes/recipes/morning-brief@",
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("bad_segment");
+  });
+
+  it("rejects refs with disallowed characters", () => {
+    expect(
+      parseGithubInstallSource("github:patchworkos/recipes/recipes/foo@a:b").ok,
+    ).toBe(false);
+    expect(
+      parseGithubInstallSource("github:patchworkos/recipes/recipes/foo@a?b").ok,
+    ).toBe(false);
+    expect(
+      parseGithubInstallSource("github:patchworkos/recipes/recipes/foo@a#b").ok,
+    ).toBe(false);
+    expect(
+      parseGithubInstallSource("github:patchworkos/recipes/recipes/foo@a b").ok,
+    ).toBe(false);
+    expect(
+      parseGithubInstallSource("github:patchworkos/recipes/recipes/foo@a..b")
+        .ok,
+    ).toBe(false);
+  });
+
+  it("still validates the name segment after stripping the ref", () => {
+    // name ".." is invalid even with a valid ref
+    expect(
+      parseGithubInstallSource("github:patchworkos/recipes/recipes/..@v1.0.0")
+        .ok,
+    ).toBe(false);
+  });
 });
 
 describe("buildGithubRawUrl", () => {
@@ -208,6 +284,20 @@ describe("buildGithubRawUrl", () => {
       "https://raw.githubusercontent.com/acme/cookbook/main/bundles/ops-pack/patchwork-bundle.json",
     );
   });
+
+  it("uses the pinned ref instead of 'main' when present", () => {
+    expect(
+      buildGithubRawUrl({
+        kind: "recipe",
+        owner: "patchworkos",
+        repo: "recipes",
+        name: "morning-brief",
+        ref: "v1.2.0",
+      }),
+    ).toBe(
+      "https://raw.githubusercontent.com/patchworkos/recipes/v1.2.0/recipes/morning-brief/morning-brief.yaml",
+    );
+  });
 });
 
 describe("buildGithubApiUrl", () => {
@@ -234,6 +324,20 @@ describe("buildGithubApiUrl", () => {
       }),
     ).toBe(
       "https://api.github.com/repos/acme/cookbook/contents/bundles/ops-pack/patchwork-bundle.json?ref=main",
+    );
+  });
+
+  it("uses the pinned ref in the ?ref= query when present", () => {
+    expect(
+      buildGithubApiUrl({
+        kind: "recipe",
+        owner: "patchworkos",
+        repo: "recipes",
+        name: "morning-brief",
+        ref: "v1.2.0",
+      }),
+    ).toBe(
+      "https://api.github.com/repos/patchworkos/recipes/contents/recipes/morning-brief/morning-brief.yaml?ref=v1.2.0",
     );
   });
 });

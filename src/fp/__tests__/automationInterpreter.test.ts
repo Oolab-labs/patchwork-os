@@ -530,6 +530,115 @@ describe("WithDedup", () => {
   });
 });
 
+// ── WithCooldown: per-file (templated) key ────────────────────────────────────
+
+describe("WithCooldown templated key (per-file cooldown)", () => {
+  // onRecipeSave emits the template `recipesave:{{file}}`; the interpreter
+  // resolves `{{file}}` from ctx.eventData.file so each saved file gets its
+  // own cooldown bucket. Two different files must NOT share a bucket.
+  const recipeHook = hook({
+    hookType: "onRecipeSave",
+    enabled: true,
+    promptSource: INLINE_SOURCE,
+  });
+
+  it("two different saved files do NOT share a cooldown bucket", async () => {
+    const backend = new TestBackend();
+    const wc = withCooldown("recipesave:{{file}}", 10_000, recipeHook);
+
+    // First file fires and records its cooldown.
+    const ctxA = makeCtx({
+      backend,
+      eventType: "onRecipeSave",
+      eventData: { file: "/recipes/a.yaml" },
+    });
+    const resA = await executeAutomationPolicy([wc], ctxA);
+    expect(resA.ok).toBe(true);
+    if (!resA.ok) return;
+    expect(resA.value.taskIds).toHaveLength(1);
+
+    // A DIFFERENT file, within the cooldown window, must still fire — it has
+    // its own bucket (`recipesave:/recipes/b.yaml`).
+    const ctxB = makeCtx({
+      backend,
+      state: resA.value.updatedState,
+      now: NOW + 1_000, // well within the 10s window
+      eventType: "onRecipeSave",
+      eventData: { file: "/recipes/b.yaml" },
+    });
+    const resB = await executeAutomationPolicy([wc], ctxB);
+    expect(resB.ok).toBe(true);
+    if (!resB.ok) return;
+    expect(resB.value.taskIds).toHaveLength(1);
+    expect(resB.value.skipped).toHaveLength(0);
+  });
+
+  it("the SAME saved file IS cooled down within the window", async () => {
+    const backend = new TestBackend();
+    const wc = withCooldown("recipesave:{{file}}", 10_000, recipeHook);
+
+    const ctx1 = makeCtx({
+      backend,
+      eventType: "onRecipeSave",
+      eventData: { file: "/recipes/a.yaml" },
+    });
+    const res1 = await executeAutomationPolicy([wc], ctx1);
+    expect(res1.ok).toBe(true);
+    if (!res1.ok) return;
+    expect(res1.value.taskIds).toHaveLength(1);
+
+    // Same file again within the window → cooled down (no task).
+    const ctx2 = makeCtx({
+      backend,
+      state: res1.value.updatedState,
+      now: NOW + 1_000,
+      eventType: "onRecipeSave",
+      eventData: { file: "/recipes/a.yaml" },
+    });
+    const res2 = await executeAutomationPolicy([wc], ctx2);
+    expect(res2.ok).toBe(true);
+    if (!res2.ok) return;
+    expect(res2.value.taskIds).toHaveLength(0);
+    expect(res2.value.skipped[0]?.reason).toBe(
+      "cooldown:recipesave:/recipes/a.yaml",
+    );
+  });
+
+  it("static (non-templated) cooldown keys are unchanged", async () => {
+    // A hook whose key has no `{{…}}` token uses the key verbatim — every
+    // other hook's cooldown behaviour must be untouched by the template path.
+    const backend = new TestBackend();
+    const gitHook = hook({
+      hookType: "onGitCommit",
+      enabled: true,
+      promptSource: INLINE_SOURCE,
+    });
+    const wc = withCooldown("gitcommit", 10_000, gitHook);
+
+    const ctx1 = makeCtx({
+      backend,
+      eventType: "onGitCommit",
+      eventData: { hash: "abc", branch: "main" },
+    });
+    const res1 = await executeAutomationPolicy([wc], ctx1);
+    if (!res1.ok) return;
+    expect(res1.value.taskIds).toHaveLength(1);
+
+    // Different commit, same static bucket → cooled down.
+    const ctx2 = makeCtx({
+      backend,
+      state: res1.value.updatedState,
+      now: NOW + 1_000,
+      eventType: "onGitCommit",
+      eventData: { hash: "def", branch: "main" },
+    });
+    const res2 = await executeAutomationPolicy([wc], ctx2);
+    if (!res2.ok) return;
+    expect(res2.value.taskIds).toHaveLength(0);
+    expect(res2.value.skipped[0]?.reason).toBe("cooldown:gitcommit");
+  });
+});
+
 // ── PBT: cooldown gate ────────────────────────────────────────────────────────
 
 describe("PBT: cooldown gate", () => {
@@ -887,6 +996,75 @@ describe("WithRetry re-execution", () => {
 
     expect(attempts).toBeGreaterThanOrEqual(2);
     expect(realRetryBackend.collector.scheduledRetries.length).toBe(1);
+  });
+
+  it("schedules up to maxRetries retries when every attempt fails (no early cap)", async () => {
+    // Regression: WithRetry's retry callback re-ran the INNER program, not the
+    // WithRetry node, so a second failure never re-entered the WithRetry branch
+    // → only ONE retry was ever scheduled regardless of maxRetries. With
+    // maxRetries:3 we expect 3 scheduled retries (attempts 1, 2, 3), then stop.
+    const realRetryBackend = new TestBackend();
+    realRetryBackend.enqueueTask = async () => {
+      throw new Error("always-fail");
+    };
+    // Defer fired callbacks into a manual queue so the initial run's state is
+    // committed to `live` before any retry callback reads it — mirroring a real
+    // timer firing AFTER the initiating mutation has committed.
+    const pendingTimers: Array<() => void> = [];
+    realRetryBackend.scheduleRetry = (key, delayMs, fn) => {
+      realRetryBackend.collector.scheduledRetries.push({ key, delayMs });
+      pendingTimers.push(fn);
+      return () => {};
+    };
+
+    let live = EMPTY_AUTOMATION_STATE;
+    // Serialize retry work like AutomationHooks' mutation chain: each unit of
+    // retry work reads the truly-current `live`, runs, and writes back before
+    // the next unit starts. Without this the re-entrant retries race on a
+    // shared snapshot.
+    let chain: Promise<void> = Promise.resolve();
+    const runRetryUnderLock = (
+      work: (
+        l: import("../automationState.js").AutomationState,
+      ) => Promise<import("../automationState.js").AutomationState>,
+    ) => {
+      chain = chain.then(async () => {
+        live = await work(live);
+      });
+    };
+
+    const prog = withRetry(
+      "retry-key",
+      3,
+      5000,
+      hook({
+        hookType: "onFileSave",
+        enabled: true,
+        promptSource: INLINE_SOURCE,
+      }),
+    );
+    const ctx = makeCtx({
+      backend: realRetryBackend,
+      getLiveState: () => live,
+      runRetryUnderLock,
+    });
+    const result = await executeAutomationPolicy([prog], ctx);
+    if (!result.ok) throw new Error("not ok");
+    // Commit the initiating run's state BEFORE firing any deferred timer.
+    live = result.value.updatedState;
+
+    // Drain the timer queue: each fired callback may enqueue another retry.
+    // Process FIFO, settling the serialized chain between fires so each retry
+    // observes the committed state of the previous one.
+    for (let i = 0; i < pendingTimers.length; i++) {
+      pendingTimers[i]!();
+      await chain;
+    }
+
+    // attempts 1, 2, 3 scheduled — and no more (stops at maxRetries).
+    expect(realRetryBackend.collector.scheduledRetries.length).toBe(3);
+    // After exhausting retries, the pending entry is cleaned up (no leak).
+    expect(live.pendingRetries.has("retry-key")).toBe(false);
   });
 });
 

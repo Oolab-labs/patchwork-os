@@ -1389,22 +1389,46 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
       const { findBridgeLock } = await import("./bridgeLockDiscovery.js");
       const lock = localFlag ? null : findBridgeLock();
       if (lock && !dryRun && !step && !explicitFile && !attemptId) {
-        const res = await fetch(`http://127.0.0.1:${lock.port}/recipes/run`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${lock.authToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: recipeArg,
-            ...(seedVars ? { vars: seedVars } : {}),
-          }),
-        });
-        const body = (await res.json()) as {
-          ok: boolean;
-          taskId?: string;
-          error?: string;
-        };
+        // 30s per-request deadline — the bridge can pass the findBridgeLock
+        // PID check yet be wedged on HTTP. Without this abort the fetch
+        // blocks forever. Mirrors the AbortController pattern used by every
+        // sibling bridge call (halts, judgments, recipe doctor, kill-switch).
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 30_000);
+        let res: Response;
+        let body: { ok: boolean; taskId?: string; error?: string };
+        try {
+          res = await fetch(`http://127.0.0.1:${lock.port}/recipes/run`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${lock.authToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              name: recipeArg,
+              ...(seedVars ? { vars: seedVars } : {}),
+            }),
+            signal: controller.signal,
+          });
+          body = (await res.json()) as {
+            ok: boolean;
+            taskId?: string;
+            error?: string;
+          };
+        } catch (err) {
+          const aborted =
+            err instanceof Error &&
+            (err.name === "AbortError" || controller.signal.aborted);
+          process.stderr.write(
+            aborted
+              ? `Error: bridge on port ${lock.port} did not respond within 30s — it may be wedged. Restart the bridge or re-run with --local.\n`
+              : `Error: failed to reach bridge on port ${lock.port}: ${err instanceof Error ? err.message : String(err)}\n`,
+          );
+          process.exit(1);
+          return;
+        } finally {
+          clearTimeout(timer);
+        }
         if (!body.ok) {
           // Fall through to local YAML runner if bridge doesn't know the recipe.
           if (!(body.error ?? "").includes("not found")) {

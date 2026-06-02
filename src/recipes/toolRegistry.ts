@@ -179,18 +179,27 @@ export function registerPluginTools(
         return typeof result === "string" ? result : JSON.stringify(result);
       };
 
+      // Honour the plugin tool's `annotations.destructiveHint` (PluginToolSchema
+      // in src/plugin.ts). A destructive plugin tool must be treated as a write
+      // so it participates in the kill-switch gate (assertWriteAllowed) and the
+      // idempotency dedup ledger in executeTool. Authors who omit the hint keep
+      // the prior read-only behaviour — zero API change.
+      const schema = t.schema as Record<string, unknown> | null;
+      const annotations = schema?.annotations as
+        | Record<string, unknown>
+        | undefined;
+      const isWrite = annotations?.destructiveHint === true;
+
       registerTool({
         id: t.name,
         namespace,
         description:
-          ((t.schema as Record<string, unknown> | null)?.description as
-            | string
-            | undefined) ?? `Plugin tool: ${t.name}`,
-        paramsSchema:
-          (t.schema as Record<string, unknown> | null)?.inputSchema ?? {},
+          (schema?.description as string | undefined) ??
+          `Plugin tool: ${t.name}`,
+        paramsSchema: schema?.inputSchema ?? {},
         outputSchema: {},
-        riskDefault: "low",
-        isWrite: false,
+        riskDefault: isWrite ? "medium" : "low",
+        isWrite,
         execute,
       });
       registered++;

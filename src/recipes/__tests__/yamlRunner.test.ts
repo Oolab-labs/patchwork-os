@@ -29,6 +29,15 @@ vi.mock("../../connectors/github.js", () => ({
   listPRs: vi.fn(),
 }));
 
+// Bug (1): exercises the *default* providerDriverFn (makeProviderDriverFn).
+// API drivers (OpenAI / Grok) never set exitCode — on failure they resolve
+// with { text: "", errorMessage } (or { wasAborted }). The stub lets a test
+// drive those shapes through the real factory by stubbing `createDriver`.
+const mockProviderRun = vi.fn();
+vi.mock("../../drivers/index.js", () => ({
+  createDriver: vi.fn(() => ({ name: "stub", run: mockProviderRun })),
+}));
+
 import {
   listIssues as listGithubIssues,
   listPRs as listGithubPRs,
@@ -45,6 +54,7 @@ import {
   evaluateExpect,
   type FetchFn,
   listYamlRecipes,
+  makeProviderDriverFn,
   type RunnerDeps,
   render,
   runYamlRecipe,
@@ -638,6 +648,173 @@ describe("runYamlRecipe — on_error retry + fallback", () => {
       }),
     );
     expect(result.errorMessage).toBeDefined();
+  });
+});
+
+// ── Bug (2): flat runner aborts on a fatal failure (mirrors chainedRunner) ─────
+// The flat runner used to record the first non-optional failure in runError
+// but kept executing later steps. It now breaks at the next loop top —
+// EXCEPT when the failure is fail-open (step.optional / on_error.fallback=
+// log_only|deliver_original) or a soft silent-fail connector envelope, both
+// of which still let the run continue.
+
+describe("runYamlRecipe — abort-on-fatal-failure (Bug 2)", () => {
+  function depsRead(readFile: () => string): RunnerDeps {
+    return { ...noop(), readFile };
+  }
+
+  it("does NOT run steps after a hard tool throw (default on_error)", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        { tool: "file.read", path: path.join(TMP, "missing"), into: "data" },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "after.md"),
+          content: "should not be written",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...depsRead(() => {
+        throw new Error("boom");
+      }),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    // Step 1 errored; step 2 must never have run.
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(written[path.join(TMP, "after.md")]).toBeUndefined();
+    // Only one step recorded — the loop broke before step 2.
+    expect(result.stepResults).toHaveLength(1);
+    expect(result.stepsRun).toBe(1);
+    expect(result.errorMessage).toBeDefined();
+  });
+
+  it("does NOT run steps after a hard agent failure (default on_error)", async () => {
+    const written: Record<string, string> = {};
+    let secondAgentCalls = 0;
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "step 1",
+            model: "claude-haiku-4-5-20251001",
+            into: "out1",
+          },
+        },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "after.md"),
+          content: "should not be written",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      // Hard agent failure — the `[agent step failed: ...]` marker.
+      claudeFn: async () => {
+        secondAgentCalls++;
+        return "[agent step failed: driver exploded]";
+      },
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(secondAgentCalls).toBe(1);
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(written[path.join(TMP, "after.md")]).toBeUndefined();
+    expect(result.stepResults).toHaveLength(1);
+  });
+
+  it("STILL delivers a downstream payload after a soft silent-fail envelope (contract preserved)", async () => {
+    // A connector list-tool returning {count:0,error} is silent-fail-detected
+    // (soft) — the run must continue so the recipe can deliver the degraded
+    // payload. This pins the carve-out that keeps the existing
+    // "linear.list_issues returns error payload" tests green.
+    mockLoadTokens.mockReturnValue(null); // → {count:0, error:"not connected"}
+    const written: Record<string, string> = {};
+    const result = await runYamlRecipe(
+      makeRecipe({
+        steps: [
+          { tool: "linear.list_issues", into: "issues" },
+          {
+            tool: "file.write",
+            path: path.join(TMP, "soft.md"),
+            content: "{{issues}}",
+          },
+        ],
+      }),
+      {
+        ...noop(),
+        writeFile: (p, c) => {
+          written[p] = c;
+        },
+      },
+    );
+    // Step 1 flagged error (silent-fail) but step 2 still ran.
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(written[path.join(TMP, "soft.md")]).toContain("not connected");
+    expect(result.stepResults).toHaveLength(2);
+  });
+
+  it("STILL runs later steps when on_error.fallback=log_only (fail-open preserved)", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      on_error: { fallback: "log_only" },
+      steps: [
+        { tool: "file.read", path: path.join(TMP, "missing"), into: "data" },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "after.md"),
+          content: "delivered anyway",
+        },
+      ],
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await runYamlRecipe(recipe, {
+      ...depsRead(() => {
+        throw new Error("boom");
+      }),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    warn.mockRestore();
+    expect(result.stepResults[0]?.status).toBe("error");
+    // Fail-open: step 2 still ran.
+    expect(written[path.join(TMP, "after.md")]).toBe("delivered anyway");
+    expect(result.stepResults).toHaveLength(2);
+  });
+
+  it("STILL runs later steps when the failing step is optional:true", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.read",
+          path: path.join(TMP, "missing"),
+          into: "data",
+          optional: true,
+        },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "after.md"),
+          content: "delivered anyway",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...depsRead(() => {
+        throw new Error("boom");
+      }),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(written[path.join(TMP, "after.md")]).toBe("delivered anyway");
+    expect(result.stepResults).toHaveLength(2);
   });
 });
 
@@ -2364,6 +2541,70 @@ describe("runYamlRecipe — agent step with provider drivers", () => {
   });
 });
 
+// ── Bug (1): default providerDriverFn surfaces the real API error ─────────────
+// API drivers (OpenAI / Grok) never set exitCode; on failure they resolve with
+// { text: "", errorMessage } (or { wasAborted }). The old default only checked
+// exitCode, so a 401/429 fell through to the generic "returned empty output"
+// branch and the real cause was lost. These pin the corrected behaviour.
+
+describe("makeProviderDriverFn — surfaces provider failure cause", () => {
+  afterEach(() => {
+    mockProviderRun.mockReset();
+  });
+
+  it("surfaces errorMessage (401/429) instead of generic empty-output", async () => {
+    mockProviderRun.mockResolvedValueOnce({
+      text: "",
+      errorMessage: "401 unauthorized",
+      durationMs: 5,
+    });
+    const fn = makeProviderDriverFn();
+    const out = await fn("openai", "hello", undefined);
+    expect(out).toContain("401 unauthorized");
+    expect(out).toContain("openai");
+    expect(out).not.toContain("returned empty output");
+  });
+
+  it("surfaces wasAborted (timeout/cancel) before the empty-output branch", async () => {
+    mockProviderRun.mockResolvedValueOnce({
+      text: "",
+      wasAborted: true,
+      durationMs: 5,
+    });
+    const fn = makeProviderDriverFn();
+    const out = await fn("grok", "hello", undefined);
+    expect(out).toMatch(/timed out or was cancelled/);
+    expect(out).toContain("grok");
+    expect(out).not.toContain("returned empty output");
+  });
+
+  it("truncates a very long errorMessage to keep the marker readable", async () => {
+    mockProviderRun.mockResolvedValueOnce({
+      text: "",
+      errorMessage: "x".repeat(500),
+      durationMs: 5,
+    });
+    const fn = makeProviderDriverFn();
+    const out = await fn("openai", "hello", undefined);
+    // 200-char cap on the message fragment (plus the surrounding marker text).
+    expect(out.length).toBeLessThan(260);
+  });
+
+  it("still reports generic empty-output when there is no error signal", async () => {
+    mockProviderRun.mockResolvedValueOnce({ text: "", durationMs: 5 });
+    const fn = makeProviderDriverFn();
+    const out = await fn("openai", "hello", undefined);
+    expect(out).toContain("returned empty output");
+  });
+
+  it("returns text unchanged on success", async () => {
+    mockProviderRun.mockResolvedValueOnce({ text: "all good", durationMs: 5 });
+    const fn = makeProviderDriverFn();
+    const out = await fn("openai", "hello", undefined);
+    expect(out).toBe("all good");
+  });
+});
+
 // ── dispatchRecipe ────────────────────────────────────────────────────────────
 
 import type { ChainedRecipe, ExecutionDeps } from "../chainedRunner.js";
@@ -2949,6 +3190,82 @@ describe("recipe.budget — tokensMax enforcement (PR2b)", () => {
     expect(calls).toBe(2);
     expect(result.stepResults[0]?.status).toBe("ok");
     expect(result.stepResults[1]?.status).toBe("ok");
+  });
+
+  // Bug (3): the admission check used to live inside the agent branch, so a
+  // breached budget left TOOL steps running unbounded. The gate now sits at
+  // the top of the loop and halts ALL step kinds.
+  it("halts a TOOL step that follows a budget-breaching agent step", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      budget: { tokensMax: 100 },
+      steps: [
+        {
+          agent: {
+            prompt: "step 1",
+            model: "claude-haiku-4-5-20251001",
+            into: "out1",
+          },
+        },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "post-budget.md"),
+          content: "should not be written",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => ({
+        text: "out",
+        usage: { inputTokens: 60, outputTokens: 60 }, // 120 > 100 → breach
+      }),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    // The tool step is denied admission and recorded as a budget error.
+    expect(result.stepResults[1]?.status).toBe("error");
+    expect(result.stepResults[1]?.haltReason).toMatch(/budget_exceeded/);
+    expect(result.stepResults[1]?.haltCategory).toBe("budget_exceeded");
+    // The tool body never executed.
+    expect(written[path.join(TMP, "post-budget.md")]).toBeUndefined();
+    expect(result.errorMessage).toMatch(/budget_exceeded/);
+  });
+
+  it("onBreach='warn' lets a TOOL step run past the cap", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      budget: { tokensMax: 100, onBreach: "warn" },
+      steps: [
+        {
+          agent: {
+            prompt: "step 1",
+            model: "claude-haiku-4-5-20251001",
+            into: "out1",
+          },
+        },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "warn-budget.md"),
+          content: "delivered",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => ({
+        text: "out",
+        usage: { inputTokens: 200, outputTokens: 200 }, // breach but warn-mode
+      }),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(result.stepResults[1]?.status).toBe("ok");
+    expect(written[path.join(TMP, "warn-budget.md")]).toBe("delivered");
   });
 });
 

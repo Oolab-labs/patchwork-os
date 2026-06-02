@@ -1128,6 +1128,29 @@ export class McpTransport {
             };
             const tool = this.tools.get(params.name);
             if (!tool && this.dynamicToolDispatch) {
+              // Per-session deny list applies to dynamic/proxied tools too.
+              // Registered tools are gated below (denyTools.has check), but the
+              // dynamic-dispatch path bypassed it — a session that denied a tool
+              // via X-Bridge-Deny-Tools could still invoke it as an orchestrator
+              // child/proxy tool. Mirror the registered-tool deny response.
+              if (this.denyTools.has(params.name)) {
+                this.callCount++;
+                this.errorCount++;
+                response = {
+                  jsonrpc: "2.0",
+                  id: msg.id,
+                  result: {
+                    content: [
+                      {
+                        type: "text",
+                        text: `Tool "${params.name}" is denied for this session.`,
+                      },
+                    ],
+                    isError: true,
+                  },
+                };
+                break;
+              }
               // Read-only scope check — unknown tools are not in the registry so
               // we cannot inspect their annotations; block them under mcp:read.
               if (this.sessionScope === "mcp:read") {

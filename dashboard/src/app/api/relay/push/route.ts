@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import webpush from "web-push";
-import { getSubscriptions, removeSubscription } from "@/lib/pushStore";
+import { getSubscriptionsFor, removeSubscription } from "@/lib/pushStore";
 import {
   DASHBOARD_API_BODY_CAPS,
   bodyTooLargeResponse,
@@ -126,12 +126,16 @@ export async function POST(req: Request) {
     );
   }
 
-  const subs = getSubscriptions();
+  // Filter to subscriptions opted in to approval pushes. A user who set
+  // approvals:false via /api/push/prefs must NOT receive these — pre-fix
+  // this used the unfiltered getSubscriptions() and ignored the opt-out
+  // (the halt relay already filtered via getSubscriptionsFor("halts")).
+  const subs = getSubscriptionsFor("approvals");
   if (subs.length === 0) {
     // Bridge fires fire-and-forget so this 404 is informational only —
     // the ok:false form lets curl-based debugging see the empty state.
     return NextResponse.json(
-      { ok: false, sent: 0, total: 0, error: "no subscriptions" },
+      { ok: false, sent: 0, total: 0, error: "no approval subscribers" },
       { status: 404 },
     );
   }

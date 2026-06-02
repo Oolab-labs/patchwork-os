@@ -101,7 +101,20 @@ export class ChildBridgeClient {
         params: {},
       });
 
-      const res = await this.post(body, INIT_TIMEOUT_MS, this.sessionId);
+      let res = await this.post(body, INIT_TIMEOUT_MS, this.sessionId);
+
+      // 404 means the child's HTTP session expired (2-hour idle TTL). This is
+      // NOT a bridge failure — re-initialize the session and retry once.
+      // Returning [] here would let the orchestrator clobber a healthy bridge's
+      // tool list (it writes whatever listTools returns), so recovering the
+      // session is what keeps proxied tools alive across an idle window.
+      if (res.status === 404) {
+        this.sessionId = null;
+        const ok = await this.initSession();
+        if (!ok) return [];
+        res = await this.post(body, INIT_TIMEOUT_MS, this.sessionId);
+      }
+
       if (!res.ok) {
         this.onFailure();
         return [];
