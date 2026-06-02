@@ -1196,6 +1196,7 @@ if (
       `  enable <name>      Re-enable a disabled recipe\n` +
       `  disable <name>     Pause a recipe (scheduled triggers stop firing)\n` +
       `  preflight <file>   Static-validate a recipe YAML before running\n` +
+      `  doctor <name|file> Diagnose a recipe: lint + policy + recent halts\n` +
       `  lint <file>        Run all lint checks on a recipe YAML\n` +
       `  fmt <file>         Format a recipe YAML in place\n` +
       `  schema             Print the recipe JSON Schema\n` +
@@ -2287,23 +2288,11 @@ if (process.argv[2] === "halts") {
         process.exit(0);
       }
 
-      const labels: Record<string, string> = {
-        agent_silent_fail: "agent silent-fail",
-        agent_narration_only: "agent narration-only",
-        agent_threw: "agent threw",
-        tool_threw: "tool threw",
-        tool_error: "tool error",
-        kill_switch: "kill-switch blocked",
-        budget_exceeded: "budget exceeded",
-        expect_failed: "expect failed",
-        step_timeout: "step timeout",
-        auth_failure: "auth failure",
-        rate_limited: "rate limited",
-        network_error: "network error",
-        missing_connector: "missing connector",
-        run_level: "run-level halt",
-        unknown: "uncategorised",
-      };
+      // Shared label + hint maps (also used by `recipe doctor` and
+      // mirrored in the dashboard) so the wording stays consistent.
+      const { HALT_CATEGORY_LABELS, HALT_CATEGORY_HINTS } = await import(
+        "./recipes/haltCategory.js"
+      );
 
       const windowLabel: Record<Win, string> = {
         "1h": "last hour",
@@ -2321,33 +2310,15 @@ if (process.argv[2] === "halts") {
         process.exit(0);
       }
 
-      // Mirrors dashboard HALT_CATEGORY_HINT — actionable one-liner so
-      // SSH / mobile users get the "what to do" without opening the UI.
-      const hints: Record<string, string> = {
-        agent_silent_fail: "inspect prompt + check trace",
-        agent_narration_only: "tighten prompt or add `into:` target",
-        agent_threw: "open run trace",
-        tool_threw: "check inner error in trace",
-        tool_error: "check inner error in trace",
-        kill_switch: "run `patchwork kill-switch release`",
-        budget_exceeded: "raise tokensMax or shrink prompts",
-        expect_failed: "inspect assertion vs actual output",
-        step_timeout: "bump timeout_ms or speed up step",
-        auth_failure: "reconnect from /connections",
-        rate_limited: "back off cron cadence or wait",
-        network_error: "check connectivity to upstream",
-        missing_connector: "install/connect from /connections",
-        run_level: "check recipe for circular deps / parse errors",
-        unknown: "open run trace for raw error",
-      };
-
       const entries = Object.entries(summary.byCategory).sort(
         ([, a], [, b]) => b - a,
       );
       process.stdout.write("\nBy category:\n");
       for (const [cat, count] of entries) {
-        const label = labels[cat] ?? cat;
-        const hint = hints[cat];
+        const label =
+          HALT_CATEGORY_LABELS[cat as keyof typeof HALT_CATEGORY_LABELS] ?? cat;
+        const hint =
+          HALT_CATEGORY_HINTS[cat as keyof typeof HALT_CATEGORY_HINTS];
         const hintSuffix = hint ? `  — ${hint}` : "";
         process.stdout.write(
           `  ${String(count).padStart(3)}  ${label}${hintSuffix}\n`,
@@ -2915,6 +2886,97 @@ if (process.argv[2] === "recipe" && process.argv[3] === "preflight") {
         allowWrites,
       });
       renderResult(result);
+      process.exit(result.ok ? 0 : 1);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
+// `recipe doctor <name|file>` — one-screen "why is this recipe unhealthy
+// + how do I fix it" diagnosis. Composes the static preflight check with
+// the recipe-scoped runtime halt summary from a live bridge (fail-soft:
+// no bridge → static-only). See runRecipeDoctor in commands/recipe.ts.
+if (process.argv[2] === "recipe" && process.argv[3] === "doctor") {
+  const args = process.argv.slice(4);
+  const usage =
+    "Usage: patchwork recipe doctor <name|file.yaml> [--json] [--local]\n\n" +
+    "Diagnoses a recipe: lint + write-policy + plan (static) plus recent\n" +
+    "runtime halts from a live bridge, each mapped to a fix hint.\n" +
+    "--local skips the bridge runtime check. Exits 1 when unhealthy.\n";
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(usage);
+    process.exit(0);
+  }
+  const wantJson = args.includes("--json");
+  const localOnly = args.includes("--local");
+  const ref = args.find((a) => !a.startsWith("--"));
+  if (!ref) {
+    process.stderr.write(usage);
+    process.exit(1);
+  }
+
+  (async () => {
+    try {
+      const { runRecipeDoctor, formatRecipeDoctorReport } = await import(
+        "./commands/recipe.js"
+      );
+
+      // Runtime halt fetcher: walk live bridges, query the recipe-scoped
+      // halt summary over the last 7 days. Returns null when no bridge is
+      // reachable so doctor degrades to static-only.
+      const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+      const fetchHalts = localOnly
+        ? undefined
+        : async (recipeName: string) => {
+            const { findAllLiveBridges } = await import(
+              "./bridgeLockDiscovery.js"
+            );
+            const liveLocks = findAllLiveBridges();
+            if (liveLocks.length === 0) return null;
+            const sinceMs = Date.now() - SEVEN_DAYS_MS;
+            const qs = `?sinceMs=${sinceMs}&recipe=${encodeURIComponent(recipeName)}`;
+            for (const lock of liveLocks) {
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 10_000);
+              try {
+                const res = await fetch(
+                  `http://127.0.0.1:${lock.port}/runs/halt-summary${qs}`,
+                  {
+                    headers: { Authorization: `Bearer ${lock.authToken}` },
+                    signal: controller.signal,
+                  },
+                );
+                if (res.ok) {
+                  return (await res.json()) as {
+                    total: number;
+                    byCategory: Record<string, number>;
+                    recent: Array<{
+                      reason: string;
+                      category: string;
+                      runSeq: number;
+                    }>;
+                  };
+                }
+              } catch {
+                /* unreachable lock — try next */
+              } finally {
+                clearTimeout(timer);
+              }
+            }
+            return null;
+          };
+
+      const result = await runRecipeDoctor(ref as string, { fetchHalts });
+
+      if (wantJson) {
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      } else {
+        process.stdout.write(formatRecipeDoctorReport(result));
+      }
       process.exit(result.ok ? 0 : 1);
     } catch (err) {
       process.stderr.write(

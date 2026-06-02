@@ -614,7 +614,14 @@ export default function RecipeEditPage({ name }: { name: string }) {
       };
       if (res.status === 503 && data.code === "feature_disabled") {
         toast.info(
-          "Recipe AI repair is off by default. Enable the `recipe.repair-ai` flag in Settings → Feature flags.",
+          "Recipe AI repair is off by default (it calls the model and costs API tokens).",
+          {
+            duration: 0,
+            action: {
+              label: "Enable & retry",
+              onClick: () => void enableRepairAndRetry(),
+            },
+          },
         );
         return;
       }
@@ -646,6 +653,42 @@ export default function RecipeEditPage({ name }: { name: string }) {
       );
     } finally {
       setRepairBusy(false);
+    }
+  }
+
+  // One-click opt-in: enable the `recipe.repair-ai` flag via the bridge,
+  // then re-run the repair. The bridge only allows toggling this opt-in UI
+  // flag; a 409 means a sysadmin pinned it via PATCHWORK_FLAG_* and the
+  // dashboard can't override that.
+  async function enableRepairAndRetry() {
+    try {
+      const res = await fetch(apiPath("/api/bridge/feature-flags"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: "recipe.repair-ai", value: true }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        envVar?: string;
+      };
+      if (res.status === 409 && data.error === "env_override") {
+        toast.error(
+          `Recipe AI repair is pinned off by ${data.envVar ?? "an environment variable"} — unset it on the bridge to enable.`,
+        );
+        return;
+      }
+      if (!res.ok) {
+        toast.error(
+          `Couldn't enable Recipe AI repair: ${data.error ?? `HTTP ${res.status}`}`,
+        );
+        return;
+      }
+      toast.success("Recipe AI repair enabled.");
+      await handleFixWithAi();
+    } catch (e) {
+      toast.error(
+        `Couldn't enable Recipe AI repair: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 
@@ -836,7 +879,8 @@ export default function RecipeEditPage({ name }: { name: string }) {
             </strong>
             {/* Phase 2A.2: Fix with AI — posts to /recipes/repair (the
                 bridge gates this behind the `recipe.repair-ai` flag;
-                503 + feature_disabled → toast pointing at Settings). */}
+                503 + feature_disabled → toast with a one-click
+                "Enable & retry" action, see enableRepairAndRetry). */}
             <button
               type="button"
               onClick={() => void handleFixWithAi()}

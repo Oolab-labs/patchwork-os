@@ -9,16 +9,17 @@ import { RecipeChip, RunChip, ToolChip, InboxChip } from "@/components/patchwork
 import { StepDiffHover } from "@/components/StepDiffHover";
 import { Dialog } from "@/components/Dialog";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
+import {
+  HALT_CATEGORY_HINT,
+  type HaltCategory,
+} from "@/lib/haltCategory";
 import { diffForStep, previewMockedReplay } from "@/lib/registryDiff";
+import {
+  type JudgeVerdict,
+  JudgeVerdictPill,
+} from "./_components/JudgeVerdictPill";
 
 // ------------------------------------------------------------------ types
-
-interface JudgeVerdict {
-  verdict: "approve" | "request_changes" | "unparseable";
-  reasons: string[];
-  fixList?: string[];
-  raw?: string;
-}
 
 interface StepResult {
   id: string;
@@ -27,6 +28,8 @@ interface StepResult {
   error?: string;
   /** One-sentence human-actionable halt reason for error rows. */
   haltReason?: string;
+  /** Bounded halt category — drives the inline fix hint on error rows. */
+  haltCategory?: HaltCategory;
   /** PR3a — cold-eyes judge verdict. Augment-only: never affects status. */
   judgeVerdict?: JudgeVerdict;
   durationMs: number;
@@ -317,72 +320,6 @@ function stepStatusLabel(status: StepResult["status"]): string {
   return "skipped";
 }
 
-function verdictPalette(
-  verdict: JudgeVerdict["verdict"],
-): { bg: string; fg: string; label: string } {
-  if (verdict === "approve") {
-    return { bg: "var(--ok-bg, #1b3a1b)", fg: "var(--ok)", label: "approve" };
-  }
-  if (verdict === "request_changes") {
-    return {
-      bg: "var(--warn-bg, #3a2a1b)",
-      fg: "var(--warn, #d49a3a)",
-      label: "request_changes",
-    };
-  }
-  return {
-    bg: "var(--bg-2)",
-    fg: "var(--ink-2)",
-    label: "unparseable",
-  };
-}
-
-function JudgeVerdictPill({ verdict }: { verdict: JudgeVerdict }) {
-  const { bg, fg, label } = verdictPalette(verdict.verdict);
-  const firstReason = verdict.reasons[0];
-  return (
-    <div
-      style={{
-        marginTop: 4,
-        display: "flex",
-        gap: 6,
-        flexWrap: "wrap",
-        alignItems: "center",
-      }}
-    >
-      <span
-        className="mono"
-        style={{
-          fontSize: "var(--fs-xs)",
-          padding: "1px 6px",
-          borderRadius: 3,
-          background: bg,
-          color: fg,
-          letterSpacing: "0.02em",
-        }}
-        title="cold-eyes judge verdict (augment-only — never gates the run)"
-      >
-        judge: {label}
-      </span>
-      {firstReason && (
-        <span
-          className="muted"
-          style={{
-            fontSize: "var(--fs-xs)",
-            whiteSpace: "normal",
-            wordBreak: "break-word",
-          }}
-        >
-          {firstReason}
-          {verdict.reasons.length > 1 && (
-            <> +{verdict.reasons.length - 1} more</>
-          )}
-        </span>
-      )}
-    </div>
-  );
-}
-
 function StepRow({
   step,
   index,
@@ -532,6 +469,22 @@ function StepRow({
               title="halt reason"
             >
               {step.haltReason}
+            </div>
+          )}
+          {step.status === "error" && step.haltCategory && (
+            // The haltReason says what broke; this says what to do about
+            // it. Same HALT_CATEGORY_HINT map the /runs list uses.
+            <div
+              style={{
+                fontSize: "var(--fs-xs)",
+                marginTop: 2,
+                color: "var(--accent)",
+                whiteSpace: "normal",
+                wordBreak: "break-word",
+              }}
+              title="suggested fix"
+            >
+              → {HALT_CATEGORY_HINT[step.haltCategory]}
             </div>
           )}
           {step.judgeVerdict && (

@@ -17,6 +17,7 @@
 
 import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DoctorPanel } from "./_components/DoctorPanel";
 import RecipeEditPage from "./_edit/page";
 import RecipePlanPage from "./_plan/page";
 import { useRouter } from "next/navigation";
@@ -853,6 +854,12 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
             Uninstall
           </button>
         </div>
+      </PatchCard>
+
+      {/* DOCTOR — composed health diagnosis (lint + policy + recent halts) */}
+      <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 260ms 160ms ease both", animationFillMode: "both" }}>
+        <SectionHeader>Doctor</SectionHeader>
+        <DoctorPanel recipeName={name} />
       </PatchCard>
       </div>{/* end main column */}
 

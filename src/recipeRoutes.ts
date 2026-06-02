@@ -723,6 +723,67 @@ export function tryHandleRecipeRoute(
     return true;
   }
 
+  // GET /recipes/doctor?recipe=<name> — one-call recipe health diagnosis.
+  // Server-side home for the `recipe doctor` CLI: composes the static
+  // preflight check (lint + write-policy + plan) with the recipe-scoped
+  // runtime halt summary (reusing deps.haltSummaryFn in-process — no lock
+  // walk), each finding mapped to a fix hint. Read-only; fail-soft.
+  if (parsedUrl.pathname === "/recipes/doctor" && req.method === "GET") {
+    void (async () => {
+      try {
+        const recipe = parsedUrl.searchParams.get("recipe");
+        if (!recipe) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "missing_recipe",
+              message: "?recipe= is required",
+            }),
+          );
+          return;
+        }
+        // Name-only over HTTP — the dashboard always sends an installed
+        // recipe name. Reject path separators / traversal so this endpoint
+        // can't be coaxed into linting an arbitrary file off disk (the CLI
+        // path-resolution affordance stays CLI-only).
+        if (/[\\/]/.test(recipe) || recipe.includes("..")) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "invalid_recipe",
+              message: "recipe must be a bare name",
+            }),
+          );
+          return;
+        }
+        const { runRecipeDoctor } = await import("./commands/recipe.js");
+        const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+        const fetchHalts = deps.haltSummaryFn
+          ? async (recipeName: string) =>
+              // deps.haltSummaryFn is sync; the doctor contract is async.
+              deps.haltSummaryFn?.({
+                sinceMs: Date.now() - SEVEN_DAYS_MS,
+                recipe: recipeName,
+              }) ?? null
+          : undefined;
+        const result = await runRecipeDoctor(recipe, { fetchHalts });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        // resolveRecipePath throws "recipe ... not found" for unknown
+        // names — map that to 404; anything else is a real 500.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/not found/i.test(msg)) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "recipe_not_found", message: msg }));
+          return;
+        }
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
   // GET /runs/:seq — single run detail (includes stepResults if present)
   const runDetailMatch =
     req.method === "GET" ? /^\/runs\/(\d+)$/.exec(parsedUrl.pathname) : null;

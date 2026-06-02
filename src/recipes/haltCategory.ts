@@ -51,6 +51,52 @@ export type HaltCategory =
   | "run_level"
   | "unknown";
 
+/**
+ * Human-readable label per category. Shared by the `halts` CLI, the
+ * `recipe doctor` command, and (mirrored) the dashboard, so the wording
+ * stays consistent across surfaces.
+ */
+export const HALT_CATEGORY_LABELS: Record<HaltCategory, string> = {
+  agent_silent_fail: "agent silent-fail",
+  agent_narration_only: "agent narration-only",
+  agent_threw: "agent threw",
+  tool_threw: "tool threw",
+  tool_error: "tool error",
+  kill_switch: "kill-switch blocked",
+  budget_exceeded: "budget exceeded",
+  expect_failed: "expect failed",
+  step_timeout: "step timeout",
+  auth_failure: "auth failure",
+  rate_limited: "rate limited",
+  network_error: "network error",
+  missing_connector: "missing connector",
+  run_level: "run-level halt",
+  unknown: "uncategorised",
+};
+
+/**
+ * Actionable one-liner per category — "what to do about it". Shared by
+ * the `halts` CLI and `recipe doctor` so SSH / mobile users get the fix
+ * hint without opening the dashboard.
+ */
+export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
+  agent_silent_fail: "inspect prompt + check trace",
+  agent_narration_only: "tighten prompt or add `into:` target",
+  agent_threw: "open run trace",
+  tool_threw: "check inner error in trace",
+  tool_error: "check inner error in trace",
+  kill_switch: "run `patchwork kill-switch release`",
+  budget_exceeded: "raise tokensMax or shrink prompts",
+  expect_failed: "inspect assertion vs actual output",
+  step_timeout: "bump timeout_ms or speed up step",
+  auth_failure: "reconnect from /connections",
+  rate_limited: "back off cron cadence or wait",
+  network_error: "check connectivity to upstream",
+  missing_connector: "install/connect from /connections",
+  run_level: "check recipe for circular deps / parse errors",
+  unknown: "open run trace for raw error",
+};
+
 export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (!reason) return "unknown";
   // Order matters: more specific phrases (silent-fail, narration, kill
