@@ -963,6 +963,24 @@ export class Bridge {
       `Available test runners: ${probeList(["vitest", "jest", "pytest", "cargo", "go"])}`,
     );
 
+    // Initialize Patchwork enrichment + decision-trace logs.
+    //
+    // These back the ctx tools (ctxQueryTraces / ctxGetTaskContext /
+    // ctxSaveTrace / getCommitsForIssue) which are advertised as standard
+    // full-mode tools regardless of orchestration. They MUST be created even
+    // on the default `driver: "none"` bridge — otherwise the decision-trace
+    // WRITE path and the enrichment reverse-lookup silently disappear and
+    // ctxSaveTrace returns tool-not-found.
+    const patchworkDir = path.join(os.homedir(), ".patchwork");
+    this.commitIssueLinkLog = new CommitIssueLinkLog({
+      dir: patchworkDir,
+      logger: this.logger,
+    });
+    this.decisionTraceLog = new DecisionTraceLog({
+      dir: patchworkDir,
+      logger: this.logger,
+    });
+
     // 2. Initialize Claude driver and orchestrator (if configured)
     if (this.config.driver !== "none") {
       const driver = createDriver(
@@ -984,16 +1002,6 @@ export class Bridge {
         },
         (msg) => this.logger.info(msg),
       );
-      // Patchwork: enrichment link log is useful regardless of orchestrator.
-      const patchworkDir = path.join(os.homedir(), ".patchwork");
-      this.commitIssueLinkLog = new CommitIssueLinkLog({
-        dir: patchworkDir,
-        logger: this.logger,
-      });
-      this.decisionTraceLog = new DecisionTraceLog({
-        dir: patchworkDir,
-        logger: this.logger,
-      });
       if (driver) {
         // Recipe run-history needs the orchestrator to produce anything.
         this.recipeRunLog = new RecipeRunLog({

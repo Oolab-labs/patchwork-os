@@ -118,7 +118,11 @@ describe("handleGetDiagnostics", () => {
     expect(vscode.languages.getDiagnostics).toHaveBeenCalled();
   });
 
-  it("returns all diagnostics grouped by file when no file param", async () => {
+  // Regression: the no-file branch MUST return a FLAT Diagnostic[] where each
+  // entry carries a `file` string. Returning a grouped { diagnostics } wrapper
+  // silently broke bridge consumers (contextBundle / getProjectContext /
+  // screenshotAndAnnotate) which do `Array.isArray(result)` + read `d.file`.
+  it("returns a FLAT array (not a wrapper object) when no file param", async () => {
     const uri1 = Uri.file("/a.ts");
     const uri2 = Uri.file("/b.ts");
     const allDiags = [
@@ -127,18 +131,28 @@ describe("handleGetDiagnostics", () => {
     ];
     vi.mocked(vscode.languages.getDiagnostics).mockReturnValue(allDiags as any);
 
-    const result = (await handleGetDiagnostics({})) as {
-      diagnostics: any[];
-      truncated: boolean;
-    };
-    expect(result.diagnostics).toHaveLength(2);
-    expect(result.diagnostics[0].file).toBe("/a.ts");
-    expect(result.diagnostics[0].diagnostics).toHaveLength(1);
-    expect(result.diagnostics[1].diagnostics).toHaveLength(2);
-    expect(result.truncated).toBe(false);
+    const result = await handleGetDiagnostics({});
+
+    // The crux of the bug fix: a flat array, not an object.
+    expect(Array.isArray(result)).toBe(true);
+    const arr = result as Array<Record<string, unknown>>;
+    expect(arr).toHaveLength(3); // 1 from a.ts + 2 from b.ts, flattened
+
+    // Every entry must include a `file` string (the inner grouped entries
+    // produced by diagnosticToJson did NOT have one).
+    for (const entry of arr) {
+      expect(typeof entry.file).toBe("string");
+      expect((entry.file as string).length).toBeGreaterThan(0);
+    }
+
+    // Files are preserved per-entry.
+    expect(arr[0].file).toBe("/a.ts");
+    expect(arr[0].message).toBe("a1");
+    expect(arr[1].file).toBe("/b.ts");
+    expect(arr[2].file).toBe("/b.ts");
   });
 
-  it("caps all-diagnostics at 500", async () => {
+  it("caps all-diagnostics at 500 (flat)", async () => {
     const uri = Uri.file("/big.ts");
     const manyDiags = Array.from({ length: 600 }, (_, i) =>
       makeDiag({ message: `err${i}` }),
@@ -147,12 +161,25 @@ describe("handleGetDiagnostics", () => {
       [uri, manyDiags],
     ] as any);
 
-    const result = (await handleGetDiagnostics({})) as {
-      diagnostics: any[];
-      truncated: boolean;
-    };
-    expect(result.diagnostics[0].diagnostics).toHaveLength(500);
-    expect(result.truncated).toBe(true);
+    const result = (await handleGetDiagnostics({})) as any[];
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(500);
+    expect(result[0].file).toBe("/big.ts");
+  });
+
+  it("caps across multiple files (flat)", async () => {
+    const uri1 = Uri.file("/one.ts");
+    const uri2 = Uri.file("/two.ts");
+    vi.mocked(vscode.languages.getDiagnostics).mockReturnValue([
+      [uri1, Array.from({ length: 400 }, () => makeDiag())],
+      [uri2, Array.from({ length: 400 }, () => makeDiag())],
+    ] as any);
+
+    const result = (await handleGetDiagnostics({})) as any[];
+    expect(result).toHaveLength(500);
+    // First 400 from /one.ts, then 100 from /two.ts.
+    expect(result[0].file).toBe("/one.ts");
+    expect(result[499].file).toBe("/two.ts");
   });
 
   it("skips files with zero diagnostics", async () => {
@@ -160,11 +187,8 @@ describe("handleGetDiagnostics", () => {
     vi.mocked(vscode.languages.getDiagnostics).mockReturnValue([
       [uri, []],
     ] as any);
-    const result = (await handleGetDiagnostics({})) as {
-      diagnostics: any[];
-      truncated: boolean;
-    };
-    expect(result.diagnostics).toHaveLength(0);
-    expect(result.truncated).toBe(false);
+    const result = (await handleGetDiagnostics({})) as any[];
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(0);
   });
 });

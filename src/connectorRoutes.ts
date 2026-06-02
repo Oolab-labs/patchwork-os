@@ -2361,5 +2361,652 @@ export function tryHandleConnectorRoute(
     return true;
   }
 
+  // ── Resend routes ───────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/resend/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/resend.js");
+      return m.handleResendConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/resend/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleResendTest } = await import("./connectors/resend.js");
+        const result = await handleResendTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (parsedUrl.pathname === "/connections/resend" && req.method === "DELETE") {
+    void (async () => {
+      try {
+        const { handleResendDisconnect } = await import(
+          "./connectors/resend.js"
+        );
+        const result = handleResendDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Obsidian routes ─────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/obsidian/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/obsidian.js");
+      return m.handleObsidianConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/obsidian/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleObsidianTest } = await import("./connectors/obsidian.js");
+        const result = await handleObsidianTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/obsidian" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleObsidianDisconnect } = await import(
+          "./connectors/obsidian.js"
+        );
+        const result = handleObsidianDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Todoist routes ──────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/todoist/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/todoist.js");
+      return m.handleTodoistConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/todoist/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleTodoistTest } = await import("./connectors/todoist.js");
+        const result = await handleTodoistTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/todoist" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleTodoistDisconnect } = await import(
+          "./connectors/todoist.js"
+        );
+        const result = handleTodoistDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Vercel routes ───────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/vercel/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/vercel.js");
+      return m.handleVercelConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/vercel/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleVercelTest } = await import("./connectors/vercel.js");
+        const result = await handleVercelTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (parsedUrl.pathname === "/connections/vercel" && req.method === "DELETE") {
+    void (async () => {
+      try {
+        const { handleVercelDisconnect } = await import(
+          "./connectors/vercel.js"
+        );
+        const result = handleVercelDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Paystack routes ─────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/paystack/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/paystack.js");
+      return m.handlePaystackConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/paystack/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handlePaystackTest } = await import("./connectors/paystack.js");
+        const result = await handlePaystackTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/paystack" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handlePaystackDisconnect } = await import(
+          "./connectors/paystack.js"
+        );
+        const result = handlePaystackDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Pipedrive routes ────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/pipedrive/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/pipedrive.js");
+      return m.handlePipedriveConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/pipedrive/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handlePipedriveTest } = await import(
+          "./connectors/pipedrive.js"
+        );
+        const result = await handlePipedriveTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/pipedrive" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handlePipedriveDisconnect } = await import(
+          "./connectors/pipedrive.js"
+        );
+        const result = handlePipedriveDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Cal.diy routes ──────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/caldiy/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/caldiy.js");
+      return m.handleCalDiyConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/caldiy/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleCalDiyTest } = await import("./connectors/caldiy.js");
+        const result = await handleCalDiyTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (parsedUrl.pathname === "/connections/caldiy" && req.method === "DELETE") {
+    void (async () => {
+      try {
+        const { handleCalDiyDisconnect } = await import(
+          "./connectors/caldiy.js"
+        );
+        const result = handleCalDiyDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Grafana routes ──────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/grafana/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/grafana.js");
+      return m.handleGrafanaConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/grafana/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleGrafanaTest } = await import("./connectors/grafana.js");
+        const result = await handleGrafanaTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/grafana" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleGrafanaDisconnect } = await import(
+          "./connectors/grafana.js"
+        );
+        const result = handleGrafanaDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── PostHog routes ──────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/posthog/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/posthog.js");
+      return m.handlePostHogConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/posthog/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handlePostHogTest } = await import("./connectors/posthog.js");
+        const result = await handlePostHogTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/posthog" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handlePostHogDisconnect } = await import(
+          "./connectors/posthog.js"
+        );
+        const result = handlePostHogDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Cloudflare routes ───────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/cloudflare/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/cloudflare.js");
+      return m.handleCloudflareConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/cloudflare/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleCloudflareTest } = await import(
+          "./connectors/cloudflare.js"
+        );
+        const result = await handleCloudflareTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/cloudflare" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleCloudflareDisconnect } = await import(
+          "./connectors/cloudflare.js"
+        );
+        const result = handleCloudflareDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── CircleCI routes ─────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/circleci/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/circleci.js");
+      return m.handleCircleCIConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/circleci/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleCircleCITest } = await import("./connectors/circleci.js");
+        const result = await handleCircleCITest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/circleci" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleCircleCIDisconnect } = await import(
+          "./connectors/circleci.js"
+        );
+        const result = handleCircleCIDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── WooCommerce routes ──────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/woocommerce/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/woocommerce.js");
+      return m.handleWooCommerceConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/woocommerce/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleWooCommerceTest } = await import(
+          "./connectors/woocommerce.js"
+        );
+        const result = await handleWooCommerceTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/woocommerce" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleWooCommerceDisconnect } = await import(
+          "./connectors/woocommerce.js"
+        );
+        const result = handleWooCommerceDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
+  // ── Supabase routes ─────────────────────────────────────────────
+  if (
+    parsedUrl.pathname === "/connections/supabase/connect" &&
+    req.method === "POST"
+  ) {
+    void dispatchConnectorConnect(req, res, async () => {
+      const m = await import("./connectors/supabase.js");
+      return m.handleSupabaseConnect;
+    });
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/supabase/test" &&
+    req.method === "POST"
+  ) {
+    void (async () => {
+      try {
+        const { handleSupabaseTest } = await import("./connectors/supabase.js");
+        const result = await handleSupabaseTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/supabase" &&
+    req.method === "DELETE"
+  ) {
+    void (async () => {
+      try {
+        const { handleSupabaseDisconnect } = await import(
+          "./connectors/supabase.js"
+        );
+        const result = handleSupabaseDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
   return false;
 }

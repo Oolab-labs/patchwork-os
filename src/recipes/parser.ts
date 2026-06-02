@@ -125,6 +125,28 @@ function parseTrigger(raw: unknown): Trigger {
       return { type: "git_hook", event: t.event };
     case "manual":
       return { type: "manual" };
+    case "chained":
+      // Chained recipes route to the ChainedRecipeRunner (dispatchRecipe).
+      // No required trigger fields — step-level awaits/parallel/vars drive
+      // execution. Parity with validateRecipeDefinition + the JSON schema
+      // so a recipe that lints + runs can also be installed.
+      return { type: "chained" };
+    case "on_file_save":
+      // Runtime file-save trigger. `glob`/`filter` are optional; preserve
+      // them when present so the on-disk JSON round-trip keeps the author's
+      // intent.
+      return {
+        type: "on_file_save",
+        ...(typeof t.glob === "string" ? { glob: t.glob } : {}),
+        ...(typeof t.filter === "string" ? { filter: t.filter } : {}),
+      };
+    case "on_test_run":
+      // Runtime test-run trigger. `filter` ("any" | "failure" |
+      // "pass-after-fail") is optional; preserve when present.
+      return {
+        type: "on_test_run",
+        ...(typeof t.filter === "string" ? { filter: t.filter } : {}),
+      };
     default:
       throw new RecipeParseError(`unknown trigger type '${String(t.type)}'`, [
         "trigger",

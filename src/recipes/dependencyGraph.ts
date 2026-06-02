@@ -18,6 +18,15 @@ export interface DependencyGraph {
   steps: StepDependency[];
   hasCycles: boolean;
   topologicalOrder: string[];
+  /**
+   * `awaits:` targets that reference a step id that does not exist. A
+   * phantom target is skipped by cycle-detection (so `hasCycles` stays
+   * false) but, if counted in Kahn's in-degree, would silently drop the
+   * awaiting step and its dependents from `topologicalOrder` — they'd
+   * never run, yet the run would report success. Callers MUST reject the
+   * run when this is non-empty. Sorted + de-duplicated.
+   */
+  unknownAwaitTargets: string[];
 }
 
 export interface ExecutionOptions {
@@ -37,6 +46,19 @@ export function buildDependencyGraph(
     awaits: s.awaits ?? [],
     index,
   }));
+
+  // Collect every declared step id so we can tell a real dependency edge
+  // from a phantom one. A phantom `awaits:` target (no matching step) must
+  // NOT be counted as an in-degree edge — otherwise Kahn's algorithm never
+  // decrements it and silently drops the awaiting step + its dependents
+  // from the topological order while the run still reports success.
+  const knownStepIds = new Set(nodes.map((n) => n.stepId));
+  const unknownTargets = new Set<string>();
+  for (const node of nodes) {
+    for (const depId of node.awaits) {
+      if (!knownStepIds.has(depId)) unknownTargets.add(depId);
+    }
+  }
 
   // Detect cycles using DFS
   const visited = new Set<string>();
@@ -76,8 +98,11 @@ export function buildDependencyGraph(
   const adjacency = new Map<string, string[]>();
 
   for (const node of nodes) {
-    inDegree.set(node.stepId, node.awaits.length);
-    for (const dep of node.awaits) {
+    // Only count edges to REAL steps. Counting phantom targets here is the
+    // root cause of the silent-drop bug — see `unknownTargets` above.
+    const realAwaits = node.awaits.filter((dep) => knownStepIds.has(dep));
+    inDegree.set(node.stepId, realAwaits.length);
+    for (const dep of realAwaits) {
       if (!adjacency.has(dep)) adjacency.set(dep, []);
       adjacency.get(dep)?.push(node.stepId);
     }
@@ -106,6 +131,7 @@ export function buildDependencyGraph(
     steps: nodes,
     hasCycles: cycles.length > 0,
     topologicalOrder,
+    unknownAwaitTargets: [...unknownTargets].sort(),
   };
 }
 

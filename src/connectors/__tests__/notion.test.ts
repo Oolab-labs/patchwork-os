@@ -216,3 +216,44 @@ describe("handleNotionDisconnect", () => {
     expect(JSON.parse(result.body).ok).toBe(true);
   });
 });
+
+describe("clearTokens deletes secure storage", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    delete process.env.NOTION_TOKEN;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock("../tokenStorage.js");
+  });
+
+  it("calls deleteSecretJsonSync('notion') so the real token is removed", async () => {
+    const deleteSecretJsonSync = vi.fn();
+    vi.doMock("../tokenStorage.js", () => ({
+      getSecretJsonSync: vi.fn(() => null),
+      storeSecretJsonSync: vi.fn(),
+      deleteSecretJsonSync,
+    }));
+
+    const { clearTokens } = await import("../notion.js");
+    clearTokens();
+
+    expect(deleteSecretJsonSync).toHaveBeenCalledWith("notion");
+  });
+
+  it("still succeeds (does not throw) if deleteSecretJsonSync throws", async () => {
+    const deleteSecretJsonSync = vi.fn(() => {
+      throw new Error("keychain locked");
+    });
+    vi.doMock("../tokenStorage.js", () => ({
+      getSecretJsonSync: vi.fn(() => null),
+      storeSecretJsonSync: vi.fn(),
+      deleteSecretJsonSync,
+    }));
+
+    const { clearTokens } = await import("../notion.js");
+    expect(() => clearTokens()).not.toThrow();
+    expect(deleteSecretJsonSync).toHaveBeenCalledWith("notion");
+  });
+});

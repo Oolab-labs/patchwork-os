@@ -132,7 +132,7 @@ describe("registerAllTools — options-object overload", () => {
     expect(registered).toContain("ctxSaveTrace");
   });
 
-  it("does NOT register ctxSaveTrace when decisionTraceLog is missing", () => {
+  it("registers ctxSaveTrace even without an injected decisionTraceLog (falls back to a default ~/.patchwork store, so the ctx write path is available on a default driver=none bridge)", () => {
     const { transport, extensionClient, registered } = makeMinimalDeps();
     registerAllTools({
       transport: transport as never,
@@ -141,7 +141,7 @@ describe("registerAllTools — options-object overload", () => {
       probes: probes as never,
       extensionClient: extensionClient as never,
     });
-    expect(registered).not.toContain("ctxSaveTrace");
+    expect(registered).toContain("ctxSaveTrace");
   });
 
   it("registers getCommitsForIssue and enrichCommit when commitIssueLinkLog is provided", () => {

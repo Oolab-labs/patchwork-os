@@ -71,6 +71,38 @@ describe("parseRecipe", () => {
     }
   });
 
+  // Regression: parser.ts rejected `chained`, `on_file_save`, and
+  // `on_test_run` even though validateRecipeDefinition, the JSON schema,
+  // and the runtime (chainedRunner / dispatchRecipe / yamlRunner) all
+  // support them. A recipe that lints + runs could NOT be installed
+  // because the install path goes through parseRecipe.
+  describe("runtime trigger types accepted by parser (parity with validation/schema)", () => {
+    it("accepts a chained trigger", () => {
+      const r = parseRecipe({ ...VALID, trigger: { type: "chained" } });
+      expect(r.trigger.type).toBe("chained");
+    });
+
+    it("accepts an on_file_save trigger and preserves glob", () => {
+      const r = parseRecipe({
+        ...VALID,
+        trigger: { type: "on_file_save", glob: "**/*.ts" },
+      });
+      expect(r.trigger.type).toBe("on_file_save");
+      const serialized = JSON.parse(JSON.stringify(r));
+      expect(serialized.trigger.glob).toBe("**/*.ts");
+    });
+
+    it("accepts an on_test_run trigger and preserves filter", () => {
+      const r = parseRecipe({
+        ...VALID,
+        trigger: { type: "on_test_run", filter: "failure" },
+      });
+      expect(r.trigger.type).toBe("on_test_run");
+      const serialized = JSON.parse(JSON.stringify(r));
+      expect(serialized.trigger.filter).toBe("failure");
+    });
+  });
+
   // Regression: the marketplace install flow was broken because parser.ts
   // only accepted the legacy boolean discriminator (`agent: true | false`)
   // while the canonical schema, the runtime executor, every bundled

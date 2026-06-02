@@ -870,6 +870,104 @@ describe("OrchestratorBridge lazy tool exposure: switchWorkspace swaps tool list
   });
 });
 
+// ── reconcileClients: leak + stale-token guard ───────────────────────────────
+
+describe("OrchestratorBridge.reconcileClients", () => {
+  interface FakeClient {
+    port: number;
+    token: string;
+    destroyed: boolean;
+    destroy(): void;
+  }
+
+  function makeFakeClient(port: number, token: string): FakeClient {
+    return {
+      port,
+      token,
+      destroyed: false,
+      destroy() {
+        this.destroyed = true;
+      },
+    };
+  }
+
+  function makeBridge(port: number, authToken: string) {
+    return { port, authToken } as { port: number; authToken: string };
+  }
+
+  it("destroys and removes clients whose port left the registry", () => {
+    const clientMap = new Map<number, FakeClient>();
+    const stale = makeFakeClient(4001, "tok-a");
+    const kept = makeFakeClient(4002, "tok-b");
+    clientMap.set(4001, stale);
+    clientMap.set(4002, kept);
+
+    const created: number[] = [];
+    OrchestratorBridge.reconcileClients(
+      clientMap as unknown as Map<number, ChildBridgeClient>,
+      [makeBridge(4002, "tok-b")], // 4001 disappeared
+      (port, token) => {
+        created.push(port);
+        return makeFakeClient(port, token) as unknown as ChildBridgeClient;
+      },
+    );
+
+    // Stale client destroyed + removed
+    expect(stale.destroyed).toBe(true);
+    expect(clientMap.has(4001)).toBe(false);
+    // Surviving client untouched
+    expect(kept.destroyed).toBe(false);
+    expect(clientMap.get(4002)).toBe(kept as unknown as ChildBridgeClient);
+    // No recreation for the unchanged-token survivor
+    expect(created).toEqual([]);
+  });
+
+  it("destroys and recreates a client whose authToken changed (PID/port reuse)", () => {
+    const clientMap = new Map<number, FakeClient>();
+    const old = makeFakeClient(5001, "old-token");
+    clientMap.set(5001, old);
+
+    const created: Array<{ port: number; token: string }> = [];
+    OrchestratorBridge.reconcileClients(
+      clientMap as unknown as Map<number, ChildBridgeClient>,
+      [makeBridge(5001, "new-token")], // same port, different token
+      (port, token) => {
+        created.push({ port, token });
+        return makeFakeClient(port, token) as unknown as ChildBridgeClient;
+      },
+    );
+
+    // Old stale-token client destroyed
+    expect(old.destroyed).toBe(true);
+    // Recreated with the new token
+    expect(created).toEqual([{ port: 5001, token: "new-token" }]);
+    const replacement = clientMap.get(5001) as unknown as FakeClient;
+    expect(replacement).toBeDefined();
+    expect(replacement.token).toBe("new-token");
+    expect(replacement.destroyed).toBe(false);
+  });
+
+  it("leaves a client untouched when port and token are unchanged", () => {
+    const clientMap = new Map<number, FakeClient>();
+    const client = makeFakeClient(6001, "tok");
+    clientMap.set(6001, client);
+
+    const created: number[] = [];
+    OrchestratorBridge.reconcileClients(
+      clientMap as unknown as Map<number, ChildBridgeClient>,
+      [makeBridge(6001, "tok")],
+      (port, token) => {
+        created.push(port);
+        return makeFakeClient(port, token) as unknown as ChildBridgeClient;
+      },
+    );
+
+    expect(client.destroyed).toBe(false);
+    expect(clientMap.get(6001)).toBe(client as unknown as ChildBridgeClient);
+    expect(created).toEqual([]);
+  });
+});
+
 /**
  * Spin up a child bridge that serves a custom tool list (no echo fallback).
  */

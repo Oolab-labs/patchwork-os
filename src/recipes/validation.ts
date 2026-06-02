@@ -161,7 +161,35 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
             });
           }
         }
+
+        // Unconditional risk-enum check. `risk` was previously never
+        // validated here (the parser casts it; the JSON-schema enum is
+        // gated behind FLAG_SCHEMA_LINT, which defaults off). A typo like
+        // `risk: "hgh"` silently fell through the compiler's risk bucketer
+        // to `allow` — fail-open. Flag any out-of-enum value as an error so
+        // `recipe lint` / `doctor` catch it before a run. Reads risk from
+        // the top-level step AND the nested agent object (both forms occur).
+        const stepAgent =
+          step.agent && typeof step.agent === "object"
+            ? (step.agent as Record<string, unknown>)
+            : undefined;
+        const riskValue = step.risk ?? stepAgent?.risk;
+        if (
+          riskValue !== undefined &&
+          riskValue !== "low" &&
+          riskValue !== "medium" &&
+          riskValue !== "high"
+        ) {
+          issues.push({
+            level: "error",
+            message: `Step ${i + 1}: invalid risk '${String(riskValue)}' — must be one of: low, medium, high`,
+            code: "risk-enum",
+            path: `steps.${i}.risk`,
+          });
+        }
       }
+
+      validateAwaitsTargets(r, recipe, issues);
 
       validateTemplateReferences(r, issues, collectParallelEachKeys(recipe));
     }
@@ -184,6 +212,121 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
     warnings,
     errors,
   };
+}
+
+/**
+ * Validate step `awaits:` targets against the set of declared step ids.
+ *
+ * An `awaits:` target that matches no real step is a recipe-authoring bug
+ * that the runtime can't recover from: the cycle-detection DFS skips the
+ * phantom edge (so `hasCycles` stays false), but Kahn's algorithm counts it
+ * in the awaiting step's in-degree and never decrements it — so the
+ * awaiting step AND all its transitive dependents silently drop out of the
+ * topological order, never run, and the run STILL reports success. Flag it
+ * statically so `recipe lint` / `doctor` catch it before any run.
+ *
+ * Known-id collection runs over BOTH:
+ *   - the NORMALIZED recipe (`normalizedRecipe.steps`) — `awaits:` clauses
+ *     live here, and `flattenValidationSteps` has already hoisted parallel
+ *     children to top level (so child ids are present), AND
+ *   - the RAW recipe (`rawRecipe.steps`) — still carries the `parallel:`
+ *     CONTAINER ids that flattening drops.
+ *
+ * The union matters because `awaits: [<parallel-group-id>]` is VALID at
+ * runtime: `chainedRunner.expandParallelSteps` rewrites a group-id await to
+ * the expanded child ids. Collecting from the raw steps keeps those
+ * container ids in `knownIds` so a legitimate group-await isn't flagged,
+ * while a genuine typo (`gather2`) — present in neither list — still errors.
+ */
+function validateAwaitsTargets(
+  normalizedRecipe: Record<string, unknown>,
+  rawRecipe: unknown,
+  issues: LintIssue[],
+): void {
+  const steps = Array.isArray(normalizedRecipe.steps)
+    ? (normalizedRecipe.steps as Array<Record<string, unknown>>)
+    : [];
+  if (steps.length === 0) return;
+
+  const knownIds = new Set<string>();
+  const collectIds = (list: Array<Record<string, unknown>>): void => {
+    for (const step of list) {
+      if (!step || typeof step !== "object") continue;
+      if (typeof step.id === "string") knownIds.add(step.id);
+      if (Array.isArray(step.parallel)) {
+        collectIds(step.parallel as Array<Record<string, unknown>>);
+      } else if (
+        step.parallel &&
+        typeof step.parallel === "object" &&
+        Array.isArray((step.parallel as Record<string, unknown>).steps)
+      ) {
+        collectIds(
+          (step.parallel as Record<string, unknown>).steps as Array<
+            Record<string, unknown>
+          >,
+        );
+      }
+    }
+  };
+  // Collect from the flattened (normalized) list first — child ids + any
+  // top-level ids.
+  collectIds(steps);
+  // Then collect from the RAW recipe steps so parallel-group CONTAINER ids
+  // (which `flattenValidationSteps` strips) are recognised as valid await
+  // targets. `collectIds` recurses into `parallel:` arrays / map-reduce
+  // `{steps}` blocks, picking up both the container id and its children.
+  if (
+    rawRecipe &&
+    typeof rawRecipe === "object" &&
+    !Array.isArray(rawRecipe) &&
+    Array.isArray((rawRecipe as Record<string, unknown>).steps)
+  ) {
+    collectIds(
+      (rawRecipe as Record<string, unknown>).steps as Array<
+        Record<string, unknown>
+      >,
+    );
+  }
+
+  const checkAwaits = (
+    list: Array<Record<string, unknown>>,
+    label: (i: number) => string,
+  ): void => {
+    for (let i = 0; i < list.length; i++) {
+      const step = list[i];
+      if (!step || typeof step !== "object") continue;
+      if (Array.isArray(step.awaits)) {
+        for (const target of step.awaits) {
+          if (typeof target === "string" && !knownIds.has(target)) {
+            issues.push({
+              level: "error",
+              message: `${label(i)}: awaits unknown step '${target}' — no step with that id exists. The step (and everything depending on it) would silently never run.`,
+              code: "unknown-awaits-target",
+              path: `steps.${i}.awaits`,
+            });
+          }
+        }
+      }
+      if (Array.isArray(step.parallel)) {
+        checkAwaits(
+          step.parallel as Array<Record<string, unknown>>,
+          (j) => `${label(i)}.parallel[${j}]`,
+        );
+      } else if (
+        step.parallel &&
+        typeof step.parallel === "object" &&
+        Array.isArray((step.parallel as Record<string, unknown>).steps)
+      ) {
+        checkAwaits(
+          (step.parallel as Record<string, unknown>).steps as Array<
+            Record<string, unknown>
+          >,
+          (j) => `${label(i)}.parallel.steps[${j}]`,
+        );
+      }
+    }
+  };
+  checkAwaits(steps, (i) => `Step ${i + 1}`);
 }
 
 /**

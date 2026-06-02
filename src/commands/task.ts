@@ -7,9 +7,13 @@
  * identical across surfaces.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import {
+  findBridgeLock,
+  type LockDiscoveryDeps,
+} from "../bridgeLockDiscovery.js";
 import { QUICK_TASK_PRESET_IDS } from "../quickTaskPresets.js";
 
 interface LockInfo {
@@ -17,61 +21,86 @@ interface LockInfo {
   authToken: string;
 }
 
-function findLock(overridePort?: number): LockInfo {
-  const lockDir = path.join(
+function defaultLockDir(): string {
+  return path.join(
     process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
     "ide",
   );
+}
 
-  let lockFile: string | undefined;
-  let port: number | undefined;
+function defaultIsLive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the running bridge to dispatch a task to.
+ *
+ * Auto-discovery delegates to the shared `findBridgeLock()` primitive
+ * (filters `isBridge:true` + live PID) — the same one used by `recipe run`,
+ * `halts`, `judgments`, and `kill-switch`. The previous local implementation
+ * picked the most recently MODIFIED `*.lock` with NO isBridge filter and NO
+ * liveness check, so it could select an IDE-owned lock or a dead bridge and
+ * POST a Bearer token to the wrong port.
+ *
+ * For an explicit `--port` override we read that single lock and verify it is
+ * a live `isBridge:true` lock before returning — same guarantees as the
+ * auto-discovery path. Returns `null` (rather than process.exit) so callers
+ * can attach their own usage messaging; the `findLock()` wrapper below handles
+ * the exit-on-failure behaviour the CLI surfaces expect.
+ *
+ * `deps` is a test-injection seam (temp dir + synthetic `isLive`).
+ */
+export function findBridgeLockForTask(
+  overridePort?: number,
+  deps: LockDiscoveryDeps = {},
+): LockInfo | null {
+  const lockDir = deps.lockDir ?? defaultLockDir();
+  const isLive = deps.isLive ?? defaultIsLive;
 
   if (overridePort !== undefined) {
-    port = overridePort;
-    lockFile = path.join(lockDir, `${port}.lock`);
-    if (!existsSync(lockFile)) {
-      process.stderr.write(`Error: No lock file for port ${port}\n`);
-      process.exit(1);
-    }
-  } else {
-    let bestMtime = 0;
+    const lockFile = path.join(lockDir, `${overridePort}.lock`);
     try {
-      for (const f of readdirSync(lockDir)) {
-        if (!f.endsWith(".lock")) continue;
-        const full = path.join(lockDir, f);
-        const mtime = statSync(full).mtimeMs;
-        if (mtime > bestMtime) {
-          bestMtime = mtime;
-          lockFile = full;
-          port = Number(path.basename(f, ".lock"));
-        }
-      }
+      const parsed = JSON.parse(readFileSync(lockFile, "utf-8")) as {
+        pid?: number;
+        authToken?: string;
+        isBridge?: boolean;
+      };
+      // Same gate as findBridgeLock: must be a live bridge, not an IDE lock.
+      if (!parsed.isBridge) return null;
+      if (!parsed.pid || !isLive(parsed.pid)) return null;
+      if (!parsed.authToken) return null;
+      return { port: overridePort, authToken: parsed.authToken };
     } catch {
-      // lock dir doesn't exist
+      return null;
     }
   }
 
-  if (!lockFile || !port) {
+  const found = findBridgeLock({ lockDir, isLive });
+  if (!found?.authToken) return null;
+  return { port: found.port, authToken: found.authToken };
+}
+
+function findLock(overridePort?: number): LockInfo {
+  const lock = findBridgeLockForTask(overridePort);
+  if (lock) return lock;
+
+  if (overridePort !== undefined) {
     process.stderr.write(
-      `Error: No bridge lock file found in ${lockDir}\n` +
-        "Start the bridge first: claude-ide-bridge --watch --full --driver subprocess\n",
+      `Error: No live bridge lock for port ${overridePort} ` +
+        "(missing, IDE-owned, or dead process).\n",
     );
     process.exit(1);
   }
-
-  try {
-    const data = JSON.parse(readFileSync(lockFile, "utf-8")) as {
-      authToken?: string;
-    };
-    if (!data.authToken) {
-      process.stderr.write("Error: Lock file has no authToken\n");
-      process.exit(1);
-    }
-    return { port, authToken: data.authToken };
-  } catch {
-    process.stderr.write(`Error: Could not read lock file ${lockFile}\n`);
-    process.exit(1);
-  }
+  process.stderr.write(
+    `Error: No live bridge found in ${defaultLockDir()}\n` +
+      "Start the bridge first: claude-ide-bridge --watch --full --driver subprocess\n",
+  );
+  process.exit(1);
 }
 
 interface QuickTaskResponse {

@@ -2,6 +2,7 @@ import {
   createReadStream,
   existsSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -11,6 +12,10 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  decryptTraceBundle,
+  isEncryptedTraceBundle,
+} from "../../traceEncryption.js";
 import { runTracesExport, TRACES_EXPORT_VERSION } from "../tracesExport.js";
 
 interface ParsedBundle {
@@ -247,5 +252,98 @@ describe("runTracesExport", () => {
         result.outputPath,
       ),
     ).toBe(true);
+  });
+
+  describe("keyed (encrypted) mode", () => {
+    it("mode=keyed with a passphrase writes a .enc bundle that round-trips", async () => {
+      const decisionRows = [
+        { id: "d1", traceType: "approval", key: "Bash", decidedAt: 100 },
+        { id: "d2", traceType: "approval", key: "Read", decidedAt: 200 },
+      ];
+      writeFileSync(
+        path.join(patchworkDir, "decision_traces.jsonl"),
+        `${decisionRows.map((r) => JSON.stringify(r)).join("\n")}\n`,
+      );
+
+      const out = path.join(tmpRoot, "bundle.enc");
+      const result = await runTracesExport({
+        patchworkDir,
+        activityDir,
+        output: out,
+        mode: "keyed",
+        passphrase: "correct horse battery staple",
+      });
+
+      // The written file must be the encrypted bundle, not plain gzip.
+      expect(result.outputPath).toBe(out);
+      expect(existsSync(out)).toBe(true);
+      const raw = readFileSync(out);
+      expect(isEncryptedTraceBundle(raw)).toBe(true);
+
+      // No leftover intermediate plain bundle.
+      expect(existsSync(`${out}.jsonl.gz`)).toBe(false);
+
+      // Decrypt → gunzip → JSONL recovers the original rows.
+      const plainGz = decryptTraceBundle(raw, "correct horse battery staple");
+      const tmpGz = path.join(tmpRoot, "decrypted.jsonl.gz");
+      writeFileSync(tmpGz, plainGz);
+      const bundle = await readBundle(tmpGz);
+      expect(bundle.manifest.type).toBe("manifest");
+      expect(bundle.manifest.version).toBe(TRACES_EXPORT_VERSION);
+      const exported = bundle.rows
+        .filter((r) => r.source === "decision_traces")
+        .map((r) => r.entry);
+      expect(exported).toEqual(decisionRows);
+    });
+
+    it("default keyed output filename ends in .enc", async () => {
+      writeFileSync(
+        path.join(patchworkDir, "runs.jsonl"),
+        `${JSON.stringify({ seq: 1 })}\n`,
+      );
+      const result = await runTracesExport({
+        patchworkDir,
+        activityDir,
+        mode: "keyed",
+        passphrase: "pw",
+      });
+      expect(result.outputPath.endsWith(".enc")).toBe(true);
+      expect(isEncryptedTraceBundle(readFileSync(result.outputPath))).toBe(
+        true,
+      );
+    });
+
+    it("mode=keyed without a passphrase throws a clear error", async () => {
+      writeFileSync(
+        path.join(patchworkDir, "runs.jsonl"),
+        `${JSON.stringify({ seq: 1 })}\n`,
+      );
+      await expect(
+        runTracesExport({
+          patchworkDir,
+          activityDir,
+          output: path.join(tmpRoot, "bundle.enc"),
+          mode: "keyed",
+        }),
+      ).rejects.toThrow(/passphrase/i);
+    });
+
+    it("mode=public (default) still writes a plain gzip bundle", async () => {
+      writeFileSync(
+        path.join(patchworkDir, "runs.jsonl"),
+        `${JSON.stringify({ seq: 1 })}\n`,
+      );
+      const result = await runTracesExport({
+        patchworkDir,
+        activityDir,
+        output: path.join(tmpRoot, "plain.jsonl.gz"),
+        mode: "public",
+      });
+      const raw = readFileSync(result.outputPath);
+      expect(isEncryptedTraceBundle(raw)).toBe(false);
+      // gzip magic bytes
+      expect(raw[0]).toBe(0x1f);
+      expect(raw[1]).toBe(0x8b);
+    });
   });
 });

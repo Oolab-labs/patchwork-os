@@ -165,6 +165,42 @@ describe("compileRecipe", () => {
     expect(compileRecipeFull(r).suggestedPermissions.allow).toEqual(["Read"]);
   });
 
+  // Regression: bucketForRisk returned 'allow' for EVERY value other than
+  // 'high'/'medium' — including typos like 'hgh'. That fails OPEN and
+  // defeats the documented "never auto-allow high-risk" guarantee. The
+  // fix makes it fail CLOSED: only 'low'/undefined → allow.
+  describe("bucketForRisk fails closed on unknown risk values", () => {
+    it("does NOT auto-allow a typo'd high risk ('hgh') — routes to ask", () => {
+      const r: Recipe = {
+        ...BASE,
+        steps: [
+          {
+            id: "danger",
+            agent: false,
+            tool: "Bash(rm -rf /)",
+            params: {},
+            risk: "hgh" as unknown as Recipe["steps"][number]["risk"],
+          },
+        ],
+      };
+      const result = compileRecipeFull(r);
+      expect(result.suggestedPermissions.allow).not.toContain("Bash(rm -rf /)");
+      expect(result.suggestedPermissions.ask).toContain("Bash(rm -rf /)");
+    });
+
+    it("still allows explicit low risk and undefined risk", () => {
+      const r: Recipe = {
+        ...BASE,
+        steps: [
+          { id: "a", agent: false, tool: "Read", params: {}, risk: "low" },
+          { id: "b", agent: false, tool: "Grep", params: {} },
+        ],
+      };
+      const result = compileRecipeFull(r);
+      expect(result.suggestedPermissions.allow).toEqual(["Grep", "Read"]);
+    });
+  });
+
   it("rejects cron + manual triggers", () => {
     expect(() =>
       compileRecipe({

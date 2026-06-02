@@ -23,9 +23,14 @@
  *
  * Scope of this PR (deliberately narrow):
  *   - In-run dedup only (Map lives for one recipe run, discarded after).
- *   - Records only on successful execution; errors don't pollute the
+ *   - Records only on successful execution; failures don't pollute the
  *     ledger, so retry-after-failure still re-executes (correct: if the
- *     tool errored, we can't assume the side effect happened).
+ *     tool failed, we can't assume the side effect happened). A failure
+ *     is EITHER a thrown/rejected error OR a resolved JSON `{ok:false}`
+ *     envelope — connector write tools (e.g. asana.create_task) catch
+ *     transient errors and RETURN `JSON.stringify({ok:false, error})`
+ *     rather than throwing, and that return-value failure must also skip
+ *     the cache (see `isReturnValueFailure` + `getOrExecute`).
  *   - No cross-run persistence — that's PR5b (disk-backed effect ledger).
  *   - No retry-time idempotency on partial-failure cases (Slack posted
  *     but HTTP timed out); that needs tool-side support and is a future
@@ -224,6 +229,35 @@ function assertSafeLedgerDir(dir: string): void {
   }
 }
 
+/**
+ * Detect a tool result that reports failure by return value rather than
+ * by throwing. Connector write tools wrap transient errors as
+ * `JSON.stringify({ok:false, error})`; such a result must NOT be cached
+ * in the effect ledger (the side effect didn't happen, so retry should
+ * re-execute).
+ *
+ * Robustness: only a JSON object literal with an explicit `ok === false`
+ * counts as a failure. `null`, non-JSON strings (`JSON.parse` throws),
+ * JSON primitives/arrays, and objects without `ok === false` (e.g.
+ * `{ok:true}`) are all treated as genuine successes and cache normally.
+ */
+function isReturnValueFailure(result: string | null): boolean {
+  if (result === null) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result);
+  } catch {
+    // Non-JSON string output — a genuine success (e.g. "Posted to #x").
+    return false;
+  }
+  return (
+    typeof parsed === "object" &&
+    parsed !== null &&
+    !Array.isArray(parsed) &&
+    (parsed as Record<string, unknown>).ok === false
+  );
+}
+
 export class WriteEffectLedger {
   private readonly cache = new Map<string, string | null>();
   private readonly inFlight = new Map<string, Promise<string | null>>();
@@ -285,7 +319,22 @@ export class WriteEffectLedger {
    * Atomically check cache + in-flight map, then execute `fn` at most once
    * per key. Concurrent callers with the same key share a single Promise —
    * fixing the TOCTOU window that existed between `has()` and `record()`.
-   * Failures are not cached so retry-after-failure still re-executes.
+   *
+   * Failures are not cached so retry-after-failure still re-executes. A
+   * failure is EITHER a rejected promise OR a resolved result that is a
+   * JSON-encoded `{ok:false, ...}` envelope. The latter case matters:
+   * connector write tools (e.g. `asana.create_task`) catch transient
+   * errors internally and RETURN `JSON.stringify({ok:false, error})`
+   * rather than throwing. If we cached that, the next retry would replay
+   * the cached failure as a silent no-op instead of re-executing — which
+   * is the entire class of "write tools that report failure by return
+   * value". So we parse the resolved result and treat `ok === false` as a
+   * failure: drop the in-flight entry, return the result to THIS caller,
+   * but do NOT record it, so a subsequent retry runs `fn` again.
+   *
+   * Genuine successes still cache: non-JSON strings (`JSON.parse` throws
+   * SyntaxError), `null`, and any JSON value without `ok === false` (e.g.
+   * `{ok:true}`) are recorded as before.
    */
   getOrExecute(
     key: string,
@@ -298,8 +347,13 @@ export class WriteEffectLedger {
     if (existing) return existing;
     const work = fn().then(
       (result) => {
-        this.record(key, result);
         this.inFlight.delete(key);
+        // Don't cache return-value failures — a resolved {ok:false}
+        // envelope means the side effect did NOT happen, so retry must
+        // re-execute. Return the result to this caller without recording.
+        if (!isReturnValueFailure(result)) {
+          this.record(key, result);
+        }
         return result;
       },
       (err: unknown) => {
