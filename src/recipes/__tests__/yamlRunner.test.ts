@@ -3409,6 +3409,13 @@ describe("recipe.budget — tokensMax enforcement (PR2b)", () => {
     expect(calls).toBe(2);
     expect(result.stepResults[0]?.status).toBe("ok");
     expect(result.stepResults[1]?.status).toBe("ok");
+    // Phase 0 pt2: the warn-mode breach warning is now surfaced on the
+    // result (RunBudget.warnings() previously had no production reader).
+    expect(result.budgetWarnings ?? []).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/token budget exceeded.*onBreach="warn"/i),
+      ]),
+    );
   });
 
   it("subscription-driver fail-open: no usage = no enforcement", async () => {
@@ -3443,6 +3450,14 @@ describe("recipe.budget — tokensMax enforcement (PR2b)", () => {
     expect(calls).toBe(2);
     expect(result.stepResults[0]?.status).toBe("ok");
     expect(result.stepResults[1]?.status).toBe("ok");
+    // Phase 0 pt2: the unmeasured-driver warning ("does not report token
+    // usage — budget enforcement skipped") is now surfaced, so a user who
+    // set a budget learns it silently did nothing for this driver.
+    expect(result.budgetWarnings ?? []).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/does not report token usage/i),
+      ]),
+    );
   });
 
   // Bug (3): the admission check used to live inside the agent branch, so a

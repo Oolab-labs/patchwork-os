@@ -213,6 +213,74 @@ function generateRecipeSchema(
       },
     },
   };
+  // Single source of truth for the `agent:` step config sub-schema. Used in
+  // BOTH the leaf-step block and the nested/parallel-step block below. These
+  // two blocks had drifted (the leaf block was missing the prompt/model/
+  // driver/into descriptions); sharing one const reconciles that and means a
+  // new agent field (e.g. the forthcoming cost-routing `downshift`) only has
+  // to be added once instead of in two parallel places. Shared by reference,
+  // matching the existing `chainedStepMetadataProperties` pattern (the schema
+  // tree is never mutated in place after generation).
+  const agentStepConfigSchema = {
+    type: "object",
+    required: ["prompt"],
+    description: "Agent step configuration",
+    properties: {
+      prompt: {
+        type: "string",
+        description: "Prompt to send to the AI (supports {{templates}})",
+      },
+      model: {
+        type: "string",
+        description: "Model to use for the agent step",
+      },
+      driver: {
+        type: "string",
+        enum: [
+          "claude",
+          "claude-code",
+          "api",
+          "openai",
+          "grok",
+          "gemini",
+          "anthropic",
+        ],
+        description: "Driver for agent execution",
+      },
+      into: {
+        type: "string",
+        description: "Variable name to store output in context",
+      },
+      mcpAccess: {
+        type: "boolean",
+        description:
+          "When true, grants the agent step access to MCP tools registered on the bridge. Defaults to false for subprocess driver steps.",
+      },
+      kind: {
+        type: "string",
+        enum: ["judge"],
+        description:
+          "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log.",
+      },
+      reviews: {
+        type: "string",
+        description:
+          "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge→refine loop.",
+      },
+      max_revisions: {
+        type: "integer",
+        minimum: 0,
+        description:
+          "OPT-IN judge→refine loop. Max revise→re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews.",
+      },
+      on_exhausted: {
+        type: "string",
+        enum: ["halt", "proceed"],
+        description:
+          "When the revision budget is exhausted and the judge still requests changes: 'halt' (default) fails the run; 'proceed' continues with the last draft.",
+      },
+    },
+  };
   const toolRefs = Object.keys(namespaceSchemas).map((ns) => ({
     allOf: [
       {
@@ -264,56 +332,7 @@ function generateRecipeSchema(
       required: ["agent"],
       properties: {
         ...chainedStepMetadataProperties,
-        agent: {
-          type: "object",
-          required: ["prompt"],
-          description: "Agent step configuration",
-          properties: {
-            prompt: { type: "string" },
-            model: { type: "string" },
-            driver: {
-              type: "string",
-              enum: [
-                "claude",
-                "claude-code",
-                "api",
-                "openai",
-                "grok",
-                "gemini",
-                "anthropic",
-              ],
-            },
-            into: { type: "string" },
-            mcpAccess: {
-              type: "boolean",
-              description:
-                "When true, grants the agent step access to MCP tools registered on the bridge. Defaults to false for subprocess driver steps.",
-            },
-            kind: {
-              type: "string",
-              enum: ["judge"],
-              description:
-                "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log.",
-            },
-            reviews: {
-              type: "string",
-              description:
-                "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge→refine loop.",
-            },
-            max_revisions: {
-              type: "integer",
-              minimum: 0,
-              description:
-                "OPT-IN judge→refine loop. Max revise→re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews.",
-            },
-            on_exhausted: {
-              type: "string",
-              enum: ["halt", "proceed"],
-              description:
-                "When the revision budget is exhausted and the judge still requests changes: 'halt' (default) fails the run; 'proceed' continues with the last draft.",
-            },
-          },
-        },
+        agent: agentStepConfigSchema,
       },
     },
     {
@@ -522,67 +541,7 @@ function generateRecipeSchema(
               required: ["agent"],
               properties: {
                 ...chainedStepMetadataProperties,
-                agent: {
-                  type: "object",
-                  required: ["prompt"],
-                  description: "Agent step configuration",
-                  properties: {
-                    prompt: {
-                      type: "string",
-                      description:
-                        "Prompt to send to the AI (supports {{templates}})",
-                    },
-                    model: {
-                      type: "string",
-                      description: "Model to use for the agent step",
-                    },
-                    driver: {
-                      type: "string",
-                      enum: [
-                        "claude",
-                        "claude-code",
-                        "api",
-                        "openai",
-                        "grok",
-                        "gemini",
-                        "anthropic",
-                      ],
-                      description: "Driver for agent execution",
-                    },
-                    into: {
-                      type: "string",
-                      description: "Variable name to store output in context",
-                    },
-                    mcpAccess: {
-                      type: "boolean",
-                      description:
-                        "When true, grants the agent step access to MCP tools registered on the bridge. Defaults to false for subprocess driver steps.",
-                    },
-                    kind: {
-                      type: "string",
-                      enum: ["judge"],
-                      description:
-                        "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log.",
-                    },
-                    reviews: {
-                      type: "string",
-                      description:
-                        "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge→refine loop.",
-                    },
-                    max_revisions: {
-                      type: "integer",
-                      minimum: 0,
-                      description:
-                        "OPT-IN judge→refine loop. Max revise→re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews.",
-                    },
-                    on_exhausted: {
-                      type: "string",
-                      enum: ["halt", "proceed"],
-                      description:
-                        "When the revision budget is exhausted and the judge still requests changes: 'halt' (default) fails the run; 'proceed' continues with the last draft.",
-                    },
-                  },
-                },
+                agent: agentStepConfigSchema,
               },
             },
             {
