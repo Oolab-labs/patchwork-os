@@ -37,6 +37,13 @@ export interface PostgresTokens {
   user?: string;
   password?: string;
   ssl?: boolean;
+  /**
+   * Opt OUT of TLS certificate verification (self-signed / internal CA setups).
+   * Defaults to verifying — see buildPgConfig. Audit 2026-06-03 (MEDIUM): the
+   * previous code disabled verification whenever `ssl` was set, silently
+   * exposing every "secure" connection to MITM.
+   */
+  sslRejectUnauthorized?: boolean;
   connected_at: string;
 }
 
@@ -411,7 +418,13 @@ function buildPgConfig(tokens: PostgresTokens): Record<string, unknown> {
     if (tokens.user) config.user = tokens.user;
     if (tokens.password) config.password = tokens.password;
   }
-  if (tokens.ssl) config.ssl = { rejectUnauthorized: false };
+  if (tokens.ssl) {
+    // Audit 2026-06-03 (MEDIUM): verify the server certificate by default.
+    // `rejectUnauthorized: false` unconditionally turned "SSL on" into
+    // "encrypted but unauthenticated" — trivially MITM-able. Self-signed /
+    // internal-CA deployments can opt out via sslRejectUnauthorized: false.
+    config.ssl = { rejectUnauthorized: tokens.sslRejectUnauthorized ?? true };
+  }
   return config;
 }
 

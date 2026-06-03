@@ -127,6 +127,33 @@ function isPrivateCimdHost(hostname: string): boolean {
   return false;
 }
 
+/**
+ * Validate a redirect_uri pulled from a Client ID Metadata Document before it
+ * is pinned as an allowed redirect target.
+ *
+ * Audit 2026-06-03 (MEDIUM): CIMD redirect_uris were accepted with only a
+ * `typeof === "string"` filter. An attacker controlling the (HTTPS, public)
+ * CIMD doc could therefore list `http://…` (downgrade), a `#fragment`
+ * (forbidden by RFC 6749 §3.1.2 and a token-smuggling vector), or
+ * `https://user:pass@…` (embedded credentials) and have the OAuth server
+ * redirect the auth code there. Require an absolute https:// URL with no
+ * fragment and no userinfo.
+ */
+export function isValidCimdRedirectUri(uri: string): boolean {
+  // Reject any fragment component on the RAW string — RFC 6749 §3.1.2. The
+  // parsed `URL.hash` is "" for a bare trailing "#", so check the literal text.
+  if (uri.includes("#")) return false;
+  let u: URL;
+  try {
+    u = new URL(uri);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:") return false;
+  if (u.username || u.password) return false;
+  return true;
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CODE_TTL_MS = 5 * 60 * 1_000; // 5 min
@@ -1090,9 +1117,12 @@ export class OAuthServerImpl implements OAuthServer {
       const doc = JSON.parse(body) as Record<string, unknown>;
       const uris = doc.redirect_uris;
       if (!Array.isArray(uris) || uris.length === 0) return null;
-      const redirectUris = uris.filter(
-        (u) => typeof u === "string",
-      ) as string[];
+      // Audit 2026-06-03 (MEDIUM): only pin https:// redirect URIs with no
+      // fragment / userinfo — a malicious CIMD doc must not be able to
+      // register an http downgrade or a fragment-smuggling redirect target.
+      const redirectUris = (uris as unknown[]).filter(
+        (u): u is string => typeof u === "string" && isValidCimdRedirectUri(u),
+      );
       if (redirectUris.length === 0) return null;
 
       this.cimdCache.set(clientIdUrl, { redirectUris, fetchedAt: Date.now() });

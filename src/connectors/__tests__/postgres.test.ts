@@ -271,6 +271,65 @@ describe("query()", () => {
   });
 });
 
+describe("TLS verification (audit 2026-06-03 MEDIUM #25)", () => {
+  it("verifies the server certificate by default when ssl is enabled", async () => {
+    const { getPostgresConnector, __setPgModuleForTest, saveTokens } =
+      await import("../postgres.js");
+    const fake = makeFakePg({ rows: [] });
+    __setPgModuleForTest(fake.pg);
+    saveTokens({
+      host: "db.example.com",
+      database: "d",
+      user: "u",
+      password: "p",
+      ssl: true,
+      connected_at: new Date().toISOString(),
+    });
+    await getPostgresConnector().query("SELECT 1");
+    const config = (fake.pg.Pool as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0]![0] as { ssl?: { rejectUnauthorized?: boolean } };
+    expect(config.ssl).toEqual({ rejectUnauthorized: true });
+  });
+
+  it("allows opting out of verification via sslRejectUnauthorized:false", async () => {
+    const { getPostgresConnector, __setPgModuleForTest, saveTokens } =
+      await import("../postgres.js");
+    const fake = makeFakePg({ rows: [] });
+    __setPgModuleForTest(fake.pg);
+    saveTokens({
+      host: "db.internal",
+      database: "d",
+      user: "u",
+      password: "p",
+      ssl: true,
+      sslRejectUnauthorized: false,
+      connected_at: new Date().toISOString(),
+    });
+    await getPostgresConnector().query("SELECT 1");
+    const config = (fake.pg.Pool as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0]![0] as { ssl?: { rejectUnauthorized?: boolean } };
+    expect(config.ssl).toEqual({ rejectUnauthorized: false });
+  });
+
+  it("omits ssl config entirely when ssl is not set", async () => {
+    const { getPostgresConnector, __setPgModuleForTest, saveTokens } =
+      await import("../postgres.js");
+    const fake = makeFakePg({ rows: [] });
+    __setPgModuleForTest(fake.pg);
+    saveTokens({
+      host: "db.local",
+      database: "d",
+      user: "u",
+      password: "p",
+      connected_at: new Date().toISOString(),
+    });
+    await getPostgresConnector().query("SELECT 1");
+    const config = (fake.pg.Pool as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0]![0] as { ssl?: unknown };
+    expect(config.ssl).toBeUndefined();
+  });
+});
+
 // ── Missing driver path ─────────────────────────────────────────────────────
 
 describe("missing pg driver", () => {
