@@ -12,6 +12,7 @@
 
 import ipaddr from "ipaddr.js";
 import { describe, expect, it } from "vitest";
+import { isValidCimdRedirectUri } from "../oauth.js";
 
 /**
  * Mirror of the production guard. Kept inline so any drift in the actual
@@ -142,5 +143,38 @@ describe("CIMD SSRF — IPv4 numeric normalization", () => {
   });
   it("blocks hex IPv4 (0x7f000001 = 127.0.0.1)", () => {
     expect(isPrivateIp("0x7f000001")).toBe(true);
+  });
+});
+
+describe("isValidCimdRedirectUri (audit 2026-06-03 MEDIUM #28)", () => {
+  it("accepts a plain https redirect URI", () => {
+    expect(isValidCimdRedirectUri("https://claude.ai/api/mcp/callback")).toBe(
+      true,
+    );
+    expect(isValidCimdRedirectUri("https://app.example.com/cb?x=1")).toBe(true);
+  });
+
+  it("rejects non-https schemes (http downgrade, custom scheme)", () => {
+    expect(isValidCimdRedirectUri("http://claude.ai/cb")).toBe(false);
+    expect(isValidCimdRedirectUri("ftp://evil/cb")).toBe(false);
+    expect(isValidCimdRedirectUri("javascript:alert(1)")).toBe(false);
+  });
+
+  it("rejects a URI carrying a #fragment (RFC 6749 §3.1.2 / smuggling)", () => {
+    expect(isValidCimdRedirectUri("https://claude.ai/cb#frag")).toBe(false);
+    expect(isValidCimdRedirectUri("https://claude.ai/cb#")).toBe(false);
+  });
+
+  it("rejects embedded userinfo credentials", () => {
+    expect(isValidCimdRedirectUri("https://user:pass@claude.ai/cb")).toBe(
+      false,
+    );
+    expect(isValidCimdRedirectUri("https://user@claude.ai/cb")).toBe(false);
+  });
+
+  it("rejects unparseable / non-absolute values", () => {
+    expect(isValidCimdRedirectUri("/relative/cb")).toBe(false);
+    expect(isValidCimdRedirectUri("not a url")).toBe(false);
+    expect(isValidCimdRedirectUri("")).toBe(false);
   });
 });
