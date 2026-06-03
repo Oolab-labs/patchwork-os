@@ -132,6 +132,12 @@ export function isReadOnlySql(sql: string): boolean {
   if (!READ_ONLY_KEYWORDS.has(kw)) return false;
   const stripped = s.replace(/;\s*$/, "");
   if (stripped.includes(";")) return false;
+  // Reject data-modifying CTEs: `WITH x AS (INSERT/UPDATE/DELETE/MERGE ...)
+  // SELECT ...` mutates despite the SELECT tail. Word-boundary match avoids
+  // false hits on identifiers like `updated_at`. Audit 2026-06-03 (HIGH #3).
+  if (kw === "with" && /\b(insert|update|delete|merge)\b/i.test(stripped)) {
+    return false;
+  }
   return true;
 }
 

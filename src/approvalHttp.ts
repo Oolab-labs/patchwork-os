@@ -13,6 +13,7 @@ import {
 } from "./ccPermissions.js";
 import { captureForRunlog } from "./recipes/stepObservation.js";
 import { classifyTool } from "./riskTier.js";
+import { isPrivateHost } from "./ssrfGuard.js";
 
 // Tools CC allows in plan mode (read-only — no filesystem or network writes).
 const PLAN_MODE_READ_TOOLS = new Set([
@@ -295,26 +296,16 @@ export async function routeApprovalRequest(
 }
 
 /**
- * Blocked IP patterns for SSRF defense.
- * Covers loopback, RFC-1918 private ranges, and link-local.
+ * Blocked IP patterns for SSRF defense (loopback, RFC-1918, link-local, ULA,
+ * IPv4-mapped IPv6, 6to4-wrapped private, etc.).
+ *
+ * Delegates to the shared, tested `isPrivateHost` (audit 2026-06-03 HIGH #5).
+ * The previous hand-rolled version split on "." and `Number()`-coerced the
+ * parts, so IPv4-mapped IPv6 (`::ffff:127.0.0.1` → `Number("::ffff:127")`=NaN)
+ * and every native IPv6 private range silently bypassed the guard.
  */
 function isBlockedIp(ip: string): boolean {
-  // IPv6 loopback
-  if (ip === "::1" || ip === "0:0:0:0:0:0:0:1") return true;
-  const parts = ip.split(".").map(Number);
-  if (parts.length !== 4) return false;
-  const [a, b] = parts as [number, number, number, number];
-  // 127.0.0.0/8 — loopback
-  if (a === 127) return true;
-  // 10.0.0.0/8 — private
-  if (a === 10) return true;
-  // 172.16.0.0/12 — private
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  // 192.168.0.0/16 — private
-  if (a === 192 && b === 168) return true;
-  // 169.254.0.0/16 — link-local
-  if (a === 169 && b === 254) return true;
-  return false;
+  return isPrivateHost(ip);
 }
 
 /**
@@ -531,10 +522,17 @@ async function dispatchNtfyApproval(
   }
 
   const callbackBase = payload.bridgeCallbackBase.replace(/\/+$/, "");
-  // Token is embedded in the URL query param — not in ntfy action headers — so the
-  // raw approvalToken is never stored as a named credential on the ntfy server.
-  const approveUrl = `${callbackBase}/approve/${payload.callId}?token=${encodeURIComponent(payload.approvalToken)}`;
-  const rejectUrl = `${callbackBase}/reject/${payload.callId}?token=${encodeURIComponent(payload.approvalToken)}`;
+  // SECURITY (audit 2026-06-03 HIGH #6): carry the single-use approval token in
+  // the x-approval-token action header, NOT a ?token= query param. URL query
+  // strings are recorded in the ntfy server's and bridge's HTTP access logs;
+  // anyone with log access could replay the token before the approver taps the
+  // button. The server reads x-approval-token first (server.ts phone-path).
+  const approveUrl = `${callbackBase}/approve/${payload.callId}`;
+  const rejectUrl = `${callbackBase}/reject/${payload.callId}`;
+  const actionHeaders = {
+    "Content-Type": "application/json",
+    "x-approval-token": payload.approvalToken,
+  };
   const body = JSON.stringify({
     topic: payload.topic,
     title: `Approve ${payload.toolName}? (${payload.tier})`,
@@ -547,7 +545,7 @@ async function dispatchNtfyApproval(
         label: "Approve",
         method: "POST",
         url: approveUrl,
-        headers: { "Content-Type": "application/json" },
+        headers: actionHeaders,
         clear: true,
       },
       {
@@ -555,7 +553,7 @@ async function dispatchNtfyApproval(
         label: "Reject",
         method: "POST",
         url: rejectUrl,
-        headers: { "Content-Type": "application/json" },
+        headers: actionHeaders,
         clear: true,
       },
     ],

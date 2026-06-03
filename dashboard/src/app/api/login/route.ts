@@ -84,24 +84,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "missing password" }, { status: 400 });
   }
 
-  const a = Buffer.from(password, "utf8");
-  const b = Buffer.from(expected, "utf8");
-  // Constant-time compare. Pad BOTH inputs to the same fixed buffer
-  // (PAD = 256) every call so the loop cost is identical regardless of
-  // either input's length, then AND with a length-equality check that
-  // runs AFTER timingSafeEqual (not before — short-circuiting on
-  // length is the same leak as not padding at all).
-  // Audit 2026-05-17 (#600): previous version padded to
-  // `max(a.length, b.length)` and short-circuited on `a.length ===
-  // b.length` BEFORE timingSafeEqual, leaking expected-password length
-  // via response time.
-  const PAD = 256;
-  const pa = Buffer.alloc(PAD);
-  const pb = Buffer.alloc(PAD);
-  if (a.length <= PAD) a.copy(pa);
-  if (b.length <= PAD) b.copy(pb);
+  // Constant-time equality of two secrets via a fixed-length padded compare.
+  //
+  // Audit 2026-06-03 (HIGH #2): the previous version padded into a 256-byte
+  // buffer but SKIPPED the copy when an input exceeded 256 bytes
+  // (`if (b.length <= PAD)`), leaving that buffer all-zeros — so two >256-byte
+  // inputs of equal length both compared as all-zeros and any same-length
+  // payload authenticated (practical for JWT-style tokens of 200-400 bytes).
+  //
+  // Fix: always copy up to a fixed CAP into equal-sized buffers (Buffer.copy
+  // bounds at min(src.length, CAP), so no overflow and — for accepted inputs —
+  // no all-zero collision), reject inputs longer than CAP, and run
+  // timingSafeEqual over the full CAP every call. The byte comparison happens
+  // FIRST; the length/cap checks are ANDed AFTER (never short-circuited before
+  // timingSafeEqual), preserving the Audit 2026-05-17 (#600) property that
+  // response time does not leak the expected password's length.
+  //
+  // This is a plain equality check (single shared secret from env), NOT
+  // password-at-rest hashing — deliberately no hash/KDF in the data path.
+  const CAP = 1024; // generous upper bound for a shared dashboard password
+  const ab = Buffer.from(password, "utf8");
+  const eb = Buffer.from(expected, "utf8");
+  const pa = Buffer.alloc(CAP);
+  const pb = Buffer.alloc(CAP);
+  ab.copy(pa, 0, 0, CAP);
+  eb.copy(pb, 0, 0, CAP);
   const bytesEqual = crypto.timingSafeEqual(pa, pb);
-  const equal = bytesEqual && a.length === b.length;
+  const equal =
+    bytesEqual &&
+    ab.length === eb.length &&
+    ab.length <= CAP &&
+    eb.length <= CAP;
 
   if (!equal) {
     // Only track failures against a real, attributable client key. The

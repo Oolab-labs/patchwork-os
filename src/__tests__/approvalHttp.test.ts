@@ -1144,20 +1144,21 @@ describe("push notification dispatch", () => {
       expect(reject).toBeDefined();
       expect(approve!.action).toBe("http");
       expect(approve!.method).toBe("POST");
-      // Token is embedded as ?token= query param in the URL rather than in action headers
-      // so the raw token is not stored as a named credential on the ntfy server.
-      expect(approve!.url).toMatch(
-        new RegExp(
-          `^https://bridge\\.example\\.com/approve/${item.callId}\\?token=.+$`,
-        ),
+      // Audit 2026-06-03 HIGH #6: the single-use approval token must travel in
+      // the x-approval-token action header, NOT the URL query string — query
+      // params land in the ntfy server's and bridge's HTTP access logs, where
+      // an attacker with log access can replay the token within its window.
+      expect(approve!.url).toBe(
+        `https://bridge.example.com/approve/${item.callId}`,
       );
-      expect(reject!.url).toMatch(
-        new RegExp(
-          `^https://bridge\\.example\\.com/reject/${item.callId}\\?token=.+$`,
-        ),
+      expect(reject!.url).toBe(
+        `https://bridge.example.com/reject/${item.callId}`,
       );
-      // x-approval-token must NOT appear in ntfy action headers.
-      expect(approve!.headers["x-approval-token"]).toBeUndefined();
+      expect(approve!.url).not.toContain("token=");
+      expect(reject!.url).not.toContain("token=");
+      // Token is carried in the action header (server reads x-approval-token first).
+      expect(approve!.headers["x-approval-token"]).toBeTruthy();
+      expect(reject!.headers["x-approval-token"]).toBeTruthy();
     } finally {
       globalThis.fetch = originalFetch;
     }

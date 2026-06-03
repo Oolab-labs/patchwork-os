@@ -3,6 +3,18 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
+// SECURITY (audit 2026-06-03 HIGH #7): share the single source of truth for
+// dangerous flags with runCommand (commandDescription.ts) instead of keeping a
+// drifted local copy. The local copy was missing curl's output-redirect flags
+// (-o/--output/-O/--remote-name/-D/--dump-header/-K/...) and the per-command
+// map, so an allowlisted curl in runInTerminal could write to arbitrary paths
+// outside the workspace — an escape runCommand already blocked.
+import {
+  DANGEROUS_FLAGS_FOR_COMMAND,
+  DANGEROUS_INTERPRETER_FLAGS,
+  DANGEROUS_PATH_FLAGS,
+  PATH_FLAG_EXEMPTIONS,
+} from "../fp/commandDescription.js";
 import {
   error,
   execSafe,
@@ -14,54 +26,6 @@ import {
   resolveFilePath,
   successStructured,
 } from "./utils.js";
-
-/**
- * Flags that allow interpreter commands to execute arbitrary code.
- * Mirrors DANGEROUS_INTERPRETER_FLAGS in runCommand.ts — applied here to
- * terminal commands where the shell is involved and quoting cannot be trusted.
- */
-const TERMINAL_DANGEROUS_INTERPRETER_FLAGS = new Set([
-  "-e",
-  "--eval",
-  "-c",
-  "--print",
-  "-p",
-  "--input-type",
-  "--import",
-  "--loader",
-  "--experimental-loader",
-  "-m",
-  "--inspect", // Node.js debugger — opens a remote debug port
-  "--inspect-brk", // Node.js debugger (break on start)
-  "--inspect-port", // Node.js debugger port override
-]);
-
-/**
- * Flags that redirect where commands read config/manifests from.
- * Mirrors DANGEROUS_PATH_FLAGS in runCommand.ts.
- */
-const TERMINAL_DANGEROUS_PATH_FLAGS = new Set([
-  "--prefix",
-  "--manifest-path",
-  "--config",
-  "--rcfile",
-  "--require",
-  "-r",
-  "--userconfig",
-  "--globalconfig",
-  "-f",
-  "--makefile",
-]);
-
-/**
- * Per-command exemptions from TERMINAL_DANGEROUS_PATH_FLAGS.
- * Mirrors PATH_FLAG_EXEMPTIONS in runCommand.ts.
- */
-const TERMINAL_PATH_FLAG_EXEMPTIONS: Record<string, Set<string>> = {
-  psql: new Set(["--config"]),
-  pg_dump: new Set(["--config"]),
-  pg_restore: new Set(["--config"]),
-};
 
 /** Environment variable names that could enable privilege escalation */
 const DANGEROUS_ENV_VARS = new Set([
@@ -114,12 +78,16 @@ function validateTerminalCommandFlags(command: string): string | undefined {
     const tok = tokens[i] ?? "";
     // Strip value for flags like --config=value → --config
     const flag = tok.split("=")[0] ?? tok;
-    if (isInterpreter && TERMINAL_DANGEROUS_INTERPRETER_FLAGS.has(flag)) {
+    if (isInterpreter && DANGEROUS_INTERPRETER_FLAGS.has(flag)) {
       return `Flag "${flag}" is not allowed for interpreter command "${cmd}" (code execution risk)`;
     }
-    const exemptions = TERMINAL_PATH_FLAG_EXEMPTIONS[cmd];
-    if (TERMINAL_DANGEROUS_PATH_FLAGS.has(flag) && !exemptions?.has(flag)) {
-      return `Flag "${flag}" is not allowed in terminal commands (config redirect risk)`;
+    const exemptions = PATH_FLAG_EXEMPTIONS[cmd];
+    if (DANGEROUS_PATH_FLAGS.has(flag) && !exemptions?.has(flag)) {
+      return `Flag "${flag}" is not allowed in terminal commands (config/output redirect risk)`;
+    }
+    // Per-command dangerous flags (e.g. curl -w/--write-out, make -f, node -r).
+    if (DANGEROUS_FLAGS_FOR_COMMAND[cmd]?.has(flag)) {
+      return `Flag "${flag}" is not allowed for command "${cmd}" (output/path redirect risk)`;
     }
   }
   return undefined;

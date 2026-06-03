@@ -16,25 +16,17 @@
  */
 
 import dns from "node:dns/promises";
+import { isPrivateHost } from "./ssrfGuard.js";
 
 /**
- * Same SSRF blocklist as `dispatchPushNotification` in approvalHttp.ts.
- * Duplicated inline to keep this dispatcher self-contained (the
- * approvalHttp version is module-private and the file is already
- * dense). If a third dispatcher ever lands, extract to a shared
- * `src/sanitizeIp.ts`.
+ * SSRF blocklist — delegates to the shared, tested `isPrivateHost`
+ * (audit 2026-06-03 HIGH #5). Previously an inline copy that, like the
+ * approvalHttp version, missed IPv4-mapped IPv6 (`::ffff:127.0.0.1`) and
+ * every native IPv6 private range because it split on "." and Number()-
+ * coerced the octets.
  */
 function isBlockedIp(ip: string): boolean {
-  if (ip === "::1" || ip === "0:0:0:0:0:0:0:1") return true;
-  const parts = ip.split(".").map(Number);
-  if (parts.length !== 4) return false;
-  const [a, b] = parts as [number, number, number, number];
-  if (a === 127) return true;
-  if (a === 10) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 169 && b === 254) return true;
-  return false;
+  return isPrivateHost(ip);
 }
 
 export interface HaltPushPayload {
