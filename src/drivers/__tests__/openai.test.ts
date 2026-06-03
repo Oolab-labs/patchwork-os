@@ -42,6 +42,21 @@ function makeStream(chunks: string[]): AsyncIterable<unknown> {
   };
 }
 
+/** Stream that ends with an include_usage final chunk (empty choices + usage). */
+function makeStreamWithUsage(
+  chunks: string[],
+  usage: { prompt_tokens: number; completion_tokens: number },
+): AsyncIterable<unknown> {
+  return {
+    [Symbol.asyncIterator]: async function* () {
+      for (const c of chunks) {
+        yield { choices: [{ delta: { content: c } }] };
+      }
+      yield { choices: [], usage };
+    },
+  };
+}
+
 describe("OpenAIApiDriver", () => {
   it("streams chunks and returns concatenated text", async () => {
     mockCreate.mockResolvedValue(makeStream(["Hello", ", ", "world"]));
@@ -57,6 +72,42 @@ describe("OpenAIApiDriver", () => {
     expect(result.text).toBe("Hello, world");
     expect(chunks).toEqual(["Hello", ", ", "world"]);
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("requests usage and captures it from the include_usage final chunk", async () => {
+    mockCreate.mockResolvedValue(
+      makeStreamWithUsage(["Hi"], { prompt_tokens: 12, completion_tokens: 8 }),
+    );
+    const driver = new OpenAIApiDriver(log);
+    const result = await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(result.text).toBe("Hi");
+    expect(result.providerMeta).toMatchObject({
+      inputTokens: 12,
+      outputTokens: 8,
+    });
+    // The usage chunk must have been requested.
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ stream_options: { include_usage: true } }),
+      expect.anything(),
+    );
+  });
+
+  it("omits token counts when the endpoint returns no usage chunk", async () => {
+    mockCreate.mockResolvedValue(makeStream(["ok"]));
+    const driver = new OpenAIApiDriver(log);
+    const result = await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+    });
+    // Fail-open: model only, no token fields (RunBudget then skips this call).
+    expect(result.providerMeta).toEqual({ model: "gpt-4o" });
   });
 
   it("returns errorMessage on API failure", async () => {

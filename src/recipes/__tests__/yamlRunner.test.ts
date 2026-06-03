@@ -2587,7 +2587,10 @@ describe("makeProviderDriverFn — surfaces provider failure cause", () => {
     const fn = makeProviderDriverFn();
     const out = await fn("openai", "hello", undefined);
     // 200-char cap on the message fragment (plus the surrounding marker text).
-    expect(out.length).toBeLessThan(260);
+    // Error paths return the bare marker string; narrow for the union.
+    expect(typeof out === "string" ? out.length : out.text.length).toBeLessThan(
+      260,
+    );
   });
 
   it("still reports generic empty-output when there is no error signal", async () => {
@@ -2597,11 +2600,25 @@ describe("makeProviderDriverFn — surfaces provider failure cause", () => {
     expect(out).toContain("returned empty output");
   });
 
-  it("returns text unchanged on success", async () => {
+  it("returns text unchanged on success (no usage → bare string)", async () => {
     mockProviderRun.mockResolvedValueOnce({ text: "all good", durationMs: 5 });
     const fn = makeProviderDriverFn();
     const out = await fn("openai", "hello", undefined);
     expect(out).toBe("all good");
+  });
+
+  it("forwards token usage when the driver reports it (Phase 1)", async () => {
+    mockProviderRun.mockResolvedValueOnce({
+      text: "all good",
+      durationMs: 5,
+      providerMeta: { model: "gpt-4o", inputTokens: 30, outputTokens: 12 },
+    });
+    const fn = makeProviderDriverFn();
+    const out = await fn("openai", "hello", undefined);
+    expect(out).toEqual({
+      text: "all good",
+      usage: { inputTokens: 30, outputTokens: 12 },
+    });
   });
 });
 
@@ -3348,6 +3365,49 @@ describe("recipe.budget — tokensMax enforcement (PR2b)", () => {
     });
     expect(calls).toBe(1); // second admission refused
     expect(result.stepResults).toHaveLength(2);
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(result.stepResults[1]?.status).toBe("error");
+    expect(result.stepResults[1]?.haltReason).toMatch(/budget_exceeded/);
+  });
+
+  it("enforces the budget on the openai/grok/gemini path (Phase 1: these now report usage)", async () => {
+    // Before Phase 1, makeProviderDriverFn returned a bare string and usage
+    // was dropped, so openai/grok/gemini agent steps ALWAYS failed open even
+    // with a budget set. With usage now forwarded, the provider path halts
+    // like the anthropic path does.
+    const recipe = makeRecipe({
+      budget: { tokensMax: 100 },
+      steps: [
+        {
+          agent: {
+            prompt: "s1",
+            driver: "openai",
+            model: "gpt-4o",
+            into: "o1",
+          },
+        },
+        {
+          agent: {
+            prompt: "s2",
+            driver: "openai",
+            model: "gpt-4o",
+            into: "o2",
+          },
+        },
+      ],
+    });
+    let calls = 0;
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      providerDriverFn: async () => {
+        calls++;
+        return {
+          text: `output ${calls}`,
+          usage: { inputTokens: 60, outputTokens: 60 },
+        };
+      },
+    });
+    expect(calls).toBe(1); // second admission refused
     expect(result.stepResults[0]?.status).toBe("ok");
     expect(result.stepResults[1]?.status).toBe("error");
     expect(result.stepResults[1]?.haltReason).toMatch(/budget_exceeded/);

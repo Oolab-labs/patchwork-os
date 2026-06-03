@@ -56,6 +56,7 @@ import {
   executeAgent as _executeAgent,
   type AgentExecutorDeps,
   type AgentResult,
+  type AgentUsage,
 } from "./agentExecutor.js";
 import { categoriseHaltReason, type HaltCategory } from "./haltCategory.js";
 import {
@@ -2339,18 +2340,35 @@ export function defaultClaudeCodeFn(
   }
 }
 
+/**
+ * Map a driver's `providerMeta` to AgentUsage. Returns undefined unless BOTH
+ * token counts are present as numbers — a half-populated count would mislead
+ * RunBudget. Pure + exported for tests.
+ */
+export function providerMetaToUsage(
+  meta: Record<string, unknown> | undefined,
+): AgentUsage | undefined {
+  if (!meta) return undefined;
+  const inputTokens = meta.inputTokens;
+  const outputTokens = meta.outputTokens;
+  if (typeof inputTokens === "number" && typeof outputTokens === "number") {
+    return { inputTokens, outputTokens };
+  }
+  return undefined;
+}
+
 /** Returns a providerDriverFn with a per-run driver cache (not shared across runs). */
 export function makeProviderDriverFn(): (
   driverName: "openai" | "grok" | "gemini",
   prompt: string,
   model: string | undefined,
-) => Promise<string> {
+) => Promise<string | AgentResult> {
   const cache = new Map<string, import("../drivers/types.js").ProviderDriver>();
   return async function defaultProviderDriverFn(
     driverName: "openai" | "grok" | "gemini",
     prompt: string,
     model: string | undefined,
-  ): Promise<string> {
+  ): Promise<string | AgentResult> {
     try {
       let driver = cache.get(driverName);
       if (!driver) {
@@ -2396,7 +2414,11 @@ export function makeProviderDriverFn(): (
         if (!result.text) {
           return `[agent step failed: ${driverName} returned empty output (possible timeout or auth error)]`;
         }
-        return result.text;
+        // Forward token usage (when the driver reported it) so RunBudget can
+        // enforce a real budget for openai/grok/gemini instead of failing
+        // open. No usage → bare string, normalised to {text} downstream.
+        const usage = providerMetaToUsage(result.providerMeta);
+        return usage ? { text: result.text, usage } : result.text;
       } finally {
         clearTimeout(timeout);
       }
