@@ -39,6 +39,23 @@ trigger:
 steps: []
 `;
 
+// Requires the Slack connector via a tool step (slack.* namespace) — the
+// same detection path the dashboard install preflight uses. `allowWrites`
+// acknowledges the write so static preflight passes, isolating the
+// connector-auth axis under test.
+const SLACK_RECIPE = `name: slack-recipe
+description: Posts to Slack
+trigger:
+  type: manual
+allowWrites:
+  - slack
+steps:
+  - tool: slack.post_message
+    channel: "#ops"
+    text: hi
+    into: posted
+`;
+
 function writeRecipe(name: string, body: string): string {
   const p = join(tmpDir, name);
   writeFileSync(p, body);
@@ -125,6 +142,89 @@ describe("runRecipeDoctor", () => {
     expect(result.runtime).toBeNull();
     expect(result.runtimeNote).toMatch(/not requested/);
     expect(result.ok).toBe(true);
+  });
+
+  it("flags a required connector that is not authorized + prints a fix hint", async () => {
+    const p = writeRecipe("slack.yaml", SLACK_RECIPE);
+    const result = await runRecipeDoctor(p, {
+      fetchHalts: async () => ({ total: 0, byCategory: {}, recent: [] }),
+      // Slack present in the connections list but NOT connected → missing.
+      fetchConnections: async () => [
+        { id: "slack", status: "disconnected" },
+        { id: "github", status: "connected" },
+      ],
+    });
+
+    expect(result.connectors.required).toContain("slack");
+    expect(result.connectors.connectionsChecked).toBe(true);
+    expect(result.connectors.missing).toContain("slack");
+    expect(result.connectors.authorized).not.toContain("slack");
+    // An unauthorized required connector makes the recipe unhealthy even
+    // though static + runtime are clean.
+    expect(result.static.ok).toBe(true);
+    expect(result.runtime?.total).toBe(0);
+    expect(result.ok).toBe(false);
+
+    const report = formatRecipeDoctorReport(result);
+    expect(report).toContain("✗ needs attention");
+    expect(report).toContain("slack");
+    expect(report).toMatch(/not authorized/);
+    expect(report).toMatch(/\/connections/); // the one-command fix hint
+  });
+
+  it("reports the connector as authorized when it is connected", async () => {
+    const p = writeRecipe("slack-ok.yaml", SLACK_RECIPE);
+    const result = await runRecipeDoctor(p, {
+      fetchHalts: async () => ({ total: 0, byCategory: {}, recent: [] }),
+      fetchConnections: async () => [{ id: "slack", status: "connected" }],
+    });
+    expect(result.connectors.missing).toEqual([]);
+    expect(result.connectors.authorized).toContain("slack");
+    expect(result.ok).toBe(true);
+
+    const report = formatRecipeDoctorReport(result);
+    expect(report).toMatch(/Connectors: ✓ all 1 authorized/);
+  });
+
+  it("reports required connectors but skips auth state when no bridge is reachable", async () => {
+    const p = writeRecipe("slack-nobridge.yaml", SLACK_RECIPE);
+    const result = await runRecipeDoctor(p, {
+      fetchHalts: async () => null,
+      fetchConnections: async () => null,
+    });
+    expect(result.connectors.required).toContain("slack");
+    expect(result.connectors.connectionsChecked).toBe(false);
+    expect(result.connectors.missing).toEqual([]);
+    // Auth state unknown → not proven unhealthy on the connector axis.
+    expect(result.ok).toBe(true);
+
+    const report = formatRecipeDoctorReport(result);
+    expect(report).toMatch(/auth state unknown/);
+    expect(report).toContain("needs: slack");
+  });
+
+  it("reports no connectors required for a recipe that uses none", async () => {
+    const p = writeRecipe("noconn.yaml", VALID_RECIPE);
+    const result = await runRecipeDoctor(p, {
+      fetchConnections: async () => [{ id: "slack", status: "connected" }],
+    });
+    expect(result.connectors.required).toEqual([]);
+    const report = formatRecipeDoctorReport(result);
+    expect(report).toMatch(/Connectors: ✓ none required/);
+  });
+
+  it("does not crash connector detection when fetchConnections rejects", async () => {
+    const p = writeRecipe("slack-fetcherr.yaml", SLACK_RECIPE);
+    const result = await runRecipeDoctor(p, {
+      fetchConnections: async () => {
+        throw new Error("connections endpoint down");
+      },
+    });
+    expect(result.connectors.required).toContain("slack");
+    expect(result.connectors.connectionsChecked).toBe(false);
+    expect(result.connectors.note).toMatch(/connector auth check failed/);
+    // Auth unknown → connectors don't force unhealthy.
+    expect(result.connectors.missing).toEqual([]);
   });
 
   it("does not throw when fetchHalts rejects — records the error note", async () => {

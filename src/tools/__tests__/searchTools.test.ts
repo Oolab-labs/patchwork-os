@@ -2,24 +2,57 @@ import { describe, expect, it } from "vitest";
 import { createSearchToolsTool } from "../searchTools.js";
 
 function makeTransport(
-  tools: Array<{ name: string; description: string; categories?: string[] }>,
+  tools: Array<{
+    name: string;
+    description: string;
+    categories?: string[];
+    inputSchema?: Record<string, unknown>;
+  }>,
 ) {
   return {
-    getToolSchemas: () => tools,
+    getToolSchemas: () =>
+      tools.map(({ name, description, categories }) => ({
+        name,
+        description,
+        categories,
+      })),
+    getSchemaSnapshot: () =>
+      tools.map(({ name, inputSchema }) => ({
+        name,
+        inputSchema: inputSchema ?? { type: "object", properties: {} },
+      })),
   } as any;
 }
 
 const FIXTURES = [
-  { name: "getGitStatus", description: "Show git status", categories: ["git"] },
+  {
+    name: "getGitStatus",
+    description: "Show git status",
+    categories: ["git"],
+    inputSchema: {
+      type: "object",
+      properties: { cwd: { type: "string" } },
+      additionalProperties: false,
+    },
+  },
   {
     name: "gitCommit",
     description: "Commit staged changes",
     categories: ["git"],
+    inputSchema: {
+      type: "object",
+      properties: { message: { type: "string" } },
+      required: ["message"],
+    },
   },
   {
     name: "getDiagnostics",
     description: "Get LSP diagnostics",
     categories: ["lsp", "analysis"],
+    inputSchema: {
+      type: "object",
+      properties: { uri: { type: "string" } },
+    },
   },
   { name: "runTests", description: "Run test suite", categories: ["analysis"] },
   {
@@ -130,5 +163,68 @@ describe("searchTools", () => {
     const names = data.tools.map((t: any) => t.name);
     expect(names).toContain("getDiagnostics");
     expect(names).toContain("runTests");
+  });
+
+  it("omits inputSchema by default (back-compat)", async () => {
+    const tool = createSearchToolsTool(makeTransport(FIXTURES));
+    const result = (await tool.handler({ query: "git" })) as any;
+    const data = JSON.parse(result.content[0].text);
+    expect(data.tools.length).toBeGreaterThan(0);
+    for (const t of data.tools) {
+      expect(t).not.toHaveProperty("inputSchema");
+    }
+  });
+
+  it("omits inputSchema when includeSchema is explicitly false", async () => {
+    const tool = createSearchToolsTool(makeTransport(FIXTURES));
+    const result = (await tool.handler({
+      query: "git",
+      includeSchema: false,
+    })) as any;
+    const data = JSON.parse(result.content[0].text);
+    for (const t of data.tools) {
+      expect(t).not.toHaveProperty("inputSchema");
+    }
+  });
+
+  it("includes inputSchema for matched tools when includeSchema is true", async () => {
+    const tool = createSearchToolsTool(makeTransport(FIXTURES));
+    const result = (await tool.handler({
+      query: "git",
+      includeSchema: true,
+    })) as any;
+    const data = JSON.parse(result.content[0].text);
+    const status = data.tools.find((t: any) => t.name === "getGitStatus");
+    const commit = data.tools.find((t: any) => t.name === "gitCommit");
+    expect(status).toBeDefined();
+    expect(commit).toBeDefined();
+    // The inline inputSchema mirrors the registered tool's schema, so a
+    // discovering client can call the tool without a second round-trip.
+    expect(status.inputSchema).toEqual({
+      type: "object",
+      properties: { cwd: { type: "string" } },
+      additionalProperties: false,
+    });
+    expect(commit.inputSchema).toEqual({
+      type: "object",
+      properties: { message: { type: "string" } },
+      required: ["message"],
+    });
+  });
+
+  it("still returns name/description/categories alongside inputSchema", async () => {
+    const tool = createSearchToolsTool(makeTransport(FIXTURES));
+    const result = (await tool.handler({
+      query: "diagnostics",
+      includeSchema: true,
+    })) as any;
+    const data = JSON.parse(result.content[0].text);
+    const match = data.tools.find((t: any) => t.name === "getDiagnostics");
+    expect(match.description).toBe("Get LSP diagnostics");
+    expect(match.categories).toEqual(["lsp", "analysis"]);
+    expect(match.inputSchema).toEqual({
+      type: "object",
+      properties: { uri: { type: "string" } },
+    });
   });
 });

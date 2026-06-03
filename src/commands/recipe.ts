@@ -20,6 +20,10 @@ import "../recipes/tools/index.js";
 import { loadFixtureLibrary } from "../connectors/fixtureLibrary.js";
 import { MockConnector } from "../connectors/mockConnector.js";
 import {
+  detectRequiredConnectors,
+  findMissingConnectors,
+} from "../recipes/connectorPreflight.js";
+import {
   HALT_CATEGORY_HINTS,
   HALT_CATEGORY_LABELS,
   type HaltCategory,
@@ -1827,6 +1831,12 @@ export interface DoctorRuntimeHalts {
   recent: Array<{ reason: string; category: string; runSeq: number }>;
 }
 
+/** One connection-status entry as reported by the bridge `/connections` list. */
+export interface DoctorConnectionEntry {
+  id?: string;
+  status?: string;
+}
+
 export interface RecipeDoctorOptions extends PreflightOptions {
   /**
    * Fetches recent runtime halts for the recipe by name. Returns null when
@@ -1834,6 +1844,21 @@ export interface RecipeDoctorOptions extends PreflightOptions {
    * the bridge walk lives in the CLI layer and the command stays testable.
    */
   fetchHalts?: (recipeName: string) => Promise<DoctorRuntimeHalts | null>;
+  /**
+   * Fetches the current connector statuses (`/connections` payload — the
+   * same `handleConnectionsList` source the dashboard install preflight
+   * uses). Returns null when no bridge is reachable, in which case doctor
+   * reports the *required* connectors statically but skips the
+   * authorized/missing classification. Injected for the same reason as
+   * `fetchHalts`: the bridge walk stays in the CLI layer and the command
+   * stays testable.
+   *
+   * "Connector not authorized" is the #1 runtime-halt class — surfacing the
+   * unauthenticated connectors a recipe needs (with the one-command fix)
+   * turns the most common silent first-run failure into an up-front
+   * diagnosis.
+   */
+  fetchConnections?: () => Promise<DoctorConnectionEntry[] | null>;
 }
 
 /**
@@ -1851,25 +1876,87 @@ export interface DoctorStaticResult {
   planSkipped?: boolean;
 }
 
+/**
+ * Connector authorization diagnosis. `required` is always populated (static
+ * detection over the recipe's steps — no bridge needed). `missing` /
+ * `authorized` are only meaningful when `connectionsChecked` is true; when no
+ * bridge was reachable we still tell the user which connectors the recipe
+ * needs but can't say which are authorized.
+ */
+export interface DoctorConnectorsResult {
+  /** Connector ids the recipe requires (static detection). Sorted. */
+  required: string[];
+  /** Required connectors that are NOT in a "connected" state. */
+  missing: string[];
+  /** Required connectors that ARE connected. */
+  authorized: string[];
+  /** True when live connection statuses were fetched and classified. */
+  connectionsChecked: boolean;
+  /** Why the auth check was skipped (no bridge / not requested), if applicable. */
+  note?: string;
+}
+
 export interface RecipeDoctorResult {
   recipe: string;
   recipePath: string;
   /** Static analysis: lint + write-policy + dry-plan (lint-only on load failure). */
   static: DoctorStaticResult;
+  /** Required connectors + (when a bridge was reachable) their auth state. */
+  connectors: DoctorConnectorsResult;
   /** Recent runtime halts, or null when no bridge was reachable. */
   runtime: DoctorRuntimeHalts | null;
   /** Why runtime is null (e.g. "no running bridge"), when applicable. */
   runtimeNote?: string;
-  /** True when static passed AND no runtime halts were seen. */
+  /** True when static passed, no required connectors are missing, AND no runtime halts were seen. */
   ok: boolean;
+}
+
+/**
+ * Map a loaded `YamlRecipe`'s steps into the schema `Step` shape that
+ * `detectRequiredConnectors` consumes. The authoring YAML and the
+ * connector-detection helper disagree on step shape — YAML carries
+ * `tool?: string` plus a nested `agent?: { prompt }` object, while the
+ * detector expects the flat schema form (`agent: false` carries `tool`,
+ * `agent: true` carries `prompt` + optional `tools[]`). This adapter lets
+ * the CLI reuse the exact helper the dashboard install preflight uses
+ * (same `TOOL_NAMESPACE_TO_CONNECTOR` map, same prompt-scan) rather than
+ * re-implementing detection. Tool steps feed the namespace path; agent
+ * steps feed the prompt-scan path (YAML agent steps have no `tools[]`).
+ */
+function detectConnectorsForYamlRecipe(recipe: YamlRecipe): string[] {
+  const steps = recipe.steps.map((step, i) => {
+    const id = typeof step.id === "string" ? step.id : `step-${i}`;
+    if (typeof step.tool === "string") {
+      return { id, agent: false as const, tool: step.tool, params: {} };
+    }
+    if (step.agent && typeof step.agent.prompt === "string") {
+      return { id, agent: true as const, prompt: step.agent.prompt };
+    }
+    // Steps with neither a tool nor an agent prompt contribute nothing —
+    // model them as an empty agent step so the detector skips them cleanly.
+    return { id, agent: true as const, prompt: "" };
+  });
+  return detectRequiredConnectors({
+    ...recipe,
+    steps,
+  } as Parameters<typeof detectRequiredConnectors>[0]);
+}
+
+/**
+ * One-command fix hint for an unauthorized connector. Phrasing matches the
+ * runtime `auth_failure` halt hint ("reconnect from /connections") so the
+ * doctor's static and runtime advice line up.
+ */
+function connectorFixHint(connectorId: string): string {
+  return `authorize from /connections (or run \`patchwork recipe preflight\` after connecting "${connectorId}")`;
 }
 
 /**
  * `recipe doctor` — one-screen "why is this recipe unhealthy + how do I
  * fix it" diagnosis. Composes the static `preflight` check (lint + policy
- * + plan) with the recipe-scoped runtime halt summary, mapping every
- * finding to an actionable hint. Fail-soft: a missing bridge degrades to
- * static-only rather than erroring.
+ * + plan) and static connector detection with the recipe-scoped runtime
+ * halt summary, mapping every finding to an actionable hint. Fail-soft: a
+ * missing bridge degrades to static-only rather than erroring.
  */
 export async function runRecipeDoctor(
   recipeRef: string,
@@ -1913,6 +2000,76 @@ export async function runRecipeDoctor(
   }
   const recipeName = staticResult.recipe;
 
+  // --- Connector authorization ---------------------------------------
+  // Static detection always runs (no bridge needed). When the recipe was
+  // too broken to load above, fall back to an empty required-set rather
+  // than crashing the whole diagnosis — the lint errors are the signal in
+  // that case.
+  let required: string[] = [];
+  if (!staticResult.planSkipped) {
+    try {
+      required = detectConnectorsForYamlRecipe(loadYamlRecipe(recipePath));
+    } catch {
+      // A recipe that lints clean but fails to load here is unusual;
+      // treat connector detection as best-effort and move on.
+      required = [];
+    }
+  }
+
+  const { fetchConnections } = options;
+  let connectors: DoctorConnectorsResult;
+  if (required.length === 0) {
+    connectors = {
+      required,
+      missing: [],
+      authorized: [],
+      connectionsChecked: false,
+      note: staticResult.planSkipped
+        ? "connector detection skipped — recipe could not be loaded"
+        : "recipe requires no Patchwork connectors",
+    };
+  } else if (fetchConnections) {
+    try {
+      const connections = await fetchConnections();
+      if (connections === null) {
+        connectors = {
+          required,
+          missing: [],
+          authorized: [],
+          connectionsChecked: false,
+          note: "no running bridge — connector auth check skipped",
+        };
+      } else {
+        const missing = findMissingConnectors(required, connections);
+        const missingSet = new Set(missing);
+        connectors = {
+          required,
+          missing,
+          authorized: required.filter((id) => !missingSet.has(id)),
+          connectionsChecked: true,
+        };
+      }
+    } catch (err) {
+      connectors = {
+        required,
+        missing: [],
+        authorized: [],
+        connectionsChecked: false,
+        note: `connector auth check failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      };
+    }
+  } else {
+    connectors = {
+      required,
+      missing: [],
+      authorized: [],
+      connectionsChecked: false,
+      note: "connector auth check not requested",
+    };
+  }
+
   let runtime: DoctorRuntimeHalts | null = null;
   let runtimeNote: string | undefined;
   if (fetchHalts) {
@@ -1931,11 +2088,15 @@ export async function runRecipeDoctor(
     runtimeNote = "runtime halt check not requested";
   }
 
-  const ok = staticResult.ok && (runtime?.total ?? 0) === 0;
+  const ok =
+    staticResult.ok &&
+    connectors.missing.length === 0 &&
+    (runtime?.total ?? 0) === 0;
   return {
     recipe: recipeName,
     recipePath,
     static: staticResult,
+    connectors,
     runtime,
     runtimeNote,
     ok,
@@ -1971,6 +2132,34 @@ export function formatRecipeDoctorReport(result: RecipeDoctorResult): string {
       const icon = issue.level === "error" ? "✗" : "⚠";
       const where = issue.stepId ? ` [step "${issue.stepId}"]` : "";
       lines.push(`  ${icon} (${issue.code})${where} ${issue.message}`);
+    }
+  }
+  lines.push("");
+
+  // --- Connectors: required vs authorized ---
+  const c = result.connectors;
+  if (c.required.length === 0) {
+    lines.push(`Connectors: ✓ none required${c.note ? ` (${c.note})` : ""}`);
+  } else if (!c.connectionsChecked) {
+    // Couldn't classify auth state (no bridge / not requested) — still tell
+    // the user which connectors the recipe needs so they can pre-authorize.
+    lines.push(
+      `Connectors: ${c.required.length} required — auth state unknown (${c.note ?? "unavailable"})`,
+    );
+    lines.push(`  needs: ${c.required.join(", ")}`);
+  } else if (c.missing.length === 0) {
+    lines.push(
+      `Connectors: ✓ all ${c.required.length} authorized (${c.required.join(", ")})`,
+    );
+  } else {
+    lines.push(
+      `Connectors: ${c.missing.length} of ${c.required.length} not authorized`,
+    );
+    for (const id of c.missing) {
+      lines.push(`  ✗ ${id} — not authorized  → ${connectorFixHint(id)}`);
+    }
+    if (c.authorized.length > 0) {
+      lines.push(`  ✓ authorized: ${c.authorized.join(", ")}`);
     }
   }
   lines.push("");
