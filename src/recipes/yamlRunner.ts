@@ -1051,6 +1051,9 @@ export async function runYamlRecipe(
       agentReturn.servedBy?.driver ??
         (driver === "api" ? "anthropic" : (driver ?? "auto")),
       agentReturn.usage,
+      // Resolved model for USD pricing (Phase 3). Absent → unpriced → the USD
+      // cap fails open for this call.
+      agentReturn.servedBy?.model,
     );
     const text = agentReturn.text;
     // Same failure detection as the main agent branch: explicit failure
@@ -1338,6 +1341,8 @@ export async function runYamlRecipe(
                 ? "anthropic"
                 : (agentCfg.driver ?? "auto")),
             agentReturn.usage,
+            // Resolved model for USD pricing (Phase 3); absent → fail open.
+            agentReturn.servedBy?.model,
           );
           // Catch both `[agent step failed: ...]` (existing) and the
           // silent-fail patterns `[agent step skipped: ...]` etc. via the
@@ -2418,7 +2423,24 @@ export function makeProviderDriverFn(): (
         // enforce a real budget for openai/grok/gemini instead of failing
         // open. No usage → bare string, normalised to {text} downstream.
         const usage = providerMetaToUsage(result.providerMeta);
-        return usage ? { text: result.text, usage } : result.text;
+        // Carry the model the driver ACTUALLY resolved+billed (providerMeta.
+        // model, e.g. openai's "gpt-4o" default when the step omitted model) so
+        // RunBudget prices the real model. executeAgent's stamp() is idempotent
+        // — it preserves this servedBy rather than re-deriving from raw input.
+        const resolvedModel =
+          typeof result.providerMeta?.model === "string"
+            ? result.providerMeta.model
+            : undefined;
+        if (usage || resolvedModel) {
+          return {
+            text: result.text,
+            ...(usage ? { usage } : {}),
+            ...(resolvedModel
+              ? { servedBy: { driver: driverName, model: resolvedModel } }
+              : {}),
+          };
+        }
+        return result.text;
       } finally {
         clearTimeout(timeout);
       }

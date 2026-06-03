@@ -92,7 +92,7 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
   tool_threw: "check inner error in trace",
   tool_error: "check inner error in trace",
   kill_switch: "run `patchwork kill-switch release`",
-  budget_exceeded: "raise tokensMax or shrink prompts",
+  budget_exceeded: "raise tokensMax / usdMax or shrink prompts",
   expect_failed: "inspect assertion vs actual output",
   step_timeout: "bump timeout_ms or speed up step",
   judge_revisions_exhausted:

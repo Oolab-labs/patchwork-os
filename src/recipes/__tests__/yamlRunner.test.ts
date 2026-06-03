@@ -2607,7 +2607,11 @@ describe("makeProviderDriverFn — surfaces provider failure cause", () => {
     expect(out).toBe("all good");
   });
 
-  it("forwards token usage when the driver reports it (Phase 1)", async () => {
+  it("forwards usage AND the driver-resolved model even when the step omits model (Phase 1 + Phase 3)", async () => {
+    // Called with model=undefined (omitted on the step); the driver resolves
+    // "gpt-4o" and reports it in providerMeta.model. That must propagate via
+    // servedBy.model so RunBudget can price + enforce usdMax — otherwise an
+    // omitted-model openai step silently fails open.
     mockProviderRun.mockResolvedValueOnce({
       text: "all good",
       durationMs: 5,
@@ -2618,6 +2622,7 @@ describe("makeProviderDriverFn — surfaces provider failure cause", () => {
     expect(out).toEqual({
       text: "all good",
       usage: { inputTokens: 30, outputTokens: 12 },
+      servedBy: { driver: "openai", model: "gpt-4o" },
     });
   });
 });
@@ -3368,6 +3373,48 @@ describe("recipe.budget — tokensMax enforcement (PR2b)", () => {
     expect(result.stepResults[0]?.status).toBe("ok");
     expect(result.stepResults[1]?.status).toBe("error");
     expect(result.stepResults[1]?.haltReason).toMatch(/budget_exceeded/);
+  });
+
+  it("enforces budget.usdMax via the price table (Phase 3 end-to-end)", async () => {
+    // Deterministic: point the price loader at a temp fixture so the run does
+    // not depend on the built-in prices or a dev's ~/.patchwork/prices.json.
+    const dir = mkdtempSync(path.join(os.tmpdir(), "pw-usdmax-"));
+    const fixture = path.join(dir, "prices.json");
+    writeFileSync(
+      fixture,
+      JSON.stringify({ prices: { "test-haiku": { input: 1, output: 5 } } }),
+    );
+    const prev = process.env.PATCHWORK_PRICE_TABLE;
+    process.env.PATCHWORK_PRICE_TABLE = fixture;
+    try {
+      const recipe = makeRecipe({
+        budget: { usdMax: 5 },
+        steps: [
+          { agent: { prompt: "s1", model: "test-haiku", into: "o1" } },
+          { agent: { prompt: "s2", model: "test-haiku", into: "o2" } },
+        ],
+      });
+      let calls = 0;
+      const result = await runYamlRecipe(recipe, {
+        ...noop(),
+        claudeFn: async () => {
+          calls++;
+          // test-haiku $1/1M in + $5/1M out → 1M + 1M = $6, over the $5 cap.
+          return {
+            text: `out ${calls}`,
+            usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+          };
+        },
+      });
+      expect(calls).toBe(1); // second admission refused on USD breach
+      expect(result.stepResults[1]?.status).toBe("error");
+      expect(result.stepResults[1]?.haltReason).toMatch(/budget_exceeded/);
+      expect(result.stepResults[1]?.haltCategory).toBe("budget_exceeded");
+    } finally {
+      if (prev === undefined) delete process.env.PATCHWORK_PRICE_TABLE;
+      else process.env.PATCHWORK_PRICE_TABLE = prev;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("enforces the budget on the openai/grok/gemini path (Phase 1: these now report usage)", async () => {

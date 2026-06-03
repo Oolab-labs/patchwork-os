@@ -1,32 +1,45 @@
 /**
- * Per-recipe token budget — PR2b.
+ * Per-recipe budget — PR2b (tokens) + cost-routing Phase 3 (USD).
  *
- * Built on PR2a's `AgentResult.usage` plumbing. The runner constructs
- * one `RunBudget` per recipe execution; agent steps consult it before
- * dispatch (admission) and reconcile actual consumption after the call
- * returns. On breach the run halts at the *next* admission check (we
- * never retroactively fail a step that succeeded — the user's tokens
- * are already spent, halting after-the-fact would just confuse the
- * audit trail).
+ * Built on PR2a's `AgentResult.usage` plumbing. The runner constructs one
+ * `RunBudget` per recipe execution; agent steps consult it before dispatch
+ * (admission) and reconcile actual consumption after the call returns. On
+ * breach the run halts at the *next* admission check (we never retroactively
+ * fail a step that succeeded — the user's tokens/dollars are already spent;
+ * halting after-the-fact would just confuse the audit trail).
  *
- * Subscription drivers (Claude CLI, provider subprocess CLIs) don't
- * surface per-call token counts. `RunBudget` tracks which drivers were
- * unmeasured and exposes a deduped warnings list — fail-open with a
- * single notice per driver per run, never block.
+ * Two independent caps, either or both:
+ *   - `tokensMax` — cumulative input + output tokens.
+ *   - `usdMax`    — cumulative USD, priced from token usage via the Phase 2
+ *                   price table (`costUsd`).
  *
- * Scope (PR2b only):
- *   - cumulative token enforcement (input + output)
- *   - halt-on-breach OR warn-on-breach via `BudgetPolicy.onBreach`
- *   - subscription-driver fail-open with warning
- *
- * Out of scope (future):
- *   - per-step caps (extend `BudgetPolicy` or add `AgentStep.tokensMax`)
- *   - `usdMax` (needs a price table; subscription drivers complicate)
- *   - `wallClockMs` (orthogonal to tokens, separate accounting)
+ * Subscription drivers (Claude CLI, provider subprocess CLIs) don't surface
+ * per-call token counts, and a model with no price-table entry can't be
+ * costed. Both cases FAIL OPEN: `RunBudget` records a deduped one-time
+ * warning and never blocks. So a USD cap enforces for *measured + priced*
+ * (API) drivers and is a no-op-with-notice for everything else — never a
+ * silent or a surprise halt on the token-blind default driver. (The opt-in
+ * estimate-the-unmeasured path is a planned follow-up; absent it, unmeasured
+ * = fail-open, which is the conservative default the design calls for.)
  */
 
 import type { AgentUsage } from "./agentExecutor.js";
+import {
+  costUsd,
+  loadPriceTable,
+  type PriceTable,
+} from "./pricing/priceTable.js";
 import type { BudgetPolicy } from "./schema.js";
+
+/**
+ * Drivers that incur real, metered, per-token API billing — the ONLY ones a
+ * USD cap is enforced against. Subscription/CLI drivers (subprocess Claude/
+ * Gemini) report no usage and never reach the pricing path; `local`
+ * (self-hosted Ollama / LM Studio) DOES report usage but costs no real money,
+ * so it must not be priced at notional API rates and halted on spend that
+ * never happened. Anything not in this set fails open with a one-time notice.
+ */
+const BILLABLE_DRIVERS = new Set(["anthropic", "openai", "grok"]);
 
 export interface BudgetAdmission {
   /** True = step may proceed. False = budget exhausted. */
@@ -39,72 +52,129 @@ export interface BudgetTotals {
   inputTokens: number;
   outputTokens: number;
   total: number;
-  /** Remaining tokens before breach. Undefined when no limit is set. */
+  /** Remaining tokens before breach. Undefined when no token limit is set. */
   remaining?: number;
-  /** True once total >= tokensMax. */
+  /** Cumulative measured USD. Undefined when no USD limit is set. */
+  usd?: number;
+  /** Remaining USD before breach. Undefined when no USD limit is set. */
+  usdRemaining?: number;
+  /** True once total tokens >= tokensMax (false when no token limit). */
   breached: boolean;
+  /** True once measured usd >= usdMax (false when no USD limit). */
+  usdBreached: boolean;
   /** Whether the configured policy halts on breach (vs warn). */
   haltOnBreach: boolean;
 }
 
 export class RunBudget {
   private readonly tokensMax?: number;
+  private readonly usdMax?: number;
   private readonly haltOnBreach: boolean;
+  private readonly priceTable?: PriceTable;
   private inputTokens = 0;
   private outputTokens = 0;
-  /** Drivers that returned `usage: undefined` during this run, deduped. */
-  private readonly unmeasuredDrivers = new Set<string>();
+  private usdSpent = 0;
+  /** Dedup keys for one-time warnings (unmeasured driver, breach, etc.). */
+  private readonly warnedKeys = new Set<string>();
   /** Free-form warnings surfaced via the run log. */
   private readonly warningList: string[] = [];
 
-  constructor(policy?: BudgetPolicy) {
+  /**
+   * @param policy   recipe budget block.
+   * @param priceTable  optional injected table (tests); otherwise loaded once
+   *                    here when a USD cap is set (file/env override aware).
+   */
+  constructor(policy?: BudgetPolicy, priceTable?: PriceTable) {
     this.tokensMax = policy?.tokensMax;
+    this.usdMax = policy?.usdMax;
     this.haltOnBreach = (policy?.onBreach ?? "halt") === "halt";
+    if (this.usdMax !== undefined) {
+      this.priceTable = priceTable ?? loadPriceTable();
+    }
+  }
+
+  /** True when neither cap is configured — reconcile/admit are no-ops. */
+  private get hasBudget(): boolean {
+    return this.tokensMax !== undefined || this.usdMax !== undefined;
   }
 
   /** Cheap admission check before dispatching an agent step. */
   admit(): BudgetAdmission {
-    if (this.tokensMax === undefined) return { admitted: true };
-    if (this.breached()) {
-      if (!this.haltOnBreach) {
-        // warn-mode: never block, just keep going. The warning was
-        // already emitted on the post-call reconcile that breached.
-        return { admitted: true };
-      }
+    // warn-mode never blocks; the breach warning was emitted at reconcile.
+    if (!this.haltOnBreach) return { admitted: true };
+    if (this.tokenBreached()) {
       return {
         admitted: false,
-        reason: `Run exceeded its token budget — budget_exceeded: total=${this.totalTokens()} > tokensMax=${this.tokensMax}.`,
+        reason: `Run exceeded its token budget — budget_exceeded: total=${this.totalTokens()} >= tokensMax=${this.tokensMax}.`,
+      };
+    }
+    if (this.usdMaxBreached()) {
+      return {
+        admitted: false,
+        reason: `Run exceeded its USD budget — budget_exceeded: usd=$${this.usdSpent.toFixed(4)} >= usdMax=$${this.usdMax}.`,
       };
     }
     return { admitted: true };
   }
 
   /**
-   * Record the actual usage reported by an agent call. `usage` may be
-   * undefined when the driver doesn't surface token counts — we record
-   * the driver name once per run and continue (fail-open).
+   * Record the actual usage reported by an agent call. `usage` is undefined
+   * when the driver doesn't surface token counts — record the driver once and
+   * continue (fail-open). `model` is the resolved model (from `servedBy`) used
+   * to price USD; an unpriced model fails open with a one-time notice.
    */
-  reconcile(driver: string, usage: AgentUsage | undefined): void {
-    if (this.tokensMax === undefined) return;
+  reconcile(
+    driver: string,
+    usage: AgentUsage | undefined,
+    model?: string,
+  ): void {
+    if (!this.hasBudget) return;
     if (!usage) {
-      if (!this.unmeasuredDrivers.has(driver)) {
-        this.unmeasuredDrivers.add(driver);
-        this.warningList.push(
-          `Driver "${driver}" does not report token usage — budget enforcement skipped for its calls. Set recipe.budget.onBreach="warn" or move to an API driver to fix.`,
-        );
-      }
+      this.pushOnce(
+        `unmeasured:${driver}`,
+        `Driver "${driver}" does not report token usage — budget enforcement skipped for its calls. Set recipe.budget.onBreach="warn" or move to an API driver to fix.`,
+      );
       return;
     }
+
     this.inputTokens += usage.inputTokens;
     this.outputTokens += usage.outputTokens;
-    if (this.breached() && !this.haltOnBreach) {
-      // warn-mode: emit a single in-band warning the first time we
-      // cross the line. Subsequent steps continue running.
-      const breachKey = "warn-breach-emitted";
-      if (!this.unmeasuredDrivers.has(breachKey)) {
-        this.unmeasuredDrivers.add(breachKey);
-        this.warningList.push(
+
+    if (this.usdMax !== undefined) {
+      if (!BILLABLE_DRIVERS.has(driver)) {
+        // Not a metered-API driver (local / subscription) — a USD cap here
+        // would be notional, not real money out. Fail open with a notice.
+        this.pushOnce(
+          `notbilled:${driver}`,
+          `Driver "${driver}" does not incur metered API cost — usdMax is not enforced for its calls.`,
+        );
+      } else {
+        const cost = costUsd(model ?? "", usage, this.priceTable);
+        // `cost === undefined` (unpriced model) OR a non-finite cost (defends
+        // against a malformed price entry) → fail open, never poison usdSpent.
+        if (cost === undefined || !Number.isFinite(cost)) {
+          this.pushOnce(
+            `unpriced:${model ?? "(no model)"}`,
+            `Model "${model ?? "(unspecified)"}" is not in the price table — USD budget enforcement skipped for its calls. Add it to ~/.patchwork/prices.json or set the agent step's model.`,
+          );
+        } else {
+          this.usdSpent += cost;
+        }
+      }
+    }
+
+    // warn-mode: emit a single in-band notice the first time we cross a cap.
+    if (!this.haltOnBreach) {
+      if (this.tokenBreached()) {
+        this.pushOnce(
+          "warn-token-breach",
           `Token budget exceeded (total=${this.totalTokens()}, tokensMax=${this.tokensMax}) but onBreach="warn" — continuing.`,
+        );
+      }
+      if (this.usdMaxBreached()) {
+        this.pushOnce(
+          "warn-usd-breach",
+          `USD budget exceeded (usd=$${this.usdSpent.toFixed(4)}, usdMax=$${this.usdMax}) but onBreach="warn" — continuing.`,
         );
       }
     }
@@ -120,7 +190,12 @@ export class RunBudget {
       ...(this.tokensMax !== undefined && {
         remaining: Math.max(0, this.tokensMax - total),
       }),
-      breached: this.breached(),
+      ...(this.usdMax !== undefined && {
+        usd: this.usdSpent,
+        usdRemaining: Math.max(0, this.usdMax - this.usdSpent),
+      }),
+      breached: this.tokenBreached(),
+      usdBreached: this.usdMaxBreached(),
       haltOnBreach: this.haltOnBreach,
     };
   }
@@ -130,11 +205,21 @@ export class RunBudget {
     return [...this.warningList];
   }
 
+  private pushOnce(key: string, msg: string): void {
+    if (this.warnedKeys.has(key)) return;
+    this.warnedKeys.add(key);
+    this.warningList.push(msg);
+  }
+
   private totalTokens(): number {
     return this.inputTokens + this.outputTokens;
   }
 
-  private breached(): boolean {
+  private tokenBreached(): boolean {
     return this.tokensMax !== undefined && this.totalTokens() >= this.tokensMax;
+  }
+
+  private usdMaxBreached(): boolean {
+    return this.usdMax !== undefined && this.usdSpent >= this.usdMax;
   }
 }
