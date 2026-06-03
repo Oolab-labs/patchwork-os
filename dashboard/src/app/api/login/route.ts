@@ -84,29 +84,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "missing password" }, { status: 400 });
   }
 
-  // Constant-time compare of two arbitrary-length secrets via keyed HMAC.
+  // Constant-time equality of two secrets via a fixed-length padded compare.
   //
-  // Audit 2026-06-03 (HIGH #2): the previous fixed-256-byte padding approach
-  // SKIPPED the copy when an input exceeded 256 bytes (`if (b.length <= PAD)`),
-  // leaving that buffer all-zeros. Two >256-byte inputs of equal length both
-  // collapsed to the all-zero buffer → any same-length payload authenticated
-  // (practical for JWT-style tokens of 200-400 bytes).
+  // Audit 2026-06-03 (HIGH #2): the previous version padded into a 256-byte
+  // buffer but SKIPPED the copy when an input exceeded 256 bytes
+  // (`if (b.length <= PAD)`), leaving that buffer all-zeros — so two >256-byte
+  // inputs of equal length both compared as all-zeros and any same-length
+  // payload authenticated (practical for JWT-style tokens of 200-400 bytes).
   //
-  // This is the canonical Node recipe (see crypto.timingSafeEqual docs) for
-  // comparing strings of unequal length: HMAC each side under a fresh random
-  // per-request key, then timingSafeEqual the fixed 32-byte tags. Properties:
-  //   - tags are always equal length → timingSafeEqual never throws and runs
-  //     in constant time regardless of either input's length (no length leak);
-  //   - no truncation and no all-zero collision (the >256-byte bug);
-  //   - the random key makes the tags unpredictable across requests.
-  // NB: this is an equality check, NOT password-at-rest hashing — a slow KDF
-  // (bcrypt/argon2) is neither needed nor appropriate here (single shared
-  // secret from env, compared per request). Audit 2026-05-17 (#600) timing
-  // concern remains addressed.
-  const cmpKey = crypto.randomBytes(32);
-  const aHmac = crypto.createHmac("sha256", cmpKey).update(password, "utf8").digest();
-  const bHmac = crypto.createHmac("sha256", cmpKey).update(expected, "utf8").digest();
-  const equal = crypto.timingSafeEqual(aHmac, bHmac);
+  // Fix: always copy up to a fixed CAP into equal-sized buffers (Buffer.copy
+  // bounds at min(src.length, CAP), so no overflow and — for accepted inputs —
+  // no all-zero collision), reject inputs longer than CAP, and run
+  // timingSafeEqual over the full CAP every call. The byte comparison happens
+  // FIRST; the length/cap checks are ANDed AFTER (never short-circuited before
+  // timingSafeEqual), preserving the Audit 2026-05-17 (#600) property that
+  // response time does not leak the expected password's length.
+  //
+  // This is a plain equality check (single shared secret from env), NOT
+  // password-at-rest hashing — deliberately no hash/KDF in the data path.
+  const CAP = 1024; // generous upper bound for a shared dashboard password
+  const ab = Buffer.from(password, "utf8");
+  const eb = Buffer.from(expected, "utf8");
+  const pa = Buffer.alloc(CAP);
+  const pb = Buffer.alloc(CAP);
+  ab.copy(pa, 0, 0, CAP);
+  eb.copy(pb, 0, 0, CAP);
+  const bytesEqual = crypto.timingSafeEqual(pa, pb);
+  const equal =
+    bytesEqual &&
+    ab.length === eb.length &&
+    ab.length <= CAP &&
+    eb.length <= CAP;
 
   if (!equal) {
     // Only track failures against a real, attributable client key. The
