@@ -168,6 +168,16 @@ export interface BudgetPolicy {
    * production cron recipes. Applies to both `tokensMax` and `usdMax`.
    */
   onBreach?: "halt" | "warn";
+  /**
+   * OPT-IN, default **false**. When true, the runner ESTIMATES the notional USD
+   * a subscription/unmeasured driver call would have cost at list prices (from
+   * the prompt + output length) and surfaces a `≈$X` figure. This is a label
+   * ONLY — estimated spend is tracked separately from `usdMax` and can NEVER
+   * halt a run (subscription spend is flat-rate, not real money out; halting on
+   * a ~4-chars/token guess would be wrong). Requires `usdMax` to be set (it
+   * reuses the price table). Default false preserves the fail-open invariant.
+   */
+  estimateUnmeasured?: boolean;
 }
 
 export interface Recipe {

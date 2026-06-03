@@ -56,6 +56,16 @@ describe("recipe budget validation", () => {
     );
   });
 
+  it("accepts a boolean estimateUnmeasured", () => {
+    expect(budgetErrors({ usdMax: 1, estimateUnmeasured: true })).toBe("");
+  });
+
+  it("rejects a non-boolean estimateUnmeasured", () => {
+    expect(budgetErrors({ usdMax: 1, estimateUnmeasured: "yes" })).toMatch(
+      /estimateUnmeasured must be a boolean/,
+    );
+  });
+
   it("rejects a non-object budget", () => {
     expect(budgetErrors("nope")).toMatch(/'budget' must be an object/);
   });

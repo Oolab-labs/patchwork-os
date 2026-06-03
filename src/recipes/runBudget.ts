@@ -41,6 +41,9 @@ import type { BudgetPolicy } from "./schema.js";
  */
 const BILLABLE_DRIVERS = new Set(["anthropic", "openai", "grok"]);
 
+/** Rough chars-per-token used for the opt-in unmeasured-driver USD estimate. */
+const ESTIMATE_CHARS_PER_TOKEN = 4;
+
 export interface BudgetAdmission {
   /** True = step may proceed. False = budget exhausted. */
   admitted: boolean;
@@ -58,6 +61,12 @@ export interface BudgetTotals {
   usd?: number;
   /** Remaining USD before breach. Undefined when no USD limit is set. */
   usdRemaining?: number;
+  /**
+   * Notional list-price USD estimated for unmeasured (subscription) calls when
+   * `estimateUnmeasured` is on. A label ONLY — never counted toward `usd` or
+   * `usdMax`, never halts. Present only when > 0.
+   */
+  usdEstimated?: number;
   /** True once total tokens >= tokensMax (false when no token limit). */
   breached: boolean;
   /** True once measured usd >= usdMax (false when no USD limit). */
@@ -70,10 +79,13 @@ export class RunBudget {
   private readonly tokensMax?: number;
   private readonly usdMax?: number;
   private readonly haltOnBreach: boolean;
+  private readonly estimateUnmeasured: boolean;
   private readonly priceTable?: PriceTable;
   private inputTokens = 0;
   private outputTokens = 0;
   private usdSpent = 0;
+  /** Notional list-price USD for unmeasured calls (warn-only; never enforced). */
+  private usdEstimated = 0;
   /** Dedup keys for one-time warnings (unmeasured driver, breach, etc.). */
   private readonly warnedKeys = new Set<string>();
   /** Free-form warnings surfaced via the run log. */
@@ -88,6 +100,7 @@ export class RunBudget {
     this.tokensMax = policy?.tokensMax;
     this.usdMax = policy?.usdMax;
     this.haltOnBreach = (policy?.onBreach ?? "halt") === "halt";
+    this.estimateUnmeasured = policy?.estimateUnmeasured ?? false;
     if (this.usdMax !== undefined) {
       this.priceTable = priceTable ?? loadPriceTable();
     }
@@ -127,9 +140,37 @@ export class RunBudget {
     driver: string,
     usage: AgentUsage | undefined,
     model?: string,
+    estimate?: { inputChars: number; outputChars: number },
   ): void {
     if (!this.hasBudget) return;
     if (!usage) {
+      if (this.usdMax !== undefined && this.estimateUnmeasured && estimate) {
+        // OPT-IN notional estimate for an unmeasured (subscription) driver.
+        // WARN-ONLY: accumulates into usdEstimated, NEVER usdSpent, and never
+        // affects admit() — a flat-rate subscription call is not real money out,
+        // and halting on a ~4-chars/token guess would be wrong.
+        const estModel = model ?? DEFAULT_MODEL;
+        const estCost = costUsd(
+          estModel,
+          {
+            inputTokens: Math.ceil(
+              estimate.inputChars / ESTIMATE_CHARS_PER_TOKEN,
+            ),
+            outputTokens: Math.ceil(
+              estimate.outputChars / ESTIMATE_CHARS_PER_TOKEN,
+            ),
+          },
+          this.priceTable,
+        );
+        if (estCost !== undefined && Number.isFinite(estCost)) {
+          this.usdEstimated += estCost;
+          this.pushOnce(
+            `estimate:${driver}`,
+            `Driver "${driver}" reports no usage — estimating notional list-price cost (≈, never enforced; see usdEstimated).`,
+          );
+          return;
+        }
+      }
       this.pushOnce(
         `unmeasured:${driver}`,
         `Driver "${driver}" does not report token usage — budget enforcement skipped for its calls. Set recipe.budget.onBreach="warn" or move to an API driver to fix.`,
@@ -194,6 +235,7 @@ export class RunBudget {
         usd: this.usdSpent,
         usdRemaining: Math.max(0, this.usdMax - this.usdSpent),
       }),
+      ...(this.usdEstimated > 0 && { usdEstimated: this.usdEstimated }),
       breached: this.tokenBreached(),
       usdBreached: this.usdMaxBreached(),
       haltOnBreach: this.haltOnBreach,
@@ -203,6 +245,22 @@ export class RunBudget {
   /** Warnings collected so the runner can surface them in the run log. */
   warnings(): string[] {
     return [...this.warningList];
+  }
+
+  /**
+   * Run-completion warnings: the live `warnings()` plus a one-line ≈$ summary
+   * of the notional cost estimated for unmeasured calls (only when
+   * `estimateUnmeasured` produced one). Use at run end; `warnings()` is the
+   * live per-driver list without the (end-of-run-only) summary.
+   */
+  finalWarnings(): string[] {
+    const out = [...this.warningList];
+    if (this.usdEstimated > 0) {
+      out.push(
+        `Unmeasured (subscription) calls would cost ≈$${this.usdEstimated.toFixed(4)} at list prices — estimate only, never enforced.`,
+      );
+    }
+    return out;
   }
 
   /**

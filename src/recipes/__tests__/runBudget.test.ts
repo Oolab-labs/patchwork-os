@@ -269,3 +269,68 @@ describe("RunBudget — routing helpers (cost-routing Phase 4)", () => {
     expect(b.quoteUsd("openai", "m1", 1_000_000, 1_000_000)).toBeUndefined();
   });
 });
+
+describe("RunBudget — estimateUnmeasured (opt-in ≈$ for subscription drivers)", () => {
+  // 4M chars / 4 = 1M tokens each side.
+  const est = { inputChars: 4_000_000, outputChars: 4_000_000 };
+
+  it("default (false): an unmeasured driver is skipped, no estimate", () => {
+    const b = new RunBudget({ usdMax: 1 }, TABLE);
+    b.reconcile("subprocess", undefined, "m1", est);
+    expect(b.totals().usdEstimated).toBeUndefined();
+    expect(
+      b.warnings().some((w) => /does not report token usage/i.test(w)),
+    ).toBe(true);
+  });
+
+  it("when true: accumulates a notional ≈$ estimate (m1 $1/1M each → $2)", () => {
+    const b = new RunBudget({ usdMax: 1, estimateUnmeasured: true }, TABLE);
+    b.reconcile("subprocess", undefined, "m1", est);
+    expect(b.totals().usdEstimated).toBeCloseTo(2, 6);
+    expect(b.warnings().some((w) => /estimating notional/i.test(w))).toBe(true);
+  });
+
+  it("NEVER halts on the estimate (warn-only) and never touches measured usd", () => {
+    const b = new RunBudget({ usdMax: 0.001, estimateUnmeasured: true }, TABLE);
+    b.reconcile("subprocess", undefined, "m1", est); // ≈$2 ≫ $0.001 cap
+    expect(b.admit().admitted).toBe(true); // estimate never gates admission
+    expect(b.totals().usd).toBe(0); // never enters measured usdSpent
+    expect(b.totals().usdBreached).toBe(false);
+  });
+
+  it("uses DEFAULT_MODEL when the step omits a model", () => {
+    const b = new RunBudget({ usdMax: 1, estimateUnmeasured: true }, TABLE);
+    // DEFAULT_MODEL $1 in / $5 out → 1M*$1 + 1M*$5 = $6.
+    b.reconcile("subprocess", undefined, undefined, est);
+    expect(b.totals().usdEstimated).toBeCloseTo(6, 6);
+  });
+
+  it("falls back to the skipped notice when no estimate chars are provided", () => {
+    const b = new RunBudget({ usdMax: 1, estimateUnmeasured: true }, TABLE);
+    b.reconcile("subprocess", undefined, "m1"); // no estimate arg
+    expect(b.totals().usdEstimated).toBeUndefined();
+    expect(
+      b.warnings().some((w) => /does not report token usage/i.test(w)),
+    ).toBe(true);
+  });
+
+  it("does nothing when estimateUnmeasured is set but usdMax is not", () => {
+    const b = new RunBudget(
+      { tokensMax: 100, estimateUnmeasured: true },
+      TABLE,
+    );
+    b.reconcile("subprocess", undefined, "m1", est);
+    expect(b.totals().usdEstimated).toBeUndefined();
+  });
+
+  it("finalWarnings appends a ≈$ summary; warnings() (live) does not", () => {
+    const b = new RunBudget({ usdMax: 1, estimateUnmeasured: true }, TABLE);
+    b.reconcile("subprocess", undefined, "m1", est);
+    expect(
+      b
+        .finalWarnings()
+        .some((w) => w.includes("≈$2.0000") && /never enforced/i.test(w)),
+    ).toBe(true);
+    expect(b.warnings().some((w) => /at list prices/i.test(w))).toBe(false);
+  });
+});

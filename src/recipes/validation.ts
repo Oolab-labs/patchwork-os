@@ -378,6 +378,17 @@ function validateRecipeBudget(
       code: "budget-onbreach-enum",
     });
   }
+  if (
+    b.estimateUnmeasured !== undefined &&
+    typeof b.estimateUnmeasured !== "boolean"
+  ) {
+    issues.push({
+      level: "error",
+      message: "budget.estimateUnmeasured must be a boolean",
+      path: "budget.estimateUnmeasured",
+      code: "budget-estimate-type",
+    });
+  }
 }
 
 /**
