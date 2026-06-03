@@ -134,6 +134,15 @@ export interface RecipeRun {
    * runs simply omit it.
    */
   inboxOutputs?: Array<{ filename: string; deliveredAt: number }>;
+  /**
+   * Budget warnings surfaced by RunBudget at completion — warn-mode token
+   * breaches and "driver X reports no usage, budget enforcement skipped"
+   * notices. Previously computed and then discarded (RunBudget.warnings()
+   * had no production reader); now persisted so the dashboard / `patchwork`
+   * surfaces can show them. Additive: absent when the run set no budget or
+   * tripped no warnings.
+   */
+  budgetWarnings?: string[];
 }
 
 const MAX_OUTPUT_TAIL = 2_000;
@@ -443,6 +452,7 @@ export class RecipeRunLog {
       errorMessage?: string;
       assertionFailures?: RecipeRun["assertionFailures"];
       inboxOutputs?: RecipeRun["inboxOutputs"];
+      budgetWarnings?: RecipeRun["budgetWarnings"];
     },
   ): void {
     const idx = this.runs.findIndex((r) => r.seq === seq);
@@ -469,6 +479,10 @@ export class RecipeRunLog {
       ...(opts.inboxOutputs !== undefined &&
         opts.inboxOutputs.length > 0 && {
           inboxOutputs: opts.inboxOutputs,
+        }),
+      ...(opts.budgetWarnings !== undefined &&
+        opts.budgetWarnings.length > 0 && {
+          budgetWarnings: opts.budgetWarnings,
         }),
     };
     this.runs[idx] = finalized;

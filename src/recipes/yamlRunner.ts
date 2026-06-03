@@ -555,6 +555,12 @@ export interface RunResult {
   stepResults: StepResult[];
   errorMessage?: string;
   assertionFailures?: AssertionFailure[];
+  /**
+   * Budget warnings collected by RunBudget over the run — warn-mode token
+   * breaches + unmeasured-driver notices. Previously discarded (no reader);
+   * now surfaced so callers and the run log can show them. Absent when none.
+   */
+  budgetWarnings?: string[];
 }
 
 export type StepResult = {
@@ -1767,6 +1773,9 @@ export async function runYamlRecipe(
           ...(runError !== undefined && { errorMessage: runError }),
           ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
           ...(inboxOutputs.length > 0 ? { inboxOutputs } : {}),
+          ...(runBudget.warnings().length > 0
+            ? { budgetWarnings: runBudget.warnings() }
+            : {}),
         });
         emit("recipe_done", {
           runSeq,
@@ -1859,6 +1868,9 @@ export async function runYamlRecipe(
     stepResults,
     errorMessage: runError,
     ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
+    ...(runBudget.warnings().length > 0
+      ? { budgetWarnings: runBudget.warnings() }
+      : {}),
   };
 }
 
