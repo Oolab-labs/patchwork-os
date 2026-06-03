@@ -110,6 +110,26 @@ describe("parseRecipe", () => {
     }
   });
 
+  // Regression (audit 2026-06-03 HIGH #9): the JSON schema documents the cron
+  // expression field as `at`, and validateRecipeDefinition reads `trigger.at`
+  // (after normalization), but parseRecipe — the install path — only read
+  // `trigger.schedule` and threw `cron.schedule required`. A schema-compliant
+  // recipe using `at:` passed `recipe lint` but failed `recipe install`.
+  it("accepts cron `at` as an alias for `schedule`", () => {
+    const r = parseRecipe({
+      ...VALID,
+      trigger: { type: "cron", at: "0 9 * * *" },
+    });
+    expect(r.trigger.type).toBe("cron");
+    expect((r.trigger as { schedule: string }).schedule).toBe("0 9 * * *");
+  });
+
+  it("still requires a cron expression (neither schedule nor at)", () => {
+    expect(() => parseRecipe({ ...VALID, trigger: { type: "cron" } })).toThrow(
+      /cron\.schedule/,
+    );
+  });
+
   // Regression: parser.ts rejected `chained`, `on_file_save`, and
   // `on_test_run` even though validateRecipeDefinition, the JSON schema,
   // and the runtime (chainedRunner / dispatchRecipe / yamlRunner) all

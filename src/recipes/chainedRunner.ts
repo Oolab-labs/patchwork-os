@@ -579,13 +579,26 @@ interface StepExecResult {
   resolvedParams?: unknown;
 }
 
+/** Upper bound on retries — clamps absurd/misconfigured values so a recipe
+ *  can't spin a step unboundedly. Mirrors the `maximum` on `retry` in the
+ *  recipe JSON schema. */
+const MAX_RETRIES = 20;
+
 async function withRetry(
   fn: () => Promise<StepExecResult>,
   maxRetries: number,
   delayMs: number,
 ): Promise<StepExecResult> {
+  // Audit 2026-06-03 (HIGH #8): clamp the retry count. A negative value (typo
+  // like `retry: -1`) made `attempt <= maxRetries` immediately false, so the
+  // step NEVER ran and silently reported as failed. A non-finite or huge value
+  // would spin unboundedly. Floor to an integer in [0, MAX_RETRIES]; non-finite
+  // → 0 (run once, no retries).
+  const safeRetries = Number.isFinite(maxRetries)
+    ? Math.min(MAX_RETRIES, Math.max(0, Math.floor(maxRetries)))
+    : 0;
   let last: StepExecResult = { success: false };
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  for (let attempt = 0; attempt <= safeRetries; attempt++) {
     if (attempt > 0) {
       await new Promise((r) => setTimeout(r, delayMs));
     }

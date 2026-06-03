@@ -437,6 +437,50 @@ describe("ClaudeOrchestrator — persistence", () => {
     expect(task?.prompt).toBe("persisted-pending");
   });
 
+  it("loadPersistedTasks — preserves useAnt/mcpAccess/isAutomationTask across reload + re-persist (audit 2026-06-03 HIGH #11)", async () => {
+    const stableId = "11111111-2222-3333-4444-555555555555";
+    const v1Payload = {
+      version: 1,
+      savedAt: Date.now(),
+      tasks: [
+        {
+          id: stableId,
+          sessionId: "",
+          prompt: "agent-task",
+          contextFiles: [],
+          status: "pending",
+          createdAt: Date.now() - 5000,
+          timeoutMs: 120_000,
+          tokenEstimate: 10,
+          useAnt: true,
+          mcpAccess: true,
+          isAutomationTask: true,
+        },
+      ],
+    };
+    mockReadFile.mockResolvedValueOnce(JSON.stringify(v1Payload));
+
+    const orch = new ClaudeOrchestrator(makeSlowDriver(60_000), "/tmp", noop);
+    await orch.loadPersistedTasks(9999);
+
+    // Restored task must carry the flags (else it runs with the wrong binary /
+    // no MCP access / no automation guard).
+    const task = orch.getTask(stableId);
+    expect(task?.useAnt).toBe(true);
+    expect(task?.mcpAccess).toBe(true);
+    expect(task?.isAutomationTask).toBe(true);
+
+    // And they must round-trip back out on the next persist.
+    await orch.persistTasks(9999);
+    const [, jsonStr] = mockWriteFile.mock.calls.at(-1) as [string, string];
+    const persisted = JSON.parse(jsonStr).tasks.find(
+      (t: { id: string }) => t.id === stableId,
+    );
+    expect(persisted.useAnt).toBe(true);
+    expect(persisted.mcpAccess).toBe(true);
+    expect(persisted.isAutomationTask).toBe(true);
+  });
+
   it("loadPersistedTasks — interrupted tasks become history (not re-enqueued)", async () => {
     const id = "ffffffff-0000-0000-0000-000000000001";
     const v1Payload = {

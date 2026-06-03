@@ -10,6 +10,7 @@ import os from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  __setKeychainOpsForTest,
   deleteTokens,
   getTokens,
   listStoredProviders,
@@ -130,5 +131,48 @@ describe("tokenStorage", () => {
 
     expect(retrieved?.accessToken).toBe("no-refresh");
     expect(retrieved?.refreshToken).toBeUndefined();
+  });
+});
+
+describe("tokenStorage native-backend fallback eviction (audit 2026-06-03 HIGH #10)", () => {
+  const tmpDir = join(os.tmpdir(), `patchwork-test-tokens-kc-${Date.now()}`);
+
+  beforeEach(() => {
+    process.env.PATCHWORK_HOME = tmpDir;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "native";
+    if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    __setKeychainOpsForTest(null);
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true });
+  });
+
+  it("evicts the stale keychain entry when a later write falls back to file", async () => {
+    const kc = new Map<string, string>();
+    let keychainWritable = true;
+    __setKeychainOpsForTest({
+      set: (k, v) => {
+        if (!keychainWritable) return false;
+        kc.set(k, v);
+        return true;
+      },
+      get: (k) => (kc.has(k) ? (kc.get(k) as string) : null),
+      delete: (k) => kc.delete(k),
+    });
+
+    // 1) First write succeeds → lands in the (fake) keychain.
+    await storeTokens("kc-provider", { accessToken: "STALE-TOKEN" });
+    expect((await getTokens("kc-provider"))?.accessToken).toBe("STALE-TOKEN");
+
+    // 2) Keychain writes now fail (e.g. locked keychain). The fresh token must
+    //    fall back to the encrypted file AND the stale keychain entry must be
+    //    evicted — otherwise getTokens (keychain-first) returns the old token.
+    keychainWritable = false;
+    await storeTokens("kc-provider", { accessToken: "FRESH-TOKEN" });
+
+    expect((await getTokens("kc-provider"))?.accessToken).toBe("FRESH-TOKEN");
   });
 });

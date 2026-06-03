@@ -98,6 +98,41 @@ describe("parsePolicy", () => {
     }
   });
 
+  it("nests WithRetry OUTSIDE WithDedup when both are configured (audit 2026-06-03 HIGH #12)", () => {
+    // A scheduled retry re-enters the OUTERMOST node. If WithDedup were the
+    // outer wrapper (WithDedup → WithRetry → Hook), a task that only succeeds
+    // on a retry would never re-pass through WithDedup, so the dedup key would
+    // never be recorded and identical content would re-fire forever. Retry
+    // must wrap dedup: WithRetry → WithDedup → Hook.
+    const policy = minPolicy({
+      onDiagnosticsError: {
+        enabled: true,
+        minSeverity: "error",
+        cooldownMs: 10_000,
+        prompt: "check errors in {{file}}",
+        dedupeByContent: true,
+        dedupeContentCooldownMs: 900_000,
+        retryCount: 2,
+        retryDelayMs: 15_000,
+      },
+    });
+    const result = parsePolicy(policy);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const top = result.value[0];
+    if (!top) throw new Error("expected first node");
+    expect(top._tag).toBe("WithRetry");
+    if (top._tag === "WithRetry") {
+      expect(top.maxRetries).toBe(2);
+      expect(top.program._tag).toBe("WithDedup");
+      if (top.program._tag === "WithDedup") {
+        expect(top.program.cooldownMs).toBe(900_000);
+        expect(top.program.program._tag).toBe("Hook");
+      }
+    }
+  });
+
   it("wraps WithRetry for hook with retryCount > 0", () => {
     const policy = minPolicy({
       onGitPush: {
