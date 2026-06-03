@@ -51,11 +51,14 @@ Requires: `transcription-mcp` (Whisper), `file-mcp`, `notify-mcp`.
 **Route each step to the right model based on cost/capability.**
 
 - Classification (fast + cheap) → `openai/gpt-4o-mini` or `claude-haiku-4-5`
-- Bulk summarization (private + free) → `ollama/llama3.2` with fallback to Haiku
+- Bulk summarization (private + free) → `ollama/llama3.2`
 - Final synthesis (quality) → `anthropic/claude-sonnet-4-6`
 
 The template for any batch workflow where not every step needs your best model.
-Uses the `model:` and `model_fallback:` per-step fields.
+Uses the per-step `model:` field. (Automatic cross-model fallback and
+cost-aware routing — a `downshift:` field — are a roadmap feature, not yet
+implemented; there is no `model_fallback:` field. See
+[../../../docs/design/cost-aware-routing.md](../../../docs/design/cost-aware-routing.md).)
 
 ---
 
