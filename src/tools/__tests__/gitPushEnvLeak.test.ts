@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Regression for audit 2026-06-03 (HIGH #1): createGitPushTool spread the full
@@ -62,7 +64,7 @@ describe("gitPush env isolation (audit HIGH #1)", () => {
 
   it("does not leak arbitrary process.env secrets into the git push subprocess", async () => {
     const { createGitPushTool } = await import("../gitWrite.js");
-    const tool = createGitPushTool("/tmp/fake-workspace");
+    const tool = createGitPushTool(path.join(os.tmpdir(), "fake-workspace"));
 
     const result = await tool.handler({
       remote: "origin",

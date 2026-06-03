@@ -84,23 +84,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "missing password" }, { status: 400 });
   }
 
-  // Constant-time compare via fixed-length SHA-256 digests.
+  // Constant-time compare of two arbitrary-length secrets via keyed HMAC.
   //
   // Audit 2026-06-03 (HIGH #2): the previous fixed-256-byte padding approach
   // SKIPPED the copy when an input exceeded 256 bytes (`if (b.length <= PAD)`),
   // leaving that buffer all-zeros. Two >256-byte inputs of equal length both
-  // hashed to the all-zero buffer → any same-length payload authenticated
+  // collapsed to the all-zero buffer → any same-length payload authenticated
   // (practical for JWT-style tokens of 200-400 bytes).
   //
-  // Hashing both sides to 32-byte digests is inherently constant-length:
-  // timingSafeEqual always runs over equal-length buffers, there is no
-  // truncation, and no length-equality short-circuit is needed (digest
-  // collisions are infeasible). The expected password is identical every
-  // request, so its hash time is constant — no secret length is leaked.
-  // Audit 2026-05-17 (#600) timing concern remains addressed.
-  const aHash = crypto.createHash("sha256").update(password, "utf8").digest();
-  const bHash = crypto.createHash("sha256").update(expected, "utf8").digest();
-  const equal = crypto.timingSafeEqual(aHash, bHash);
+  // This is the canonical Node recipe (see crypto.timingSafeEqual docs) for
+  // comparing strings of unequal length: HMAC each side under a fresh random
+  // per-request key, then timingSafeEqual the fixed 32-byte tags. Properties:
+  //   - tags are always equal length → timingSafeEqual never throws and runs
+  //     in constant time regardless of either input's length (no length leak);
+  //   - no truncation and no all-zero collision (the >256-byte bug);
+  //   - the random key makes the tags unpredictable across requests.
+  // NB: this is an equality check, NOT password-at-rest hashing — a slow KDF
+  // (bcrypt/argon2) is neither needed nor appropriate here (single shared
+  // secret from env, compared per request). Audit 2026-05-17 (#600) timing
+  // concern remains addressed.
+  const cmpKey = crypto.randomBytes(32);
+  const aHmac = crypto.createHmac("sha256", cmpKey).update(password, "utf8").digest();
+  const bHmac = crypto.createHmac("sha256", cmpKey).update(expected, "utf8").digest();
+  const equal = crypto.timingSafeEqual(aHmac, bHmac);
 
   if (!equal) {
     // Only track failures against a real, attributable client key. The
