@@ -30,6 +30,21 @@ describe("parseRecipe", () => {
     expect(() => parseRecipe({ ...VALID, name: "" })).toThrow(RecipeParseError);
   });
 
+  // Regression: parseRecipe (the installer's normalizer) silently dropped the
+  // recipe-level `budget`, so a recipe round-tripped through it lost its token
+  // budget and RunBudget(recipe.budget) enforced nothing. Pass it through.
+  it("preserves the recipe-level budget", () => {
+    const r = parseRecipe({
+      ...VALID,
+      budget: { tokensMax: 50000, onBreach: "warn" },
+    });
+    expect(r.budget).toEqual({ tokensMax: 50000, onBreach: "warn" });
+  });
+
+  it("leaves budget undefined when absent (no synthetic policy)", () => {
+    expect(parseRecipe(VALID).budget).toBeUndefined();
+  });
+
   // Regression: parseRecipe hard-rejected a version-less recipe with
   // "missing or empty 'version'", but the JSON schema marks version
   // optional with default "1.0.0" and neither validateRecipeDefinition

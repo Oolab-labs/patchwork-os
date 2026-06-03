@@ -28,6 +28,17 @@ export interface AgentUsage {
 export interface AgentResult {
   text: string;
   usage?: AgentUsage;
+  /**
+   * Which driver (and model, when known) ACTUALLY served this call. Stamped
+   * by `executeAgent` — the single place that resolves driver auto-detection
+   * — so callers attribute the result to the real driver instead of guessing
+   * from the configured `driver` string (which is often undefined → the
+   * runner previously logged a literal `"auto"`). Consumed by
+   * `RunBudget.reconcile` for correct per-driver usage/warning attribution,
+   * and the substrate the forthcoming USD cost ledger needs. Additive:
+   * absent on results from callers that bypass `executeAgent`.
+   */
+  servedBy?: { driver: string; model?: string };
 }
 
 export interface AgentExecutorDeps {
@@ -71,17 +82,46 @@ export async function executeAgent(
   const { prompt, driver, model, mcpAccess } = input;
   const cliOpts = mcpAccess !== undefined ? { mcpAccess } : undefined;
 
+  // Stamp the driver that ACTUALLY ran onto the result. This is the single
+  // place driver auto-detection is resolved, so it is the only place that
+  // knows the true answer — callers (RunBudget.reconcile, future cost
+  // accounting) must not re-guess from the configured `driver` string.
+  // Additive and idempotent: never overwrites a servedBy a dep already set.
+  const stamp = async (
+    resolvedDriver: string,
+    resolvedModel: string | undefined,
+    p: Promise<AgentResult>,
+  ): Promise<AgentResult> => {
+    const r = await p;
+    if (r.servedBy) return r;
+    return {
+      ...r,
+      servedBy: {
+        driver: resolvedDriver,
+        ...(resolvedModel !== undefined ? { model: resolvedModel } : {}),
+      },
+    };
+  };
+
   if (driver === "anthropic" || driver === "claude") {
-    return deps.anthropicFn(prompt, model ?? DEFAULT_MODEL);
+    return stamp(
+      "anthropic",
+      model ?? DEFAULT_MODEL,
+      deps.anthropicFn(prompt, model ?? DEFAULT_MODEL),
+    );
   }
   if (driver === "openai" || driver === "grok" || driver === "gemini") {
-    return deps.providerDriverFn(driver, prompt, model);
+    return stamp(driver, model, deps.providerDriverFn(driver, prompt, model));
   }
   if (driver === "subprocess" || driver === "claude-code") {
-    return deps.claudeCliFn(prompt, cliOpts);
+    return stamp("subprocess", model, deps.claudeCliFn(prompt, cliOpts));
   }
   if (driver === "local") {
-    return deps.localFn(prompt, model ?? DEFAULT_MODEL);
+    return stamp(
+      "local",
+      model ?? DEFAULT_MODEL,
+      deps.localFn(prompt, model ?? DEFAULT_MODEL),
+    );
   }
   if (driver !== undefined) {
     throw new Error(`Unknown driver: "${driver}"`);
@@ -90,23 +130,35 @@ export async function executeAgent(
   // No driver — check pwCfg for local model preference (THE MISSING BRANCH).
   const pwCfg = deps.loadPatchworkConfig();
   if (pwCfg.model === "local") {
-    return deps.localFn(prompt, model ?? DEFAULT_MODEL);
+    return stamp(
+      "local",
+      model ?? DEFAULT_MODEL,
+      deps.localFn(prompt, model ?? DEFAULT_MODEL),
+    );
   }
 
   // Explicit subprocess driver config → skip API key check entirely.
   if (pwCfg.driver === "subprocess" || pwCfg.driver === "claude-code") {
-    return deps.claudeCliFn(prompt, cliOpts);
+    return stamp("subprocess", model, deps.claudeCliFn(prompt, cliOpts));
   }
 
   // Auto-detect: prefer API key, otherwise probe for claude CLI.
   if (process.env.ANTHROPIC_API_KEY) {
-    return deps.anthropicFn(prompt, model ?? DEFAULT_MODEL);
+    return stamp(
+      "anthropic",
+      model ?? DEFAULT_MODEL,
+      deps.anthropicFn(prompt, model ?? DEFAULT_MODEL),
+    );
   }
   if (deps.probeClaudeCli()) {
-    return deps.claudeCliFn(prompt, cliOpts);
+    return stamp("subprocess", model, deps.claudeCliFn(prompt, cliOpts));
   }
   // Probe failed and no API key — fall back to anthropicFn so the caller
   // surfaces a clear "[agent step skipped: ANTHROPIC_API_KEY not set]" message
   // (and so test overrides of claudeFn/anthropicFn are honored).
-  return deps.anthropicFn(prompt, model ?? DEFAULT_MODEL);
+  return stamp(
+    "anthropic",
+    model ?? DEFAULT_MODEL,
+    deps.anthropicFn(prompt, model ?? DEFAULT_MODEL),
+  );
 }

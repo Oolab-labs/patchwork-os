@@ -42,8 +42,11 @@ steps:
   # Step 2: Bulk summarization — local Ollama (free, private, good enough for summaries)
   - id: summarize_documents
     risk: low
-    model: ollama/llama3.2      # falls back to anthropic/claude-haiku-4-5 if Ollama unavailable
-    model_fallback: anthropic/claude-haiku-4-5-20251001
+    model: ollama/llama3.2      # local Ollama — free + private, fine for bulk summaries
+    # NOTE: automatic cross-model fallback (e.g. to Haiku when Ollama is down)
+    # is a roadmap feature — there is no `model_fallback:` field today, so do
+    # not rely on one. Per-step cost-aware fallback is designed as `downshift`
+    # in ../../../docs/design/cost-aware-routing.md. The `model:` field works now.
     awaits:
       - classify_documents
     agent:

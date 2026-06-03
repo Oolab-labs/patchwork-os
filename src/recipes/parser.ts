@@ -79,6 +79,14 @@ export function parseRecipe(raw: unknown): Recipe {
       typeof r.on_error === "object" && r.on_error !== null
         ? (r.on_error as Recipe["on_error"])
         : undefined,
+    // Pass the recipe-level budget through. Without this the normalizer
+    // silently dropped `budget`, so any recipe round-tripped through
+    // parseRecipe (the installer's validation path) lost its token budget —
+    // RunBudget(recipe.budget) then saw undefined and enforced nothing.
+    budget:
+      typeof r.budget === "object" && r.budget !== null
+        ? (r.budget as Recipe["budget"])
+        : undefined,
   };
 }
 

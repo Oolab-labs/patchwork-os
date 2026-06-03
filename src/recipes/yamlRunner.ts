@@ -1038,7 +1038,11 @@ export async function runYamlRecipe(
       buildAgentExecutorDeps(stepDeps, deps),
     );
     runBudget.reconcile(
-      driver === "api" ? "anthropic" : (driver ?? "auto"),
+      // Prefer the driver executeAgent actually resolved+ran; fall back to
+      // the configured value only when servedBy is absent (non-executeAgent
+      // callers). Stops auto-detected runs being mis-attributed to "auto".
+      agentReturn.servedBy?.driver ??
+        (driver === "api" ? "anthropic" : (driver ?? "auto")),
       agentReturn.usage,
     );
     const text = agentReturn.text;
@@ -1319,9 +1323,13 @@ export async function runYamlRecipe(
           );
           agentResult = agentReturn.text;
           runBudget.reconcile(
-            agentCfg.driver === "api"
-              ? "anthropic"
-              : (agentCfg.driver ?? "auto"),
+            // Prefer the driver executeAgent actually resolved+ran; the
+            // configured value is only the fallback for non-executeAgent
+            // callers (it is often undefined → previously logged "auto").
+            agentReturn.servedBy?.driver ??
+              (agentCfg.driver === "api"
+                ? "anthropic"
+                : (agentCfg.driver ?? "auto")),
             agentReturn.usage,
           );
           // Catch both `[agent step failed: ...]` (existing) and the
