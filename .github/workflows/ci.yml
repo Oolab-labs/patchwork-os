@@ -342,7 +342,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build --build-arg GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} -t patchwork-smoke .
+        # Retry to ride out transient Docker Hub registry timeouts on base-image
+        # pulls. The `# syntax=` directive was removed from the Dockerfile so
+        # BuildKit no longer fetches the docker/dockerfile frontend at build start
+        # (the recurring `registry-1.docker.io ... i/o timeout` flake).
+        run: |
+          for attempt in 1 2 3; do
+            docker build --build-arg GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" -t patchwork-smoke . && exit 0
+            echo "::warning::docker build attempt $attempt failed (likely a transient Docker Hub timeout); retrying in 15s"
+            sleep 15
+          done
+          echo "docker build failed after 3 attempts"
+          exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Start container
