@@ -42,6 +42,7 @@ const here = dirname(fileURLToPath(import.meta.url));
  * historical / brevity reasons and are spelled out here:
  *   - `calendar` is the Google Calendar step namespace → `google-calendar`.
  *   - `drive`    is the Google Drive step namespace    → `google-drive`.
+ *   - `docs`     is the Google Docs step namespace     → `google-docs`.
  * (`gmail` matches its connector id directly, so needs no alias.)
  *
  * Namespaces that are NOT connector-backed (built-in / composite tools such
@@ -51,6 +52,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const NAMESPACE_TO_CONNECTOR_ID: Record<string, string> = {
   calendar: "google-calendar",
   drive: "google-drive",
+  docs: "google-docs",
 };
 
 function namespaceToConnectorId(namespace: string): string {
