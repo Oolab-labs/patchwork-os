@@ -31,6 +31,11 @@ import "./jira.js";
 import "./pagerduty.js";
 import "./sentry.js";
 import "./stripe.js";
+import "./airtable.js";
+import "./resend.js";
+import "./sendgrid.js";
+import "./twilio.js";
+import "./vercel.js";
 import "./meetingNotes.js";
 
 export type {
