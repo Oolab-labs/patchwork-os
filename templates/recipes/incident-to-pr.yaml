@@ -1,0 +1,187 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json
+apiVersion: patchwork.sh/v1
+version: 1.0.0
+name: incident-to-pr
+description: |
+  FLAGSHIP — the end-to-end AI-native incident-response loop. Turns a
+  production incident into a reviewed, ready-to-merge pull request. Every
+  primitive Patchwork added during the connector + judge→refine campaign
+  shows up here in one pipeline:
+
+    1. investigate — an agent root-causes the incident against THIS repo
+                     using the read/git tools it has via MCP (no writes).
+    2. draft_fix   — an agent writes the smallest correct patch + a PR
+                     title/body. This is the draft the judge reviews.
+    3. review_fix  — a JUDGE step (agent.kind: judge) gives the draft a
+                     cold-eyes senior-engineer review. On `request_changes`
+                     it DRIVES the judge→refine loop: the draft step is
+                     re-run with the judge's fix-list injected, up to
+                     `max_revisions` cycles, until the judge approves. This
+                     is the moat — quality is gated by an AI reviewer, not
+                     by hope.
+    4. open_pr     — an agent opens the PR via the githubCreatePR MCP tool.
+                     Opening a PR is a high-risk WRITE, so the runtime
+                     approval gate pauses here for a human to sign off — the
+                     human-in-the-loop checkpoint before anything lands.
+    5. notify      — posts the PR link + judge verdict to Slack.
+
+  REQUIREMENTS
+    - Bridge running with `--driver subprocess` so the agent steps have MCP
+      tool access (read files, git, githubCreatePR).
+    - GitHub connector connected (for the PR) and Slack connector connected
+      (for the alert) — visit /connections, or `patchwork connect github` /
+      `patchwork connect slack`.
+    - An approval gate of "high" or "all" to exercise the open_pr pause
+      (with the gate off, the PR opens unattended).
+
+  MANUAL RUN
+    patchwork recipe run incident-to-pr \
+      --var INCIDENT_TITLE="checkout 500s on /api/pay" \
+      --var STACK_TRACE="TypeError: cannot read 'id' of undefined at pay.ts:42"
+
+  WEBHOOK CONVERSION (PagerDuty / Sentry / Datadog)
+    Replace the trigger block with:
+      trigger:
+        type: webhook
+        path: /hooks/incident-to-pr
+    and reference {{payload.title}} / {{payload.body}} in place of the vars.
+
+trigger:
+  type: manual
+  vars:
+    - name: INCIDENT_TITLE
+      description: "One-line incident summary (seeds the PR title)"
+      required: true
+    - name: STACK_TRACE
+      description: "Stack trace / error text to root-cause (optional, recommended)"
+      required: false
+    - name: SEVERITY
+      description: "critical | high | medium | low"
+      required: false
+      default: "high"
+    - name: SLACK_CHANNEL
+      description: "Slack channel for the resolution alert"
+      required: false
+      default: "#incidents"
+
+steps:
+  - id: investigate
+    agent:
+      driver: claude-code
+      prompt: |
+        A production incident has fired. Root-cause it against THIS repository.
+
+        Incident: {{INCIDENT_TITLE}}
+        Severity: {{SEVERITY}}
+        Stack trace / error:
+        {{STACK_TRACE}}
+
+        Use the read and git tools available to you — read files, search the
+        codebase, inspect recent commits and run git blame on the implicated
+        files. Do NOT write any files in this step.
+
+        Respond with a concise root-cause analysis containing:
+          - the offending file(s) and line(s)
+          - what is going wrong and why
+          - the commit that most likely introduced it (if identifiable)
+          - the smallest correct fix you would make
+      into: investigation
+    risk: low
+
+  - id: draft_fix
+    awaits:
+      - investigate
+    agent:
+      driver: claude-code
+      prompt: |
+        Using the root-cause analysis below, write a concrete, MINIMAL fix.
+
+        Root-cause analysis:
+        {{investigation}}
+
+        Output exactly these four markdown sections and nothing else:
+
+        ## PR title
+        <conventional-commit-style title, <= 70 chars>
+
+        ## Summary
+        <2-4 sentences: what the bug was and how this change fixes it>
+
+        ## Patch
+        <a unified diff of the smallest change that fixes the root cause —
+         touch as few lines as possible; no drive-by refactors>
+
+        ## Test
+        <the test you would add or modify to prove the fix (a diff), or a
+         short note if existing coverage already exercises the path>
+
+        Do NOT write files in this step — only emit the four sections.
+      into: fix_draft
+    risk: low
+
+  - id: review_fix
+    awaits:
+      - draft_fix
+    agent:
+      kind: judge
+      reviews: fix_draft
+      max_revisions: 2
+      on_exhausted: proceed
+      driver: claude-code
+      prompt: |
+        You are a senior engineer doing a cold-eyes review of the proposed
+        fix below BEFORE it becomes a pull request. Judge it on:
+          - correctness:  does it actually fix the root cause?
+          - minimality:   smallest possible change, nothing unrelated?
+          - safety:       regression risk, edge cases, missing guards?
+          - tests:        is there a test that would FAIL without the fix?
+          - PR hygiene:   clear, accurate title and summary?
+
+        Return a verdict: approve | request_changes | unparseable.
+        If request_changes, list concrete, actionable fixes — each one a
+        specific change the author must make. Those drive the revision loop;
+        the draft is regenerated with your fix-list and re-reviewed.
+      into: review
+    risk: low
+
+  - id: open_pr
+    awaits:
+      - review_fix
+    agent:
+      driver: claude-code
+      prompt: |
+        The fix below has passed judge review. Open a pull request for it.
+
+        Approved fix:
+        {{fix_draft}}
+
+        Do this:
+          1. Create a branch off the default branch named
+             fix/<short-slug-derived-from-the-PR-title>.
+          2. Apply the change from the "## Patch" section and add the test
+             from the "## Test" section.
+          3. Open a pull request using the githubCreatePR tool, with the
+             "## PR title" as the title and the "## Summary" — followed by a
+             line "Fixes incident: {{INCIDENT_TITLE}}" — as the body.
+
+        Opening a PR is a write action; it will pause at the approval gate
+        for a human to confirm before it lands. After it succeeds, respond
+        with ONLY this JSON object (no markdown fences):
+        {"prUrl": "<url>", "prNumber": <number>, "branch": "<branch>"}
+
+        If the GitHub connector is not connected, respond with:
+        {"error": "GitHub connector not connected — visit /connections"}
+      into: pr
+    risk: high
+
+  - id: notify
+    awaits:
+      - open_pr
+    tool: slack.post_message
+    channel: "{{SLACK_CHANNEL}}"
+    text: |
+      :white_check_mark: Incident fix ready for review
+      *Incident:* {{INCIDENT_TITLE}} ({{SEVERITY}})
+      *Pull request:* {{pr}}
+      *Judge review:* {{review}}
+    risk: medium
