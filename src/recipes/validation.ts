@@ -160,6 +160,58 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
               message: `Step ${i + 1}: Agent step missing 'prompt'`,
             });
           }
+
+          // OPT-IN judge→refine loop fields. Both `max_revisions` and
+          // `on_exhausted` are meaningless without a `kind: "judge"` step
+          // that points at an upstream step via `reviews:` — a refine loop
+          // needs an agent output to re-run. Flag misuse as an error so
+          // `recipe lint` / `doctor` catch it before any run.
+          const hasRefineField =
+            agent.max_revisions !== undefined ||
+            agent.on_exhausted !== undefined;
+          if (hasRefineField) {
+            if (agent.kind !== "judge") {
+              issues.push({
+                level: "error",
+                message: `Step ${i + 1}: 'max_revisions'/'on_exhausted' require 'kind: judge' (the judge→refine loop only applies to judge steps)`,
+                code: "refine-requires-judge",
+                path: `steps.${i}.agent`,
+              });
+            } else if (
+              typeof agent.reviews !== "string" ||
+              agent.reviews.length === 0
+            ) {
+              issues.push({
+                level: "error",
+                message: `Step ${i + 1}: 'max_revisions'/'on_exhausted' require 'reviews' to be set (the loop re-runs the reviewed step)`,
+                code: "refine-requires-reviews",
+                path: `steps.${i}.agent`,
+              });
+            }
+          }
+          if (agent.max_revisions !== undefined) {
+            const mr = agent.max_revisions;
+            if (typeof mr !== "number" || !Number.isInteger(mr) || mr < 0) {
+              issues.push({
+                level: "error",
+                message: `Step ${i + 1}: 'max_revisions' must be a non-negative integer (got ${JSON.stringify(mr)})`,
+                code: "refine-max-revisions-invalid",
+                path: `steps.${i}.agent.max_revisions`,
+              });
+            }
+          }
+          if (
+            agent.on_exhausted !== undefined &&
+            agent.on_exhausted !== "halt" &&
+            agent.on_exhausted !== "proceed"
+          ) {
+            issues.push({
+              level: "error",
+              message: `Step ${i + 1}: invalid 'on_exhausted' '${String(agent.on_exhausted)}' — must be 'halt' or 'proceed'`,
+              code: "refine-on-exhausted-enum",
+              path: `steps.${i}.agent.on_exhausted`,
+            });
+          }
         }
 
         // Unconditional risk-enum check. `risk` was previously never

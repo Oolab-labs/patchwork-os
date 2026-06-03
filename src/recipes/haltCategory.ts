@@ -27,6 +27,11 @@ export type HaltCategory =
   /** Per-step wall-clock `timeout_ms` exceeded (sandbox-alternative slice). */
   | "step_timeout"
   /**
+   * Opt-in judge→refine loop exhausted its `max_revisions` budget and the
+   * judge still returned `request_changes` with `on_exhausted: "halt"`.
+   */
+  | "judge_revisions_exhausted"
+  /**
    * Connector returned 401/403 — token expired or scopes insufficient.
    * Actionable: user should reconnect from /connections.
    */
@@ -66,6 +71,7 @@ export const HALT_CATEGORY_LABELS: Record<HaltCategory, string> = {
   budget_exceeded: "budget exceeded",
   expect_failed: "expect failed",
   step_timeout: "step timeout",
+  judge_revisions_exhausted: "judge revisions exhausted",
   auth_failure: "auth failure",
   rate_limited: "rate limited",
   network_error: "network error",
@@ -89,6 +95,8 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
   budget_exceeded: "raise tokensMax or shrink prompts",
   expect_failed: "inspect assertion vs actual output",
   step_timeout: "bump timeout_ms or speed up step",
+  judge_revisions_exhausted:
+    "raise max_revisions, refine the prompt, or set on_exhausted: proceed",
   auth_failure: "reconnect from /connections",
   rate_limited: "back off cron cadence or wait",
   network_error: "check connectivity to upstream",
@@ -111,6 +119,10 @@ export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (/budget[_ ]?exceeded|exceeded its token budget/i.test(reason))
     return "budget_exceeded";
   if (/^expect_failed/i.test(reason)) return "expect_failed";
+  // Opt-in judge→refine loop exhaustion (`judge "x" did not approve after N
+  // revisions`). Must precede the generic `Agent step ... threw` matcher.
+  if (/did not approve after \d+ revision/i.test(reason))
+    return "judge_revisions_exhausted";
   // Must precede the `^Tool ... threw` matcher: timeouts surface wrapped
   // inside the tool-threw envelope (`Tool "x" in step "y" threw: step_timeout: ...`).
   if (/step_timeout/i.test(reason)) return "step_timeout";

@@ -295,6 +295,23 @@ function generateRecipeSchema(
               description:
                 "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log.",
             },
+            reviews: {
+              type: "string",
+              description:
+                "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge→refine loop.",
+            },
+            max_revisions: {
+              type: "integer",
+              minimum: 0,
+              description:
+                "OPT-IN judge→refine loop. Max revise→re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews.",
+            },
+            on_exhausted: {
+              type: "string",
+              enum: ["halt", "proceed"],
+              description:
+                "When the revision budget is exhausted and the judge still requests changes: 'halt' (default) fails the run; 'proceed' continues with the last draft.",
+            },
           },
         },
       },
@@ -546,6 +563,23 @@ function generateRecipeSchema(
                       enum: ["judge"],
                       description:
                         "When set to 'judge', the agent step emits a structured verdictReason and stores the verdict in the run log.",
+                    },
+                    reviews: {
+                      type: "string",
+                      description:
+                        "Step output key the judge reviews (its `into`, default 'agent_output'). Required for the judge→refine loop.",
+                    },
+                    max_revisions: {
+                      type: "integer",
+                      minimum: 0,
+                      description:
+                        "OPT-IN judge→refine loop. Max revise→re-judge cycles when the verdict is 'request_changes' (0/absent = augment-only, no loop). Requires kind:judge + reviews.",
+                    },
+                    on_exhausted: {
+                      type: "string",
+                      enum: ["halt", "proceed"],
+                      description:
+                        "When the revision budget is exhausted and the judge still requests changes: 'halt' (default) fails the run; 'proceed' continues with the last draft.",
                     },
                   },
                 },
