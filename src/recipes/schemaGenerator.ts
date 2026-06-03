@@ -673,6 +673,11 @@ function generateRecipeSchema(
             description:
               "Cumulative USD allowed across the whole run, priced from token usage via the model price table. Unpriced models / subscription drivers fail open (never halt on them).",
           },
+          estimateUnmeasured: {
+            type: "boolean",
+            description:
+              "OPT-IN (default false). Estimate the notional list-price USD an unmeasured/subscription call would have cost and surface a ≈$ figure. Label only — never counted toward usdMax, never halts. Requires usdMax.",
+          },
           onBreach: {
             type: "string",
             enum: ["halt", "warn"],

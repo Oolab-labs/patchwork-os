@@ -3530,6 +3530,41 @@ describe("recipe.budget — tokensMax enforcement (PR2b)", () => {
     expect(seen).toEqual(["big-model"]); // preferred used; no routing
   });
 
+  it("surfaces a ≈$ estimate for unmeasured drivers when estimateUnmeasured is on", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "pw-estimate-"));
+    const fixture = path.join(dir, "prices.json");
+    writeFileSync(
+      fixture,
+      JSON.stringify({ prices: { "sub-model": { input: 100, output: 100 } } }),
+    );
+    const prev = process.env.PATCHWORK_PRICE_TABLE;
+    process.env.PATCHWORK_PRICE_TABLE = fixture;
+    try {
+      const recipe = makeRecipe({
+        budget: { usdMax: 1000, estimateUnmeasured: true },
+        steps: [
+          {
+            agent: {
+              prompt: "estimate me please",
+              model: "sub-model",
+              into: "o1",
+            },
+          },
+        ],
+      });
+      const result = await runYamlRecipe(recipe, {
+        ...noop(),
+        // Returns a STRING (no usage) → unmeasured, like a subscription CLI.
+        claudeFn: async () => "ok output",
+      });
+      expect(result.budgetWarnings?.some((w) => w.includes("≈$"))).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.PATCHWORK_PRICE_TABLE;
+      else process.env.PATCHWORK_PRICE_TABLE = prev;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("does not enforce when recipe.budget is absent (no overhead)", async () => {
     const recipe = makeRecipe({
       steps: [

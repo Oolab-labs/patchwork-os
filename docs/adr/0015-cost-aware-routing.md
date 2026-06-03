@@ -34,7 +34,7 @@ Five opt-in phases, each byte-identical when unconfigured:
 ## Alternatives considered
 
 - **Declarative cost tiers (`tier:`/`routing:` + inline `pricing:`).** Rejected: ~400 LOC of tier-dictionary that duplicates what per-step `driver`+`model` already expresses, and an inline `pricing:` field is a budget-evasion footgun (a recipe could under-price a model to dodge `usdMax`). The leaner per-step `downshift` + out-of-band price overrides get the value without the surface.
-- **Estimate-and-halt for subscription drivers (`estimateUnmeasured: true` default).** Rejected as the default: it would hard-halt the token-blind subscription driver on a ~4-chars/token guess of notional spend — inverting fail-open. Deferred entirely; if it lands later it must default `false` and can only *warn*.
+- **Estimate-and-halt for subscription drivers (`estimateUnmeasured: true` default).** Rejected *as the default*: it would hard-halt the token-blind subscription driver on a ~4-chars/token guess of notional spend — inverting fail-open. **Shipped as opt-in, default `false`, warn-only:** when enabled it estimates the notional list-price USD an unmeasured call would have cost (`totals().usdEstimated`, surfaced as a `≈$X` run-log line) but tracks it entirely separately from `usdMax` — `admit()` never reads it, so it can never halt a run. A flat-rate subscription call is not real money out, and halting on an estimate would be wrong.
 - **A wall-clock CI staleness gate on the price table.** Rejected: a time-based hard-fail eventually breaks an unrelated PR. Shipped instead as a pure `isPriceTableStale` helper + a structural test, ready for a scheduled (non-PR) check.
 
 ## Consequences

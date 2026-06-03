@@ -1073,6 +1073,8 @@ export async function runYamlRecipe(
       // Resolved model for USD pricing (Phase 3). Absent → unpriced → the USD
       // cap fails open for this call.
       agentReturn.servedBy?.model,
+      // Char counts for the opt-in unmeasured-driver ≈$ estimate (warn-only).
+      { inputChars: prompt.length, outputChars: agentReturn.text.length },
     );
     const text = agentReturn.text;
     // Same failure detection as the main agent branch: explicit failure
@@ -1371,6 +1373,11 @@ export async function runYamlRecipe(
             agentReturn.usage,
             // Resolved model for USD pricing (Phase 3); absent → fail open.
             agentReturn.servedBy?.model,
+            // Char counts for the opt-in unmeasured-driver ≈$ estimate.
+            {
+              inputChars: renderedPrompt.length,
+              outputChars: agentReturn.text.length,
+            },
           );
           // Catch both `[agent step failed: ...]` (existing) and the
           // silent-fail patterns `[agent step skipped: ...]` etc. via the
@@ -1807,8 +1814,8 @@ export async function runYamlRecipe(
           ...(runError !== undefined && { errorMessage: runError }),
           ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
           ...(inboxOutputs.length > 0 ? { inboxOutputs } : {}),
-          ...(runBudget.warnings().length > 0
-            ? { budgetWarnings: runBudget.warnings() }
+          ...(runBudget.finalWarnings().length > 0
+            ? { budgetWarnings: runBudget.finalWarnings() }
             : {}),
         });
         emit("recipe_done", {
@@ -1902,8 +1909,8 @@ export async function runYamlRecipe(
     stepResults,
     errorMessage: runError,
     ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
-    ...(runBudget.warnings().length > 0
-      ? { budgetWarnings: runBudget.warnings() }
+    ...(runBudget.finalWarnings().length > 0
+      ? { budgetWarnings: runBudget.finalWarnings() }
       : {}),
   };
 }
