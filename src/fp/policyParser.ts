@@ -188,14 +188,12 @@ function buildHook(
     ? hookNode
     : withCooldown(key, safeCooldownMs, hookNode);
 
-  // Wrap WithRetry around WithCooldown if retryCount > 0
-  const retryCount = src.retryCount ?? 0;
-  if (retryCount > 0) {
-    const retryDelayMs = Math.max(5_000, src.retryDelayMs ?? 30_000);
-    program = withRetry(key, retryCount, retryDelayMs, program);
-  }
-
-  // Wrap WithDedup for diagnostics error with dedupeByContent
+  // Wrap WithDedup for diagnostics error with dedupeByContent.
+  // Audit 2026-06-03 (HIGH #12): dedup must be wrapped BEFORE (inside) retry.
+  // A scheduled retry re-enters the OUTERMOST node; with WithDedup as the outer
+  // wrapper a retried-into-success task never re-passed through dedup, so the
+  // dedup key was never recorded and identical content re-fired forever.
+  // Final order: WithRetry → WithDedup → Hook.
   if (useDedup) {
     const dedupCooldown = Math.max(
       5_000,
@@ -203,6 +201,14 @@ function buildHook(
         .dedupeContentCooldownMs ?? 900_000,
     );
     program = withDedup(`dedup:${key}`, dedupCooldown, program);
+  }
+
+  // Wrap WithRetry (outermost) so retries re-enter the full stack — cooldown
+  // and dedup included — and record their state on success.
+  const retryCount = src.retryCount ?? 0;
+  if (retryCount > 0) {
+    const retryDelayMs = Math.max(5_000, src.retryDelayMs ?? 30_000);
+    program = withRetry(key, retryCount, retryDelayMs, program);
   }
 
   return ok(program);

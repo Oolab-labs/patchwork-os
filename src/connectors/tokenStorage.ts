@@ -71,6 +71,12 @@ export function storeSecretJsonSync(provider: string, value: unknown): void {
     return;
   }
 
+  // Keychain write failed — fall back to the encrypted file. Audit 2026-06-03
+  // (HIGH #10): evict any stale keychain entry first. getSecretJsonSync reads
+  // the keychain BEFORE the file, so leaving an old entry behind would make it
+  // return the stale credential and ignore this fresh write — leaving the
+  // connector "connected" with a revoked token until manual cleanup.
+  deleteKeychainItemSync(key);
   setEncryptedFileSync(key, json);
 }
 
@@ -449,7 +455,21 @@ function resolveBackend(): TokenStorageBackend {
 }
 
 // Platform abstraction
+
+/** Injectable keychain ops — lets tests exercise the native backend + its
+ *  fallback paths without touching the real OS credential store. */
+export interface KeychainOpsForTest {
+  set: (key: string, value: string) => boolean;
+  get: (key: string) => string | null;
+  delete: (key: string) => boolean;
+}
+let _keychainOverride: KeychainOpsForTest | null = null;
+export function __setKeychainOpsForTest(ops: KeychainOpsForTest | null): void {
+  _keychainOverride = ops;
+}
+
 function setKeychainItemSync(key: string, value: string): boolean {
+  if (_keychainOverride) return _keychainOverride.set(key, value);
   if (process.platform === "darwin") {
     return setMacOSKeychainItemSync(key, value);
   }
@@ -460,6 +480,7 @@ function setKeychainItemSync(key: string, value: string): boolean {
 }
 
 function getKeychainItemSync(key: string): string | null {
+  if (_keychainOverride) return _keychainOverride.get(key);
   if (process.platform === "darwin") {
     return getMacOSKeychainItemSync(key);
   }
@@ -470,6 +491,7 @@ function getKeychainItemSync(key: string): string | null {
 }
 
 function deleteKeychainItemSync(key: string): boolean {
+  if (_keychainOverride) return _keychainOverride.delete(key);
   if (process.platform === "darwin") {
     return deleteMacOSKeychainItemSync(key);
   }

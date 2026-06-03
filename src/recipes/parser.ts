@@ -109,13 +109,25 @@ function parseTrigger(raw: unknown): Trigger {
           "path",
         ]);
       return { type: "webhook", path: t.path };
-    case "cron":
-      if (typeof t.schedule !== "string" || !t.schedule.trim())
-        throw new RecipeParseError("cron.schedule required", [
+    case "cron": {
+      // Audit 2026-06-03 (HIGH #9): accept both `schedule` and the schema-
+      // documented `at` field. validateRecipeDefinition reads `trigger.at`
+      // (post-normalization) so a recipe authored with `at:` lints fine; the
+      // install path goes through here, so without this alias it threw
+      // `cron.schedule required` and lint-passing recipes failed to install.
+      const cronExpr =
+        typeof t.schedule === "string" && t.schedule.trim()
+          ? t.schedule
+          : typeof t.at === "string" && t.at.trim()
+            ? t.at
+            : null;
+      if (!cronExpr)
+        throw new RecipeParseError("cron.schedule (or cron.at) required", [
           "trigger",
           "schedule",
         ]);
-      return { type: "cron", schedule: t.schedule };
+      return { type: "cron", schedule: cronExpr };
+    }
     case "file_watch":
       if (!Array.isArray(t.patterns) || t.patterns.length === 0)
         throw new RecipeParseError("file_watch.patterns required", [

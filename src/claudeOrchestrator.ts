@@ -140,6 +140,13 @@ interface PersistedTask {
   startupMs?: number;
   triggerSource?: string;
   systemPrompt?: string;
+  // Audit 2026-06-03 (HIGH #11): these must survive a persist→restart→reload
+  // round-trip. Dropping them silently re-ran tasks with the wrong binary
+  // (useAnt), without bridge tool access (mcpAccess), or without the
+  // automation infinite-chain guard (isAutomationTask).
+  useAnt?: boolean;
+  mcpAccess?: boolean;
+  isAutomationTask?: boolean;
 }
 
 export class ClaudeOrchestrator {
@@ -568,6 +575,11 @@ export class ClaudeOrchestrator {
         ...(t.wasAborted !== undefined && { wasAborted: t.wasAborted }),
         ...(t.startupMs !== undefined && { startupMs: t.startupMs }),
         ...(t.systemPrompt !== undefined && { systemPrompt: t.systemPrompt }),
+        ...(t.useAnt !== undefined && { useAnt: t.useAnt }),
+        ...(t.mcpAccess !== undefined && { mcpAccess: t.mcpAccess }),
+        ...(t.isAutomationTask !== undefined && {
+          isAutomationTask: t.isAutomationTask,
+        }),
         ...(t.triggerSource !== undefined && {
           triggerSource: t.triggerSource,
         }),
@@ -727,6 +739,11 @@ export class ClaudeOrchestrator {
               ...(t.systemPrompt !== undefined && {
                 systemPrompt: t.systemPrompt,
               }),
+              ...(t.useAnt !== undefined && { useAnt: t.useAnt }),
+              ...(t.mcpAccess !== undefined && { mcpAccess: t.mcpAccess }),
+              ...(t.isAutomationTask !== undefined && {
+                isAutomationTask: t.isAutomationTask,
+              }),
             });
             reenqueued++;
           } else {
@@ -804,6 +821,11 @@ export class ClaudeOrchestrator {
       }),
       ...(typeof t.startupMs === "number" && { startupMs: t.startupMs }),
       ...(t.systemPrompt !== undefined && { systemPrompt: t.systemPrompt }),
+      ...(t.useAnt !== undefined && { useAnt: t.useAnt }),
+      ...(t.mcpAccess !== undefined && { mcpAccess: t.mcpAccess }),
+      ...(t.isAutomationTask !== undefined && {
+        isAutomationTask: t.isAutomationTask,
+      }),
     };
     this.tasks.set(task.id, task);
   }

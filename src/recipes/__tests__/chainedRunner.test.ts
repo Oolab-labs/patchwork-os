@@ -448,6 +448,38 @@ describe("runChainedRecipe", () => {
     expect(alwaysFailDeps.executeTool).toHaveBeenCalledTimes(3);
   });
 
+  it("still runs the step exactly once when retry is negative (audit 2026-06-03 HIGH #8)", async () => {
+    // A negative retry (typo / misconfig) previously made `attempt <= maxRetries`
+    // immediately false, so the step NEVER executed and reported as failed with
+    // no diagnostic. The step must still run once (retries clamped to >= 0).
+    const okDeps = {
+      ...noopDeps,
+      executeTool: vi.fn().mockResolvedValue(undefined),
+    };
+    const recipe: ChainedRecipe = {
+      name: "test",
+      steps: [{ id: "a", tool: "t", retry: -1, retryDelay: 0 }],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, okDeps);
+    expect(result.success).toBe(true);
+    expect(okDeps.executeTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps an absurdly large retry count instead of looping unboundedly (audit 2026-06-03 HIGH #8)", async () => {
+    const alwaysFailDeps = {
+      ...noopDeps,
+      executeTool: vi.fn().mockRejectedValue(new Error("permanent")),
+    };
+    const recipe: ChainedRecipe = {
+      name: "test",
+      steps: [{ id: "a", tool: "t", retry: 1_000_000, retryDelay: 0 }],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, alwaysFailDeps);
+    expect(result.success).toBe(false);
+    // Clamped to MAX_RETRIES (20) → 1 initial + 20 retries = 21 calls, not 1e6.
+    expect(alwaysFailDeps.executeTool).toHaveBeenCalledTimes(21);
+  });
+
   it("counts skipped steps correctly", async () => {
     const recipe: ChainedRecipe = {
       name: "test",
