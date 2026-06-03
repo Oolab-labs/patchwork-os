@@ -136,6 +136,15 @@ export function isReadOnlySql(sql: string): boolean {
   // ";" too, accept that). Allows a single trailing semicolon.
   const stripped = s.replace(/;\s*$/, "");
   if (stripped.includes(";")) return false;
+  // PostgreSQL allows DATA-MODIFYING CTEs: `WITH x AS (INSERT/UPDATE/DELETE/
+  // MERGE ... RETURNING ...) SELECT ...` mutates despite the SELECT tail and
+  // would otherwise pass the `with` keyword check. Reject any WITH statement
+  // that embeds a data-modifying keyword (word-boundary match avoids false
+  // hits on identifiers like `updated_at`/`deleted`). Defence in depth — pair
+  // with role-level read-only grants. Audit 2026-06-03 (HIGH #3).
+  if (kw === "with" && /\b(insert|update|delete|merge)\b/i.test(stripped)) {
+    return false;
+  }
   return true;
 }
 

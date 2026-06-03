@@ -73,6 +73,34 @@ describe("isReadOnlySql", () => {
     expect(isReadOnlySql("WITH x AS (SELECT 1) SELECT * FROM x")).toBe(true);
   });
 
+  it("rejects writable CTEs that mutate via WITH ... INSERT/UPDATE/DELETE (audit 2026-06-03 HIGH #3)", async () => {
+    const { isReadOnlySql } = await import("../postgres.js");
+    expect(
+      isReadOnlySql(
+        "WITH x AS (INSERT INTO t VALUES (1) RETURNING id) SELECT id FROM x",
+      ),
+    ).toBe(false);
+    expect(
+      isReadOnlySql(
+        "WITH del AS (DELETE FROM t WHERE id=1 RETURNING *) SELECT * FROM del",
+      ),
+    ).toBe(false);
+    expect(
+      isReadOnlySql(
+        "with upd as (UPDATE t SET a=1 RETURNING *) select * from upd",
+      ),
+    ).toBe(false);
+    expect(
+      isReadOnlySql(
+        "WITH m AS (MERGE INTO t USING s ON t.id=s.id WHEN MATCHED THEN UPDATE SET a=1) SELECT 1",
+      ),
+    ).toBe(false);
+    // A genuinely read-only CTE is still accepted (no over-block of plain WITH).
+    expect(
+      isReadOnlySql("WITH a AS (SELECT 1), b AS (SELECT 2) SELECT * FROM a, b"),
+    ).toBe(true);
+  });
+
   it("rejects INSERT / UPDATE / DELETE / DROP / TRUNCATE / ALTER", async () => {
     const { isReadOnlySql } = await import("../postgres.js");
     expect(isReadOnlySql("INSERT INTO users VALUES (1)")).toBe(false);

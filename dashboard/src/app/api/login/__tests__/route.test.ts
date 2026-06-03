@@ -78,6 +78,36 @@ describe("POST /api/login — no trusted proxy (BRIDGE_TRUST_PROXY unset)", () =
   });
 });
 
+describe("POST /api/login — long-password compare (audit 2026-06-03 HIGH #2)", () => {
+  // The compare padded both inputs into a fixed 256-byte buffer but SKIPPED
+  // the copy when an input exceeded 256 bytes (`if (b.length <= PAD)`), leaving
+  // that buffer all-zeros. Two >256-byte inputs of equal length therefore both
+  // compared as all-zeros → any same-length payload authenticated. JWT-style
+  // tokens (200-400 bytes) make this practical.
+  const LONG = "x".repeat(300);
+
+  beforeEach(() => {
+    process.env.DASHBOARD_PASSWORD = LONG;
+  });
+
+  it("rejects a wrong password of the same (>256-byte) length", async () => {
+    const attempt = "y".repeat(300); // same length, different content
+    const r = await POST(req({ password: attempt }));
+    expect(r.status).toBe(401);
+  });
+
+  it("still accepts the correct >256-byte password", async () => {
+    const ok = await POST(req({ password: LONG }));
+    expect(ok.status).toBe(200);
+  });
+
+  it("rejects a wrong password that shares the first 256 bytes", async () => {
+    const attempt = "x".repeat(256) + "z".repeat(44); // first 256 identical
+    const r = await POST(req({ password: attempt }));
+    expect(r.status).toBe(401);
+  });
+});
+
 describe("POST /api/login — trusted proxy (BRIDGE_TRUST_PROXY=true)", () => {
   beforeEach(() => {
     process.env.BRIDGE_TRUST_PROXY = "true";

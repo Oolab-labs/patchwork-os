@@ -16,7 +16,7 @@ const MAX_ARGS = 100;
 const MAX_ARG_LENGTH = 16_384;
 
 /** Flags that allow interpreter commands to execute arbitrary code */
-const DANGEROUS_INTERPRETER_FLAGS = new Set([
+export const DANGEROUS_INTERPRETER_FLAGS = new Set([
   "-e",
   "--eval",
   "-c",
@@ -33,7 +33,7 @@ const DANGEROUS_INTERPRETER_FLAGS = new Set([
 ]);
 
 /** Flags that redirect where commands read config/manifests from */
-const DANGEROUS_PATH_FLAGS = new Set([
+export const DANGEROUS_PATH_FLAGS = new Set([
   "--prefix",
   "--manifest-path",
   "--config",
@@ -54,7 +54,7 @@ const DANGEROUS_PATH_FLAGS = new Set([
   "--netrc-file",
 ]);
 
-const DANGEROUS_FLAGS_FOR_COMMAND: Record<string, Set<string>> = {
+export const DANGEROUS_FLAGS_FOR_COMMAND: Record<string, Set<string>> = {
   make: new Set(["-f", "--file"]),
   curl: new Set(["-w", "--write-out"]),
   node: new Set(["-r"]),
@@ -62,7 +62,7 @@ const DANGEROUS_FLAGS_FOR_COMMAND: Record<string, Set<string>> = {
   tsx: new Set(["-r"]),
 };
 
-const PATH_FLAG_EXEMPTIONS: Record<string, Set<string>> = {
+export const PATH_FLAG_EXEMPTIONS: Record<string, Set<string>> = {
   psql: new Set(["--config"]),
   pg_dump: new Set(["--config"]),
   pg_restore: new Set(["--config"]),

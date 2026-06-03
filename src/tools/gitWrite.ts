@@ -955,8 +955,12 @@ export function createGitPushTool(
             timeout: 120_000,
             // Inject SSH options: fast connect-timeout surfaces auth errors
             // immediately instead of hanging; keepalive prevents silent TCP drops.
+            // SECURITY (audit 2026-06-03 HIGH #1): pass ONLY GIT_SSH_COMMAND.
+            // execSafe merges opts.env into its minimalEnv allowlist, so spreading
+            // process.env here would defeat the secret filter and expose
+            // ANTHROPIC_API_KEY / OAuth tokens / DB creds to a malicious remote's
+            // credential helper, hooks, or GIT_ASKPASS.
             env: {
-              ...process.env,
               GIT_SSH_COMMAND:
                 "ssh -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=6",
             },

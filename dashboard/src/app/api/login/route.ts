@@ -84,24 +84,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "missing password" }, { status: 400 });
   }
 
-  const a = Buffer.from(password, "utf8");
-  const b = Buffer.from(expected, "utf8");
-  // Constant-time compare. Pad BOTH inputs to the same fixed buffer
-  // (PAD = 256) every call so the loop cost is identical regardless of
-  // either input's length, then AND with a length-equality check that
-  // runs AFTER timingSafeEqual (not before — short-circuiting on
-  // length is the same leak as not padding at all).
-  // Audit 2026-05-17 (#600): previous version padded to
-  // `max(a.length, b.length)` and short-circuited on `a.length ===
-  // b.length` BEFORE timingSafeEqual, leaking expected-password length
-  // via response time.
-  const PAD = 256;
-  const pa = Buffer.alloc(PAD);
-  const pb = Buffer.alloc(PAD);
-  if (a.length <= PAD) a.copy(pa);
-  if (b.length <= PAD) b.copy(pb);
-  const bytesEqual = crypto.timingSafeEqual(pa, pb);
-  const equal = bytesEqual && a.length === b.length;
+  // Constant-time compare via fixed-length SHA-256 digests.
+  //
+  // Audit 2026-06-03 (HIGH #2): the previous fixed-256-byte padding approach
+  // SKIPPED the copy when an input exceeded 256 bytes (`if (b.length <= PAD)`),
+  // leaving that buffer all-zeros. Two >256-byte inputs of equal length both
+  // hashed to the all-zero buffer → any same-length payload authenticated
+  // (practical for JWT-style tokens of 200-400 bytes).
+  //
+  // Hashing both sides to 32-byte digests is inherently constant-length:
+  // timingSafeEqual always runs over equal-length buffers, there is no
+  // truncation, and no length-equality short-circuit is needed (digest
+  // collisions are infeasible). The expected password is identical every
+  // request, so its hash time is constant — no secret length is leaked.
+  // Audit 2026-05-17 (#600) timing concern remains addressed.
+  const aHash = crypto.createHash("sha256").update(password, "utf8").digest();
+  const bHash = crypto.createHash("sha256").update(expected, "utf8").digest();
+  const equal = crypto.timingSafeEqual(aHash, bHash);
 
   if (!equal) {
     // Only track failures against a real, attributable client key. The
