@@ -311,6 +311,7 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
     }
 
     validateRecipeBudget(r, issues);
+    validateRecipeErrorPolicy(r, issues);
   }
 
   if (isEnabled(FLAG_SCHEMA_LINT)) {
@@ -387,6 +388,78 @@ function validateRecipeBudget(
       message: "budget.estimateUnmeasured must be a boolean",
       path: "budget.estimateUnmeasured",
       code: "budget-estimate-type",
+    });
+  }
+}
+
+/**
+ * Validate the optional recipe `on_error` policy block. Audit 2026-06-03
+ * (MEDIUM): the hand-rolled lint never checked it, so a typo'd `fallback`
+ * enum, a non-numeric `retry`, or a negative `retry` (which the runtime
+ * now clamps — see chainedRunner.withRetry, audit HIGH #8) passed lint
+ * silently. Mirrors validateRecipeBudget. `retry` is a non-negative integer;
+ * `retryDelay` a non-negative number (ms); `fallback` the documented enum.
+ */
+function validateRecipeErrorPolicy(
+  r: Record<string, unknown>,
+  issues: LintIssue[],
+): void {
+  const onError = r.on_error;
+  if (onError === undefined) return;
+  if (
+    typeof onError !== "object" ||
+    onError === null ||
+    Array.isArray(onError)
+  ) {
+    issues.push({
+      level: "error",
+      message: "'on_error' must be an object",
+      path: "on_error",
+      code: "on-error-type",
+    });
+    return;
+  }
+  const e = onError as Record<string, unknown>;
+  if (e.retry !== undefined) {
+    if (
+      typeof e.retry !== "number" ||
+      !Number.isInteger(e.retry) ||
+      e.retry < 0
+    ) {
+      issues.push({
+        level: "error",
+        message: "on_error.retry must be a non-negative integer",
+        path: "on_error.retry",
+        code: "on-error-retry",
+      });
+    }
+  }
+  if (e.retryDelay !== undefined) {
+    if (
+      typeof e.retryDelay !== "number" ||
+      !Number.isFinite(e.retryDelay) ||
+      e.retryDelay < 0
+    ) {
+      issues.push({
+        level: "error",
+        message: "on_error.retryDelay must be a non-negative number (ms)",
+        path: "on_error.retryDelay",
+        code: "on-error-retrydelay",
+      });
+    }
+  }
+  if (
+    e.fallback !== undefined &&
+    e.fallback !== "log_only" &&
+    e.fallback !== "abort" &&
+    e.fallback !== "deliver_original"
+  ) {
+    issues.push({
+      level: "error",
+      message:
+        "on_error.fallback must be 'log_only', 'abort', or 'deliver_original'",
+      path: "on_error.fallback",
+      code: "on-error-fallback-enum",
     });
   }
 }

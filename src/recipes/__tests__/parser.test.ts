@@ -130,6 +130,26 @@ describe("parseRecipe", () => {
     );
   });
 
+  // Regression (audit 2026-06-03 MEDIUM): a file_watch patterns array of only
+  // non-strings passed the length check but filtered to [], so the trigger
+  // silently watched nothing. It must throw, not produce an empty watcher.
+  it("rejects a file_watch patterns array with no usable string globs", () => {
+    expect(() =>
+      parseRecipe({
+        ...VALID,
+        trigger: { type: "file_watch", patterns: [123, true] },
+      }),
+    ).toThrow(/file_watch\.patterns must contain at least one string/);
+  });
+
+  it("keeps the valid string globs in a mixed file_watch patterns array", () => {
+    const r = parseRecipe({
+      ...VALID,
+      trigger: { type: "file_watch", patterns: ["**/*.ts", 5] },
+    });
+    expect((r.trigger as { patterns: string[] }).patterns).toEqual(["**/*.ts"]);
+  });
+
   // Regression: parser.ts rejected `chained`, `on_file_save`, and
   // `on_test_run` even though validateRecipeDefinition, the JSON schema,
   // and the runtime (chainedRunner / dispatchRecipe / yamlRunner) all
