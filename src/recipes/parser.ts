@@ -128,16 +128,26 @@ function parseTrigger(raw: unknown): Trigger {
         ]);
       return { type: "cron", schedule: cronExpr };
     }
-    case "file_watch":
+    case "file_watch": {
       if (!Array.isArray(t.patterns) || t.patterns.length === 0)
         throw new RecipeParseError("file_watch.patterns required", [
           "trigger",
           "patterns",
         ]);
-      return {
-        type: "file_watch",
-        patterns: (t.patterns as string[]).filter((p) => typeof p === "string"),
-      };
+      const patterns = (t.patterns as unknown[]).filter(
+        (p): p is string => typeof p === "string",
+      );
+      // Audit 2026-06-03 (MEDIUM): a patterns array containing only non-strings
+      // passed the length check above but filtered to []. The trigger then
+      // silently watched NOTHING — install/lint succeeded but the recipe never
+      // fired. Require at least one usable string pattern.
+      if (patterns.length === 0)
+        throw new RecipeParseError(
+          "file_watch.patterns must contain at least one string glob",
+          ["trigger", "patterns"],
+        );
+      return { type: "file_watch", patterns };
+    }
     case "git_hook":
       if (
         t.event !== "post-commit" &&
