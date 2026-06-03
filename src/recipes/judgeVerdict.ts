@@ -20,6 +20,16 @@
  * `status: "ok"` with a stashed verdict, never `status: "error"`.
  * That separation is what prevents the judge step from quietly
  * becoming a gate.
+ *
+ * ⚠️ OPT-IN DEPARTURE (judge→refine loop) — when a judge step sets the
+ * opt-in `agent.max_revisions > 0` (with `kind: "judge"` + `reviews`),
+ * the runner DELIBERATELY departs the augment-only invariant: a
+ * `request_changes` verdict drives a bounded revise→re-judge loop and
+ * MAY end with `status: "error"` (`on_exhausted: "halt"`). This is the
+ * single sanctioned exception and is reachable ONLY through those opt-in
+ * fields. When they're absent, the augment-only contract above holds
+ * byte-for-byte. The loop itself lives in `runJudgeRefineLoop` inside
+ * yamlRunner.ts; this parser is unchanged and still never gates.
  */
 
 export type JudgeVerdictKind = "approve" | "request_changes" | "unparseable";

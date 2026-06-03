@@ -3057,6 +3057,259 @@ describe("agent kind: 'judge' — augment-only invariant (PR3a)", () => {
   });
 });
 
+// ── judge → refine loop (opt-in; departs augment-only when fields present) ────
+
+describe("agent kind: 'judge' — refine loop (opt-in)", () => {
+  it("(a) max_revisions absent → augment-only unchanged: request_changes stays ok, no re-run", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "Make a draft.",
+            model: "claude-haiku-4-5-20251001",
+            into: "draft",
+          },
+        },
+        {
+          agent: {
+            prompt: "Review the draft.",
+            model: "claude-haiku-4-5-20251001",
+            into: "review",
+            kind: "judge",
+            reviews: "draft",
+            // no max_revisions → augment-only
+          },
+        },
+      ],
+    });
+    let calls = 0;
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => {
+        calls++;
+        if (calls === 1) return "draft v1";
+        return `Bad.\n{"verdict": "request_changes", "reasons": ["nope"], "fixList": ["fix it"]}`;
+      },
+    });
+    // Exactly two calls: draft + single judge. No revision loop.
+    expect(calls).toBe(2);
+    const judge = result.stepResults[1]!;
+    expect(judge.status).toBe("ok");
+    expect(judge.judgeVerdict?.verdict).toBe("request_changes");
+    expect(judge.revisions).toBeUndefined();
+    expect(result.errorMessage).toBeUndefined();
+  });
+
+  it("(b) request_changes then approve after 1 revision → reviewed step re-run with fixList, ctx updated, final verdict approve, revisions:1", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "Write the draft.",
+            model: "claude-haiku-4-5-20251001",
+            into: "draft",
+          },
+        },
+        {
+          agent: {
+            prompt: "Review the draft.",
+            model: "claude-haiku-4-5-20251001",
+            into: "review",
+            kind: "judge",
+            reviews: "draft",
+            max_revisions: 2,
+          },
+        },
+        {
+          agent: {
+            prompt: "Use the final draft: {{draft}}",
+            model: "claude-haiku-4-5-20251001",
+            into: "downstream",
+          },
+        },
+      ],
+    });
+    const prompts: string[] = [];
+    let calls = 0;
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async (prompt) => {
+        calls++;
+        prompts.push(prompt);
+        // 1: draft, 2: judge request_changes, 3: revised draft, 4: judge approve, 5: downstream
+        if (calls === 1) return "draft v1";
+        if (calls === 2)
+          return `Bad.\n{"verdict": "request_changes", "reasons": ["too short"], "fixList": ["add a closing line"]}`;
+        if (calls === 3) return "draft v2 improved";
+        if (calls === 4)
+          return `Good.\n{"verdict": "approve", "reasons": ["fixed"]}`;
+        return "downstream used draft v2 improved";
+      },
+    });
+    expect(calls).toBe(5);
+    // The revision (call 3) prompt must include the prior draft + the fixList.
+    const revisionPrompt = prompts[2]!;
+    expect(revisionPrompt).toContain("draft v1");
+    expect(revisionPrompt).toContain("add a closing line");
+    // ctx[reviews target = "draft"] updated to revised draft for downstream.
+    expect(result.context.draft).toBe("draft v2 improved");
+    // downstream saw the revised draft.
+    const downstreamPrompt = prompts[4]!;
+    expect(downstreamPrompt).toContain("draft v2 improved");
+    // Final judge stepResult reflects the LAST (approve) verdict + revisions:1.
+    const judge = result.stepResults[1]!;
+    expect(judge.status).toBe("ok");
+    expect(judge.judgeVerdict?.verdict).toBe("approve");
+    expect(judge.revisions).toBe(1);
+    expect(result.errorMessage).toBeUndefined();
+  });
+
+  it("(c) all-request_changes for max_revisions=2 with on_exhausted:'halt' → run halts (status error, haltCategory judge_revisions_exhausted)", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "Write the draft.",
+            model: "claude-haiku-4-5-20251001",
+            into: "draft",
+          },
+        },
+        {
+          agent: {
+            prompt: "Review the draft.",
+            model: "claude-haiku-4-5-20251001",
+            into: "review",
+            kind: "judge",
+            reviews: "draft",
+            max_revisions: 2,
+            on_exhausted: "halt",
+          },
+        },
+        {
+          agent: {
+            prompt: "Should never run.",
+            model: "claude-haiku-4-5-20251001",
+            into: "downstream",
+          },
+        },
+      ],
+    });
+    let calls = 0;
+    const requestChanges = `Nope.\n{"verdict": "request_changes", "reasons": ["still bad"], "fixList": ["try again"]}`;
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => {
+        calls++;
+        if (calls === 1) return "draft v1";
+        // odd calls after first = revised drafts, even = judge request_changes
+        if (calls % 2 === 0) return requestChanges;
+        return `draft revision ${calls}`;
+      },
+    });
+    const judge = result.stepResults[1]!;
+    expect(judge.status).toBe("error");
+    expect(judge.haltCategory).toBe("judge_revisions_exhausted");
+    expect(judge.judgeVerdict?.verdict).toBe("request_changes");
+    expect(judge.revisions).toBe(2);
+    expect(result.errorMessage).toBeDefined();
+    expect(result.errorMessage).toContain("did not approve");
+    // downstream must NOT have run (run halted).
+    expect(
+      result.stepResults.find((s) => s.id === "downstream"),
+    ).toBeUndefined();
+  });
+
+  it("(d) all-request_changes with on_exhausted:'proceed' → status ok, final verdict request_changes, downstream continues", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "Write the draft.",
+            model: "claude-haiku-4-5-20251001",
+            into: "draft",
+          },
+        },
+        {
+          agent: {
+            prompt: "Review the draft.",
+            model: "claude-haiku-4-5-20251001",
+            into: "review",
+            kind: "judge",
+            reviews: "draft",
+            max_revisions: 2,
+            on_exhausted: "proceed",
+          },
+        },
+        {
+          agent: {
+            prompt: "Downstream uses: {{draft}}",
+            model: "claude-haiku-4-5-20251001",
+            into: "downstream",
+          },
+        },
+      ],
+    });
+    let calls = 0;
+    const requestChanges = `Nope.\n{"verdict": "request_changes", "reasons": ["still bad"], "fixList": ["try again"]}`;
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => {
+        calls++;
+        if (calls === 1) return "draft v1";
+        if (calls % 2 === 0) return requestChanges;
+        return `draft revision ${calls}`;
+      },
+    });
+    const judge = result.stepResults[1]!;
+    expect(judge.status).toBe("ok");
+    expect(judge.judgeVerdict?.verdict).toBe("request_changes");
+    expect(judge.revisions).toBe(2);
+    expect(result.errorMessage).toBeUndefined();
+    // downstream DID run with the last revised draft.
+    const downstream = result.stepResults.find((s) => s.id === "downstream");
+    expect(downstream?.status).toBe("ok");
+  });
+
+  it("does not loop when the reviewed key does not map to an agent step (graceful skip)", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          // tool step writes into ctx; judge "reviews" it — but it's not an agent.
+          tool: "file.read",
+          path: path.join(TMP, "seed.txt"),
+          optional: true,
+          into: "seed",
+        },
+        {
+          agent: {
+            prompt: "Review the seed.",
+            model: "claude-haiku-4-5-20251001",
+            into: "review",
+            kind: "judge",
+            reviews: "seed",
+            max_revisions: 2,
+          },
+        },
+      ],
+    });
+    let calls = 0;
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      readFile: () => "seed contents",
+      claudeFn: async () => {
+        calls++;
+        return `Bad.\n{"verdict": "request_changes", "reasons": ["x"], "fixList": ["y"]}`;
+      },
+    });
+    // Only the single judge call — no agent step to re-run, so no loop.
+    expect(calls).toBe(1);
+    const judge = result.stepResults[1]!;
+    expect(judge.status).toBe("ok");
+    expect(judge.judgeVerdict?.verdict).toBe("request_changes");
+    expect(judge.revisions).toBeUndefined();
+  });
+});
+
 // ── PR2b — recipe.budget enforcement ─────────────────────────────────────────
 
 describe("recipe.budget — tokensMax enforcement (PR2b)", () => {

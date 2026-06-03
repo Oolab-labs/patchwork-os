@@ -152,3 +152,99 @@ describe("unknown awaits-target validation", () => {
     expect(errors.some((e) => e.message.includes("gather2"))).toBe(true);
   });
 });
+
+describe("judge refine-loop field validation (max_revisions / on_exhausted)", () => {
+  it("accepts max_revisions on a proper judge step (kind:judge + reviews)", () => {
+    const result = validateRecipeDefinition({
+      ...base,
+      steps: [
+        { id: "draft", agent: { prompt: "make", into: "draft" } },
+        {
+          id: "review",
+          agent: {
+            prompt: "review",
+            kind: "judge",
+            reviews: "draft",
+            max_revisions: 2,
+            on_exhausted: "proceed",
+          },
+        },
+      ],
+    });
+    const errors = result.issues.filter(
+      (i) =>
+        i.level === "error" &&
+        /max_revisions|on_exhausted|refine/i.test(i.message),
+    );
+    expect(errors).toHaveLength(0);
+  });
+
+  it("rejects max_revisions on a non-judge agent step", () => {
+    const result = validateRecipeDefinition({
+      ...base,
+      steps: [{ id: "s1", agent: { prompt: "hi", max_revisions: 2 } }],
+    });
+    const errors = result.issues.filter(
+      (i) => i.level === "error" && /max_revisions/i.test(i.message),
+    );
+    expect(errors.length).toBeGreaterThan(0);
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects max_revisions on a judge step without reviews", () => {
+    const result = validateRecipeDefinition({
+      ...base,
+      steps: [
+        { id: "s1", agent: { prompt: "hi", kind: "judge", max_revisions: 1 } },
+      ],
+    });
+    const errors = result.issues.filter(
+      (i) => i.level === "error" && /max_revisions|reviews/i.test(i.message),
+    );
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("rejects a negative / non-integer max_revisions", () => {
+    for (const bad of [-1, 1.5, "two"]) {
+      const result = validateRecipeDefinition({
+        ...base,
+        steps: [
+          {
+            id: "s1",
+            agent: {
+              prompt: "hi",
+              kind: "judge",
+              reviews: "draft",
+              max_revisions: bad,
+            },
+          },
+        ],
+      });
+      const errors = result.issues.filter(
+        (i) => i.level === "error" && /max_revisions/i.test(i.message),
+      );
+      expect(errors.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("rejects an out-of-enum on_exhausted", () => {
+    const result = validateRecipeDefinition({
+      ...base,
+      steps: [
+        {
+          id: "s1",
+          agent: {
+            prompt: "hi",
+            kind: "judge",
+            reviews: "draft",
+            on_exhausted: "explode",
+          },
+        },
+      ],
+    });
+    const errors = result.issues.filter(
+      (i) => i.level === "error" && /on_exhausted/i.test(i.message),
+    );
+    expect(errors.length).toBeGreaterThan(0);
+  });
+});

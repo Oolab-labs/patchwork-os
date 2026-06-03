@@ -128,7 +128,8 @@ export interface YamlStep {
      * attached to the step result but **never gates the run** — judge
      * steps always finish with `status: "ok"` regardless of the
      * verdict. This is the augment-only invariant: judges add signal,
-     * they don't block.
+     * they don't block. (The sole sanctioned exception is the OPT-IN
+     * judge→refine loop below — see `max_revisions`.)
      *
      * Pair with `reviews: <stepId>` to point the judge at the output
      * of a prior step; the runner injects that step's `output` into
@@ -137,6 +138,29 @@ export interface YamlStep {
     kind?: "agent" | "judge";
     /** Step id whose output the judge should review. Required when `kind: "judge"`. */
     reviews?: string;
+    /**
+     * OPT-IN judge→refine loop (only meaningful for `kind: "judge"` + `reviews`).
+     *
+     * ⚠️ INVARIANT DEPARTURE — when set (`> 0`), the judge step *drives* a
+     * bounded revision loop and MAY gate the run on exhaustion. This
+     * deliberately departs the augment-only invariant documented in
+     * judgeVerdict.ts, but ONLY when these fields are present. When
+     * `max_revisions` is absent or 0 the behavior is byte-identical to the
+     * augment-only path (parse + stash verdict, `status: "ok"`, no re-run).
+     *
+     * On a `request_changes` verdict the runner re-runs the reviewed agent
+     * step with the prior draft + the verdict's `fixList` injected, then
+     * re-judges, up to `max_revisions` cycles or until `approve`.
+     */
+    max_revisions?: number;
+    /**
+     * What to do if the judge still returns `request_changes` after the
+     * revision budget is exhausted. `"halt"` (default) fails the run
+     * (respecting fail-open like other agent failures); `"proceed"`
+     * continues with the last draft and records the unapproved verdict.
+     * Only meaningful alongside `max_revisions > 0`.
+     */
+    on_exhausted?: "halt" | "proceed";
   };
   into?: string;
   optional?: boolean;
@@ -545,6 +569,14 @@ export type StepResult = {
    * and `bridge_recipe_judgments` metrics (forthcoming PR3b/c).
    */
   judgeVerdict?: import("./judgeVerdict.js").JudgeVerdict;
+  /**
+   * OPT-IN judge→refine loop — number of revise→re-judge cycles the judge
+   * step drove. Present only when `agent.max_revisions > 0` triggered at
+   * least the loop entry (i.e. the first verdict was `request_changes` and
+   * a reviewable agent step was found). The attached `judgeVerdict` reflects
+   * the FINAL verdict after the loop, not the first.
+   */
+  revisions?: number;
   /**
    * Structured error code propagated from a thrown step error. Currently
    * populated for `recipe_path_jail_escape` (G-security A-PR1) so tests
@@ -977,6 +1009,174 @@ export async function runYamlRecipe(
     });
   };
 
+  // ── OPT-IN judge → refine loop (helper closure) ──────────────────────────
+  //
+  // ⚠️ INVARIANT DEPARTURE — this drives a bounded revise→re-judge loop and
+  // MAY gate the run on exhaustion. It departs the augment-only invariant in
+  // judgeVerdict.ts, but is reachable ONLY when the judge step opts in via
+  // `agent.max_revisions > 0`. The augment-only PR3a path is untouched.
+  //
+  // `runAgentText` mirrors the main agent path's text processing exactly
+  // (strip leading narration, then JSON-fence parse + sanitize, else use the
+  // raw string) so a revised draft commits to ctx the same way a first-pass
+  // agent step would. It returns `{ value, ok }`; `ok: false` signals a
+  // failed / silent-fail / empty agent response — the caller stops the loop
+  // and treats it as exhausted (we don't re-judge a non-result).
+  const runAgentText = async (
+    prompt: string,
+    driver: string | undefined,
+    model: string | undefined,
+    mcpAccess: boolean | undefined,
+  ): Promise<{ value: unknown; ok: boolean }> => {
+    const agentReturn = await _executeAgent(
+      {
+        prompt,
+        driver: driver === "api" ? "anthropic" : driver,
+        model,
+        ...(mcpAccess !== undefined && { mcpAccess }),
+      },
+      buildAgentExecutorDeps(stepDeps, deps),
+    );
+    runBudget.reconcile(
+      driver === "api" ? "anthropic" : (driver ?? "auto"),
+      agentReturn.usage,
+    );
+    const text = agentReturn.text;
+    // Same failure detection as the main agent branch: explicit failure
+    // marker or silent-fail patterns ⇒ not a usable result.
+    if (text.startsWith("[agent step failed:") || detectSilentFail(text)) {
+      return { value: text, ok: false };
+    }
+    const stripped = stripLeadingNarration(text);
+    if (!stripped.trim()) {
+      return { value: stripped, ok: false };
+    }
+    try {
+      const jsonMatch = /```(?:json)?\s*([\s\S]*?)```/.exec(stripped) ?? [
+        null,
+        stripped,
+      ];
+      const parsed = sanitizeParsed(JSON.parse((jsonMatch[1] ?? "").trim()));
+      return { value: parsed, ok: true };
+    } catch {
+      return { value: stripped, ok: true };
+    }
+  };
+
+  const runJudgeRefineLoop = async (params: {
+    agentCfg: NonNullable<YamlStep["agent"]>;
+    reviewsKey: string;
+    maxRevisions: number;
+    judgeStepId: string;
+    firstVerdict: import("./judgeVerdict.js").JudgeVerdict;
+    judgeStepResult: StepResult;
+    failOpenAgent: boolean;
+  }): Promise<{ runError?: string; haltAfterFailure: boolean }> => {
+    const {
+      agentCfg,
+      reviewsKey,
+      maxRevisions,
+      judgeStepId,
+      firstVerdict,
+      judgeStepResult,
+      failOpenAgent,
+    } = params;
+
+    // Find the agent step whose output the judge reviews. A judge that
+    // reviews a tool step or a seed var (no agent to re-run) cannot be
+    // refined — skip the loop gracefully, leaving the augment-only verdict
+    // already stashed on the judge step result untouched.
+    const reviewedStep = recipe.steps.find(
+      (s) => s.agent && (s.agent.into ?? "agent_output") === reviewsKey,
+    );
+    if (!reviewedStep?.agent) {
+      return { haltAfterFailure: false };
+    }
+    const reviewedAgent = reviewedStep.agent;
+
+    let currentVerdict = firstVerdict;
+    let revisions = 0;
+    while (
+      revisions < maxRevisions &&
+      currentVerdict.verdict === "request_changes"
+    ) {
+      // Budget gate: never exceed the run's token budget. If admission is
+      // refused, stop early (treat as exhausted) — the budget halt is
+      // surfaced by the next top-of-loop admission check for later steps.
+      const admission = runBudget.admit();
+      if (!admission.admitted) {
+        break;
+      }
+
+      // REVISE: re-run the reviewed agent with the prior draft + fixList.
+      const priorDraft = ctx[reviewsKey];
+      const fixList = currentVerdict.fixList ?? [];
+      const revisionBlock =
+        `\n\n<revision-request>\n` +
+        `A reviewer requested changes to your previous draft. Address every` +
+        ` item, then return the full revised draft only.\n\n` +
+        `<previous-draft>\n${typeof priorDraft === "string" ? priorDraft : JSON.stringify(priorDraft, null, 2)}\n</previous-draft>\n\n` +
+        `<fix-list>\n${fixList.length > 0 ? fixList.map((f) => `- ${f}`).join("\n") : "- (no explicit fix list provided)"}\n</fix-list>\n` +
+        `</revision-request>`;
+      const revisionPrompt = render(reviewedAgent.prompt, ctx) + revisionBlock;
+      const revised = await runAgentText(
+        revisionPrompt,
+        reviewedAgent.driver,
+        reviewedAgent.model,
+        reviewedAgent.mcpAccess,
+      );
+      if (!revised.ok) {
+        // A failed / empty revision can't be re-judged — stop and treat the
+        // loop as exhausted with the last good verdict still in place.
+        break;
+      }
+      // Commit the revised draft so downstream steps (and the re-judge) see
+      // the improved value under the reviewed step's key.
+      ctx[reviewsKey] = revised.value as RunContext[string];
+
+      // RE-JUDGE: rebuild the judge prompt against the revised artefact.
+      const reJudgePrompt =
+        render(agentCfg.prompt, ctx) +
+        buildJudgeArtefactBlock(ctx[reviewsKey]) +
+        JUDGE_PROMPT_SUFFIX;
+      const judged = await runAgentText(
+        reJudgePrompt,
+        agentCfg.driver,
+        agentCfg.model,
+        agentCfg.mcpAccess,
+      );
+      const judgedText =
+        typeof judged.value === "string"
+          ? judged.value
+          : JSON.stringify(judged.value);
+      currentVerdict = parseJudgeVerdict(stripLeadingNarration(judgedText));
+      revisions++;
+    }
+
+    // Record the FINAL verdict + the revision count on the judge step result.
+    judgeStepResult.judgeVerdict = currentVerdict;
+    judgeStepResult.revisions = revisions;
+
+    // EXHAUSTION: still requesting changes after the loop.
+    if (currentVerdict.verdict === "request_changes") {
+      const onExhausted = agentCfg.on_exhausted ?? "halt";
+      if (onExhausted === "halt") {
+        const reason = `judge "${judgeStepId}" did not approve after ${maxRevisions} revisions`;
+        judgeStepResult.status = "error";
+        judgeStepResult.error = reason;
+        judgeStepResult.haltReason = reason;
+        judgeStepResult.haltCategory = "judge_revisions_exhausted";
+        return {
+          runError: reason,
+          // Respect fail-open like other agent failures.
+          haltAfterFailure: !failOpenAgent,
+        };
+      }
+      // "proceed": leave status ok, keep the recorded (unapproved) verdict.
+    }
+    return { haltAfterFailure: false };
+  };
+
   // The step loop is wrapped so an uncaught throw from any unguarded
   // call site (a `when`/prompt render on a malformed step, a path-jail
   // re-check, etc.) cannot escape `runYamlRecipe` and strand the
@@ -1187,13 +1387,47 @@ export async function runYamlRecipe(
               const judgeVerdict = isJudge
                 ? parseJudgeVerdict(stripped)
                 : undefined;
-              stepResults.push({
+              const judgeStepResult: StepResult = {
                 id: stepId,
                 tool: "agent",
                 status: "ok",
                 ...(judgeVerdict !== undefined && { judgeVerdict }),
                 durationMs: Date.now() - stepStart,
-              });
+              };
+              stepResults.push(judgeStepResult);
+
+              // ── OPT-IN judge → refine loop ───────────────────────────────
+              // ⚠️ INVARIANT DEPARTURE: when the judge step opts in via
+              // `max_revisions > 0`, a `request_changes` verdict now DRIVES a
+              // bounded revise→re-judge loop instead of merely stashing the
+              // verdict. This deliberately departs the augment-only invariant
+              // (see judgeVerdict.ts) — but ONLY when the opt-in fields are
+              // present. With them absent the block below is skipped entirely
+              // and behavior is byte-identical to the PR3a augment-only path.
+              if (
+                isJudge &&
+                agentCfg.reviews &&
+                typeof agentCfg.max_revisions === "number" &&
+                agentCfg.max_revisions > 0 &&
+                judgeVerdict?.verdict === "request_changes"
+              ) {
+                const loopOutcome = await runJudgeRefineLoop({
+                  agentCfg,
+                  reviewsKey: agentCfg.reviews,
+                  maxRevisions: agentCfg.max_revisions,
+                  judgeStepId: stepId,
+                  firstVerdict: judgeVerdict,
+                  judgeStepResult,
+                  failOpenAgent,
+                });
+                if (loopOutcome.runError !== undefined) {
+                  runError = runError ?? loopOutcome.runError;
+                }
+                if (loopOutcome.haltAfterFailure) {
+                  haltAfterFailure = true;
+                }
+              }
+
               // Slice 2 — per-step expect eval. Runs on the value just
               // committed to ctx[intoKey]. Halt failure flips the just-pushed
               // result to error and rolls back the ctx commit so downstream
