@@ -73,6 +73,7 @@ import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
 } from "./migrations/index.js";
+import { costRouter, type RouteCandidate } from "./pricing/costRouter.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import type { ErrorPolicy } from "./schema.js";
@@ -162,6 +163,15 @@ export interface YamlStep {
      * Only meaningful alongside `max_revisions > 0`.
      */
     on_exhausted?: "halt" | "proceed";
+    /**
+     * OPT-IN cost-aware routing (cost-routing Phase 4). Ordered cheaper
+     * fallbacks, each overriding `driver` and/or `model`, tried when
+     * `budget.usdMax` is set and the remaining budget is too tight for the
+     * preferred driver/model. The author asserts each is good enough for the
+     * step — the engine only checks affordability. Absent ⇒ the preferred
+     * model is always used (byte-identical to no routing).
+     */
+    downshift?: import("./pricing/costRouter.js").RouteCandidate[];
   };
   into?: string;
   optional?: boolean;
@@ -1034,22 +1044,31 @@ export async function runYamlRecipe(
     driver: string | undefined,
     model: string | undefined,
     mcpAccess: boolean | undefined,
+    downshift?: RouteCandidate[],
   ): Promise<{ value: unknown; ok: boolean }> => {
+    // Phase 4: route revisions too, so a downshift on the reviewed step also
+    // applies to its refine-loop re-runs (no-op when downshift is absent).
+    const routed = resolveRouting(
+      { driver, model },
+      downshift,
+      prompt,
+      runBudget,
+    );
     const agentReturn = await _executeAgent(
       {
         prompt,
-        driver: driver === "api" ? "anthropic" : driver,
-        model,
+        driver: routed.driver === "api" ? "anthropic" : routed.driver,
+        model: routed.model,
         ...(mcpAccess !== undefined && { mcpAccess }),
       },
       buildAgentExecutorDeps(stepDeps, deps),
     );
     runBudget.reconcile(
       // Prefer the driver executeAgent actually resolved+ran; fall back to
-      // the configured value only when servedBy is absent (non-executeAgent
+      // the routed value only when servedBy is absent (non-executeAgent
       // callers). Stops auto-detected runs being mis-attributed to "auto".
       agentReturn.servedBy?.driver ??
-        (driver === "api" ? "anthropic" : (driver ?? "auto")),
+        (routed.driver === "api" ? "anthropic" : (routed.driver ?? "auto")),
       agentReturn.usage,
       // Resolved model for USD pricing (Phase 3). Absent → unpriced → the USD
       // cap fails open for this call.
@@ -1138,6 +1157,7 @@ export async function runYamlRecipe(
         reviewedAgent.driver,
         reviewedAgent.model,
         reviewedAgent.mcpAccess,
+        reviewedAgent.downshift,
       );
       if (!revised.ok) {
         // A failed / empty revision can't be re-judged — stop and treat the
@@ -1320,11 +1340,19 @@ export async function runYamlRecipe(
         // `RunBudget.reconcile` records a fail-open warning per driver per
         // run and continues.
         try {
+          // Phase 4: opt-in cost-aware routing. No-op (returns preferred) when
+          // the step has no `downshift` list or no USD cap is set.
+          const routed = resolveRouting(
+            { driver: agentCfg.driver, model: agentCfg.model },
+            agentCfg.downshift,
+            renderedPrompt,
+            runBudget,
+          );
           const agentReturn = await _executeAgent(
             {
               prompt: renderedPrompt,
-              driver: agentCfg.driver === "api" ? "anthropic" : agentCfg.driver,
-              model: agentCfg.model,
+              driver: routed.driver === "api" ? "anthropic" : routed.driver,
+              model: routed.model,
               ...(agentCfg.mcpAccess !== undefined && {
                 mcpAccess: agentCfg.mcpAccess,
               }),
@@ -1333,13 +1361,13 @@ export async function runYamlRecipe(
           );
           agentResult = agentReturn.text;
           runBudget.reconcile(
-            // Prefer the driver executeAgent actually resolved+ran; the
-            // configured value is only the fallback for non-executeAgent
-            // callers (it is often undefined → previously logged "auto").
+            // Prefer the driver executeAgent actually resolved+ran; the routed
+            // value is only the fallback for non-executeAgent callers (it is
+            // often undefined → previously logged "auto").
             agentReturn.servedBy?.driver ??
-              (agentCfg.driver === "api"
+              (routed.driver === "api"
                 ? "anthropic"
-                : (agentCfg.driver ?? "auto")),
+                : (routed.driver ?? "auto")),
             agentReturn.usage,
             // Resolved model for USD pricing (Phase 3); absent → fail open.
             agentReturn.servedBy?.model,
@@ -2360,6 +2388,34 @@ export function providerMetaToUsage(
     return { inputTokens, outputTokens };
   }
   return undefined;
+}
+
+const ROUTER_CHARS_PER_TOKEN = 4;
+
+/**
+ * Apply opt-in cost-aware routing (Phase 4) to choose the driver/model for an
+ * agent dispatch. Returns `preferred` UNCHANGED when there is no downshift list
+ * or no USD cap is set (byte-identical to no routing). The output-token figure
+ * is a deliberately-rough 1:1-of-input pre-dispatch estimate — enough to pick a
+ * gear; the real cost is reconciled after the call (see the cost-routing ADR).
+ * Exported for unit testing.
+ */
+export function resolveRouting(
+  preferred: RouteCandidate,
+  downshift: RouteCandidate[] | undefined,
+  promptText: string,
+  budget: RunBudget,
+): RouteCandidate {
+  if (!downshift || downshift.length === 0) return preferred;
+  const remainingUsd = budget.remainingUsd();
+  if (remainingUsd === undefined) return preferred; // no USD cap → no routing
+  const estInputTokens = Math.ceil(promptText.length / ROUTER_CHARS_PER_TOKEN);
+  const estOutputTokens = estInputTokens; // rough 1:1 assumption (documented)
+  return costRouter(preferred, downshift, {
+    remainingUsd,
+    quote: (driver, model) =>
+      budget.quoteUsd(driver, model, estInputTokens, estOutputTokens),
+  });
 }
 
 /** Returns a providerDriverFn with a per-run driver cache (not shared across runs). */

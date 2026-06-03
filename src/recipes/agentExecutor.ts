@@ -73,7 +73,12 @@ export interface AgentExecutorInput {
   mcpAccess?: boolean;
 }
 
-const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
+/**
+ * Model the anthropic/local agent paths fall back to when a step omits `model`.
+ * Exported so RunBudget.quoteUsd prices the same model executeAgent will run
+ * (keeps cost-routing quotes in parity with actual reconcile billing).
+ */
+export const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 
 export async function executeAgent(
   input: AgentExecutorInput,

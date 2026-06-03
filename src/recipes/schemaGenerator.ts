@@ -279,6 +279,32 @@ function generateRecipeSchema(
         description:
           "When the revision budget is exhausted and the judge still requests changes: 'halt' (default) fails the run; 'proceed' continues with the last draft.",
       },
+      downshift: {
+        type: "array",
+        description:
+          "OPT-IN cost-aware routing (Phase 4). Ordered cheaper fallbacks tried when budget.usdMax is set and the remaining budget is too tight for the preferred driver/model. Each entry overrides driver and/or model. Absent → preferred model always used.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: {
+            driver: {
+              type: "string",
+              enum: [
+                "claude",
+                "claude-code",
+                "api",
+                "openai",
+                "grok",
+                "gemini",
+                "anthropic",
+                "local",
+              ],
+            },
+            model: { type: "string" },
+          },
+        },
+      },
     },
   };
   const toolRefs = Object.keys(namespaceSchemas).map((ns) => ({

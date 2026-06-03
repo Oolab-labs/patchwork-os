@@ -3460,6 +3460,76 @@ describe("recipe.budget — tokensMax enforcement (PR2b)", () => {
     expect(result.stepResults[1]?.haltReason).toMatch(/budget_exceeded/);
   });
 
+  it("downshifts to a cheaper model when usdMax is tight (Phase 4)", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "pw-downshift-"));
+    const fixture = path.join(dir, "prices.json");
+    writeFileSync(
+      fixture,
+      JSON.stringify({
+        prices: {
+          "big-model": { input: 1_000_000, output: 1_000_000 }, // ~$1/token
+          "small-model": { input: 0.001, output: 0.001 },
+        },
+      }),
+    );
+    const prev = process.env.PATCHWORK_PRICE_TABLE;
+    process.env.PATCHWORK_PRICE_TABLE = fixture;
+    try {
+      const recipe = makeRecipe({
+        budget: { usdMax: 1 },
+        steps: [
+          {
+            agent: {
+              prompt: "do the thing",
+              model: "big-model",
+              downshift: [{ model: "small-model" }],
+              into: "o1",
+            },
+          },
+        ],
+      });
+      const seenModels: (string | undefined)[] = [];
+      await runYamlRecipe(recipe, {
+        ...noop(),
+        claudeFn: async (_prompt, model) => {
+          seenModels.push(model);
+          return { text: "ok", usage: { inputTokens: 10, outputTokens: 10 } };
+        },
+      });
+      // The expensive preferred model can't fit the $1 cap for the call, so the
+      // run downshifts to the cheaper listed model.
+      expect(seenModels).toEqual(["small-model"]);
+    } finally {
+      if (prev === undefined) delete process.env.PATCHWORK_PRICE_TABLE;
+      else process.env.PATCHWORK_PRICE_TABLE = prev;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores downshift when no usdMax is set (byte-identical)", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "x",
+            model: "big-model",
+            downshift: [{ model: "small-model" }],
+            into: "o1",
+          },
+        },
+      ],
+    });
+    const seen: (string | undefined)[] = [];
+    await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async (_p, m) => {
+        seen.push(m);
+        return "ok";
+      },
+    });
+    expect(seen).toEqual(["big-model"]); // preferred used; no routing
+  });
+
   it("does not enforce when recipe.budget is absent (no overhead)", async () => {
     const recipe = makeRecipe({
       steps: [

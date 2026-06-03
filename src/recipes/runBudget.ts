@@ -23,7 +23,7 @@
  * = fail-open, which is the conservative default the design calls for.)
  */
 
-import type { AgentUsage } from "./agentExecutor.js";
+import { type AgentUsage, DEFAULT_MODEL } from "./agentExecutor.js";
 import {
   costUsd,
   loadPriceTable,
@@ -203,6 +203,56 @@ export class RunBudget {
   /** Warnings collected so the runner can surface them in the run log. */
   warnings(): string[] {
     return [...this.warningList];
+  }
+
+  /**
+   * USD remaining before the cap, or undefined when no USD cap is set.
+   * Cost-aware routing (Phase 4) uses this to decide when to downshift.
+   */
+  remainingUsd(): number | undefined {
+    if (this.usdMax === undefined) return undefined;
+    return Math.max(0, this.usdMax - this.usdSpent);
+  }
+
+  /**
+   * Pre-dispatch USD estimate for a prospective (driver, model) call, or
+   * undefined when it would NOT be USD-enforced: no USD cap, a non-billable
+   * driver (local / subscription), or an unpriced model. Mirrors exactly the
+   * enforcement rule in `reconcile`, so a candidate the router treats as
+   * "free" is precisely one `reconcile` would not charge.
+   */
+  quoteUsd(
+    driver: string | undefined,
+    model: string | undefined,
+    inputTokens: number,
+    outputTokens: number,
+  ): number | undefined {
+    if (this.usdMax === undefined) return undefined;
+    // Mirror executeAgent/reconcile resolution so a candidate the router calls
+    // "free" is EXACTLY one reconcile would not charge:
+    //   - "api"/"claude" select the billable Anthropic path (→ "anthropic").
+    //   - undefined optimistically assumes auto-detect lands on a metered API
+    //     driver (usually anthropic); if it actually resolves to a subscription
+    //     driver the call is free and the cap simply isn't enforced there.
+    const resolvedDriver =
+      driver === "api" || driver === "claude" ? "anthropic" : driver;
+    if (resolvedDriver !== undefined && !BILLABLE_DRIVERS.has(resolvedDriver)) {
+      return undefined;
+    }
+    // The anthropic path bills DEFAULT_MODEL when the step omits `model`.
+    // (Provider drivers default internally to a model unknowable pre-dispatch,
+    // so an omitted model there stays unpriced → not routed on.)
+    const onAnthropicPath =
+      resolvedDriver === "anthropic" || resolvedDriver === undefined;
+    const resolvedModel =
+      model ?? (onAnthropicPath ? DEFAULT_MODEL : undefined);
+    if (!resolvedModel) return undefined;
+    const cost = costUsd(
+      resolvedModel,
+      { inputTokens, outputTokens },
+      this.priceTable,
+    );
+    return cost !== undefined && Number.isFinite(cost) ? cost : undefined;
   }
 
   private pushOnce(key: string, msg: string): void {
