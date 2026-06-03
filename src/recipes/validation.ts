@@ -14,6 +14,18 @@ import {
 import { generateSchemaSet } from "./schemaGenerator.js";
 import { listToolOutputContextKeys } from "./toolRegistry.js";
 
+/** Driver ids a `downshift` candidate may name (mirrors the JSON-schema enum). */
+const DOWNSHIFT_KNOWN_DRIVERS = new Set([
+  "claude",
+  "claude-code",
+  "api",
+  "openai",
+  "grok",
+  "gemini",
+  "anthropic",
+  "local",
+]);
+
 export interface LintIssue {
   level: "error" | "warning";
   message: string;
@@ -211,6 +223,58 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
               code: "refine-on-exhausted-enum",
               path: `steps.${i}.agent.on_exhausted`,
             });
+          }
+
+          // OPT-IN cost-aware routing (Phase 4). `downshift` is an ordered list
+          // of {driver?, model?} cheaper fallbacks; each entry must set at
+          // least one field and any driver must be dispatch-known.
+          if (agent.downshift !== undefined) {
+            if (!Array.isArray(agent.downshift)) {
+              issues.push({
+                level: "error",
+                message: `Step ${i + 1}: 'downshift' must be an array of {driver?, model?} candidates`,
+                code: "downshift-type",
+                path: `steps.${i}.agent.downshift`,
+              });
+            } else {
+              agent.downshift.forEach((entry: unknown, di: number) => {
+                if (
+                  typeof entry !== "object" ||
+                  entry === null ||
+                  Array.isArray(entry)
+                ) {
+                  issues.push({
+                    level: "error",
+                    message: `Step ${i + 1}: downshift[${di}] must be an object with 'driver' and/or 'model'`,
+                    code: "downshift-entry-type",
+                    path: `steps.${i}.agent.downshift.${di}`,
+                  });
+                  return;
+                }
+                const e = entry as Record<string, unknown>;
+                const hasDriver = typeof e.driver === "string";
+                const hasModel = typeof e.model === "string";
+                if (!hasDriver && !hasModel) {
+                  issues.push({
+                    level: "error",
+                    message: `Step ${i + 1}: downshift[${di}] must set at least one of 'driver' or 'model'`,
+                    code: "downshift-entry-empty",
+                    path: `steps.${i}.agent.downshift.${di}`,
+                  });
+                }
+                if (
+                  hasDriver &&
+                  !DOWNSHIFT_KNOWN_DRIVERS.has(e.driver as string)
+                ) {
+                  issues.push({
+                    level: "error",
+                    message: `Step ${i + 1}: downshift[${di}].driver '${String(e.driver)}' is not a known driver`,
+                    code: "downshift-driver-enum",
+                    path: `steps.${i}.agent.downshift.${di}.driver`,
+                  });
+                }
+              });
+            }
           }
         }
 

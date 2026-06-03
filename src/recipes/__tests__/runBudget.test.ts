@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_MODEL } from "../agentExecutor.js";
 import type { PriceTable } from "../pricing/priceTable.js";
 import { RunBudget } from "../runBudget.js";
 
@@ -13,6 +14,7 @@ const TABLE: PriceTable = {
   prices: {
     m1: { input: 1, output: 1 }, // $1/1M in, $1/1M out
     m2: { input: 2, output: 4 }, // $2/1M in, $4/1M out
+    [DEFAULT_MODEL]: { input: 1, output: 5 }, // the omitted-model fallback
   },
 };
 
@@ -209,5 +211,61 @@ describe("RunBudget — usdMax (cost-routing Phase 3)", () => {
     );
     expect(b.totals().usd).toBeCloseTo(10, 6);
     expect(b.admit().admitted).toBe(false);
+  });
+});
+
+describe("RunBudget — routing helpers (cost-routing Phase 4)", () => {
+  it("remainingUsd tracks spend; undefined without a usd cap", () => {
+    expect(
+      new RunBudget({ tokensMax: 100 }, TABLE).remainingUsd(),
+    ).toBeUndefined();
+    const b = new RunBudget({ usdMax: 10 }, TABLE);
+    expect(b.remainingUsd()).toBe(10);
+    b.reconcile("openai", { inputTokens: 1_000_000, outputTokens: 0 }, "m1"); // $1
+    expect(b.remainingUsd()).toBeCloseTo(9, 6);
+  });
+
+  it("quoteUsd prices a billable+priced call; undefined otherwise", () => {
+    const b = new RunBudget({ usdMax: 10 }, TABLE);
+    // m1 $1/1M each side → 1M+1M = $2.
+    expect(b.quoteUsd("openai", "m1", 1_000_000, 1_000_000)).toBeCloseTo(2, 6);
+    // undefined driver (auto-detect) is treated as billable (anthropic).
+    expect(b.quoteUsd(undefined, "m1", 1_000_000, 0)).toBeCloseTo(1, 6);
+    // non-billable driver (local) → undefined (free, never enforced).
+    expect(b.quoteUsd("local", "m1", 1_000_000, 1_000_000)).toBeUndefined();
+    // unpriced model → undefined.
+    expect(b.quoteUsd("openai", "nope", 1_000_000, 1_000_000)).toBeUndefined();
+    // openai with missing model → undefined (provider default unknown here).
+    expect(
+      b.quoteUsd("openai", undefined, 1_000_000, 1_000_000),
+    ).toBeUndefined();
+  });
+
+  it("quoteUsd mirrors reconcile resolution for the anthropic aliases (review fix)", () => {
+    const b = new RunBudget({ usdMax: 10 }, TABLE);
+    // "api" and "claude" both resolve to the billable anthropic path, so they
+    // must be priced exactly like an explicit "anthropic" — not treated as free
+    // (the bug: the router never downshifted driver: api/claude steps).
+    const expected = b.quoteUsd("anthropic", "m1", 1_000_000, 1_000_000);
+    expect(expected).toBeCloseTo(2, 6);
+    expect(b.quoteUsd("api", "m1", 1_000_000, 1_000_000)).toBe(expected);
+    expect(b.quoteUsd("claude", "m1", 1_000_000, 1_000_000)).toBe(expected);
+  });
+
+  it("quoteUsd prices an omitted model on the anthropic path at DEFAULT_MODEL", () => {
+    const b = new RunBudget({ usdMax: 10 }, TABLE);
+    // DEFAULT_MODEL priced $1 in / $5 out → 1M+1M = $6 — what reconcile charges.
+    expect(
+      b.quoteUsd("anthropic", undefined, 1_000_000, 1_000_000),
+    ).toBeCloseTo(6, 6);
+    expect(b.quoteUsd(undefined, undefined, 1_000_000, 1_000_000)).toBeCloseTo(
+      6,
+      6,
+    );
+  });
+
+  it("quoteUsd is undefined when no usd cap is set (no routing)", () => {
+    const b = new RunBudget({ tokensMax: 100 }, TABLE);
+    expect(b.quoteUsd("openai", "m1", 1_000_000, 1_000_000)).toBeUndefined();
   });
 });
