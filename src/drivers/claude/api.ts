@@ -80,7 +80,8 @@ export class ApiDriver implements ProviderDriver {
     }
 
     // biome-ignore lint/suspicious/noExplicitAny: message is from dynamically imported optional dep
-    const content = (message as any).content as Array<{
+    const msg = message as any;
+    const content = msg.content as Array<{
       type: string;
       text?: string;
     }>;
@@ -91,10 +92,22 @@ export class ApiDriver implements ProviderDriver {
 
     input.onChunk?.(text);
 
+    // The SDK returns usage on every message; forward it so RunBudget can
+    // enforce a real token/USD budget. Both fields together or neither.
+    const inputTokens = msg.usage?.input_tokens;
+    const outputTokens = msg.usage?.output_tokens;
+    const model = typeof msg.model === "string" ? msg.model : input.model;
+
     return {
       text: text.slice(0, OUTPUT_CAP),
       exitCode: 0,
       durationMs: Date.now() - start,
+      providerMeta: {
+        ...(model !== undefined ? { model } : {}),
+        ...(typeof inputTokens === "number" && typeof outputTokens === "number"
+          ? { inputTokens, outputTokens }
+          : {}),
+      },
     };
   }
 }

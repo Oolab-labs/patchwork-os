@@ -47,6 +47,29 @@ describe("ApiDriver", () => {
     expect(result.exitCode).toBe(0);
   });
 
+  it("forwards token usage from message.usage into providerMeta", async () => {
+    mockCreate.mockResolvedValue({
+      model: "claude-haiku-4-5-20251001",
+      content: [{ type: "text", text: "hi" }],
+      usage: { input_tokens: 10, output_tokens: 20 },
+    });
+    const driver = new ApiDriver(log);
+    const result = await driver.run(makeInput());
+    expect(result.providerMeta).toEqual({
+      model: "claude-haiku-4-5-20251001",
+      inputTokens: 10,
+      outputTokens: 20,
+    });
+  });
+
+  it("omits token counts when usage is absent (fail-open)", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "hi" }] });
+    const driver = new ApiDriver(log);
+    const result = await driver.run(makeInput({ model: "claude-x" }));
+    // model falls back to input.model; no token fields → RunBudget skips it.
+    expect(result.providerMeta).toEqual({ model: "claude-x" });
+  });
+
   // Bug 2 regression: ProviderDriver.run must resolve, never reject. Before the
   // try/catch was added, a rejecting messages.create propagated the rejection.
   it("resolves with errorMessage when messages.create throws (does not reject)", async () => {

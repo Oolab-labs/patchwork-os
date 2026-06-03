@@ -96,6 +96,8 @@ export class OpenAIApiDriver implements ProviderDriver {
 
     let text = "";
     let firstChunkAt: number | undefined;
+    let promptTokens: number | undefined;
+    let completionTokens: number | undefined;
 
     try {
       // biome-ignore lint/suspicious/noExplicitAny: dynamic import shape
@@ -106,12 +108,27 @@ export class OpenAIApiDriver implements ProviderDriver {
           ...(temperature !== undefined ? { temperature } : {}),
           messages,
           stream: true,
+          // Ask the API to emit a final usage chunk (prompt/completion token
+          // counts) so RunBudget can enforce a real token/USD budget instead
+          // of failing open. Compliant OpenAI-style endpoints return it; an
+          // endpoint that ignores the option simply omits usage and we fail
+          // open (providerMeta carries no tokens).
+          stream_options: { include_usage: true },
         },
         { signal: input.signal },
       );
 
       // biome-ignore lint/suspicious/noExplicitAny: stream shape from dynamic import
       for await (const chunk of stream as AsyncIterable<any>) {
+        // The include_usage final chunk carries an empty `choices` array and a
+        // `usage` object; capture it whenever present (so it works even if an
+        // endpoint attaches usage to a content-bearing chunk).
+        if (chunk.usage) {
+          if (typeof chunk.usage.prompt_tokens === "number")
+            promptTokens = chunk.usage.prompt_tokens;
+          if (typeof chunk.usage.completion_tokens === "number")
+            completionTokens = chunk.usage.completion_tokens;
+        }
         const delta: string = chunk.choices?.[0]?.delta?.content ?? "";
         if (delta) {
           if (firstChunkAt === undefined) firstChunkAt = Date.now();
@@ -161,7 +178,14 @@ export class OpenAIApiDriver implements ProviderDriver {
       text: text.slice(0, OUTPUT_CAP),
       durationMs: Date.now() - start,
       startupMs: firstChunkAt !== undefined ? firstChunkAt - start : undefined,
-      providerMeta: { model },
+      providerMeta: {
+        model,
+        // Present only when the endpoint returned a usage chunk. Both fields
+        // together or neither — a half-populated count would mislead budgets.
+        ...(promptTokens !== undefined && completionTokens !== undefined
+          ? { inputTokens: promptTokens, outputTokens: completionTokens }
+          : {}),
+      },
     };
   }
 
