@@ -633,18 +633,25 @@ function generateRecipeSchema(
       budget: {
         type: "object",
         description:
-          "Per-recipe token budget (PR2b). When set, the runner tracks cumulative tokens across API driver calls; on breach the run halts with budget_exceeded. Subscription drivers (Claude CLI) don't report token counts and are skipped.",
+          "Per-recipe budget. Set tokensMax and/or usdMax; on breach the run halts with budget_exceeded (or warns). Enforced for API drivers that report token usage and (for usdMax) have a price-table entry; subscription drivers (Claude CLI) report no tokens and are skipped (fail-open with a one-time warning).",
         properties: {
           tokensMax: {
             type: "number",
+            exclusiveMinimum: 0,
             description:
               "Cumulative input + output tokens allowed across the whole run",
+          },
+          usdMax: {
+            type: "number",
+            exclusiveMinimum: 0,
+            description:
+              "Cumulative USD allowed across the whole run, priced from token usage via the model price table. Unpriced models / subscription drivers fail open (never halt on them).",
           },
           onBreach: {
             type: "string",
             enum: ["halt", "warn"],
             description:
-              "halt (default): stop run on next admission check. warn: continue but record the breach in the run log.",
+              "halt (default): stop run on next admission check. warn: continue but record the breach in the run log. Applies to both tokensMax and usdMax.",
             default: "halt",
           },
         },

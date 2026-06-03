@@ -66,6 +66,18 @@ describe("costUsd", () => {
       costUsd("some-unknown-model", { inputTokens: 1000, outputTokens: 1000 }),
     ).toBeUndefined();
   });
+
+  it("returns undefined (not NaN) for a prototype-key model name", () => {
+    // Regression: bare bracket lookup would return Object.prototype members.
+    for (const evil of ["__proto__", "constructor", "toString", "valueOf"]) {
+      expect(priceFor(evil), evil).toBeUndefined();
+      const cost = costUsd(evil, {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+      });
+      expect(cost, evil).toBeUndefined();
+    }
+  });
 });
 
 describe("loadPriceTable precedence", () => {

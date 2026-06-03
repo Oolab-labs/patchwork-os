@@ -245,6 +245,8 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
 
       validateTemplateReferences(r, issues, collectParallelEachKeys(recipe));
     }
+
+    validateRecipeBudget(r, issues);
   }
 
   if (isEnabled(FLAG_SCHEMA_LINT)) {
@@ -264,6 +266,54 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
     warnings,
     errors,
   };
+}
+
+/**
+ * Validate the optional recipe `budget` block. Closes a real gap: before
+ * cost-routing Phase 3 there was NO budget validation, so `tokensMax: -5` or
+ * `tokensMax: "lots"` passed lint silently. A present cap must be a positive
+ * number; `onBreach` must be the halt|warn enum.
+ */
+function validateRecipeBudget(
+  r: Record<string, unknown>,
+  issues: LintIssue[],
+): void {
+  const budget = r.budget;
+  if (budget === undefined) return;
+  if (typeof budget !== "object" || budget === null || Array.isArray(budget)) {
+    issues.push({
+      level: "error",
+      message: "'budget' must be an object",
+      path: "budget",
+      code: "budget-type",
+    });
+    return;
+  }
+  const b = budget as Record<string, unknown>;
+  for (const key of ["tokensMax", "usdMax"] as const) {
+    const value = b[key];
+    if (value === undefined) continue;
+    if (typeof value !== "number" || !(value > 0)) {
+      issues.push({
+        level: "error",
+        message: `budget.${key} must be a positive number`,
+        path: `budget.${key}`,
+        code: "budget-positive",
+      });
+    }
+  }
+  if (
+    b.onBreach !== undefined &&
+    b.onBreach !== "halt" &&
+    b.onBreach !== "warn"
+  ) {
+    issues.push({
+      level: "error",
+      message: "budget.onBreach must be 'halt' or 'warn'",
+      path: "budget.onBreach",
+      code: "budget-onbreach-enum",
+    });
+  }
 }
 
 /**

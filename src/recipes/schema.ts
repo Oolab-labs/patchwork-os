@@ -143,18 +143,29 @@ export interface ErrorPolicy {
  * drivers (Anthropic API, OpenAI/Gemini/Grok subprocess that surfaces
  * usage, local LLM adapters) get full enforcement.
  *
- * Nested object (not flat `tokensMax`) so future siblings — `usdMax`,
- * `wallClockMs`, `stepsMax` — don't churn the schema again.
+ * Nested object (not flat `tokensMax`) so siblings — `usdMax` (added in
+ * cost-routing Phase 3), and future `wallClockMs` / `stepsMax` — don't churn
+ * the schema again.
  */
 export interface BudgetPolicy {
   /** Cumulative input + output tokens allowed across the whole run. */
   tokensMax?: number;
   /**
-   * What to do when the budget is breached. `halt` (default) stops the
+   * Cumulative USD allowed across the whole run, priced from token usage via
+   * the model price table (`src/recipes/pricing`). Enforced for measured +
+   * priced (API) drivers; a subscription driver that reports no tokens, or a
+   * model with no price-table entry, FAILS OPEN with a one-time warning and
+   * never halts on it. Same `onBreach` semantics as `tokensMax`. A USD cap on
+   * a subscription driver would be notional, not real money out — so it is
+   * deliberately not enforced there.
+   */
+  usdMax?: number;
+  /**
+   * What to do when a budget is breached. `halt` (default) stops the
    * run on the next admission check with a `budget_exceeded` halt
    * reason. `warn` continues the run but emits a warning + records the
    * breach in the run log; useful for tuning budgets without breaking
-   * production cron recipes.
+   * production cron recipes. Applies to both `tokensMax` and `usdMax`.
    */
   onBreach?: "halt" | "warn";
 }

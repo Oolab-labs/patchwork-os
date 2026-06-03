@@ -121,9 +121,10 @@ export function loadPriceTable(
     const rawPrices =
       root.prices && typeof root.prices === "object" ? root.prices : root;
 
-    const merged: Record<string, ModelPrice> = {
-      ...BUILTIN_PRICE_TABLE.prices,
-    };
+    // Null-prototype base so a user override keyed "__proto__" creates an own
+    // property instead of mutating the prototype (bracket-assign pollution).
+    const merged: Record<string, ModelPrice> = Object.create(null);
+    Object.assign(merged, BUILTIN_PRICE_TABLE.prices);
     for (const [model, entry] of Object.entries(
       rawPrices as Record<string, unknown>,
     )) {
@@ -145,7 +146,13 @@ export function priceFor(
   model: string,
   table: PriceTable = loadPriceTable(),
 ): ModelPrice | undefined {
-  return table.prices[model];
+  // Own-property lookup only. A user-controlled model id that collides with an
+  // Object.prototype key ("__proto__", "constructor", "valueOf", "toString", …)
+  // must resolve to undefined (unpriced → fail open), NOT to an inherited
+  // prototype member — otherwise costUsd would compute on a function and return
+  // NaN, silently poisoning the USD budget (a prototype-walk bug class this
+  // codebase has been bitten by before — use Object.hasOwn, never `in`/bracket).
+  return Object.hasOwn(table.prices, model) ? table.prices[model] : undefined;
 }
 
 /**
