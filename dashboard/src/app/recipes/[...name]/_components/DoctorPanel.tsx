@@ -210,7 +210,7 @@ export function DoctorPanel({
                       <li key={cat} style={{ color: "var(--err)" }}>
                         {HALT_CATEGORY_LABEL[category] ?? cat}: {count}
                         <span
-                          style={{ color: "var(--accent)", marginLeft: 6 }}
+                          style={{ color: "var(--ink-2)", marginLeft: 6 }}
                           title="suggested fix"
                         >
                           → {HALT_CATEGORY_HINT[category] ?? "open run trace"}

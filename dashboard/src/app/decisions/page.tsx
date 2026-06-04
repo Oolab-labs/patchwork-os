@@ -262,7 +262,7 @@ function DecisionsContent() {
               onClick={() => setTag(tag === t ? "" : t)}
               aria-pressed={tag === t}
               aria-label={`Filter by tag: ${t}`}
-              className={tag === t ? "pill accent" : "pill muted"}
+              className={tag === t ? "pill info" : "pill muted"}
               style={{ cursor: "pointer", fontFamily: "var(--font-mono)" }}
             >
               {t}
@@ -413,12 +413,12 @@ function DecisionsContent() {
                       <div
                         style={{
                           padding: "10px 14px",
-                          background: "var(--orange-soft)",
+                          background: "var(--err-soft)",
                           borderRadius: "var(--r-s)",
-                          border: "1px solid var(--orange-tint)",
+                          border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)",
                         }}
                       >
-                        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 600, color: "var(--orange)", marginBottom: 6 }}>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 600, color: "var(--err-text)", marginBottom: 6 }}>
                           <span aria-hidden="true">✻ </span>Problem
                         </div>
                         <div style={{ fontSize: "var(--fs-m)", color: "var(--ink-1)", lineHeight: 1.55 }}>

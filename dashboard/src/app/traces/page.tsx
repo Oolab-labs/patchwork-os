@@ -652,7 +652,7 @@ export default function TracesPage() {
               key={k}
               type="button"
               onClick={() => setStatusFilter(k)}
-              className={statusFilter === k ? "pill accent traces-filter-pill" : "pill muted traces-filter-pill"}
+              className={statusFilter === k ? "pill info traces-filter-pill" : "pill muted traces-filter-pill"}
             >
               {k === "all" ? `All (${traces.length})` : k === "done" ? `Done (${doneCount})` : `Errors (${errorCount})`}
             </button>
@@ -660,7 +660,7 @@ export default function TracesPage() {
           <button
             type="button"
             onClick={() => setKsOnly((v) => !v)}
-            className={ksOnly ? "pill accent traces-filter-pill traces-ks-pill" : "pill muted traces-filter-pill"}
+            className={ksOnly ? "pill info traces-filter-pill traces-ks-pill" : "pill muted traces-filter-pill"}
           >
             Kill-switch
           </button>
@@ -684,7 +684,7 @@ export default function TracesPage() {
               key={v}
               type="button"
               onClick={() => setView(v)}
-              className={view === v ? "pill accent traces-filter-pill traces-view-pill" : "pill muted traces-filter-pill traces-view-pill"}
+              className={view === v ? "pill info traces-filter-pill traces-view-pill" : "pill muted traces-filter-pill traces-view-pill"}
             >
               {v}
             </button>

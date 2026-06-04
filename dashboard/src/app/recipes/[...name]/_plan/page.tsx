@@ -92,7 +92,7 @@ function formatCost(tokens: number): string {
 
 function TypeBadge({ type }: { type: string }) {
   const colors: Record<string, string> = {
-    tool: "var(--accent)",
+    tool: "var(--accent-cool)",
     agent: "var(--purple)",
     recipe: "var(--blue)",
   };

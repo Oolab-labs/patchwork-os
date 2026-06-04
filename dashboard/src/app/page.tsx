@@ -404,7 +404,10 @@ function ragColor(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   const hue = h % 360;
-  return `hsl(${hue}, 52%, 38%)`;
+  // Yellow-green hues (40–200) read brighter to the eye; cap their lightness
+  // lower so white initials clear ~5.2:1 across all hues (facelift P3-13).
+  const lightness = hue >= 40 && hue <= 200 ? 28 : 34;
+  return `hsl(${hue}, 55%, ${lightness}%)`;
 }
 
 /** Up to 2 uppercase initials from a recipe name. */
@@ -1110,7 +1113,7 @@ export default function HomePage() {
                       <div className="mt-1">
                         <Sparkline
                           values={runs7dSeries}
-                          color="var(--accent)"
+                          color="var(--ok)"
                           height={22}
                           labels={days7dLabels}
                           unit="runs"

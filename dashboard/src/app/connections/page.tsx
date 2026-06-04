@@ -1807,7 +1807,7 @@ export default function ConnectionsPage() {
                   No connections yet
                 </p>
                 <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
-                  Connect a service to start automating workflows.
+                  Connect a service to start automating with recipes.
                 </p>
               </div>
               <button
@@ -1833,7 +1833,7 @@ export default function ConnectionsPage() {
                 key={k}
                 type="button"
                 onClick={() => setStatusFilter(k)}
-                className={statusFilter === k ? "pill accent conn-filter-pill" : "pill muted conn-filter-pill"}
+                className={statusFilter === k ? "pill info conn-filter-pill" : "pill muted conn-filter-pill"}
               >
                 {label}
               </button>

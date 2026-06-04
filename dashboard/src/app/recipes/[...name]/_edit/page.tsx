@@ -1074,7 +1074,7 @@ export default function RecipeEditPage({ name }: { name: string }) {
                 href="/connections"
                 style={{
                   fontSize: "var(--fs-xs)",
-                  color: "var(--accent)",
+                  color: "var(--info)",
                   textDecoration: "none",
                 }}
               >

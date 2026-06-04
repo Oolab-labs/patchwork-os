@@ -722,7 +722,7 @@ function TasksContent() {
                 t.status === "error"
                   ? "var(--err)"
                   : t.status === "running" || t.status === "pending"
-                    ? "var(--accent)"
+                    ? "var(--accent-cool)"
                     : t.status === "cancelled" || t.status === "interrupted"
                       ? "var(--warn)"
                       : "var(--ok)";
@@ -730,7 +730,7 @@ function TasksContent() {
                 t.status === "error"
                   ? "var(--err)"
                   : t.status === "running" || t.status === "pending"
-                    ? "var(--accent)"
+                    ? "var(--accent-cool)"
                     : t.status === "done"
                       ? "var(--ok)"
                       : t.status === "cancelled" || t.status === "interrupted"

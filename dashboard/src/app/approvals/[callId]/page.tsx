@@ -492,7 +492,7 @@ export default function ApprovalDetailPage() {
             </code>
             <Link
               href={`/approvals?session=${sessionId}`}
-              style={{ fontSize: "var(--fs-m)", color: "var(--accent)" }}
+              style={{ fontSize: "var(--fs-m)", color: "var(--info)" }}
             >
               All approvals for this session →
             </Link>
