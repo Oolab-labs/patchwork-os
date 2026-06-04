@@ -30,6 +30,27 @@ const { randomUUID } = require("node:crypto");
 // Resolve ws from the bridge's own node_modules (script lives in scripts/)
 const { WebSocket } = require(path.join(__dirname, "..", "node_modules", "ws"));
 
+// process.kill(pid, 0) probes liveness without delivering a signal: it throws
+// ESRCH when the process is gone and EPERM when it exists but isn't ours (still
+// alive). A stale lock whose bridge has exited would otherwise be "selected"
+// (newest mtime within its tier) and every connect would hang on a refused port
+// until backoff gives up — the multi-bridge footgun. Mirrors the shared
+// src/bridgeLockDiscovery.ts isLive() check.
+function isAlive(pid) {
+  if (typeof pid !== "number" || !Number.isFinite(pid)) return true; // unknown pid → don't exclude
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
+  }
+}
+
+// Remembers the last lock we logged a selection for, so the diagnostic below
+// fires once at startup (and again only when the selection actually changes)
+// rather than on every poll tick.
+let lastSelectedLockPath = null;
+
 function findLockFile() {
   const lockDir = path.join(
     process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"),
@@ -38,49 +59,40 @@ function findLockFile() {
   // Three-tier preference: orchestrator > bridge > any lock (each by newest mtime).
   // Orchestrator locks win because child bridge restarts produce newer lock files,
   // which would hijack the shim away from the orchestrator if we only used mtime.
-  let orchestratorLock = null;
-  let orchestratorMtime = 0;
-  let bridgeLock = null;
-  let bridgeMtime = 0;
-  let fallbackLock = null;
-  let fallbackMtime = 0;
+  const orchestrator = { path: null, mtime: 0, data: null };
+  const bridge = { path: null, mtime: 0, data: null };
+  const fallback = { path: null, mtime: 0, data: null };
   try {
     for (const f of fs.readdirSync(lockDir)) {
       if (!f.endsWith(".lock")) continue;
       const fullPath = path.join(lockDir, f);
       try {
         const stat = fs.statSync(fullPath);
-        let isBridge = false;
-        let isOrchestrator = false;
+        let data = null;
         try {
-          const data = JSON.parse(fs.readFileSync(fullPath, "utf8"));
-          isBridge = data.isBridge === true;
-          isOrchestrator = data.orchestrator === true;
-          // Skip locks that don't match the requested workspace
-          if (
-            workspaceFilter &&
-            data.workspace &&
-            data.workspace !== workspaceFilter
-          )
-            continue;
+          data = JSON.parse(fs.readFileSync(fullPath, "utf8"));
         } catch {
-          // unparseable — treat as non-bridge
+          // unparseable — treated as a fallback lock with no metadata
         }
-        if (isOrchestrator) {
-          if (stat.mtimeMs > orchestratorMtime) {
-            orchestratorMtime = stat.mtimeMs;
-            orchestratorLock = fullPath;
-          }
-        } else if (isBridge) {
-          if (stat.mtimeMs > bridgeMtime) {
-            bridgeMtime = stat.mtimeMs;
-            bridgeLock = fullPath;
-          }
-        } else {
-          if (stat.mtimeMs > fallbackMtime) {
-            fallbackMtime = stat.mtimeMs;
-            fallbackLock = fullPath;
-          }
+        // Skip locks whose owning bridge process has exited. Without this a
+        // wedged/stale lock can be picked and the connection hangs.
+        if (data && !isAlive(data.pid)) continue;
+        // When a workspace filter is set, require an EXACT workspace match — a
+        // lock with a missing/blank workspace field must not be picked under the
+        // filter (otherwise the shim can latch onto an unrelated bridge).
+        if (workspaceFilter && (!data || data.workspace !== workspaceFilter))
+          continue;
+        const isBridge = data ? data.isBridge === true : false;
+        const isOrchestrator = data ? data.orchestrator === true : false;
+        const tier = isOrchestrator
+          ? orchestrator
+          : isBridge
+            ? bridge
+            : fallback;
+        if (stat.mtimeMs > tier.mtime) {
+          tier.mtime = stat.mtimeMs;
+          tier.path = fullPath;
+          tier.data = data;
         }
       } catch {
         // skip unreadable files
@@ -90,7 +102,25 @@ function findLockFile() {
     // lock dir doesn't exist
   }
   // Prefer orchestrator > bridge > fallback (each newest mtime within tier)
-  return orchestratorLock ?? bridgeLock ?? fallbackLock;
+  const chosen = orchestrator.path
+    ? orchestrator
+    : bridge.path
+      ? bridge
+      : fallback.path
+        ? fallback
+        : null;
+  // One-line stderr diagnostic so operators can see which bridge/workspace the
+  // shim latched onto — silent wrong-bridge selection was a real footgun. stderr
+  // is not the JSON-RPC stream, so this never corrupts protocol traffic.
+  if (chosen && chosen.path !== lastSelectedLockPath) {
+    lastSelectedLockPath = chosen.path;
+    const wsName = chosen.data?.workspace || "(unknown workspace)";
+    const pid = chosen.data?.pid || "?";
+    process.stderr.write(
+      `mcp-stdio-shim: selected ${path.basename(chosen.path)} (workspace=${wsName}, pid=${pid})\n`,
+    );
+  }
+  return chosen ? chosen.path : null;
 }
 
 function parseLock(lockPath) {
@@ -199,11 +229,16 @@ function scheduleBackoffReconnect(errorType) {
 // Parse named flags first so they don't pollute positional port/token detection.
 const args = process.argv.slice(2);
 let workspaceFilter = null;
+let pingMode = false;
 for (let i = 0; i < args.length; i++) {
-  if (args[i] === "--workspace" && args[i + 1]) {
+  if (args[i] === "--ping" || args[i] === "--probe") {
+    pingMode = true;
+    args.splice(i, 1);
+    i--;
+  } else if (args[i] === "--workspace" && args[i + 1] !== undefined) {
     workspaceFilter = args[i + 1];
     args.splice(i, 2);
-    break;
+    i--;
   }
 }
 const explicitPort = args[0] && args[1] ? Number(args[0]) : null;
@@ -369,8 +404,104 @@ function startPoll() {
   }, POLL_INTERVAL_MS);
 }
 
-// --- Initial connection ---
-if (explicitPort !== null) {
+// --- Ping mode: one-shot probe, then exit ---
+// `grok mcp doctor` (and similar stdio MCP verifiers) hang on this shim because
+// it is a long-lived relay that only exits on stdin EOF. `--ping` / `--probe`
+// gives those tools a clean check: connect, run initialize + tools/list, print a
+// one-line summary, and exit. It skips the relay, lock watcher, and reconnect
+// loops entirely.
+if (pingMode) {
+  let pingPort = explicitPort;
+  let pingToken = explicitToken;
+  if (pingPort === null) {
+    const lockFile = findLockFile();
+    if (!lockFile) {
+      process.stderr.write("mcp-stdio-shim: --ping: no bridge lock found.\n");
+      process.exit(1);
+    }
+    try {
+      const parsed = parseLock(lockFile);
+      pingPort = parsed.port;
+      pingToken = parsed.authToken;
+    } catch (err) {
+      process.stderr.write(
+        `mcp-stdio-shim: --ping: lock unreadable (${err.message}).\n`,
+      );
+      process.exit(1);
+    }
+  }
+  let pingDone = false;
+  const pingWs = new WebSocket(`ws://127.0.0.1:${pingPort}`, {
+    headers: {
+      "x-claude-code-ide-authorization": pingToken,
+      "x-claude-code-session-id": CLIENT_SESSION_ID,
+    },
+  });
+  const failPing = (msg) => {
+    if (pingDone) return;
+    pingDone = true;
+    process.stderr.write(`mcp-stdio-shim: --ping: ${msg}\n`);
+    try {
+      pingWs.terminate();
+    } catch {
+      /* ignore */
+    }
+    process.exit(1);
+  };
+  const pingTimer = setTimeout(
+    () => failPing(`timed out after 5s (port ${pingPort})`),
+    5000,
+  );
+  pingWs.on("open", () => {
+    pingWs.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "shim-ping", version: "1" },
+        },
+      }),
+    );
+  });
+  pingWs.on("message", (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(raw.toString());
+    } catch {
+      return;
+    }
+    if (msg.id === 1) {
+      pingWs.send(
+        JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+      );
+      pingWs.send(
+        JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
+      );
+    } else if (msg.id === 2) {
+      clearTimeout(pingTimer);
+      pingDone = true;
+      const n =
+        msg.result && Array.isArray(msg.result.tools)
+          ? msg.result.tools.length
+          : "?";
+      process.stdout.write(`bridge OK — port ${pingPort}, ${n} tools\n`);
+      try {
+        pingWs.close();
+      } catch {
+        /* ignore */
+      }
+      process.exit(0);
+    }
+  });
+  pingWs.on("error", (err) => failPing(`connect failed (${err.message})`));
+  pingWs.on("close", (code) =>
+    failPing(`closed before tools/list (code ${code})`),
+  );
+} else if (explicitPort !== null) {
+  // --- Initial connection ---
   connect(explicitPort, explicitToken);
 } else {
   const lockFile = findLockFile();
@@ -398,7 +529,7 @@ if (explicitPort !== null) {
 // Watches ~/.claude/ide/ for .lock file changes. When a new bridge lock appears
 // on a different port, reconnects automatically. This means Claude Desktop never
 // needs to be restarted when the bridge restarts on a new port.
-if (explicitPort === null) {
+if (!pingMode && explicitPort === null) {
   const lockDir = path.join(
     process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"),
     "ide",
@@ -439,52 +570,38 @@ if (explicitPort === null) {
 
 // --- stdin → bridge (newline-delimited JSON-RPC) ---
 // Messages that arrive before the WebSocket is open are queued and flushed on connect.
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk) => {
-  buffer += chunk;
-  const lines = buffer.split("\n");
-  buffer = lines.pop() ?? "";
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(trimmed);
-      } catch (sendErr) {
-        process.stderr.write(
-          `mcp-stdio-shim: ws.send failed (${sendErr.message}) — queuing message.\n`,
-        );
-        if (pendingLines.length < MAX_PENDING_LINES) {
-          pendingLines.push(trimmed);
+// Skipped in --ping mode — the one-shot probe manages its own lifecycle and exits.
+if (!pingMode) {
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => {
+    buffer += chunk;
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(trimmed);
+        } catch (sendErr) {
+          process.stderr.write(
+            `mcp-stdio-shim: ws.send failed (${sendErr.message}) — queuing message.\n`,
+          );
+          if (pendingLines.length < MAX_PENDING_LINES) {
+            pendingLines.push(trimmed);
+          }
         }
+      } else if (pendingLines.length < MAX_PENDING_LINES) {
+        pendingLines.push(trimmed);
+      } else {
+        process.stderr.write(
+          `mcp-stdio-shim: pendingLines overflow (${MAX_PENDING_LINES}) — dropping message (bridge not connected)\n`,
+        );
       }
-    } else if (pendingLines.length < MAX_PENDING_LINES) {
-      pendingLines.push(trimmed);
-    } else {
-      process.stderr.write(
-        `mcp-stdio-shim: pendingLines overflow (${MAX_PENDING_LINES}) — dropping message (bridge not connected)\n`,
-      );
     }
-  }
-});
+  });
 
-process.stdin.on("end", () => {
-  if (ws) {
-    try {
-      ws.close();
-    } catch {
-      /* ignore */
-    }
-  }
-  process.exit(0);
-});
-
-process.stdin.on("error", (err) => {
-  // EPIPE / ERR_STREAM_DESTROYED means the MCP host closed the pipe — clean shutdown.
-  if (err.code === "EPIPE" || err.code === "ERR_STREAM_DESTROYED") {
-    process.stderr.write(
-      `mcp-stdio-shim: stdin closed (${err.code}) — shutting down.\n`,
-    );
+  process.stdin.on("end", () => {
     if (ws) {
       try {
         ws.close();
@@ -493,6 +610,23 @@ process.stdin.on("error", (err) => {
       }
     }
     process.exit(0);
-  }
-  process.stderr.write(`mcp-stdio-shim: stdin error: ${err.message}\n`);
-});
+  });
+
+  process.stdin.on("error", (err) => {
+    // EPIPE / ERR_STREAM_DESTROYED means the MCP host closed the pipe — clean shutdown.
+    if (err.code === "EPIPE" || err.code === "ERR_STREAM_DESTROYED") {
+      process.stderr.write(
+        `mcp-stdio-shim: stdin closed (${err.code}) — shutting down.\n`,
+      );
+      if (ws) {
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      process.exit(0);
+    }
+    process.stderr.write(`mcp-stdio-shim: stdin error: ${err.message}\n`);
+  });
+}
