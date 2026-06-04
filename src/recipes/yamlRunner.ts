@@ -1181,6 +1181,16 @@ export async function runYamlRecipe(
         agentCfg.model,
         agentCfg.mcpAccess,
       );
+      if (!judged.ok) {
+        // Audit 2026-06-03 (MEDIUM #17): a failed / silent-fail / empty
+        // RE-JUDGE can't yield a trustworthy verdict. Mirror the revise-
+        // failure break above: stop and KEEP the last good verdict. Parsing
+        // the failure/empty text would have produced a bogus verdict (usually
+        // "unparseable"), silently dropping the request_changes signal and
+        // skipping the on_exhausted gate — the run would proceed as if the
+        // (unvalidated) revised draft had been approved.
+        break;
+      }
       const judgedText =
         typeof judged.value === "string"
           ? judged.value
