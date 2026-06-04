@@ -275,7 +275,9 @@
   --recess:  #15181d;
   --pressed: #1c2026;
   --line-1:  rgba(255,255,255,0.08);
-  --line-2:  rgba(255,255,255,0.16);
+  /* Theme-redesign AP-08: lift the dark divider step 0.16→0.20 so load-bearing
+     borders (cards, summary-band, table groupings) clear the 3:1 non-text floor. */
+  --line-2:  rgba(255,255,255,0.20);
   --line-3:  rgba(255,255,255,0.24);
   --ink-0:   #f6f7f8;
   --ink-1:   #d4d6dc;
@@ -344,7 +346,9 @@
   --paper-grain: none;
 
   --card-bg:     rgba(16,18,22,0.94);
-  --card-shadow: 0 1px 0 0 rgba(255,255,255,0.1) inset, var(--shadow-s);
+  /* Theme-redesign AP-08: lift the dark inset highlight 0.10→0.15 so cards
+     read as raised surfaces, not flat panels (light uses 0.85). */
+  --card-shadow: 0 1px 0 0 rgba(255,255,255,0.15) inset, var(--shadow-s);
   --card-shadow-hover:
     inset 0 1px 0 0 rgba(255,255,255,0.12),
     inset 0 0 0 1px rgba(255,255,255,0.05),
@@ -1257,11 +1261,17 @@ a.btn { text-decoration: none; }
 }
 .input:focus {
   outline: none;
-  border-color: var(--orange);
-  box-shadow: 0 0 0 3px var(--orange-soft), 0 0 12px rgba(var(--orange-rgb), 0.15);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
-[data-theme="dark"] .input:focus {
-  box-shadow: 0 0 0 3px rgba(var(--orange-rgb), 0.18), 0 0 14px rgba(var(--orange-rgb), 0.2);
+.input:focus-visible {
+  /* Theme-redesign AP-09: a solid 2px outline is the AA-load-bearing focus
+     indicator (clears the 3:1 perimeter); the soft halo is decorative. Was
+     outline:none + a ~1.2:1 orange glow only. */
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
 }
 .input::placeholder { color: var(--ink-3); }
 
@@ -1922,9 +1932,12 @@ a.btn { text-decoration: none; }
   align-items: center;
   margin-bottom: var(--s-4);
   padding: 8px 12px;
-  border: 1px solid var(--line-2);
+  /* Theme-redesign AP-08: surface + line-3 so the band reads as a distinct
+     grouping zone — in dark it previously shared the canvas color (--bg-0)
+     and dissolved into the background. */
+  border: 1px solid var(--line-3);
   border-radius: var(--r-1);
-  background: var(--bg-0);
+  background: var(--surface);
 }
 .runs-summary-band-label { font-size: var(--fs-xs); }
 
@@ -5531,6 +5544,10 @@ a.btn { text-decoration: none; }
   border-color: color-mix(in srgb, var(--err) 18%, var(--line-1));
   border-left-color: var(--err);
 }
+/* Theme-redesign AP-08: the 4% warn/err tint is invisible on the near-black
+   dark canvas; lift to 8% so the band's severity actually registers. */
+[data-theme="dark"] .attention-band { background: color-mix(in srgb, var(--warn) 8%, var(--card-bg)); }
+[data-theme="dark"] .attention-band[data-severity="err"] { background: color-mix(in srgb, var(--err) 8%, var(--card-bg)); }
 .attention-band-label {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -8868,4 +8885,21 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
     padding: var(--s-3) 0;
     margin-bottom: var(--s-3);
   }
+}
+
+/* ── Theme-redesign AP-09: keyboard focus rings on every text input ──────────
+   The per-input `:focus { outline: none }` rules (scattered above, each higher
+   specificity than the global :focus-visible) were swallowing the keyboard
+   focus indicator. This rule, placed last, restores an AA-load-bearing solid
+   2px outline on :focus-visible only — so mouse focus stays clean, keyboard
+   focus is clearly ringed. */
+.traces-search-input:focus-visible,
+.traces-export-input:focus-visible,
+.mkt-search-input:focus-visible,
+.recipes-search-wrap input:focus-visible,
+.new-recipe-field-input:focus-visible,
+.cmdk-input-row input:focus-visible,
+.stg-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
