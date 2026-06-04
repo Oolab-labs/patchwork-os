@@ -202,7 +202,6 @@
   /* Theme-redesign AP-04: drop the orange bloom from generic card hovers —
      elevation comes from --shadow-l only; orange stays reserved for brand/CTA. */
   --card-shadow-hover: 0 1px 0 0 rgba(255,255,255,0.95) inset, var(--shadow-l);
-  --card-hover-glow: rgba(255,255,255,0.45);
 
   /* glass — blur disabled for scroll perf, see --card-blur note above. */
   --glass-bg:     rgba(251,248,240,0.92);
@@ -356,9 +355,6 @@
     0 0 0 1px rgba(0,0,0,0.18),
     0 3px 6px rgba(0,0,0,0.22),
     0 12px 28px rgba(0,0,0,0.24);
-  /* Faint white lift on dark — a 0.45 white spotlight blotched the near-black
-     cards; 0.06 reads as a gentle hover sheen. */
-  --card-hover-glow: rgba(255,255,255,0.06);
   --glass-bg:     rgba(16,18,22,0.92);
   --glass-border: rgba(255,255,255,0.1);
 
@@ -934,33 +930,11 @@ button.topbar-search {
   margin-bottom: 16px;
 }
 
-/* Mouse-tracking radial glow on cards */
-.card::before,
-.stat-card::before,
-.glass-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  /* Theme-redesign AP-04: neutral sheen, not an orange bloom. The glow color is
-     theme-aware (--card-hover-glow): a soft white lift on the cream theme, a
-     much fainter white on dark (a 0.45 white spotlight read as a harsh blotch
-     on the near-black canvas). */
-  background: radial-gradient(
-    400px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
-    var(--card-hover-glow),
-    transparent 65%
-  );
-  opacity: 0;
-  transition: opacity 300ms;
-  pointer-events: none;
-  z-index: 0;
-}
-.card:hover::before,
-.stat-card:hover::before,
-.glass-card:hover::before { opacity: 1; }
-/* Ensure card children stack above the glow layer */
-.card > *, .stat-card > *, .glass-card > * { position: relative; z-index: 1; }
+/* The mouse-tracking radial hover-glow on cards was removed: it never read
+   well (a faint warm bloom in light, a harsh white spotlight on dark), it cost
+   a global mousemove handler + per-frame DOM writes (CardGlow.tsx), and card
+   hover elevation is already carried by --card-shadow-hover. Cards lift on
+   hover via shadow alone now. */
 
 .glass-card {
   background: var(--glass-bg);
@@ -2475,14 +2449,16 @@ a.btn { text-decoration: none; }
   position: absolute;
   inset: 0;
   pointer-events: none;
-  /* Theme-redesign AP-03: confine the mosaic to a far-right strip at reduced
-     opacity (was 0.85, full mask from 38%) so it reads as a quiet texture, not
-     a competing field. Paired with the neutral QuiltBg PALETTE (no orange). */
-  opacity: 0.55;
-  mask-image: linear-gradient(to right, transparent 55%, rgba(0, 0, 0, 0.5) 72%, black 85%);
-  -webkit-mask-image: linear-gradient(to right, transparent 55%, rgba(0, 0, 0, 0.5) 72%, black 85%);
+  /* The neutral mosaic reads as quiet texture (no orange tiles, AP-03). Dialed
+     a little more visible than the first pass (0.55 / mask from 55%) — it earns
+     a bit more presence on the landing-page hero without competing with the
+     copy: more opaque + the reveal starts earlier so a fuller tile field shows
+     to the right of the headline. */
+  opacity: 0.72;
+  mask-image: linear-gradient(to right, transparent 42%, rgba(0, 0, 0, 0.55) 62%, black 78%);
+  -webkit-mask-image: linear-gradient(to right, transparent 42%, rgba(0, 0, 0, 0.55) 62%, black 78%);
 }
-[data-theme="dark"] .quilt-bg { opacity: 0.50; }
+[data-theme="dark"] .quilt-bg { opacity: 0.62; }
 .quilt-bg svg {
   width: 100%;
   height: 100%;
