@@ -1937,6 +1937,10 @@ a.btn { text-decoration: none; }
 .runs-stat-card[data-variant="all"][data-active="true"]  { border-left-color: var(--orange); }
 .runs-stat-card[data-variant="done"][data-active="true"] { border-left-color: var(--ok); }
 .runs-stat-card[data-variant="error"][data-active="true"]{ border-left-color: var(--err); }
+/* Subtle semantic wash so the done / errored tiles read at a glance, not just
+   via the small colored label (facelift P0-2). The "all" tile stays neutral. */
+.runs-stat-card[data-variant="done"]  { background: color-mix(in srgb, var(--ok) 5%, transparent); }
+.runs-stat-card[data-variant="error"] { background: color-mix(in srgb, var(--err) 6%, transparent); }
 .runs-stat-label {
   font-size: var(--fs-xs);
   font-weight: 500;
@@ -5457,6 +5461,13 @@ a.btn { text-decoration: none; }
   box-shadow: var(--card-shadow);
   flex-wrap: wrap;
 }
+/* Band border/tint takes the highest severity present — a band containing a
+   failed-run or halt chip reads red, not amber (facelift P1-7). */
+.attention-band[data-severity="err"] {
+  background: color-mix(in srgb, var(--err) 4%, var(--card-bg));
+  border-color: color-mix(in srgb, var(--err) 18%, var(--line-1));
+  border-left-color: var(--err);
+}
 .attention-band-label {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -5487,12 +5498,14 @@ a.btn { text-decoration: none; }
   border: 1px solid;
 }
 .attention-chip:hover { filter: brightness(1.06); transform: translateY(-1px); }
-.attention-chip--urgent {
-  background: color-mix(in srgb, var(--amber) 10%, var(--card-bg));
-  border-color: color-mix(in srgb, var(--amber) 40%, var(--line-1));
-  color: var(--amber);
-}
+/* Severity tones — class name now matches the rendered color (facelift P1-7).
+   warn = amber (pending approvals), err = red (failed runs / halts). */
 .attention-chip--warn {
+  background: color-mix(in srgb, var(--warn) 10%, var(--card-bg));
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--line-1));
+  color: var(--warn);
+}
+.attention-chip--err {
   background: color-mix(in srgb, var(--err) 8%, var(--card-bg));
   border-color: color-mix(in srgb, var(--err) 32%, var(--line-1));
   color: var(--err);
