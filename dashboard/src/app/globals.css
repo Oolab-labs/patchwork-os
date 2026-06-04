@@ -2413,6 +2413,11 @@ a.btn { text-decoration: none; }
   inset: 0;
   pointer-events: none;
   opacity: 0.85;
+  /* Fade the mosaic out under the hero copy (left) and let it resolve into a
+     clean tile field on the right, so the two regions stop competing in the
+     same column (facelift P2-10 / guardrail G-1). */
+  mask-image: linear-gradient(to right, transparent 38%, rgba(0, 0, 0, 0.6) 58%, black 72%);
+  -webkit-mask-image: linear-gradient(to right, transparent 38%, rgba(0, 0, 0, 0.6) 58%, black 72%);
 }
 .quilt-bg svg {
   width: 100%;
@@ -3235,7 +3240,13 @@ a.btn { text-decoration: none; }
   [data-theme="dark"] .quilt-content::before {
     background: linear-gradient(to bottom, var(--surface) 60%, color-mix(in srgb, var(--surface) 75%, transparent) 100%);
   }
-  .quilt-bg { opacity: 0.55; }
+  /* On narrow screens the hero stacks vertically, so fade the mosaic top-to-
+     bottom instead of left-to-right (facelift P2-10). */
+  .quilt-bg {
+    opacity: 0.65;
+    mask-image: linear-gradient(to bottom, transparent 42%, rgba(0, 0, 0, 0.5) 62%, black 78%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 42%, rgba(0, 0, 0, 0.5) 62%, black 78%);
+  }
 }
 
 /* ---- Chip (2.0 small inline pills) ---- */

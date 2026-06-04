@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { RunSparkBars, SuccessRing } from "@/components/patchwork";
 import { relTime } from "@/components/time";
 import { useRunRecipe } from "@/hooks/useRunRecipe";
+import { recipeDisplayName } from "@/lib/recipeDisplay";
 import type { LeaderboardRun } from "./RecipeLeaderboard";
 
 /**
@@ -27,6 +28,8 @@ interface FeaturedRecipeAsideProps {
   runs: LeaderboardRun[];
   /** Window in ms for volume ranking. Defaults to 24h. */
   windowMs?: number;
+  /** Installed-recipe count, for the empty state's "N recipes installed" line. */
+  recipesCount?: number;
 }
 
 type Mode = "running" | "needs-retry" | "top" | "empty";
@@ -136,6 +139,7 @@ function fmtElapsed(ms: number): string {
 export function FeaturedRecipeAside({
   runs,
   windowMs = 24 * 60 * 60 * 1000,
+  recipesCount,
 }: FeaturedRecipeAsideProps) {
   const pick = pickAside(runs, windowMs);
   const { run, pending } = useRunRecipe();
@@ -149,16 +153,22 @@ export function FeaturedRecipeAside({
   }, [pick?.mode]);
 
   if (!pick) {
+    // Distinguish "have recipes, none run yet" from "nothing installed" so the
+    // slot reflects the real next step (facelift P1-5-C).
+    const hasRecipes = (recipesCount ?? 0) > 0;
+    const emptyValue = hasRecipes
+      ? `${recipesCount} recipe${recipesCount === 1 ? "" : "s"} installed`
+      : "No recipes yet";
     return (
       <div className="quilt-aside-empty" aria-label="No recipes ready yet">
         <div className="quilt-aside-empty-label">Start here</div>
-        <div className="quilt-aside-empty-value">No runs yet</div>
+        <div className="quilt-aside-empty-value">{emptyValue}</div>
         <div className="quilt-aside-empty-foot">
           <Link
-            href="/marketplace"
-            style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}
+            href={hasRecipes ? "/recipes" : "/marketplace"}
+            style={{ color: "var(--info)", textDecoration: "none", fontWeight: 600 }}
           >
-            Browse recipes →
+            {hasRecipes ? "Run one →" : "Browse recipes →"}
           </Link>
         </div>
       </div>
@@ -212,7 +222,7 @@ export function FeaturedRecipeAside({
     <div
       className="quilt-aside-featured"
       data-mode={pick.mode}
-      aria-label={`Recipe ${pick.name}`}
+      aria-label={`Recipe ${recipeDisplayName(pick.name)}`}
     >
       <div className="quilt-aside-eyebrow">
         {eyebrow}
@@ -221,9 +231,9 @@ export function FeaturedRecipeAside({
         <Link
           href={`/recipes/${encodeURIComponent(pick.name)}/edit`}
           className="quilt-aside-name"
-          title={`Edit ${pick.name}`}
+          title={`Edit ${recipeDisplayName(pick.name)}`}
         >
-          {pick.name}
+          {recipeDisplayName(pick.name)}
         </Link>
         <SuccessRing pct={pick.okRate} size={28} stroke={3.5} />
       </div>
@@ -244,7 +254,7 @@ export function FeaturedRecipeAside({
           href={ctaHref}
           className="quilt-aside-run"
           data-mode={pick.mode}
-          title={`Open live run of ${pick.name}`}
+          title={`Open live run of ${recipeDisplayName(pick.name)}`}
         >
           {ctaLabel}
         </Link>
@@ -255,7 +265,7 @@ export function FeaturedRecipeAside({
           disabled={isQueueing}
           className="quilt-aside-run"
           data-mode={pick.mode}
-          title={`Run ${pick.name} now`}
+          title={`Run ${recipeDisplayName(pick.name)} now`}
         >
           {ctaLabel}
         </button>
