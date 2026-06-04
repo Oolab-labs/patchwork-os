@@ -67,7 +67,7 @@ export function SuccessRing({ pct, size = 28, stroke = 4 }: SuccessRingProps) {
           fill: "var(--ink-1)",
         }}
       >
-        {pct == null ? "—" : `${Math.round(safePct)}`}
+        {pct == null ? "—" : `${Math.round(safePct)}%`}
       </text>
     </svg>
   );

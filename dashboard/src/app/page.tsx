@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { bandSeverity, buildAttentionItems } from "@/lib/attention";
+import { recipeDisplayName } from "@/lib/recipeDisplay";
 import { FirstRunChecklist } from "@/components/FirstRunChecklist";
 import { StatCard } from "@/components/StatCard";
 import { SkeletonStatCard } from "@/components/Skeleton";
@@ -400,11 +401,6 @@ function ragInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/** Human-readable display name (capitalised, dashes→spaces). */
-function ragDisplayName(name: string): string {
-  return name.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 /** Short role text per column. */
 function ragRole(
   kind: "draft" | "paused" | "active",
@@ -634,7 +630,7 @@ function RecipesAtAGlance({
                           {ragInitials(recipe.name)}
                         </span>
                         <div className="rag3-card-info">
-                          <div className="rag3-card-name" title={ragDisplayName(recipe.name)}>{ragDisplayName(recipe.name)}</div>
+                          <div className="rag3-card-name" title={recipeDisplayName(recipe.name)}>{recipeDisplayName(recipe.name)}</div>
                           <div className="rag3-card-role">{roleText}</div>
                         </div>
                       </div>
@@ -656,8 +652,8 @@ function RecipesAtAGlance({
                       <button
                         type="button"
                         className="rag3-card-run"
-                        aria-label={`Run ${ragDisplayName(recipe.name)} now`}
-                        title={`Run ${ragDisplayName(recipe.name)}`}
+                        aria-label={`Run ${recipeDisplayName(recipe.name)} now`}
+                        title={`Run ${recipeDisplayName(recipe.name)}`}
                         disabled={isQueueing}
                         onClick={(e) => { e.preventDefault(); void runRecipe(canonicalRecipeKey(recipe.name)); }}
                       >
@@ -973,6 +969,19 @@ export default function HomePage() {
       return sum;
     });
   })();
+  // Hour-of-day labels aligned to curveSeries (index 0 = oldest hour, 23 =
+  // current), so the Tools sparkline carries a hover inspector instead of an
+  // unlabelled curve (facelift P1-4).
+  const hours24Labels = (() => {
+    const HOURS = 24;
+    const HOUR_MS = 60 * 60 * 1000;
+    const windowStart = Date.now() - HOURS * HOUR_MS;
+    return Array.from({ length: HOURS }, (_, i) => {
+      const h = new Date(windowStart + i * HOUR_MS).getHours();
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      return `${h12}${h < 12 ? "am" : "pm"}`;
+    });
+  })();
   return (
     <section>
       {/* Kill-switch banner rendered globally by Shell — was duplicated here. */}
@@ -1017,7 +1026,7 @@ export default function HomePage() {
           }
           return stats.length > 0 ? stats : undefined;
         })()}
-        aside={<FeaturedRecipeAside runs={runs as LeaderboardRun[]} />}
+        aside={<FeaturedRecipeAside runs={runs as LeaderboardRun[]} recipesCount={recipes.length} />}
       />
 
       {/* ------------------------------------------------------------------ */}
@@ -1180,6 +1189,8 @@ export default function HomePage() {
                               values={curveSeries}
                               color="var(--accent-cool)"
                               height={22}
+                              labels={hours24Labels}
+                              unit="calls"
                             />
                           </div>
                         )}
