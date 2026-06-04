@@ -1,0 +1,4 @@
+{
+  "_README": "Backlog of connector ids that are present in some-but-not-all of CATALOG (dashboard/src/app/connections/page.tsx), SUPPORTED_CONNECTORS (same file, ~line 318), and KNOWN_CONNECTOR_IDS (dashboard/src/lib/recipeConnectors.ts). Enforced by dashboard-connector-parity.test.ts. RULES: (1) entries may only be REMOVED — never added casually — as the three sources are brought into lockstep; (2) a NEW divergence (a connector id appears in one or two of the three sources but not all) must be CONSCIOUSLY appended here, the test fails until it is; (3) once a connector id appears in all three sources, it MUST be deleted from this list, the test fails if a listed id is now in-scope everywhere. The list can only shrink. See also #850 cross-layer parity (connectorRoutes-registry-parity.test.ts and connector-step-parity.test.ts). Initial state: empty — the three sources already match exactly on 2026-06-04.",
+  "connectorsOutOfSync": []
+}
