@@ -303,6 +303,7 @@ function SpanBar({
   groupStartMs,
   groupEndMs,
   color,
+  label,
 }: {
   startMs: number;
   durationMs: number;
@@ -312,10 +313,15 @@ function SpanBar({
   label?: string;
 }) {
   const range = groupEndMs - groupStartMs;
+  // The bar was previously unreadable: `label` was declared but never
+  // rendered, so the track carried no hover tooltip or screen-reader text and
+  // children passed no label at all. Surface it as title + aria-label on the
+  // track in every branch, falling back to the duration.
+  const barLabel = label ?? (durationMs > 0 ? `${durationMs}ms` : "instant");
 
   if (range <= 0) {
     return (
-      <div className="traces-span-track">
+      <div className="traces-span-track" title={barLabel} aria-label={barLabel}>
         <div className="traces-span-fill" style={{ inset: 0, background: color }} />
       </div>
     );
@@ -325,7 +331,7 @@ function SpanBar({
 
   if (durationMs <= 0) {
     return (
-      <div className="traces-span-track">
+      <div className="traces-span-track" title={barLabel} aria-label={barLabel}>
         <div
           className="traces-span-tick"
           style={{ left: `${Math.min(leftPct, 98)}%`, background: color }}
@@ -337,7 +343,7 @@ function SpanBar({
   const widthPct = Math.max(2, (durationMs / range) * 100);
 
   return (
-    <div className="traces-span-track">
+    <div className="traces-span-track" title={barLabel} aria-label={barLabel}>
       <div
         className="traces-span-fill"
         style={{
@@ -692,6 +698,24 @@ export default function TracesPage() {
         </div>
       </div>
 
+      {/* Type-color legend — the waterfall bar + row-icon colors encode the
+          trace type; without a key those colors are meaningless (facelift
+          addendum, Traces waterfall pass). */}
+      <div className="traces-legend" aria-label="Trace type colors">
+        {(Object.entries(TYPE_THEME) as Array<[TraceType, (typeof TYPE_THEME)[TraceType]]>).map(
+          ([type, theme]) => (
+            <span key={type} className="traces-legend-item">
+              <span
+                className="traces-legend-swatch"
+                style={{ background: theme.fg }}
+                aria-hidden="true"
+              />
+              {type.replace(/_/g, " ")}
+            </span>
+          ),
+        )}
+      </div>
+
       {loading && traces.length === 0 && (
         <SkeletonList rows={6} columns={4} />
       )}
@@ -904,6 +928,7 @@ export default function TracesPage() {
                                 groupStartMs={groupStartMs}
                                 groupEndMs={groupEndMs}
                                 color={childTheme.fg}
+                                label={`${child.key} · ${childDuration > 0 ? `${childDuration}ms` : "instant"} · +${child.ts - groupStartMs}ms from start`}
                               />
                             </div>
                             {childDuration > 0 && (
