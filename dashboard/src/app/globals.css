@@ -2454,11 +2454,11 @@ a.btn { text-decoration: none; }
      a bit more presence on the landing-page hero without competing with the
      copy: more opaque + the reveal starts earlier so a fuller tile field shows
      to the right of the headline. */
-  opacity: 0.72;
-  mask-image: linear-gradient(to right, transparent 42%, rgba(0, 0, 0, 0.55) 62%, black 78%);
-  -webkit-mask-image: linear-gradient(to right, transparent 42%, rgba(0, 0, 0, 0.55) 62%, black 78%);
+  opacity: 0.92;
+  mask-image: linear-gradient(to right, transparent 34%, rgba(0, 0, 0, 0.65) 54%, black 70%);
+  -webkit-mask-image: linear-gradient(to right, transparent 34%, rgba(0, 0, 0, 0.65) 54%, black 70%);
 }
-[data-theme="dark"] .quilt-bg { opacity: 0.62; }
+[data-theme="dark"] .quilt-bg { opacity: 0.8; }
 .quilt-bg svg {
   width: 100%;
   height: 100%;
