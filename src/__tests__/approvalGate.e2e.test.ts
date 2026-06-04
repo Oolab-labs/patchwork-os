@@ -90,17 +90,20 @@ function setup(): {
     },
   );
 
-  transport.setApprovalGate(async ({ toolName, params, sessionId }) => {
-    const tier = classifyTool(toolName);
-    if (tier !== "high") return "bypass";
-    const { promise } = queue.request({
-      toolName,
-      params,
-      tier,
-      sessionId: sessionId ?? undefined,
-    });
-    return promise;
-  });
+  transport.setApprovalGate(
+    async ({ toolName, params, sessionId, onPending }) => {
+      const tier = classifyTool(toolName);
+      if (tier !== "high") return "bypass";
+      const { promise, callId } = queue.request({
+        toolName,
+        params,
+        tier,
+        sessionId: sessionId ?? undefined,
+      });
+      onPending?.(callId);
+      return promise;
+    },
+  );
 
   const ws = new MockWs();
   transport.attach(ws as unknown as import("ws").WebSocket);
@@ -186,6 +189,39 @@ describe("approval gate E2E", () => {
     expect(result.isError).toBeFalsy();
     expect(result.content[0]!.text).toBe("committed");
     expect(handlerRan.value).toBe(true);
+  });
+
+  it("signals 'pending approval' via a progress notification when the client sent a progressToken", async () => {
+    const { queue, send, nextMatching } = setup();
+
+    send({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "tools/call",
+      params: {
+        name: "gitCommit",
+        arguments: { message: "needs approval" },
+        _meta: { progressToken: "ptok-7" },
+      },
+    });
+
+    // The dispatcher should emit a progress notification the moment the call is
+    // parked — before any approve/reject — so the agent knows it isn't hung.
+    const progress = await nextMatching(
+      (m) => m.method === "notifications/progress",
+    );
+    const p = progress.params as {
+      progressToken: string | number;
+      message?: string;
+    };
+    expect(p.progressToken).toBe("ptok-7");
+    expect(p.message).toMatch(/awaiting human approval/i);
+
+    // Clean up: approve so the tool resolves and the request completes.
+    const pending = queue.list();
+    expect(pending).toHaveLength(1);
+    queue.approve(pending[0]!.callId);
+    await nextMatching((m) => m.id === 7);
   });
 
   it("reject: tool is blocked and reply carries isError:true", async () => {

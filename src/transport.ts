@@ -193,6 +193,9 @@ export class McpTransport {
         toolName: string;
         params: Record<string, unknown>;
         sessionId: string | null;
+        /** Called with the queue callId when (and only when) the call is parked
+         *  for human approval — lets the dispatcher signal "pending" to clients. */
+        onPending?: (callId: string) => void;
       }) => Promise<
         "approved" | "rejected" | "expired" | "cancelled" | "bypass"
       >)
@@ -203,6 +206,7 @@ export class McpTransport {
       toolName: string;
       params: Record<string, unknown>;
       sessionId: string | null;
+      onPending?: (callId: string) => void;
     }) => Promise<"approved" | "rejected" | "expired" | "cancelled" | "bypass">,
   ): void {
     this.approvalGate = fn;
@@ -1410,6 +1414,18 @@ export class McpTransport {
                     toolName: params.name,
                     params: toolArgs as Record<string, unknown>,
                     sessionId: this.sessionId,
+                    // When a call is parked for human approval, tell agentic
+                    // clients that sent a progressToken instead of letting the
+                    // request look hung. Purely additive — never changes the
+                    // gate's decision.
+                    onPending: progressFn
+                      ? (callId) =>
+                          progressFn(
+                            0,
+                            undefined,
+                            `Awaiting human approval in the Patchwork dashboard (callId ${callId}); expires in ~5 min.`,
+                          )
+                      : undefined,
                   });
                   if (
                     decision === "rejected" ||
