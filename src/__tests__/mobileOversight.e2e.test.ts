@@ -15,9 +15,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routeApprovalRequest } from "../approvalHttp.js";
 import { ApprovalQueue, resetApprovalQueueForTests } from "../approvalQueue.js";
 
-// Mock dns so push.mock-relay.local resolves to a public IP (passes SSRF check)
+// Mock dns so push.mock-relay.local resolves to a public IP (passes SSRF check).
+// The SSRF guard calls dns.lookup(host, { all: true }) → an ARRAY (audit
+// 2026-06-03 MEDIUM #26: resolve-all to defeat split-horizon DNS).
 vi.mock("node:dns/promises", () => ({
-  lookup: vi.fn().mockResolvedValue({ address: "93.184.216.34", family: 4 }),
+  lookup: vi.fn().mockResolvedValue([{ address: "93.184.216.34", family: 4 }]),
 }));
 
 // ── Mock relay server ─────────────────────────────────────────────────────
