@@ -830,19 +830,22 @@ export class StreamableHttpHandler {
     if (denyTools.size > 0) transport.setDenyTools(denyTools);
     if (this.config.approvalGate !== "off") {
       const gateAll = this.config.approvalGate === "all";
-      transport.setApprovalGate(async ({ toolName, params, sessionId }) => {
-        const tier = classifyTool(toolName);
-        if (!gateAll && tier !== "high") return "bypass";
-        const queue = getApprovalQueue();
-        const { promise } = queue.request({
-          toolName,
-          params,
-          tier,
-          sessionId: sessionId ?? undefined,
-          riskSignals: [],
-        });
-        return promise;
-      });
+      transport.setApprovalGate(
+        async ({ toolName, params, sessionId, onPending }) => {
+          const tier = classifyTool(toolName);
+          if (!gateAll && tier !== "high") return "bypass";
+          const queue = getApprovalQueue();
+          const { promise, callId } = queue.request({
+            toolName,
+            params,
+            tier,
+            sessionId: sessionId ?? undefined,
+            riskSignals: [],
+          });
+          onPending?.(callId);
+          return promise;
+        },
+      );
     }
 
     const terminalPrefix = `h${id.slice(0, 8)}-`; // "h" prefix distinguishes HTTP sessions

@@ -348,21 +348,24 @@ export class Bridge {
         } catch {
           // Best-effort warning — never block startup on a hook check failure.
         }
-        transport.setApprovalGate(async ({ toolName, params, sessionId }) => {
-          const tier = classifyTool(toolName);
-          if (this.server.approvalGate === "off") return "bypass";
-          if (this.server.approvalGate !== "all" && tier !== "high")
-            return "bypass";
-          const queue = getApprovalQueue();
-          const { promise } = queue.request({
-            toolName,
-            params,
-            tier,
-            sessionId: sessionId ?? undefined,
-            riskSignals: [],
-          });
-          return promise;
-        });
+        transport.setApprovalGate(
+          async ({ toolName, params, sessionId, onPending }) => {
+            const tier = classifyTool(toolName);
+            if (this.server.approvalGate === "off") return "bypass";
+            if (this.server.approvalGate !== "all" && tier !== "high")
+              return "bypass";
+            const queue = getApprovalQueue();
+            const { promise, callId } = queue.request({
+              toolName,
+              params,
+              tier,
+              sessionId: sessionId ?? undefined,
+              riskSignals: [],
+            });
+            onPending?.(callId);
+            return promise;
+          },
+        );
       }
       transport.setExtensionConnectedFn(() =>
         this.extensionClient.isConnected(),
