@@ -1,15 +1,18 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 
+// Theme-redesign AP-03: neutral tile palette — no orange/ink bleeding through
+// the hero text mask. Quiet surface tones + transparency only; the mosaic is a
+// texture, not a competing color field.
 const PALETTE = [
-  "var(--orange)",
-  "var(--orange-soft)",
+  "var(--recess)",
+  "var(--pressed)",
+  "var(--surface)",
   "var(--quilt-soft)",
   "transparent",
   "transparent",
   "transparent",
-  "var(--ink-3)",
-  "var(--pressed)",
+  "var(--canvas)",
 ];
 
 interface Cell {
@@ -98,7 +101,7 @@ export function QuiltBg({
           }
           return next;
         });
-      }, 1400);
+      }, 2800);
     };
     const stop = () => {
       if (id !== null) {

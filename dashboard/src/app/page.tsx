@@ -383,14 +383,17 @@ function NeedsAttentionBand({
 // ---------------------------------------------------------------------------
 
 /** Derive stable pastel avatar colour from recipe name. */
+// Theme-redesign AP-04: a fixed 5-tone muted palette instead of a 360° hue
+// rotation, so recipe avatars stop forming a rainbow that competes with the
+// semantic status hues. Tones are dark + low-chroma (warm taupe / sage /
+// slate / mauve / ochre) so the white initials (.rag3-avatar) clear ~5:1+ in
+// both themes. (The audit's light-pastel palette assumed dark ink; these
+// initials are #fff, so the tones must stay dark.)
+const AVATAR_PALETTE = ["#6b5d4f", "#5a6b50", "#4f5d6b", "#6b5060", "#6b5a3a"];
 function ragColor(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  const hue = h % 360;
-  // Yellow-green hues (40–200) read brighter to the eye; cap their lightness
-  // lower so white initials clear ~5.2:1 across all hues (facelift P3-13).
-  const lightness = hue >= 40 && hue <= 200 ? 28 : 34;
-  return `hsl(${hue}, 55%, ${lightness}%)`;
+  return AVATAR_PALETTE[h % AVATAR_PALETTE.length];
 }
 
 /** Up to 2 uppercase initials from a recipe name. */
