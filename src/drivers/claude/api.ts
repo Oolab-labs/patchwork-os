@@ -1,3 +1,4 @@
+import { truncateUtf8Bytes } from "../outputCap.js";
 import type {
   ProviderDriver,
   ProviderTaskInput,
@@ -99,7 +100,7 @@ export class ApiDriver implements ProviderDriver {
     const model = typeof msg.model === "string" ? msg.model : input.model;
 
     return {
-      text: text.slice(0, OUTPUT_CAP),
+      text: truncateUtf8Bytes(text, OUTPUT_CAP),
       exitCode: 0,
       durationMs: Date.now() - start,
       providerMeta: {

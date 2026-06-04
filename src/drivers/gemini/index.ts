@@ -12,6 +12,7 @@ import { treeKill } from "../../processTree.js";
 import { ensureCmdShim } from "../../winShim.js";
 import { sanitizeEnv } from "../claude/envSanitizer.js";
 import { splitLines } from "../claude/streamParser.js";
+import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
 import type {
   ProviderDriver,
   ProviderTaskInput,
@@ -299,10 +300,16 @@ export class GeminiSubprocessDriver implements ProviderDriver {
             const text = event.content;
             accumulated += text;
             if (outputBytesSent < OUTPUT_CAP) {
-              const send = text.slice(0, OUTPUT_CAP - outputBytesSent);
+              // Audit 2026-06-03 (#57): count UTF-8 BYTES, not UTF-16 units, so
+              // the cap is honored for multi-byte output and chunks never split
+              // a codepoint.
+              const { send, bytes } = truncateToBytes(
+                text,
+                OUTPUT_CAP - outputBytesSent,
+              );
               if (send.length > 0) {
                 input.onChunk?.(send);
-                outputBytesSent += send.length;
+                outputBytesSent += bytes;
               }
             }
           } else if (event.type === "result") {
@@ -350,7 +357,7 @@ export class GeminiSubprocessDriver implements ProviderDriver {
           input.signal.aborted;
         if (isAbort) {
           return {
-            text: accumulated.slice(0, OUTPUT_CAP),
+            text: truncateUtf8Bytes(accumulated, OUTPUT_CAP),
             durationMs: Date.now() - start,
             wasAborted: true,
             startupMs: startupMsOf(),
@@ -363,7 +370,7 @@ export class GeminiSubprocessDriver implements ProviderDriver {
 
       if (startupTimedOut) {
         return {
-          text: accumulated.slice(0, OUTPUT_CAP),
+          text: truncateUtf8Bytes(accumulated, OUTPUT_CAP),
           durationMs: Date.now() - start,
           wasAborted: true,
           startupTimedOut: true,
@@ -381,7 +388,7 @@ export class GeminiSubprocessDriver implements ProviderDriver {
       }
 
       return {
-        text: accumulated.slice(0, OUTPUT_CAP),
+        text: truncateUtf8Bytes(accumulated, OUTPUT_CAP),
         exitCode: effectiveExitCode,
         durationMs: Date.now() - start,
         stderrTail: stderrTailOf(stderr),

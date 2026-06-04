@@ -1,3 +1,4 @@
+import { truncateUtf8Bytes } from "../outputCap.js";
 import type {
   ProviderDriver,
   ProviderTaskInput,
@@ -160,7 +161,7 @@ export class OpenAIApiDriver implements ProviderDriver {
         input.signal.aborted;
       if (isAbort) {
         return {
-          text: text.slice(0, OUTPUT_CAP),
+          text: truncateUtf8Bytes(text, OUTPUT_CAP),
           durationMs: Date.now() - start,
           wasAborted: true,
           startupMs:
@@ -168,14 +169,14 @@ export class OpenAIApiDriver implements ProviderDriver {
         };
       }
       return {
-        text: text.slice(0, OUTPUT_CAP),
+        text: truncateUtf8Bytes(text, OUTPUT_CAP),
         durationMs: Date.now() - start,
         errorMessage: err instanceof Error ? err.message : String(err),
       };
     }
 
     return {
-      text: text.slice(0, OUTPUT_CAP),
+      text: truncateUtf8Bytes(text, OUTPUT_CAP),
       durationMs: Date.now() - start,
       startupMs: firstChunkAt !== undefined ? firstChunkAt - start : undefined,
       providerMeta: {

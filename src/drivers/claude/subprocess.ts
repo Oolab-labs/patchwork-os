@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { treeKill } from "../../processTree.js";
 import { ensureCmdShim } from "../../winShim.js";
+import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
 import type {
   ProviderDriver,
   ProviderTaskInput,
@@ -15,38 +16,6 @@ import { parseStreamLine, splitLines } from "./streamParser.js";
 import { createSubprocessSettings } from "./subprocessSettings.js";
 
 const OUTPUT_CAP = 50 * 1024; // 50KB
-
-/**
- * Truncate `text` to at most `cap` UTF-8 bytes without splitting a multi-byte
- * codepoint mid-sequence. `String.slice(0, cap)` operates on UTF-16 code
- * units, so a 50K cap can store ~50K code points but emit up to ~200KB of
- * UTF-8 wire bytes for CJK / emoji content — and may produce a lone surrogate
- * at the boundary. `Buffer.toString("utf8")` substitutes U+FFFD for incomplete
- * trailing sequences instead.
- */
-function truncateUtf8Bytes(text: string, cap: number): string {
-  const buf = Buffer.from(text, "utf8");
-  if (buf.length <= cap) return text;
-  return buf.subarray(0, cap).toString("utf8");
-}
-
-/**
- * Truncate `text` so it adds at most `remaining` UTF-8 bytes to the stream and
- * never splits a multi-byte codepoint mid-sequence. Returns the safely-
- * truncated slice plus its actual byte length so the running byte total can be
- * advanced correctly.
- */
-function truncateToBytes(
-  text: string,
-  remaining: number,
-): { send: string; bytes: number } {
-  const buf = Buffer.from(text, "utf8");
-  if (buf.length <= remaining) return { send: text, bytes: buf.length };
-  // Buffer.toString("utf8") substitutes U+FFFD for incomplete trailing
-  // sequences, which is the correct UTF-8 truncation behavior.
-  const sliced = buf.subarray(0, remaining).toString("utf8");
-  return { send: sliced, bytes: Buffer.byteLength(sliced, "utf8") };
-}
 
 /**
  * Write a single-server MCP config to a 0600 temp file, return the path.
