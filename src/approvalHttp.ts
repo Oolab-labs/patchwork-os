@@ -325,7 +325,11 @@ async function hostResolvesToBlockedIp(
 ): Promise<boolean> {
   let resolved: Array<{ address: string }>;
   try {
-    resolved = await dns.lookup(hostname, { all: true });
+    const r = await dns.lookup(hostname, { all: true });
+    // `{ all: true }` always yields an array; coerce defensively so a single
+    // LookupAddress (e.g. a test mock that forgot the array) can't throw on
+    // `.find` and silently fail open vs closed.
+    resolved = Array.isArray(r) ? r : [r as { address: string }];
   } catch (err) {
     if (label)
       console.warn(
