@@ -1095,7 +1095,7 @@ export default function HomePage() {
               <StatCard
                 label="Runs · 24h"
                 className="stat-card--runs"
-                icon={<span className="stat-tile-icon stat-tile-icon--runs" style={{ color: "var(--accent)" }}><TileIconPlay /></span>}
+                icon={<span className="stat-tile-icon stat-tile-icon--runs" style={{ color: "var(--ok)" }}><TileIconPlay /></span>}
                 value={<AnimatedNumber value={runsCount24h} />}
                 foot={
                   <div>

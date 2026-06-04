@@ -6209,6 +6209,24 @@ a.btn { text-decoration: none; }
 .traces-view-label { font-size: var(--fs-s); color: var(--ink-3); }
 .traces-view-pill { cursor: pointer; }
 
+/* -- type-color legend -- */
+.traces-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 2px 12px;
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+  color: var(--ink-2);
+}
+.traces-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.traces-legend-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
 /* -- card / outer -- */
 .traces-card { padding: 0; overflow-x: auto; }
 
