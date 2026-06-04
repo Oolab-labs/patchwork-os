@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { bandSeverity, buildAttentionItems } from "@/lib/attention";
 import { FirstRunChecklist } from "@/components/FirstRunChecklist";
 import { StatCard } from "@/components/StatCard";
 import { SkeletonStatCard } from "@/components/Skeleton";
@@ -315,26 +316,7 @@ function NeedsAttentionBand({
   failingCount24h: number;
   bridgeOk: boolean;
 }) {
-  const items = [
-    pendingCount > 0 && {
-      count: pendingCount,
-      label: pendingCount === 1 ? "approval pending" : "approvals pending",
-      href: "/approvals",
-      urgent: true,
-    },
-    haltCount24h > 0 && {
-      count: haltCount24h,
-      label: haltCount24h === 1 ? "halt · 24h" : "halts · 24h",
-      href: "/runs?halt=1",
-      urgent: false,
-    },
-    failingCount24h > 0 && {
-      count: failingCount24h,
-      label: failingCount24h === 1 ? "run failed · 24h" : "runs failed · 24h",
-      href: "/runs?window=24h",
-      urgent: false,
-    },
-  ].filter(Boolean) as Array<{ count: number; label: string; href: string; urgent: boolean }>;
+  const items = buildAttentionItems({ pendingCount, haltCount24h, failingCount24h });
 
   const allClear = items.length === 0;
 
@@ -375,14 +357,14 @@ function NeedsAttentionBand({
   }
 
   return (
-    <div className="attention-band">
+    <div className="attention-band" data-severity={bandSeverity(items)}>
       <span className="attention-band-label">Needs attention</span>
       <div className="attention-chips">
         {items.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={`attention-chip ${item.urgent ? "attention-chip--urgent" : "attention-chip--warn"}`}
+            className={`attention-chip attention-chip--${item.severity}`}
             aria-label={`${item.count} ${item.label} — view all`}
           >
             <span className="attention-chip-count">{item.count}</span>

@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import { apiPath } from "@/lib/api";
+import { deriveRunStatus } from "@/components/patchwork/StatusPill";
 import { HALT_CATEGORY_HINT, HALT_CATEGORY_LABEL } from "@/lib/haltCategory";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -108,23 +109,24 @@ function fmtDur(ms: number): string {
   return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
 
-function statusPill(r: Run): "ok" | "err" | "warn" | "muted" | "running" {
-  if (r.status === "running") return "running";
-  if (r.assertionFailures && r.assertionFailures.length > 0) return "err";
-  // Honest partial-failure: a run can finish `done` while a step errored.
-  // Render amber "completed with errors" instead of a clean green "done".
-  if (r.status === "done" && r.hadStepErrors) return "warn";
-  if (r.status === "done") return "ok";
-  if (r.status === "error") return "err";
-  return "warn";
-}
-
-/** Display label for the status cell — honest about partial failure. */
-function statusLabel(r: Run): string {
-  if (r.status === "done" && r.hadStepErrors && !r.assertionFailures?.length) {
-    return "completed with errors";
-  }
-  return r.status;
+/**
+ * Runs-list status view, derived from the shared `deriveRunStatus` so the
+ * list cell and the run-detail header render one verdict from one place
+ * (facelift P0-3-C). `running` keeps its dedicated pill class so
+ * `.pill.running::before` draws the pulse dot (no inline JSX dot). The
+ * returned label already folds in assertion failures ("error · N fail") and
+ * partial failures ("completed with errors") — callers render it verbatim.
+ */
+function runStatusView(r: Run): { cls: string; label: string } {
+  if (r.status === "running") return { cls: "running", label: "running" };
+  const { tone, label } = deriveRunStatus(r.status, {
+    hadStepErrors: r.hadStepErrors,
+    assertionFailures: r.assertionFailures?.length ?? 0,
+  });
+  // deriveRunStatus only yields "info" for running (handled above); ok/err/warn
+  // map 1:1 to pill tone classes, anything else falls back to muted.
+  const cls = tone === "ok" || tone === "err" || tone === "warn" ? tone : "muted";
+  return { cls, label };
 }
 
 const RUNS_PAGE_SIZE = 100;
@@ -474,7 +476,16 @@ export default function RunsPage() {
       <div className="page-head">
         <div>
           <h1 className="editorial-h1">
-            Runs — <span className="accent">every patch your agents stitched.</span>
+            {/* Editorial tagline only when there's no data to speak for itself;
+                once runs are loaded the factual subtitle below carries the
+                context, so the header stays operational (facelift P2-8-A). */}
+            Runs
+            {(!runs || runs.length === 0) && (
+              <>
+                {" — "}
+                <span className="accent">every patch your agents stitched.</span>
+              </>
+            )}
           </h1>
           <div className="editorial-sub">
             {runs ? `${runs.length} runs` : "— runs"} · {TIME_WINDOW_LABEL[window].toLowerCase()} · avg {fmtDur(stats.avgMs)}
@@ -500,7 +511,9 @@ export default function RunsPage() {
           <RelationStrip
             items={[
               { label: "Recipes", href: "/recipes", title: "The YAML that produced these runs" },
-              { label: "Halts", href: "/runs?halt=1", tone: "warn", title: "Runs that hit a halt reason" },
+              // Only tint the Halts chip when halts actually exist; otherwise
+              // it sits ghost-neutral like its siblings (facelift P3-12).
+              { label: "Halts", href: "/runs?halt=1", tone: (haltSummary?.total ?? 0) > 0 ? "err" : undefined, title: "Runs that hit a halt reason" },
               { label: "Traces", href: "/traces", title: "Decision logs for these runs" },
               { label: "Activity", href: "/activity", title: "Live event firehose" },
             ]}
@@ -703,7 +716,7 @@ export default function RunsPage() {
           aria-pressed={status === "error"}
           aria-label={`Filter: errored runs (${stats.err})`}
         >
-          <div className="runs-stat-label runs-stat-label--err">⚠ Errored</div>
+          <div className="runs-stat-label runs-stat-label--err">✗ Errored</div>
           <div className={`runs-stat-value${stats.err > 0 ? " runs-stat-value--err" : ""}`}><AnimatedNumber value={stats.err} /></div>
           <div className="runs-stat-foot">{stats.total > 0 ? Math.round(stats.err / stats.total * 100) + "%" : "—"} error rate</div>
         </button>
@@ -816,7 +829,7 @@ export default function RunsPage() {
                   3,
                   Math.round((r.durationMs / maxDur) * 100),
                 );
-                const sClass = statusPill(r);
+                const { cls: sClass, label: sLabel } = runStatusView(r);
                 const barColor =
                   sClass === "ok"
                     ? "var(--green)"
@@ -841,7 +854,7 @@ export default function RunsPage() {
                       tabIndex={0}
                       role="button"
                       aria-expanded={isExpanded}
-                      aria-label={`Run of ${formatRecipeName(r.recipeName, r.trigger)}, ${statusLabel(r)}, ${normaliseTrigger(r.trigger)} trigger`}
+                      aria-label={`Run of ${formatRecipeName(r.recipeName, r.trigger)}, ${sLabel}, ${normaliseTrigger(r.trigger)} trigger`}
                     >
                       <td className="mono muted">
                         {fmtWhen(
@@ -881,31 +894,22 @@ export default function RunsPage() {
                       </td>
                       <td>
                         <span className={`pill ${sClass} runs-status-pill`}>
-                          {sClass === "running" ? (
-                            <span
-                              style={{
-                                display: "inline-block",
-                                width: 7,
-                                height: 7,
-                                borderRadius: "50%",
-                                background: "var(--accent)",
-                                marginRight: 5,
-                                animation: "runs-pulse 1.4s ease-in-out infinite",
-                                verticalAlign: "middle",
-                              }}
-                            />
-                          ) : (
-                            <span className="pill-dot" />
-                          )}
-                          {statusLabel(r)}
-                          {r.assertionFailures &&
-                            r.assertionFailures.length > 0 &&
-                            ` · ${r.assertionFailures.length} fail`}
+                          {/* Running pills draw their pulse dot via
+                              `.pill.running::before`; only non-running pills
+                              need the static dot (facelift P0-3-B). */}
+                          {sClass !== "running" && <span className="pill-dot" />}
+                          {sLabel}
                         </span>
                       </td>
-                      <td>
+                      <td
+                        aria-label={`Duration ${
+                          r.status === "running"
+                            ? fmtDur(Date.now() - (r.startedAt ?? r.createdAt))
+                            : fmtDur(r.durationMs)
+                        }, status: ${sLabel}`}
+                      >
                         <div className="runs-dur-cell">
-                          <div className="progress runs-dur-bar">
+                          <div className="progress runs-dur-bar" aria-hidden="true">
                             <div
                               className="progress-fill"
                               style={{
@@ -1040,7 +1044,7 @@ export default function RunsPage() {
           {windowedRuns.map((r, rowIdx) => {
             const key = `${r.taskId}-${r.seq}`;
             const isExpanded = expanded === key;
-            const sClass = statusPill(r);
+            const { cls: sClass, label: sLabel } = runStatusView(r);
             return (
               <div
                 key={key}
@@ -1072,26 +1076,10 @@ export default function RunsPage() {
                     />
                   </span>
                   <span className={`pill ${sClass} xs`}>
-                    {sClass === "running" ? (
-                      <span
-                        style={{
-                          display: "inline-block",
-                          width: 6,
-                          height: 6,
-                          borderRadius: "50%",
-                          background: "currentColor",
-                          marginRight: 4,
-                          animation: "runs-pulse 1.4s ease-in-out infinite",
-                          verticalAlign: "middle",
-                        }}
-                      />
-                    ) : (
-                      <span className="pill-dot" />
-                    )}
-                    {statusLabel(r)}
-                    {r.assertionFailures &&
-                      r.assertionFailures.length > 0 &&
-                      ` · ${r.assertionFailures.length} fail`}
+                    {/* Running pills draw their pulse dot via
+                        `.pill.running::before` (facelift P0-3-B). */}
+                    {sClass !== "running" && <span className="pill-dot" />}
+                    {sLabel}
                   </span>
                 </div>
                 <div className="run-card-meta">
