@@ -157,6 +157,26 @@ function detectGeminiCli(): boolean {
   }
 }
 
+/**
+ * Detect Grok Build (the Grok CLI). Probes `grok --version`; if the binary
+ * isn't on PATH (e.g. a fresh install whose shell PATH hasn't been reloaded yet)
+ * it falls back to the path the official installer symlinks. Exported for tests.
+ */
+export function detectGrokCli(home: string): boolean {
+  try {
+    // grok is `.cmd` on Windows when installed via npm — without ensureCmdShim
+    // this silently returns false on Windows (mirrors the detectGeminiCli note).
+    const r = spawnSync(ensureCmdShim("grok"), ["--version"], {
+      stdio: "pipe",
+      timeout: 3000,
+    });
+    if (r.status === 0) return true;
+  } catch {
+    // not on PATH — fall through to the filesystem check
+  }
+  return existsSync(join(home, ".grok", "bin", "grok"));
+}
+
 async function detectOllama(timeoutMs = 500): Promise<boolean> {
   try {
     const controller = new AbortController();
@@ -178,6 +198,7 @@ interface InitResult {
   recipesSkipped: number;
   ollamaDetected: boolean;
   geminiCliDetected: boolean;
+  grokCliDetected: boolean;
   configAction: "created" | "merged" | "overwritten";
   /**
    * State of the Claude Code PreToolUse hook after init ran.
@@ -254,6 +275,13 @@ export async function runPatchworkInit(
     geminiCliDetected
       ? `  ✓ Gemini CLI detected — driver will default to gemini\n`
       : `  · Gemini CLI not detected (install from https://github.com/google-gemini/gemini-cli)\n`,
+  );
+
+  const grokCliDetected = detectGrokCli(home);
+  log(
+    grokCliDetected
+      ? `  ✓ Grok Build (Grok CLI) detected — to use the bridge's tools from it, add the stdio-shim block to ~/.grok/config.toml (see "Connecting Grok Build" in the README) and set approvalGate to "high"/"off" so calls don't queue for approval.\n`
+      : `  · Grok Build not detected (install from https://x.ai/cli)\n`,
   );
 
   let ollamaDetected = false;
@@ -358,6 +386,7 @@ Next:
     recipesSkipped,
     ollamaDetected,
     geminiCliDetected,
+    grokCliDetected,
     configAction,
     preToolUseHook,
   };
