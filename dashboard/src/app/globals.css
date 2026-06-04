@@ -186,7 +186,9 @@
   --card-bg:     rgba(251,248,240,0.96);
   --card-blur:   none;
   --card-shadow: 0 1px 0 0 rgba(255,255,255,0.85) inset, var(--shadow-s);
-  --card-shadow-hover: 0 1px 0 0 rgba(255,255,255,0.95) inset, 0 0 30px rgba(var(--orange-rgb),0.10), var(--shadow-l);
+  /* Theme-redesign AP-04: drop the orange bloom from generic card hovers —
+     elevation comes from --shadow-l only; orange stays reserved for brand/CTA. */
+  --card-shadow-hover: 0 1px 0 0 rgba(255,255,255,0.95) inset, var(--shadow-l);
 
   /* glass — blur disabled for scroll perf, see --card-blur note above. */
   --glass-bg:     rgba(251,248,240,0.92);
@@ -199,17 +201,15 @@
   --header-h: 56px;
   --transition: cubic-bezier(0.4, 0, 0.2, 1);
   --stitch-line: rgba(60,45,20,0.10);
-  --quilt-soft: rgba(197,83,42,0.07);
-  --aurora-1: rgba(197,83,42,0.05);
-  --aurora-2: rgba(120,90,40,0.04);
-  --aurora-3: rgba(160,120,60,0.04);
-  --grid-mask-opacity: 0.55;
-  --paper-grain:
-    radial-gradient(circle at 13% 22%, rgba(120,90,40,0.025) 0, transparent 0.7px),
-    radial-gradient(circle at 67% 41%, rgba(120,90,40,0.025) 0, transparent 0.7px),
-    radial-gradient(circle at 89% 78%, rgba(120,90,40,0.025) 0, transparent 0.7px),
-    radial-gradient(circle at 31% 89%, rgba(120,90,40,0.02) 0, transparent 0.7px),
-    radial-gradient(circle at 52% 12%, rgba(120,90,40,0.02) 0, transparent 0.7px);
+  /* Theme-redesign AP-03: quiet the decorative layers behind data.
+     Neutral quilt tint (no orange), halved aurora, grid as a faint top-edge
+     texture (0.55→0.18), paper-grain removed (imperceptible benefit, real noise). */
+  --quilt-soft: rgba(120,90,40,0.05);
+  --aurora-1: rgba(197,83,42,0.03);
+  --aurora-2: rgba(120,90,40,0.02);
+  --aurora-3: rgba(160,120,60,0.02);
+  --grid-mask-opacity: 0.18;
+  --paper-grain: none;
 
   /* spacing */
   --s-1: 4px;  --s-2: 8px;   --s-3: 12px; --s-4: 16px;
@@ -300,11 +300,13 @@
   --accent-strong: #e8956e;
   --accent-glow: rgba(255,122,69,0.35);
   --stitch-line: rgba(255,255,255,0.05);
-  --quilt-soft: rgba(255,122,69,0.06);
-  --aurora-1: rgba(255,122,69,0.06);
-  --aurora-2: rgba(110,168,254,0.05);
-  --aurora-3: rgba(176,140,232,0.04);
-  --grid-mask-opacity: 0.4;
+  /* Theme-redesign AP-03: neutral quilt tint (no orange) + halved aurora +
+     calmer grid in dark, matching the light-mode decoration quieting. */
+  --quilt-soft: rgba(255,255,255,0.04);
+  --aurora-1: rgba(255,122,69,0.04);
+  --aurora-2: rgba(110,168,254,0.03);
+  --aurora-3: rgba(176,140,232,0.03);
+  --grid-mask-opacity: 0.15;
   --paper-grain: none;
 
   --card-bg:     rgba(16,18,22,0.94);
@@ -579,11 +581,11 @@ button { font-family: inherit; }
    * `clip` clamps overflow on a single axis without creating a scroll box. */
   overflow-x: clip;
   overflow-y: visible;
+  /* Theme-redesign AP-03: two faint top radials only — dropped the bottom
+     aurora-3 radial and the paper-grain stack so the canvas stays quiet. */
   background:
     radial-gradient(600px 400px at 15% 20%, var(--aurora-2), transparent 60%),
-    radial-gradient(500px 350px at 90% 70%, var(--aurora-1), transparent 65%),
-    radial-gradient(400px 300px at 50% 110%, var(--aurora-3), transparent 60%),
-    var(--paper-grain);
+    radial-gradient(500px 350px at 90% 70%, var(--aurora-1), transparent 65%);
 }
 
 .app-main::before {
@@ -596,8 +598,10 @@ button { font-family: inherit; }
   background-size: 32px 32px;
   background-position: -1px -1px;
   opacity: var(--grid-mask-opacity);
-  mask-image: radial-gradient(ellipse at top, black 30%, transparent 80%);
-  -webkit-mask-image: radial-gradient(ellipse at top, black 30%, transparent 80%);
+  /* Theme-redesign AP-03: confine the grid to a faint top-edge texture
+     (~top 22%) so it never sits behind tables, cards, or the fold. */
+  mask-image: radial-gradient(ellipse 120% 22% at 50% 0%, black 0%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 120% 22% at 50% 0%, black 0%, transparent 100%);
   pointer-events: none;
 }
 
@@ -605,10 +609,10 @@ button { font-family: inherit; }
   content: "";
   position: absolute;
   inset: 0;
+  /* Theme-redesign AP-03: one static top-right wash, no animation — was an
+     18s two-aurora keyframe drifting behind the data. */
   background:
-    radial-gradient(720px 460px at 82% 0%, var(--aurora-1), transparent 62%),
-    radial-gradient(520px 360px at 8% 58%, var(--aurora-2), transparent 65%);
-  animation: aurora 18s ease-in-out infinite alternate;
+    radial-gradient(600px 320px at 90% 0%, var(--aurora-1), transparent 60%);
   pointer-events: none;
 }
 
@@ -891,9 +895,11 @@ button.topbar-search {
   position: absolute;
   inset: 0;
   border-radius: inherit;
+  /* Theme-redesign AP-04: neutral light sheen, not an orange bloom — orange is
+     reserved for brand/CTA, not sprayed on every hoverable card. */
   background: radial-gradient(
     400px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
-    rgba(var(--orange-rgb), 0.12),
+    rgba(255, 255, 255, 0.45),
     transparent 65%
   );
   opacity: 0;
@@ -2412,13 +2418,14 @@ a.btn { text-decoration: none; }
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.85;
-  /* Fade the mosaic out under the hero copy (left) and let it resolve into a
-     clean tile field on the right, so the two regions stop competing in the
-     same column (facelift P2-10 / guardrail G-1). */
-  mask-image: linear-gradient(to right, transparent 38%, rgba(0, 0, 0, 0.6) 58%, black 72%);
-  -webkit-mask-image: linear-gradient(to right, transparent 38%, rgba(0, 0, 0, 0.6) 58%, black 72%);
+  /* Theme-redesign AP-03: confine the mosaic to a far-right strip at reduced
+     opacity (was 0.85, full mask from 38%) so it reads as a quiet texture, not
+     a competing field. Paired with the neutral QuiltBg PALETTE (no orange). */
+  opacity: 0.55;
+  mask-image: linear-gradient(to right, transparent 55%, rgba(0, 0, 0, 0.5) 72%, black 85%);
+  -webkit-mask-image: linear-gradient(to right, transparent 55%, rgba(0, 0, 0, 0.5) 72%, black 85%);
 }
+[data-theme="dark"] .quilt-bg { opacity: 0.50; }
 .quilt-bg svg {
   width: 100%;
   height: 100%;
