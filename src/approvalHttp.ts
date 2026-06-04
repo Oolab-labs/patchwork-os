@@ -309,6 +309,42 @@ function isBlockedIp(ip: string): boolean {
 }
 
 /**
+ * Resolve a hostname and return true if it should be blocked for SSRF defense.
+ *
+ * Audit 2026-06-03 (MEDIUM #26): resolve ALL addresses (`{ all: true }`) and
+ * block if ANY is private. The previous single-address `dns.lookup(hostname)`
+ * checked only the first result, so split-horizon DNS could return a public
+ * address to the guard while the subsequent `fetch` resolved a private one.
+ * DNS-resolution failure is treated as blocked (fail-closed), matching the
+ * prior per-site catch-and-skip behavior. `label` (when set) reproduces the
+ * per-dispatcher warn messages.
+ */
+async function hostResolvesToBlockedIp(
+  hostname: string,
+  label?: string,
+): Promise<boolean> {
+  let resolved: Array<{ address: string }>;
+  try {
+    resolved = await dns.lookup(hostname, { all: true });
+  } catch (err) {
+    if (label)
+      console.warn(
+        `[${label}] DNS resolution failed for ${hostname}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    return true;
+  }
+  const blocked = resolved.find((r) => isBlockedIp(r.address));
+  if (blocked) {
+    if (label)
+      console.warn(
+        `[${label}] Blocked private/loopback IP: ${blocked.address}`,
+      );
+    return true;
+  }
+  return false;
+}
+
+/**
  * Dispatch a JSON webhook notification when an approval is queued.
  * Failures are logged but never thrown — webhook errors must not block
  * the approval flow.
@@ -346,21 +382,8 @@ async function dispatchApprovalWebhook(
     return;
   }
 
-  // Resolve hostname and check resolved IP against blocklist
-  try {
-    const resolved = await dns.lookup(hostname);
-    if (isBlockedIp(resolved.address)) {
-      console.warn(
-        `[webhook] Blocked private/loopback IP for webhook: ${resolved.address}`,
-      );
-      return;
-    }
-  } catch (err) {
-    console.warn(
-      `[webhook] DNS resolution failed for ${hostname}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return;
-  }
+  // Resolve hostname and check EVERY resolved IP against the blocklist.
+  if (await hostResolvesToBlockedIp(hostname, "webhook")) return;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5_000);
@@ -423,20 +446,7 @@ async function dispatchPushNotification(
     console.warn(`[push] Blocked loopback push service hostname`);
     return;
   }
-  try {
-    const resolved = await dns.lookup(hostname);
-    if (isBlockedIp(resolved.address)) {
-      console.warn(
-        `[push] Blocked private/loopback IP for push service: ${resolved.address}`,
-      );
-      return;
-    }
-  } catch (err) {
-    console.warn(
-      `[push] DNS resolution failed for ${hostname}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return;
-  }
+  if (await hostResolvesToBlockedIp(hostname, "push")) return;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5_000);
@@ -506,20 +516,7 @@ async function dispatchNtfyApproval(
     console.warn(`[ntfy] Blocked loopback ntfy server hostname`);
     return;
   }
-  try {
-    const resolved = await dns.lookup(hostname);
-    if (isBlockedIp(resolved.address)) {
-      console.warn(
-        `[ntfy] Blocked private/loopback IP for ntfy server: ${resolved.address}`,
-      );
-      return;
-    }
-  } catch (err) {
-    console.warn(
-      `[ntfy] DNS resolution failed for ${hostname}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return;
-  }
+  if (await hostResolvesToBlockedIp(hostname, "ntfy")) return;
 
   const callbackBase = payload.bridgeCallbackBase.replace(/\/+$/, "");
   // SECURITY (audit 2026-06-03 HIGH #6): carry the single-use approval token in
@@ -599,12 +596,7 @@ async function dispatchNtfyConfirmation(
     return;
   }
   if (hostname === "localhost") return;
-  try {
-    const resolved = await dns.lookup(hostname);
-    if (isBlockedIp(resolved.address)) return;
-  } catch {
-    return;
-  }
+  if (await hostResolvesToBlockedIp(hostname)) return;
   const approved = payload.outcome === "approved";
   const body = JSON.stringify({
     topic: payload.topic,

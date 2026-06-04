@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { routeApprovalRequest } from "../approvalHttp.js";
 import { ApprovalQueue } from "../approvalQueue.js";
 
+// The SSRF guards call dns.lookup(host, { all: true }) → an ARRAY of addresses
+// (audit 2026-06-03 MEDIUM #26: resolve-all to defeat split-horizon DNS).
 vi.mock("node:dns/promises", () => ({
-  lookup: vi.fn().mockResolvedValue({ address: "93.184.216.34", family: 4 }),
+  lookup: vi.fn().mockResolvedValue([{ address: "93.184.216.34", family: 4 }]),
 }));
 
 type Rules = { allow: string[]; ask: string[]; deny: string[] };
@@ -937,6 +939,74 @@ describe("routeApprovalRequest", () => {
         queue.approve(item.callId);
         await pending;
         expect(calls).toHaveLength(0);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("blocks dispatch when ANY resolved address is private — split-horizon (audit 2026-06-03 MEDIUM #26)", async () => {
+      // The host's FIRST address is public (would pass the old single-address
+      // check) but a later one is private. Resolve-all must catch it.
+      const dnsMod = await import("node:dns/promises");
+      vi.mocked(dnsMod.lookup).mockResolvedValueOnce([
+        { address: "93.184.216.34", family: 4 },
+        { address: "10.0.0.5", family: 4 },
+      ] as never);
+      const originalFetch = globalThis.fetch;
+      const calls: string[] = [];
+      globalThis.fetch = (async (url: string) => {
+        calls.push(url);
+        return new Response("{}", { status: 200 });
+      }) as typeof globalThis.fetch;
+      try {
+        const queue = new ApprovalQueue();
+        const pending = routeApprovalRequest(
+          { method: "POST", path: "/approvals", body: { toolName: "gitPush" } },
+          {
+            queue,
+            workspace: "/tmp",
+            ccLoader: emptyRules(),
+            approvalGate: "all",
+            webhookUrl: "https://rebind.example.com/hook",
+          },
+        );
+        await new Promise((r) => setTimeout(r, 20));
+        const item = queue.list()[0];
+        if (!item) throw new Error("missing queued item");
+        queue.approve(item.callId);
+        await pending;
+        expect(calls).toHaveLength(0);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("resolves ALL addresses (dns.lookup called with { all: true })", async () => {
+      const dnsMod = await import("node:dns/promises");
+      const spy = vi.mocked(dnsMod.lookup);
+      spy.mockClear();
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async () =>
+        new Response("{}", { status: 200 })) as typeof globalThis.fetch;
+      try {
+        const queue = new ApprovalQueue();
+        const pending = routeApprovalRequest(
+          { method: "POST", path: "/approvals", body: { toolName: "gitPush" } },
+          {
+            queue,
+            workspace: "/tmp",
+            ccLoader: emptyRules(),
+            approvalGate: "all",
+            webhookUrl: "https://hook.example.com/x",
+          },
+        );
+        await new Promise((r) => setTimeout(r, 20));
+        queue.approve(queue.list()[0]!.callId);
+        await pending;
+        expect(spy).toHaveBeenCalledWith(
+          "hook.example.com",
+          expect.objectContaining({ all: true }),
+        );
       } finally {
         globalThis.fetch = originalFetch;
       }
