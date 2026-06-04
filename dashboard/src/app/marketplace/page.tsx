@@ -1033,8 +1033,13 @@ export default function MarketplacePage() {
                   style={{
                     border: "1px solid var(--accent)",
                     borderRadius: "var(--r-3)",
-                    background: "var(--accent-soft)",
-                    padding: 2,
+                    // Theme-redesign: blend the orange frame with the card bg so
+                    // it's visible in dark too (the flat --accent-soft tint
+                    // vanished on the near-black canvas), plus a soft orange
+                    // glow so the featured card reads as featured in both themes.
+                    background: "color-mix(in srgb, var(--accent) 16%, var(--card-bg))",
+                    boxShadow: "0 1px 14px color-mix(in srgb, var(--accent) 20%, transparent)",
+                    padding: 3,
                     position: "relative",
                   }}
                 >

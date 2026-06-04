@@ -13,7 +13,6 @@ import { ActivityTicker } from "./ActivityTicker";
 import { BridgeOfflineBanner } from "./BridgeOfflineBanner";
 import { KillSwitchBanner } from "./KillSwitchBanner";
 import { PWAInstallPrompt } from "./PWAInstallPrompt";
-import { CardGlow } from "./CardGlow";
 import { CommandPalette } from "./CommandPalette";
 import { GlobalLiveRunsStrip } from "./GlobalLiveRunsStrip";
 import { HaltToastWatcher } from "./HaltToastWatcher";
@@ -439,7 +438,6 @@ function AppShell({ children }: { children: ReactNode }) {
     <LiveRunsProvider>
     <HaltToastWatcher />
     <div className={`app-shell${mobileOpen ? " mobile-open" : ""}`}>
-      <CardGlow />
       <button
         type="button"
         className="mobile-scrim"
