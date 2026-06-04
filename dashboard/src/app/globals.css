@@ -44,6 +44,7 @@
   --amber-rgb:     201, 142, 43;
   --red-rgb:       181, 67, 67;
   --blue-rgb:      74, 111, 165;
+  --purple-rgb:    122, 91, 156;
   --accent-glow:   rgba(197,83,42,0.28);
 
   /* secondary palette */
@@ -81,6 +82,17 @@
   --ok-text:       #3d6635;   /* 5.5:1 on --ok-soft   */
   --warn-text:     #7a5200;   /* 5.8:1 on --warn-soft */
   --err-text:      #aa3838;   /* 5.5:1 on --err-soft  */
+  /* Theme-redesign: complete the *-text pattern for the remaining semantic
+     hues so standalone (non-pill) blue/purple/amber text clears AA. Dark mode
+     re-points these to the lifted bright primitives (see [data-theme="dark"]). */
+  --info-text:     #2f5496;   /* ~4.9:1 on --blue-soft tint, 6.0:1 on surface */
+  --purp-text:     #5a3d7a;   /* ~4.9:1 on --purple-soft, 6.3:1 on surface */
+  --amber-text:    #7a5200;   /* standalone amber text (verdicts/countdown), 5.8:1 on surface */
+  /* Solid-fill CTA backgrounds: white on light --green/--accent-cool fails AA,
+     so route CTA text through on-color tokens + a darker green fill. */
+  --green-strong:  #3d6635;   /* white = 5.5:1 (vs 2.66:1 on --green) */
+  --on-green:      #fff;
+  --on-accent-cool: #fff;     /* white on the darkened --accent-cool #0060d9 = 4.82:1 */
   --overlay-bg:    rgba(10, 11, 13, 0.55);
   --shadow-modal:  0 20px 50px rgba(10, 11, 13, 0.35);
   --on-accent:     #fff;
@@ -111,8 +123,9 @@
      Reserved for: info stat tile stroke, sparkline strokes, FlowSvg
      running-state badge, +N connector pill text. Do NOT use for primary
      CTAs (those stay --accent orange) or destructive actions. */
-  --accent-cool:      #0787ff;
-  --accent-cool-glow: rgba(7,135,255,0.3);
+  --accent-cool:      #0060d9;
+  --accent-cool-rgb:  0, 96, 217;
+  --accent-cool-glow: rgba(0,96,217,0.30);
 
   /* Visually-hidden until focused; surfaces for keyboard users only. */
 }
@@ -291,12 +304,33 @@
   --red:          #d05757;
   --red-soft:     rgba(208,87,87,0.16);
   --blue-soft:    #101b2c;
-  /* Pill TEXT tokens point back to the bright palette in dark mode — the
-     light-mode #3d6635/#7a5200/#aa3838 would be near-invisible on the dark
-     soft pill fills (facelift P0-1-A dark-pill gap). */
+  /* Theme-redesign: dark chromatic lifts. --blue/--purple/--amber/--accent-cool
+     previously inherited their light values and failed AA on the dark canvas
+     (2.95 / 3.04 / 3.2 / —). Lifted to clear AA as text, mirroring the shipped
+     --red/--green lifts; each gets a -rgb companion for color-mix/glow consumers.
+     NOTE: --blue/--accent-cool are used as TEXT here — never as a bg under white
+     text (nav-badge / install button route through soft bg or on-* tokens). */
+  --blue:         #6b9dd6;   /* text on canvas ~5.1:1 */
+  --blue-rgb:     107, 157, 214;
+  --purple:       #a07acc;   /* text on canvas ~5.3:1, on --purple-soft ~4.9:1 */
+  --purple-rgb:   160, 122, 204;
+  --purple-hover: #b490d8;
+  --amber:        #d4a040;   /* text on canvas ~4.7:1 (AA normal) */
+  --amber-rgb:    212, 160, 64;
+  --accent-cool:      #4d96e8;   /* text/stroke ~5.1:1; bg under --on-accent-cool ink = 13.8:1 */
+  --accent-cool-rgb:  77, 150, 232;
+  --accent-cool-glow: rgba(77,150,232,0.30);
+  --on-accent-cool:   #0a0b0d;   /* dark ink on bright cool bg (white would be 3.3:1) */
+  --green-strong:     #6da060;   /* = dark --green; AA comes from flipping to --on-green ink */
+  --on-green:         #0a0b0d;   /* dark ink on bright green ~8:1 */
+  /* Pill / standalone TEXT tokens point back to the lifted bright palette in
+     dark mode — the light-mode dark values would vanish on the dark soft fills. */
   --ok-text:      var(--green);
   --warn-text:    var(--amber);
   --err-text:     var(--err);
+  --info-text:    var(--blue);
+  --purp-text:    var(--purple);
+  --amber-text:   var(--amber);
   --accent-strong: #e8956e;
   --accent-glow: rgba(255,122,69,0.35);
   --stitch-line: rgba(255,255,255,0.05);
@@ -421,7 +455,7 @@ button { font-family: inherit; }
   border-radius: var(--r-m);
   background: var(--orange);
   border: none;
-  color: #fff;
+  color: var(--on-orange);
   font-size: 13.5px;
   font-weight: 700;
   cursor: pointer;
@@ -445,7 +479,7 @@ button { font-family: inherit; }
 .sidebar-create:hover::before { left: 140%; }
 .sidebar-create:hover {
   background: var(--orange-hover);
-  color: #fff;
+  color: var(--on-orange);
   transform: translateY(-1px);
   box-shadow: 0 1px 0 0 rgba(255,255,255,0.35) inset, 0 4px 16px rgba(var(--orange-rgb), 0.4);
 }
@@ -539,8 +573,12 @@ button { font-family: inherit; }
   height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: var(--info);
-  color: #fff;
+  /* Ink-on-soft, not white-on-blue: white on the lifted dark --blue is only
+     ~2.8:1 (theme-redesign AP-01/AP-02). Soft bg + --info-text passes AA in
+     both themes and survives the dark lift. */
+  background: var(--info-soft);
+  color: var(--info-text);
+  border: 1px solid var(--blue);
   font-size: 10px;
   font-weight: 700;
   font-family: var(--font-mono);
@@ -554,7 +592,8 @@ button { font-family: inherit; }
    Distinct from the static .nav-badge counter for pending/queued things;
    both use the info/blue tone (orange is reserved for brand/CTA). */
 .nav-badge.is-live {
-  background: var(--blue);
+  background: var(--blue-soft);
+  color: var(--info-text);
   animation: nav-badge-live-pulse 1.8s ease-in-out infinite;
 }
 @keyframes nav-badge-live-pulse {
@@ -1039,9 +1078,12 @@ button.topbar-search {
 }
 
 .btn.success {
-  background: var(--green);
-  border-color: var(--green);
-  color: #fff;
+  /* White on light --green is 2.66:1 (fail). Use the darker --green-strong
+     fill + --on-green text: light = white on #3d6635 (5.5:1); dark flips to
+     dark ink on the bright green (theme-redesign AP-02 / goal #9). */
+  background: var(--green-strong);
+  border-color: var(--green-strong);
+  color: var(--on-green);
   box-shadow: 0 1px 0 0 rgba(255,255,255,0.25) inset, 0 2px 6px rgba(13,138,94,.25);
 }
 .btn.success:hover { filter: brightness(1.08); }
@@ -1177,10 +1219,12 @@ a.btn { text-decoration: none; }
   box-shadow: 0 1px 0 0 rgba(255,255,255,0.18) inset, 0 3px 10px rgba(var(--orange-rgb), 0.28);
 }
 
-/* 6. Marketplace install button — use --accent-cool in dark mode */
+/* 6. Marketplace install button — --accent-cool bg in dark. White text on the
+   bright dark cool is only ~3.3:1; flip to --on-accent-cool dark ink = 13.8:1
+   (theme-redesign AP-02). Light keeps white on the darkened cool #0060d9 = 4.82:1. */
 [data-theme="dark"] .mkt-install-btn {
   background: var(--accent-cool);
-  color: #fff;
+  color: var(--on-accent-cool);
   border-color: var(--accent-cool);
 }
 [data-theme="dark"] .mkt-install-btn:not(:disabled):hover {
