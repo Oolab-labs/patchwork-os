@@ -53,7 +53,7 @@ export function tryHandleMcpRoute(
       name: "claude-ide-bridge",
       version: BRIDGE_PROTOCOL_VERSION,
       description:
-        "MCP bridge providing full IDE integration for Claude Code — LSP, diagnostics, file operations, terminal, debug adapters, and AI task orchestration",
+        "MCP bridge providing full IDE integration for AI coding assistants — LSP, diagnostics, file operations, terminal, debug adapters, and AI task orchestration",
       homepage: "https://github.com/Oolab-labs/claude-ide-bridge",
       transport: ["websocket", "stdio", "streamable-http"],
       capabilities: {

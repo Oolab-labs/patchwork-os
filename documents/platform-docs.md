@@ -860,6 +860,8 @@ The `--driver` flag selects the provider backend for subprocess orchestration ta
 
 **Subscription vs API key:** `subprocess` and `gemini` drivers spawn the provider's CLI, which handles OAuth/subscription auth locally. No API key required if you have an active subscription. `api`, `openai`, and `grok` always require an API key.
 
+> **`grok` here is the *outbound* path** — the bridge calling xAI's API to run recipe/agent steps. It is **not** how Grok Build (the Grok CLI) connects *to* the bridge as an MCP client to use the IDE tools. For that inbound setup (stdio shim, the mandatory `--workspace`, and the `grok mcp doctor`/approval-gate gotchas) see **[Connecting Grok Build](../README.md#transport-layers)** in the README.
+
 **Default model per driver:**
 
 | Driver | Default model |

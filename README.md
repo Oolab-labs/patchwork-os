@@ -118,7 +118,7 @@ The bridge runs without any flags. No recipes, no automation, no dashboard — j
 | Client | Protocol |
 |---|---|
 | Claude Code CLI | WebSocket `ws://127.0.0.1:<port>` |
-| Claude Desktop | stdio shim → WebSocket |
+| Claude Desktop, Grok Build (Grok CLI) | stdio shim → WebSocket |
 | Gemini CLI, Codex CLI, claude.ai | Streamable HTTP + Bearer token |
 
 **Connecting Gemini CLI:**
@@ -133,6 +133,25 @@ gemini mcp add patchwork http://127.0.0.1:<port>/mcp \
 ```
 
 The bridge auto-responds to the GET probe Gemini sends before initializing, so it shows as **Connected** immediately.
+
+**Connecting Grok Build (Grok CLI):**
+
+Grok Build connects over the same **stdio shim** as Claude Desktop. Add this block to `~/.grok/config.toml` (the `--workspace` arg is the important part):
+
+```toml
+[mcp_servers.patchwork]
+command = "claude-ide-bridge"
+args = ["shim", "--workspace", "/absolute/path/to/your/project"]
+enabled = true
+```
+
+Three gotchas that look like bugs but aren't:
+
+- **`--workspace` is required.** Without it the shim picks the newest bridge lock across *all* workspaces — in a multi-bridge setup (orchestrator, leftover dev bridges) that can be the wrong or a dead bridge, so tools act on the wrong project or hang. Always pin it to your project path.
+- **`grok mcp doctor` hangs — don't use it.** The shim is a long-lived relay that stays open for the session, so `doctor` waits forever for it to exit. Verify with the in-TUI **`/mcps`** instead, or run `claude-ide-bridge shim --ping` (one-shot: connects, lists tools, exits).
+- **The approval gate can park tool calls.** If `~/.patchwork/config.json` has `"approvalGate": "all"` (or `"high"`), tool calls queue for human approval in the dashboard and look like they're hanging to Grok. Set it to `"high"` (gate only risky writes) or `"off"`, or approve in the dashboard at `localhost:3000`.
+
+Grok Build can also connect over Streamable HTTP + Bearer (same as Gemini, above) if you'd rather not use the shim.
 
 **Tool modes:**
 
