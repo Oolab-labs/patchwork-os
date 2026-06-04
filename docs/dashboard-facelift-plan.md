@@ -334,3 +334,113 @@ Orig-7 (focus-trap audit), Orig-8 (sidebar Activity collapse). These require the
 | Orig-21 Orange grammar | **Superseded by P0-1** (P0-1 is fully grounded; Orig-21 was directional) | Drop |
 | Orig-25 QuiltBg animation gate | **Still open** | Bundle into PR 3 |
 | Orig card-class cleanup | **Still open** | PR 4 |
+
+
+---
+
+## Addendum — refinements (2026-06-04)
+
+---
+
+### 1. Design guardrails (prevent recurrence)
+
+The three anti-patterns below each have a direct plan anchor. Apply this checklist to every new component before merging.
+
+#### Checklist
+
+**[G-1] Bounding box discipline** *(reinforces P2-10 — layout density)*
+- Every panel/card gets a fixed or max-width bounding box with `overflow: hidden` on the container.
+- Decorative or background text lives on a dedicated `z-index` layer (e.g. `z-0`) separated from live content (`z-10`+). Never place two content regions in the same visual column without an explicit divider (`border`, `gap`, or `padding`).
+- `position: absolute` children require a `position: relative` parent with explicit `width`/`height` — no implicit overflow bleed.
+
+**[G-2] Typography & contrast** *(reinforces P2-9 — typography scale + token grammar)*
+- `letter-spacing` on UI labels: `≤ 0.02em`. The current design token for mono labels is `0.04em` (`--tracking-wide`) — reserve that value for code/mono contexts only; prose labels use `normal` or `0.01em`.
+- Case: sentence case on all labels. `text-transform: uppercase` requires explicit sign-off and a contrast check.
+- Minimum contrast: `4.5:1` for normal text (< 18 px / 14 px bold); `3:1` for large text. Run `globals.css` `color-mix()` combos through a contrast checker before shipping.
+
+**[G-3] Status-pill color construction** *(reinforces P0-3 — chip/pill component)*
+- Pills must use: soft background + dark text from the **same color ramp**. Pattern: `background: var(--green-soft); color: var(--green-900)` (or `color-mix(in srgb, var(--green) 18%, var(--card-bg))` with `color: var(--green)` at ≥ 4.5:1 ratio on that bg).
+- No saturated foreground color on a dark/neutral background. The `--amber`, `--err`, `--ok` tokens are for borders and icon strokes, not pill background fills on dark surfaces.
+- Status dot (`·` or `<span>`) uses the **same token** as the label text — never a separate decorative color.
+
+---
+
+### 2. Traces unlabelled bars — new P1 item
+
+**Finding (grounded):** `dashboard/src/app/traces/page.tsx`
+
+Four compounding issues make waterfall bars unreadable:
+
+1. **`SpanBar` silently discards `label`** — the prop is declared in the type at line 312 (`label?: string`) but never destructured; no `title`, `aria-label`, or tooltip is emitted. Compare `RunSparkBars.tsx` line 120: `<title>{barTooltip(run, i, slotCount)}</title>` inside each `<rect>` — the established native-tooltip pattern.
+
+2. **Child call sites pass no `label`** — lines 901–907 omit the prop entirely, so children remain unlabelled even after the destructuring fix.
+
+3. **No axis ticks** — `.traces-waterfall` CSS (line 6244) has no `0 … Nms` axis strip. `EventsHistogram.tsx` lines 110–133 shows the established pattern (flex row of monospace time labels beneath the chart).
+
+4. **No color legend** — `TYPE_THEME` at line 57 maps all four `TraceType` values to colors (`--blue`, `--purple`, `--amber`, `--green`) but no legend key is rendered; a reader cannot distinguish `recipe_run` from `decision` bars.
+
+**Proposed fix (additive, no layout library):**
+
+- Destructure `label` in `SpanBar`; emit `aria-label={label ?? \`${durationMs}ms\`}` and `title={...}` on the outer `div.traces-span-track` in all three render branches (full-bar ~line 340, zero-duration tick ~line 327, zero-range fill ~line 316).
+- Pass a composed label from child call sites (lines 901–907): `label={[child.key, childDuration > 0 ? \`${childDuration}ms\` : 'instant', \`+${child.ts - groupStartMs}ms from start\`].join(' · ')}`.
+- Add a two-tick axis div after `.traces-span-bar-wrap` close tag: `<div className="traces-waterfall-axis" aria-hidden="true"><span>0</span><span>{groupEndMs - groupStartMs}ms</span></div>` with CSS `display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: var(--fs-3xs); color: var(--ink-3)`.
+- Add a four-swatch legend strip above the tree-view card using `Object.entries(TYPE_THEME)`: `8px × 8px` colored `border-radius: 2px` swatches with `font-size: var(--fs-2xs); color: var(--ink-2)`.
+
+**Plan slot:** Insert as **P1-5a** between P1-4 (data context) and P1-6 (decision-detail drawer). Effort: small (items 1/2/4) + medium (item 3, axis layout restructure).
+
+---
+
+### 3. "Needs attention" band redesign — refines P1-7
+
+**Grounded state** (`dashboard/src/app/page.tsx` lines 318–394, `globals.css` lines 5418–5470):
+
+The band renders three fixed item types — `pendingCount` (approvals), `haltCount24h` (halts), `failingCount24h` (failed runs) — with a critical urgency inversion: `urgent: true` maps to `.attention-chip--urgent` → amber (`--warn`), while `urgent: false` maps to `.attention-chip--warn` → red (`--err`). Failed runs and halts are more severe than pending approvals yet render in the higher-alarm color. The band border (`border-left: 3px solid var(--warn)`, line 5421) is always amber regardless of severity mix.
+
+**Recommended direction: B + E hybrid**
+
+Directions A (cleaned-up current) does not resolve the inversion. C (usage bar) is inapplicable — the data is a count, not a quota. D (one-line collapse) loses the per-type deep-links users need. E alone would over-expand the chip. B (icon-led, per-type severity) + E (inline CTA on the approval chip only) fits the real data.
+
+**Concrete markup and token fix:**
+
+Replace the `urgent: boolean` discriminant with `severity: 'err' | 'warn'`:
+- `pendingCount` → `severity: 'warn'` (amber, `.attention-chip--warn`)
+- `haltCount24h` → `severity: 'err'` (red, `.attention-chip--err`)
+- `failingCount24h` → `severity: 'err'` (red, `.attention-chip--err`)
+
+Chip class: `attention-chip attention-chip--${item.severity}`.
+
+Rename CSS classes in `globals.css` lines 5461–5470:
+```css
+.attention-chip--warn {
+  background: color-mix(in srgb, var(--warn) 10%, var(--card-bg));
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--line-1));
+  color: var(--warn);
+}
+.attention-chip--err {
+  background: color-mix(in srgb, var(--err) 8%, var(--card-bg));
+  border-color: color-mix(in srgb, var(--err) 32%, var(--line-1));
+  color: var(--err);
+}
+```
+
+Drive band border from highest-severity item present via `data-severity` on the band `div` (computed as `items.some(i => i.severity === 'err') ? 'err' : 'warn'`):
+```css
+/* globals.css — after line 5429 */
+.attention-band[data-severity="err"] {
+  border-left-color: var(--err);
+  background: color-mix(in srgb, var(--err) 4%, var(--card-bg));
+  border-color: color-mix(in srgb, var(--err) 18%, var(--line-1));
+}
+```
+
+Add a contextual SVG icon per `href` key (clock for `/approvals`, octagon for `/runs?halt=1`, circle-exclamation for `/runs?window=24h`) inside `.attention-chip-icon { display: inline-flex; width: 18px; height: 18px; border-radius: 4px; background: color-mix(in srgb, currentColor 16%, transparent); }`.
+
+For the approval chip only (`item.href === '/approvals'`), render a non-link wrapper div with an inner `<Link className="attention-chip-cta">Review →</Link>` to the right of the label. All other chips keep the existing full-chip `<Link>` with `→` arrow.
+
+The `.attention-offline` state (`page.tsx` lines 341–354) is correct in behavior but should use `--warn` (not `--err`) for its band border and background, since `BridgeOfflineBanner.tsx` already claims the `--err`/red register at page-top. Change `globals.css` lines 5408–5410 to `border-left: 3px solid var(--warn)` while keeping `.attention-offline-label` in `--err` so the word "Bridge offline" remains red.
+
+---
+
+### 4. Validation note
+
+The live re-critique's three cross-cutting themes map cleanly onto existing plan items without requiring structural changes. Orange/amber overload (chips, band, halt panel, toasts all pulling `--warn`/`--amber` when severity warrants `--err`) directly corroborates **P0-1** (token grammar discipline — the root cause is tokens used by feel rather than semantic role). The editorial-voice-vs-operational tension — "Needs attention" as a heading on a band that contains machine-precise counts and deep-links — corroborates **P2-8** (copy and microcopy pass, distinguishing ambient status from actionable alerts). The data-without-context critique (unlabelled bars, count chips with no rate/trend, halt counts with no drill-down preview) corroborates **P1-4** and **P1-6** (data context layer and decision-detail drawer). No plan items need to move; these are independent confirmations that the prioritization is correct.
