@@ -39,6 +39,9 @@ describe("runInstall", () => {
   let stderrOutput: string[];
 
   beforeEach(() => {
+    // vitest 4: restoreAllMocks() no longer clears vi.fn() call history, so
+    // module-mock call counts leak across tests. Clear history each test.
+    vi.clearAllMocks();
     stdoutOutput = [];
     stderrOutput = [];
     vi.spyOn(console, "log").mockImplementation((...args) => {

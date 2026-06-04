@@ -29,7 +29,10 @@ function makeFakePg(
   };
   return {
     pg: {
-      Pool: vi.fn().mockImplementation(() => pool),
+      // biome-ignore lint/complexity/useArrowFunction: must be constructable with `new` — vitest 4 runs the mock impl as a constructor and arrows can't construct
+      Pool: vi.fn().mockImplementation(function () {
+        return pool;
+      }),
     },
     pool,
     calls,

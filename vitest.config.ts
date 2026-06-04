@@ -20,10 +20,16 @@ export default defineConfig({
         "src/index.ts",
       ],
       all: true,
+      // Re-baselined for vitest 4's AST-aware coverage counting (the ast-v8
+      // remapper counts more branches/functions than v3's heuristic, so the
+      // SAME tests measure lower). Was 75/70/75 under vitest 3. Set ~1pt below
+      // the lower of the two CI platforms (Windows: 72.08/63.03/70.94; ubuntu:
+      // 72.81/63.55/71.38) so both clear with margin. Coverage did not regress;
+      // only the measurement got stricter.
       thresholds: {
-        lines: 75,
-        branches: 70,
-        functions: 75,
+        lines: 71,
+        branches: 62,
+        functions: 70,
       },
     },
   },

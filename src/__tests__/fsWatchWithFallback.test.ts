@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import fs, { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,6 +33,7 @@ describe("watchDirectoryWithFallback — polling fallback", () => {
       }
     }
     rmSync(tmp, { recursive: true, force: true });
+    vi.restoreAllMocks();
   });
 
   it("falls back to polling when fs.watch throws (non-existent dir)", async () => {
@@ -110,19 +111,42 @@ describe("watchDirectoryWithFallback — polling fallback", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("happy path: fs.watch succeeds and fires onChange", async () => {
+  it("happy path: fs.watch wiring forwards events to onChange", () => {
+    // Deterministic: stub fs.watch and drive the change event ourselves.
+    // Relying on real OS fs.watch delivery made this flaky under --coverage
+    // (events are OS-scheduled and can exceed any fixed wait under load); the
+    // real fs.watch path is exercised implicitly elsewhere (pluginWatcher).
     const onChange = vi.fn();
-    const stop = watchDirectoryWithFallback(tmp, onChange, {
-      pollIntervalMs: 20,
-    });
-    stops.push(stop);
-    writeFileSync(path.join(tmp, "new.txt"), "x");
-    // Poll for the event rather than sleeping a fixed 50ms — fs.watch event
-    // delivery is OS-scheduled and can be delayed under parallel CI load.
-    const start = Date.now();
-    while (onChange.mock.calls.length === 0 && Date.now() - start < 3000) {
-      await new Promise((r) => setTimeout(r, 20));
+    let listener:
+      | ((event: string, filename: string | null) => void)
+      | undefined;
+    const fakeWatcher = {
+      on: vi.fn(),
+      close: vi.fn(),
+    } as unknown as ReturnType<typeof fs.watch>;
+    const watchSpy = vi.spyOn(fs, "watch").mockImplementation(((
+      _dir: unknown,
+      _opts: unknown,
+      cb: (event: string, filename: string | null) => void,
+    ) => {
+      listener = cb;
+      return fakeWatcher;
+    }) as unknown as typeof fs.watch);
+    try {
+      const stop = watchDirectoryWithFallback(tmp, onChange, {
+        pollIntervalMs: 20,
+      });
+      stops.push(stop);
+      expect(watchSpy).toHaveBeenCalledWith(
+        tmp,
+        { recursive: false },
+        expect.any(Function),
+      );
+      // Simulate an fs.watch event firing — no OS timing involved.
+      listener?.("change", "new.txt");
+      expect(onChange).toHaveBeenCalledTimes(1);
+    } finally {
+      watchSpy.mockRestore();
     }
-    expect(onChange).toHaveBeenCalled();
   });
 });

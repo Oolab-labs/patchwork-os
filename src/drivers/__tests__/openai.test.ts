@@ -6,9 +6,10 @@ import { OpenAIApiDriver } from "../openai/index.js";
 
 const mockCreate = vi.fn();
 vi.mock("openai", () => ({
-  default: vi.fn().mockImplementation(() => ({
-    chat: { completions: { create: mockCreate } },
-  })),
+  // biome-ignore lint/complexity/useArrowFunction: must be constructable with `new` — vitest 4 runs the mock impl as a constructor
+  default: vi.fn().mockImplementation(function () {
+    return { chat: { completions: { create: mockCreate } } };
+  }),
 }));
 
 const log = vi.fn();

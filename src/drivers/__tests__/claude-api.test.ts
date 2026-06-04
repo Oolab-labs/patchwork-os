@@ -4,9 +4,10 @@ import type { ProviderTaskInput } from "../types.js";
 
 const mockCreate = vi.fn();
 vi.mock("@anthropic-ai/sdk", () => ({
-  default: vi.fn().mockImplementation(() => ({
-    messages: { create: mockCreate },
-  })),
+  // biome-ignore lint/complexity/useArrowFunction: must be constructable with `new` — vitest 4 runs the mock impl as a constructor
+  default: vi.fn().mockImplementation(function () {
+    return { messages: { create: mockCreate } };
+  }),
 }));
 
 const log = vi.fn();

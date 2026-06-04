@@ -16,7 +16,10 @@ import "../http.js";
 vi.mock("undici", () => {
   const mockFetch = vi.fn();
   return {
-    Agent: vi.fn().mockImplementation(() => ({})),
+    // biome-ignore lint/complexity/useArrowFunction: must be constructable with `new` — vitest 4 runs the mock impl as a constructor
+    Agent: vi.fn().mockImplementation(function () {
+      return {};
+    }),
     fetch: mockFetch,
   };
 });

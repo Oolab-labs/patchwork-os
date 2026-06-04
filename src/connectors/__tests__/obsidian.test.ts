@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Mock undici so tests don't need a real Obsidian instance.
 vi.mock("undici", () => {
   return {
-    Agent: vi.fn().mockImplementation(() => ({})),
+    // biome-ignore lint/complexity/useArrowFunction: must be constructable with `new` — vitest 4 runs the mock impl as a constructor
+    Agent: vi.fn().mockImplementation(function () {
+      return {};
+    }),
     fetch: vi.fn(),
   };
 });
