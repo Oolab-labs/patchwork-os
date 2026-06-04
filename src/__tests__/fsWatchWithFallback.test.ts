@@ -33,6 +33,7 @@ describe("watchDirectoryWithFallback — polling fallback", () => {
       }
     }
     rmSync(tmp, { recursive: true, force: true });
+    vi.restoreAllMocks();
   });
 
   it("falls back to polling when fs.watch throws (non-existent dir)", async () => {
