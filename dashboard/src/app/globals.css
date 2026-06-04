@@ -1285,7 +1285,7 @@ a.btn { text-decoration: none; }
 .pill.ok   { background: var(--ok-soft);   color: var(--ok-text);   border-color: transparent; }
 .pill.warn { background: var(--warn-soft); color: var(--warn-text); border-color: transparent; }
 .pill.err  { background: var(--err-soft);  color: var(--err-text);  border-color: transparent; }
-.pill.info { background: var(--blue-soft);  color: var(--blue);      border-color: transparent; }
+.pill.info { background: var(--blue-soft);  color: var(--info-text);  border-color: transparent; }
 .pill.muted { color: var(--ink-3); background: var(--recess); border-color: transparent; }
 /* ── VD-3: per-step hover diff panel ─────────────────────────────── */
 /* Position is set inline (fixed coordinates from the anchor row's
@@ -1384,7 +1384,7 @@ a.btn { text-decoration: none; }
    color-named aliases (.green/.amber/.red/.blue) and .round were
    prototype leftovers with no callsites; the canonical state names
    (.ok/.warn/.err/.info) cover those tones. */
-.pill.purp   { background: var(--purple-soft); color: var(--purple); border-color: transparent; }
+.pill.purp   { background: var(--purple-soft); color: var(--purp-text); border-color: transparent; }
 
 /* Active filter / info state — used by traces filter buttons
    (`pill info` / `pill muted` toggle). Orange `.pill.accent` removed in the
@@ -1883,7 +1883,7 @@ a.btn { text-decoration: none; }
 }
 .approval-spacer { flex: 1; }
 .countdown { font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 12px; }
-.countdown.urgent { color: var(--amber); font-weight: 600; }
+.countdown.urgent { color: var(--amber-text); font-weight: 600; }
 
 
 .status-cell {
@@ -1892,8 +1892,8 @@ a.btn { text-decoration: none; }
   gap: 6px;
   font-weight: 600;
 }
-.status-cell.ok  { color: var(--green); }
-.status-cell.err { color: var(--red); }
+.status-cell.ok  { color: var(--ok-text); }
+.status-cell.err { color: var(--err-text); }
 
 /* ── Runs page ───────────────────────────────────────────────────────── */
 
@@ -1938,8 +1938,8 @@ a.btn { text-decoration: none; }
 
 /* Judge verdict pill */
 .runs-judge-pill { font-size: var(--fs-2xs); }
-.runs-judge-pill[data-verdict="approve"] { color: var(--ok); }
-.runs-judge-pill[data-verdict="request_changes"] { color: var(--warn, #d49a3a); }
+.runs-judge-pill[data-verdict="approve"] { color: var(--ok-text); }
+.runs-judge-pill[data-verdict="request_changes"] { color: var(--warn-text); }
 .runs-judge-pill[data-verdict="unparseable"] {
   color: var(--ink-3);
   border: 1px solid var(--line-2);
@@ -1991,8 +1991,8 @@ a.btn { text-decoration: none; }
   color: var(--ink-3);
   margin-bottom: 8px;
 }
-.runs-stat-label--ok  { color: var(--ok); }
-.runs-stat-label--err { color: var(--err); }
+.runs-stat-label--ok  { color: var(--ok-text); }
+.runs-stat-label--err { color: var(--err-text); }
 .runs-stat-value {
   font-family: var(--font-mono);
   font-size: 36px;
@@ -2000,7 +2000,7 @@ a.btn { text-decoration: none; }
   color: var(--ink-0);
   line-height: 1;
 }
-.runs-stat-value--err { color: var(--err); }
+.runs-stat-value--err { color: var(--err-text); }
 .runs-stat-foot { font-size: var(--fs-xs); color: var(--ink-3); margin-top: 4px; }
 
 /* Table row: running rows get a left accent bar */
@@ -5048,13 +5048,18 @@ a.btn { text-decoration: none; }
   color: var(--ink-2);
   border-color: var(--line-2);
 }
-.rag3-chip--tag-blue   { color: #3b82f6; background: rgba(59,130,246,0.1);  border-color: rgba(59,130,246,0.25); }
-.rag3-chip--tag-purple { color: #a855f7; background: rgba(168,85,247,0.1);  border-color: rgba(168,85,247,0.25); }
-.rag3-chip--tag-pink   { color: #ec4899; background: rgba(236,72,153,0.1);  border-color: rgba(236,72,153,0.25); }
-.rag3-chip--tag-slate  { color: #64748b; background: rgba(100,116,139,0.1); border-color: rgba(100,116,139,0.25); }
-.rag3-chip--tag-amber  { color: #f59e0b; background: rgba(245,158,11,0.1);  border-color: rgba(245,158,11,0.25); }
-.rag3-chip--tag-teal   { color: #14b8a6; background: rgba(20,184,166,0.1);  border-color: rgba(20,184,166,0.25); }
-.rag3-chip--tag-indigo { color: #6366f1; background: rgba(99,102,241,0.1);  border-color: rgba(99,102,241,0.25); }
+/* Theme-redesign AP-04/AP-01: the 7 off-palette Tailwind tag hexes (amber
+   chip was 1.74:1, teal 1.99:1 — critical AA fails, invisible to tokens:check)
+   mapped onto the semantic *-text/*-soft tokens. blue+teal→info, purple+indigo
+   →purple, pink→err, amber→warn, slate→neutral. Dark auto-lifts via the
+   *-text redirects, so the per-theme hex overrides below are removed. */
+.rag3-chip--tag-blue   { color: var(--info-text); background: var(--blue-soft);   border-color: rgba(var(--blue-rgb),0.25); }
+.rag3-chip--tag-purple { color: var(--purp-text); background: var(--purple-soft); border-color: rgba(var(--purple-rgb),0.25); }
+.rag3-chip--tag-pink   { color: var(--err-text);  background: var(--err-soft);    border-color: rgba(var(--red-rgb),0.25); }
+.rag3-chip--tag-slate  { color: var(--ink-3);     background: var(--recess);      border-color: var(--line-2); }
+.rag3-chip--tag-amber  { color: var(--warn-text); background: var(--amber-soft);  border-color: rgba(var(--amber-rgb),0.25); }
+.rag3-chip--tag-teal   { color: var(--info-text); background: var(--blue-soft);   border-color: rgba(var(--blue-rgb),0.25); }
+.rag3-chip--tag-indigo { color: var(--purp-text); background: var(--purple-soft); border-color: rgba(var(--purple-rgb),0.25); }
 
 /* Active-only run button — hidden at rest, revealed on card hover */
 .rag3-card-run {
@@ -5194,13 +5199,9 @@ a.btn { text-decoration: none; }
 [data-theme="dark"] .rag3-card--paused { border-left-color: color-mix(in srgb, var(--warn)  55%, transparent); }
 [data-theme="dark"] .rag3-card--active { border-left-color: color-mix(in srgb, var(--ok)    65%, transparent); }
 
-[data-theme="dark"] .rag3-chip--tag-blue   { color: #60a5fa; background: rgba(59,130,246,0.14); border-color: rgba(59,130,246,0.28); }
-[data-theme="dark"] .rag3-chip--tag-purple { color: #c084fc; background: rgba(168,85,247,0.14); border-color: rgba(168,85,247,0.28); }
-[data-theme="dark"] .rag3-chip--tag-pink   { color: #f472b6; background: rgba(236,72,153,0.14); border-color: rgba(236,72,153,0.28); }
-[data-theme="dark"] .rag3-chip--tag-slate  { color: #94a3b8; background: rgba(100,116,139,0.14); border-color: rgba(100,116,139,0.28); }
-[data-theme="dark"] .rag3-chip--tag-amber  { color: #fbbf24; background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.28); }
-[data-theme="dark"] .rag3-chip--tag-teal   { color: #2dd4bf; background: rgba(20,184,166,0.14); border-color: rgba(20,184,166,0.28); }
-[data-theme="dark"] .rag3-chip--tag-indigo { color: #818cf8; background: rgba(99,102,241,0.14); border-color: rgba(99,102,241,0.28); }
+/* Dark tag-chip hex overrides removed — the semantic *-soft backgrounds and
+   *-text colors (which redirect to the lifted dark primitives) handle dark
+   automatically now (theme-redesign AP-04). */
 
 @media (max-width: 720px) {
   [data-theme="dark"] .rag3-grid { gap: 0; }
@@ -5534,13 +5535,13 @@ a.btn { text-decoration: none; }
 .attention-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 /* Offline band text nodes */
 .attention-offline-label { color: var(--err); font-weight: 700; }
-.attention-offline-link { color: var(--info); text-decoration: none; font-weight: 600; }
+.attention-offline-link { color: var(--info-text); text-decoration: none; font-weight: 600; }
 /* Bridge-offline banner dismiss button: bump tap target on touch devices */
 @media (hover: none) and (pointer: coarse) {
   .bridge-offline-dismiss { min-height: 44px; padding: 10px 14px; }
 }
 /* All-clear text nodes */
-.attention-clear-ok { color: var(--ok); font-weight: 700; font-size: var(--fs-s); }
+.attention-clear-ok { color: var(--ok-text); font-weight: 700; font-size: var(--fs-s); }
 .attention-clear-sub { color: var(--ink-3); font-size: var(--fs-s); margin-left: 8px; }
 .attention-chip {
   display: inline-flex;
@@ -7415,8 +7416,8 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .tx-table-row:hover {
   background: color-mix(in srgb, var(--surface) 60%, var(--card-bg) 40%);
 }
-.tx-status-pending  { color: var(--warn); font-weight: 600; }
-.tx-status-complete { color: var(--ok); font-weight: 600; }
+.tx-status-pending  { color: var(--warn-text); font-weight: 600; }
+.tx-status-complete { color: var(--ok-text); font-weight: 600; }
 .tx-status-failed   { color: var(--err); font-weight: 600; }
 .tx-amount { font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-base); }
 
