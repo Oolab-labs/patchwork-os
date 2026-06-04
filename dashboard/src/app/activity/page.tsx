@@ -611,11 +611,11 @@ export default function ActivityPage() {
                 cursor: "pointer",
                 color: isActive ? "var(--ink-0)" : "var(--ink-2)",
                 background: isActive
-                  ? "color-mix(in srgb, var(--accent) 8%, transparent 92%)"
+                  ? "color-mix(in srgb, var(--accent-cool) 8%, transparent 92%)"
                   : "none",
                 border: "none",
                 borderBottom: isActive
-                  ? "2px solid var(--accent)"
+                  ? "2px solid var(--accent-cool)"
                   : "2px solid transparent",
                 borderRadius: isActive ? "4px 4px 0 0" : "4px 4px 0 0",
               }}
@@ -624,7 +624,7 @@ export default function ActivityPage() {
               <span
                 style={{
                   fontSize: "var(--fs-xs)",
-                  color: isActive ? "var(--accent)" : "var(--ink-3)",
+                  color: isActive ? "var(--accent-cool)" : "var(--ink-3)",
                   fontFamily: "var(--font-mono)",
                   transition: "color 0.15s ease",
                 }}

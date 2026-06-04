@@ -55,7 +55,7 @@ export function HBarList({
                   style={{
                     width: `${Math.max(2, pct)}%`,
                     height: "100%",
-                    background: item.color ?? "var(--orange)",
+                    background: item.color ?? "var(--ink-3)",
                     borderRadius: height,
                     transition: "width 0.4s ease",
                   }}

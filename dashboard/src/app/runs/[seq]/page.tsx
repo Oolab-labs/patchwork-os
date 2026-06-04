@@ -478,7 +478,7 @@ function StepRow({
               style={{
                 fontSize: "var(--fs-xs)",
                 marginTop: 2,
-                color: "var(--accent)",
+                color: "var(--ink-2)",
                 whiteSpace: "normal",
                 wordBreak: "break-word",
               }}
@@ -549,7 +549,7 @@ function StepRow({
               <Link
                 href={`/recipes/${encodeURIComponent(recipeName)}/edit#step-${encodeURIComponent(step.id)}`}
                 style={{
-                  color: "var(--accent)",
+                  color: "var(--info)",
                   textDecoration: "none",
                   fontWeight: 600,
                   // ≥44pt touch target on mobile — explicit padding lets

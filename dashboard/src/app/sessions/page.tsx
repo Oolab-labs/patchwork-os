@@ -200,7 +200,7 @@ export default function SessionsPage() {
                 href="https://docs.anthropic.com/claude-code"
                 target="_blank"
                 rel="noreferrer"
-                style={{ color: "var(--accent)" }}
+                style={{ color: "var(--info)" }}
               >
                 Learn how to connect →
               </a>

@@ -24,7 +24,10 @@
      Darkened to ~4.8:1; the ~190 text sites that use --ink-3/--fg-3/--text-3
      pass AA in one swap. Non-text idle/offline dots and tinted swatches now
      point at --dot-muted (defined below) to preserve their soft tone. */
-  --ink-3: #7a6f57;
+  /* Darkened a further 4 lightness points (#7a6f57 → #706550): lifts 10px
+     sidebar/eyebrow label contrast from 4.31→4.65:1 (facelift P0-1-A / P2-9).
+     Non-text muted dots keep their soft tone via --dot-muted below. */
+  --ink-3: #706550;
   --dot-muted: #9a907a;
   --text-0: var(--ink-0);
   --text-1: var(--ink-1);
@@ -72,6 +75,12 @@
   --err-bg:        var(--red-soft);
   --info:          var(--blue);
   --info-soft:     var(--blue-soft);
+  /* Pill TEXT variants — darker than the decoration tokens so soft-tinted
+     pills clear AA on the light canvas (facelift P0-1-A / P0-3-A). Dark mode
+     re-points these back to the bright tokens (see [data-theme="dark"]). */
+  --ok-text:       #3d6635;   /* 5.5:1 on --ok-soft   */
+  --warn-text:     #7a5200;   /* 5.8:1 on --warn-soft */
+  --err-text:      #aa3838;   /* 5.5:1 on --err-soft  */
   --overlay-bg:    rgba(10, 11, 13, 0.55);
   --shadow-modal:  0 20px 50px rgba(10, 11, 13, 0.35);
   --on-accent:     #fff;
@@ -271,10 +280,23 @@
   --orange-tint:  rgba(255,122,69,0.25);
   --orange-rgb: 255, 122, 69;
   --purple-soft:  #1c1b32;
+  /* --green #5b8a4f is borderline (4.87:1) on the dark canvas; lift to
+     #6da060 (5.7:1) so --ok text/strokes pass AA (facelift Orig-15). */
+  --green:        #6da060;
   --green-soft:   #0e2519;
   --amber-soft:   #2b2110;
-  --red-soft:     #2b1511;
+  /* --red #b54343 fails (3.6:1) on the dark canvas; lift to #d05757
+     (4.86:1 on #0a0b0d) so --err passes AA. --err aliases --red, so this
+     cascades (facelift P0-1-A). */
+  --red:          #d05757;
+  --red-soft:     rgba(208,87,87,0.16);
   --blue-soft:    #101b2c;
+  /* Pill TEXT tokens point back to the bright palette in dark mode — the
+     light-mode #3d6635/#7a5200/#aa3838 would be near-invisible on the dark
+     soft pill fills (facelift P0-1-A dark-pill gap). */
+  --ok-text:      var(--green);
+  --warn-text:    var(--amber);
+  --err-text:     var(--err);
   --accent-strong: #e8956e;
   --accent-glow: rgba(255,122,69,0.35);
   --stitch-line: rgba(255,255,255,0.05);
@@ -442,10 +464,10 @@ button { font-family: inherit; }
 }
 
 .app-nav-section-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-transform: none;
   color: var(--ink-3);
   padding: 10px 8px 3px;
 }
@@ -517,7 +539,7 @@ button { font-family: inherit; }
   height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: var(--orange);
+  background: var(--info);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
@@ -528,9 +550,9 @@ button { font-family: inherit; }
   line-height: 1;
 }
 
-/* "Live now" variant — blue tone + soft pulse to signal motion
-   (active recipe runs). Distinct from .nav-badge (orange, static
-   counter for pending/queued things). */
+/* "Live now" variant — soft pulse to signal motion (active recipe runs).
+   Distinct from the static .nav-badge counter for pending/queued things;
+   both use the info/blue tone (orange is reserved for brand/CTA). */
 .nav-badge.is-live {
   background: var(--blue);
   animation: nav-badge-live-pulse 1.8s ease-in-out infinite;
@@ -800,7 +822,7 @@ button.topbar-search {
 .global-live-runs-strip-bar > span {
   display: block;
   height: 100%;
-  background: var(--accent);
+  background: var(--accent-cool);
   transition: width 0.25s ease;
 }
 .global-live-runs-strip-overflow {
@@ -1216,10 +1238,10 @@ a.btn { text-decoration: none; }
   background: currentColor;
   flex-shrink: 0;
 }
-.pill.ok   { background: var(--green-soft); color: var(--green); border-color: transparent; }
-.pill.warn { background: var(--amber-soft); color: var(--amber); border-color: transparent; }
-.pill.err  { background: var(--red-soft);   color: var(--red);   border-color: transparent; }
-.pill.info { background: var(--blue-soft);  color: var(--blue);  border-color: transparent; }
+.pill.ok   { background: var(--ok-soft);   color: var(--ok-text);   border-color: transparent; }
+.pill.warn { background: var(--warn-soft); color: var(--warn-text); border-color: transparent; }
+.pill.err  { background: var(--err-soft);  color: var(--err-text);  border-color: transparent; }
+.pill.info { background: var(--blue-soft);  color: var(--blue);      border-color: transparent; }
 .pill.muted { color: var(--ink-3); background: var(--recess); border-color: transparent; }
 /* ── VD-3: per-step hover diff panel ─────────────────────────────── */
 /* Position is set inline (fixed coordinates from the anchor row's
@@ -1320,9 +1342,10 @@ a.btn { text-decoration: none; }
    (.ok/.warn/.err/.info) cover those tones. */
 .pill.purp   { background: var(--purple-soft); color: var(--purple); border-color: transparent; }
 
-/* Active filter / accent state — used by traces filter buttons
-   (`pill accent` / `pill muted` toggle). */
-.pill.accent { background: var(--orange-soft); color: var(--orange); border-color: var(--orange-tint); }
+/* Active filter / info state — used by traces filter buttons
+   (`pill info` / `pill muted` toggle). Orange `.pill.accent` removed in the
+   facelift token-grammar pass: orange is reserved for brand/CTA, not a pill
+   tone. Filter-active pills now use `.pill.info` (defined above). */
 
 /* ---- Connector dot (marketplace + health panel) ---- */
 .connector-dot {
@@ -1714,7 +1737,7 @@ a.btn { text-decoration: none; }
 .progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: var(--orange);
+  background: var(--ok);
   position: relative;
   overflow: hidden;
   transition: width 600ms var(--transition);
@@ -2298,11 +2321,17 @@ a.btn { text-decoration: none; }
   color: var(--ink-0);
   margin: 0 0 6px;
 }
+/* Editorial accent on operational page headers (insights/settings/tasks/
+   activity/runs/traces/analytics) — neutral by default. Orange is reserved
+   for brand/CTA (facelift P0-1 orange reservation / P2-8). The Overview hero
+   keeps its orange via the separate `.quilt-title .accent` rule below, which
+   is already scoped to the hero. PR 4 (P2-8-B) removes the spans that no
+   longer earn emphasis; until then they render as neutral serif italics. */
 .editorial-h1 .accent {
   font-family: var(--font-serif);
   font-style: italic;
   font-weight: 400;
-  color: var(--orange);
+  color: var(--ink-2);
   letter-spacing: 0;
 }
 .editorial-h1 .num {
@@ -5439,7 +5468,7 @@ a.btn { text-decoration: none; }
 .attention-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 /* Offline band text nodes */
 .attention-offline-label { color: var(--err); font-weight: 700; }
-.attention-offline-link { color: var(--accent); text-decoration: none; font-weight: 600; }
+.attention-offline-link { color: var(--info); text-decoration: none; font-weight: 600; }
 /* Bridge-offline banner dismiss button: bump tap target on touch devices */
 @media (hover: none) and (pointer: coarse) {
   .bridge-offline-dismiss { min-height: 44px; padding: 10px 14px; }
@@ -5500,7 +5529,7 @@ a.btn { text-decoration: none; }
   width: 3px;
   height: 14px;
   border-radius: 2px;
-  background: var(--accent);
+  background: var(--line-3);
   flex-shrink: 0;
 }
 .pg-section-head-rule {

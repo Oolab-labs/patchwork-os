@@ -57,7 +57,7 @@ function kindDotColor(kind: TimelineEvent["kind"]): string {
     case "run":      return "var(--blue, #4a90d9)";
     case "inbox":    return "var(--green, #4caf50)";
     case "approval": return "var(--amber, #d49a3a)";
-    case "trace":    return "var(--accent, #7c6ff7)";
+    case "trace":    return "var(--accent-cool, #0787ff)";
     case "step":     return "var(--ink-3, #9ca3af)";
     case "trigger":  return "var(--ink-2, #6b7280)";
     default:         return "var(--line-2)";
@@ -122,7 +122,7 @@ function EntityChip({ event }: { event: TimelineEvent }) {
         href={event.href}
         style={{
           fontSize: "var(--fs-xs)",
-          color: "var(--accent)",
+          color: "var(--info)",
           textDecoration: "none",
         }}
       >

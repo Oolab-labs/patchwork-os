@@ -54,9 +54,9 @@ function toneStyles(tone: RelationTone = "neutral"): {
   switch (tone) {
     case "accent":
       return {
-        borderColor: "color-mix(in srgb, var(--accent) 35%, transparent)",
-        color: "var(--accent)",
-        background: "color-mix(in srgb, var(--accent) 8%, transparent)",
+        borderColor: "color-mix(in srgb, var(--accent-cool) 35%, transparent)",
+        color: "var(--accent-cool)",
+        background: "color-mix(in srgb, var(--accent-cool) 8%, transparent)",
       };
     case "warn":
       return {

@@ -12,7 +12,10 @@ import { useEffect, useId, useRef, useState } from "react";
  */
 export function Sparkline({
   values,
-  color = "var(--orange)",
+  // Neutral default — orange is reserved for brand/CTA (facelift P0-1-I).
+  // Callers pass a semantic color (runs→--ok, halts→--err, tools→--accent-cool);
+  // a missed caller degrades to neutral ink rather than an off-grammar orange.
+  color = "var(--ink-3)",
   height = 36,
   labels,
   unit = "",
