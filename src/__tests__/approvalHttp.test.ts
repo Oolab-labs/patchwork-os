@@ -123,6 +123,34 @@ describe("routeApprovalRequest", () => {
     });
   });
 
+  it("POST /approve fires the onDecision audit hook (audit 2026-06-03 MEDIUM #27)", async () => {
+    // Previously only the reject path called onDecision, so approvals — the
+    // higher-risk decision — left no audit/activity trail.
+    const queue = new ApprovalQueue();
+    const { callId } = queue.request({
+      toolName: "gitPush",
+      params: {},
+      tier: "high",
+    });
+    const events: Array<{ event: string; meta: Record<string, unknown> }> = [];
+    const res = await routeApprovalRequest(
+      { method: "POST", path: `/approve/${callId}` },
+      {
+        queue,
+        workspace: "/tmp",
+        ccLoader: emptyRules(),
+        onDecision: (event, meta) => events.push({ event, meta }),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ decision: "allow", callId });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      event: "approval_decision",
+      meta: { callId, decision: "allow" },
+    });
+  });
+
   it("POST /approve on truly-unknown callId → 404 (not 409)", async () => {
     const queue = new ApprovalQueue();
     const res = await routeApprovalRequest(

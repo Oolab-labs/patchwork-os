@@ -236,6 +236,10 @@ export async function routeApprovalRequest(
     }
     const ok = deps.queue.approve(callId);
     if (ok) {
+      // Audit 2026-06-03 (MEDIUM #27): fire the audit hook on APPROVE too —
+      // previously only the reject path called onDecision, so approvals (the
+      // higher-risk decision) left no audit/activity-log trail.
+      deps.onDecision?.("approval_decision", { callId, decision: "allow" });
       return { status: 200, body: { decision: "allow", callId } };
     }
     // Distinguish "callId never existed" from "callId was decided by a
