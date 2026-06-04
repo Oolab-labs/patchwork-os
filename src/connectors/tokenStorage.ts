@@ -55,7 +55,9 @@ export function storeSecretJsonSync(provider: string, value: unknown): void {
   const key = storageKey(provider);
   const json = JSON.stringify(value);
 
-  if (resolveBackend() === "file") {
+  const backend = resolveBackend();
+
+  if (backend === "file") {
     setEncryptedFileSync(key, json);
     // Cross-backend orphan guard: if a prior session wrote to the native
     // keychain (auto-mode default), forcing PATCHWORK_TOKEN_STORAGE_BACKEND=file
@@ -66,6 +68,23 @@ export function storeSecretJsonSync(provider: string, value: unknown): void {
     return;
   }
 
+  // Audit 2026-06-03 (MEDIUM #21): `native` means keychain-ONLY. Previously it
+  // fell through to the same keychain-then-file path as `auto`, so a keychain
+  // write failure silently wrote the secret to a file the operator explicitly
+  // opted out of. Fail loud instead of downgrading their chosen security level.
+  if (backend === "native") {
+    if (!setKeychainItemSync(key, json)) {
+      throw new Error(
+        "PATCHWORK_TOKEN_STORAGE_BACKEND=native but the OS keychain is " +
+          "unavailable; refusing to fall back to file storage. Unset the env " +
+          "var (or set it to 'auto') to allow encrypted-file fallback.",
+      );
+    }
+    deleteEncryptedFileSync(key); // evict any stale file credential
+    return;
+  }
+
+  // auto: keychain with encrypted-file fallback.
   if (setKeychainItemSync(key, json)) {
     deleteEncryptedFileSync(key);
     return;
@@ -82,11 +101,21 @@ export function storeSecretJsonSync(provider: string, value: unknown): void {
 
 export function getSecretJsonSync<T>(provider: string): T | null {
   const key = storageKey(provider);
+  const backend = resolveBackend();
 
-  if (resolveBackend() === "file") {
+  if (backend === "file") {
     return parseJson<T>(getEncryptedFileSync(key));
   }
 
+  // Audit 2026-06-03 (MEDIUM #21): `native` reads the keychain ONLY — it must
+  // not fall back to the encrypted file (symmetric with the keychain-only
+  // write path), so a stale file can never shadow the operator's keychain-only
+  // intent.
+  if (backend === "native") {
+    return parseJson<T>(getKeychainItemSync(key));
+  }
+
+  // auto: keychain first, then encrypted-file fallback.
   const fromKeychain = getKeychainItemSync(key);
   if (fromKeychain !== null) {
     return parseJson<T>(fromKeychain);

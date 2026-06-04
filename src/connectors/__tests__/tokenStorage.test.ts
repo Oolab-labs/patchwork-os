@@ -134,12 +134,15 @@ describe("tokenStorage", () => {
   });
 });
 
-describe("tokenStorage native-backend fallback eviction (audit 2026-06-03 HIGH #10)", () => {
+describe("tokenStorage auto-backend fallback eviction (audit 2026-06-03 HIGH #10)", () => {
+  // NB: this is the AUTO path (keychain with encrypted-file fallback). The
+  // keychain-only `native` backend (MEDIUM #21) deliberately does NOT fall
+  // back to file, so the fallback-eviction behavior tested here lives in auto.
   const tmpDir = join(os.tmpdir(), `patchwork-test-tokens-kc-${Date.now()}`);
 
   beforeEach(() => {
     process.env.PATCHWORK_HOME = tmpDir;
-    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "native";
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "auto";
     if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true });
   });
 
@@ -174,5 +177,65 @@ describe("tokenStorage native-backend fallback eviction (audit 2026-06-03 HIGH #
     await storeTokens("kc-provider", { accessToken: "FRESH-TOKEN" });
 
     expect((await getTokens("kc-provider"))?.accessToken).toBe("FRESH-TOKEN");
+  });
+});
+
+describe("tokenStorage native backend = keychain-only (audit 2026-06-03 MEDIUM #21)", () => {
+  const tmpDir = join(
+    os.tmpdir(),
+    `patchwork-test-tokens-native-${Date.now()}`,
+  );
+
+  beforeEach(() => {
+    process.env.PATCHWORK_HOME = tmpDir;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "native";
+    if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true });
+  });
+  afterEach(() => {
+    __setKeychainOpsForTest(null);
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true });
+  });
+
+  it("stores and reads via the keychain only (no file written)", async () => {
+    const kc = new Map<string, string>();
+    __setKeychainOpsForTest({
+      set: (k, v) => {
+        kc.set(k, v);
+        return true;
+      },
+      get: (k) => (kc.has(k) ? (kc.get(k) as string) : null),
+      delete: (k) => kc.delete(k),
+    });
+    await storeTokens("native-provider", { accessToken: "KC-ONLY" });
+    expect((await getTokens("native-provider"))?.accessToken).toBe("KC-ONLY");
+    // The credential lives in the (fake) keychain, not on disk.
+    expect(kc.size).toBe(1);
+  });
+
+  it("THROWS instead of silently writing a file when the keychain is unavailable", async () => {
+    __setKeychainOpsForTest({
+      set: () => false, // keychain write fails
+      get: () => null,
+      delete: () => false,
+    });
+    await expect(
+      storeTokens("native-provider", { accessToken: "x" }),
+    ).rejects.toThrow(/native.*keychain|refusing to fall back/i);
+  });
+
+  it("does NOT fall back to reading a stale file (keychain-only read)", async () => {
+    // Pre-seed an encrypted file under file-backend, then switch to native.
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    await storeTokens("native-provider", { accessToken: "STALE-FILE" });
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "native";
+    __setKeychainOpsForTest({
+      set: () => true,
+      get: () => null, // keychain empty
+      delete: () => true,
+    });
+    // native read must return null (keychain empty) — never the stale file.
+    expect(await getTokens("native-provider")).toBeNull();
   });
 });
