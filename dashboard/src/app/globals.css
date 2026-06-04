@@ -2334,9 +2334,12 @@ a.btn { text-decoration: none; }
   flex-wrap: wrap;
 }
 .section-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
+  /* Theme-redesign AP-07: prose labels in sans, not mono — reserve mono for
+     code / identifiers / tabular numbers. */
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--ink-3);
   margin-bottom: 4px;
 }
@@ -2382,9 +2385,11 @@ a.btn { text-decoration: none; }
 }
 .editorial-sub {
   color: var(--ink-2);
-  font-size: 13px;
-  font-family: var(--font-mono);
-  letter-spacing: 0.02em;
+  font-size: var(--fs-m);
+  /* Theme-redesign AP-07: page subtitles in sans — they read as inconsistent
+     mono next to the sans h1. */
+  font-family: var(--font-sans);
+  letter-spacing: 0.01em;
   margin: 0;
   min-width: 0;
   overflow: hidden;
@@ -2481,9 +2486,11 @@ a.btn { text-decoration: none; }
   background: linear-gradient(to right, var(--surface) 35%, color-mix(in srgb, var(--surface) 60%, transparent) 75%, transparent 100%);
 }
 .quilt-greeting {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  /* Theme-redesign AP-07: sans + tighter tracking (0.06em was the widest in
+     the app); reserve mono for code/identifiers. */
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.01em;
   color: var(--ink-3);
   margin-bottom: 12px;
 }
@@ -5525,9 +5532,11 @@ a.btn { text-decoration: none; }
 [data-theme="dark"] .attention-band { background: color-mix(in srgb, var(--warn) 8%, var(--card-bg)); }
 [data-theme="dark"] .attention-band[data-severity="err"] { background: color-mix(in srgb, var(--err) 8%, var(--card-bg)); }
 .attention-band-label {
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  font-weight: 500;
+  /* Theme-redesign AP-07: prose label in sans, not mono. */
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--ink-3);
   flex-shrink: 0;
 }
