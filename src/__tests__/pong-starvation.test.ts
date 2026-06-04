@@ -7,15 +7,23 @@
  *  - Disconnect log includes disconnectReason="pong_timeout" + lastPong age
  *  - Clean client close logs disconnectReason="client_initiated"
  *
- * Uses real timers with a very short pingIntervalMs (50ms) injected via the
- * Server constructor option, avoiding fake-timer / I/O callback ordering issues.
+ * Uses real timers with a short pingIntervalMs injected via the Server
+ * constructor option, avoiding fake-timer / I/O callback ordering issues.
  *
- * Threshold logic (interval 1 = first false flag, no miss counted):
- *   T+50ms:  isAlive=true → flag false, ping sent
- *   T+100ms: isAlive=false → missedPongs=1
- *   T+150ms: isAlive=false → missedPongs=2
- *   T+200ms: isAlive=false → missedPongs=3
- *   T+250ms: isAlive=false → missedPongs=4 → terminate()
+ * Threshold logic (interval 1 = first false flag, no miss counted), at the
+ * PING_MS below:
+ *   1×PING_MS: isAlive=true → flag false, ping sent
+ *   2×PING_MS: isAlive=false → missedPongs=1
+ *   3×PING_MS: isAlive=false → missedPongs=2
+ *   4×PING_MS: isAlive=false → missedPongs=3
+ *   5×PING_MS: isAlive=false → missedPongs=4 → terminate()
+ *
+ * PING_MS was 50ms, which left the "stays alive below threshold" test only a
+ * ~75ms wall-clock margin before the 5th interval — too tight for a loaded
+ * Windows CI runner under --coverage, where event-loop drift pushed the test's
+ * own setTimeout past the terminate point and it flaked (missedPongs=4). Raised
+ * to 200ms so that negative assertion has a ~300ms margin. (CI retry is a
+ * second backstop; see vitest.config.ts.)
  */
 
 import { randomUUID } from "node:crypto";
@@ -24,7 +32,7 @@ import { WebSocket, type WebSocketServer } from "ws";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
 
-const PING_MS = 50; // short interval for tests
+const PING_MS = 200; // short interval for tests; wide enough margin for CI drift
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -100,7 +108,7 @@ describe("pong starvation — threshold is 4 missed pongs", () => {
     await connectNoAutoPong(port, authToken);
 
     // Wait for server to terminate the client (5 intervals = 250ms + slack)
-    await waitForClientsSize(server, 0, 2000);
+    await waitForClientsSize(server, 0, 3000);
 
     expect(getWssClients(server).size).toBe(0);
   });
@@ -151,7 +159,7 @@ describe("pong starvation — disconnect-reason logging", () => {
     const _ws = await connectNoAutoPong(port, authToken);
 
     // Wait for termination (5 intervals + slack)
-    await waitForClientsSize(server, 0, 2000);
+    await waitForClientsSize(server, 0, 3000);
 
     const warnMatch = warnLines.find((l) => l.includes("4 missed pongs"));
     expect(warnMatch).toBeDefined();
@@ -170,7 +178,7 @@ describe("pong starvation — disconnect-reason logging", () => {
 
     ws.close(1000, "done");
     // Wait until server side has removed the client (close handler has fired)
-    await waitForClientsSize(server, 0, 2000);
+    await waitForClientsSize(server, 0, 3000);
 
     const infoMatch = infoLines.find((l) =>
       l.includes("Claude Code WebSocket closed"),
