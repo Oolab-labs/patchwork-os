@@ -27,6 +27,33 @@ export interface TrustMetadata {
   maintainer?: string;
 }
 
+/**
+ * Default-deny trust gate for the install-confirm dialog.
+ *
+ * Returns `false` (bypass the confirm dialog, allow one-click install)
+ * ONLY when the recipe is provably safe: it explicitly claims low risk
+ * AND explicitly disclaims both network and file access. Any missing /
+ * undefined field is treated as elevated → returns `true` (ask first).
+ *
+ * Rationale: the live marketplace registry carries NO trust metadata on
+ * any recipe today (`risk_level`/`network_access`/`file_access` are all
+ * absent). A permissive OR-chain over optional fields evaluates to
+ * "not elevated" for every live recipe, silently one-click-installing
+ * them. Failing closed on missing metadata is the safe default — a
+ * registry author who forgets to flag a file-writing recipe must not be
+ * able to grant users a silent install.
+ *
+ * Shared by the browse view (page.tsx) and the detail-page InstallPanel
+ * so there is exactly ONE definition of "needs confirmation".
+ */
+export function requiresElevatedConfirm(meta: TrustMetadata): boolean {
+  const provablySafe =
+    meta.risk_level === "low" &&
+    meta.network_access === false &&
+    meta.file_access === false;
+  return !provablySafe;
+}
+
 export interface RegistryRecipe extends TrustMetadata {
   name: string;
   version: string;

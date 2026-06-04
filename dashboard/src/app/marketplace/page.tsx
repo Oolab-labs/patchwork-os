@@ -15,6 +15,7 @@ import {
   type RegistryBundle,
   type RegistryData,
   type RegistryRecipe,
+  requiresElevatedConfirm,
   type RiskLevel,
   shortName,
 } from "@/lib/registry";
@@ -172,6 +173,26 @@ const FALLBACK_REGISTRY: RegistryData = {
 
 // ------------------------------------------------------------------ constants
 
+// Format FALLBACK_REGISTRY.updated_at as a plain YYYY-MM-DD for the
+// registry-unreachable banner. Falls back to the raw value if it isn't a
+// parseable date so the banner never shows "Invalid Date".
+function fallbackSnapshotDate(): string {
+  const raw = FALLBACK_REGISTRY.updated_at;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? raw : d.toISOString().slice(0, 10);
+}
+
+// Map known bridge install-error `code`s to clearer, actionable copy.
+// Falls through to the raw `error` string for unrecognised codes.
+const INSTALL_ERROR_MESSAGES: Record<string, string> = {
+  not_allowlisted:
+    "This recipe's source repo isn't on the bridge's install allowlist. Add it via PATCHWORK_RECIPE_REPO_ALLOWLIST and restart the bridge.",
+  host_not_allowlisted:
+    "This recipe's install host isn't allowed. Add it via CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS (default: github.com) and restart the bridge.",
+  bad_shape:
+    "The bridge rejected the install source as malformed. Expected `github:owner/repo[/path]@ref`.",
+};
+
 const PROVIDER_COLORS: Record<string, string> = {
   gmail: "#EA4335",
   slack: "#4A154B",
@@ -241,15 +262,13 @@ function RecipeCard({
 
   const isInstalled = installed || justInstalled;
 
-  // Risk-aware confirmation. Low-risk recipes install on a single click
-  // (preserves the existing one-click flow); medium/high or any recipe
-  // that requests network/file access opens a styled summary dialog so
-  // the operator sees what they're agreeing to before the bridge fetches it.
-  const elevated =
-    recipe.risk_level === "medium" ||
-    recipe.risk_level === "high" ||
-    recipe.network_access ||
-    recipe.file_access;
+  // Risk-aware confirmation (default-deny — see requiresElevatedConfirm).
+  // Only a recipe that EXPLICITLY claims low risk and disclaims network +
+  // file access installs on a single click; anything missing those flags
+  // (which is every live-registry recipe today) opens a styled summary
+  // dialog so the operator sees what they're agreeing to first. Shared
+  // with the detail-page InstallPanel via the same helper.
+  const elevated = requiresElevatedConfirm(recipe);
 
   async function runInstall() {
     setLoading(true);
@@ -665,10 +684,15 @@ export default function MarketplacePage() {
       } else {
         // Both bridge and GitHub failed — show the hardcoded fallback BUT
         // surface the failure so users know they're looking at stale,
-        // pre-seeded data rather than live registry contents.
+        // pre-seeded data rather than live registry contents. Include the
+        // FALLBACK_REGISTRY snapshot date so the staleness is concrete
+        // (a fixed ISO date the user can reason about) instead of a vague
+        // "built-in fallback".
         setRegistry(FALLBACK_REGISTRY.recipes);
         setBundles(registryBundles);
-        setLoadErr("registry unreachable — showing built-in fallback");
+        setLoadErr(
+          `registry unreachable — showing built-in fallback (snapshot ${fallbackSnapshotDate()})`,
+        );
       }
     }
 
@@ -729,6 +753,7 @@ export default function MarketplacePage() {
     let parsed: {
       ok?: boolean;
       error?: string;
+      code?: string;
       missingConnectors?: string[];
     } = {};
     try {
@@ -754,7 +779,13 @@ export default function MarketplacePage() {
           "Dashboard session expired. Log in and try again.",
         );
       }
-      throw new Error(parsed.error ?? `Error ${res.status}`);
+      // Bridge install errors carry a machine-readable `code` (see
+      // recipeRoutes install handler). Map the known ones to a clearer,
+      // actionable message before falling back to the raw `error` string
+      // — an operator who misconfigured the allowlist otherwise sees an
+      // opaque message with no hint about what to fix.
+      const coded = parsed.code ? INSTALL_ERROR_MESSAGES[parsed.code] : undefined;
+      throw new Error(coded ?? parsed.error ?? `Error ${res.status}`);
     }
 
     // Optimistic update so the card flips to "Installed" immediately.
