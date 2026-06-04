@@ -1,0 +1,9 @@
+{
+  "_README": "Ctx-family tools that MUST be registered by `registerAllTools` under the default config (`driver: \"none\"`, `fullMode: true`, no log args supplied). Enforced by ctxToolsDefaultConfig.test.ts. This is the #850 cross-layer-parity `Invariant 4 — Default-config availability` ratchet. RULES: (1) entries may only be REMOVED — never added casually — when a tool is intentionally retired from the default bridge; (2) a NEW ctx tool registered on the default config must be CONSCIOUSLY appended here, the test fails until it is; (3) an allowlisted tool that stops registering on the default config fails the build (this is the exact regression #850 Invariant 4 was created to prevent). The list can only shrink as tools are retired. Initial state (2026-06-04): the four tools that ctxToolsUnconditional.test.ts already locks in, plus the historical reverse-lookup tool `getCommitsForIssue` (which is part of the same family by behaviour even though it does not carry the `ctx` prefix).",
+  "ctxToolsRequiredOnDefaultConfig": [
+    "ctxQueryTraces",
+    "ctxGetTaskContext",
+    "ctxSaveTrace",
+    "getCommitsForIssue"
+  ]
+}
