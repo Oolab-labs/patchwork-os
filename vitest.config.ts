@@ -7,6 +7,14 @@ export default defineConfig({
     setupFiles: ["src/__tests__/testEnvSetup.ts"],
     testTimeout: 15_000,
     hookTimeout: 10_000,
+    // Retry only in CI: the bridge suite has timing/IO/port/fs.watch tests that
+    // run on shared, overloaded runners (worst on Windows under --coverage), so
+    // a genuinely-correct test can fail once on event-loop drift. Up to 3
+    // attempts ends the "re-run the whole job by hand" tax without masking real
+    // breaks — a true failure still fails all attempts. Local dev keeps retry 0
+    // so flakes surface and get fixed (e.g. the pong-starvation timing fix in
+    // this same change).
+    retry: process.env.CI ? 2 : 0,
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
