@@ -130,6 +130,44 @@ describe("POST /api/bridge/recipes/install — source validation", () => {
   });
 });
 
+describe("POST /api/bridge/recipes/install — content-type mirroring", () => {
+  it("mirrors an upstream text/html content-type instead of forcing JSON", async () => {
+    bridgeFetchMock.mockClear();
+    // Remote mode: a reverse proxy in front of the bridge returns an HTML
+    // error page. The proxy must NOT relabel it application/json — that
+    // makes the client silently fail to parse the (HTML) body.
+    bridgeFetchMock.mockResolvedValueOnce(
+      new Response("<html><body>502 Bad Gateway</body></html>", {
+        status: 502,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      }),
+    );
+    const res = await POST(
+      makeReq(
+        JSON.stringify({
+          source: "github:patchworkos/recipes/recipes/morning-brief",
+        }),
+      ),
+    );
+    expect(res.status).toBe(502);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(await res.text()).toContain("502 Bad Gateway");
+  });
+
+  it("still labels a JSON upstream body application/json", async () => {
+    bridgeFetchMock.mockClear();
+    const res = await POST(
+      makeReq(
+        JSON.stringify({
+          source: "github:patchworkos/recipes/recipes/morning-brief",
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/json");
+  });
+});
+
 describe("POST /api/bridge/recipes/install — CSRF gate", () => {
   it("rejects cross-site POST with 403", async () => {
     const req = new Request("https://dashboard.local/api/bridge/recipes/install", {
