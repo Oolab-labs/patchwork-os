@@ -304,6 +304,16 @@ export const FLAG_SCHEMA_LINT = "ui.schema-lint";
  */
 export const FLAG_REPAIR_AI = "recipe.repair-ai";
 
+/**
+ * Globally disable the per-step `allowPrivate: true` SSRF bypass in the
+ * recipe `http.post` tool. Default OFF (backward-compatible — recipes that
+ * set `allowPrivate: true` keep working). When an operator turns this ON
+ * (e.g. for a shared / multi-tenant bridge running untrusted marketplace
+ * recipes), the bypass is ignored and private/loopback hosts are blocked
+ * regardless of what the recipe requests.
+ */
+export const FLAG_BLOCK_RECIPE_ALLOW_PRIVATE = "block-recipe-allow-private";
+
 // Register built-in flags
 registerFlag({
   id: KILL_SWITCH_WRITES,
@@ -329,6 +339,15 @@ registerFlag({
     "Phase 2A: enable the /recipes/repair LLM-driven fix endpoint. Costs API tokens per call; gated by a per-session token bucket and prompt-injection sanitization.",
   defaultValue: false,
   category: "ui",
+  requiresOptIn: true,
+});
+
+registerFlag({
+  id: FLAG_BLOCK_RECIPE_ALLOW_PRIVATE,
+  description:
+    "Globally disable the per-step allowPrivate:true SSRF bypass in the recipe http.post tool. When on, private/loopback hosts are blocked even if a recipe sets allowPrivate:true.",
+  defaultValue: false,
+  category: "safety",
   requiresOptIn: true,
 });
 

@@ -73,6 +73,15 @@ describe("http.post — SSRF guard (lexical)", () => {
     expect(isPrivateHost("172.15.0.1")).toBe(false);
     expect(isPrivateHost("172.32.0.1")).toBe(false);
   });
+  it("rejects CGNAT (RFC 6598 100.64.0.0/10) — canonical-guard coverage", () => {
+    // The local lexical copy in http.ts missed 100.64.0.0/10; the canonical
+    // ssrfGuard covers it. Concrete address verified by reading both impls.
+    expect(isPrivateHost("100.64.0.1")).toBe(true);
+    expect(isPrivateHost("100.127.255.254")).toBe(true);
+    // outside the /10 stays public
+    expect(isPrivateHost("100.63.0.1")).toBe(false);
+    expect(isPrivateHost("100.128.0.1")).toBe(false);
+  });
 });
 
 describe("http.post — execute", () => {
@@ -134,5 +143,25 @@ describe("http.post — execute", () => {
     await expect(
       executeTool("http.post", makeCtx({ url: "not a url", body: "" })),
     ).rejects.toThrow(/invalid URL/);
+  });
+
+  it("blocks allowPrivate bypass when PATCHWORK_FLAG_BLOCK_RECIPE_ALLOW_PRIVATE is on", async () => {
+    vi.stubEnv("PATCHWORK_FLAG_BLOCK_RECIPE_ALLOW_PRIVATE", "true");
+    try {
+      await expect(
+        executeTool(
+          "http.post",
+          makeCtx({
+            url: "http://127.0.0.1:9000/x",
+            body: "x",
+            allowPrivate: true,
+          }),
+        ),
+      ).rejects.toThrow(/private\/loopback/);
+      // fetch must never be reached when the bypass is disabled
+      expect(mockUndiciFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
