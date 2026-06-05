@@ -2767,20 +2767,21 @@ export function buildChainedDeps(
     model?: string,
     driver?: string,
     mcpAccess?: boolean,
-  ): Promise<string> => {
-    // chainedRunner's AgentExecutor contract still returns a plain string —
-    // PR2b's token-budget consumer will plug in here as well, but for now
-    // we discard `.usage`.
-    const result = await _executeAgent(
+  ): Promise<AgentResult> => {
+    // Surface the FULL AgentResult (text + usage + servedBy) so the chained
+    // runner can reconcile real spend against the run budget — alignment with
+    // the flat path, which already reads `.usage`. (Previously this closure
+    // discarded everything but `.text`, leaving the chained path's budget
+    // unenforced — the S1 SECURITY finding.)
+    return _executeAgent(
       {
         prompt,
         model,
-        driver,
+        driver: driver === "api" ? "anthropic" : driver,
         ...(mcpAccess !== undefined && { mcpAccess }),
       },
       buildAgentExecutorDeps(stepDeps, runnerDeps, claudeCodeFnOverride),
     );
-    return result.text;
   };
 
   // ---------------------------------------------------------------------
