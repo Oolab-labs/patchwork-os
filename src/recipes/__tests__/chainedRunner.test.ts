@@ -929,3 +929,131 @@ describe("expandParallelSteps", () => {
     );
   });
 });
+
+describe("runChainedRecipe — budget enforcement (S1 alignment)", () => {
+  // A deterministic agent that reports usage so RunBudget reconciles real
+  // spend. Each call returns a fixed token usage stamped as an API driver.
+  function meteredAgentDeps(perCallTokens: number) {
+    const calls: string[] = [];
+    const executeAgent = vi.fn(async (prompt: string) => {
+      calls.push(prompt);
+      return {
+        text: `done:${calls.length}`,
+        usage: {
+          inputTokens: perCallTokens / 2,
+          outputTokens: perCallTokens / 2,
+        },
+        servedBy: { driver: "anthropic", model: "test-model" },
+      };
+    });
+    const deps: ExecutionDeps = {
+      executeTool: vi.fn().mockResolvedValue({ ok: true }),
+      executeAgent,
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    return { deps, executeAgent, calls };
+  }
+
+  it("HALTS further agent dispatch once cumulative spend exceeds tokensMax", async () => {
+    // tokensMax=1000, each agent call burns 600 tokens.
+    //   a: admit ok (total 0) → dispatch → reconcile 600
+    //   b: admit ok (600 < 1000) → dispatch → reconcile 1200 (breached)
+    //   c: admit DENIED (1200 >= 1000) → no dispatch
+    const { deps, executeAgent } = meteredAgentDeps(600);
+    const recipe: ChainedRecipe = {
+      name: "budget-chain",
+      budget: { tokensMax: 1000 },
+      steps: [
+        { id: "a", agent: { prompt: "step a" } },
+        { id: "b", agent: { prompt: "step b" }, awaits: ["a"] },
+        { id: "c", agent: { prompt: "step c" }, awaits: ["b"] },
+      ],
+    };
+
+    const result = await runChainedRecipe(recipe, baseOptions, deps);
+
+    // Only two agent dispatches happened — the third was admission-denied.
+    expect(executeAgent).toHaveBeenCalledTimes(2);
+    // The run failed because step c halted on the budget.
+    expect(result.success).toBe(false);
+    const stepC = result.stepResults.get("c");
+    expect(stepC?.success).toBe(false);
+    expect(stepC?.error?.message).toMatch(/budget_exceeded/);
+  });
+
+  it("admits all dispatches when cumulative spend stays under tokensMax", async () => {
+    // 3 calls * 100 tokens = 300 < tokensMax 10000 → all run.
+    const { deps, executeAgent } = meteredAgentDeps(100);
+    const recipe: ChainedRecipe = {
+      name: "budget-chain-ok",
+      budget: { tokensMax: 10000 },
+      steps: [
+        { id: "a", agent: { prompt: "a" } },
+        { id: "b", agent: { prompt: "b" }, awaits: ["a"] },
+        { id: "c", agent: { prompt: "c" }, awaits: ["b"] },
+      ],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, deps);
+    expect(executeAgent).toHaveBeenCalledTimes(3);
+    expect(result.success).toBe(true);
+  });
+
+  it("records the budget breach + spend in the run log (runLogDir path)", async () => {
+    const { mkdtempSync, readFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "chained-budget-"));
+
+    const { deps } = meteredAgentDeps(600);
+    const recipe: ChainedRecipe = {
+      name: "budget-runlog",
+      budget: { tokensMax: 1000 },
+      steps: [
+        { id: "a", agent: { prompt: "a" } },
+        { id: "b", agent: { prompt: "b" }, awaits: ["a"] },
+        { id: "c", agent: { prompt: "c" }, awaits: ["b"] },
+      ],
+    };
+
+    const result = await runChainedRecipe(
+      recipe,
+      { ...baseOptions, runLogDir: dir },
+      deps,
+    );
+    expect(result.success).toBe(false);
+
+    const lines = readFileSync(join(dir, "runs.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+    const lastLine = lines[lines.length - 1] ?? "";
+    const run = JSON.parse(lastLine) as {
+      status: string;
+      stepResults: Array<{ id: string; status: string; haltReason?: string }>;
+    };
+    expect(run.status).toBe("error");
+    const cRow = run.stepResults.find((s) => s.id === "c");
+    expect(cRow?.status).toBe("error");
+    // haltReason carries the budget breach so the dashboard pill categorises it.
+    expect(cRow?.haltReason).toMatch(/budget/i);
+  });
+
+  it("reconcile is fed REAL usage — no breach when usage is small enough", async () => {
+    // Same step count as the halting test but tiny per-call usage proves the
+    // budget reconciles the ACTUAL reported usage (not a fixed guess): with
+    // 1-token calls the 1000 cap is never reached.
+    const { deps, executeAgent } = meteredAgentDeps(2);
+    const recipe: ChainedRecipe = {
+      name: "budget-real-usage",
+      budget: { tokensMax: 1000 },
+      steps: [
+        { id: "a", agent: { prompt: "a" } },
+        { id: "b", agent: { prompt: "b" }, awaits: ["a"] },
+        { id: "c", agent: { prompt: "c" }, awaits: ["b"] },
+      ],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, deps);
+    expect(executeAgent).toHaveBeenCalledTimes(3);
+    expect(result.success).toBe(true);
+  });
+});

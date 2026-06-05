@@ -2713,7 +2713,7 @@ describe("buildChainedDeps executeAgent", () => {
     const deps = buildChainedDeps({ ...noop(), claudeCodeFn, testMode: true });
     const result = await deps.executeAgent("hello", undefined, "claude-code");
     expect(claudeCodeFn).toHaveBeenCalledWith("hello", undefined);
-    expect(result).toBe("cc result");
+    expect((result as { text: string }).text).toBe("cc result");
   });
 
   it("routes anthropic driver to claudeFn", async () => {
@@ -2725,14 +2725,14 @@ describe("buildChainedDeps executeAgent", () => {
       "anthropic",
     );
     expect(claudeFn).toHaveBeenCalledWith("hello", "claude-haiku-4-5-20251001");
-    expect(result).toBe("api result");
+    expect((result as { text: string }).text).toBe("api result");
   });
 
   it("routes claude driver to claudeFn", async () => {
     const claudeFn = vi.fn().mockResolvedValue("api result 2");
     const deps = buildChainedDeps({ ...noop(), claudeFn, testMode: true });
     const result = await deps.executeAgent("hi", undefined, "claude");
-    expect(result).toBe("api result 2");
+    expect((result as { text: string }).text).toBe("api result 2");
   });
 
   it("routes openai driver to providerDriverFn", async () => {
@@ -2744,7 +2744,7 @@ describe("buildChainedDeps executeAgent", () => {
     });
     const result = await deps.executeAgent("prompt", "gpt-4", "openai");
     expect(providerDriverFn).toHaveBeenCalledWith("openai", "prompt", "gpt-4");
-    expect(result).toBe("openai");
+    expect((result as { text: string }).text).toBe("openai");
   });
 
   it("uses claudeCodeFnOverride when no driver specified and no API key", async () => {
@@ -2757,8 +2757,8 @@ describe("buildChainedDeps executeAgent", () => {
     delete process.env.ANTHROPIC_API_KEY;
     try {
       const result = await deps.executeAgent("q", undefined, undefined);
-      // Either claudeFn or override was called — result is a string
-      expect(typeof result).toBe("string");
+      // Either claudeFn or override was called — closure now returns AgentResult
+      expect(typeof (result as { text: string }).text).toBe("string");
     } finally {
       if (savedKey !== undefined) process.env.ANTHROPIC_API_KEY = savedKey;
     }

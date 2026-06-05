@@ -7,6 +7,7 @@
  *   - Dry-run mode
  */
 
+import type { AgentResult } from "./agentExecutor.js";
 import type { ExecutionOptions, StepExecutor } from "./dependencyGraph.js";
 import {
   buildDependencyGraph,
@@ -27,18 +28,27 @@ import {
 } from "./nestedRecipeStep.js";
 import type { OutputRegistry } from "./outputRegistry.js";
 import { createOutputRegistry } from "./outputRegistry.js";
+import type { RouteCandidate } from "./pricing/costRouter.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
-import type { ErrorPolicy } from "./schema.js";
+import { RunBudget } from "./runBudget.js";
+import type { BudgetPolicy, ErrorPolicy } from "./schema.js";
 import { captureForRunlog, detectSilentFail } from "./stepObservation.js";
 import type { TemplateContext, TemplateError } from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
 import type { StepExpect } from "./yamlRunner.js";
-import { evaluateStepExpect } from "./yamlRunner.js";
+import { evaluateStepExpect, resolveRouting } from "./yamlRunner.js";
 
 export interface ChainedStep {
   id: string;
   tool?: string;
-  agent?: { prompt: string; model?: string; driver?: string };
+  agent?: {
+    prompt: string;
+    model?: string;
+    driver?: string;
+    /** Cost-aware routing fallbacks (Phase 4) — mirrors the flat path. */
+    downshift?: RouteCandidate[];
+    mcpAccess?: boolean;
+  };
   recipe?: NestedRecipeConfig["recipe"];
   chain?: NestedRecipeConfig["recipe"];
   /** Sugar: run these steps concurrently. Expanded to flat steps at runtime. */
@@ -67,6 +77,14 @@ export interface ChainedRecipe {
   /** Plugin specs (npm package name or local path) to load before running steps. */
   servers?: string[];
   on_error?: ErrorPolicy;
+  /**
+   * Per-recipe token / USD budget. Mirrors the flat (yamlRunner) path: one
+   * `RunBudget` is constructed per top-level run, agent steps consult it
+   * before dispatch (admission) and reconcile actual consumption after. Absent
+   * → no enforcement, no overhead. SECURITY: without this thread a chained
+   * recipe ran UNBOUNDED API calls (S1 finding).
+   */
+  budget?: BudgetPolicy;
 }
 
 export interface RunOptions {
@@ -121,6 +139,13 @@ export interface RunOptions {
    * run log entry so the dashboard can render the causal chain.
    */
   parentSeq?: number;
+  /**
+   * Shared per-run budget. Constructed once by the top-level
+   * `runChainedRecipe` from `recipe.budget` and threaded into nested recipe
+   * calls so the whole tree shares one cap (mirrors the flat path's single
+   * `RunBudget` per run). Internal — callers don't set this.
+   */
+  budget?: RunBudget;
 }
 
 export interface StepExecutionContext {
@@ -129,6 +154,8 @@ export interface StepExecutionContext {
   options: RunOptions;
   recipe: ChainedRecipe;
   depth: number;
+  /** Shared per-run budget (admit before dispatch, reconcile after). */
+  budget?: RunBudget;
 }
 
 export type ToolExecutor = (
@@ -136,11 +163,22 @@ export type ToolExecutor = (
   params: Record<string, unknown>,
 ) => Promise<unknown>;
 
+/**
+ * Agent dispatch closure. Returns either a bare string (legacy / simple test
+ * mocks) or an `AgentResult` carrying `usage` + `servedBy` so the chained
+ * runner can reconcile real spend against the run budget (alignment with the
+ * flat path — previously the yamlRunner closure discarded `.usage`).
+ */
 export type AgentExecutor = (
   prompt: string,
   model?: string,
   driver?: string,
-) => Promise<string>;
+) => Promise<string | AgentResult>;
+
+/** Normalise the union AgentExecutor return into an AgentResult. */
+function toChainedAgentResult(v: string | AgentResult): AgentResult {
+  return typeof v === "string" ? { text: v } : v;
+}
 
 export interface ExecutionDeps {
   executeTool: ToolExecutor;
@@ -459,6 +497,7 @@ export async function executeChainedStep(
         maxDepth: options.maxDepth,
         sourcePath: nestedRecipe.sourcePath,
         env: { ...options.env, ...resolvedVars }, // Merge resolved vars into env
+        budget: ctx.budget, // share the single per-run budget across the tree
       };
 
       const childResult = await runChainedRecipe(
@@ -482,11 +521,59 @@ export async function executeChainedStep(
     } else if (step.agent) {
       // Agent step
       const prompt = (resolved.agentPrompt as string) ?? step.agent.prompt;
-      let result: unknown = await deps.executeAgent(
-        prompt,
-        step.agent.model,
-        step.agent.driver,
+
+      // Budget admission BEFORE dispatch — mirrors the flat path. A denied
+      // admission halts this step (and, via the dependency graph, its
+      // dependents) with a `budget_exceeded`-categorised reason. SECURITY:
+      // without this the chained path made UNBOUNDED API calls.
+      const budget = ctx.budget;
+      if (budget) {
+        const admission = budget.admit();
+        if (!admission.admitted) {
+          return {
+            success: false,
+            error:
+              admission.reason ?? "Run exceeded its budget — budget_exceeded.",
+            resolvedParams: resolved,
+          };
+        }
+      }
+
+      // Phase 4: opt-in cost-aware routing. No-op when the step has no
+      // `downshift` list or no USD cap is set on the run budget.
+      let dispatchDriver = step.agent.driver;
+      let dispatchModel = step.agent.model;
+      if (budget && step.agent.downshift?.length) {
+        const routed = resolveRouting(
+          { driver: step.agent.driver, model: step.agent.model },
+          step.agent.downshift,
+          prompt,
+          budget,
+        );
+        dispatchDriver = routed.driver === "api" ? "anthropic" : routed.driver;
+        dispatchModel = routed.model;
+      }
+
+      const agentReturn = toChainedAgentResult(
+        await deps.executeAgent(prompt, dispatchModel, dispatchDriver),
       );
+
+      // Reconcile REAL usage after dispatch (the closure now surfaces it
+      // instead of discarding it). Subscription drivers report no usage →
+      // RunBudget fails open with a one-time warning.
+      if (budget) {
+        budget.reconcile(
+          agentReturn.servedBy?.driver ?? dispatchDriver ?? "auto",
+          agentReturn.usage,
+          agentReturn.servedBy?.model ?? dispatchModel,
+          {
+            inputChars: prompt.length,
+            outputChars: agentReturn.text.length,
+          },
+        );
+      }
+
+      let result: unknown = agentReturn.text;
       // Detect failure signals returned as sentinel strings (mirrors flat runner)
       if (
         typeof result === "string" &&
@@ -731,6 +818,13 @@ export async function runChainedRecipe(
 
   const registry = existingRegistry ?? createOutputRegistry();
 
+  // Per-run budget: build once at the top level from `recipe.budget`; nested
+  // recipe calls inherit the SAME instance via `options.budget` so the whole
+  // tree shares one cap (mirrors the flat path's single RunBudget per run).
+  // Absent `recipe.budget` → an empty RunBudget whose admit/reconcile are
+  // no-ops, so there's no behaviour change for budget-less recipes.
+  const budget = options.budget ?? new RunBudget(recipe.budget);
+
   // Expand parallel: sugar into flat steps before building the dependency graph.
   const steps = expandParallelSteps(recipe.steps);
 
@@ -956,6 +1050,7 @@ export async function runChainedRecipe(
       options,
       recipe,
       depth,
+      budget,
     };
 
     const retryCount = step.retry ?? recipe.on_error?.retry ?? 0;
@@ -1138,6 +1233,9 @@ export async function runChainedRecipe(
         )
         .join("\n")
         .slice(0, 2000);
+      // Budget warnings/spend — record like the flat path so chained runs
+      // surface spend + fail-open notices on the same dashboard surfaces.
+      const budgetWarnings = budget.finalWarnings();
       if (options.runLog && runSeq !== undefined) {
         options.runLog.completeRun(runSeq, {
           status: result.success ? "done" : "error",
@@ -1145,6 +1243,7 @@ export async function runChainedRecipe(
           durationMs: doneAt - runStartedAt,
           stepResults: stepResultsList,
           outputTail,
+          ...(budgetWarnings.length > 0 && { budgetWarnings }),
           ...(result.errorMessage !== undefined && {
             errorMessage: result.errorMessage,
           }),
@@ -1181,6 +1280,7 @@ export async function runChainedRecipe(
           outputTail,
           errorMessage: result.errorMessage,
           stepResults: stepResultsList,
+          ...(budgetWarnings.length > 0 && { budgetWarnings }),
         });
       }
     } catch {
