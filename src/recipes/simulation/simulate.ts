@@ -17,6 +17,7 @@ import {
   classifyStepSideEffect,
   emptySideEffectCounts,
 } from "./sideEffects.js";
+import type { MockedRunResult } from "./simulateMockedRun.js";
 import {
   type ApprovalProjection,
   type BranchProjection,
@@ -224,6 +225,109 @@ export function simulateFromPlan(
     cost,
     branches,
     lint: plan.lint,
+    notes,
+  };
+}
+
+/**
+ * Extract the step ids a `when:` condition references via `{{ ... }}`
+ * placeholders. Covers the common dotted forms the chained runner exposes
+ * (`steps.<id>.data`, `outputs.<id>`, or a bare `<id>`). A coarse regex is
+ * deliberate — we only need to know WHICH step ids the branch depends on so we
+ * can decide whether the branch is determinable from history.
+ */
+export function extractReferencedStepIds(condition: string): Set<string> {
+  const ids = new Set<string>();
+  const placeholder = /\{\{\s*([^}]+?)\s*\}\}/g;
+  let m: RegExpExecArray | null = placeholder.exec(condition);
+  while (m !== null) {
+    const expr = (m[1] ?? "").trim();
+    // First identifier-ish token of the expression.
+    const head = /^[A-Za-z_$][\w$]*/.exec(expr)?.[0];
+    if (head) {
+      if ((head === "steps" || head === "outputs") && expr.includes(".")) {
+        // steps.<id>.data | outputs.<id>
+        const seg = /^(?:steps|outputs)\.([A-Za-z_$][\w$]*)/.exec(expr)?.[1];
+        if (seg) ids.add(seg);
+      } else if (head !== "env") {
+        // bare step id (env keys are not steps)
+        ids.add(head);
+      }
+    }
+    m = placeholder.exec(condition);
+  }
+  return ids;
+}
+
+/**
+ * P2 — compose the mocked report: take the static report and OVERLAY the
+ * results of the trace-seeded mocked sandbox run.
+ *
+ *   - `fidelity:"mocked"` + `sampleRuns`.
+ *   - each step's `mockedFrom` ("history" | "synthesized").
+ *   - `branches[].outcome` recomputed: `"taken"`/`"skipped"` when EVERY step id
+ *     the `when:` references is in `historyStepIds` (determinable from real
+ *     data), else `"undetermined"`.
+ *
+ * Risk / side-effect / cost / approvals sections are carried over unchanged
+ * from the static report. `gatedOnRecipeSteps` stays false (P0/P4 truth).
+ */
+export function simulateMockedFromPlan(
+  plan: RecipeDryRunPlan,
+  mocked: MockedRunResult,
+): RecipeSimulationReport {
+  const base = simulateFromPlan(plan);
+
+  const steps: SimulationStep[] = base.steps.map((s) => {
+    const state = mocked.stepData.get(s.id);
+    const mockedFrom: "history" | "synthesized" =
+      state?.mockedFrom ??
+      (mocked.historyStepIds.has(s.id) ? "history" : "synthesized");
+    return { ...s, mockedFrom };
+  });
+
+  const branches: BranchProjection[] = base.branches.map((b) => {
+    const refs = extractReferencedStepIds(b.condition);
+    const determinable =
+      refs.size > 0 && [...refs].every((id) => mocked.historyStepIds.has(id));
+    if (!determinable) {
+      return {
+        ...b,
+        outcome: "undetermined" as const,
+        reason:
+          refs.size === 0
+            ? "Condition references no resolvable step output — left undetermined."
+            : "Condition references at least one step with no run history — outcome cannot be resolved from real data.",
+      };
+    }
+    const state = mocked.stepData.get(b.stepId);
+    const outcome: "taken" | "skipped" = state?.skipped ? "skipped" : "taken";
+    return {
+      ...b,
+      outcome,
+      reason: `Resolved from history-backed upstream output(s): ${[...refs].join(", ")}.`,
+    };
+  });
+
+  const notes: string[] = [
+    `Mocked fidelity: downstream templates and conditions were resolved by driving the chained runner with ${mocked.sampleRuns} prior run(s) of history. No step executed for real (stubbed deps, no persistence).`,
+    "Steps without run history were fed synthesized placeholders; their downstream effects are approximate.",
+    "Approval projection shows the tier that WOULD apply if recipe steps were gated — they are NOT gated on the execution path today (gatedOnRecipeSteps=false).",
+    "Cost remains a static estimate at this phase; USD is not projected (P3).",
+  ];
+  if (base.summary.unresolvedSteps > 0) {
+    notes.push(
+      `${base.summary.unresolvedSteps} step(s) reference tools unknown to the registry — their side effects could not be classified.`,
+    );
+  }
+
+  return {
+    ...base,
+    schemaVersion: SIMULATION_SCHEMA_VERSION,
+    fidelity: "mocked",
+    sampleRuns: mocked.sampleRuns,
+    steps,
+    branches,
     notes,
   };
 }

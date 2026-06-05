@@ -452,9 +452,12 @@ describe("schemaGenerator", () => {
         "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/simulation-report.v1.json",
       );
       const properties = schema.properties as Record<string, unknown>;
-      expect(properties.schemaVersion).toMatchObject({ const: 1 });
+      expect(properties.schemaVersion).toMatchObject({ const: 2 });
       expect(properties.kind).toMatchObject({ const: "what-if-preview" });
       expect(properties.gatedOnRecipeSteps).toMatchObject({ type: "boolean" });
+      expect(properties.fidelity).toMatchObject({
+        enum: ["static", "mocked"],
+      });
     });
 
     it("validates a real simulateFromPlan output via Ajv", () => {

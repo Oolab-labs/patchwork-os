@@ -262,10 +262,13 @@ export class RecipeOrchestration {
 
     server.simulateFn = async (recipeName: string) => {
       const { runRecipeSimulate } = await import("./commands/recipe.js");
-      return (await runRecipeSimulate(recipeName)) as unknown as Record<
-        string,
-        unknown
-      >;
+      // P2: pass the long-lived run log so chained recipes WITH history get a
+      // higher-fidelity "mocked" report (zero real I/O — the runner is driven
+      // with history-backed mockedOutputs + stubbed deps + no persistence).
+      // Flat recipes / no-history recipes fall back to the static report.
+      return (await runRecipeSimulate(recipeName, {
+        ...(this.deps.recipeRunLog ? { runLog: this.deps.recipeRunLog } : {}),
+      })) as unknown as Record<string, unknown>;
     };
 
     // VD-4 mocked replay: load the original run, re-parse its recipe

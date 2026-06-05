@@ -3012,8 +3012,12 @@ if (process.argv[2] === "recipe" && process.argv[3] === "simulate") {
       const out = process.stdout;
       const mark = (tier: string): string =>
         tier === "high" ? "●" : tier === "medium" ? "◐" : "○";
+      const fidelityLabel =
+        report.fidelity === "mocked"
+          ? `mocked fidelity, ${report.sampleRuns ?? 0} prior run(s)`
+          : `${report.fidelity} fidelity`;
       out.write(
-        `\n  What-If Preview — ${report.recipe} (${report.topology}, ${report.fidelity} fidelity)\n`,
+        `\n  What-If Preview — ${report.recipe} (${report.topology}, ${fidelityLabel})\n`,
       );
       out.write(
         `  Trigger: ${report.triggerType} · ${report.summary.totalSteps} step(s)\n\n`,
@@ -3054,9 +3058,29 @@ if (process.argv[2] === "recipe" && process.argv[3] === "simulate") {
         }\n`,
       );
       if (report.branches.length > 0) {
-        out.write(
-          `  Branches: ${report.branches.length} conditional — undetermined (resolve in a later sandbox phase)\n`,
-        );
+        if (report.fidelity === "mocked") {
+          const taken = report.branches.filter(
+            (b) => b.outcome === "taken",
+          ).length;
+          const skipped = report.branches.filter(
+            (b) => b.outcome === "skipped",
+          ).length;
+          const undet = report.branches.filter(
+            (b) => b.outcome === "undetermined",
+          ).length;
+          out.write(
+            `  Branches: ${report.branches.length} conditional — ${taken} taken, ${skipped} skipped, ${undet} undetermined\n`,
+          );
+          for (const b of report.branches) {
+            out.write(
+              `    ${b.outcome.padEnd(12)} ${b.stepId}  ${b.condition}\n`,
+            );
+          }
+        } else {
+          out.write(
+            `  Branches: ${report.branches.length} conditional — undetermined (resolve in a later sandbox phase)\n`,
+          );
+        }
       }
       if (report.lint.errors.length > 0 || report.lint.warnings.length > 0) {
         out.write(

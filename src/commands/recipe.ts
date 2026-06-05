@@ -34,7 +34,11 @@ import {
 } from "../recipes/migrations/index.js";
 import { tryResolveRecipePath } from "../recipes/resolveRecipePath.js";
 import { generateSchemaSet, writeSchemas } from "../recipes/schemaGenerator.js";
-import { simulateFromPlan } from "../recipes/simulation/simulate.js";
+import {
+  simulateFromPlan,
+  simulateMockedFromPlan,
+} from "../recipes/simulation/simulate.js";
+import { simulateMockedRun } from "../recipes/simulation/simulateMockedRun.js";
 import type { RecipeSimulationReport } from "../recipes/simulation/types.js";
 import {
   getTool,
@@ -61,6 +65,7 @@ import {
   type YamlStep,
 } from "../recipes/yamlRunner.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
+import type { RecipeRunLog } from "../runLog.js";
 import { findInstalledRecipeEntrypoint } from "./recipeInstall.js";
 
 const RECIPES_DIR = join(os.homedir(), ".patchwork", "recipes");
@@ -1663,9 +1668,32 @@ export async function runRecipeDryPlan(
  */
 export async function runRecipeSimulate(
   recipeRef: string,
-  options: RunRecipeOptions = {},
+  options: RunRecipeOptions & { runLog?: RecipeRunLog } = {},
 ): Promise<RecipeSimulationReport> {
   const plan = await runRecipeDryPlan(recipeRef, options);
+
+  // P2 mocked sandbox — ONLY for chained recipes WITH run history and a
+  // provided runLog. Flat recipes ALWAYS stay static (hard guard: the runner
+  // is never driven for a flat recipe). Callers with no runLog (CLI) stay
+  // static too.
+  if (plan.triggerType === "chained" && options.runLog) {
+    try {
+      const recipePath = resolveRecipePath(recipeRef);
+      const recipe = loadYamlRecipe(recipePath);
+      const recipeToPlan = options.step
+        ? { ...recipe, steps: [selectRecipeStep(recipe, options.step).step] }
+        : recipe;
+      const chainedRecipe =
+        recipeToPlan as unknown as import("../recipes/chainedRunner.js").ChainedRecipe;
+      const mocked = await simulateMockedRun(chainedRecipe, options.runLog);
+      if (mocked.sampleRuns > 0) {
+        return simulateMockedFromPlan(plan, mocked);
+      }
+    } catch {
+      // Fail-soft: fall through to the static report.
+    }
+  }
+
   return simulateFromPlan(plan);
 }
 

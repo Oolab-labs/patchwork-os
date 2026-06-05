@@ -19,8 +19,15 @@
  * Later phases bump `fidelity` ("mocked" | "hybrid") and `schemaVersion`.
  */
 
-/** Stable schema version for consumers; bump on breaking shape changes. */
-export const SIMULATION_SCHEMA_VERSION = 1;
+/**
+ * Stable schema version for consumers; bump on breaking shape changes.
+ *
+ * v2 (P2 mocked sandbox): adds `fidelity:"mocked"`, `SimulationStep.mockedFrom`,
+ * and the `taken`/`skipped` branch outcomes (alongside the existing
+ * `undetermined`). All additions are additive/back-compatible — a static report
+ * is still a valid v2 report.
+ */
+export const SIMULATION_SCHEMA_VERSION = 2;
 
 export type RiskTier = "low" | "medium" | "high";
 
@@ -60,6 +67,14 @@ export interface SimulationStep {
   sideEffect: SideEffectKind;
   isWrite: boolean;
   isConnector: boolean;
+  /**
+   * P2 mocked fidelity only. Present when the report is `fidelity:"mocked"`:
+   * `"history"` → this step's output was taken from a real prior run;
+   * `"synthesized"` → no history existed, so the mocked sandbox fed the step a
+   * synthesized placeholder (still executing nothing for real). Absent at
+   * static fidelity.
+   */
+  mockedFrom?: "history" | "synthesized";
 }
 
 /** Per-step approval projection — "what WOULD gate, if recipe steps were gated". */
@@ -72,12 +87,17 @@ export interface ApprovalProjection {
   reason: string;
 }
 
-/** A conditional branch the engine refuses to resolve statically. */
+/** A conditional branch surfaced by the engine. */
 export interface BranchProjection {
   stepId: string;
   condition: string;
-  /** Always "undetermined" at static fidelity — sentinels would lie. */
-  outcome: "undetermined";
+  /**
+   * At static fidelity always `"undetermined"` — sentinels would lie.
+   * At mocked fidelity (P2): `"taken"` / `"skipped"` when every step id the
+   * `when:` references has a real historical value (so the condition resolves
+   * realistically), else `"undetermined"`.
+   */
+  outcome: "taken" | "skipped" | "undetermined";
   reason: string;
 }
 
@@ -133,8 +153,19 @@ export interface RecipeSimulationReport {
   triggerType: string;
   /** ISO-8601 generation timestamp. */
   generatedAt: string;
-  /** Simulation fidelity. P0 is always "static". */
-  fidelity: "static";
+  /**
+   * Simulation fidelity. `"static"` (P0): pure transform of the dry-run plan,
+   * nothing executed. `"mocked"` (P2): a chained recipe WITH run history driven
+   * through the real chained runner with history-backed `mockedOutputs` +
+   * fully-stubbed deps — still zero real I/O, but downstream templates and
+   * `when:` branches resolve realistically.
+   */
+  fidelity: "static" | "mocked";
+  /**
+   * P2 mocked fidelity only — number of prior runs sampled to synthesize the
+   * mocked outputs. Absent at static fidelity.
+   */
+  sampleRuns?: number;
   /** "chained" recipes have a real DAG; "flat" recipes are a linear list. */
   topology: "chained" | "flat";
   /**
