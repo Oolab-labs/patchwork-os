@@ -14,6 +14,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // airtable.list_records
@@ -92,7 +93,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getAirtableConnector } = await import(
       "../../connectors/airtable.js"
     );
@@ -122,7 +123,7 @@ registerTool({
       },
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -163,7 +164,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getAirtableConnector } = await import(
       "../../connectors/airtable.js"
     );
@@ -174,7 +175,7 @@ registerTool({
       params.recordId as string,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -216,7 +217,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getAirtableConnector } = await import(
       "../../connectors/airtable.js"
     );
@@ -227,7 +228,7 @@ registerTool({
       (params.fields as Record<string, unknown>) ?? {},
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -264,12 +265,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async () => {
+  execute: wrapConnectorExecute(async () => {
     const { getAirtableConnector } = await import(
       "../../connectors/airtable.js"
     );
     const connector = getAirtableConnector();
     const result = await connector.listBases();
     return JSON.stringify(result);
-  },
+  }),
 });

@@ -9,6 +9,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // circleci.list_pipelines
@@ -54,7 +55,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getCircleCIConnector } = await import(
       "../../connectors/circleci.js"
     );
@@ -64,7 +65,7 @@ registerTool({
       typeof params.branch === "string" ? params.branch : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -114,7 +115,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getCircleCIConnector } = await import(
       "../../connectors/circleci.js"
     );
@@ -131,7 +132,7 @@ registerTool({
       },
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -170,14 +171,14 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getCircleCIConnector } = await import(
       "../../connectors/circleci.js"
     );
     const connector = getCircleCIConnector();
     const result = await connector.getWorkflow(params.id as string);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -222,7 +223,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getCircleCIConnector } = await import(
       "../../connectors/circleci.js"
     );
@@ -232,5 +233,5 @@ registerTool({
       params.jobNumber as number,
     );
     return JSON.stringify(result);
-  },
+  }),
 });

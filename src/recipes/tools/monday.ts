@@ -21,6 +21,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // monday.list_boards
@@ -66,12 +67,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { listBoards } = await import("../../connectors/monday.js");
     const limit = typeof params.limit === "number" ? params.limit : undefined;
     const boards = await listBoards(limit);
     return JSON.stringify(boards);
-  },
+  }),
 });
 
 // ============================================================================
@@ -125,14 +126,14 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { listItems } = await import("../../connectors/monday.js");
     const limit = typeof params.limit === "number" ? params.limit : undefined;
     const cursor =
       typeof params.cursor === "string" ? params.cursor : undefined;
     const page = await listItems(params.boardId as string, limit, cursor);
     return JSON.stringify(page);
-  },
+  }),
 });
 
 // ============================================================================
@@ -196,11 +197,11 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getItem } = await import("../../connectors/monday.js");
     const item = await getItem(params.itemId as string);
     return JSON.stringify(item);
-  },
+  }),
 });
 
 // ============================================================================
@@ -246,7 +247,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { createItem } = await import("../../connectors/monday.js");
     const columnValues =
       typeof params.columnValues === "string" ? params.columnValues : undefined;
@@ -257,5 +258,5 @@ registerTool({
       columnValues,
     );
     return JSON.stringify(created);
-  },
+  }),
 });

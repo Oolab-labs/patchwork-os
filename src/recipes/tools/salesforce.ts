@@ -15,6 +15,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // salesforce.query  (SOQL — read)
@@ -58,14 +59,14 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { query } = await import("../../connectors/salesforce.js");
     const result = await query(
       params.soql as string,
       typeof params.limit === "number" ? { limit: params.limit } : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -102,11 +103,11 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { searchSosl } = await import("../../connectors/salesforce.js");
     const result = await searchSosl(params.sosl as string);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -142,14 +143,14 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getObject } = await import("../../connectors/salesforce.js");
     const result = await getObject(
       params.object_name as string,
       params.record_id as string,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -191,7 +192,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { createRecord } = await import("../../connectors/salesforce.js");
     const fields =
       params.fields && typeof params.fields === "object"
@@ -199,5 +200,5 @@ registerTool({
         : {};
     const result = await createRecord(params.object_name as string, fields);
     return JSON.stringify(result);
-  },
+  }),
 });

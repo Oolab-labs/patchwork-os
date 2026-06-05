@@ -7,6 +7,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // resend.send_email  (write-gated)
@@ -56,7 +57,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getResendConnector } = await import("../../connectors/resend.js");
     const connector = getResendConnector();
     const result = await connector.sendEmail({
@@ -71,7 +72,7 @@ registerTool({
           : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -107,7 +108,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getResendConnector } = await import("../../connectors/resend.js");
     const connector = getResendConnector();
     const result = await connector.listEmails({
@@ -115,7 +116,7 @@ registerTool({
       page: typeof params.page === "number" ? params.page : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -151,10 +152,10 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getResendConnector } = await import("../../connectors/resend.js");
     const connector = getResendConnector();
     const result = await connector.getEmail(params.id as string);
     return JSON.stringify(result);
-  },
+  }),
 });

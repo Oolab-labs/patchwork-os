@@ -5,6 +5,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // stripe.listCharges
@@ -45,7 +46,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getStripeConnector } = await import("../../connectors/stripe.js");
     const connector = getStripeConnector();
     const result = await connector.listCharges({
@@ -55,7 +56,7 @@ registerTool({
       status: typeof params.status === "string" ? params.status : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -86,12 +87,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getStripeConnector } = await import("../../connectors/stripe.js");
     const connector = getStripeConnector();
     const result = await connector.getCharge(params.chargeId as string);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -128,7 +129,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getStripeConnector } = await import("../../connectors/stripe.js");
     const connector = getStripeConnector();
     const result = await connector.listCustomers({
@@ -136,7 +137,7 @@ registerTool({
       email: typeof params.email === "string" ? params.email : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -170,12 +171,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getStripeConnector } = await import("../../connectors/stripe.js");
     const connector = getStripeConnector();
     const result = await connector.getCustomer(params.customerId as string);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -219,7 +220,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getStripeConnector } = await import("../../connectors/stripe.js");
     const connector = getStripeConnector();
     const result = await connector.listSubscriptions({
@@ -229,7 +230,7 @@ registerTool({
       status: typeof params.status === "string" ? params.status : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -272,7 +273,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getStripeConnector } = await import("../../connectors/stripe.js");
     const connector = getStripeConnector();
     const result = await connector.listInvoices({
@@ -282,5 +283,5 @@ registerTool({
       status: typeof params.status === "string" ? params.status : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });

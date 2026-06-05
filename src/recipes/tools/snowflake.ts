@@ -15,6 +15,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // Shared output schema — every Snowflake connector method resolves to a
 // SnowflakeQueryResult (see src/connectors/snowflake.ts).
@@ -73,7 +74,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getSnowflakeConnector } = await import(
       "../../connectors/snowflake.js"
     );
@@ -83,7 +84,7 @@ registerTool({
       typeof params.schema === "string" ? params.schema : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -109,7 +110,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getSnowflakeConnector } = await import(
       "../../connectors/snowflake.js"
     );
@@ -120,7 +121,7 @@ registerTool({
       params.table as string,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -143,14 +144,14 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async () => {
+  execute: wrapConnectorExecute(async () => {
     const { getSnowflakeConnector } = await import(
       "../../connectors/snowflake.js"
     );
     const connector = getSnowflakeConnector();
     const result = await connector.listDatabases();
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -189,7 +190,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getSnowflakeConnector } = await import(
       "../../connectors/snowflake.js"
     );
@@ -200,5 +201,5 @@ registerTool({
       typeof params.rowLimit === "number" ? params.rowLimit : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });

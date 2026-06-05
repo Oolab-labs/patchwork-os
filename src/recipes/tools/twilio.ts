@@ -10,6 +10,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // twilio.send_sms  (write-gated)
@@ -65,7 +66,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getTwilioConnector } = await import("../../connectors/twilio.js");
     const connector = getTwilioConnector();
     const result = await connector.sendSms({
@@ -74,7 +75,7 @@ registerTool({
       from: typeof params.from === "string" ? params.from : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -122,7 +123,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getTwilioConnector } = await import("../../connectors/twilio.js");
     const connector = getTwilioConnector();
     const result = await connector.listMessages({
@@ -133,7 +134,7 @@ registerTool({
       limit: typeof params.limit === "number" ? params.limit : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -180,10 +181,10 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getTwilioConnector } = await import("../../connectors/twilio.js");
     const connector = getTwilioConnector();
     const result = await connector.getMessage(params.messageSid as string);
     return JSON.stringify(result);
-  },
+  }),
 });
