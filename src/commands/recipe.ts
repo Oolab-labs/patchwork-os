@@ -34,6 +34,8 @@ import {
 } from "../recipes/migrations/index.js";
 import { tryResolveRecipePath } from "../recipes/resolveRecipePath.js";
 import { generateSchemaSet, writeSchemas } from "../recipes/schemaGenerator.js";
+import { simulateFromPlan } from "../recipes/simulation/simulate.js";
+import type { RecipeSimulationReport } from "../recipes/simulation/types.js";
 import {
   getTool,
   isConnectorNamespace,
@@ -1648,6 +1650,23 @@ export async function runRecipeDryPlan(
     ...summarizePlanSteps(steps),
     lint,
   };
+}
+
+/**
+ * What-If Preview — run a static counterfactual simulation of a recipe.
+ *
+ * Produces the dry-run plan first (no execution), then transforms it into a
+ * {@link RecipeSimulationReport} that projects actions, side-effect taxonomy,
+ * blast-radius-aware risk, a tier-only approval projection (honestly flagged as
+ * NOT gated on recipe steps today), a low-confidence cost estimate, and the
+ * conditional branches it refuses to resolve statically. Zero side effects.
+ */
+export async function runRecipeSimulate(
+  recipeRef: string,
+  options: RunRecipeOptions = {},
+): Promise<RecipeSimulationReport> {
+  const plan = await runRecipeDryPlan(recipeRef, options);
+  return simulateFromPlan(plan);
 }
 
 // ============================================================================

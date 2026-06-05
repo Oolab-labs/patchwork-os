@@ -2942,6 +2942,140 @@ if (process.argv[2] === "recipe" && process.argv[3] === "preflight") {
   })();
 }
 
+// `recipe simulate <name|file>` — What-If Preview. Statically simulates a
+// recipe before it is enabled: projected actions, side-effect taxonomy,
+// blast-radius risk, tier-only approval projection (honestly flagged as NOT
+// gated on recipe steps today), low-confidence cost, and undetermined
+// conditional branches. Executes nothing. See runRecipeSimulate in
+// commands/recipe.ts.
+if (process.argv[2] === "recipe" && process.argv[3] === "simulate") {
+  const args = process.argv.slice(4);
+  const usage =
+    "Usage: patchwork recipe simulate <name|file.yaml> [--json] [--step <id>] [--var k=v]\n\n" +
+    "What-If Preview: statically simulate a recipe before enabling it.\n" +
+    "Shows projected actions, side effects, risk, approvals (tier-only),\n" +
+    "cost (low-confidence), and undetermined branches. Executes nothing.\n";
+  let json = false;
+  let step: string | undefined;
+  const vars: Record<string, string> = {};
+  let target: string | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === undefined) continue;
+    if (arg === "--json") {
+      json = true;
+      continue;
+    }
+    if (arg === "--step" || arg.startsWith("--step=")) {
+      const value = arg === "--step" ? args[++i] : arg.slice("--step=".length);
+      if (!value) {
+        process.stderr.write(`Error: --step requires a value\n${usage}`);
+        process.exit(1);
+      }
+      step = value;
+      continue;
+    }
+    if (arg === "--var" || arg.startsWith("--var=")) {
+      const value = arg === "--var" ? args[++i] : arg.slice("--var=".length);
+      if (!value?.includes("=")) {
+        process.stderr.write(`Error: --var requires k=v\n${usage}`);
+        process.exit(1);
+      }
+      const idx = value.indexOf("=");
+      vars[value.slice(0, idx)] = value.slice(idx + 1);
+      continue;
+    }
+    if (!arg.startsWith("--")) {
+      target = arg;
+    }
+  }
+
+  if (!target) {
+    process.stderr.write(usage);
+    process.exit(1);
+  }
+
+  (async () => {
+    try {
+      const { runRecipeSimulate } = await import("./commands/recipe.js");
+      const report = await runRecipeSimulate(target as string, {
+        ...(step ? { step } : {}),
+        ...(Object.keys(vars).length ? { vars } : {}),
+      });
+
+      if (json) {
+        process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+        process.exit(0);
+      }
+
+      const out = process.stdout;
+      const mark = (tier: string): string =>
+        tier === "high" ? "●" : tier === "medium" ? "◐" : "○";
+      out.write(
+        `\n  What-If Preview — ${report.recipe} (${report.topology}, ${report.fidelity} fidelity)\n`,
+      );
+      out.write(
+        `  Trigger: ${report.triggerType} · ${report.summary.totalSteps} step(s)\n\n`,
+      );
+      out.write(
+        `  Risk: ${report.risk.tier.toUpperCase()} (score ${report.risk.score}/100)\n`,
+      );
+      const c = report.risk.components;
+      out.write(
+        `    high:${c.highSteps} medium:${c.mediumSteps} writes:${c.writeSteps} connector-writes:${c.connectorWriteSteps} http:${c.externalHttpSteps} unresolved:${c.unresolvedSteps}\n\n`,
+      );
+      out.write("  Actions:\n");
+      for (const s of report.steps) {
+        const tool = s.tool ?? s.type;
+        const when = s.condition ? `  when: ${s.condition}` : "";
+        out.write(
+          `    ${mark(s.effectiveRisk)} ${s.id}  ${tool}  [${s.sideEffect}]${when}\n`,
+        );
+      }
+      out.write("\n");
+      const ns = report.summary.connectorNamespaces;
+      out.write(
+        `  Side effects: ${report.summary.writeSteps} write(s) · ${report.summary.connectorSteps} connector call(s)${
+          ns.length ? ` (${ns.join(", ")})` : ""
+        } · ${report.summary.agentSteps} agent step(s)\n`,
+      );
+      const gating = report.approvals.projected.filter(
+        (a) => a.wouldRequireApproval,
+      ).length;
+      out.write(
+        `  Approvals: ${gating} step(s) would gate IF recipe steps were gated — they are NOT gated today\n`,
+      );
+      out.write(
+        `  Cost: ${
+          report.cost.basis === "heuristic"
+            ? `~${report.cost.estPromptTokens} input token(s) over ${report.cost.estimatedAgentSteps} agent step(s) (heuristic); USD not projected`
+            : report.cost.note
+        }\n`,
+      );
+      if (report.branches.length > 0) {
+        out.write(
+          `  Branches: ${report.branches.length} conditional — undetermined (resolve in a later sandbox phase)\n`,
+        );
+      }
+      if (report.lint.errors.length > 0 || report.lint.warnings.length > 0) {
+        out.write(
+          `  Lint: ${report.lint.errors.length} error(s), ${report.lint.warnings.length} warning(s)\n`,
+        );
+      }
+      out.write("\n  Notes:\n");
+      for (const n of report.notes) out.write(`    • ${n}\n`);
+      out.write("\n");
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
 // `recipe doctor <name|file>` — one-screen "why is this recipe unhealthy
 // + how do I fix it" diagnosis. Composes the static preflight check with
 // the recipe-scoped runtime halt summary from a live bridge (fail-soft:
