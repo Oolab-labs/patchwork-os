@@ -1166,14 +1166,20 @@ export async function runYamlRecipe(
         // loop as exhausted with the last good verdict still in place.
         break;
       }
-      // Commit the revised draft so downstream steps (and the re-judge) see
-      // the improved value under the reviewed step's key.
-      ctx[reviewsKey] = revised.value as RunContext[string];
+      // R4 #1 (HIGH): stage the revised draft locally — do NOT commit to ctx
+      // yet. Committing before the verdict resolves leaves an UNAPPROVED draft
+      // in ctx on any loop break (unparseable verdict, budget denial, failed
+      // re-judge), so downstream steps treat it as approved. The revised value
+      // is only promoted to ctx once a verdict accepts it (approve, or
+      // exhaustion with on_exhausted: "proceed").
+      const pendingRevised = revised.value as RunContext[string];
 
-      // RE-JUDGE: rebuild the judge prompt against the revised artefact.
+      // RE-JUDGE: rebuild the judge prompt against the revised artefact. The
+      // judge reviews the STAGED draft, not ctx (which still holds the prior
+      // accepted value).
       const reJudgePrompt =
         render(agentCfg.prompt, ctx) +
-        buildJudgeArtefactBlock(ctx[reviewsKey]) +
+        buildJudgeArtefactBlock(pendingRevised) +
         JUDGE_PROMPT_SUFFIX;
       const judged = await runAgentText(
         reJudgePrompt,
@@ -1197,6 +1203,32 @@ export async function runYamlRecipe(
           : JSON.stringify(judged.value);
       currentVerdict = parseJudgeVerdict(stripLeadingNarration(judgedText));
       revisions++;
+
+      // R4 #2 (HIGH): an UNPARSEABLE verdict exits the while-loop (only
+      // "request_changes" continues it), but the exhaustion gate below fires
+      // ONLY on "request_changes" — so an unparseable verdict would leave the
+      // run 'ok' with the unvalidated draft never committed and no error.
+      // Treat it as a hard, non-ok stop (distinct from the failed-re-judge
+      // break above, which keeps the prior good verdict). Do NOT promote the
+      // staged draft.
+      if (currentVerdict.verdict === "unparseable") {
+        const reason = `judge "${judgeStepId}" returned an unparseable verdict after revision`;
+        judgeStepResult.judgeVerdict = currentVerdict;
+        judgeStepResult.revisions = revisions;
+        judgeStepResult.status = "error";
+        judgeStepResult.error = reason;
+        judgeStepResult.haltReason = reason;
+        judgeStepResult.haltCategory = "judge_revisions_exhausted";
+        return {
+          runError: reason,
+          haltAfterFailure: !failOpenAgent,
+        };
+      }
+
+      // R4 #1: verdict accepted the revision (approve, or non-exhausted
+      // continuation). Promote the staged draft to ctx so downstream steps and
+      // the next iteration see the improved, judged value.
+      ctx[reviewsKey] = pendingRevised;
     }
 
     // Record the FINAL verdict + the revision count on the judge step result.
@@ -2523,16 +2555,37 @@ export function makeProviderDriverFn(): (
   };
 }
 
-async function defaultClaudeFn(
+/** Default Anthropic API request timeout. Mirrors the provider path (300s). */
+const DEFAULT_CLAUDE_API_TIMEOUT_MS = 300_000;
+/**
+ * R4 #4 (HIGH): default max output tokens. The old hard-coded 1024 silently
+ * truncated structured JSON (judge verdicts, multi-field agent outputs).
+ */
+const DEFAULT_CLAUDE_MAX_TOKENS = 4096;
+
+export async function defaultClaudeFn(
   prompt: string,
   model: string,
+  opts?: { timeoutMs?: number; maxTokens?: number },
 ): Promise<AgentResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey)
     return { text: "[agent step skipped: ANTHROPIC_API_KEY not set]" };
+  const maxTokens =
+    typeof opts?.maxTokens === "number" && opts.maxTokens > 0
+      ? opts.maxTokens
+      : DEFAULT_CLAUDE_MAX_TOKENS;
+  // R4 #3 (HIGH): abort a stalled gateway instead of hanging the run forever.
+  const timeoutMs =
+    typeof opts?.timeoutMs === "number" && opts.timeoutMs > 0
+      ? opts.timeoutMs
+      : DEFAULT_CLAUDE_API_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
@@ -2540,7 +2593,7 @@ async function defaultClaudeFn(
       },
       body: JSON.stringify({
         model,
-        max_tokens: 1024,
+        max_tokens: maxTokens,
         messages: [
           {
             role: "user",
@@ -2560,9 +2613,14 @@ async function defaultClaudeFn(
     const data = (await res.json()) as {
       content?: Array<{ type: string; text?: string }>;
       usage?: { input_tokens?: number; output_tokens?: number };
+      stop_reason?: string;
     };
-    const text =
-      data.content?.[0]?.text ?? "[agent step failed: empty response]";
+    let text = data.content?.[0]?.text ?? "[agent step failed: empty response]";
+    // R4 #4: detect+warn when the response was cut off at the token cap so a
+    // truncated (likely unparseable) JSON payload isn't silently trusted.
+    if (data.stop_reason === "max_tokens") {
+      text = `[warning: response truncated at max_tokens=${maxTokens}; raise max_tokens]\n${text}`;
+    }
     const inputTokens = data.usage?.input_tokens;
     const outputTokens = data.usage?.output_tokens;
     if (typeof inputTokens === "number" && typeof outputTokens === "number") {
@@ -2570,9 +2628,19 @@ async function defaultClaudeFn(
     }
     return { text };
   } catch (err) {
+    const aborted =
+      controller.signal.aborted ||
+      (err instanceof Error && err.name === "AbortError");
+    if (aborted) {
+      return {
+        text: `[agent step failed: Anthropic API request timed out after ${timeoutMs}ms]`,
+      };
+    }
     return {
       text: `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`,
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
