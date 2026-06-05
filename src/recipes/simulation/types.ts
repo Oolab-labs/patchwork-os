@@ -121,18 +121,41 @@ export interface RunRiskSummary {
 
 export interface SimulationCost {
   /**
-   * "heuristic": a coarse chars/4 token estimate (low confidence).
-   * "unavailable": no static basis for an estimate (e.g. chained agent steps
-   *   carry no prompt in the plan).
+   * "history": median of the P1 per-step token corpus (P3).
+   * "heuristic": a coarse chars/4 token estimate (no run history yet).
+   * "unavailable": no agent steps / nothing to estimate.
    */
-  basis: "heuristic" | "unavailable";
+  basis: "history" | "heuristic" | "unavailable";
+  /**
+   * Loud confidence signal (P3). "high" only when every agent step has enough
+   * historical samples; "low" when some fall back to chars/4; "none" otherwise.
+   */
+  confidence?: "high" | "low" | "none";
+  /** Prior runs that contributed at least one sample (history basis). */
+  sampleRuns?: number;
   agentSteps: number;
-  /** Agent steps whose prompt was available to estimate from. */
+  /** Agent steps with any estimate (history or prompt-heuristic). */
   estimatedAgentSteps: number;
-  /** Sum of chars/4 over available agent prompts. null when basis unavailable. */
+  /**
+   * Back-compat input-token proxy: chars/4 sum at static fidelity, or the
+   * median-summed input tokens once a history projection exists.
+   */
   estPromptTokens: number | null;
-  /** USD is deliberately never projected at static fidelity. Always null. */
-  usd: null;
+  /** P3 — projected total input tokens (median-summed). */
+  estInputTokens?: number | null;
+  /** P3 — projected total output tokens (median-summed). */
+  estOutputTokens?: number | null;
+  /**
+   * Expected USD — sum of per-step median historical costUsd. null when there
+   * is no billable history (e.g. subscription/subprocess drivers); NEVER a $0
+   * placeholder. (Was always null pre-P3.)
+   */
+  usd: number | null;
+  /** P3 — USD range across history (sum of per-step min/max). null when none. */
+  minUsd?: number | null;
+  maxUsd?: number | null;
+  /** P3 — agent steps whose projection used real history (vs chars/4). */
+  historyAgentSteps?: number;
   note: string;
 }
 

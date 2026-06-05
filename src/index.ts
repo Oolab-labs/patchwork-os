@@ -3050,13 +3050,26 @@ if (process.argv[2] === "recipe" && process.argv[3] === "simulate") {
       out.write(
         `  Approvals: ${gating} step(s) would gate IF recipe steps were gated — they are NOT gated today\n`,
       );
-      out.write(
-        `  Cost: ${
-          report.cost.basis === "heuristic"
-            ? `~${report.cost.estPromptTokens} input token(s) over ${report.cost.estimatedAgentSteps} agent step(s) (heuristic); USD not projected`
-            : report.cost.note
-        }\n`,
-      );
+      {
+        const c = report.cost;
+        const toks =
+          typeof c.estInputTokens === "number"
+            ? ` ~${c.estInputTokens} in / ${c.estOutputTokens ?? 0} out tokens`
+            : typeof c.estPromptTokens === "number"
+              ? ` ~${c.estPromptTokens} input tokens`
+              : "";
+        const usd =
+          typeof c.usd === "number"
+            ? ` ≈$${c.usd.toFixed(4)}${
+                typeof c.minUsd === "number" && typeof c.maxUsd === "number"
+                  ? ` ($${c.minUsd.toFixed(4)}–$${c.maxUsd.toFixed(4)})`
+                  : ""
+              }`
+            : "";
+        const conf = c.confidence ? `/${c.confidence}` : "";
+        out.write(`  Cost [${c.basis}${conf}]:${toks}${usd}\n`);
+        out.write(`    ${c.note}\n`);
+      }
       if (report.branches.length > 0) {
         if (report.fidelity === "mocked") {
           const taken = report.branches.filter(
