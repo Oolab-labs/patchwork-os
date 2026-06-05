@@ -76,13 +76,17 @@ function _scanLockFiles(): BridgeLock | null {
       const parsed = JSON.parse(raw) as Partial<BridgeLock>;
       if (!parsed.isBridge) continue;
       if (!parsed.pid || !isPidAlive(parsed.pid)) continue;
+      // An empty/missing authToken would still pass every other guard and
+      // send `Authorization: Bearer ` (empty) — which the bridge rejects.
+      // Skip it so discovery can fall through to a healthy lock instead.
+      if (!parsed.authToken) continue;
       const port = Number.parseInt(f.replace(/\.lock$/, ""), 10);
       if (!Number.isFinite(port)) continue;
       return {
         pid: parsed.pid,
         port,
         workspace: parsed.workspace ?? "",
-        authToken: parsed.authToken ?? "",
+        authToken: parsed.authToken,
         isBridge: true,
       };
     } catch {

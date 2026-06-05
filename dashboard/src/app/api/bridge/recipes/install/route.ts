@@ -70,10 +70,19 @@ export async function POST(req: Request): Promise<Response> {
       headers: { "content-type": "application/json" },
       body: read.body,
     });
+    // Mirror the upstream content-type so a non-JSON body (e.g. a
+    // reverse-proxy HTML error page in remote mode) isn't mislabelled
+    // application/json — that makes the client silently fail to parse it.
+    // Same logic as the catch-all `[...path]` proxy.
+    const upstreamCt = res.headers.get("content-type") ?? "";
     const text = await res.text();
+    const ct =
+      upstreamCt.includes("application/json") || upstreamCt === ""
+        ? "application/json"
+        : upstreamCt;
     return new Response(text, {
       status: res.status,
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": ct },
     });
   } catch (err) {
     // #600: don't leak err.message detail; see [name]/route.ts.

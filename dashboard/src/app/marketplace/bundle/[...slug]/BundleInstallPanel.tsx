@@ -56,7 +56,10 @@ interface BundleInstallResponse {
   code?: string;
 }
 
-const POLL_TIMEOUT_MS = 1500;
+// 4000ms matches the single-recipe InstallPanel — a shorter window caused
+// false "No local bridge detected" banners on cold start (slow first
+// /api/bridge/recipes probe).
+const POLL_TIMEOUT_MS = 4000;
 
 export default function BundleInstallPanel({
   installSource,

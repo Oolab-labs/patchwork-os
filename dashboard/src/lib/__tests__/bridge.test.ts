@@ -199,11 +199,40 @@ describe("findBridge — lock-file scan", () => {
     expect(findBridge()).toBeNull();
   });
 
-  it("treats missing optional fields as empty strings rather than crashing", () => {
-    writeLock(4242, { pid: process.pid, isBridge: true });
+  it("treats a missing workspace as an empty string rather than crashing", () => {
+    writeLock(4242, { pid: process.pid, authToken: "tok", isBridge: true });
     const got = findBridge();
     expect(got).not.toBeNull();
     expect(got!.workspace).toBe("");
-    expect(got!.authToken).toBe("");
+    expect(got!.authToken).toBe("tok");
+  });
+
+  it("skips locks with a missing authToken (would send `Bearer ` empty)", () => {
+    writeLock(4242, { pid: process.pid, isBridge: true });
+    expect(findBridge()).toBeNull();
+  });
+
+  it("skips locks with an empty-string authToken and falls through to a valid one", () => {
+    writeLock(4242, {
+      pid: process.pid,
+      authToken: "",
+      isBridge: true,
+    });
+    fs.utimesSync(
+      path.join(ideDir, "4242.lock"),
+      Date.now() / 1000,
+      Date.now() / 1000,
+    );
+    writeLock(4243, {
+      pid: process.pid,
+      authToken: "good",
+      isBridge: true,
+    });
+    // Bump the empty-token lock's mtime forward so it would win the
+    // most-recent-first sort — proving the guard, not the ordering, is
+    // what skips it.
+    const future = Date.now() / 1000 + 60;
+    fs.utimesSync(path.join(ideDir, "4242.lock"), future, future);
+    expect(findBridge()?.authToken).toBe("good");
   });
 });
