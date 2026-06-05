@@ -8,7 +8,15 @@
  */
 
 import { Agent, fetch as undiciFetch } from "undici";
-import { assertWriteAllowed } from "../../featureFlags.js";
+import {
+  assertWriteAllowed,
+  FLAG_BLOCK_RECIPE_ALLOW_PRIVATE,
+  isEnabled,
+} from "../../featureFlags.js";
+// Canonical SSRF guard — single source of truth (handles CGNAT 100.64/10,
+// 6to4 2002::/16, hex/octal IPv4, ::ffff:0: translated forms — none of which
+// the previous local copy covered).
+import { isPrivateHost } from "../../ssrfGuard.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
 
 // Custom dispatcher pinning DNS resolution to IPv4. Node's Happy-Eyeballs
@@ -29,22 +37,6 @@ const httpAgent = new Agent({
   keepAliveTimeout: 5_000,
   keepAliveMaxTimeout: 10_000,
 });
-
-function isPrivateHost(hostname: string): boolean {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (h === "localhost" || h.endsWith(".localhost")) return true;
-  if (h === "::1") return true;
-  if (h.startsWith("::ffff:")) return isPrivateHost(h.slice(7));
-  if (/^127\./.test(h)) return true;
-  if (/^10\./.test(h)) return true;
-  if (/^192\.168\./.test(h)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
-  if (/^169\.254\./.test(h)) return true;
-  if (/^0\./.test(h)) return true;
-  if (/^fc[0-9a-f]{2}:/.test(h) || /^fd[0-9a-f]{2}:/.test(h)) return true;
-  if (/^fe80:/.test(h)) return true;
-  return false;
-}
 
 registerTool({
   id: "http.post",
@@ -126,7 +118,11 @@ registerTool({
       );
     }
 
-    const allowPrivate = params.allowPrivate === true;
+    // Operator kill-flag: when on, the per-step allowPrivate:true bypass is
+    // ignored so a (potentially marketplace-installed) recipe can never reach
+    // a private/loopback host.
+    const bypassDisabled = isEnabled(FLAG_BLOCK_RECIPE_ALLOW_PRIVATE);
+    const allowPrivate = !bypassDisabled && params.allowPrivate === true;
     if (!allowPrivate && isPrivateHost(parsed.hostname)) {
       throw new Error(
         `http.post: refusing to reach private/loopback host "${parsed.hostname}" — set allowPrivate: true to override`,
