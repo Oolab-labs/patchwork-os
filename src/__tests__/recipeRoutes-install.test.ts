@@ -119,6 +119,7 @@ function fakeResponse(
   ok: boolean;
   status: number;
   statusText: string;
+  headers: Headers;
   body: ReadableStream<Uint8Array>;
 } {
   const enc = new TextEncoder();
@@ -132,6 +133,10 @@ function fakeResponse(
     ok: status >= 200 && status < 300,
     status,
     statusText: status === 200 ? "OK" : "Not Found",
+    // B3-A: the non-github install path now follows redirects manually and
+    // reads `Location` off the response — a real fetch Response always has a
+    // `headers` object, so the stub must too.
+    headers: new Headers(),
     body: stream,
   };
 }
@@ -223,6 +228,46 @@ describe("Server /recipes/install — A-PR2 (dogfood F-05 / H-routes Bug 2)", ()
     const parsed = JSON.parse(body);
     expect(parsed.ok).toBe(false);
     expect(parsed.code).toBe("ssrf_blocked");
+  });
+
+  it("install-post-redirect-ssrf: 302 → loopback host is rejected without following (B3-A)", async () => {
+    // Allowlist a public host so the upfront allowlist + validateSafeUrl pass;
+    // the upstream then 302-redirects to a loopback host. The manual redirect
+    // loop must re-validate the hop and reject it BEFORE fetching the private
+    // host. Pre-fix (`redirect: "follow"`) this slipped straight through.
+    process.env.CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS = "example.org";
+    const fetched: string[] = [];
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      fetched.push(url);
+      if (url === "https://example.org/foo.yaml") {
+        return {
+          ok: false,
+          status: 302,
+          statusText: "Found",
+          headers: new Headers({ location: "https://127.0.0.1/evil.yaml" }),
+          body: null,
+        } as unknown as Response;
+      }
+      // Reaching here means the private host WAS followed — guard failed.
+      return fakeResponse(200, "name: evil\n") as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/install",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ source: "https://example.org/foo.yaml" }),
+    );
+    expect(status).toBe(403);
+    expect(JSON.parse(body).code).toBe("ssrf_blocked");
+    // The loopback redirect target must never have been fetched.
+    expect(fetched).not.toContain("https://127.0.0.1/evil.yaml");
   });
 
   it("install-hot-reload: success path invokes server.onRecipesChangedFn exactly once", async () => {
