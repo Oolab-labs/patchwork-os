@@ -74,6 +74,11 @@ import {
   normalizeRecipeForRuntime,
 } from "./migrations/index.js";
 import { costRouter, type RouteCandidate } from "./pricing/costRouter.js";
+import {
+  loadPriceTable,
+  type PriceTable,
+  costUsd as priceCostUsd,
+} from "./pricing/priceTable.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import type { ErrorPolicy } from "./schema.js";
@@ -572,6 +577,13 @@ export interface RunResult {
    * now surfaced so callers and the run log can show them. Absent when none.
    */
   budgetWarnings?: string[];
+  /**
+   * P1 cost/token corpus — run-level aggregate of per-step agent token usage.
+   * Present ONLY when at least one step reported usage. `costUsd` summed from
+   * priceable steps only (omitted when none priceable). Forwarded to the
+   * persisted RecipeRun. Additive + optional.
+   */
+  tokenTotals?: { inputTokens: number; outputTokens: number; costUsd?: number };
 }
 
 export type StepResult = {
@@ -625,6 +637,20 @@ export type StepResult = {
    * instead and this stays undefined.
    */
   expectWarnings?: string[];
+  /**
+   * P1 cost/token corpus — agent token usage for this step, SUMMED across
+   * every agent call the step made (a judge→refine step makes several).
+   * Absent for tool steps and for unmeasured drivers (usage undefined).
+   * Mirrors RunStepResult so this stays assignable to it.
+   */
+  inputTokens?: number;
+  /** P1 — see `inputTokens`. Summed across all agent calls for this step. */
+  outputTokens?: number;
+  /**
+   * P1 — measured USD cost for this step. Set ONLY for a priceable billable
+   * model; NEVER `0` as a placeholder; omitted otherwise.
+   */
+  costUsd?: number;
   durationMs: number;
 };
 
@@ -781,6 +807,146 @@ export async function loadRecipeServers(specs: string[]): Promise<void> {
       );
     }
   }
+}
+
+/**
+ * P1 cost/token corpus — drivers that incur real, metered, per-token API
+ * billing (the only ones whose spend is real money and thus priceable here).
+ * Mirrors `BILLABLE_DRIVERS` in runBudget.ts (kept local — that set is private
+ * and runBudget.ts is enforcement-critical / must not be modified for P1).
+ * `local` reports usage but costs no real money, so it is NOT billable.
+ */
+const COST_BILLABLE_DRIVERS = new Set([
+  "anthropic",
+  "openai",
+  "grok",
+  "gemini",
+]);
+
+/**
+ * Per-step token accumulator, summed across every agent call a step makes.
+ * `costUsd` accrues only the priceable portion (billable driver + priced
+ * model); it stays `undefined` until a priceable call contributes. Used by
+ * both runners.
+ */
+interface StepUsageAccumulator {
+  inputTokens: number;
+  outputTokens: number;
+  /** Undefined until at least one priceable agent call contributed. */
+  costUsd?: number;
+  /** True once any agent call reported usage (gates field emission). */
+  measured: boolean;
+}
+
+function newStepUsageAccumulator(): StepUsageAccumulator {
+  return { inputTokens: 0, outputTokens: 0, measured: false };
+}
+
+/**
+ * Fold one agent call's usage into a per-step accumulator. Adds tokens when
+ * `usage` is present; adds USD only when the served model is billable AND
+ * present in the price table (NEVER a `0` placeholder for the unpriced case).
+ */
+function accumulateAgentUsage(
+  acc: StepUsageAccumulator,
+  usage: AgentUsage | undefined,
+  servedBy: { driver?: string; model?: string } | undefined,
+  priceTable: PriceTable,
+): void {
+  if (!usage) return;
+  acc.measured = true;
+  acc.inputTokens += usage.inputTokens;
+  acc.outputTokens += usage.outputTokens;
+  const driver = servedBy?.driver;
+  const model = servedBy?.model;
+  if (driver && model && COST_BILLABLE_DRIVERS.has(driver)) {
+    const cost = priceCostUsd(model, usage, priceTable);
+    if (typeof cost === "number") {
+      acc.costUsd = (acc.costUsd ?? 0) + cost;
+    }
+  }
+}
+
+/**
+ * Build the optional token fields for a step result from its accumulator.
+ * Returns an empty object (no fields) when the step reported no usage, so a
+ * tool step or unmeasured-driver step round-trips with the fields ABSENT.
+ */
+function stepUsageFields(acc: StepUsageAccumulator): {
+  inputTokens?: number;
+  outputTokens?: number;
+  costUsd?: number;
+} {
+  if (!acc.measured) return {};
+  return {
+    inputTokens: acc.inputTokens,
+    outputTokens: acc.outputTokens,
+    ...(typeof acc.costUsd === "number" ? { costUsd: acc.costUsd } : {}),
+  };
+}
+
+/**
+ * P1 — single-call usage → persisted-step usage fields. Exported for the
+ * chained runner, whose agent steps make exactly one agent call (no
+ * judge→refine loop), so a per-call computation suffices. Returns undefined
+ * when the driver reported no usage (fields stay ABSENT). `costUsd` set only
+ * for a billable driver + priced model; never a `0` placeholder.
+ */
+export function computeAgentCallUsage(
+  usage: AgentUsage | undefined,
+  servedBy: { driver?: string; model?: string } | undefined,
+  priceTable: PriceTable = loadPriceTable(),
+): { inputTokens: number; outputTokens: number; costUsd?: number } | undefined {
+  if (!usage) return undefined;
+  const driver = servedBy?.driver;
+  const model = servedBy?.model;
+  let cost: number | undefined;
+  if (driver && model && COST_BILLABLE_DRIVERS.has(driver)) {
+    const c = priceCostUsd(model, usage, priceTable);
+    if (typeof c === "number") cost = c;
+  }
+  return {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    ...(typeof cost === "number" ? { costUsd: cost } : {}),
+  };
+}
+
+/** Run-level token aggregate, summed from per-step accumulators. */
+interface RunUsageAccumulator {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd?: number;
+  measured: boolean;
+}
+
+function newRunUsageAccumulator(): RunUsageAccumulator {
+  return { inputTokens: 0, outputTokens: 0, measured: false };
+}
+
+function foldStepIntoRun(
+  run: RunUsageAccumulator,
+  step: StepUsageAccumulator,
+): void {
+  if (!step.measured) return;
+  run.measured = true;
+  run.inputTokens += step.inputTokens;
+  run.outputTokens += step.outputTokens;
+  if (typeof step.costUsd === "number") {
+    run.costUsd = (run.costUsd ?? 0) + step.costUsd;
+  }
+}
+
+/** Build the optional `tokenTotals` for a run, or undefined when none measured. */
+function runTokenTotals(
+  run: RunUsageAccumulator,
+): { inputTokens: number; outputTokens: number; costUsd?: number } | undefined {
+  if (!run.measured) return undefined;
+  return {
+    inputTokens: run.inputTokens,
+    outputTokens: run.outputTokens,
+    ...(typeof run.costUsd === "number" ? { costUsd: run.costUsd } : {}),
+  };
 }
 
 export async function runYamlRecipe(
@@ -948,6 +1114,13 @@ export async function runYamlRecipe(
 
   const outputs: string[] = [];
   const stepResults: StepResult[] = [];
+  // P1 cost/token corpus. The price table is loaded once per run (fail-open).
+  // `currentStepUsage` accumulates usage across all agent calls of the CURRENT
+  // agent step (including judge→refine re-runs via `runAgentText`); `runUsage`
+  // sums measured steps into the run-level total.
+  const priceTable = loadPriceTable();
+  const runUsage = newRunUsageAccumulator();
+  let currentStepUsage = newStepUsageAccumulator();
   let stepsRun = 0;
   let runError: string | undefined;
   // Bug (2): the flat runner historically recorded the first non-optional
@@ -1084,6 +1257,13 @@ export async function runYamlRecipe(
       agentReturn.servedBy?.model,
       // Char counts for the opt-in unmeasured-driver ≈$ estimate (warn-only).
       { inputChars: prompt.length, outputChars: agentReturn.text.length },
+    );
+    // P1: fold this refine-loop agent call into the current step's usage.
+    accumulateAgentUsage(
+      currentStepUsage,
+      agentReturn.usage,
+      agentReturn.servedBy,
+      priceTable,
     );
     const text = agentReturn.text;
     // Same failure detection as the main agent branch: explicit failure
@@ -1380,6 +1560,9 @@ export async function runYamlRecipe(
         const intoKey = agentCfg.into ?? "agent_output";
         const stepId = intoKey;
         const stepStart = Date.now();
+        // P1: fresh per-step usage accumulator for this agent step (and any
+        // judge→refine re-runs it spawns via runAgentText, which share it).
+        currentStepUsage = newStepUsageAccumulator();
         let agentResult: string;
         // Bug (2): fail-open semantics for THIS agent step. Mirrors the
         // tool-branch `failOpen` (step.optional OR recipe-level
@@ -1434,6 +1617,13 @@ export async function runYamlRecipe(
               inputChars: renderedPrompt.length,
               outputChars: agentReturn.text.length,
             },
+          );
+          // P1: fold this primary agent call into the current step's usage.
+          accumulateAgentUsage(
+            currentStepUsage,
+            agentReturn.usage,
+            agentReturn.servedBy,
+            priceTable,
           );
           // Catch both `[agent step failed: ...]` (existing) and the
           // silent-fail patterns `[agent step skipped: ...]` etc. via the
@@ -1584,6 +1774,14 @@ export async function runYamlRecipe(
             durationMs: Date.now() - stepStart,
           });
         }
+        // P1: attach this agent step's summed token usage (across primary +
+        // any judge→refine re-runs) to the result just pushed, and fold it
+        // into the run-level total. Fields are ABSENT when no usage measured.
+        const pushedAgentResult = stepResults[stepResults.length - 1];
+        if (pushedAgentResult) {
+          Object.assign(pushedAgentResult, stepUsageFields(currentStepUsage));
+        }
+        foldStepIntoRun(runUsage, currentStepUsage);
         stepsRun++;
         persistLiveStepResults();
         emitStepDone(stepIdForEmit);
@@ -1858,8 +2056,21 @@ export async function runYamlRecipe(
         ...(s.haltReason ? { haltReason: s.haltReason } : {}),
         ...(s.haltCategory ? { haltCategory: s.haltCategory } : {}),
         ...(s.judgeVerdict ? { judgeVerdict: s.judgeVerdict } : {}),
+        // P1: carry per-step token usage through to the persisted run row.
+        // Absent for tool / unmeasured-driver steps (round-trips unchanged).
+        ...(typeof s.inputTokens === "number"
+          ? { inputTokens: s.inputTokens }
+          : {}),
+        ...(typeof s.outputTokens === "number"
+          ? { outputTokens: s.outputTokens }
+          : {}),
+        ...(typeof s.costUsd === "number" ? { costUsd: s.costUsd } : {}),
         durationMs: s.durationMs,
       }));
+      // P1: run-level token aggregate + budget totals (latter only when a
+      // budget was configured — never persist all-zero no-budget totals).
+      const tokenTotals = runTokenTotals(runUsage);
+      const budgetTotals = recipe.budget ? runBudget.totals() : undefined;
       if (deps.runLog && runSeq !== undefined) {
         deps.runLog.completeRun(runSeq, {
           status: runError ? "error" : "done",
@@ -1873,6 +2084,8 @@ export async function runYamlRecipe(
           ...(runBudget.finalWarnings().length > 0
             ? { budgetWarnings: runBudget.finalWarnings() }
             : {}),
+          ...(tokenTotals ? { tokenTotals } : {}),
+          ...(budgetTotals ? { budgetTotals } : {}),
         });
         emit("recipe_done", {
           runSeq,
@@ -1910,6 +2123,8 @@ export async function runYamlRecipe(
           stepResults: finalStepResults,
           ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
           ...(inboxOutputs.length > 0 ? { inboxOutputs } : {}),
+          ...(tokenTotals ? { tokenTotals } : {}),
+          ...(budgetTotals ? { budgetTotals } : {}),
         });
       }
     } catch {
@@ -1968,6 +2183,11 @@ export async function runYamlRecipe(
     ...(runBudget.finalWarnings().length > 0
       ? { budgetWarnings: runBudget.finalWarnings() }
       : {}),
+    // P1: forward run-level token aggregate to callers / persisters.
+    ...(() => {
+      const tt = runTokenTotals(runUsage);
+      return tt ? { tokenTotals: tt } : {};
+    })(),
   };
 }
 

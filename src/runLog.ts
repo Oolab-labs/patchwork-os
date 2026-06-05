@@ -66,6 +66,23 @@ export interface RunStepResult {
   registrySnapshot?: Record<string, unknown>;
   /** Step start time (ms epoch) — useful for live-tail correlation. */
   startedAt?: number;
+  /**
+   * P1 cost/token corpus — agent token usage for this step, SUMMED across
+   * every agent call the step made (a judge→refine step makes several).
+   * Additive + optional: ABSENT for non-agent (tool) steps and for steps
+   * served by drivers that report no usage (subscription Claude CLI, some
+   * local stacks). Pre-P1 `runs.jsonl` rows round-trip unchanged (omitted).
+   */
+  inputTokens?: number;
+  /** P1 — see `inputTokens`. Summed across all agent calls for this step. */
+  outputTokens?: number;
+  /**
+   * P1 — measured USD cost for this step's token usage. Set ONLY when the
+   * served model is actually priceable (billable driver + model present in
+   * the price table). NEVER `0` as a placeholder — OMITTED when unpriceable
+   * (subscription / unmeasured driver, or model absent from the price table).
+   */
+  costUsd?: number;
 }
 
 export interface RecipeRun {
@@ -143,6 +160,21 @@ export interface RecipeRun {
    * tripped no warnings.
    */
   budgetWarnings?: string[];
+  /**
+   * P1 cost/token corpus — run-level aggregate of per-step agent token usage,
+   * summed across all steps that reported usage. Present ONLY when at least
+   * one step reported usage; absent for tool-only runs and runs served
+   * entirely by unmeasured drivers. `costUsd` is the sum of the per-step
+   * measured costs (priceable steps only) and is itself omitted when no step
+   * was priceable. Additive + optional: pre-P1 rows round-trip unchanged.
+   */
+  tokenTotals?: { inputTokens: number; outputTokens: number; costUsd?: number };
+  /**
+   * P1 — `RunBudget.totals()` snapshot at completion, persisted ONLY when a
+   * budget was configured for the run (we never persist the all-zero no-budget
+   * case, which would be misleading). Additive + optional.
+   */
+  budgetTotals?: import("./recipes/runBudget.js").BudgetTotals;
 }
 
 const MAX_OUTPUT_TAIL = 2_000;

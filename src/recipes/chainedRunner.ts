@@ -36,7 +36,11 @@ import { captureForRunlog, detectSilentFail } from "./stepObservation.js";
 import type { TemplateContext, TemplateError } from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
 import type { StepExpect } from "./yamlRunner.js";
-import { evaluateStepExpect, resolveRouting } from "./yamlRunner.js";
+import {
+  computeAgentCallUsage,
+  evaluateStepExpect,
+  resolveRouting,
+} from "./yamlRunner.js";
 
 export interface ChainedStep {
   id: string;
@@ -325,6 +329,12 @@ export async function executeChainedStep(
   /** VD-2: resolved params after template substitution — captured by the
    *  runner for the dashboard's per-step view. */
   resolvedParams?: unknown;
+  /**
+   * P1 cost/token corpus — agent token usage for this step (chained steps
+   * make exactly one agent call). Absent for tool steps and unmeasured
+   * drivers. `costUsd` set only for a priceable billable model (never 0).
+   */
+  usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
 }> {
   const { registry, step, options, depth } = ctx;
   const { dryRun } = options;
@@ -573,19 +583,37 @@ export async function executeChainedStep(
         );
       }
 
+      // P1: per-step agent token usage (chained = one agent call per step).
+      // Attached to every return below so it lands on the persisted step row
+      // regardless of success / failure. Absent for unmeasured drivers.
+      const usage = computeAgentCallUsage(
+        agentReturn.usage,
+        agentReturn.servedBy,
+      );
+
       let result: unknown = agentReturn.text;
       // Detect failure signals returned as sentinel strings (mirrors flat runner)
       if (
         typeof result === "string" &&
         result.startsWith("[agent step failed:")
       ) {
-        return { success: false, error: result, resolvedParams: resolved };
+        return {
+          success: false,
+          error: result,
+          resolvedParams: resolved,
+          ...(usage ? { usage } : {}),
+        };
       }
       const agentSilentFail =
         step.silentFailDetection !== false ? detectSilentFail(result) : null;
       if (agentSilentFail) {
         const reason = `silent-fail detected (${agentSilentFail.reason}): ${agentSilentFail.matched}`;
-        return { success: false, error: reason, resolvedParams: resolved };
+        return {
+          success: false,
+          error: reason,
+          resolvedParams: resolved,
+          ...(usage ? { usage } : {}),
+        };
       }
       if (step.transform) {
         try {
@@ -601,10 +629,16 @@ export async function executeChainedStep(
             success: false,
             error: `expect failed: ${failures.join("; ")}`,
             resolvedParams: resolved,
+            ...(usage ? { usage } : {}),
           };
         }
       }
-      return { success: true, data: result, resolvedParams: resolved };
+      return {
+        success: true,
+        data: result,
+        resolvedParams: resolved,
+        ...(usage ? { usage } : {}),
+      };
     } else if (step.tool) {
       // Tool step
       let result: unknown = await deps.executeTool(step.tool, resolved);
@@ -664,6 +698,9 @@ interface StepExecResult {
   /** VD-2: forwarded from `executeChainedStep` so the runner can capture
    *  what params actually flew at the tool/agent. */
   resolvedParams?: unknown;
+  /** P1: agent token usage for this step — forwarded from
+   *  `executeChainedStep`. Absent for tool / unmeasured-driver steps. */
+  usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
 }
 
 /** Upper bound on retries — clamps absurd/misconfigured values so a recipe
@@ -946,6 +983,13 @@ export async function runChainedRecipe(
       startedAt: number;
     }
   >();
+  // P1 cost/token corpus — per-step agent usage, keyed by stepId. Populated
+  // for every depth-0 agent step (independent of the VD-2 runLog-gated
+  // capture above) so both the bridge and CLI persistence paths get it.
+  const capturedUsage = new Map<
+    string,
+    { inputTokens: number; outputTokens: number; costUsd?: number }
+  >();
 
   // VD-1 live-tail: when an `activityLog` is provided AND we have a `runSeq`
   // (depth 0, runLog supplied), broadcast `recipe_step_start` /
@@ -1065,6 +1109,10 @@ export async function runChainedRecipe(
       durationMs: Date.now() - stepStart,
       skipped: result.skipped,
     });
+    // P1: stash this step's agent token usage (depth-0 persistence reads it).
+    if (depth === 0 && result.usage) {
+      capturedUsage.set(stepId, result.usage);
+    }
 
     // Recipe-level on_error.fallback: "log_only" and "deliver_original" both
     // treat step failures as non-fatal (fail-open) — same semantics as
@@ -1191,7 +1239,14 @@ export async function runChainedRecipe(
         output?: unknown;
         registrySnapshot?: Record<string, unknown>;
         startedAt?: number;
+        // P1 cost/token corpus.
+        inputTokens?: number;
+        outputTokens?: number;
+        costUsd?: number;
       }> = [];
+      // P1: run-level token aggregate, summed from per-step agent usage.
+      const runTok = { inputTokens: 0, outputTokens: 0, measured: false };
+      let runCostUsd: number | undefined;
       for (const [id, r] of enrichedResults) {
         const step = stepMap.get(id);
         const captured = capturedStepData.get(id);
@@ -1207,6 +1262,15 @@ export async function runChainedRecipe(
           status,
           error: errorMsg,
         });
+        const usage = capturedUsage.get(id);
+        if (usage) {
+          runTok.measured = true;
+          runTok.inputTokens += usage.inputTokens;
+          runTok.outputTokens += usage.outputTokens;
+          if (typeof usage.costUsd === "number") {
+            runCostUsd = (runCostUsd ?? 0) + usage.costUsd;
+          }
+        }
         stepResultsList.push({
           id,
           tool: step?.tool,
@@ -1224,8 +1288,28 @@ export async function runChainedRecipe(
           ...(captured?.startedAt !== undefined && {
             startedAt: captured.startedAt,
           }),
+          // P1: per-step token usage (absent for tool / unmeasured steps).
+          ...(usage
+            ? {
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                ...(typeof usage.costUsd === "number"
+                  ? { costUsd: usage.costUsd }
+                  : {}),
+              }
+            : {}),
         });
       }
+      // P1: assemble run-level totals (only when any step reported usage) +
+      // budget totals (only when a budget was configured).
+      const tokenTotals = runTok.measured
+        ? {
+            inputTokens: runTok.inputTokens,
+            outputTokens: runTok.outputTokens,
+            ...(typeof runCostUsd === "number" ? { costUsd: runCostUsd } : {}),
+          }
+        : undefined;
+      const budgetTotals = recipe.budget ? budget.totals() : undefined;
       const outputTail = stepResultsList
         .map(
           (s) =>
@@ -1247,6 +1331,8 @@ export async function runChainedRecipe(
           ...(result.errorMessage !== undefined && {
             errorMessage: result.errorMessage,
           }),
+          ...(tokenTotals ? { tokenTotals } : {}),
+          ...(budgetTotals ? { budgetTotals } : {}),
         });
         if (broadcastActivity && broadcastSeq !== undefined) {
           try {
@@ -1281,6 +1367,8 @@ export async function runChainedRecipe(
           errorMessage: result.errorMessage,
           stepResults: stepResultsList,
           ...(budgetWarnings.length > 0 && { budgetWarnings }),
+          ...(tokenTotals ? { tokenTotals } : {}),
+          ...(budgetTotals ? { budgetTotals } : {}),
         });
       }
     } catch {
