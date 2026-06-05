@@ -176,6 +176,12 @@ export function generateSimulationSchema(): unknown {
       sideEffect: sideEffectEnum,
       isWrite: { type: "boolean" },
       isConnector: { type: "boolean" },
+      mockedFrom: {
+        type: "string",
+        enum: ["history", "synthesized"],
+        description:
+          "Mocked fidelity only — whether this step's output came from real run history or a synthesized placeholder.",
+      },
     },
   };
 
@@ -205,7 +211,7 @@ export function generateSimulationSchema(): unknown {
       "notes",
     ],
     properties: {
-      schemaVersion: { type: "number", const: 1 },
+      schemaVersion: { type: "number", const: 2 },
       kind: { type: "string", const: "what-if-preview" },
       recipe: { type: "string" },
       triggerType: { type: "string" },
@@ -213,7 +219,12 @@ export function generateSimulationSchema(): unknown {
         type: "string",
         description: "ISO-8601 timestamp (reused from the dry-run plan)",
       },
-      fidelity: { type: "string", enum: ["static"] },
+      fidelity: { type: "string", enum: ["static", "mocked"] },
+      sampleRuns: {
+        type: "number",
+        description:
+          "Mocked fidelity only — number of prior runs sampled to seed the mocked sandbox.",
+      },
       topology: { type: "string", enum: ["chained", "flat"] },
       gatedOnRecipeSteps: {
         type: "boolean",
@@ -322,7 +333,10 @@ export function generateSimulationSchema(): unknown {
           properties: {
             stepId: { type: "string" },
             condition: { type: "string" },
-            outcome: { type: "string", const: "undetermined" },
+            outcome: {
+              type: "string",
+              enum: ["taken", "skipped", "undetermined"],
+            },
             reason: { type: "string" },
           },
         },
