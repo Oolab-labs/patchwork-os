@@ -274,25 +274,45 @@ const REGISTRY_INDEX_SRC: ParsedInstallSource = {
  * sandboxed networks even when `github.com` + `api.github.com` are
  * reachable, which previously broke marketplace browse + install 100%.
  *
- * Returns the file text, or `null` if BOTH endpoints fail. No auth token
- * is attached — both endpoints work unauthenticated for public repos.
- * The Contents API has a 60 req/hr unauthenticated rate limit; that is
- * acceptable for this read path (it is only hit when raw is unreachable).
+ * Returns the file text, or `null` if BOTH endpoints fail.
+ *
+ * Auth: both endpoints work unauthenticated for public repos, but the
+ * unauthenticated rate limit is 60 req/hr per IP — quickly exhausted on a
+ * shared NAT where many dashboard clients poll the same registry, which
+ * then silently degrades to the stale FALLBACK_REGISTRY. When the optional
+ * `GITHUB_TOKEN` env var is present we attach `Authorization: Bearer
+ * <token>` (raises the limit to 5 000 req/hr) and add a single ~1s retry on
+ * HTTP 429 so a transient rate-limit blip doesn't drop straight to fallback.
  */
+async function fetchOnceWithRetry(url: string, init: RequestInit): Promise<Response> {
+  const res = await fetch(url, init);
+  if (res.status === 429) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    return fetch(url, init);
+  }
+  return res;
+}
+
 export async function fetchGithubFile(
   src: ParsedInstallSource,
   file: string,
   opts: FetchOpts = {},
 ): Promise<string | null> {
   const revalidate = opts.revalidate ?? 300;
-  const init = {
-    next: { revalidate },
-    signal: opts.signal,
-  } as RequestInit;
+  // Optional auth token — raises the GitHub rate limit from 60 to 5 000
+  // req/hr, preventing silent fallback to the stale registry on shared NAT.
+  const token = process.env.GITHUB_TOKEN;
+  const authHeader: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
 
   // 1. raw.githubusercontent.com (preferred)
   try {
-    const res = await fetch(rawUrlFor(src, file), init);
+    const res = await fetchOnceWithRetry(rawUrlFor(src, file), {
+      next: { revalidate },
+      signal: opts.signal,
+      headers: { ...authHeader },
+    } as RequestInit);
     if (res.ok) return await res.text();
   } catch {
     // fall through to the API fallback
@@ -300,9 +320,10 @@ export async function fetchGithubFile(
 
   // 2. api.github.com Contents API (fallback for raw-blocked networks)
   try {
-    const res = await fetch(contentsApiUrlFor(src, file), {
-      ...init,
-      headers: { Accept: "application/vnd.github.raw" },
+    const res = await fetchOnceWithRetry(contentsApiUrlFor(src, file), {
+      next: { revalidate },
+      signal: opts.signal,
+      headers: { Accept: "application/vnd.github.raw", ...authHeader },
     } as RequestInit);
     if (res.ok) return await res.text();
   } catch {
@@ -312,14 +333,74 @@ export async function fetchGithubFile(
   return null;
 }
 
+const RISK_LEVELS: readonly RiskLevel[] = ["low", "medium", "high"];
+const APPROVAL_BEHAVIORS: readonly ApprovalBehavior[] = [
+  "always_ask",
+  "ask_on_novel",
+  "auto_approve",
+];
+
+/**
+ * Runtime-sanitize one recipe/bundle entry's untrusted trust fields.
+ *
+ * `fetchRegistry` parses an `index.json` served from a public GitHub repo —
+ * a tampered or MITM-flipped index can carry an out-of-enum `risk_level`
+ * (`"bogus"`, `42`, `null`) or a non-number `downloads` (`"12"`). Left
+ * unchecked, `RISK_PILL_CLASS[risk_level]` renders `class="pill undefined"`
+ * and an out-of-enum risk reads as falsy → silently NOT elevated in the
+ * trust gate. We strip any value outside the known enum (so it becomes
+ * `undefined`, which `requiresElevatedConfirm` correctly treats as elevated)
+ * and coerce `downloads` to a finite number or `undefined`. Mutates in place
+ * and returns the same reference. Conservative: unknown extra fields are
+ * left untouched.
+ */
+function sanitizeRegistryEntry<T extends TrustMetadata & { downloads?: unknown }>(
+  entry: T,
+): T {
+  if (
+    entry.risk_level !== undefined &&
+    !RISK_LEVELS.includes(entry.risk_level as RiskLevel)
+  ) {
+    entry.risk_level = undefined;
+  }
+  if (
+    entry.approval_behavior !== undefined &&
+    !APPROVAL_BEHAVIORS.includes(entry.approval_behavior as ApprovalBehavior)
+  ) {
+    entry.approval_behavior = undefined;
+  }
+  const dl = entry.downloads;
+  if (typeof dl !== "number" || !Number.isFinite(dl)) {
+    entry.downloads = typeof dl === "string" && dl.trim() !== "" && Number.isFinite(Number(dl))
+      ? Number(dl)
+      : undefined;
+  }
+  return entry;
+}
+
 export async function fetchRegistry(opts: FetchOpts = {}): Promise<RegistryData | null> {
   const text = await fetchGithubFile(REGISTRY_INDEX_SRC, "index.json", opts);
   if (text === null) return null;
+  let data: RegistryData;
   try {
-    return JSON.parse(text) as RegistryData;
+    data = JSON.parse(text) as RegistryData;
   } catch {
     return null;
   }
+  // Sanitize the untrusted trust fields BEFORE returning so a tampered
+  // index.json can't make RISK_PILL_CLASS[risk_level] render undefined or
+  // smuggle an out-of-enum risk past the elevation gate.
+  if (Array.isArray(data.recipes)) {
+    for (const r of data.recipes) {
+      if (r && typeof r === "object") sanitizeRegistryEntry(r);
+    }
+  }
+  if (Array.isArray(data.bundles)) {
+    for (const b of data.bundles) {
+      if (b && typeof b === "object") sanitizeRegistryEntry(b);
+    }
+  }
+  return data;
 }
 
 export async function fetchManifest(
