@@ -9,6 +9,7 @@ import {
   githubBlobUrlFor,
   type ParsedInstallSource,
   rawUrlFor,
+  requiresElevatedConfirm,
   shortName,
   summarizeRisk,
 } from "@/lib/registry";
@@ -399,6 +400,69 @@ describe("fetch* functions use the fallback", () => {
       vi.fn(async () => notOk()),
     );
     expect(await fetchBundleManifest(SRC)).toBeNull();
+  });
+});
+
+describe("requiresElevatedConfirm (default-deny trust gate)", () => {
+  // SECURITY: the all-undefined case is the live-registry case — no
+  // recipe in the GitHub index.json carries trust metadata today. It
+  // MUST require confirmation (return true) or every live install
+  // bypasses the dialog.
+  it("returns true when ALL trust fields are absent (the vulnerability case)", () => {
+    expect(requiresElevatedConfirm({})).toBe(true);
+  });
+
+  it("returns false ONLY when explicitly proven safe (low + no network + no file)", () => {
+    expect(
+      requiresElevatedConfirm({
+        risk_level: "low",
+        network_access: false,
+        file_access: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("returns true when risk_level is medium/high even with no access flags", () => {
+    expect(
+      requiresElevatedConfirm({
+        risk_level: "medium",
+        network_access: false,
+        file_access: false,
+      }),
+    ).toBe(true);
+    expect(
+      requiresElevatedConfirm({
+        risk_level: "high",
+        network_access: false,
+        file_access: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("returns true when network_access is true", () => {
+    expect(
+      requiresElevatedConfirm({
+        risk_level: "low",
+        network_access: true,
+        file_access: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("returns true when file_access is true", () => {
+    expect(
+      requiresElevatedConfirm({
+        risk_level: "low",
+        network_access: false,
+        file_access: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("returns true when risk_level is low but access flags are undefined (partial metadata)", () => {
+    // A registry author who set risk_level but forgot the access flags
+    // must still get a confirm — undefined is not a disclaimer.
+    expect(requiresElevatedConfirm({ risk_level: "low" })).toBe(true);
   });
 });
 

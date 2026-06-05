@@ -6,6 +6,7 @@ import { apiPath } from "@/lib/api";
 import {
   assertValidInstallSource,
   formatConnectorLabel,
+  requiresElevatedConfirm,
   type RiskLevel,
   shortName,
 } from "@/lib/registry";
@@ -64,25 +65,16 @@ export default function InstallPanel({
   // troubleshoot if the recipe never runs.
   const [missingConnectors, setMissingConnectors] = useState<string[]>([]);
 
-  // Marketplace trust Wave 0 (#782 follow-up): default-deny semantics.
-  //
-  // Previously the confirmation dialog ONLY appeared when one of
-  // {riskLevel >= medium, networkAccess === true, fileAccess === true}
-  // was set, which meant a registry author who forgot to flag a
-  // file-writing recipe gave users a silent one-tap install. The live
-  // marketplace registry has NO trust metadata on any recipe today
-  // (`risk_level`/`network_access`/`file_access` are absent), so every
-  // live install bypassed confirmation.
-  //
-  // New rule: only bypass confirmation if the recipe EXPLICITLY claims
-  // low risk AND explicitly disclaims network + file access. Anything
-  // missing those flags is treated as elevated — same as if the author
-  // explicitly marked it high-risk. Honest fail-closed.
-  const elevated = !(
-    riskLevel === "low" &&
-    networkAccess === false &&
-    fileAccess === false
-  );
+  // Marketplace trust Wave 0 (#782 follow-up): default-deny semantics,
+  // now shared with the browse view via requiresElevatedConfirm so there
+  // is exactly ONE definition of "needs confirmation". Only bypass the
+  // dialog when the recipe EXPLICITLY claims low risk AND disclaims
+  // network + file access; anything missing those flags fails closed.
+  const elevated = requiresElevatedConfirm({
+    risk_level: riskLevel,
+    network_access: networkAccess,
+    file_access: fileAccess,
+  });
 
   useEffect(() => {
     let cancelled = false;
