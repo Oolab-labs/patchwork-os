@@ -34,6 +34,7 @@ import {
 } from "../recipes/migrations/index.js";
 import { tryResolveRecipePath } from "../recipes/resolveRecipePath.js";
 import { generateSchemaSet, writeSchemas } from "../recipes/schemaGenerator.js";
+import { projectCost } from "../recipes/simulation/costProjector.js";
 import {
   simulateFromPlan,
   simulateMockedFromPlan,
@@ -1676,6 +1677,7 @@ export async function runRecipeSimulate(
   // provided runLog. Flat recipes ALWAYS stay static (hard guard: the runner
   // is never driven for a flat recipe). Callers with no runLog (CLI) stay
   // static too.
+  let report: RecipeSimulationReport | undefined;
   if (plan.triggerType === "chained" && options.runLog) {
     try {
       const recipePath = resolveRecipePath(recipeRef);
@@ -1687,14 +1689,27 @@ export async function runRecipeSimulate(
         recipeToPlan as unknown as import("../recipes/chainedRunner.js").ChainedRecipe;
       const mocked = await simulateMockedRun(chainedRecipe, options.runLog);
       if (mocked.sampleRuns > 0) {
-        return simulateMockedFromPlan(plan, mocked);
+        report = simulateMockedFromPlan(plan, mocked);
       }
     } catch {
       // Fail-soft: fall through to the static report.
     }
   }
 
-  return simulateFromPlan(plan);
+  if (!report) report = simulateFromPlan(plan);
+
+  // P3 cost projection — whenever a runLog is available (any fidelity/topology),
+  // overlay a history-backed cost estimate. Degrades to the chars/4 heuristic /
+  // "unavailable" shape when there is no usable history, so it is always safe.
+  if (options.runLog) {
+    try {
+      report = { ...report, cost: projectCost(plan, options.runLog) };
+    } catch {
+      // Fail-soft: keep the static cost estimate already on the report.
+    }
+  }
+
+  return report;
 }
 
 // ============================================================================
