@@ -77,7 +77,7 @@ import { costRouter, type RouteCandidate } from "./pricing/costRouter.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import type { ErrorPolicy } from "./schema.js";
-import { detectSilentFail } from "./stepObservation.js";
+import { detectSilentFail, redactSecretsForPrompt } from "./stepObservation.js";
 // Import tool registry and trigger tool self-registration
 import {
   applyToolOutputContext,
@@ -796,6 +796,12 @@ export async function runYamlRecipe(
 
   // Resolve recipe-level context blocks (type: env) into seed context
   const envCtx: RunContext = {};
+  // SECRETS-IN-VARS: track which ctx keys came from a `type: env` block so the
+  // agent (LLM-facing) prompt can redact them. Their raw values still flow to
+  // TOOL steps (an http header / DB password legitimately needs the secret),
+  // but they must never reach the model verbatim — the secure default is
+  // redaction. See PR body / docs/recipe-feature-investigation-2026-06-05.md.
+  const secretKeys = new Set<string>();
   if (Array.isArray((recipe as unknown as Record<string, unknown>).context)) {
     for (const block of (recipe as unknown as Record<string, unknown[]>)
       .context ?? []) {
@@ -803,7 +809,10 @@ export async function runYamlRecipe(
       if (b.type === "env" && Array.isArray(b.keys)) {
         for (const key of b.keys as string[]) {
           const v = process.env[key];
-          if (v !== undefined) envCtx[key] = v;
+          if (v !== undefined) {
+            envCtx[key] = v;
+            secretKeys.add(key);
+          }
         }
       }
     }
@@ -1153,7 +1162,9 @@ export async function runYamlRecipe(
         `<previous-draft>\n${typeof priorDraft === "string" ? priorDraft : JSON.stringify(priorDraft, null, 2)}\n</previous-draft>\n\n` +
         `<fix-list>\n${fixList.length > 0 ? fixList.map((f) => `- ${f}`).join("\n") : "- (no explicit fix list provided)"}\n</fix-list>\n` +
         `</revision-request>`;
-      const revisionPrompt = render(reviewedAgent.prompt, ctx) + revisionBlock;
+      const revisionPrompt =
+        render(reviewedAgent.prompt, redactSecretsForPrompt(ctx, secretKeys)) +
+        revisionBlock;
       const revised = await runAgentText(
         revisionPrompt,
         reviewedAgent.driver,
@@ -1178,7 +1189,7 @@ export async function runYamlRecipe(
       // judge reviews the STAGED draft, not ctx (which still holds the prior
       // accepted value).
       const reJudgePrompt =
-        render(agentCfg.prompt, ctx) +
+        render(agentCfg.prompt, redactSecretsForPrompt(ctx, secretKeys)) +
         buildJudgeArtefactBlock(pendingRevised) +
         JUDGE_PROMPT_SUFFIX;
       const judged = await runAgentText(
@@ -1356,7 +1367,10 @@ export async function runYamlRecipe(
         // PR3a: judge prompt convention. Append the structured-verdict
         // suffix and, when `reviews: <stepId>` is set, inject the
         // upstream step's output as an <artefact> block.
-        let renderedPrompt = render(agentCfg.prompt, ctx);
+        let renderedPrompt = render(
+          agentCfg.prompt,
+          redactSecretsForPrompt(ctx, secretKeys),
+        );
         if (isJudge) {
           if (agentCfg.reviews) {
             renderedPrompt += buildJudgeArtefactBlock(ctx[agentCfg.reviews]);
