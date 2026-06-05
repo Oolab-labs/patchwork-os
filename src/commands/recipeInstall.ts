@@ -28,6 +28,7 @@ import {
   disabledMarkerPath,
   isInstallDirDisabled,
 } from "../recipes/disabledMarkers.js";
+import { loadAllowlist } from "../recipes/githubInstallSource.js";
 import {
   getManifestRecipeFiles,
   loadManifestFromDir,
@@ -449,6 +450,22 @@ export async function runRecipeInstall(
   options: { recipesDir?: string } = {},
 ): Promise<InstallResult> {
   const source = parseInstallSource(rawSource);
+  // Enforce the same repo allowlist the HTTP install path uses
+  // (`POST /recipes/install` via parseGithubInstallSource). The CLI used to
+  // skip this check entirely, so `patchwork recipe install github:evil/repo`
+  // would fetch from any org. Default-deny for github sources: only
+  // `patchworkos/recipes` plus operator-opted-in PATCHWORK_RECIPE_REPO_ALLOWLIST
+  // entries pass. Local sources are unaffected.
+  if (source.type === "github") {
+    const allowSet = new Set(loadAllowlist().map((s) => s.toLowerCase()));
+    const ownerRepo = `${source.owner}/${source.repo}`.toLowerCase();
+    if (!allowSet.has(ownerRepo)) {
+      throw new Error(
+        `'${source.owner}/${source.repo}' is not in the recipe-repo allowlist. ` +
+          `Set PATCHWORK_RECIPE_REPO_ALLOWLIST=${source.owner}/${source.repo} to opt in.`,
+      );
+    }
+  }
   const recipesDir = options.recipesDir ?? INSTALL_RECIPES_DIR;
 
   // Stage into temp dir first

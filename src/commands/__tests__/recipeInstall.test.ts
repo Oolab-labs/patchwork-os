@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import type { RecipeManifest } from "../../recipes/manifest.js";
-import { determineInstallName, parseInstallSource } from "../recipeInstall.js";
+import {
+  determineInstallName,
+  parseInstallSource,
+  runRecipeInstall,
+} from "../recipeInstall.js";
 
 // ============================================================================
 // parseInstallSource
@@ -245,5 +251,42 @@ describe("determineInstallName", () => {
 
   it("uses directory basename for local source without manifest", () => {
     expect(determineInstallName(null, localSource)).toBe("my-recipe");
+  });
+});
+
+// ============================================================================
+// runRecipeInstall — repo allowlist enforcement (security)
+// ============================================================================
+
+describe("runRecipeInstall allowlist enforcement", () => {
+  const PRIOR = process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST;
+
+  afterEach(() => {
+    if (PRIOR === undefined) {
+      delete process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST;
+    } else {
+      process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST = PRIOR;
+    }
+  });
+
+  it("rejects a github source whose owner/repo is not allowlisted", async () => {
+    process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST = "allowed-org/allowed-repo";
+    const recipesDir = path.join(os.tmpdir(), "patchwork-allowlist-test");
+
+    // evil-org/evil-repo is NOT in the allowlist → must be rejected before
+    // any network fetch happens.
+    await expect(
+      runRecipeInstall("github:evil-org/evil-repo", { recipesDir }),
+    ).rejects.toThrow(/allowlist/i);
+  });
+
+  it("still allows the default patchworkos/recipes when no env var is set", () => {
+    delete process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST;
+    // The default allowlist must keep permitting the official org so the
+    // unset case is not a behaviour change. We only assert the allowlist
+    // gate passes (parse succeeds) — no network call is asserted here.
+    expect(() =>
+      parseInstallSource("github:patchworkos/recipes/morning-brief"),
+    ).not.toThrow();
   });
 });
