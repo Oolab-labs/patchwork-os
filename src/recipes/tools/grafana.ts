@@ -10,6 +10,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // grafana.list_dashboards
@@ -54,7 +55,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getGrafanaConnector } = await import("../../connectors/grafana.js");
     const connector = getGrafanaConnector();
     const result = await connector.getDashboards(
@@ -62,7 +63,7 @@ registerTool({
       typeof params.limit === "number" ? params.limit : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -104,14 +105,14 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getGrafanaConnector } = await import("../../connectors/grafana.js");
     const connector = getGrafanaConnector();
     const result = await connector.getAlertRules(
       typeof params.limit === "number" ? params.limit : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -164,7 +165,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getGrafanaConnector } = await import("../../connectors/grafana.js");
     const connector = getGrafanaConnector();
     const result = await connector.createAnnotation(
@@ -181,7 +182,7 @@ registerTool({
       },
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -229,7 +230,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getGrafanaConnector } = await import("../../connectors/grafana.js");
     const connector = getGrafanaConnector();
     const result = await connector.queryDataSource(
@@ -239,5 +240,5 @@ registerTool({
       typeof params.to === "string" ? params.to : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });

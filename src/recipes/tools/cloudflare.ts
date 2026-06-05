@@ -12,6 +12,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // cloudflare.list_zones
@@ -49,7 +50,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getCloudflareConnector } = await import(
       "../../connectors/cloudflare.js"
     );
@@ -58,7 +59,7 @@ registerTool({
       typeof params.name === "string" ? params.name : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -109,7 +110,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getCloudflareConnector } = await import(
       "../../connectors/cloudflare.js"
     );
@@ -120,7 +121,7 @@ registerTool({
       typeof params.name === "string" ? params.name : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -180,7 +181,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getCloudflareConnector } = await import(
       "../../connectors/cloudflare.js"
     );
@@ -194,7 +195,7 @@ registerTool({
       typeof params.proxied === "boolean" ? params.proxied : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -233,7 +234,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getCloudflareConnector } = await import(
       "../../connectors/cloudflare.js"
     );
@@ -244,5 +245,5 @@ registerTool({
       typeof params.until === "string" ? params.until : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });

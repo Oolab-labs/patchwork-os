@@ -15,6 +15,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // posthog.capture_event  (write-gated)
@@ -58,7 +59,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPostHogConnector } = await import("../../connectors/posthog.js");
     const connector = getPostHogConnector();
     const result = await connector.captureEvent(
@@ -70,7 +71,7 @@ registerTool({
       typeof params.timestamp === "string" ? params.timestamp : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -113,7 +114,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPostHogConnector } = await import("../../connectors/posthog.js");
     const connector = getPostHogConnector();
     const result = await connector.getInsights(
@@ -121,7 +122,7 @@ registerTool({
       typeof params.limit === "number" ? params.limit : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -158,7 +159,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPostHogConnector } = await import("../../connectors/posthog.js");
     const connector = getPostHogConnector();
     const result = await connector.queryInsight(
@@ -166,7 +167,7 @@ registerTool({
       params.query as Record<string, unknown>,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -226,7 +227,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPostHogConnector } = await import("../../connectors/posthog.js");
     const connector = getPostHogConnector();
     const result = await connector.getEvents(
@@ -241,5 +242,5 @@ registerTool({
       },
     );
     return JSON.stringify(result);
-  },
+  }),
 });
