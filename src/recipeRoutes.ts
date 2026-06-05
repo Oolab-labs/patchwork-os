@@ -54,20 +54,89 @@ let templatesCache: unknown = null;
 let templatesCacheTs = 0;
 
 /**
- * #605: shape-validate the upstream templates payload before caching.
- * The minimal contract used by the dashboard marketplace is `{recipes:
- * Array}` (other fields are optional). Anything else (an error page
- * JSON, a tampered file with a flipped key, a future GitHub schema
- * change) is rejected so we don't serve garbage for 5 minutes to every
- * dashboard client.
+ * Canonical trust enums the dashboard understands. Anything outside these
+ * sets must NOT survive into the cached registry — an out-of-enum
+ * `risk_level` evaluates falsy downstream (silently reading as "safe") and
+ * `RISK_PILL_CLASS[risk_level]` resolves to `undefined`.
  */
-function isWellFormedTemplatesPayload(raw: unknown): boolean {
+const TEMPLATE_RISK_LEVELS = new Set(["low", "medium", "high"]);
+const TEMPLATE_APPROVAL_BEHAVIORS = new Set([
+  "always_ask",
+  "ask_on_novel",
+  "auto_approve",
+]);
+
+/**
+ * #605 / B3-A: shape-validate AND sanitize the upstream templates payload
+ * before caching.
+ *
+ * The minimal contract used by the dashboard marketplace is `{recipes:
+ * Array}` (other fields are optional). A bare array is accepted too (legacy).
+ * Anything that fails that contract (an error page JSON, a tampered file with
+ * a flipped top-level key, a future GitHub schema change) is rejected so we
+ * don't serve garbage for 5 minutes to every dashboard client.
+ *
+ * B3-A SECURITY change: rather than reject the WHOLE payload when a single
+ * entry carries a malformed trust field, we SANITIZE each entry IN PLACE so
+ * one bad entry can't poison the registry for every client. For each entry:
+ *
+ *   - `risk_level` not in {low,medium,high}        → stripped (set undefined)
+ *   - `approval_behavior` not in the canonical set → stripped (set undefined)
+ *   - `downloads` not a finite number              → coerced if it parses to a
+ *                                                     finite number, else dropped
+ *
+ * Conservative by design: stripping an out-of-enum `risk_level` means the
+ * dashboard treats trust as UNKNOWN (which the default-deny gate renders as
+ * elevated), never silently as "low"/"safe".
+ */
+export function isWellFormedTemplatesPayload(raw: unknown): boolean {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    // Some legacy callers used a bare array; accept that too.
-    return Array.isArray(raw);
+    // Some legacy callers used a bare array; accept (and sanitize) that too.
+    if (Array.isArray(raw)) {
+      for (const entry of raw) sanitizeTemplateEntry(entry);
+      return true;
+    }
+    return false;
   }
   const r = raw as { recipes?: unknown };
-  return Array.isArray(r.recipes);
+  if (!Array.isArray(r.recipes)) return false;
+  for (const entry of r.recipes) sanitizeTemplateEntry(entry);
+  return true;
+}
+
+/**
+ * Strip/coerce untrusted trust fields on a single registry entry, mutating it
+ * in place. Non-object entries are left untouched (the dashboard tolerates
+ * them; they simply won't render trust pills). Kept conservative: we only
+ * touch the three fields with a downstream safety impact.
+ */
+function sanitizeTemplateEntry(entry: unknown): void {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    return;
+  }
+  const e = entry as Record<string, unknown>;
+
+  // risk_level: must be one of the canonical levels, else undefined.
+  if ("risk_level" in e && !TEMPLATE_RISK_LEVELS.has(e.risk_level as string)) {
+    e.risk_level = undefined;
+  }
+
+  // approval_behavior: must be one of the canonical behaviors, else undefined.
+  if (
+    "approval_behavior" in e &&
+    !TEMPLATE_APPROVAL_BEHAVIORS.has(e.approval_behavior as string)
+  ) {
+    e.approval_behavior = undefined;
+  }
+
+  // downloads: must be a finite number. Coerce a numeric string; otherwise
+  // drop. A non-numeric value (e.g. "abc") must never pass through as-is.
+  if ("downloads" in e && typeof e.downloads !== "number") {
+    const n = Number(e.downloads);
+    e.downloads = Number.isFinite(n) ? n : undefined;
+  } else if (typeof e.downloads === "number" && !Number.isFinite(e.downloads)) {
+    e.downloads = undefined;
+  }
 }
 
 /**
@@ -343,6 +412,87 @@ function respondInvalidJson(res: ServerResponse): void {
   res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
 }
 // END A-PR2 EDIT BLOCK
+
+// ---------------------------------------------------------------------
+// B3-A — post-redirect SSRF re-check for the non-github HTTPS install path.
+//
+// `validateSafeUrl` only validates the FIRST hop and explicitly does NOT pin
+// the resolved IP across redirects (see src/ssrfGuard.ts header comment). A
+// bare `fetch(url, { redirect: "follow" })` therefore lets a 302 → private
+// IP / IMDS slip past the upfront guard. This helper replays the manual
+// redirect-loop pattern from the CLI `httpsGet` in
+// src/commands/recipeInstall.ts: every hop's host is re-validated with the
+// canonical async guard (`validateSafeUrl`, which re-resolves DNS), the chain
+// is capped, and relative `Location` values are resolved against the current
+// URL before re-validation.
+// ---------------------------------------------------------------------
+const INSTALL_FETCH_MAX_REDIRECTS = 5;
+
+/**
+ * Fetch `startUrl` following HTTP redirects manually, re-validating every hop
+ * against the SSRF guard. Throws on a blocked host (private/loopback),
+ * unsupported protocol, malformed `Location`, or exceeding the hop cap.
+ * Returns the terminal (non-redirect) `Response`.
+ *
+ * `fetchImpl` is injectable for tests; defaults to the global `fetch`.
+ * `signal` is forwarded to every hop so the install timeout still applies.
+ */
+export async function fetchFollowingRedirectsSafely(
+  startUrl: string,
+  opts: { signal?: AbortSignal; fetchImpl?: typeof fetch } = {},
+): Promise<Response> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  let currentUrl = startUrl;
+
+  for (let hop = 0; hop <= INSTALL_FETCH_MAX_REDIRECTS; hop++) {
+    // Re-validate the host of THIS hop before issuing the request. The first
+    // hop was already validated by the route, but re-checking is cheap and
+    // keeps this helper self-contained / correct in isolation.
+    const ssrf = await validateSafeUrl(currentUrl);
+    if (!ssrf.ok) {
+      throw new Error(
+        `SSRF guard blocked redirect target: ${ssrf.detail ?? ssrf.reason ?? "unknown"}`,
+      );
+    }
+
+    const res = await doFetch(currentUrl, {
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      redirect: "manual",
+    });
+
+    const isRedirect = res.status >= 300 && res.status < 400;
+    // Defensive: a non-redirect response with no `Location` is terminal even
+    // if a stub omits the `headers` object entirely.
+    const location =
+      typeof res.headers?.get === "function"
+        ? res.headers.get("location")
+        : null;
+    if (!isRedirect || !location) {
+      // Terminal response — host already validated above.
+      return res;
+    }
+
+    if (hop >= INSTALL_FETCH_MAX_REDIRECTS) {
+      throw new Error(
+        `Too many redirects (>${INSTALL_FETCH_MAX_REDIRECTS}) installing recipe`,
+      );
+    }
+
+    // Resolve relative redirects against the current URL so a relative
+    // `Location: /foo` isn't treated as an empty hostname.
+    let nextUrl: URL;
+    try {
+      nextUrl = new URL(location, currentUrl);
+    } catch {
+      throw new Error(`Invalid redirect location: "${location}"`);
+    }
+    currentUrl = nextUrl.toString();
+    // Loop re-validates currentUrl at the top before fetching it.
+  }
+
+  // Unreachable: the loop either returns a terminal response or throws.
+  throw new Error("Too many redirects installing recipe");
+}
 
 export interface RecipeRouteDeps {
   setRecipeTrustFn:
@@ -2222,12 +2372,30 @@ export function tryHandleRecipeRoute(
           yamlRes = fetched.response;
         } else {
           try {
-            yamlRes = await fetch(fetchUrl, {
+            // B3-A: manual redirect loop with per-hop SSRF re-validation —
+            // the upfront validateSafeUrl above only pins the first hop, so a
+            // 302 → private IP / IMDS would otherwise bypass it under
+            // `redirect: "follow"`.
+            yamlRes = await fetchFollowingRedirectsSafely(fetchUrl, {
               signal: fetchCtl.signal,
-              redirect: "follow",
             });
           } catch (err) {
             clearTimeout(fetchTimeout);
+            // A redirect to a blocked host is an SSRF attempt, not a generic
+            // network failure — surface it as 403 ssrf_blocked so it isn't
+            // confused with an unreachable upstream.
+            const msg = err instanceof Error ? err.message : String(err);
+            if (/^SSRF guard blocked/.test(msg)) {
+              res.writeHead(403, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: msg,
+                  code: "ssrf_blocked",
+                }),
+              );
+              return;
+            }
             console.error(`[recipes/install] fetch failed:`, err);
             // Network-level error → 502 (upstream unreachable), not 500.
             res.writeHead(502, { "Content-Type": "application/json" });
