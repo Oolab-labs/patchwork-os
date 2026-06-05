@@ -108,3 +108,87 @@ export const _config = {
   LOCKOUT_MS,
   MAX_ENTRIES,
 };
+
+/* ------------------------------------------------------------------------- *
+ * Generic call-count rate limiter (NOT the failure tracker above).
+ *
+ * The failure tracker only records auth *failures* — a successful login
+ * clears the entry, so it cannot bound the rate of *successful* expensive
+ * calls. The recipe-install proxy needs the opposite: every call is
+ * expensive (a GitHub fetch + filesystem write on the bridge), so a stolen
+ * cookie or insider can hammer it at full speed and exhaust disk or GitHub's
+ * unauthenticated 60 req/hr limit for everyone. This is a separate sliding-
+ * window counter that counts ALL calls within a window, keyed by an opaque
+ * caller identity (a hash of the session cookie, or a coarse IP fallback).
+ *
+ * Same single-process scope caveat as the failure tracker.
+ * ------------------------------------------------------------------------- */
+
+const MAX_CALLS = parsePositiveInt(
+  process.env.DASHBOARD_INSTALL_RATE_MAX,
+  30,
+);
+const RATE_WINDOW_MS = parsePositiveInt(
+  process.env.DASHBOARD_INSTALL_RATE_WINDOW_MS,
+  60 * 1000,
+);
+const RATE_MAX_ENTRIES = 10_000;
+
+// Sliding window of call timestamps (ms) per key.
+const callStore = new Map<string, number[]>();
+
+export type RateLimitResult =
+  | { limited: false }
+  | { limited: true; retryAfterSec: number };
+
+/**
+ * Record a call against `key` and report whether it should be rejected.
+ *
+ * Returns `{ limited: false }` when the call is within budget (the call IS
+ * counted), or `{ limited: true, retryAfterSec }` when the window is already
+ * saturated (the call is NOT counted — a rejected call must not extend the
+ * lockout, or a caller hammering a saturated bucket would never recover).
+ *
+ * `now` is injectable for deterministic tests.
+ */
+export function checkRateLimit(
+  key: string,
+  now: number = Date.now(),
+): RateLimitResult {
+  const cutoff = now - RATE_WINDOW_MS;
+  let calls = callStore.get(key);
+  if (calls) {
+    calls = calls.filter((t) => t > cutoff);
+  } else {
+    if (callStore.size >= RATE_MAX_ENTRIES) {
+      const oldest = callStore.keys().next().value;
+      if (oldest !== undefined) callStore.delete(oldest);
+    }
+    calls = [];
+  }
+
+  if (calls.length >= MAX_CALLS) {
+    // Saturated. Persist the pruned list so the entry doesn't grow, but do
+    // NOT add this call. retryAfterSec = time until the oldest in-window
+    // call ages out, freeing one slot.
+    callStore.set(key, calls);
+    const oldest = calls[0] ?? now;
+    const freesAt = oldest + RATE_WINDOW_MS;
+    const retryAfterSec = Math.max(1, Math.ceil((freesAt - now) / 1000));
+    return { limited: true, retryAfterSec };
+  }
+
+  calls.push(now);
+  callStore.set(key, calls);
+  return { limited: false };
+}
+
+export function _resetRateLimitForTests(): void {
+  callStore.clear();
+}
+
+export const _rateLimitConfig = {
+  MAX_CALLS,
+  WINDOW_MS: RATE_WINDOW_MS,
+  MAX_ENTRIES: RATE_MAX_ENTRIES,
+};

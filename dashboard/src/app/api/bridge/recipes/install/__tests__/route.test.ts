@@ -8,8 +8,9 @@
  * validate, but the dashboard layer should reject obviously bad input
  * before opening the bridge socket.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { _resetRateLimitForTests, _rateLimitConfig } from "@/lib/authRateLimit";
 import { POST } from "../route";
 
 const bridgeFetchMock = vi.fn(
@@ -24,16 +25,27 @@ vi.mock("@/lib/bridge", () => ({
     bridgeFetchMock(path, init),
 }));
 
-function makeReq(body: string): Request {
+function makeReq(body: string, extraHeaders?: Record<string, string>): Request {
   return new Request("https://dashboard.local/api/bridge/recipes/install", {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "sec-fetch-site": "same-origin",
+      ...extraHeaders,
     },
     body,
   });
 }
+
+// The install route applies a per-session/per-IP call-count limiter whose
+// state is a module singleton. Reset it around every test so accumulated
+// calls from earlier specs can't trip the limiter for unrelated cases.
+beforeEach(() => {
+  _resetRateLimitForTests();
+});
+afterEach(() => {
+  _resetRateLimitForTests();
+});
 
 describe("POST /api/bridge/recipes/install — source validation", () => {
   it("rejects non-JSON bodies with 400 / bad_json", async () => {
@@ -165,6 +177,56 @@ describe("POST /api/bridge/recipes/install — content-type mirroring", () => {
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/json");
+  });
+});
+
+describe("POST /api/bridge/recipes/install — per-session rate limit", () => {
+  const goodBody = JSON.stringify({
+    source: "github:patchworkos/recipes/recipes/morning-brief",
+  });
+
+  it("returns 429 + Retry-After once a session exceeds the call limit", async () => {
+    bridgeFetchMock.mockClear();
+    // Same session cookie on every call → same bucket.
+    const cookie = "patchwork_session=v1.9999999999999.sig-abc";
+    const limit = _rateLimitConfig.MAX_CALLS;
+
+    // Calls up to the limit pass through to the bridge (mocked 200).
+    for (let i = 0; i < limit; i++) {
+      const res = await POST(makeReq(goodBody, { cookie }));
+      expect(res.status).toBe(200);
+    }
+    expect(bridgeFetchMock).toHaveBeenCalledTimes(limit);
+
+    // The next call is rejected BEFORE forwarding to the bridge.
+    const blocked = await POST(makeReq(goodBody, { cookie }));
+    expect(blocked.status).toBe(429);
+    const retryAfter = blocked.headers.get("retry-after");
+    expect(retryAfter).not.toBeNull();
+    expect(Number.parseInt(retryAfter ?? "0", 10)).toBeGreaterThan(0);
+    const body = (await blocked.json()) as { error?: string; code?: string };
+    expect(body.code).toBe("rate_limited");
+    expect(typeof body.error).toBe("string");
+    // Bridge must NOT have been called for the over-limit request.
+    expect(bridgeFetchMock).toHaveBeenCalledTimes(limit);
+  });
+
+  it("isolates distinct sessions — one saturated cookie does not block another", async () => {
+    bridgeFetchMock.mockClear();
+    const limit = _rateLimitConfig.MAX_CALLS;
+    const noisy = "patchwork_session=v1.9999999999999.noisy";
+    const quiet = "patchwork_session=v1.9999999999999.quiet";
+
+    for (let i = 0; i <= limit; i++) {
+      await POST(makeReq(goodBody, { cookie: noisy }));
+    }
+    // Noisy session is now blocked.
+    const noisyRes = await POST(makeReq(goodBody, { cookie: noisy }));
+    expect(noisyRes.status).toBe(429);
+
+    // A different session still gets through.
+    const quietRes = await POST(makeReq(goodBody, { cookie: quiet }));
+    expect(quietRes.status).toBe(200);
   });
 });
 
