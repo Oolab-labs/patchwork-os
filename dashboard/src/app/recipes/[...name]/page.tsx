@@ -17,7 +17,13 @@
 
 import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  fetchSimulation,
+  riskColor,
+  type SimulationReport,
+} from "@/lib/simulation";
 import { DoctorPanel } from "./_components/DoctorPanel";
+import { SimulatePanel } from "./_components/SimulatePanel";
 import RecipeEditPage from "./_edit/page";
 import RecipePlanPage from "./_plan/page";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -195,6 +201,31 @@ function RunModal({
     setValues(init);
   }, [open, recipe]);
   const vars = recipe?.vars ?? [];
+
+  // Run-Now pre-run risk gate: when the modal opens, fetch the What-If Preview
+  // and show a compact risk banner so the user sees what this run WOULD do
+  // before confirming. Best-effort — a failed/absent simulation never blocks
+  // the run (the banner just doesn't render).
+  const [sim, setSim] = useState<SimulationReport | null>(null);
+  useEffect(() => {
+    if (!open || !recipe) {
+      setSim(null);
+      return;
+    }
+    let cancelled = false;
+    setSim(null);
+    void fetchSimulation(recipe.name)
+      .then((r) => {
+        if (!cancelled) setSim(r);
+      })
+      .catch(() => {
+        /* best-effort gate — ignore */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, recipe]);
+
   return (
     <Dialog open={open} onClose={onClose} ariaLabelledBy="hub-run-modal-title" maxWidth={480}>
       {recipe && (
@@ -211,6 +242,35 @@ function RunModal({
               onConfirm(values);
             }}
           >
+            {sim && (
+              <div
+                style={{
+                  marginBottom: "var(--s-4)",
+                  padding: "var(--s-3) var(--s-4)",
+                  border: `1px solid ${riskColor(sim.risk.tier)}`,
+                  borderRadius: "var(--r-1)",
+                  background: "var(--bg-2)",
+                  fontSize: "var(--fs-s)",
+                }}
+              >
+                <strong style={{ color: riskColor(sim.risk.tier) }}>
+                  {sim.risk.tier.toUpperCase()} risk
+                </strong>{" "}
+                ({sim.risk.score}/100) — {sim.summary.writeSteps} write(s),{" "}
+                {sim.summary.connectorSteps} connector call(s)
+                {sim.summary.connectorNamespaces.length > 0 &&
+                  ` (${sim.summary.connectorNamespaces.join(", ")})`}
+                , {sim.summary.agentSteps} agent step(s).{" "}
+                <Link
+                  href={`/recipes/${encodeURIComponent(
+                    canonicalRecipeKey(recipe.name),
+                  )}?simulate=1#simulate`}
+                  style={{ color: "var(--ink-2)" }}
+                >
+                  Full preview →
+                </Link>
+              </div>
+            )}
             {vars.length === 0 && (
               <div
                 style={{
@@ -280,6 +340,8 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
   // Deep-link: `?diagnose=1` (from the recipes list / failed-run views)
   // auto-runs the Doctor panel and scrolls to it.
   const autoDiagnose = useSearchParams().get("diagnose") === "1";
+  // Deep-link: `?simulate=1` auto-runs the What-If Preview panel + scrolls to it.
+  const autoSimulate = useSearchParams().get("simulate") === "1";
 
   // Reusable list fetch for the recipe row (matches layout's data source).
   const { data: recipes, refetch: refetchRecipes } = useBridgeFetch<Recipe[]>(
@@ -841,6 +903,14 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
             Plan
           </Link>
           <Link
+            href={`/recipes/${encodeURIComponent(name)}?simulate=1#simulate`}
+            className="btn ghost hub-control-btn"
+            style={{ textDecoration: "none" }}
+            title="What-If Preview — see what this recipe would do before running it"
+          >
+            Simulate
+          </Link>
+          <Link
             href={`/recipes/compare?name=${encodeURIComponent(name)}`}
             className="btn ghost hub-control-btn"
             style={{ textDecoration: "none" }}
@@ -865,6 +935,15 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
       <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 260ms 160ms ease both", animationFillMode: "both" }}>
         <SectionHeader>Doctor</SectionHeader>
         <DoctorPanel recipeName={name} autoRun={autoDiagnose} />
+      </PatchCard>
+      </div>
+
+      {/* WHAT-IF PREVIEW — static counterfactual simulation (no execution).
+          The wrapping `#simulate` div is the scroll target for deep-links. */}
+      <div id="simulate">
+      <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 280ms 180ms ease both", animationFillMode: "both" }}>
+        <SectionHeader>What-If Preview</SectionHeader>
+        <SimulatePanel recipeName={name} autoRun={autoSimulate} />
       </PatchCard>
       </div>
       </div>{/* end main column */}
