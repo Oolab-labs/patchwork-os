@@ -66,6 +66,19 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
   } else {
     const r = normalizedRecipe as Record<string, unknown>;
 
+    // Root-level `vars:` is silently dropped at runtime — the runner reads
+    // only `trigger.vars` / `trigger.inputs` (PR#259 trap). Warn so the
+    // author moves it under `trigger:` instead of debugging empty {{vars}}.
+    if (r.vars !== undefined) {
+      issues.push({
+        level: "warning",
+        message:
+          "Top-level 'vars' is ignored at runtime — only 'trigger.vars' / 'trigger.inputs' are read. Move declared variables under 'trigger:'.",
+        code: "root-vars-ignored",
+        path: "vars",
+      });
+    }
+
     if (!r.name || typeof r.name !== "string") {
       issues.push({
         level: "error",
@@ -151,8 +164,26 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
         message: "Recipe must have at least one step",
       });
     } else {
+      const seenStepIds = new Set<string>();
       for (let i = 0; i < r.steps.length; i++) {
         const step = r.steps[i] as Record<string, unknown>;
+
+        // Duplicate step ids break dependency wiring (`awaits:`, `into:`
+        // overwrite, output keying) — the runner keys outputs by id and a
+        // second step with the same id silently clobbers the first. Reject.
+        if (typeof step.id === "string") {
+          if (seenStepIds.has(step.id)) {
+            issues.push({
+              level: "error",
+              message: `Step ${i + 1}: duplicate step id '${step.id}' — step ids must be unique`,
+              code: "duplicate-step-id",
+              path: `steps.${i}.id`,
+            });
+          } else {
+            seenStepIds.add(step.id);
+          }
+        }
+
         const hasTool = typeof step.tool === "string";
         const hasAgent = !!step.agent;
         const hasNestedRecipe =
@@ -170,6 +201,24 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
             issues.push({
               level: "error",
               message: `Step ${i + 1}: Agent step missing 'prompt'`,
+            });
+          }
+
+          // `driver: claude|anthropic` routes to the Anthropic API (needs
+          // ANTHROPIC_API_KEY), NOT the Claude Code subscription — a common
+          // trap. Warn at lint time when the key is absent so the step
+          // doesn't silently no-op ("[agent step skipped: ANTHROPIC_API_KEY
+          // not set]") at run time. Use `driver: subprocess`/`claude-code`
+          // for the subscription path.
+          if (
+            (agent.driver === "claude" || agent.driver === "anthropic") &&
+            !process.env.ANTHROPIC_API_KEY
+          ) {
+            issues.push({
+              level: "warning",
+              message: `Step ${i + 1}: driver '${String(agent.driver)}' uses the Anthropic API but ANTHROPIC_API_KEY is not set — the step will be skipped at run time. Set ANTHROPIC_API_KEY, or use 'driver: subprocess' for the Claude Code subscription.`,
+              code: "driver-api-key-required",
+              path: `steps.${i}.agent.driver`,
             });
           }
 

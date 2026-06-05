@@ -500,7 +500,64 @@ function generateRecipeSchema(
           },
           filter: {
             type: "string",
-            description: "File filter pattern (for file_watch trigger)",
+            description:
+              "File filter pattern (for file_watch trigger). For on_test_run triggers, one of: any | failure | pass-after-fail.",
+          },
+          vars: {
+            type: "array",
+            description:
+              "Declared input variables resolvable as {{name}} in steps. Place declared variables here (NOT at recipe root — top-level vars are ignored at runtime).",
+            items: {
+              type: "object",
+              required: ["name"],
+              properties: {
+                name: {
+                  type: "string",
+                  pattern: "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+                  description:
+                    "Variable name (letter/underscore start; letters, digits, underscores; max 64 chars).",
+                },
+                required: {
+                  type: "boolean",
+                  description: "Whether the variable must be supplied.",
+                },
+                default: {
+                  description: "Default value when not supplied.",
+                },
+                description: {
+                  type: "string",
+                  description: "Human-readable description of the variable.",
+                },
+              },
+            },
+          },
+          inputs: {
+            type: "array",
+            description:
+              "Alias for trigger.vars — declared input variables resolvable as {{name}} in steps.",
+            items: {
+              type: "object",
+              required: ["name"],
+              properties: {
+                name: {
+                  type: "string",
+                  pattern: "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+                  description:
+                    "Variable name (letter/underscore start; letters, digits, underscores; max 64 chars).",
+                },
+                required: {
+                  type: "boolean",
+                  description: "Whether the variable must be supplied.",
+                },
+                default: {
+                  description: "Default value when not supplied.",
+                },
+                description: {
+                  type: "string",
+                  description: "Human-readable description of the variable.",
+                },
+              },
+            },
           },
           eventSource: {
             type: "string",

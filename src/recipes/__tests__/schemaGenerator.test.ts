@@ -194,6 +194,28 @@ describe("schemaGenerator", () => {
     });
   });
 
+  it("includes trigger.vars / trigger.inputs array schema", () => {
+    const schemas = generateSchemaSet();
+    const recipeSchema = schemas.recipe as {
+      properties?: {
+        trigger?: {
+          properties?: Record<string, { type?: string; items?: unknown }>;
+        };
+      };
+    };
+    const trigProps = recipeSchema.properties?.trigger?.properties;
+    expect(trigProps?.vars).toMatchObject({ type: "array" });
+    expect(trigProps?.inputs).toMatchObject({ type: "array" });
+    const varItems = trigProps?.vars?.items as {
+      required?: string[];
+      properties?: { name?: { pattern?: string } };
+    };
+    expect(varItems.required).toContain("name");
+    expect(varItems.properties?.name?.pattern).toBe(
+      "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+    );
+  });
+
   it("includes chained recipe trigger and nested recipe step support", () => {
     const schemas = generateSchemaSet();
     const recipeSchema = schemas.recipe as {

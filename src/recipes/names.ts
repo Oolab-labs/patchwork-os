@@ -64,15 +64,20 @@ export const RECIPE_VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
  * data silently. The simple-identifier subset of
  * `registerRecipeContextKeys` + `extractTemplateExpressions builtinKeys`
  * (see `src/recipes/validation.ts`).
+ *
+ * Entries are stored LOWERCASE: the validator (and the dashboard mirror)
+ * look up `name.toLowerCase()`, so the date-format keys (`yyyy`, `iso_now`,
+ * `hh`, `mm`, `ss`) must be lowercase here or they would never match —
+ * letting a `yyyy`/`YYYY` var silently shadow the built-in date key.
  */
 export const RESERVED_VAR_NAMES: ReadonlySet<string> = new Set([
   "date",
   "time",
-  "YYYY",
-  "ISO_NOW",
-  "HH",
-  "MM",
-  "SS",
+  "yyyy",
+  "iso_now",
+  "hh",
+  "mm",
+  "ss",
   "this",
   "hash",
   "message",
