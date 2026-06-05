@@ -117,8 +117,13 @@ export function riskGlyph(tier: RiskTier): string {
 export async function fetchSimulation(
   recipeName: string,
 ): Promise<SimulationReport> {
+  // no-store: the simulation reflects live bridge/recipe state; a cached 404
+  // (e.g. before the bridge had the route) must never stick in the browser.
   const res = await fetch(
-    apiPath(`/api/bridge/recipes/simulate?recipe=${encodeURIComponent(recipeName)}`),
+    apiPath(
+      `/api/bridge/recipes/simulate?recipe=${encodeURIComponent(recipeName)}`,
+    ),
+    { cache: "no-store" },
   );
   const data = (await res.json().catch(() => ({}))) as
     | { report: SimulationReport }
