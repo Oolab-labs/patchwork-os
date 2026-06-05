@@ -1,4 +1,8 @@
+import { createHash } from "node:crypto";
+
+import { checkRateLimit } from "@/lib/authRateLimit";
 import { bridgeFetch } from "@/lib/bridge";
+import { clientKey } from "@/lib/clientIp";
 import { requireSameOrigin } from "@/lib/csrf";
 import {
   BRIDGE_BODY_CAPS,
@@ -6,6 +10,7 @@ import {
   readBodyWithCap,
 } from "@/lib/readBodyWithCap";
 import { assertValidInstallSource } from "@/lib/registry";
+import { SESSION_COOKIE_NAME } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,16 +19,59 @@ function jsonError(
   status: number,
   error: string,
   code?: string,
+  extraHeaders?: Record<string, string>,
 ): Response {
   return new Response(JSON.stringify(code ? { error, code } : { error }), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...extraHeaders },
   });
+}
+
+/**
+ * Derive an opaque per-caller key for the install rate limiter.
+ *
+ * Preferred identity is the session cookie — hashed (SHA-256, truncated) so
+ * the raw token never lives in the limiter's in-memory map. When no session
+ * cookie is present (e.g. unauthenticated dev deploy, or a malformed
+ * request), fall back to the coarse client-IP bucket from clientKey() so the
+ * route is never left completely unbounded. clientKey returns "unknown"
+ * without a trusted proxy, which collapses to a single shared global bucket
+ * — intentionally conservative.
+ */
+function rateLimitKey(req: Request): string {
+  const cookieHeader = req.headers.get("cookie") ?? "";
+  for (const part of cookieHeader.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    const name = part.slice(0, eq).trim();
+    if (name === SESSION_COOKIE_NAME) {
+      const value = part.slice(eq + 1).trim();
+      if (value) {
+        const digest = createHash("sha256").update(value).digest("hex");
+        return `sess:${digest.slice(0, 32)}`;
+      }
+    }
+  }
+  return `ip:${clientKey(req.headers)}`;
 }
 
 export async function POST(req: Request): Promise<Response> {
   const guard = requireSameOrigin(req);
   if (guard) return guard;
+
+  // Per-session call-count cap BEFORE any bridge work. Each install triggers
+  // a GitHub fetch + filesystem write on the bridge; an unbounded POST loop
+  // (stolen cookie / insider) can exhaust disk or GitHub's 60 req/hr limit
+  // for everyone. See B3-C in docs/marketplace-investigation-2026-06-04.md.
+  const rl = checkRateLimit(rateLimitKey(req));
+  if (rl.limited) {
+    return jsonError(
+      429,
+      "Too many install requests — slow down and retry shortly.",
+      "rate_limited",
+      { "retry-after": String(rl.retryAfterSec) },
+    );
+  }
 
   const read = await readBodyWithCap(req, BRIDGE_BODY_CAPS.install);
   if (!read.ok) return bodyTooLargeResponse(BRIDGE_BODY_CAPS.install);
