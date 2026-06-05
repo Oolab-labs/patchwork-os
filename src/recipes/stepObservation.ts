@@ -186,8 +186,30 @@ const SENSITIVE_KEY_PATTERNS = [
   "access_token",
 ];
 
-const REDACTED = "[REDACTED]";
+export const REDACTED = "[REDACTED]";
 const TRUNCATED = "[truncated]";
+
+/**
+ * Build a context copy in which the values of `secretKeys` (keys populated
+ * from a recipe-level `type: env` block) are replaced with the REDACTED
+ * marker. Used to render the LLM-facing agent prompt so an env-sourced
+ * secret never reaches the model verbatim. Tool-step param interpolation
+ * uses the ORIGINAL context — tools legitimately need the real value.
+ *
+ * Returns the input unchanged (same reference) when there are no secret
+ * keys, so the common no-secrets recipe path allocates nothing.
+ */
+export function redactSecretsForPrompt<T extends Record<string, string>>(
+  ctx: T,
+  secretKeys: ReadonlySet<string>,
+): T {
+  if (secretKeys.size === 0) return ctx;
+  const out: Record<string, string> = { ...ctx };
+  for (const key of secretKeys) {
+    if (Object.hasOwn(out, key)) out[key] = REDACTED;
+  }
+  return out as T;
+}
 
 function isSensitiveKey(key: string): boolean {
   const lower = key.toLowerCase();

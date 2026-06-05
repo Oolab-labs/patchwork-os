@@ -4098,3 +4098,63 @@ describe("runYamlRecipe — orphaned-run guard", () => {
     }
   });
 });
+
+// ── SECRETS-IN-VARS: env-sourced secrets redacted from agent prompts ─────────
+// An env (`type: env`) context value must NEVER reach the LLM verbatim, but a
+// TOOL step still needs the real value (http header / DB password). See
+// docs/recipe-feature-investigation-2026-06-05.md (#1 gap: SECRETS-IN-VARS).
+describe("runYamlRecipe — env secret redaction (agent vs tool)", () => {
+  const SECRET_ENV = "PATCHWORK_TEST_SECRET_REDACT";
+  const SECRET_VALUE = "sk-supersecret-deadbeef-1234";
+
+  afterEach(() => {
+    delete process.env[SECRET_ENV];
+  });
+
+  it("redacts the secret in the agent prompt but passes the raw value to the tool", async () => {
+    process.env[SECRET_ENV] = SECRET_VALUE;
+
+    let receivedPrompt = "";
+    const writtenContent: string[] = [];
+
+    const recipe = makeRecipe({
+      name: "secret-redact",
+      context: [{ type: "env", keys: [SECRET_ENV] }],
+      steps: [
+        {
+          agent: {
+            prompt: `Use the key: {{${SECRET_ENV}}}`,
+            into: "out",
+          },
+        },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "secret-tool-out.txt"),
+          content: `header={{${SECRET_ENV}}}`,
+        },
+      ],
+    } as Partial<YamlRecipe>);
+
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async (prompt) => {
+        receivedPrompt = prompt;
+        return "ok";
+      },
+      writeFile: (_p, c) => {
+        writtenContent.push(c);
+      },
+    });
+
+    expect(result.errorMessage).toBeUndefined();
+
+    // Agent (LLM-facing) prompt: secret redacted, raw value absent.
+    expect(receivedPrompt).toContain("[REDACTED]");
+    expect(receivedPrompt).not.toContain(SECRET_VALUE);
+
+    // Tool step: raw secret preserved (tools legitimately need it).
+    expect(writtenContent).toHaveLength(1);
+    expect(writtenContent[0]).toBe(`header=${SECRET_VALUE}`);
+    expect(writtenContent[0]).not.toContain("[REDACTED]");
+  });
+});
