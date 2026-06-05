@@ -33,13 +33,14 @@ import type { BudgetPolicy } from "./schema.js";
 
 /**
  * Drivers that incur real, metered, per-token API billing — the ONLY ones a
- * USD cap is enforced against. Subscription/CLI drivers (subprocess Claude/
- * Gemini) report no usage and never reach the pricing path; `local`
+ * USD cap is enforced against. Includes the metered Gemini API driver
+ * (stamped "gemini"); the subscription/CLI subprocess drivers report no usage
+ * and never reach the pricing path; `local`
  * (self-hosted Ollama / LM Studio) DOES report usage but costs no real money,
  * so it must not be priced at notional API rates and halted on spend that
  * never happened. Anything not in this set fails open with a one-time notice.
  */
-const BILLABLE_DRIVERS = new Set(["anthropic", "openai", "grok"]);
+const BILLABLE_DRIVERS = new Set(["anthropic", "openai", "grok", "gemini"]);
 
 /** Rough chars-per-token used for the opt-in unmeasured-driver USD estimate. */
 const ESTIMATE_CHARS_PER_TOKEN = 4;

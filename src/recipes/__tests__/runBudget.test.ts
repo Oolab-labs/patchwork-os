@@ -117,6 +117,31 @@ describe("RunBudget — usdMax (cost-routing Phase 3)", () => {
     expect(a.reason).toMatch(/usdMax=\$10/);
   });
 
+  it("bills the gemini API driver against usdMax (does not fail open)", () => {
+    const b = new RunBudget({ usdMax: 10 }, TABLE);
+    // m1 = $1/1M each side → 5M in + 5M out = $10.00.
+    b.reconcile(
+      "gemini",
+      { inputTokens: 5_000_000, outputTokens: 5_000_000 },
+      "m1",
+    );
+    expect(b.totals().usd).toBeCloseTo(10, 6);
+    expect(b.totals().usdBreached).toBe(true);
+    const a = b.admit();
+    expect(a.admitted).toBe(false);
+    expect(a.reason).toMatch(/budget_exceeded/);
+    // No "not-billed" fail-open warning for gemini.
+    expect(b.warnings().some((w) => /does not incur metered/.test(w))).toBe(
+      false,
+    );
+  });
+
+  it("quoteUsd prices a gemini call (mirrors reconcile billing)", () => {
+    const b = new RunBudget({ usdMax: 10 }, TABLE);
+    const q = b.quoteUsd("gemini", "m1", 1_000_000, 0); // $1
+    expect(q).toBeCloseTo(1, 6);
+  });
+
   it("admits under the cap and reports usd / usdRemaining", () => {
     const b = new RunBudget({ usdMax: 10 }, TABLE);
     b.reconcile("openai", { inputTokens: 1_000_000, outputTokens: 0 }, "m1"); // $1
