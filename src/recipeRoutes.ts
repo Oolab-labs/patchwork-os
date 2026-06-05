@@ -1594,9 +1594,22 @@ export function tryHandleRecipeRoute(
       try {
         const now = Date.now();
         if (templatesCache === null || now - templatesCacheTs > 5 * 60 * 1000) {
-          const ghRes = await fetch(
-            "https://raw.githubusercontent.com/patchworkos/recipes/main/index.json",
-          );
+          // Abort a stalled CDN connection — without this a hung socket
+          // parks the handler forever (the negative-cache sentinel only
+          // fires on rejection, which a hung connection never produces).
+          // Matches the AbortController idiom used by the other fetch
+          // sites in this file.
+          const ctl = new AbortController();
+          const timeout = setTimeout(() => ctl.abort(), 30_000);
+          let ghRes: Response;
+          try {
+            ghRes = await fetch(
+              "https://raw.githubusercontent.com/patchworkos/recipes/main/index.json",
+              { signal: ctl.signal },
+            );
+          } finally {
+            clearTimeout(timeout);
+          }
           if (!ghRes.ok) {
             throw new Error(`GitHub returned ${ghRes.status}`);
           }
