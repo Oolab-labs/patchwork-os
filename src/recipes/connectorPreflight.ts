@@ -44,6 +44,7 @@ export const TOOL_NAMESPACE_TO_CONNECTOR: Record<string, string> = {
   gmail: "gmail",
   calendar: "google-calendar",
   drive: "google-drive",
+  docs: "google-docs",
   intercom: "intercom",
   hubspot: "hubspot",
   datadog: "datadog",
@@ -56,6 +57,35 @@ export const TOOL_NAMESPACE_TO_CONNECTOR: Record<string, string> = {
   discord: "discord",
   gitlab: "gitlab",
   pagerduty: "pagerduty",
+  // Wave-2 backfill (audit 2026-06-05): the map previously covered only ~19
+  // of the ~45 connector-backed recipe-step namespaces, so recipes using any
+  // of the below got NO install-time missing-auth warning and hard-threw on
+  // first run. The connector-preflight-parity ratchet keeps this honest.
+  airtable: "airtable",
+  caldiy: "caldiy",
+  circleci: "circleci",
+  cloudflare: "cloudflare",
+  elasticsearch: "elasticsearch",
+  figma: "figma",
+  grafana: "grafana",
+  monday: "monday",
+  obsidian: "obsidian",
+  paystack: "paystack",
+  pipedrive: "pipedrive",
+  postgres: "postgres",
+  posthog: "posthog",
+  redis: "redis",
+  resend: "resend",
+  salesforce: "salesforce",
+  sendgrid: "sendgrid",
+  shopify: "shopify",
+  snowflake: "snowflake",
+  supabase: "supabase",
+  todoist: "todoist",
+  twilio: "twilio",
+  vercel: "vercel",
+  webflow: "webflow",
+  woocommerce: "woocommerce",
 };
 
 /**
