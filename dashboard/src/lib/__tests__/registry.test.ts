@@ -403,6 +403,217 @@ describe("fetch* functions use the fallback", () => {
   });
 });
 
+describe("fetchRegistry sanitization (tampered-index resilience)", () => {
+  const INDEX_SRC: ParsedInstallSource = {
+    owner: "patchworkos",
+    repo: "recipes",
+    path: "",
+    ref: "main",
+  };
+  const okText = (body: string) => ({ ok: true, text: async () => body }) as Response;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("strips an out-of-enum risk_level and coerces non-number downloads on recipes", async () => {
+    const rawUrl = rawUrlFor(INDEX_SRC, "index.json");
+    const payload = JSON.stringify({
+      version: "1",
+      updated_at: "2026-06-04",
+      recipes: [
+        {
+          name: "tampered",
+          version: "1.0.0",
+          description: "d",
+          tags: [],
+          connectors: [],
+          install: "github:o/r@main",
+          // SECURITY: a tampered index can set an out-of-enum risk so that
+          // RISK_PILL_CLASS[risk_level] renders `undefined` and the value
+          // reads as not-elevated. Sanitization must drop it.
+          risk_level: "bogus",
+          approval_behavior: "definitely_safe",
+          // Non-number downloads must coerce to a number-or-undefined.
+          downloads: "12",
+        },
+      ],
+    });
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === rawUrl) return okText(payload);
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const data = await fetchRegistry();
+    const r = data?.recipes[0];
+    expect(r?.risk_level).toBeUndefined();
+    expect(r?.approval_behavior).toBeUndefined();
+    expect(typeof r?.downloads === "number" || r?.downloads === undefined).toBe(true);
+    expect(r?.downloads).not.toBe("12");
+  });
+
+  it("preserves valid enum + numeric downloads unchanged", async () => {
+    const rawUrl = rawUrlFor(INDEX_SRC, "index.json");
+    const payload = JSON.stringify({
+      version: "1",
+      updated_at: "2026-06-04",
+      recipes: [
+        {
+          name: "good",
+          version: "1.0.0",
+          description: "d",
+          tags: [],
+          connectors: [],
+          install: "github:o/r@main",
+          risk_level: "low",
+          approval_behavior: "auto_approve",
+          downloads: 42,
+        },
+      ],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === rawUrl) return okText(payload);
+        throw new Error(`unexpected url: ${url}`);
+      }),
+    );
+
+    const data = await fetchRegistry();
+    const r = data?.recipes[0];
+    expect(r?.risk_level).toBe("low");
+    expect(r?.approval_behavior).toBe("auto_approve");
+    expect(r?.downloads).toBe(42);
+  });
+
+  it("sanitizes bundle entries too", async () => {
+    const rawUrl = rawUrlFor(INDEX_SRC, "index.json");
+    const payload = JSON.stringify({
+      version: "2",
+      updated_at: "2026-06-04",
+      recipes: [],
+      bundles: [
+        {
+          name: "@o/b",
+          version: "1.0.0",
+          description: "d",
+          tags: [],
+          connectors: [],
+          install: "github:o/r@main",
+          risk_level: 42,
+          downloads: null,
+        },
+      ],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === rawUrl) return okText(payload);
+        throw new Error(`unexpected url: ${url}`);
+      }),
+    );
+
+    const data = await fetchRegistry();
+    const b = data?.bundles?.[0];
+    expect(b?.risk_level).toBeUndefined();
+    expect(typeof b?.downloads === "number" || b?.downloads === undefined).toBe(true);
+  });
+});
+
+describe("fetchGithubFile GITHUB_TOKEN auth", () => {
+  // The fetch mocks below declare only a `url` param, so the recorded
+  // `mock.calls` entries are typed as 1-tuples. `fetchGithubFile` always
+  // passes a second `init` arg at runtime; read it through this helper so the
+  // tuple index stays type-safe and the unused-param lint stays quiet.
+  const initOf = (call: unknown[]): { headers?: Record<string, string> } | undefined =>
+    call[1] as { headers?: Record<string, string> } | undefined;
+
+  const SRC: ParsedInstallSource = {
+    owner: "patchworkos",
+    repo: "recipes",
+    path: "examples/hello",
+    ref: "main",
+  };
+  const RAW = rawUrlFor(SRC, "recipe.yaml");
+  const API = contentsApiUrlFor(SRC, "recipe.yaml");
+  const okText = (body: string) => ({ ok: true, text: async () => body }) as Response;
+  const rateLimited = () => ({ ok: false, status: 429, text: async () => "" }) as Response;
+  const notOk = () => ({ ok: false, status: 404, text: async () => "" }) as Response;
+
+  const origToken = process.env.GITHUB_TOKEN;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (origToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = origToken;
+  });
+
+  it("attaches Authorization: Bearer on the raw fetch when GITHUB_TOKEN is set", async () => {
+    process.env.GITHUB_TOKEN = "ghp_test_token";
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === RAW) return okText("ok");
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchGithubFile(SRC, "recipe.yaml");
+    const init = initOf(fetchMock.mock.calls[0]);
+    expect(init?.headers?.Authorization).toBe("Bearer ghp_test_token");
+  });
+
+  it("attaches Authorization: Bearer on the Contents-API fallback when GITHUB_TOKEN is set", async () => {
+    process.env.GITHUB_TOKEN = "ghp_test_token";
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === RAW) return notOk();
+      if (url === API) return okText("ok");
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchGithubFile(SRC, "recipe.yaml");
+    const apiCall = fetchMock.mock.calls.find(([u]) => u === API);
+    const init = apiCall ? initOf(apiCall) : undefined;
+    expect(init?.headers?.Authorization).toBe("Bearer ghp_test_token");
+  });
+
+  it("does NOT attach Authorization when GITHUB_TOKEN is absent", async () => {
+    delete process.env.GITHUB_TOKEN;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === RAW) return okText("ok");
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchGithubFile(SRC, "recipe.yaml");
+    const init = initOf(fetchMock.mock.calls[0]);
+    expect(init?.headers?.Authorization).toBeUndefined();
+  });
+
+  it("retries once on HTTP 429 then succeeds", async () => {
+    let rawCalls = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === RAW) {
+        rawCalls++;
+        if (rawCalls === 1) return rateLimited();
+        return okText("ok-after-retry");
+      }
+      throw new Error(`unexpected url: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const text = await fetchGithubFile(SRC, "recipe.yaml");
+    expect(text).toBe("ok-after-retry");
+    expect(rawCalls).toBe(2);
+  });
+});
+
 describe("requiresElevatedConfirm (default-deny trust gate)", () => {
   // SECURITY: the all-undefined case is the live-registry case — no
   // recipe in the GitHub index.json carries trust metadata today. It
