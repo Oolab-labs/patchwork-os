@@ -4,7 +4,9 @@ import { RECIPE_NAME_RE } from "../names.js";
 import {
   generateDryRunPlanSchema,
   generateSchemaSet,
+  generateSimulationSchema,
 } from "../schemaGenerator.js";
+import { simulateFromPlan } from "../simulation/simulate.js";
 import { clearRegistry, registerTool } from "../toolRegistry.js";
 
 describe("schemaGenerator", () => {
@@ -440,6 +442,64 @@ describe("schemaGenerator", () => {
       };
 
       expect(validate(invalid)).toBe(false);
+    });
+  });
+
+  describe("simulation report schema (What-If Preview)", () => {
+    it("exposes a stable id + schemaVersion/kind const", () => {
+      const schema = generateSimulationSchema() as Record<string, unknown>;
+      expect(schema.$id).toBe(
+        "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/simulation-report.v1.json",
+      );
+      const properties = schema.properties as Record<string, unknown>;
+      expect(properties.schemaVersion).toMatchObject({ const: 1 });
+      expect(properties.kind).toMatchObject({ const: "what-if-preview" });
+      expect(properties.gatedOnRecipeSteps).toMatchObject({ type: "boolean" });
+    });
+
+    it("validates a real simulateFromPlan output via Ajv", () => {
+      const ajv = new Ajv({ strict: false });
+      const validate = ajv.compile(generateSimulationSchema() as object);
+
+      // A real report from the engine — keeps the schema honest against impl.
+      const report = simulateFromPlan({
+        schemaVersion: 1,
+        recipe: "example",
+        mode: "dry-run",
+        triggerType: "chained",
+        generatedAt: new Date().toISOString(),
+        connectorNamespaces: ["slack"],
+        steps: [
+          {
+            id: "post",
+            type: "tool",
+            tool: "slack.post_message",
+            namespace: "slack",
+            risk: "high",
+            isWrite: true,
+            isConnector: true,
+            resolved: true,
+            condition: "{{ ok }}",
+          },
+        ],
+        lint: { errors: [], warnings: [] },
+      });
+
+      const ok = validate(report);
+      if (!ok) {
+        throw new Error(
+          `schema errors: ${JSON.stringify(validate.errors, null, 2)}`,
+        );
+      }
+      expect(ok).toBe(true);
+    });
+
+    it("rejects a report missing required fields", () => {
+      const ajv = new Ajv({ strict: false });
+      const validate = ajv.compile(generateSimulationSchema() as object);
+      expect(validate({ schemaVersion: 1, kind: "what-if-preview" })).toBe(
+        false,
+      );
     });
   });
 });

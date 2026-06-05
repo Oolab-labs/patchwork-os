@@ -260,6 +260,14 @@ export class RecipeOrchestration {
       >;
     };
 
+    server.simulateFn = async (recipeName: string) => {
+      const { runRecipeSimulate } = await import("./commands/recipe.js");
+      return (await runRecipeSimulate(recipeName)) as unknown as Record<
+        string,
+        unknown
+      >;
+    };
+
     // VD-4 mocked replay: load the original run, re-parse its recipe
     // from disk (so a later edit replays against the new logic), and
     // re-fire through chainedRunner with `mockedOutputs` populated from
