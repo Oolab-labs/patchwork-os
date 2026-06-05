@@ -128,6 +128,219 @@ export function generateDryRunPlanSchema(): unknown {
 }
 
 /**
+ * JSON Schema for the What-If Preview `RecipeSimulationReport`
+ * (`src/recipes/simulation/types.ts`), the output of
+ * `GET /recipes/:name/simulate` and `patchwork recipe simulate`. A superset of
+ * the dry-run plan; consumers pin on `schemaVersion`. Standalone (not part of
+ * `generateSchemaSet`/`writeSchemas`) — served on demand to consumers that want
+ * to validate the wire contract.
+ */
+export function generateSimulationSchema(): unknown {
+  const riskEnum = { type: "string", enum: ["low", "medium", "high"] };
+  const sideEffectEnum = {
+    type: "string",
+    enum: [
+      "local-read",
+      "local-write",
+      "connector-read",
+      "connector-write",
+      "external-http",
+      "agent-llm",
+      "nested-recipe",
+      "unknown",
+    ],
+  };
+  const simStep = {
+    type: "object",
+    required: [
+      "id",
+      "type",
+      "resolved",
+      "baseRisk",
+      "effectiveRisk",
+      "sideEffect",
+      "isWrite",
+      "isConnector",
+    ],
+    properties: {
+      id: { type: "string" },
+      type: { type: "string", enum: ["tool", "agent", "recipe"] },
+      tool: { type: "string" },
+      namespace: { type: "string" },
+      resolved: { type: "boolean" },
+      optional: { type: "boolean" },
+      dependencies: { type: "array", items: { type: "string" } },
+      condition: { type: "string" },
+      baseRisk: riskEnum,
+      effectiveRisk: riskEnum,
+      sideEffect: sideEffectEnum,
+      isWrite: { type: "boolean" },
+      isConnector: { type: "boolean" },
+    },
+  };
+
+  return {
+    $schema: "http://json-schema.org/draft-07/schema#",
+    $id: "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/simulation-report.v1.json",
+    title: "Patchwork Recipe What-If Preview",
+    description:
+      "Stable machine-readable output of `patchwork recipe simulate` / GET /recipes/:name/simulate. Static counterfactual simulation — executes nothing. Pin consumers on schemaVersion. `gatedOnRecipeSteps` is false today: recipe steps are NOT gated by the approval queue.",
+    type: "object",
+    required: [
+      "schemaVersion",
+      "kind",
+      "recipe",
+      "triggerType",
+      "generatedAt",
+      "fidelity",
+      "topology",
+      "gatedOnRecipeSteps",
+      "steps",
+      "summary",
+      "risk",
+      "approvals",
+      "cost",
+      "branches",
+      "lint",
+      "notes",
+    ],
+    properties: {
+      schemaVersion: { type: "number", const: 1 },
+      kind: { type: "string", const: "what-if-preview" },
+      recipe: { type: "string" },
+      triggerType: { type: "string" },
+      generatedAt: {
+        type: "string",
+        description: "ISO-8601 timestamp (reused from the dry-run plan)",
+      },
+      fidelity: { type: "string", enum: ["static"] },
+      topology: { type: "string", enum: ["chained", "flat"] },
+      gatedOnRecipeSteps: {
+        type: "boolean",
+        description:
+          "False today — recipe-runner steps are NOT gated by the approval queue. The approval projection is the tier that WOULD apply if they were.",
+      },
+      steps: { type: "array", items: simStep },
+      summary: {
+        type: "object",
+        required: [
+          "totalSteps",
+          "writeSteps",
+          "connectorSteps",
+          "agentSteps",
+          "unresolvedSteps",
+          "sideEffectCounts",
+          "connectorNamespaces",
+        ],
+        properties: {
+          totalSteps: { type: "number" },
+          writeSteps: { type: "number" },
+          connectorSteps: { type: "number" },
+          agentSteps: { type: "number" },
+          unresolvedSteps: { type: "number" },
+          sideEffectCounts: {
+            type: "object",
+            additionalProperties: { type: "number" },
+          },
+          connectorNamespaces: { type: "array", items: { type: "string" } },
+        },
+      },
+      risk: {
+        type: "object",
+        required: ["score", "tier", "components", "highestStepRisk"],
+        properties: {
+          score: { type: "number" },
+          tier: riskEnum,
+          highestStepRisk: riskEnum,
+          components: {
+            type: "object",
+            required: [
+              "highSteps",
+              "mediumSteps",
+              "writeSteps",
+              "connectorWriteSteps",
+              "externalHttpSteps",
+              "unresolvedSteps",
+            ],
+            properties: {
+              highSteps: { type: "number" },
+              mediumSteps: { type: "number" },
+              writeSteps: { type: "number" },
+              connectorWriteSteps: { type: "number" },
+              externalHttpSteps: { type: "number" },
+              unresolvedSteps: { type: "number" },
+            },
+          },
+        },
+      },
+      approvals: {
+        type: "object",
+        required: ["gatedOnRecipeSteps", "projected", "note"],
+        properties: {
+          gatedOnRecipeSteps: { type: "boolean" },
+          note: { type: "string" },
+          projected: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["stepId", "tier", "wouldRequireApproval", "reason"],
+              properties: {
+                stepId: { type: "string" },
+                tool: { type: "string" },
+                tier: riskEnum,
+                wouldRequireApproval: { type: "boolean" },
+                reason: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+      cost: {
+        type: "object",
+        required: [
+          "basis",
+          "agentSteps",
+          "estimatedAgentSteps",
+          "estPromptTokens",
+          "usd",
+          "note",
+        ],
+        properties: {
+          basis: { type: "string", enum: ["heuristic", "unavailable"] },
+          agentSteps: { type: "number" },
+          estimatedAgentSteps: { type: "number" },
+          estPromptTokens: { type: ["number", "null"] },
+          usd: { type: "null" },
+          note: { type: "string" },
+        },
+      },
+      branches: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["stepId", "condition", "outcome", "reason"],
+          properties: {
+            stepId: { type: "string" },
+            condition: { type: "string" },
+            outcome: { type: "string", const: "undetermined" },
+            reason: { type: "string" },
+          },
+        },
+      },
+      lint: {
+        type: "object",
+        required: ["errors", "warnings"],
+        properties: {
+          errors: { type: "array", items: { type: "string" } },
+          warnings: { type: "array", items: { type: "string" } },
+        },
+      },
+      notes: { type: "array", items: { type: "string" } },
+    },
+  };
+}
+
+/**
  * Generate top-level recipe schema that composes namespace tool schemas.
  */
 function generateRecipeSchema(

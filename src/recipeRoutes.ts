@@ -607,6 +607,8 @@ export interface RecipeRouteDeps {
       }) => import("./recipes/judgeSummary.js").JudgeSummary)
     | null;
   runPlanFn: ((recipeName: string) => Promise<Record<string, unknown>>) | null;
+  /** What-If Preview: static counterfactual simulation for a recipe by name. */
+  simulateFn: ((recipeName: string) => Promise<Record<string, unknown>>) | null;
   runReplayFn:
     | ((seq: number) => Promise<{
         ok: boolean;
@@ -1502,6 +1504,41 @@ export function tryHandleRecipeRoute(
           res.end(JSON.stringify({ error: "Recipe not found" }));
         } else {
           respond500(res, err, "recipes plan");
+        }
+      }
+    })();
+    return true;
+  }
+
+  // GET /recipes/:name/simulate — What-If Preview: static counterfactual
+  // simulation of a recipe by name (projected actions, side-effect taxonomy,
+  // blast-radius risk, tier-only approval projection honestly flagged as NOT
+  // gated on recipe steps today, low-confidence cost, undetermined branches).
+  // Executes nothing; superset of the dry-run plan. See runRecipeSimulate.
+  const recipeSimulateMatch =
+    req.method === "GET"
+      ? /^\/recipes\/([^/]+)\/simulate$/.exec(parsedUrl.pathname)
+      : null;
+  if (recipeSimulateMatch?.[1]) {
+    const name = decodeURIComponent(recipeSimulateMatch[1]);
+    void (async () => {
+      try {
+        if (!deps.simulateFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "simulate_unavailable" }));
+          return;
+        }
+        const report = await deps.simulateFn(name);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ report }));
+      } catch (err) {
+        // #605: classify by code, not substring (see /recipes/:name/plan).
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code === "ENOENT" || code === "RECIPE_NOT_FOUND") {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Recipe not found" }));
+        } else {
+          respond500(res, err, "recipes simulate");
         }
       }
     })();

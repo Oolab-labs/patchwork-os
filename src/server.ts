@@ -295,6 +295,11 @@ export class Server extends EventEmitter<ServerEvents> {
   public runPlanFn:
     | ((recipeName: string) => Promise<Record<string, unknown>>)
     | null = null;
+  /** Patchwork: set by bridge to generate a What-If Preview simulation for a
+   *  recipe by name (static counterfactual; superset of the dry-run plan). */
+  public simulateFn:
+    | ((recipeName: string) => Promise<Record<string, unknown>>)
+    | null = null;
   /** Patchwork (VD-4): mocked replay of an existing run. Returns the new
    *  run's seq plus any unmocked steps the caller may want to surface. */
   public runReplayFn:
@@ -1532,6 +1537,7 @@ export class Server extends EventEmitter<ServerEvents> {
           haltSummaryFn: this.haltSummaryFn,
           judgeSummaryFn: this.judgeSummaryFn,
           runPlanFn: this.runPlanFn,
+          simulateFn: this.simulateFn,
           runReplayFn: this.runReplayFn,
           runRecipeFn: this.runRecipeFn,
           onRecipesChangedFn: this.onRecipesChangedFn,
