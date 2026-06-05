@@ -617,6 +617,73 @@ describe("MarketplaceSubmitPage — Validate-before-submit guard", () => {
 });
 
 // =====================================================================
+// S2 — mandatory client-side syntax gate (no full bypass)
+// =====================================================================
+
+describe("MarketplaceSubmitPage — S2 syntax gate", () => {
+  it("blocks submit on syntactically-broken YAML even when the bridge lint is gated (401)", async () => {
+    // Gated/public deploy: initial recipes load + the lint POST both
+    // return 401. Pre-fix the 401 set lintError and let submit through
+    // with no validation. With the client-side syntax gate, broken YAML
+    // is rejected regardless of the bridge response.
+    fetchMock.mockResolvedValue(jsonResponse(401, {}));
+
+    render(<MarketplaceSubmitPage />);
+    await fillRequiredFields();
+    // Unbalanced flow sequence — yaml.parse throws.
+    fireEvent.change(screen.getByTestId("fake-yaml-editor"), {
+      target: { value: "name: my-recipe\nsteps: [ - id: x" },
+    });
+
+    // Click Validate so the lintError (401 → soft path) is recorded —
+    // this is the exact bypass route the gate must close.
+    fireEvent.click(screen.getByRole("button", { name: /^Validate$/i }));
+    await waitFor(() =>
+      expect(screen.queryByText(/syntax validated only/i)).not.toBeNull(),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Open PR on GitHub/i }),
+    );
+
+    expect(
+      await screen.findByText(/not valid YAML/i),
+    ).toBeInTheDocument();
+    // GitHub tab was NOT opened — the broken YAML is blocked.
+    expect(openMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a non-blocking trust warning when network access is contradicted", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(503, {}));
+
+    render(<MarketplaceSubmitPage />);
+    await fillRequiredFields();
+    // Valid YAML, but it reaches out to the network while the
+    // networkAccess checkbox stays unchecked (default false).
+    fireEvent.change(screen.getByTestId("fake-yaml-editor"), {
+      target: {
+        value:
+          "name: my-recipe\ntrigger:\n  type: manual\nsteps:\n  - id: fetch\n    agent:\n      prompt: call https://example.com/api\n",
+      },
+    });
+
+    // The warning surfaces live (before submit) since the manifest claims
+    // no network access but the YAML reaches out.
+    expect(
+      await screen.findByText(/trust-metadata warning/i),
+    ).toBeInTheDocument();
+
+    await runValidateAndWait();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Open PR on GitHub/i }),
+    );
+
+    // ...but it does NOT block the GitHub handoff.
+    await waitFor(() => expect(openMock).toHaveBeenCalledTimes(1));
+  });
+});
+
+// =====================================================================
 // Draft-restored banner
 // =====================================================================
 

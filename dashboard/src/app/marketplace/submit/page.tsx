@@ -16,6 +16,7 @@ import {
 import { apiPath } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import {
+  analyzeTrustConsistency,
   buildGithubCreateFileUrl,
   buildManifestJson,
   extractYamlName,
@@ -326,6 +327,21 @@ export default function MarketplaceSubmitPage() {
     [formData],
   );
 
+  // S2: live, non-blocking trust-consistency warnings. Computed
+  // continuously (not just on submit) so the author sees a contradiction
+  // — e.g. manifest says no-network but the YAML has an http step —
+  // while composing, before the GitHub handoff. Conservative heuristics:
+  // warn, never block. Returns [] when the YAML doesn't parse (the
+  // submit-time syntax gate handles that case as a blocking error).
+  const trustWarnings = useMemo<string[]>(() => {
+    if (yaml.trim().length === 0) return [];
+    try {
+      return analyzeTrustConsistency(formData, yaml).map((i) => i.message);
+    } catch {
+      return [];
+    }
+  }, [formData, yaml]);
+
   // Live estimate of the full GitHub create-file URL we'd open at submit.
   // Lets the action bar warn the user before they hit the silent-truncation
   // ceiling (GitHub's prefill ~8 KB hard limit; we warn from URL_SAFE_CONTENT_LIMIT).
@@ -471,11 +487,17 @@ export default function MarketplaceSubmitPage() {
       if (!res.ok) {
         if (res.status === 502 || res.status === 503 || res.status === 504) {
           setLintError(
-            "Bridge isn't responding. You can still submit — full validation will run during PR review.",
+            "Bridge isn't responding — syntax validated only. You can still submit (YAML syntax is checked client-side; full schema validation runs during PR review).",
           );
           return;
         }
-        setLintError(`Validation request failed: HTTP ${res.status}`);
+        // Any other non-OK status (e.g. 401 on a gated/public deploy)
+        // degrades to syntax-only too — never a full bypass: the
+        // client-side YAML syntax gate in validateSubmission still runs
+        // at submit time.
+        setLintError(
+          `Validation request failed: HTTP ${res.status} — syntax validated only. Full schema validation runs during PR review.`,
+        );
         return;
       }
       const data = (await res.json()) as {
@@ -531,19 +553,28 @@ export default function MarketplaceSubmitPage() {
   // ---- submit ------------------------------------------------------
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const issues = validateSubmission(formData);
+    // S2: pass the YAML so validateSubmission runs the client-side syntax
+    // gate (blocking) + trust-consistency heuristics (non-blocking). The
+    // syntax gate is independent of the bridge lint endpoint, so broken
+    // YAML can't slip through even when the bridge is offline / gated.
+    const issues = validateSubmission(formData, yaml);
     const errMap: Partial<Record<keyof SubmissionFormData | "yaml", string>> =
       {};
     for (const issue of issues) {
-      // Only record the first issue per field; the UI shows one line each.
+      // Trust-consistency warnings are non-blocking — they're surfaced
+      // live via the trustWarnings memo, not as submit-blocking errors.
+      if (issue.level === "warning") continue;
+      // Only record the first blocking issue per field; the UI shows one
+      // line each.
       if (!errMap[issue.field]) errMap[issue.field] = issue.message;
     }
     if (yaml.trim().length === 0) {
       errMap.yaml = "Recipe YAML is required.";
-    } else {
+    } else if (!errMap.yaml) {
       // Cross-check the YAML's `name:` against the form slug. They land in
       // separate files (recipe.yaml + recipe.json) so a mismatch would mean
       // the index builder shows one name but the YAML asserts another.
+      // Skip if the syntax gate already flagged this field.
       const yamlName = extractYamlName(yaml);
       if (yamlName !== null && yamlName !== formData.slug) {
         errMap.yaml = `YAML "name: ${yamlName}" doesn't match the slug "${formData.slug}". They must match — update one or the other.`;
@@ -1311,6 +1342,35 @@ export default function MarketplaceSubmitPage() {
             {manifestContent}
           </pre>
         </details>
+
+        {/* -------- trust-consistency warnings (S2, non-blocking) - */}
+        {trustWarnings.length > 0 && (
+          <div
+            role="status"
+            style={{
+              background: "var(--warn-soft, var(--bg-2))",
+              border: "1px solid var(--warn, var(--border-default))",
+              borderRadius: "var(--r-2)",
+              color: "var(--ink-1)",
+              fontSize: "var(--fs-s)",
+              gridColumn: "1 / -1",
+              padding: "var(--s-3) var(--s-4)",
+            }}
+          >
+            <strong style={{ color: "var(--warn)" }}>
+              {trustWarnings.length} trust-metadata warning
+              {trustWarnings.length === 1 ? "" : "s"}
+            </strong>{" "}
+            — these don&apos;t block submission, but reviewers will likely
+            flag them:
+            <ul style={{ margin: "var(--s-2) 0 0 var(--s-4)" }}>
+              {trustWarnings.map((w, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: warnings are plain strings, order-stable
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* -------- action bar (inside form so Enter submits) ----- */}
         <div

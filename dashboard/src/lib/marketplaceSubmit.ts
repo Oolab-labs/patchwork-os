@@ -16,6 +16,7 @@
  * user with a GitHub account.
  */
 
+import { parse as parseYaml } from "yaml";
 import type { ApprovalBehavior, RiskLevel } from "./registry";
 
 export const REGISTRY_OWNER = "patchworkos";
@@ -173,6 +174,15 @@ export function normalizeAuthor(input: string): string {
 export interface ValidationIssue {
   field: keyof SubmissionFormData | "yaml";
   message: string;
+  /**
+   * Severity of the issue. Absent is treated as "error" (blocking) by
+   * every existing call site — kept optional so the long-standing
+   * form-field issues don't all have to be touched. Trust-consistency
+   * heuristics (S2) emit "warning": surfaced to the author but never
+   * blocking, since the heuristics are deliberately conservative and
+   * can false-positive.
+   */
+  level?: "error" | "warning";
 }
 
 /**
@@ -194,7 +204,27 @@ export function extractYamlName(yaml: string): string | null {
   return match[2] ?? match[3] ?? match[4] ?? null;
 }
 
-export function validateSubmission(data: SubmissionFormData): ValidationIssue[] {
+/**
+ * Validate the submission form.
+ *
+ * When `yaml` is supplied, two extra families of checks run:
+ *  1. A CLIENT-SIDE syntax gate (S2): the YAML is parsed with the bundled
+ *     `yaml` package. A parse failure is a BLOCKING `field: "yaml"` error.
+ *     This is independent of the bridge lint endpoint — so a syntactically
+ *     broken recipe can never be submitted even when the bridge is offline
+ *     or its lint route returns a non-OK status (401 on a gated deploy, a
+ *     network hiccup, etc.). The bridge lint, when reachable, layers richer
+ *     schema validation on top; when unreachable the UI degrades to
+ *     "syntax validated only" rather than a full bypass.
+ *  2. TRUST-CONSISTENCY heuristics (S2): conservative, non-blocking
+ *     `level: "warning"` issues flagging obvious contradictions between the
+ *     manifest trust dropdowns and what the YAML actually does (see
+ *     analyzeTrustConsistency).
+ */
+export function validateSubmission(
+  data: SubmissionFormData,
+  yaml?: string,
+): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   if (!SLUG_RE.test(data.slug)) {
     issues.push({
@@ -284,6 +314,112 @@ export function validateSubmission(data: SubmissionFormData): ValidationIssue[] 
       }
     }
   }
+
+  // ---- YAML-aware checks (S2) -------------------------------------
+  // Only run when a YAML doc is supplied. Keeps the data-only call sites
+  // (and their existing tests) unchanged.
+  if (typeof yaml === "string") {
+    const trimmed = yaml.trim();
+    if (trimmed.length > 0) {
+      let parseFailed = false;
+      try {
+        parseYaml(yaml);
+      } catch (err) {
+        parseFailed = true;
+        const detail = err instanceof Error ? err.message : String(err);
+        // Collapse multi-line parser output to a single line so the inline
+        // error box stays compact.
+        const oneLine = detail.split("\n")[0]?.trim() || "syntax error";
+        issues.push({
+          field: "yaml",
+          level: "error",
+          message: `Recipe YAML is not valid YAML: ${oneLine}`,
+        });
+      }
+      // Trust heuristics need a parseable doc; skip when parsing failed.
+      if (!parseFailed) {
+        issues.push(...analyzeTrustConsistency(data, yaml));
+      }
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Conservative trust-consistency heuristics (S2).
+ *
+ * buildManifestJson copies the risk/network/file dropdowns straight from
+ * the form, so a data-exfiltrating recipe can be declared low-risk /
+ * no-access. These heuristics parse the YAML and flag obvious
+ * contradictions as NON-BLOCKING warnings. Deliberately conservative —
+ * they warn, never block, because a false positive here must not stop a
+ * legitimate submission.
+ *
+ * Detection is text-based against the raw YAML (covers prompts and values
+ * uniformly), with the parse already proven to succeed by the caller.
+ *
+ *  - network_access=false but YAML mentions http(s):// URLs or a
+ *    fetch/curl/http(.request) call  → warn on networkAccess.
+ *  - file_access=false but YAML has a file read/write op (fs.*,
+ *    writeFile/readFile, or a `path:` value)  → warn on fileAccess.
+ *  - risk_level=low but a step declares `risk: high|medium`  → warn on
+ *    riskLevel.
+ */
+export function analyzeTrustConsistency(
+  data: SubmissionFormData,
+  yaml: string,
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+
+  // Network: declared no-network but the YAML reaches out.
+  if (!data.networkAccess) {
+    const networkSignal =
+      /https?:\/\//i.test(yaml) ||
+      /\b(?:fetch|curl|wget|axios|http\.request|sendHttpRequest|webhook)\b/i.test(
+        yaml,
+      );
+    if (networkSignal) {
+      issues.push({
+        field: "networkAccess",
+        level: "warning",
+        message:
+          'The YAML references network calls (a URL or fetch/http step) but "Makes outbound network requests" is unchecked. Reviewers may flag this — re-check the box if the recipe reaches the network.',
+      });
+    }
+  }
+
+  // Files: declared no-file-access but the YAML reads/writes files.
+  if (!data.fileAccess) {
+    const fileSignal =
+      /\bfs\.[a-z]/i.test(yaml) ||
+      /\b(?:writeFile|readFile|createFile|editText|writeFileSync|readFileSync)\b/i.test(
+        yaml,
+      ) ||
+      /^\s*path:\s*\S/m.test(yaml);
+    if (fileSignal) {
+      issues.push({
+        field: "fileAccess",
+        level: "warning",
+        message:
+          'The YAML references local file operations (an fs/writeFile step or a path: value) but "Reads or writes local files" is unchecked. Re-check the box if the recipe touches the filesystem.',
+      });
+    }
+  }
+
+  // Risk: declared low but a step annotates itself higher.
+  if (data.riskLevel === "low") {
+    const declaresHigherRisk = /^\s*risk:\s*(high|medium)\b/im.test(yaml);
+    if (declaresHigherRisk) {
+      issues.push({
+        field: "riskLevel",
+        level: "warning",
+        message:
+          'A step in the YAML is annotated risk: high/medium but the manifest risk level is "low". Consider raising the risk level so the install confirmation matches.',
+      });
+    }
+  }
+
   return issues;
 }
 
