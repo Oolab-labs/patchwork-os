@@ -14,6 +14,7 @@ import {
   shortName,
   summarizeRisk,
 } from "@/lib/registry";
+import { TrustDivergenceNotice } from "../_components/TrustDivergenceNotice";
 import InstallPanel from "./InstallPanel";
 
 // 60s ISR (was 300s). A 5-minute cache hides freshly merged recipes
@@ -127,6 +128,15 @@ export default async function RecipeDetailPage({ params }: PageProps) {
       <Steps yaml={yaml} />
 
       <TrustMetadataCard recipe={recipe} />
+
+      <TrustDivergenceNotice
+        meta={{
+          risk_level: recipe.risk_level,
+          network_access: recipe.network_access,
+          file_access: recipe.file_access,
+        }}
+        riskSummary={yaml ? summarizeRisk(yaml) : { low: 0, medium: 0, high: 0, steps: 0 }}
+      />
 
       <YamlPreview yaml={yaml} src={src} mainFile={manifest?.recipes?.main} />
 
