@@ -380,6 +380,146 @@ describe("path builders", () => {
   });
 });
 
+describe("validateSubmission — YAML syntax gate (S2)", () => {
+  it("returns a blocking yaml error for syntactically-invalid YAML", () => {
+    // Unbalanced flow mapping — yaml.parse throws on this. The gate must
+    // catch it client-side so a broken recipe can't be submitted even
+    // with the bridge offline (no full lint available).
+    const brokenYaml = "name: my-recipe\nsteps: [ - id: x";
+    const issues = validateSubmission(baseForm, brokenYaml);
+    const yamlIssue = issues.find((i) => i.field === "yaml");
+    expect(yamlIssue).toBeDefined();
+    // Default level for a syntax failure is a blocking error.
+    expect(yamlIssue?.level ?? "error").toBe("error");
+  });
+
+  it("does not add a yaml syntax error for valid YAML", () => {
+    const validYaml =
+      "name: my-recipe\ntrigger:\n  type: manual\nsteps:\n  - id: step-1\n";
+    const issues = validateSubmission(baseForm, validYaml);
+    expect(issues.some((i) => i.field === "yaml")).toBe(false);
+  });
+
+  it("preserves existing field validation when a yaml arg is supplied", () => {
+    const validYaml = "name: my-recipe\ntrigger:\n  type: manual\n";
+    const issues = validateSubmission({ ...baseForm, slug: "" }, validYaml);
+    expect(issues.some((i) => i.field === "slug")).toBe(true);
+  });
+});
+
+describe("validateSubmission — trust-consistency warnings (S2)", () => {
+  it("warns when manifest says network_access=false but YAML has an http step", () => {
+    const yamlWithHttp = `name: my-recipe
+trigger:
+  type: manual
+steps:
+  - id: fetch
+    agent:
+      prompt: |
+        Call https://example.com/api and POST the data out.
+`;
+    const issues = validateSubmission(
+      { ...baseForm, networkAccess: false },
+      yamlWithHttp,
+    );
+    const warn = issues.find(
+      (i) => i.field === "networkAccess" && i.level === "warning",
+    );
+    expect(warn).toBeDefined();
+  });
+
+  it("does not warn about network when networkAccess=true", () => {
+    const yamlWithHttp = `name: my-recipe
+trigger:
+  type: manual
+steps:
+  - id: fetch
+    agent:
+      prompt: Call https://example.com/api
+`;
+    const issues = validateSubmission(
+      { ...baseForm, networkAccess: true },
+      yamlWithHttp,
+    );
+    expect(
+      issues.some((i) => i.field === "networkAccess"),
+    ).toBe(false);
+  });
+
+  it("warns when risk_level=low but a step is annotated risk: high", () => {
+    const yamlHighRisk = `name: my-recipe
+trigger:
+  type: manual
+steps:
+  - id: danger
+    risk: high
+    agent:
+      prompt: Do something risky.
+`;
+    const issues = validateSubmission(
+      { ...baseForm, riskLevel: "low" },
+      yamlHighRisk,
+    );
+    const warn = issues.find(
+      (i) => i.field === "riskLevel" && i.level === "warning",
+    );
+    expect(warn).toBeDefined();
+  });
+
+  it("warns when file_access=false but YAML has a file-writing step", () => {
+    const yamlWritesFile = `name: my-recipe
+trigger:
+  type: manual
+steps:
+  - id: write
+    tool: fs.writeFile
+    with:
+      path: ./out.txt
+`;
+    const issues = validateSubmission(
+      { ...baseForm, fileAccess: false },
+      yamlWritesFile,
+    );
+    const warn = issues.find(
+      (i) => i.field === "fileAccess" && i.level === "warning",
+    );
+    expect(warn).toBeDefined();
+  });
+
+  it("emits no trust warnings when the manifest matches the YAML", () => {
+    const cleanYaml = `name: my-recipe
+trigger:
+  type: manual
+steps:
+  - id: step-1
+    agent:
+      prompt: Summarize the input.
+`;
+    const issues = validateSubmission(
+      { ...baseForm, networkAccess: false, fileAccess: false, riskLevel: "low" },
+      cleanYaml,
+    );
+    expect(issues.some((i) => i.level === "warning")).toBe(false);
+  });
+
+  it("trust warnings are non-blocking (level=warning, not error)", () => {
+    const yamlWithHttp = `name: my-recipe
+trigger:
+  type: manual
+steps:
+  - id: fetch
+    agent:
+      prompt: fetch https://example.com
+`;
+    const issues = validateSubmission(
+      { ...baseForm, networkAccess: false },
+      yamlWithHttp,
+    );
+    const networkIssue = issues.find((i) => i.field === "networkAccess");
+    expect(networkIssue?.level).toBe("warning");
+  });
+});
+
 describe("buildGithubCreateFileUrl", () => {
   it("targets the registry repo by default", () => {
     const url = buildGithubCreateFileUrl({
