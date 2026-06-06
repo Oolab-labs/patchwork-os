@@ -566,7 +566,8 @@ describe("Server.findAndListen — EADDRINUSE retry (NET-001)", () => {
     let listenCallCount = 0;
     const realListen = (server as any).listen.bind(server);
     vi.spyOn(server as any, "listen").mockImplementation(
-      async (port: number, addr: string) => {
+      async (...args: unknown[]) => {
+        const [port, addr] = args as [number, string];
         listenCallCount++;
         if (listenCallCount === 1 && port !== 0) {
           const err = new Error(

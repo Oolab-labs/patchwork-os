@@ -15,13 +15,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // vi.hoisted runs before vi.mock factory; store refs so mock can call through.
 
 const saved = vi.hoisted(() => ({
-  renameSync: null as ((...a: any[]) => void) | null,
-  unlinkSync: null as ((...a: any[]) => void) | null,
+  renameSync: null as ((src: string, dst: string) => void) | null,
+  unlinkSync: null as ((p: string) => void) | null,
 }));
 
 const mockFns = vi.hoisted(() => ({
-  renameSync: vi.fn<[string, string], void>(),
-  unlinkSync: vi.fn<[string], void>(),
+  renameSync: vi.fn<(src: string, dst: string) => void>(),
+  unlinkSync: vi.fn<(p: string) => void>(),
 }));
 
 vi.mock("node:fs", async (importOriginal) => {

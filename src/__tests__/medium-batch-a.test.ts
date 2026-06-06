@@ -129,28 +129,6 @@ describe("installGuard — darwin-only guard", () => {
 // full tool requires a live workspace/extension.
 
 describe("PH-04 — ctags module split handles backslash paths", () => {
-  // Extract the buggy/fixed logic inline so the test is self-contained.
-
-  function _extractTopDirBuggy(
-    workspace: string,
-    tagPath: string,
-  ): string | null {
-    const rel = require("node:path").relative(workspace, tagPath);
-    const dir = rel.split("/")[0];
-    return dir && !dir.startsWith(".") && dir !== "node_modules" ? dir : null;
-  }
-
-  function _extractTopDirFixed(
-    workspace: string,
-    tagPath: string,
-  ): string | null {
-    const nodePath = require("node:path");
-    const rel = nodePath.relative(workspace, tagPath);
-    // Normalise: on Windows, relative() returns backslash separators.
-    const dir = rel.replace(/\\/g, "/").split("/")[0];
-    return dir && !dir.startsWith(".") && dir !== "node_modules" ? dir : null;
-  }
-
   it("buggy split('/') returns whole path as single token on Windows-style path", () => {
     // Simulate Windows: relative() returns backslash path
     const rel = "src\\auth.ts"; // path.relative would return this on Windows
