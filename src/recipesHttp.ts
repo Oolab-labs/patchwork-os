@@ -29,6 +29,29 @@ import {
 } from "./recipes/validation.js";
 import { enrichIssuesWithPositions } from "./recipes/yamlPositions.js";
 
+// ── Per-recipesDir caches ─────────────────────────────────────────────────────
+// Keyed by resolved recipesDir. Populated on first call, cleared by
+// invalidateRecipesCache() (called from fireOnRecipesChanged after any
+// install/uninstall/enable/disable mutation).
+const _listCache = new Map<string, ListRecipesResult>();
+// webhook cache: recipesDir → requestPath → match|null
+const _webhookCache = new Map<string, Map<string, WebhookRecipeMatch | null>>();
+
+/**
+ * Invalidate both caches for a specific recipesDir (or all dirs when called
+ * without an argument). Called by fireOnRecipesChanged after any mutation.
+ */
+export function invalidateRecipesCache(recipesDir?: string): void {
+  if (recipesDir === undefined) {
+    _listCache.clear();
+    _webhookCache.clear();
+  } else {
+    const key = recipesDir;
+    _listCache.delete(key);
+    _webhookCache.delete(key);
+  }
+}
+
 /**
  * Returns true unless `filePath` lives inside an install dir whose
  * `.disabled` marker is present. Top-level legacy recipes (direct children
@@ -1065,6 +1088,14 @@ export function listInstalledRecipes(
   recipesDir: string,
   opts: { disabledRecipes?: ReadonlyArray<string> } = {},
 ): ListRecipesResult {
+  // Cache only the production path (explicit disabledRecipes = test-only,
+  // varies per call, unsafe to cache).
+  const useCache = opts.disabledRecipes !== undefined;
+  if (useCache) {
+    const cached = _listCache.get(recipesDir);
+    if (cached) return cached;
+  }
+
   let entries: string[];
   try {
     entries = readdirSync(recipesDir);
@@ -1277,7 +1308,9 @@ export function listInstalledRecipes(
   }
 
   recipes.sort((a, b) => a.name.localeCompare(b.name));
-  return { recipesDir, recipes };
+  const result: ListRecipesResult = { recipesDir, recipes };
+  if (useCache) _listCache.set(recipesDir, result);
+  return result;
 }
 
 /**
@@ -1377,6 +1410,12 @@ export function findWebhookRecipe(
   recipesDir: string,
   requestPath: string,
 ): WebhookRecipeMatch | null {
+  // Check per-dir webhook cache (stores null for misses too).
+  let dirCache = _webhookCache.get(recipesDir);
+  if (dirCache?.has(requestPath)) {
+    return dirCache.get(requestPath) ?? null;
+  }
+
   let entries: string[];
   try {
     entries = readdirSync(recipesDir);
@@ -1397,12 +1436,18 @@ export function findWebhookRecipe(
       };
       if (parsed.trigger?.type !== "webhook") continue;
       if (parsed.trigger.path === requestPath) {
-        return {
+        const hit: WebhookRecipeMatch = {
           name: parsed.name ?? path.basename(f, path.extname(f)),
           path: requestPath,
           filePath,
           format: isYaml ? "yaml" : "json",
         };
+        if (!dirCache) {
+          dirCache = new Map();
+          _webhookCache.set(recipesDir, dirCache);
+        }
+        dirCache.set(requestPath, hit);
+        return hit;
       }
     } catch {
       // skip malformed
@@ -1422,7 +1467,7 @@ export function findWebhookRecipe(
       };
       if (parsed.trigger?.type !== "webhook") continue;
       if (parsed.trigger.path === requestPath) {
-        return {
+        const hit: WebhookRecipeMatch = {
           name:
             parsed.name ??
             path.basename(entrypointPath, path.extname(entrypointPath)),
@@ -1430,11 +1475,23 @@ export function findWebhookRecipe(
           filePath: entrypointPath,
           format: isYaml ? "yaml" : "json",
         };
+        if (!dirCache) {
+          dirCache = new Map();
+          _webhookCache.set(recipesDir, dirCache);
+        }
+        dirCache.set(requestPath, hit);
+        return hit;
       }
     } catch {
       // skip malformed
     }
   }
+  // Cache the miss so subsequent identical requests skip the scan.
+  if (!dirCache) {
+    dirCache = new Map();
+    _webhookCache.set(recipesDir, dirCache);
+  }
+  dirCache.set(requestPath, null);
   return null;
 }
 

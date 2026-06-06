@@ -42,6 +42,7 @@ export class TokenUsageTracker {
     messages: 0,
   };
   private timer: NodeJS.Timeout | null = null;
+  private _scanning = false;
 
   constructor(opts: TokenUsageTrackerOptions) {
     const slug = workspaceToProjectSlug(opts.workspace);
@@ -53,8 +54,10 @@ export class TokenUsageTracker {
 
   start(): void {
     if (this.timer) return;
-    this.scan();
-    this.timer = setInterval(() => this.scan(), this.pollIntervalMs);
+    void this.scan();
+    this.timer = setInterval(() => {
+      void this.scan();
+    }, this.pollIntervalMs);
     this.timer.unref?.();
   }
 
@@ -69,24 +72,30 @@ export class TokenUsageTracker {
     return { ...this.totals };
   }
 
-  private scan(): void {
-    let entries: string[];
+  async scan(): Promise<void> {
+    if (this._scanning) return;
+    this._scanning = true;
     try {
-      entries = fs.readdirSync(this.projectsDir);
-    } catch {
-      return;
-    }
-    for (const name of entries) {
-      if (!name.endsWith(".jsonl")) continue;
-      const full = path.join(this.projectsDir, name);
-      this.readDelta(full);
+      let entries: string[];
+      try {
+        entries = await fs.promises.readdir(this.projectsDir);
+      } catch {
+        return;
+      }
+      for (const name of entries) {
+        if (!name.endsWith(".jsonl")) continue;
+        const full = path.join(this.projectsDir, name);
+        await this.readDelta(full);
+      }
+    } finally {
+      this._scanning = false;
     }
   }
 
-  private readDelta(filePath: string): void {
+  private async readDelta(filePath: string): Promise<void> {
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(filePath);
+      stat = await fs.promises.stat(filePath);
     } catch {
       return;
     }
@@ -102,13 +111,13 @@ export class TokenUsageTracker {
     }
     let chunk: Buffer;
     try {
-      const fd = fs.openSync(filePath, "r");
+      const len = stat.size - state.offset;
+      chunk = Buffer.alloc(len);
+      const fh = await fs.promises.open(filePath, "r");
       try {
-        const len = stat.size - state.offset;
-        chunk = Buffer.alloc(len);
-        fs.readSync(fd, chunk, 0, len, state.offset);
+        await fh.read(chunk, 0, len, state.offset);
       } finally {
-        fs.closeSync(fd);
+        await fh.close();
       }
     } catch (err) {
       this.logger?.warn(
