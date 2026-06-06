@@ -43,7 +43,8 @@ describe("detectWorkspaceSymlinkInstall", () => {
   });
 
   // fs.symlinkSync requires admin / Developer Mode on Windows; not portable.
-  it.skipIf(process.platform === "win32")(
+  // detectWorkspaceSymlinkInstall() returns null early on non-darwin (TCC-only concern).
+  it.skipIf(process.platform !== "darwin")(
     "returns SymlinkInstallInfo when the global slot is a symlink to a workspace",
     () => {
       const globalRoot = "/opt/homebrew/lib/node_modules";
