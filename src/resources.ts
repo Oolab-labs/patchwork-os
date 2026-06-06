@@ -11,6 +11,19 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { mimeTypeFromPath } from "./tools/utils.js";
 
 const RESOURCES_PAGE_SIZE = 50;
+
+// TTL cache for workspace realpathSync — called per readResource; same workspace
+// root for the process lifetime so 30 s is safe.
+const _wsRealpathCache = new Map<string, { real: string; expires: number }>();
+const _WS_REALPATH_TTL = 30_000;
+function cachedWorkspaceRealpath(ws: string): string {
+  const now = Date.now();
+  const hit = _wsRealpathCache.get(ws);
+  if (hit && now < hit.expires) return hit.real;
+  const real = fs.realpathSync(ws);
+  _wsRealpathCache.set(ws, { real, expires: now + _WS_REALPATH_TTL });
+  return real;
+}
 const MAX_RESOURCE_BYTES = 1 * 1024 * 1024; // 1 MB — same guard as getBufferContent
 
 /** Extensions we emit as resources. Binary files (images, pdfs) are listed but not read as text. */
@@ -272,7 +285,7 @@ export function readResource(
   let realWorkspace: string;
   try {
     realPath = fs.realpathSync(absPath);
-    realWorkspace = fs.realpathSync(normalizedWorkspace);
+    realWorkspace = cachedWorkspaceRealpath(normalizedWorkspace);
   } catch {
     return { error: `Resource not found: ${uri}`, code: "file_not_found" };
   }

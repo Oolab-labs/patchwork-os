@@ -148,9 +148,12 @@ export function saveApiKeyToSecureStore(
 ): void {
   if (!key) {
     deleteSecretJsonSync(secretKeyFor(provider));
-    return;
+  } else {
+    storeSecretJsonSync(secretKeyFor(provider), { key } satisfies StoredApiKey);
   }
-  storeSecretJsonSync(secretKeyFor(provider), { key } satisfies StoredApiKey);
+  // Secure-store change invalidates any cached loadConfig result that merged
+  // the old key values.
+  clearConfigCache();
 }
 
 function loadApiKeysFromSecureStore(): NonNullable<PatchworkConfig["apiKeys"]> {
@@ -181,12 +184,32 @@ export function getApiKeysPresent(): Record<ApiKeyProvider, boolean> {
   return out;
 }
 
+// TTL-based cache for loadConfig results. loadConfig reads config.json + up to
+// 4 provider .enc files (DPAPI spawn on Windows = 500–1500 ms each). A 30 s TTL
+// cuts the per-webhook 9+ kernel-call burst to ~1 per 30 s at steady state.
+const _configCache = new Map<
+  string,
+  { result: PatchworkConfig; expires: number }
+>();
+const _CONFIG_TTL_MS = 30_000;
+
+/** Clear the loadConfig cache. Exposed for tests and after saveConfig. */
+export function clearConfigCache(): void {
+  _configCache.clear();
+}
+
 export function loadConfig(path = defaultConfigPath()): PatchworkConfig {
+  const now = Date.now();
+  const cached = _configCache.get(path);
+  if (cached && now < cached.expires) return cached.result;
   if (!existsSync(path)) {
     const fromStore = loadApiKeysFromSecureStore();
-    return Object.keys(fromStore).length > 0
-      ? { ...DEFAULTS, apiKeys: fromStore }
-      : { ...DEFAULTS };
+    const result: PatchworkConfig =
+      Object.keys(fromStore).length > 0
+        ? { ...DEFAULTS, apiKeys: fromStore }
+        : { ...DEFAULTS };
+    _configCache.set(path, { result, expires: now + _CONFIG_TTL_MS });
+    return result;
   }
   const raw = readFileSync(path, "utf8");
   const parsed = JSON.parse(raw) as Partial<PatchworkConfig>;
@@ -231,13 +254,23 @@ export function loadConfig(path = defaultConfigPath()): PatchworkConfig {
     Object.keys(fromStore).length > 0 || parsed.apiKeys
       ? { ...parsed.apiKeys, ...fromStore }
       : undefined;
-  return { ...DEFAULTS, ...parsed, ...(apiKeys ? { apiKeys } : {}) };
+  const result: PatchworkConfig = {
+    ...DEFAULTS,
+    ...parsed,
+    ...(apiKeys ? { apiKeys } : {}),
+  };
+  // Don't cache migrated configs — the file has just been rewritten; next load
+  // should see the stripped version. This path is once-per-key, not hot.
+  if (!migrated)
+    _configCache.set(path, { result, expires: now + _CONFIG_TTL_MS });
+  return result;
 }
 
 export function saveConfig(
   config: PatchworkConfig,
   path = defaultConfigPath(),
 ): void {
+  _configCache.delete(path); // invalidate before write so next load sees new content
   mkdirSync(dirname(path), { recursive: true });
   // Strip apiKeys before persisting — they belong in the secure store, never
   // on disk. Defense in depth: even if a caller mutates cfg.apiKeys directly,

@@ -332,6 +332,14 @@ export function evaluateExpect(
  * without schema assertions don't pay the import/compile cost.
  */
 let _stepExpectAjv: import("../ajv2020.js").Ajv2020 | undefined;
+
+// Process-scoped probe cache for `claude --version`. Avoids spawning the .cmd
+// shim (300–700 ms on Windows) on every recipe step when no claudeFn is
+// configured. Exported for tests that need to reset between cases.
+let _claudeCliProbeCache: { result: boolean } | undefined;
+export function resetProbeCliCache(): void {
+  _claudeCliProbeCache = undefined;
+}
 async function getStepExpectAjv(): Promise<import("../ajv2020.js").Ajv2020> {
   if (!_stepExpectAjv) {
     const { createAjv2020 } = await import("../ajv2020.js");
@@ -2536,6 +2544,8 @@ function buildAgentExecutorDeps(
       toAgentResult(await stepDeps.localFn(prompt, model)),
     probeClaudeCli: () => {
       if (runnerDeps.claudeFn !== undefined) return false;
+      if (_claudeCliProbeCache !== undefined)
+        return _claudeCliProbeCache.result;
       // Use the same resolution as defaultClaudeCodeFn so the auto-detect
       // branch in agentExecutor.ts doesn't probe "claude" via PATH and
       // then later fail to spawn the configured override (or vice versa).
@@ -2543,7 +2553,8 @@ function buildAgentExecutorDeps(
         encoding: "utf-8",
         timeout: 5000,
       });
-      return !probe.error;
+      _claudeCliProbeCache = { result: !probe.error };
+      return _claudeCliProbeCache.result;
     },
     loadPatchworkConfig: () => {
       // Synchronous static import — earlier `require()` form silently failed

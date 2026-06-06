@@ -207,6 +207,14 @@ function resolvePs(): string {
 }
 const PS_BIN = resolvePs();
 
+// Process-scoped read cache for DPAPI credentials. PowerShell cold-start is
+// 500–1500 ms per call; `getSecretJsonSync` is called per API-key provider at
+// every loadConfig hit (up to 4 providers × every webhook). 60 s TTL keeps
+// the cache warm across a busy burst while still picking up key rotations.
+// Invalidated by setWindowsCredentialSync + deleteWindowsCredentialSync.
+const _dpCache = new Map<string, { value: string | null; expires: number }>();
+const _DP_CACHE_TTL_MS = 60_000;
+
 function setWindowsCredentialSync(key: string, value: string): boolean {
   if (process.platform !== "win32") return false;
 
@@ -232,6 +240,7 @@ function setWindowsCredentialSync(key: string, value: string): boolean {
       encoding: "utf-8",
       timeout: 10000,
     });
+    if (result.status === 0) _dpCache.delete(key);
     return result.status === 0;
   } catch {
     return false;
@@ -240,6 +249,10 @@ function setWindowsCredentialSync(key: string, value: string): boolean {
 
 function getWindowsCredentialSync(key: string): string | null {
   if (process.platform !== "win32") return null;
+
+  const now = Date.now();
+  const cached = _dpCache.get(key);
+  if (cached && now < cached.expires) return cached.value;
 
   try {
     // Base64-encode the key so it is never interpolated as PS code — a key
@@ -263,9 +276,12 @@ function getWindowsCredentialSync(key: string): string | null {
       timeout: 10000,
     });
     if (result.status !== 0) {
+      _dpCache.set(key, { value: null, expires: now + _DP_CACHE_TTL_MS });
       return null;
     }
-    return result.stdout.trim() || null;
+    const value = result.stdout.trim() || null;
+    _dpCache.set(key, { value, expires: now + _DP_CACHE_TTL_MS });
+    return value;
   } catch {
     return null;
   }
@@ -296,30 +312,35 @@ function getEncryptionKey(): Buffer {
   const dir = getStorageDir();
   const keyPath = join(dir, MASTER_KEY_FILE);
 
+  // Cache is valid only while the key file still exists on disk.
+  // Without the existsSync guard, a deleted storage dir (e.g. in tests) would
+  // return a stale in-memory key and never write .master.key back to disk.
   if (cachedKey && cachedKeyDir === dir && existsSync(keyPath)) {
     return cachedKey;
   }
 
-  if (existsSync(keyPath)) {
-    try {
-      const key = readFileSync(keyPath);
-      if (key.length === 32) {
-        cachedKey = key;
-        cachedKeyDir = dir;
-        return key;
-      }
-    } catch {
-      // fall through to regenerate
+  try {
+    const key = readFileSync(keyPath);
+    if (key.length === 32) {
+      cachedKey = key;
+      cachedKeyDir = dir;
+      return key;
     }
-    // Corrupt or unreadable — replace.
+    // Corrupt — replace.
     try {
       unlinkSync(keyPath);
     } catch {}
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      // Unreadable — best-effort replace.
+      try {
+        unlinkSync(keyPath);
+      } catch {}
+    }
+    // ENOENT: fall through to generate new key.
   }
 
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-  }
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
 
   const key = crypto.randomBytes(32);
   try {
@@ -376,9 +397,7 @@ function decrypt(encryptedData: string): string | null {
 
 function setEncryptedFileSync(key: string, value: string): void {
   const dir = getStorageDir();
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-  }
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
 
   const encrypted = encrypt(value);
   const finalPath = join(dir, `${key}.enc`);
@@ -410,8 +429,6 @@ function setEncryptedFileSync(key: string, value: string): void {
 
 function getEncryptedFileSync(key: string): string | null {
   const filePath = join(getStorageDir(), `${key}.enc`);
-  if (!existsSync(filePath)) return null;
-
   try {
     const encrypted = readFileSync(filePath, "utf-8");
     const plain = decrypt(encrypted);
@@ -426,24 +443,23 @@ function getEncryptedFileSync(key: string): string | null {
     }
 
     return null;
-  } catch {
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
     return null;
   }
 }
 
 function deleteEncryptedFileSync(key: string): void {
   const filePath = join(getStorageDir(), `${key}.enc`);
-  if (existsSync(filePath)) {
-    try {
-      unlinkSync(filePath);
-    } catch {}
+  try {
+    unlinkSync(filePath);
+  } catch {
+    /* ENOENT is expected; other errors are best-effort */
   }
 }
 
 function listEncryptedFiles(): string[] {
   const dir = getStorageDir();
-  if (!existsSync(dir)) return [];
-
   try {
     const files = readdirSync(dir);
     return files
@@ -463,8 +479,12 @@ function deleteWindowsCredentialSync(key: string): boolean {
     const localAppData = process.env.LOCALAPPDATA;
     if (!localAppData) return false;
     const filePath = join(localAppData, "PatchworkOS", "tokens", `${key}.bin`);
-    if (!existsSync(filePath)) return true;
+    if (!existsSync(filePath)) {
+      _dpCache.delete(key);
+      return true;
+    }
     unlinkSync(filePath);
+    _dpCache.delete(key);
     return true;
   } catch {
     return false;

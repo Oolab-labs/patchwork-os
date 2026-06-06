@@ -117,12 +117,20 @@ export function optionalArray(
   return val;
 }
 
-// No caching for workspace realpath — a stale cache creates a TOCTOU window
-// where a symlink swap of the workspace directory could allow path traversal
-// outside the workspace. The overhead of realpathSync is negligible relative
-// to the file I/O that follows each resolveFilePath call.
+// Short-TTL cache for workspace root realpaths (30 s). The workspace root is
+// stable within a bridge session; resolving it on every resolveFilePath call
+// (145 sites) triggers GetFinalPathNameByHandle + Defender scans on Windows.
+// 30 s TTL limits the TOCTOU window for a symlink-swap attack to 30 s — an
+// attacker with fs write access at that level can already write files directly.
+const _realpathCache = new Map<string, { resolved: string; expires: number }>();
+const _REALPATH_TTL_MS = 30_000;
 function cachedRealpathSync(p: string): string {
-  return fs.realpathSync(p);
+  const now = Date.now();
+  const cached = _realpathCache.get(p);
+  if (cached && now < cached.expires) return cached.resolved;
+  const resolved = fs.realpathSync(p);
+  _realpathCache.set(p, { resolved, expires: now + _REALPATH_TTL_MS });
+  return resolved;
 }
 
 export function resolveFilePath(

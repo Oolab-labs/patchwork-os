@@ -5,6 +5,43 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+// On Windows, each probe spawns where.exe + Defender scans the exe. Capping
+// concurrent probes at 6 limits the fan-out from ~22 simultaneous processes to
+// 4 waves of 6, cutting peak Defender pressure without slowing cold-start.
+function makeSemaphore(limit: number) {
+  let active = 0;
+  const queue: Array<() => void> = [];
+  return async function acquire<T>(fn: () => Promise<T>): Promise<T> {
+    if (active < limit) {
+      active++;
+      try {
+        return await fn();
+      } finally {
+        active--;
+        queue.shift()?.();
+      }
+    }
+    return new Promise<T>((resolve, reject) => {
+      queue.push(() => {
+        active++;
+        fn().then(
+          (v) => {
+            active--;
+            queue.shift()?.();
+            resolve(v);
+          },
+          (e) => {
+            active--;
+            queue.shift()?.();
+            reject(e);
+          },
+        );
+      });
+    });
+  };
+}
+const _probeSem = makeSemaphore(6);
+
 export interface ProbeResults {
   rg: boolean;
   fd: boolean;
@@ -135,19 +172,21 @@ async function probeTypescriptLanguageServer(): Promise<boolean> {
 
 export async function probeAll(workspace = ""): Promise<ProbeResults> {
   const entries = await Promise.all(
-    COMMANDS.map(async ([key, cmd]) => {
-      const available =
-        workspace && JS_LOCAL_TOOLS.has(cmd)
-          ? await probeCommandWithLocalFallback(cmd, workspace)
-          : await probeCommand(cmd);
-      return [key, available] as const;
-    }),
+    COMMANDS.map(([key, cmd]) =>
+      _probeSem(async () => {
+        const available =
+          workspace && JS_LOCAL_TOOLS.has(cmd)
+            ? await probeCommandWithLocalFallback(cmd, workspace)
+            : await probeCommand(cmd);
+        return [key, available] as const;
+      }),
+    ),
   );
 
   const [universalCtags, typescriptLanguageServer, ant] = await Promise.all([
-    probeUniversalCtags(),
-    probeTypescriptLanguageServer(),
-    probeCommand("ant"),
+    _probeSem(() => probeUniversalCtags()),
+    _probeSem(() => probeTypescriptLanguageServer()),
+    _probeSem(() => probeCommand("ant")),
   ]);
 
   const base = Object.fromEntries(entries) as unknown as ProbeResults;
