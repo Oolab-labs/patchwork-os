@@ -4,8 +4,9 @@
  * What-If Preview panel — the dashboard home for `recipe simulate`. Calls the
  * bridge `GET /recipes/:name/simulate` (via the `/api/bridge/recipes/simulate`
  * proxy) and renders the static counterfactual: projected actions, side-effect
- * taxonomy, blast-radius risk, a tier-only approval projection, a
- * low-confidence cost note, and undetermined branches. Executes nothing.
+ * taxonomy, blast-radius risk, a tier-only approval projection, a cost
+ * projection (history band or heuristic), the simulation fidelity
+ * (static/mocked), and per-branch outcomes. Executes nothing.
  *
  * The bridge owns the simulation (single source of truth); this only renders
  * it — and surfaces the `gatedOnRecipeSteps=false` honesty caveat loudly so the
@@ -14,7 +15,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  branchOutcomeCounts,
   fetchSimulation,
+  fidelityLabel,
+  formatCost,
   riskColor,
   riskGlyph,
   type SimulationReport,
@@ -78,6 +82,19 @@ export function SimulatePanel({
             {report.topology}
           </span>
         )}
+        {report && (
+          <span
+            className="mono muted"
+            style={{ fontSize: "var(--fs-2xs)" }}
+            title={
+              report.fidelity === "mocked"
+                ? "Driven by run history — branches + downstream values resolved against real prior outputs."
+                : "Static projection — no run history used; data-dependent branches are undetermined."
+            }
+          >
+            {fidelityLabel(report)}
+          </span>
+        )}
       </div>
 
       {error && (
@@ -127,6 +144,16 @@ export function SimulatePanel({
                   </span>
                   <span className="mono">{s.id}</span> {s.tool ?? s.type}{" "}
                   <span className="muted">[{s.sideEffect}]</span>
+                  {report.fidelity === "mocked" &&
+                    s.mockedFrom === "synthesized" && (
+                      <span
+                        className="muted"
+                        title="No run history for this step — value was synthesized, not from a real prior run."
+                      >
+                        {" "}
+                        · synth
+                      </span>
+                    )}
                   {s.condition && (
                     <span className="muted"> · when: {s.condition}</span>
                   )}
@@ -161,21 +188,42 @@ export function SimulatePanel({
             )}
           </div>
 
-          {/* Cost */}
+          {/* Cost — history band / heuristic tokens / unavailable note */}
           <div className="muted" style={{ fontSize: "var(--fs-xs)" }}>
-            cost:{" "}
-            {report.cost.basis === "heuristic"
-              ? `~${report.cost.estPromptTokens} input token(s) over ${report.cost.estimatedAgentSteps} agent step(s) (heuristic; USD not projected)`
-              : report.cost.note}
+            <span className="mono" style={{ fontSize: "var(--fs-2xs)" }}>
+              cost:{" "}
+            </span>
+            {formatCost(report.cost)}
           </div>
 
-          {/* Undetermined branches */}
-          {report.branches.length > 0 && (
-            <div style={{ fontSize: "var(--fs-xs)", color: "var(--warn)" }}>
-              {report.branches.length} conditional branch(es) undetermined —
-              resolved only in a later sandbox phase.
-            </div>
-          )}
+          {/* Branches — per-outcome (P2 resolves taken/skipped from history) */}
+          {report.branches.length > 0 &&
+            (() => {
+              const c = branchOutcomeCounts(report.branches);
+              return (
+                <div style={{ fontSize: "var(--fs-xs)" }}>
+                  <span
+                    className="mono muted"
+                    style={{ fontSize: "var(--fs-2xs)" }}
+                  >
+                    branches:{" "}
+                  </span>
+                  {c.taken > 0 && (
+                    <span style={{ color: "var(--ok)" }}>{c.taken} taken</span>
+                  )}
+                  {c.taken > 0 && (c.skipped > 0 || c.undetermined > 0) && " · "}
+                  {c.skipped > 0 && (
+                    <span className="muted">{c.skipped} skipped</span>
+                  )}
+                  {c.skipped > 0 && c.undetermined > 0 && " · "}
+                  {c.undetermined > 0 && (
+                    <span style={{ color: "var(--warn)" }}>
+                      {c.undetermined} undetermined
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
 
           {/* Lint */}
           {(report.lint.errors.length > 0 || report.lint.warnings.length > 0) && (
