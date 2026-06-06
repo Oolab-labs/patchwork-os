@@ -308,3 +308,59 @@ describe("sendNotification — dispose guard", () => {
     conn.dispose();
   });
 });
+
+// ── fw-001: null-filename rename events from fs.watch (Windows) ──────────────
+// import must be at top-level; use vi.mock for node:fs to intercept fs.watch
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    watch: vi.fn(actual.watch),
+    existsSync: vi.fn(actual.existsSync),
+    mkdirSync: vi.fn(actual.mkdirSync),
+  };
+});
+
+import * as fsModule from "node:fs";
+
+describe("startWatchingLockDir — null-filename rename event (fw-001)", () => {
+  it("null filename triggers reconnect attempt (Windows delivers null for rename events)", () => {
+    // On Windows, fs.watch delivers rename events with filename=null for
+    // O_EXCL lock file creation. The old guard `!filename?.endsWith('.lock')`
+    // evaluates to `!undefined === true` → return early → fast reconnect missed.
+    // Fix: `if (filename !== null && !filename.endsWith('.lock')) return;`
+    // BEFORE FIX: null filename short-circuits → reconnect NOT triggered
+    // AFTER FIX:  null filename passes guard → reconnect IS triggered
+
+    type WatchCb = (event: string, filename: string | null) => void;
+    const watchCbs: WatchCb[] = [];
+
+    vi.mocked(fsModule.watch).mockImplementation((_path: any, cb: any) => {
+      watchCbs.push(cb as WatchCb);
+      return { close: vi.fn() } as unknown as fsModule.FSWatcher;
+    });
+    vi.mocked(fsModule.existsSync).mockReturnValue(true);
+
+    const conn = new BridgeConnection();
+    vi.mocked(readLockFilesAsync).mockResolvedValue(mockLockData as any);
+
+    conn.startWatchingLockDir();
+    expect(fsModule.watch).toHaveBeenCalled();
+
+    (conn as any).state = ConnectionState.DISCONNECTED;
+    const tryConnectSpy = vi
+      .spyOn(conn as any, "tryConnect")
+      .mockResolvedValue(undefined);
+
+    // Fire rename event with null filename (Windows behavior)
+    for (const cb of watchCbs) cb("rename", null);
+
+    // BEFORE FIX: guard returns early → setTimeout not called → tryConnect not called
+    // AFTER FIX:  guard passes → setTimeout(tryConnect, 200) scheduled
+    vi.advanceTimersByTime(250);
+    expect(tryConnectSpy).toHaveBeenCalled();
+
+    conn.dispose();
+  });
+});

@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import type { ExtensionClient } from "../extensionClient.js";
 import { readNote } from "./handoffNote.js";
 import { execSafe, successStructured } from "./utils.js";
@@ -128,9 +129,7 @@ export function createContextBundleTool(
               (d) =>
                 d.severity === "error" &&
                 typeof d.line === "number" &&
-                (String(d.file ?? "").endsWith(
-                  activeFile.split("/").pop() ?? "",
-                ) ||
+                (String(d.file ?? "").endsWith(basename(activeFile)) ||
                   d.file === activeFile),
             );
             const errorLine =
@@ -200,7 +199,7 @@ export function createContextBundleTool(
             const rec = d as Record<string, unknown>;
             const sev = String(rec.severity ?? "error");
             const file = String(rec.file ?? "unknown");
-            const baseName = file.split("/").pop() ?? file;
+            const baseName = basename(file) || file;
             const key = `${sev}:${baseName}`;
             countsByFileSeverity.set(
               key,

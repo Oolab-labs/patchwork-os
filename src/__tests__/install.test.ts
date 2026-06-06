@@ -14,8 +14,9 @@ vi.mock("node:child_process", () => ({
   execFileSync: vi.fn(),
 }));
 
-// Mock fs
-vi.mock("node:fs", () => ({
+// Mock fs — include `default` so writeFileAtomicSync (which imports fs
+// as the default export) can resolve renameSync / writeFileSync / unlinkSync.
+const fsMockFns = vi.hoisted(() => ({
   existsSync: vi.fn(),
   mkdirSync: vi.fn(),
   readFileSync: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock("node:fs", () => ({
   unlinkSync: vi.fn(),
   writeFileSync: vi.fn(),
 }));
+vi.mock("node:fs", () => ({ ...fsMockFns, default: fsMockFns }));
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";

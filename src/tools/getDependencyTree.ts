@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { ProbeResults } from "../probe.js";
 import {
   execSafe,
@@ -192,7 +192,7 @@ async function runPip(
     version: string;
   }>;
   const tree: DepNode = {
-    name: workspace.split("/").pop() ?? "project",
+    name: basename(workspace) || "project",
     deps: pkgs.map((p) => ({ name: p.name, version: p.version })),
   };
   return { packageManager: "pip", count: pkgs.length, tree };

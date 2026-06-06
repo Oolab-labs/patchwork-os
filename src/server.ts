@@ -3079,7 +3079,7 @@ export class Server extends EventEmitter<ServerEvents> {
               // 10 ms floor is low enough for tests, high enough to be safe.
             },
             Math.max(10, this.pingIntervalMs),
-          );
+          ).unref();
           resolve(addr.port);
         })
         .on("error", reject);
@@ -3097,7 +3097,28 @@ export class Server extends EventEmitter<ServerEvents> {
         );
         // Fall through to OS-assigned port below
       } else {
-        return this.listen(preferredPort, bindAddress);
+        // On Windows, SO_REUSEADDR does not release ports in TIME_WAIT (~4 min).
+        // A supervisor restart with --port N crash-loops until the port clears.
+        // Retry with exponential backoff (1s, 2s, 4s, 8s) before falling back
+        // to an OS-assigned port, so a single restart attempt survives the
+        // typical TIME_WAIT window without wedging the supervisor. (NET-001)
+        const backoffs = [1000, 2000, 4000, 8000];
+        for (let i = 0; i <= backoffs.length; i++) {
+          try {
+            return await this.listen(preferredPort, bindAddress);
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code !== "EADDRINUSE") throw err;
+            if (i === backoffs.length) break;
+            this.logger.warn(
+              `Port ${preferredPort} in use (attempt ${i + 1}/${backoffs.length}), ` +
+                `retrying in ${backoffs[i]}ms…`,
+            );
+            await new Promise<void>((r) => setTimeout(r, backoffs[i]));
+          }
+        }
+        this.logger.warn(
+          `Port ${preferredPort} still in use after retries, falling back to OS-assigned port`,
+        );
       }
     }
     // Port 0 lets the OS kernel assign a free port atomically

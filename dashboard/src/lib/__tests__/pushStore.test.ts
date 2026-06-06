@@ -141,6 +141,41 @@ describe("pushStore — add/remove/get", () => {
     expect(getSubscriptions()).toHaveLength(2);
   });
 
+  it("persist survives EEXIST on renameSync (Windows — target already exists)", async () => {
+    // BEFORE FIX: renameSync throws EEXIST → caught → subscriptions logged as
+    //   warn but NOT written → next load() sees stale/missing file → data lost.
+    // AFTER FIX:  EEXIST triggers unlink+retry → write succeeds → data persisted.
+    const { addSubscription, getSubscriptions } = await importFresh();
+
+    const sub = makeSub("https://push.example/eexist");
+    // Pre-create the store file so the second persist finds an existing target
+    fs.writeFileSync(storePath, "[]");
+
+    // Spy on renameSync to throw EEXIST on first call (Windows simulation)
+    const realRename = fs.renameSync.bind(fs);
+    let calls = 0;
+    vi.spyOn(fs, "renameSync").mockImplementation(
+      (src: fs.PathLike, dest: fs.PathLike) => {
+        if (++calls === 1) {
+          const err = new Error(
+            "EEXIST: file already exists",
+          ) as NodeJS.ErrnoException;
+          err.code = "EEXIST";
+          throw err;
+        }
+        return realRename(src, dest);
+      },
+    );
+
+    addSubscription(sub);
+
+    // BEFORE FIX: EEXIST swallowed → file not updated → reading disk returns []
+    // AFTER FIX:  unlink+retry → file written → on-disk matches in-memory
+    const onDisk = JSON.parse(fs.readFileSync(storePath, "utf8")) as unknown[];
+    expect(onDisk).toHaveLength(1);
+    expect(getSubscriptions()).toEqual([sub]);
+  });
+
   it("write failure is swallowed (warn-and-continue, in-memory state stands)", async () => {
     const { addSubscription, getSubscriptions } = await importFresh();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

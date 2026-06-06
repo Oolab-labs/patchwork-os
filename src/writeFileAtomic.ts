@@ -71,21 +71,38 @@ export function writeFileAtomicSync(
     } else {
       fs.writeFileSync(tmp, data, { mode });
     }
-    try {
-      fs.renameSync(tmp, target);
-    } catch (renameErr) {
-      // On Windows, renameSync throws EEXIST when the target already exists
-      // (unlike POSIX which atomically replaces). Unlink the target and retry.
-      if (
-        process.platform === "win32" &&
-        (renameErr as NodeJS.ErrnoException).code === "EEXIST"
-      ) {
-        fs.unlinkSync(target);
+    // Attempt the rename up to 4 times (immediate + 3 retries at ~50 ms).
+    // On Windows, Defender or an AV tool can hold a brief exclusive handle on
+    // the target (EPERM/EBUSY) between reads; a short backoff is enough.
+    // EEXIST means the target exists but no one holds it — unlink then retry.
+    const RETRYABLE = new Set(["EEXIST", "EPERM", "EBUSY"]);
+    let lastRenameErr: unknown;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        if (attempt > 0) {
+          // eslint-disable-next-line no-await-in-loop -- sync helper; Atomics.wait used for sleep
+          const buf = new SharedArrayBuffer(4);
+          Atomics.wait(new Int32Array(buf), 0, 0, 50);
+        }
         fs.renameSync(tmp, target);
-      } else {
-        throw renameErr;
+        lastRenameErr = undefined;
+        break;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "EEXIST") {
+          // EEXIST: target exists — unlink it, then retry the rename.
+          try {
+            fs.unlinkSync(target);
+          } catch {
+            /* ignore */
+          }
+        } else if (!RETRYABLE.has(code ?? "")) {
+          throw err; // non-retryable error; propagate immediately
+        }
+        lastRenameErr = err;
       }
     }
+    if (lastRenameErr !== undefined) throw lastRenameErr;
   } catch (err) {
     try {
       fs.unlinkSync(tmp);
@@ -121,10 +138,8 @@ export async function writeFileAtomic(
       await fs.promises.rename(tmp, target);
     } catch (renameErr) {
       // Windows: rename throws EEXIST when target exists (unlike POSIX atomic replace).
-      if (
-        process.platform === "win32" &&
-        (renameErr as NodeJS.ErrnoException).code === "EEXIST"
-      ) {
+      // Guard not platform-restricted; POSIX rename never throws EEXIST in practice.
+      if ((renameErr as NodeJS.ErrnoException).code === "EEXIST") {
         await fs.promises.unlink(target);
         await fs.promises.rename(tmp, target);
       } else {

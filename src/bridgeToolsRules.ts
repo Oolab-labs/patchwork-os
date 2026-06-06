@@ -4,17 +4,11 @@
  * so the bridge can auto-repair stale files at startup instead of just warning.
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PACKAGE_VERSION } from "./version.js";
+import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -41,21 +35,7 @@ export function isBridgeToolsFileValid(filePath: string): boolean {
 }
 
 function writeRulesFileAtomic(rulesFilePath: string, content: string): void {
-  // Use a PID+timestamp suffix so concurrent bridge instances each get a unique
-  // tmp path — eliminates the unlink+wx TOCTOU race where two processes both
-  // unlink the shared .tmp then one throws EEXIST on wx.
-  const tmpPath = `${rulesFilePath}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmpPath, content, { encoding: "utf-8", flag: "wx" });
-  try {
-    renameSync(tmpPath, rulesFilePath);
-  } catch (err) {
-    try {
-      unlinkSync(tmpPath);
-    } catch {
-      /* best-effort cleanup */
-    }
-    throw err;
-  }
+  writeFileAtomicSync(rulesFilePath, content, { encoding: "utf-8" });
 }
 
 /**

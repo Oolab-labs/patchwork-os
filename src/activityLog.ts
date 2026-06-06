@@ -40,6 +40,7 @@ export class ActivityLog {
   private nextId = 1;
   private maxEntries: number;
   private persistPath: string | null;
+  private _dirEnsured = false;
   private readonly listeners = new Set<ActivityListener>();
   private rateLimitRejections = 0;
 
@@ -134,8 +135,11 @@ export class ActivityLog {
     // Fire-and-forget async — never block the event loop on disk I/O
     void (async () => {
       try {
-        const dir = path.dirname(persistPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        if (!this._dirEnsured) {
+          const dir = path.dirname(persistPath);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          this._dirEnsured = true;
+        }
         const line = `${JSON.stringify({ kind, ...entry })}\n`;
         // Rotate first if file exceeds limits, then always append the current entry
         try {
@@ -443,6 +447,7 @@ export class ActivityLog {
       const e = ei >= 0 ? ents[ei] : undefined;
       const l = li >= 0 ? lifes[li] : undefined;
       if (!e) {
+        // biome-ignore lint/style/noNonNullAssertion: l is defined when !e (invariant: ei+li covers all entries)
         result.push({ kind: "lifecycle" as const, ...l! });
         li--;
       } else if (!l || e.id > l.id) {

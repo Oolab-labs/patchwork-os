@@ -91,7 +91,18 @@ function persist(store: Map<string, PushEntry>): void {
     fs.fsyncSync(fd);
     fs.closeSync(fd);
     fd = null;
-    fs.renameSync(tmp, STORE_PATH);
+    try {
+      fs.renameSync(tmp, STORE_PATH);
+    } catch (renameErr) {
+      // On Windows renameSync throws EEXIST when the target already exists
+      // (unlike POSIX which atomically replaces). Unlink the target and retry.
+      if ((renameErr as NodeJS.ErrnoException).code === "EEXIST") {
+        fs.unlinkSync(STORE_PATH);
+        fs.renameSync(tmp, STORE_PATH);
+      } else {
+        throw renameErr;
+      }
+    }
   } catch (err) {
     if (fd !== null) {
       try { fs.closeSync(fd); } catch { /* already closed */ }

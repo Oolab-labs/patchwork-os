@@ -396,18 +396,7 @@ This is a thin wrapper over \`start-all\`. For advanced flags see:
 }
 
 function writeRulesFileAtomic(rulesFilePath: string, content: string): void {
-  const tmpPath = `${rulesFilePath}.tmp`;
-  writeFileSync(tmpPath, content, { encoding: "utf-8", flag: "wx" });
-  try {
-    renameSync(tmpPath, rulesFilePath);
-  } catch (err) {
-    try {
-      unlinkSync(tmpPath);
-    } catch {
-      /* best-effort cleanup */
-    }
-    throw err;
-  }
+  writeFileAtomicSync(rulesFilePath, content, { encoding: "utf-8" });
 }
 
 /**
@@ -430,7 +419,7 @@ function handleRulesWriteError(
     );
     return 0;
   }
-  if (code === "ELOOP" || code === "EEXIST") {
+  if (code === "ELOOP") {
     process.stderr.write(
       `${indent}[error] Bridge rules — suspicious path condition (${code}): ${rulesFilePath}\n\n`,
     );
@@ -551,7 +540,24 @@ Options:
     const backupPath = `${targetPath}.${ts}.bak`;
     try {
       renameSync(targetPath, backupPath);
-      renameSync(tmpPath, targetPath);
+      try {
+        renameSync(tmpPath, targetPath);
+      } catch (renameErr) {
+        if (
+          (renameErr as NodeJS.ErrnoException).code === "EEXIST" &&
+          process.platform === "win32"
+        ) {
+          // Concurrent writer recreated targetPath between the two renames.
+          try {
+            unlinkSync(targetPath);
+          } catch {
+            /* best-effort */
+          }
+          renameSync(tmpPath, targetPath);
+        } else {
+          throw renameErr;
+        }
+      }
     } catch (err) {
       try {
         unlinkSync(tmpPath);
@@ -567,7 +573,28 @@ Options:
       encoding: "utf-8",
       flag: "wx",
     });
-    renameSync(`${targetPath}.tmp`, targetPath);
+    try {
+      renameSync(`${targetPath}.tmp`, targetPath);
+    } catch (renameErr) {
+      if (
+        (renameErr as NodeJS.ErrnoException).code === "EEXIST" &&
+        process.platform === "win32"
+      ) {
+        try {
+          unlinkSync(targetPath);
+        } catch {
+          /* best-effort */
+        }
+        renameSync(`${targetPath}.tmp`, targetPath);
+      } else {
+        try {
+          unlinkSync(`${targetPath}.tmp`);
+        } catch {
+          /* best-effort */
+        }
+        throw renameErr;
+      }
+    }
   }
 
   process.stderr.write(
@@ -1917,6 +1944,16 @@ if (process.argv[2] === "traces" && process.argv[3] === "import") {
           writeFileSync(tmp, plain, { mode: 0o600 });
           input = tmp;
           process.stderr.write("Decryption succeeded.\n");
+          // Ensure tmp is removed after import regardless of success/failure.
+          // On Windows mode:0o600 is a no-op (NTFS doesn't honour POSIX bits),
+          // so the plaintext would persist in %TEMP% until the next reboot.
+          process.once("exit", () => {
+            try {
+              unlinkSync(tmp);
+            } catch {
+              /* best-effort */
+            }
+          });
         }
       }
 
@@ -2101,7 +2138,10 @@ if (process.argv[2] === "kill-switch") {
             ? ` [env-locked: ${j.lockedReason ?? "yes"}]`
             : "";
           const wsLabel = lock.workspace
-            ? lock.workspace.split("/").slice(-2).join("/")
+            ? path.join(
+                path.basename(path.dirname(lock.workspace)),
+                path.basename(lock.workspace),
+              )
             : `pid=${lock.pid}`;
           process.stdout.write(
             `  ${engaged}  port=${lock.port} ${wsLabel}${lockedSuffix}\n`,
@@ -2120,7 +2160,10 @@ if (process.argv[2] === "kill-switch") {
           ...(reason ? { reason } : {}),
         });
         const wsLabel = lock.workspace
-          ? lock.workspace.split("/").slice(-2).join("/")
+          ? path.join(
+              path.basename(path.dirname(lock.workspace)),
+              path.basename(lock.workspace),
+            )
           : `pid=${lock.pid}`;
         if (result.status === 409) {
           anyFailed = true;
@@ -4058,7 +4101,7 @@ Steps performed:
       // shell-evaluated and could be injected via `--workspace '"; ...'`
       // since path.resolve preserves shell metachars. Audit 2026-05-17.
       const { execFile } = await import("node:child_process");
-      execFile("code", [target], { timeout: 3000 }, () => {});
+      execFile(ensureCmdShim("code"), [target], { timeout: 3000 }, () => {});
     }
   }
 

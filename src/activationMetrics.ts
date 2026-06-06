@@ -27,6 +27,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { getAnalyticsPref } from "./analyticsPrefs.js";
+import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
 export interface ActivationMetrics {
   installedAt: number;
@@ -193,11 +194,9 @@ function trimByDay(
 function writeAtomic(file: string, metrics: ActivationMetrics): void {
   const dir = path.dirname(file);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(metrics, null, 2)}\n`, {
+  writeFileAtomicSync(file, `${JSON.stringify(metrics, null, 2)}\n`, {
     mode: 0o600,
   });
-  fs.renameSync(tmp, file);
 }
 
 /** Returns true if the outbound analytics preference is not an explicit false. */

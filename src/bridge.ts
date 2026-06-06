@@ -690,7 +690,7 @@ export class Bridge {
         }
         errors += e;
         warnings += w;
-        if (e > 0) errorFiles.push(file.split("/").pop() ?? file);
+        if (e > 0) errorFiles.push(path.basename(file) || file);
       }
       lines.push(`Diagnostics: ${errors} errors, ${warnings} warnings`);
       if (errorFiles.length > 0) {

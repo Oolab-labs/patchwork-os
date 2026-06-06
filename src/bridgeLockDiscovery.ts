@@ -27,7 +27,11 @@ function defaultIsLive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (err) {
+    // EPERM: we lack permission to signal the process, but it IS running
+    // (cross-user or elevated on Windows). Mirror lockfile.ts:199–215.
+    if ((err as NodeJS.ErrnoException).code === "EPERM") return true;
+    // ESRCH: no such process → dead.
     return false;
   }
 }
@@ -86,7 +90,17 @@ export function findAllLiveBridges(
       };
       if (!parsed.isBridge) continue;
       if (!parsed.pid) continue;
-      if (!isLive(parsed.pid)) continue;
+      // isLive can throw when process.kill(pid,0) throws EPERM (cross-user /
+      // elevated process on Windows). EPERM means the process IS alive — we
+      // just lack permission to signal it. Any other throw (ESRCH, etc.) means
+      // dead. Mirror defaultIsLive + lockfile.ts:199–215.
+      let live: boolean;
+      try {
+        live = isLive(parsed.pid);
+      } catch (liveErr) {
+        live = (liveErr as NodeJS.ErrnoException).code === "EPERM";
+      }
+      if (!live) continue;
       const port = Number.parseInt(f.replace(/\.lock$/, ""), 10);
       if (!Number.isFinite(port)) continue;
       out.push({
