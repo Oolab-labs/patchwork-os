@@ -56,6 +56,12 @@ async function waitFor(
   return false;
 }
 
+// Track every server so afterEach guarantees cleanup even when a test throws
+// before its manual closeServer() — a leaked listener (plus a freePort TOCTOU
+// re-bind) is the EADDRINUSE-uncaught-exception flake class (see PR #924 /
+// shim-reconnect.test.ts).
+const activeServers = new Set<http.Server | WebSocketServer>();
+
 /** Find a free TCP port. */
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -76,6 +82,10 @@ async function freePort(): Promise<number> {
 function startRejectServer(statusCode: number): Promise<http.Server> {
   return new Promise((resolve) => {
     const srv = http.createServer();
+    activeServers.add(srv);
+    srv.on("error", (err) => {
+      console.error(`[reject-server] server error: ${(err as Error).message}`);
+    });
     srv.on("upgrade", (_req, socket) => {
       socket.write(
         `HTTP/1.1 ${statusCode} ${statusCode === 429 ? "Too Many Requests" : "Unauthorized"}\r\n\r\n`,
@@ -88,6 +98,14 @@ function startRejectServer(statusCode: number): Promise<http.Server> {
 
 function startMockBridge(port: number, token: string): WebSocketServer {
   const wss = new WebSocketServer({ port, host: "127.0.0.1" });
+  activeServers.add(wss);
+  // A bind error (e.g. EADDRINUSE from a freePort TOCTOU re-bind on a retry)
+  // must never escape as an uncaught exception that fails the whole run.
+  wss.on("error", (err) => {
+    console.error(
+      `[mock-bridge:${port}] server error: ${(err as Error).message}`,
+    );
+  });
   wss.on("connection", (ws, req) => {
     const auth = req.headers["x-claude-code-ide-authorization"];
     if (auth !== token) ws.close(4001, "Unauthorized");
@@ -96,11 +114,15 @@ function startMockBridge(port: number, token: string): WebSocketServer {
 }
 
 async function closeServer(srv: http.Server | WebSocketServer): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    srv.close((err) => (err ? reject(err) : resolve()));
-    if ("clients" in srv) {
-      for (const client of srv.clients) client.terminate();
-    }
+  // Idempotent: safe for both the per-test manual close and the afterEach net.
+  // Close errors are ignored — this is teardown.
+  if (!activeServers.has(srv)) return;
+  activeServers.delete(srv);
+  if ("clients" in srv) {
+    for (const client of srv.clients) client.terminate();
+  }
+  await new Promise<void>((resolve) => {
+    srv.close(() => resolve());
   });
 }
 
@@ -117,6 +139,10 @@ beforeEach(() => {
 afterEach(async () => {
   shimProcess?.kill();
   shimProcess = null;
+  // Authoritative cleanup: close any server a test left open (e.g. one whose
+  // body threw before its manual closeServer) so a CI retry never inherits a
+  // bound port.
+  await Promise.all([...activeServers].map((srv) => closeServer(srv)));
   await new Promise((r) => setTimeout(r, 150));
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
