@@ -119,8 +119,77 @@ describe("SimulatePanel", () => {
     expect(screen.getByText(/\[connector-write\]/)).toBeTruthy();
     // the honesty caveat — approval projection is NOT a live gate
     expect(screen.getByText(/NOT gated today/)).toBeTruthy();
-    // undetermined branch surfaced
-    expect(screen.getByText(/conditional branch\(es\) undetermined/)).toBeTruthy();
+    // static fidelity badge
+    expect(screen.getByText(/^static$/)).toBeTruthy();
+    // undetermined branch surfaced (per-outcome summary)
+    expect(screen.getByText(/1 undetermined/)).toBeTruthy();
+  });
+
+  it("renders mocked fidelity, history cost band, per-branch outcome and synth steps", async () => {
+    const mocked: SimulationReport = {
+      ...REPORT,
+      fidelity: "mocked",
+      sampleRuns: 7,
+      steps: [
+        { ...REPORT.steps[0]!, mockedFrom: "history" },
+        {
+          id: "notify",
+          type: "tool",
+          tool: "slack.postMessage",
+          namespace: "slack",
+          resolved: true,
+          baseRisk: "medium",
+          effectiveRisk: "medium",
+          sideEffect: "connector-write",
+          isWrite: true,
+          isConnector: true,
+          mockedFrom: "synthesized",
+        },
+      ],
+      cost: {
+        basis: "history",
+        confidence: "high",
+        sampleRuns: 7,
+        agentSteps: 1,
+        estimatedAgentSteps: 1,
+        estPromptTokens: 1200,
+        estInputTokens: 1200,
+        estOutputTokens: 300,
+        usd: 0.0025,
+        minUsd: 0.0018,
+        maxUsd: 0.004,
+        historyAgentSteps: 1,
+        note: "history",
+      },
+      branches: [
+        {
+          stepId: "open_pr",
+          condition: "{{ fetch.count }}",
+          outcome: "taken",
+          reason: "resolved from history",
+        },
+        {
+          stepId: "notify",
+          condition: "{{ x }}",
+          outcome: "skipped",
+          reason: "resolved from history",
+        },
+      ],
+    };
+    mockFetchOnce({ report: mocked });
+    render(<SimulatePanel recipeName="demo" autoRun />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/mocked · 7 runs/)).toBeTruthy();
+    });
+    // history cost band with USD range + confidence
+    expect(screen.getByText(/\$0\.0025/)).toBeTruthy();
+    expect(screen.getByText(/high confidence/)).toBeTruthy();
+    // per-branch outcomes
+    expect(screen.getByText(/1 taken/)).toBeTruthy();
+    expect(screen.getByText(/1 skipped/)).toBeTruthy();
+    // synthesized step flagged
+    expect(screen.getByText(/synth/)).toBeTruthy();
   });
 
   it("auto-runs on mount when autoRun is set", async () => {

@@ -33,6 +33,8 @@ export interface SimulationStep {
   sideEffect: SideEffectKind;
   isWrite: boolean;
   isConnector: boolean;
+  /** P2 mocked sandbox — whether this step's value came from run history. */
+  mockedFrom?: "history" | "synthesized";
 }
 
 export interface SimulationReport {
@@ -41,7 +43,10 @@ export interface SimulationReport {
   recipe: string;
   triggerType: string;
   generatedAt: string;
-  fidelity: "static";
+  /** "mocked" when driven by run history (P2); "static" otherwise. */
+  fidelity: "static" | "mocked";
+  /** Prior runs sampled for a mocked simulation (P2). */
+  sampleRuns?: number;
   topology: "chained" | "flat";
   gatedOnRecipeSteps: boolean;
   steps: SimulationStep[];
@@ -79,17 +84,30 @@ export interface SimulationReport {
     note: string;
   };
   cost: {
-    basis: "heuristic" | "unavailable";
+    /** "history" = P1 median corpus; "heuristic" = chars/4; "unavailable". */
+    basis: "history" | "heuristic" | "unavailable";
+    /** Loud confidence signal (P3). */
+    confidence?: "high" | "low" | "none";
+    /** Prior runs that contributed a sample (history basis). */
+    sampleRuns?: number;
     agentSteps: number;
     estimatedAgentSteps: number;
     estPromptTokens: number | null;
-    usd: null;
+    estInputTokens?: number | null;
+    estOutputTokens?: number | null;
+    /** Expected USD (median-summed). null when no billable history; never $0. */
+    usd: number | null;
+    /** USD range across history (P3). */
+    minUsd?: number | null;
+    maxUsd?: number | null;
+    /** Agent steps whose projection used real history vs chars/4. */
+    historyAgentSteps?: number;
     note: string;
   };
   branches: Array<{
     stepId: string;
     condition: string;
-    outcome: "undetermined";
+    outcome: "taken" | "skipped" | "undetermined";
     reason: string;
   }>;
   lint: { errors: string[]; warnings: string[] };
@@ -108,6 +126,58 @@ export function riskColor(tier: RiskTier): string {
 /** Per-step effective-risk glyph used in the actions list. */
 export function riskGlyph(tier: RiskTier): string {
   return tier === "high" ? "●" : tier === "medium" ? "◐" : "○";
+}
+
+/** Short human label for the simulation fidelity (P2). */
+export function fidelityLabel(report: SimulationReport): string {
+  if (report.fidelity === "mocked") {
+    const n = report.sampleRuns ?? 0;
+    return `mocked · ${n} run${n === 1 ? "" : "s"}`;
+  }
+  return "static";
+}
+
+/** Format a USD amount with adaptive precision; never shows a bare "$0.00". */
+function formatUsd(n: number): string {
+  if (n <= 0) return "$0.00";
+  const s = n < 1 ? n.toFixed(4) : n.toFixed(2);
+  // A positive value that still rounds to zero (e.g. 1e-6) — don't lie with $0.
+  return Number.parseFloat(s) === 0 ? "<$0.0001" : `$${s}`;
+}
+
+/**
+ * Human cost string honoring the P3 contract: a history projection shows an
+ * expected USD (+ range + confidence), heuristic shows tokens, unavailable
+ * shows the bridge note. USD is NEVER a "$0" placeholder.
+ */
+export function formatCost(cost: SimulationReport["cost"]): string {
+  if (cost.basis === "history") {
+    const conf = cost.confidence ? ` · ${cost.confidence} confidence` : "";
+    const runs = cost.sampleRuns ? ` · ${cost.sampleRuns} run(s)` : "";
+    if (typeof cost.usd === "number") {
+      const range =
+        typeof cost.minUsd === "number" && typeof cost.maxUsd === "number"
+          ? ` (${formatUsd(cost.minUsd)}–${formatUsd(cost.maxUsd)})`
+          : "";
+      return `~${formatUsd(cost.usd)}${range}${conf}${runs}`;
+    }
+    // History tokens but no billable USD (subscription/subprocess driver).
+    const tok = cost.estInputTokens ?? cost.estPromptTokens;
+    return `~${tok ?? "?"} input token(s)${conf}${runs} · USD not billed (subscription driver)`;
+  }
+  if (cost.basis === "heuristic") {
+    return `~${cost.estPromptTokens} input token(s) over ${cost.estimatedAgentSteps} agent step(s) (heuristic; USD not projected)`;
+  }
+  return cost.note;
+}
+
+/** Tally branch outcomes (P2) for a compact summary line. */
+export function branchOutcomeCounts(
+  branches: SimulationReport["branches"],
+): { taken: number; skipped: number; undetermined: number } {
+  const out = { taken: 0, skipped: 0, undetermined: 0 };
+  for (const b of branches) out[b.outcome] += 1;
+  return out;
 }
 
 /**
