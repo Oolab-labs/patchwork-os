@@ -1,0 +1,61 @@
+name: Audit follow-up
+description: Track a single security/quality audit finding as a release-blocker-aware issue.
+title: "[audit] <finding-id> — <one-line summary>"
+labels: ["audit-followup"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One finding per issue, so each becomes individually trackable and a
+        "what's blocking release" digest can be generated from the
+        `blocks-release` checkbox + `audit-followup` label.
+  - type: input
+    id: finding-id
+    attributes:
+      label: Finding ID
+      description: Stable identifier from the audit run.
+      placeholder: "AUDIT-2026-06-03-H1"
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - HIGH
+        - MEDIUM
+        - LOW
+    validations:
+      required: true
+  - type: input
+    id: ref
+    attributes:
+      label: OWASP / MITRE / CWE reference
+      description: Optional — the closest standard category, if any.
+      placeholder: "CWE-209 / OWASP A05:2021"
+  - type: input
+    id: location
+    attributes:
+      label: Affected file:line
+      placeholder: "src/recipeRoutes.ts:2428"
+    validations:
+      required: true
+  - type: input
+    id: fix-surface
+    attributes:
+      label: Proposed fix surface (one line)
+      description: The smallest change that resolves it — not a full design.
+      placeholder: "return a static error; never echo err.message to the client"
+    validations:
+      required: true
+  - type: checkboxes
+    id: release-impact
+    attributes:
+      label: Release impact
+      options:
+        - label: Blocks release
+  - type: textarea
+    id: details
+    attributes:
+      label: Details / repro / notes
+      description: Evidence, reproduction, attacker reachability, or links to the audit report.
