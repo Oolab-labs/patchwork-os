@@ -503,14 +503,15 @@ describe("Server /recipes/install — A-PR2 (dogfood F-05 / H-routes Bug 2)", ()
       expect(status).toBe(403);
       expect(JSON.parse(body).code).toBe("not_allowlisted");
     }
-    // Opt-in via env: install proceeds past the allowlist check.
-    // We don't stub fetch here — outcome can be 200 (parses + installs)
-    // or 502 (no fetch mock so the request bombs out at the network).
-    // Either way, status MUST NOT be 403 — that's the proof the gate
-    // passed.
+    // Opt-in via env: install proceeds past the allowlist check. We don't stub
+    // fetch here, so past the gate the outcome depends on the REAL network —
+    // 404/502, or even a 403 `ssrf_blocked` if a redirect trips the SSRF guard
+    // in CI (which made the old `status !== 403` assertion flaky). The only
+    // thing this test proves is that the default-deny gate LET IT THROUGH —
+    // i.e. the response is no longer the `not_allowlisted` 403. Assert on that.
     process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST = "acme/cookbook";
     try {
-      const { status } = await makeRequest(
+      const { body } = await makeRequest(
         {
           method: "POST",
           path: "/recipes/install",
@@ -523,7 +524,13 @@ describe("Server /recipes/install — A-PR2 (dogfood F-05 / H-routes Bug 2)", ()
           source: "github:acme/cookbook/recipes/incident-pager",
         }),
       );
-      expect(status).not.toBe(403);
+      let code: unknown;
+      try {
+        code = JSON.parse(body).code;
+      } catch {
+        code = undefined; // non-JSON body (network/HTML error) — also past the gate
+      }
+      expect(code).not.toBe("not_allowlisted");
     } finally {
       delete process.env.PATCHWORK_RECIPE_REPO_ALLOWLIST;
     }

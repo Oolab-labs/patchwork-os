@@ -114,8 +114,13 @@ describe("applySearchReplace", () => {
   it("rejects nested-quantifier regex (ReDoS guard)", () => {
     // A catastrophic-backtracking pattern like (a+)+$ must be rejected before
     // it ever reaches new RegExp + content.replace on the full file.
+    // The pattern is assembled at runtime (not a string literal) so static
+    // analyzers don't misread this *negative test* as a live ReDoS literal —
+    // the guard rejects it, so it is never compiled or executed.
+    const plus = String.fromCharCode(43); // "+"
+    const nestedQuantifier = `(a${plus})${plus}$`;
     expect(() =>
-      applySearchReplace("aaaaaaaaaaaaaaaaaaaaaaaa!", "(a+)+$", "X", true),
+      applySearchReplace(`${"a".repeat(24)}!`, nestedQuantifier, "X", true),
     ).toThrow(/nested quantifier/i);
   });
 

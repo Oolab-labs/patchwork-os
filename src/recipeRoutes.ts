@@ -2423,11 +2423,20 @@ export function tryHandleRecipeRoute(
             // confused with an unreachable upstream.
             const msg = err instanceof Error ? err.message : String(err);
             if (/^SSRF guard blocked/.test(msg)) {
+              // Log the full guard detail server-side, but return a STATIC
+              // message — never echo the caught error text to the client (it is
+              // error/stack-derived; CodeQL js/stack-trace-exposure). The
+              // `code` carries the machine-readable signal.
+              console.error(
+                `[recipes/install] SSRF guard blocked redirect:`,
+                msg,
+              );
               res.writeHead(403, { "Content-Type": "application/json" });
               res.end(
                 JSON.stringify({
                   ok: false,
-                  error: msg,
+                  error:
+                    "Install blocked: the source redirected to a disallowed host (SSRF guard).",
                   code: "ssrf_blocked",
                 }),
               );
