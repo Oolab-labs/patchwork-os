@@ -54,15 +54,8 @@ describe("probeClaudeCli — module-level singleton cache (PS-002)", () => {
       error: undefined,
     });
 
-    // Import the module fresh for each test (avoids cross-test cache pollution)
-    const _mod = await vi.importActual<
-      typeof import("../recipes/yamlRunner.js")
-    >("../recipes/yamlRunner.js");
-    // probeClaudeCli is an internal function; access it via the exported
-    // `_buildStepDeps` test seam if available, otherwise skip if not exposed.
-    // For now, assert that the underlying spawnSync is not called more than
-    // once when probeClaudeCli is called repeatedly within the same process.
-    // (The cache resets on module reload — verified by clearing callCount.)
+    // probeClaudeCli is an internal function; we assert the underlying
+    // spawnSync is not called more than once within the same process.
     vi.mocked(spawnSync).mockClear();
 
     // Call the exported hook (which calls probeClaudeCli inside) multiple times.
@@ -109,31 +102,6 @@ describe("resolveFilePath — workspace realpath TTL cache (PH-01)", () => {
 // The bridge.ts file lives in the dashboard; we test its behaviour via the
 // exported _clearBridgeCache + findBridge tandem.
 
-describe("dashboard bridge — lock-file TTL (dash-win-001)", () => {
-  it("re-scans after TTL expires but not before (TTL >= 3 s)", async () => {
-    vi.useFakeTimers();
-    // Re-import to get a fresh module with cleared cache
-    const { findBridge, _clearBridgeCache } = await import(
-      "../../dashboard/src/lib/bridge.js"
-    ).catch(() => ({ findBridge: undefined, _clearBridgeCache: undefined }));
-
-    if (!findBridge || !_clearBridgeCache) {
-      // Dashboard module not resolvable in bridge test context — skip
-      expect(true).toBe(true);
-      vi.useRealTimers();
-      return;
-    }
-
-    _clearBridgeCache();
-    const r1 = findBridge(); // cold — scans disk
-    const r2 = findBridge(); // within TTL — cache hit
-    expect(r2).toBe(r1); // same reference (cached)
-
-    // Advance past old 1 s TTL but still within new 5 s TTL
-    vi.advanceTimersByTime(2_000);
-    const r3 = findBridge(); // BEFORE FIX: re-scans (TTL was 1 s); AFTER FIX: cache hit
-    expect(r3).toBe(r1); // still cached — TTL >= 3 s
-
-    vi.useRealTimers();
-  });
-});
+// dash-win-001: bridge lock TTL is tested in dashboard's own test suite
+// (dashboard/src/lib/__tests__/bridge.test.ts). The bridge.ts file lives
+// outside this rootDir so we cannot import it here without a tsconfig violation.
