@@ -49,8 +49,23 @@ function writelockOrchestrator(lockDir: string, port: number, token: string) {
   return writelock(lockDir, port, token, true, true);
 }
 
+// Track every mock bridge so afterEach can guarantee cleanup even when a test
+// throws before reaching its manual closeServer() — otherwise the leaked
+// listener keeps the fixed port bound and CI's `retry` re-run of the same test
+// hits EADDRINUSE, which (as an unhandled server 'error') would kill the run.
+const activeServers = new Set<WebSocketServer>();
+
 function startMockBridge(port: number, token: string): WebSocketServer {
   const wss = new WebSocketServer({ port, host: "127.0.0.1" });
+  activeServers.add(wss);
+  // A bind error (e.g. EADDRINUSE from a not-yet-released port on a retry) must
+  // never escape as an uncaught exception that fails the entire run — surface
+  // it via the next assertion/timeout instead of crashing the worker.
+  wss.on("error", (err) => {
+    console.error(
+      `[mock-bridge:${port}] server error: ${(err as Error).message}`,
+    );
+  });
   wss.on("connection", (ws, req) => {
     const auth = req.headers["x-claude-code-ide-authorization"];
     if (auth !== token) {
@@ -74,9 +89,14 @@ async function waitFor(
 }
 
 async function closeServer(wss: WebSocketServer): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    wss.close((err) => (err ? reject(err) : resolve()));
-    for (const client of wss.clients) client.terminate();
+  // Idempotent: safe to call from both the per-test manual close and the
+  // afterEach safety net. Close errors (e.g. "not running") are ignored — this
+  // is teardown, and a half-open server must never fail a test.
+  if (!activeServers.has(wss)) return;
+  activeServers.delete(wss);
+  for (const client of wss.clients) client.terminate();
+  await new Promise<void>((resolve) => {
+    wss.close(() => resolve());
   });
 }
 
@@ -91,6 +111,10 @@ beforeEach(() => {
 afterEach(async () => {
   shimProcess?.kill();
   shimProcess = null;
+  // Authoritative cleanup: close any mock bridge a test left open (e.g. one
+  // whose body threw before its manual closeServer). Without this, the leaked
+  // fixed-port listener makes a CI retry of the same test crash on EADDRINUSE.
+  await Promise.all([...activeServers].map((wss) => closeServer(wss)));
   await new Promise((r) => setTimeout(r, 100));
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
