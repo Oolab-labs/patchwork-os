@@ -6,6 +6,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-beta.11] — 2026-06-06
+
+What-If Preview simulation engine · marketplace/install security hardening · Grok Build onboarding · dashboard theme redesign · CI flake fixes (#881–#926). (Supersedes the un-noted beta.10.)
+
+### Added
+
+- **What-If Preview — counterfactual recipe simulation** (#916–#923). `patchwork recipe simulate <name>` and `GET /recipes/:name/simulate` statically project what a recipe *would* do before you run it: actions, side-effect taxonomy, blast-radius risk score, a tier-only approval projection (honestly flagged as **not** gated on recipe steps today), cost, and conditional branches. Higher-fidelity **mocked** mode (chained recipes with run history) resolves downstream templates + branches by driving the runner with history-backed mocked outputs and **zero** real I/O. Surfaced in the dashboard as a **What-If Preview** panel + a Run-Now pre-run risk gate.
+- **History-backed cost projection** (#917, #921) — per-step agent token usage + run cost totals persisted to the run log; simulation projects expected USD (with confidence + range) from that corpus.
+- **Grok Build (Grok CLI) onboarding** (#896, #897) — detection + MCP-client setup guidance.
+- **`audit-followup` issue form** (#926) — track each audit finding as a release-blocker-aware issue.
+
+### Security
+
+- **Marketplace/install hardening** — default-deny install-confirm gate (#899), repo allowlist enforced on the CLI install path (#900), canonical SSRF guard + post-redirect re-check on install and `http.post` (#903, #906), registry trust-field sanitization + authenticated GitHub fetches (#902, #905, #907), per-session rate limit on the install proxy (#908).
+- **Env-secret redaction** from agent prompts (#914).
+- **CodeQL alerts cleared** — stack-trace exposure on the install SSRF path + a ReDoS false-positive in tests (#925).
+
+### Changed
+
+- **Dashboard theme redesign + facelift** — token foundation, AA contrast sweeps, dark structural parity, decoration quieting, prose-in-sans (#882–#894).
+- **Budget + cost enforcement in the chained runner**, incl. Gemini API spend billed against `budget.usdMax` (#909, #913); judge→refine loop + Anthropic API caller hardened (#912).
+
+### Fixed
+
+- Validation parity gaps + `trigger.vars` schema (#910), connector-preflight backfill + parity ratchet (#911), connector-tool error normalization (#915).
+- Recurring **Windows CI flakes** — leaked mock-server `EADDRINUSE` in the shim suites (#924) and a network-dependent install-allowlist assertion (#925).
+- Dashboard What-If Preview fetch `no-store` to avoid a pinned stale response (#922).
+
+---
+
 ## [0.2.0-beta.9] — 2026-05-29
 
 Perf hot-path sweep · recipe template repairs · transport hardening · Node 22 baseline (#818–#828).
