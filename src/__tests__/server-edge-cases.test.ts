@@ -10,6 +10,7 @@ afterEach(async () => {
   await server?.close();
   server = null;
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 // ── DNS rebinding protection ──────────────────────────────────────────────────
