@@ -80,9 +80,14 @@ export function writeFileAtomicSync(
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
         if (attempt > 0) {
-          // eslint-disable-next-line no-await-in-loop -- sync helper; Atomics.wait used for sleep
-          const buf = new SharedArrayBuffer(4);
-          Atomics.wait(new Int32Array(buf), 0, 0, 50);
+          // Atomics.wait is not allowed on the main thread (throws TypeError).
+          // Best-effort sleep: if it throws, skip the delay and retry immediately.
+          try {
+            const buf = new SharedArrayBuffer(4);
+            Atomics.wait(new Int32Array(buf), 0, 0, 50);
+          } catch {
+            // main thread — no sleep available; retry immediately
+          }
         }
         fs.renameSync(tmp, target);
         lastRenameErr = undefined;
