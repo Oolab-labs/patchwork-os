@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import {
+  checkGlobalLocked,
   checkLocked,
   recordFailure,
+  recordGlobalFailure,
   recordSuccess,
 } from "@/lib/authRateLimit";
 import { clientKey } from "@/lib/clientIp";
@@ -51,15 +53,23 @@ export async function POST(req: NextRequest) {
 
   const ip = clientKey(req.headers);
   // When no trusted reverse proxy is configured, clientKey() returns the
-  // literal "unknown" for EVERY request — so a shared lockout keyed on it
-  // would let 5 bad passwords from anyone lock out ALL users for the
-  // lockout window (the common local / direct-deploy case). Only apply the
-  // per-IP brute-force lockout when we have a real, attributable client key
-  // (i.e. BRIDGE_TRUST_PROXY=true + a forwarded IP). Without it we rely on
-  // the timing-safe password compare below as the sole gate. Audit 2026-06-02.
+  // literal "unknown" for EVERY request. A per-IP lockout keyed on "unknown"
+  // would lock out ALL users after MAX_FAILURES bad passwords. Instead, use a
+  // global fallback bucket with a much higher threshold
+  // (DASHBOARD_AUTH_GLOBAL_MAX_FAILURES, default 50) — still bounds automated
+  // attacks while legitimate users making a few typos are never denied.
+  // Audit 2026-06-03 MEDIUM #18.
   const trackable = ip !== "unknown";
   if (trackable) {
     const lock = checkLocked(ip);
+    if (lock.locked) {
+      return NextResponse.json(
+        { error: "too many attempts" },
+        { status: 429, headers: { "Retry-After": String(lock.retryAfterSec) } },
+      );
+    }
+  } else {
+    const lock = checkGlobalLocked();
     if (lock.locked) {
       return NextResponse.json(
         { error: "too many attempts" },
@@ -117,11 +127,19 @@ export async function POST(req: NextRequest) {
     eb.length <= CAP;
 
   if (!equal) {
-    // Only track failures against a real, attributable client key. The
-    // "unknown" bucket (no trusted proxy) must not accumulate a shared
-    // lockout — see the trackable guard above.
     if (trackable) {
       const result = recordFailure(ip);
+      if (result.locked) {
+        return NextResponse.json(
+          { error: "too many attempts" },
+          {
+            status: 429,
+            headers: { "Retry-After": String(result.retryAfterSec) },
+          },
+        );
+      }
+    } else {
+      const result = recordGlobalFailure();
       if (result.locked) {
         return NextResponse.json(
           { error: "too many attempts" },

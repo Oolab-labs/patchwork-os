@@ -168,3 +168,64 @@ describe("slack token storage", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("slack OAuth callback - postMessage targetOrigin (audit 2026-06-03 MEDIUM #6)", () => {
+  // window.opener.postMessage(msg, '*') is a wildcard origin — any page in
+  // the opener's browsing context receives the message, enabling cross-origin
+  // theft of the 'patchwork:slack:connected' signal by a malicious tab.
+  // Fix: use window.location.origin instead of '*'.
+
+  const tmpDir = join(os.tmpdir(), `patchwork-slack-origin-${Date.now()}`);
+  const homeDir = join(tmpDir, "home");
+  const patchworkHome = join(homeDir, ".patchwork");
+  const tokensDir = join(patchworkHome, "tokens");
+
+  beforeEach(() => {
+    process.env.HOME = homeDir;
+    process.env.PATCHWORK_HOME = patchworkHome;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    mkdirSync(tokensDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    delete process.env.HOME;
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("callback success HTML uses window.location.origin, not wildcard '*'", async () => {
+    const state = "origin-check-state";
+    writeFileSync(
+      join(tokensDir, "slack-state.json"),
+      JSON.stringify({ state, ts: Date.now() }),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          access_token: "xoxb-test",
+          bot_user_id: "U1",
+          team: { id: "T1", name: "Test" },
+        }),
+      } as unknown as Response),
+    );
+
+    process.env.PATCHWORK_SLACK_CLIENT_ID = "cid";
+    process.env.PATCHWORK_SLACK_CLIENT_SECRET = "csec";
+
+    const { handleSlackCallback } = await import("../slack.js");
+    const result = await handleSlackCallback("code-xyz", state, null);
+
+    expect(result.status).toBe(200);
+    // Must NOT use the wildcard origin
+    expect(result.body).not.toMatch(/postMessage\([^,]+,\s*['"`]\*['"`]/);
+    // Must use window.location.origin as the targetOrigin
+    expect(result.body).toContain("window.location.origin");
+  });
+});

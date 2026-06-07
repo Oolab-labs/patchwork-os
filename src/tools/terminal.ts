@@ -76,8 +76,14 @@ function validateTerminalCommandFlags(command: string): string | undefined {
 
   for (let i = 1; i < tokens.length; i++) {
     const tok = tokens[i] ?? "";
-    // Strip value for flags like --config=value → --config
-    const flag = tok.split("=")[0] ?? tok;
+    // Strip value for flags like --config=value → --config.
+    // For short flags (-r, -e, etc.) the value may be concatenated without a
+    // separator (e.g. node -revil.js). split("=") is a no-op in that case;
+    // take only the first 2 chars so "-revil.js" → "-r" which IS in the
+    // blocklist. Audit 2026-06-03 MEDIUM #15.
+    const flag = tok.startsWith("--")
+      ? (tok.split("=")[0] ?? tok)
+      : tok.slice(0, 2);
     if (isInterpreter && DANGEROUS_INTERPRETER_FLAGS.has(flag)) {
       return `Flag "${flag}" is not allowed for interpreter command "${cmd}" (code execution risk)`;
     }

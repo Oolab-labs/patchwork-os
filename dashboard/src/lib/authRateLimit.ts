@@ -110,6 +110,48 @@ export const _config = {
 };
 
 /* ------------------------------------------------------------------------- *
+ * Global fallback rate limiter — audit 2026-06-03 MEDIUM #18.
+ *
+ * When no trusted reverse proxy is configured, clientKey() returns "unknown"
+ * for every request. A per-IP lockout would deny all users after just
+ * MAX_FAILURES bad passwords. The global bucket uses a much higher threshold
+ * (DASHBOARD_AUTH_GLOBAL_MAX_FAILURES, default 50) so automated attacks are
+ * still bounded while a user making a few typos never gets locked out.
+ * The same `store` Map is used; "unknown" IPs are keyed on GLOBAL_KEY.
+ * ------------------------------------------------------------------------- */
+const GLOBAL_MAX_FAILURES = parsePositiveInt(
+  process.env.DASHBOARD_AUTH_GLOBAL_MAX_FAILURES,
+  50,
+);
+
+const GLOBAL_KEY = "__global_ratelimit__";
+
+export function checkGlobalLocked(now: number = Date.now()): LockResult {
+  return checkLocked(GLOBAL_KEY, now);
+}
+
+export function recordGlobalFailure(now: number = Date.now()): LockResult {
+  const entry = getOrInit(GLOBAL_KEY);
+  if (entry.lockedUntil !== 0 && entry.lockedUntil <= now) {
+    entry.lockedUntil = 0;
+    entry.failures = [];
+  }
+  const cutoff = now - FAILURE_WINDOW_MS;
+  entry.failures = entry.failures.filter((t) => t > cutoff);
+  entry.failures.push(now);
+  if (entry.failures.length >= GLOBAL_MAX_FAILURES) {
+    entry.lockedUntil = now + LOCKOUT_MS;
+    entry.failures = [];
+    return { locked: true, retryAfterSec: Math.ceil(LOCKOUT_MS / 1000) };
+  }
+  return { locked: false };
+}
+
+export const _globalConfig = {
+  GLOBAL_MAX_FAILURES,
+};
+
+/* ------------------------------------------------------------------------- *
  * Generic call-count rate limiter (NOT the failure tracker above).
  *
  * The failure tracker only records auth *failures* — a successful login

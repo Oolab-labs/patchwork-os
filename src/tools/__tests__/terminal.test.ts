@@ -392,3 +392,47 @@ describe("runInTerminal - PATH_FLAG_EXEMPTIONS", () => {
     expect(parseResult(result)).not.toContain("not allowed");
   });
 });
+
+describe("sendTerminalCommand - short-flag concat bypass (audit 2026-06-03 MEDIUM #15)", () => {
+  // `node -revil.js` tokenises to ["-revil.js"]. The old flag-extraction did
+  // `tok.split("=")[0]` which returns the whole token unchanged (no "=" present),
+  // so "-r" was never found in DANGEROUS_FLAGS_FOR_COMMAND["node"].
+  // Fix: for short flags (single leading "-"), take only the first 2 chars.
+
+  it("blocks node -r with a concatenated value (e.g. node -revil.js)", async () => {
+    const tool = createSendTerminalCommandTool(mockExtensionClient(), ["node"]);
+    const result = (await tool.handler({
+      text: "node -revil.js",
+      name: "test",
+    })) as any;
+    expect(result.isError).toBe(true);
+    expect(parseResult(result)).toContain("-r");
+  });
+
+  it("blocks node -e with a concatenated expression", async () => {
+    const tool = createSendTerminalCommandTool(mockExtensionClient(), ["node"]);
+    const result = (await tool.handler({
+      text: "node -eprocess.exit(0)",
+      name: "test",
+    })) as any;
+    expect(result.isError).toBe(true);
+  });
+
+  it("still blocks node -r as a standalone flag", async () => {
+    const tool = createSendTerminalCommandTool(mockExtensionClient(), ["node"]);
+    const result = (await tool.handler({
+      text: "node -r ./evil.js",
+      name: "test",
+    })) as any;
+    expect(result.isError).toBe(true);
+  });
+
+  it("still allows a safe node invocation with no blocked flags", async () => {
+    const tool = createSendTerminalCommandTool(mockExtensionClient(), ["node"]);
+    const result = (await tool.handler({
+      text: "node --version",
+      name: "test",
+    })) as any;
+    expect(result.isError).toBeUndefined();
+  });
+});
