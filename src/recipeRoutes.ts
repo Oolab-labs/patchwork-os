@@ -44,6 +44,7 @@ import { respondIfUnknownBodyKeys } from "./httpBodyValidation.js";
 import { respond500 } from "./httpErrorResponse.js";
 import type { LintIssue } from "./recipes/validation.js";
 import type { RecipeDraft } from "./recipesHttp.js";
+import { invalidateRecipesCache } from "./recipesHttp.js";
 import { validateSafeUrl } from "./ssrfGuard.js";
 
 // 5-minute cache of the public template registry from the patchworkos/recipes
@@ -649,6 +650,7 @@ export interface RecipeRouteDeps {
  * routes after their respective success paths.
  */
 function fireOnRecipesChanged(deps: RecipeRouteDeps): void {
+  invalidateRecipesCache();
   if (!deps.onRecipesChangedFn) return;
   try {
     deps.onRecipesChangedFn();

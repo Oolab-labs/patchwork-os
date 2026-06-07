@@ -76,7 +76,7 @@ describe("TokenUsageTracker", () => {
     t.stop();
   });
 
-  it("aggregates usage across files and dedupes by message.id", () => {
+  it("aggregates usage across files and dedupes by message.id", async () => {
     fs.writeFileSync(
       path.join(dir, "a.jsonl"),
       makeAssistantLine({ id: "msg_1", input: 10, output: 5 }) +
@@ -88,7 +88,7 @@ describe("TokenUsageTracker", () => {
       makeAssistantLine({ id: "msg_3", output: 2, cacheCreate: 50 }),
     );
     const t = newTracker();
-    t.start();
+    await t.scan();
     expect(t.getTotals()).toEqual({
       input: 13,
       output: 14,
@@ -100,7 +100,7 @@ describe("TokenUsageTracker", () => {
     t.stop();
   });
 
-  it("ignores non-assistant lines and malformed JSON", () => {
+  it("ignores non-assistant lines and malformed JSON", async () => {
     fs.writeFileSync(
       path.join(dir, "x.jsonl"),
       JSON.stringify({ type: "user", message: { id: "u_1" } }) +
@@ -109,13 +109,13 @@ describe("TokenUsageTracker", () => {
         makeAssistantLine({ id: "msg_a", input: 1, output: 2 }),
     );
     const t = newTracker();
-    t.start();
+    await t.scan();
     expect(t.getTotals().total).toBe(3);
     expect(t.getTotals().messages).toBe(1);
     t.stop();
   });
 
-  it("incrementally picks up appended lines on subsequent scans", () => {
+  it("incrementally picks up appended lines on subsequent scans", async () => {
     const file = path.join(dir, "live.jsonl");
     fs.writeFileSync(
       file,
@@ -126,32 +126,29 @@ describe("TokenUsageTracker", () => {
       projectsDir: dir,
       pollIntervalMs: 1_000_000,
     });
-    t.start();
+    await t.scan();
     expect(t.getTotals().messages).toBe(1);
 
     fs.appendFileSync(
       file,
       makeAssistantLine({ id: "m2", input: 4, output: 6 }),
     );
-    // trigger a manual scan via private method through a fresh start cycle
-    t.stop();
-    t.start();
+    await t.scan();
     expect(t.getTotals()).toMatchObject({ input: 5, output: 7, messages: 2 });
     t.stop();
   });
 
-  it("handles partial trailing line written across two scans", () => {
+  it("handles partial trailing line written across two scans", async () => {
     const file = path.join(dir, "partial.jsonl");
     const line = makeAssistantLine({ id: "m_p", input: 2, output: 3 });
     const half = line.slice(0, line.length - 5);
     fs.writeFileSync(file, half);
     const t = newTracker();
-    t.start();
+    await t.scan();
     expect(t.getTotals().messages).toBe(0);
 
     fs.writeFileSync(file, line);
-    t.stop();
-    t.start();
+    await t.scan();
     expect(t.getTotals().messages).toBe(1);
     expect(t.getTotals().total).toBe(5);
     t.stop();
