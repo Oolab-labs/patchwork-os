@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useActiveRuns } from "@/hooks/LiveRunsContext";
 import { useToast } from "@/components/Toast";
 import {
@@ -50,6 +50,22 @@ export function HaltToastWatcher() {
   // independent of the localStorage flag (which also survives reloads).
   const offeredPushRef = useRef(false);
 
+  // Derive a stable string key from only the halt-relevant fields so the
+  // effect does not re-fire on every SSE event that creates a new Map
+  // reference without changing halt status or haltReason.
+  const runsKey = useMemo(
+    () =>
+      JSON.stringify(
+        [...runs.entries()].map(([name, r]) => [
+          name,
+          r.status,
+          r.haltReason ?? null,
+          r.runSeq,
+        ]),
+      ),
+    [runs],
+  );
+
   useEffect(() => {
     // On the very first render we get whatever state the store
     // already holds — skip toasts so we don't bark about runs that
@@ -94,7 +110,8 @@ export function HaltToastWatcher() {
     }
 
     prevRef.current = runs;
-  }, [runs, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runsKey, toast]);
 
   // Fire the one-time "Enable push" offer if the user isn't already
   // subscribed and hasn't been asked before. Separate toast (not an

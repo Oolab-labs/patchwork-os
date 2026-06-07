@@ -637,7 +637,7 @@ function ApprovalsContent() {
       const poll = async () => {
         if (!alive) return;
         try {
-          const approvalsUrl = `${API}/approvals${sessionFilter ? `?session=${sessionFilter}` : ""}`;
+          const approvalsUrl = `${API}/approvals${sessionFilter ? `?session=${encodeURIComponent(sessionFilter)}` : ""}`;
           const r = await fetch(approvalsUrl);
           if (!r.ok) throw new Error(`/approvals ${r.status}`);
           setPending((await r.json()) as Pending[]);
@@ -992,7 +992,7 @@ function ApprovalsContent() {
           type="button"
           className="btn sm ghost"
           onClick={() => {
-            const approvalsUrl = `${API}/approvals${sessionFilter ? `?session=${sessionFilter}` : ""}`;
+            const approvalsUrl = `${API}/approvals${sessionFilter ? `?session=${encodeURIComponent(sessionFilter)}` : ""}`;
             fetch(approvalsUrl)
               .then(async (r) => {
                 if (!r.ok) {
