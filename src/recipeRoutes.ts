@@ -203,7 +203,7 @@ export function _resetRepairRateLimitForTests(): void {
 //                 per R3 amendment 4 / I-3, prevents JSON.stringify smuggling
 //                 a `..` segment into a coerced value at render time).
 const VARS_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
-const VARS_VALUE_RE = /^[\w\-. :+@,]+$/u;
+const VARS_VALUE_RE = /^(?!.*\.\.)([\w\-. :+@,]+)$/u;
 
 export interface VarsValidationError {
   ok: false;
@@ -282,6 +282,11 @@ export const RECIPE_ROUTE_BODY_CAPS = {
    * (256 KB matches the existing PUT/POST/lint caps).
    */
   repair: 256 * 1024,
+  /**
+   * PATCH /recipes/:name — only `{ "enabled": true/false }` (≈ 15 bytes).
+   * 1 KB is 66× that maximum; 256 KB was a trivial DoS vector.
+   */
+  toggle: 1 * 1024,
 } as const;
 
 /**
@@ -312,11 +317,14 @@ export function readBodyWithCap(
       total += chunk.byteLength;
       if (total > max) {
         aborted = true;
+        // Remove the data listener immediately so no further chunks accumulate
+        // in `chunks` after the promise resolves. The `aborted` guard already
+        // prevents adding to `chunks`, but leaving the listener attached causes
+        // unnecessary listener accumulation when the same socket is reused.
+        req.removeListener("data", onData);
         // Resolve immediately so the route can write 413; do NOT destroy the
         // socket here — destroying mid-upload races with the response write
         // and the client sees EPIPE/ECONNRESET before reading the body.
-        // Subsequent chunks land in `onData` again but the `aborted` guard
-        // discards them, draining the upload until the client emits `end`.
         resolve({ ok: false, code: "too_large" });
         // Force the underlying stream to keep flowing so buffered upload
         // data drains naturally. Without this Node may pause the stream
@@ -333,6 +341,7 @@ export function readBodyWithCap(
 
     const onEnd = () => {
       if (aborted) return;
+      req.removeListener("data", onData);
       const bytes = Buffer.concat(chunks);
       // `bytes` is the raw on-the-wire body; `body` is the utf-8 decode used
       // by JSON parsers. HMAC consumers must use `bytes` to avoid the
@@ -343,6 +352,7 @@ export function readBodyWithCap(
     const onError = () => {
       if (aborted) return;
       aborted = true;
+      req.removeListener("data", onData);
       // Treat aborted/error mid-stream as a malformed read. Callers that
       // care about the distinction can check the `code` on the
       // readJsonBody result; here we collapse to "too_large" to keep
@@ -1020,6 +1030,14 @@ export function tryHandleRecipeRoute(
           res.end(JSON.stringify({ error: "plan_unavailable" }));
           return;
         }
+        // Guard: recipeName may be absent on runs created before the field was
+        // added (audit LOW #36). An unsafe cast + immediate .replace() would
+        // throw TypeError — return 404 instead.
+        if (!run.recipeName) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "recipe_name_missing" }));
+          return;
+        }
         // triggerSource appends ":agent" suffix — strip before file lookup
         const recipeName = (run.recipeName as string).replace(/:agent$/, "");
         const plan = await deps.runPlanFn(recipeName);
@@ -1384,16 +1402,17 @@ export function tryHandleRecipeRoute(
 
   const recipePatchMatch = /^\/recipes\/([^/]+)$/.exec(parsedUrl.pathname);
   if (recipePatchMatch && req.method === "PATCH") {
-    // A-PR2: bounded JSON read at RECIPE_ROUTE_BODY_CAPS.content (256 KB).
+    // A-PR2: tight 1 KB cap — the only valid payload is `{"enabled":bool}`.
+    // Using the 256 KB content cap here was a trivial DoS vector (audit LOW #34).
     const name = decodeURIComponent(recipePatchMatch[1] ?? "");
     void (async () => {
       const parsedBody = await readJsonBody<{ enabled?: boolean }>(
         req,
-        RECIPE_ROUTE_BODY_CAPS.content,
+        RECIPE_ROUTE_BODY_CAPS.toggle,
       );
       if (!parsedBody.ok) {
         if (parsedBody.code === "too_large") {
-          respond413(res, RECIPE_ROUTE_BODY_CAPS.content);
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.toggle);
         } else {
           respondInvalidJson(res);
         }
@@ -2117,8 +2136,10 @@ export function tryHandleRecipeRoute(
                 os.tmpdir(),
                 `patchwork-bundle-install-${process.pid}-${Date.now()}-${randomBytesFn(6).toString("hex")}-${r}.yaml`,
               );
-              writeFileSync(tmpFile, yamlText, "utf-8");
+              // Audit LOW #35: writeFileSync is inside the try so that the
+              // finally block's unlinkSync runs even when the write throws.
               try {
+                writeFileSync(tmpFile, yamlText, "utf-8");
                 const installResult = installRecipeFromFile(tmpFile, {
                   recipesDir,
                 });
@@ -2549,13 +2570,17 @@ export function tryHandleRecipeRoute(
         const { writeFileSync, mkdirSync, unlinkSync } = await import(
           "node:fs"
         );
-        writeFileSync(tmpFile, yamlText, "utf-8");
         let result: {
           action: "created" | "replaced";
           name: string;
           missingConnectors?: string[];
         };
+        // Audit LOW #35: writeFileSync is now inside the try so that the
+        // finally block's unlinkSync runs even when the write itself throws
+        // (e.g. ENOSPC, EROFS). Previously writeFileSync was called before
+        // the try, orphaning the temp file on any write error.
         try {
+          writeFileSync(tmpFile, yamlText, "utf-8");
           const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
           mkdirSync(recipesDir, { recursive: true });
           const { installRecipeFromFile } = await import(
