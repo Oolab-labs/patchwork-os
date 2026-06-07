@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isValidRef } from "../git-utils.js";
 import {
   createGitAddTool,
@@ -254,6 +254,36 @@ describe("gitWrite tools", () => {
       const result = await tool.handler({ filePath: "untracked.txt" });
 
       expect(result.isError).toBe(true);
+    });
+
+    it("clamps startLine to MAX_BLAME_LINE (LOW #28 — no unbounded large line numbers)", async () => {
+      // Write a multi-line file so blame has real content to return.
+      fs.writeFileSync(
+        path.join(tmpDir, "multi.txt"),
+        Array.from({ length: 5 }, (_, i) => `line ${i + 1}`).join("\n") + "\n",
+      );
+      execSync("git add multi.txt", { cwd: tmpDir, stdio: "ignore" });
+      execSync('git commit -m "add multi"', { cwd: tmpDir, stdio: "ignore" });
+
+      const tool = createGitBlameTool(tmpDir);
+
+      // Verify that startLine=1, endLine=999_999_999 completes without hanging.
+      // Before the fix: git receives `-L1,999999999` which is unbounded.
+      // After the fix: endLine is clamped to MAX_BLAME_LINE (1_000_000).
+      const result = await tool.handler({
+        filePath: "multi.txt",
+        startLine: 1,
+        endLine: 999_999_999,
+      });
+      expect(result.content.length).toBeGreaterThan(0);
+
+      // Verify startLine=999_999_999 also results in a handled error (not an
+      // unhandled exception). Git will say "file has only 5 lines".
+      const result2 = await tool.handler({
+        filePath: "multi.txt",
+        startLine: 999_999_999,
+      });
+      expect(result2.content.length).toBeGreaterThan(0);
     });
   });
 });

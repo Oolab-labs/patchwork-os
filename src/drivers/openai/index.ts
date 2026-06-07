@@ -1,4 +1,4 @@
-import { truncateUtf8Bytes } from "../outputCap.js";
+import { truncateToBytes, truncateUtf8Bytes } from "../outputCap.js";
 import type {
   ProviderDriver,
   ProviderTaskInput,
@@ -96,6 +96,7 @@ export class OpenAIApiDriver implements ProviderDriver {
     );
 
     let text = "";
+    let outputBytesSent = 0;
     let firstChunkAt: number | undefined;
     let promptTokens: number | undefined;
     let completionTokens: number | undefined;
@@ -133,14 +134,35 @@ export class OpenAIApiDriver implements ProviderDriver {
         const delta: string = chunk.choices?.[0]?.delta?.content ?? "";
         if (delta) {
           if (firstChunkAt === undefined) firstChunkAt = Date.now();
-          if (text.length < OUTPUT_CAP) {
+          if (outputBytesSent < OUTPUT_CAP) {
             // Cap accumulation in-loop to bound memory under runaway streams
             // (e.g. local LLMs that loop). Once we hit the cap, stop appending
             // and abort the upstream stream so sockets and decoder buffers
-            // are released. onChunk is gated by the same cap so partial
-            // listeners stop receiving deltas.
-            text += delta;
-            input.onChunk?.(delta);
+            // are released.
+            //
+            // LOW #19 audit 2026-06-03: use truncateToBytes so the chunk sent
+            // to onChunk is always the SAME bytes as what lands in result.text.
+            // The previous pattern appended the full `delta` to `text` then
+            // called `onChunk(delta)`, but `truncateUtf8Bytes(text, OUTPUT_CAP)`
+            // at the end could cut the last delta — so onChunk sum > result.text.
+            const remaining = OUTPUT_CAP - outputBytesSent;
+            const { send, bytes } = truncateToBytes(delta, remaining);
+            text += send;
+            outputBytesSent += bytes;
+            if (send) input.onChunk?.(send);
+            if (bytes < Buffer.byteLength(delta, "utf8")) {
+              // We've hit the cap mid-delta — abort the stream.
+              // biome-ignore lint/suspicious/noExplicitAny: stream shape
+              const ctrl = (stream as any).controller;
+              if (ctrl && typeof ctrl.abort === "function") {
+                try {
+                  ctrl.abort();
+                } catch {
+                  /* best effort */
+                }
+              }
+              break;
+            }
           } else {
             // biome-ignore lint/suspicious/noExplicitAny: stream shape
             const ctrl = (stream as any).controller;
