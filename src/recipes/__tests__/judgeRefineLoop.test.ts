@@ -9,11 +9,17 @@
  * on_exhausted gate, so the run proceeded as if the unvalidated revised draft
  * had been approved. The fix keeps the last good verdict (mirroring the
  * revise-failure break) and lets on_exhausted decide.
+ *
+ * Also covers audit 2026-06-03 LOW #2: budget admission is checked at the
+ * top of the loop (before REVISE) but was NOT re-checked between REVISE and
+ * RE-JUDGE, so when REVISE exhausted the budget the RE-JUDGE fired anyway —
+ * one extra LLM call over budget. The fix adds a second admit() after REVISE.
  */
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import type { AgentResult } from "../agentExecutor.js";
 import {
   type RunnerDeps,
   runYamlRecipe,
@@ -118,6 +124,102 @@ describe("judge→refine: failed re-judge (audit 2026-06-03 MEDIUM #17)", () => 
     const judge = judgeResult(result);
     expect(judge?.judgeVerdict?.verdict).toBe("approve");
     expect(judge?.status).toBe("ok");
+    expect(result.errorMessage).toBeUndefined();
+  });
+});
+
+describe("judge→refine: budget off-by-one (audit 2026-06-03 LOW #2)", () => {
+  /**
+   * Returns RunnerDeps whose claudeFn always reports 500 input + 500 output
+   * tokens so RunBudget.reconcile() accumulates real token counts. Also
+   * increments callCount.n so the test can verify how many LLM calls fired.
+   */
+  function depsWithBudget(callCount: { n: number }): RunnerDeps {
+    return {
+      now: () => new Date("2026-06-03T08:00:00Z"),
+      logDir,
+      claudeFn: async (prompt: string): Promise<AgentResult> => {
+        callCount.n += 1;
+        // Initial write step → plain draft.
+        if (
+          !prompt.includes("<artefact>") &&
+          !prompt.includes("<revision-request>")
+        ) {
+          return {
+            text: "DRAFT v1",
+            usage: { inputTokens: 500, outputTokens: 500 },
+          };
+        }
+        // REVISE step.
+        if (prompt.includes("<revision-request>")) {
+          return {
+            text: "REVISED v2",
+            usage: { inputTokens: 500, outputTokens: 500 },
+          };
+        }
+        // Initial judge (artefact = DRAFT v1) → request_changes.
+        // Re-judge (artefact = REVISED v2) → should NOT fire when budget exhausted.
+        if (prompt.includes("REVISED v2")) {
+          return {
+            text: '```json\n{"verdict":"approve","reasons":["ok"]}\n```',
+            usage: { inputTokens: 500, outputTokens: 500 },
+          };
+        }
+        return {
+          text: REQUEST_CHANGES,
+          usage: { inputTokens: 500, outputTokens: 500 },
+        };
+      },
+    };
+  }
+
+  it("does NOT fire re-judge when the REVISE call exhausts the token budget", async () => {
+    // Token accounting:
+    //   initial write:  500 + 500 = 1 000   (total = 1 000)
+    //   initial judge:  500 + 500 = 1 000   (total = 2 000)
+    //   loop admit() at 2 000 → 2 000 < 3 000 → admitted ✓
+    //   revise:         500 + 500 = 1 000   (total = 3 000)
+    //   WITH FIX: post-revise admit() at 3 000 → 3 000 >= 3 000 → break
+    //             callCount = 3, revisions = 0
+    //   WITHOUT FIX: re-judge fires → total = 4 000, callCount = 4, revisions = 1
+    const callCount = { n: 0 };
+    const recipe: YamlRecipe = {
+      name: "budget-judge",
+      trigger: { type: "manual" },
+      budget: { tokensMax: 3000 },
+      steps: [
+        {
+          agent: {
+            prompt: "write the thing",
+            model: "claude-haiku-4-5-20251001",
+            driver: "anthropic",
+            into: "draft",
+          },
+        },
+        {
+          agent: {
+            kind: "judge",
+            reviews: "draft",
+            max_revisions: 3,
+            on_exhausted: "proceed",
+            prompt: "review the draft",
+            model: "claude-haiku-4-5-20251001",
+            driver: "anthropic",
+          },
+        },
+      ],
+    } as YamlRecipe;
+
+    const result = await runYamlRecipe(recipe, depsWithBudget(callCount));
+    const judge = judgeResult(result);
+
+    // The re-judge must NOT have fired: only 3 calls (write + judge + revise).
+    expect(callCount.n).toBe(3);
+    // revisions = 0 because the loop broke before re-judging.
+    expect(judge?.revisions).toBe(0);
+    // The verdict must still be "request_changes" (the initial judge verdict).
+    expect(judge?.judgeVerdict?.verdict).toBe("request_changes");
+    // on_exhausted: proceed → no overall error, the step itself is ok.
     expect(result.errorMessage).toBeUndefined();
   });
 });

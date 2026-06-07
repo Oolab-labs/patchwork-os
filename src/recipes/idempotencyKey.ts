@@ -427,8 +427,24 @@ export class WriteEffectLedger {
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
         if (code !== "ENOENT") throw err;
+        // ENOENT on statSync: file was deleted by a concurrent rotation.
+        // Another writer already trimmed the file — skip our rotation and
+        // fall through to appendFileSync which will create a fresh file.
       }
-      appendFileSync(this.file, `${JSON.stringify(row)}\n`, { mode: 0o600 });
+      // appendFileSync uses O_APPEND | O_CREAT semantics: if the file was
+      // deleted (e.g. by a concurrent rotation from another process), it
+      // will be created fresh. Retry once on ENOENT in case a concurrent
+      // rename/unlink races with our O_CREAT — audit 2026-06-03 LOW #1.
+      try {
+        appendFileSync(this.file, `${JSON.stringify(row)}\n`, { mode: 0o600 });
+      } catch (appendErr) {
+        const code = (appendErr as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT") throw appendErr;
+        // A concurrent writer deleted / rotated the file in the brief window
+        // between our statSync and this appendFileSync. Retry once: the new
+        // file will be created by the O_CREAT flag.
+        appendFileSync(this.file, `${JSON.stringify(row)}\n`, { mode: 0o600 });
+      }
     } catch (err) {
       this.disk.logger?.warn?.(
         `[effect-ledger] append failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -440,6 +456,13 @@ export class WriteEffectLedger {
    * Trim `effect_ledger.jsonl` to the most recent MAX_PERSIST_LINES.
    * Best-effort — failure logs and the next append proceeds against the
    * un-rotated file. Same pattern as RecipeRunLog / DecisionTraceLog.
+   *
+   * Race hardening (audit 2026-06-03 LOW #1): if the file is deleted by
+   * a concurrent writer between our statSync check and the readFileSync
+   * here, readFileSync throws ENOENT. We swallow it and skip the rotation
+   * — the file is already gone (another process already rotated) so there
+   * is nothing to trim. The subsequent appendFileSync in `append` will
+   * create a fresh file with the new entry.
    */
   private rotate(): void {
     if (!this.file || !this.disk) return;
@@ -455,6 +478,12 @@ export class WriteEffectLedger {
         { mode: 0o600 },
       );
     } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        // File was removed by a concurrent rotation — nothing to trim.
+        // The append() caller will create a fresh file via appendFileSync.
+        return;
+      }
       this.disk.logger?.warn?.(
         `[effect-ledger] rotate failed: ${err instanceof Error ? err.message : String(err)}`,
       );

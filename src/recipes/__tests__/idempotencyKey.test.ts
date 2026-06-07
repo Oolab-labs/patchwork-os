@@ -2,7 +2,9 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -457,4 +459,108 @@ describe("WriteEffectLedger — ledgerDir validation (security hardening)", () =
       expect(warnings.some((w) => /symlink/.test(w))).toBe(true);
     },
   );
+});
+
+describe("WriteEffectLedger — ledger rotation race (audit 2026-06-03 LOW #1)", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(os.tmpdir(), "effect-ledger-race-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("rotates correctly when the ledger exceeds MAX_PERSIST_LINES (10 000 rows)", () => {
+    const file = path.join(dir, "effect_ledger.jsonl");
+    // Pre-fill 11 000 rows with a padded output field so the file is
+    // well over 1 MB — both the line-count (>10 000) and the byte-size
+    // (>1 MB) rotation thresholds are exceeded.
+    // Row size: ~150 bytes → 11 000 × 150 = ~1.65 MB (> MAX_PERSIST_BYTES=1 MB).
+    const paddedOutput = "x".repeat(80); // pad to make each row ~150 bytes
+    const row = JSON.stringify({
+      scopeKey: "pre:fill",
+      idemKey: "x",
+      output: paddedOutput,
+      recordedAt: 1,
+    });
+    const lines = `${Array.from({ length: 11_000 }, () => row).join("\n")}\n`;
+    writeFileSync(file, lines, { mode: 0o600 });
+
+    // Write one more record — this triggers rotation via the size check
+    // (file is well over 1 MB at 11 000 rows × ~150 bytes each).
+    const ledger = new WriteEffectLedger({ dir, scopeKey: "post:rotation" });
+    ledger.record("new-entry", "after-rotation");
+
+    const finalLines = readFileSync(file, "utf-8")
+      .split("\n")
+      .filter((l) => l.trim());
+    // After rotation, the line count must be at or below MAX_PERSIST_LINES+1
+    // (10 000 kept rows + the new entry we just wrote).
+    expect(finalLines.length).toBeLessThanOrEqual(10_001);
+    // The newly written entry must survive.
+    expect(
+      finalLines.some((l) => {
+        try {
+          return JSON.parse(l).idemKey === "new-entry";
+        } catch {
+          return false;
+        }
+      }),
+    ).toBe(true);
+  });
+
+  it("recovers gracefully when the ledger file is deleted between stat and append", () => {
+    const file = path.join(dir, "effect_ledger.jsonl");
+    const ledger = new WriteEffectLedger({ dir, scopeKey: "race:test" });
+    // Write a first record so the file exists.
+    ledger.record("k1", "v1");
+    expect(statSync(file).size).toBeGreaterThan(0);
+
+    // Simulate a concurrent process deleting the file.
+    unlinkSync(file);
+
+    // A second record() must NOT throw — it should create a fresh file.
+    expect(() => ledger.record("k2", "v2")).not.toThrow();
+
+    // The second record must be present in the new file.
+    const lines = readFileSync(file, "utf-8")
+      .split("\n")
+      .filter((l) => l.trim());
+    expect(
+      lines.some((l) => {
+        try {
+          return JSON.parse(l).idemKey === "k2";
+        } catch {
+          return false;
+        }
+      }),
+    ).toBe(true);
+  });
+
+  it("two ledger instances writing to the same file both survive concurrent appends", () => {
+    const ledger1 = new WriteEffectLedger({ dir, scopeKey: "scope1" });
+    const ledger2 = new WriteEffectLedger({ dir, scopeKey: "scope2" });
+
+    // Interleave records from both ledger instances.
+    ledger1.record("a1", "alpha");
+    ledger2.record("b1", "beta");
+    ledger1.record("a2", "alpha2");
+    ledger2.record("b2", "beta2");
+
+    const file = path.join(dir, "effect_ledger.jsonl");
+    const lines = readFileSync(file, "utf-8")
+      .split("\n")
+      .filter((l) => l.trim());
+
+    // All 4 records must be present — no silent loss.
+    const keys = lines.flatMap((l) => {
+      try {
+        return [JSON.parse(l).idemKey];
+      } catch {
+        return [];
+      }
+    });
+    expect(keys).toContain("a1");
+    expect(keys).toContain("b1");
+    expect(keys).toContain("a2");
+    expect(keys).toContain("b2");
+  });
 });
