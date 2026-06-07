@@ -611,20 +611,27 @@ function listLinuxSecrets(): string[] {
 
 // Rename the platform-specific functions to avoid conflicts
 function setMacOSKeychainItemSync(key: string, value: string): boolean {
+  // Audit 2026-06-03 (HIGH #3): pass credential via env var, not as a -w
+  // argument. Process args appear in `ps aux` output and are readable by any
+  // local process for the duration of the spawnSync call. Environment variables
+  // require elevated access to inspect on macOS. The shell reads $PATCHWORK_KCV
+  // and expands it into security's -w argument; the bridge process itself never
+  // carries the credential in its own arg list.
   try {
     const result = spawnSync(
-      "security",
+      "/bin/sh",
       [
-        "add-generic-password",
-        "-s",
+        "-c",
+        'security add-generic-password -s "$1" -a "$2" -U -w "$PATCHWORK_KCV"',
+        "--",
         key,
-        "-a",
         SERVICE_NAME,
-        "-w",
-        value,
-        "-U",
       ],
-      { encoding: "utf-8", timeout: 5000 },
+      {
+        encoding: "utf-8",
+        timeout: 5000,
+        env: { ...process.env, PATCHWORK_KCV: value },
+      },
     );
     return result.status === 0;
   } catch {
