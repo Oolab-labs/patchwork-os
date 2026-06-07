@@ -239,3 +239,61 @@ describe("tokenStorage native backend = keychain-only (audit 2026-06-03 MEDIUM #
     expect(await getTokens("native-provider")).toBeNull();
   });
 });
+
+// LOW #10 — listMacOSKeychainItems uses `security dump-keychain` which reads
+// every keychain entry. Fix: use the per-key `find-generic-password` approach
+// (O(1) per provider, doesn't expose unrelated secrets). The injectable
+// KeychainOpsForTest.list hook lets tests verify the list path uses the override
+// rather than running the real `security` CLI.
+describe("listStoredProviders uses keychain list override, not dump-keychain (audit 2026-06-03 LOW #10)", () => {
+  const tmpDir = join(
+    os.tmpdir(),
+    `patchwork-test-tokens-kc-list-${Date.now()}`,
+  );
+
+  beforeEach(() => {
+    process.env.PATCHWORK_HOME = tmpDir;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "auto";
+    if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    __setKeychainOpsForTest(null);
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true });
+  });
+
+  it("uses the injected list() hook when listing providers", async () => {
+    const kc = new Map<string, string>();
+    let listCallCount = 0;
+
+    // Keys stored in kc use the full storageKey form "patchwork-os.<provider>".
+    // The list() hook must return provider names (with the prefix stripped),
+    // matching the contract of listKeychainItems() / listStoredProviders().
+    const SERVICE_PREFIX = "patchwork-os.";
+    __setKeychainOpsForTest({
+      set: (k, v) => {
+        kc.set(k, v);
+        return true;
+      },
+      get: (k) => kc.get(k) ?? null,
+      delete: (k) => kc.delete(k),
+      list: () => {
+        listCallCount++;
+        return [...kc.keys()]
+          .filter((k) => k.startsWith(SERVICE_PREFIX))
+          .map((k) => k.slice(SERVICE_PREFIX.length));
+      },
+    });
+
+    await storeTokens("provider-x", { accessToken: "token-x" });
+    await storeTokens("provider-y", { accessToken: "token-y" });
+
+    const providers = await listStoredProviders();
+    // The list override must have been consulted.
+    expect(listCallCount).toBeGreaterThan(0);
+    expect(providers).toContain("provider-x");
+    expect(providers).toContain("provider-y");
+  });
+});

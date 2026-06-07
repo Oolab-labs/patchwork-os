@@ -802,7 +802,17 @@ function flattenValidationStep(step: unknown): unknown[] {
         typeof otherwiseStep === "object" &&
         !Array.isArray(otherwiseStep)
       ) {
+        // Validate the `otherwise` block.
         branchSteps.push(...flattenValidationStep(otherwiseStep));
+        // Also validate the co-located conditional step fields (if any) — strip
+        // `otherwise` so the validator sees only the branch-step shape.
+        // Only do this when the entry has keys beyond `otherwise`; a standalone
+        // `{ otherwise: {...} }` entry has nothing else to validate and passing
+        // an empty object `{}` to the schema validator produces bogus errors.
+        const { otherwise: _omit, ...branchWithoutOtherwise } = branchRecord;
+        if (Object.keys(branchWithoutOtherwise).length > 0) {
+          branchSteps.push(...flattenValidationStep(branchWithoutOtherwise));
+        }
         continue;
       }
 
