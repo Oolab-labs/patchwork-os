@@ -28,10 +28,21 @@ const ROUTES: { name: string; bridgePath: string; handler: Handler }[] = [
   { name: "google-drive",     bridgePath: "/connections/google-drive/callback",     handler: gdriveCallback },
 ];
 
+let origAllowUnauthenticated: string | undefined;
+
 beforeEach(() => {
   bridgeFetchMock.mockReset();
+  // Bypass the session guard (LOW #39 fix) so these proxy-behaviour tests
+  // don't need a real signed session cookie.
+  origAllowUnauthenticated = process.env.DASHBOARD_ALLOW_UNAUTHENTICATED;
+  process.env.DASHBOARD_ALLOW_UNAUTHENTICATED = "1";
 });
 afterEach(() => {
+  if (origAllowUnauthenticated === undefined) {
+    delete process.env.DASHBOARD_ALLOW_UNAUTHENTICATED;
+  } else {
+    process.env.DASHBOARD_ALLOW_UNAUTHENTICATED = origAllowUnauthenticated;
+  }
   vi.restoreAllMocks();
 });
 

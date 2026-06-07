@@ -11,6 +11,7 @@ import { useToast } from "@/components/Toast";
 import { CountdownTimer } from "./_components/CountdownTimer";
 import { Spinner } from "./_components/Spinner";
 import { RiskMeter } from "./_components/RiskMeter";
+import { syntaxHighlightJson } from "@/lib/syntaxHighlight";
 
 interface RiskSignal {
   kind: "destructive_flag" | "domain_reputation" | "path_escape" | "chaining";
@@ -368,9 +369,15 @@ const ApprovalCard = memo(function ApprovalCard({
               >
                 {paramsCopied ? "✓ Copied" : "Copy JSON"}
               </button>
-              <pre className="approval-params-json">
-                {safeStringify(p.params)}
-              </pre>
+              <pre
+                className="approval-params-json"
+                // LOW #42: use syntaxHighlightJson (same as detail page) for
+                // consistent rendering and HTML-safe output.
+                // eslint-disable-next-line react/no-danger
+                dangerouslySetInnerHTML={{
+                  __html: syntaxHighlightJson(safeStringify(p.params)),
+                }}
+              />
             </div>
           )}
         </div>
