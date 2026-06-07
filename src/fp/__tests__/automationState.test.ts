@@ -398,4 +398,33 @@ describe("mergeAutomationStates", () => {
     const mergedReverse = mergeAutomationStates(populatedB, emptyA);
     expect(mergedReverse.deduplicationWindow.size).toBe(2);
   });
+
+  // LOW #26 — activeTasks merge must keep entries from BOTH parallel branches
+  // when they have disjoint trigger keys.  The unionMap used previously would
+  // silently drop task entries from branch A whenever branch B had an entry
+  // with the same trigger key (last-write-wins on key collision).
+
+  it("activeTasks: merging two states with disjoint trigger keys keeps both task IDs", () => {
+    // Branch A fires for trigger key "k-A" with task "task-A".
+    // Branch B fires for trigger key "k-B" with task "task-B".
+    // The merged state must contain both entries (no silent drop).
+    const stateA = recordTrigger(EMPTY_AUTOMATION_STATE, "k-A", "task-A", NOW);
+    const stateB = recordTrigger(EMPTY_AUTOMATION_STATE, "k-B", "task-B", NOW);
+    const merged = mergeAutomationStates(stateA, stateB);
+    expect(merged.activeTasks.get("k-A")).toBe("task-A");
+    expect(merged.activeTasks.get("k-B")).toBe("task-B");
+    expect(merged.activeTasks.size).toBe(2);
+  });
+
+  it("activeTasks: merge is symmetric for disjoint trigger keys", () => {
+    // Whether we merge A∪B or B∪A, disjoint-key entries all survive.
+    const stateA = recordTrigger(EMPTY_AUTOMATION_STATE, "k-A", "task-A", NOW);
+    const stateB = recordTrigger(EMPTY_AUTOMATION_STATE, "k-B", "task-B", NOW);
+    const ab = mergeAutomationStates(stateA, stateB);
+    const ba = mergeAutomationStates(stateB, stateA);
+    expect(ab.activeTasks.get("k-A")).toBe("task-A");
+    expect(ab.activeTasks.get("k-B")).toBe("task-B");
+    expect(ba.activeTasks.get("k-A")).toBe("task-A");
+    expect(ba.activeTasks.get("k-B")).toBe("task-B");
+  });
 });

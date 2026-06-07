@@ -360,13 +360,14 @@ describe("lintRecipeContent", () => {
       ok: false,
       // Phase 1B: lint issues now carry `line`/`column` from
       // `enrichIssuesWithPositions` — Step 1's `agent:` row in the
-      // sample YAML lives at line 5 col 5.
+      // sample YAML lives at line 5. Column is 0-indexed (audit LOW #6):
+      // '  - agent: {}' → spaces(0,1), dash(2), space(3), 'a'gent at col 4.
       errors: [
         {
           level: "error",
           message: "Step 1: Agent step missing 'prompt'",
           line: 5,
-          column: 5,
+          column: 4,
         },
       ],
       warnings: [{ level: "warning", message: "Missing 'description' field" }],

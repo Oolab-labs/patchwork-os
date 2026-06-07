@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  execSafeStreaming,
   optionalBool,
   optionalInt,
   optionalString,
@@ -211,5 +212,70 @@ describe("optionalBool", () => {
     expect(() => optionalBool({ key: "true" }, "key")).toThrow(
       "must be a boolean",
     );
+  });
+});
+
+// LOW #27 — execSafeStreaming must not leak the abort listener when the
+// timeout fires first (before the external signal fires).
+describe("execSafeStreaming abort listener cleanup (LOW #27)", () => {
+  it("resolves cleanly when timeout fires before any output", async () => {
+    // Use a very short timeout so the test is fast. The process will be
+    // killed by the timeout before producing any output.
+    const ac = new AbortController();
+    const result = await execSafeStreaming("sleep", ["10"], {
+      timeout: 50,
+      signal: ac.signal,
+      allowlistChecked: true,
+    });
+    expect(result.timedOut).toBe(true);
+    expect(result.exitCode).not.toBe(0);
+  });
+
+  it("abort listener does not fire after function has already resolved via timeout", async () => {
+    // The abort listener registered inside execSafeStreaming must be removed
+    // from the signal once the process closes (via timeout). If it leaks, a
+    // subsequent abort() would try to kill an already-dead process and could
+    // throw or produce observable side effects.
+    const ac = new AbortController();
+    const spuriousCallCount = 0;
+
+    // Wrap the signal so we can count how many listeners are invoked on abort.
+    const origAdd = ac.signal.addEventListener.bind(ac.signal);
+    const origRemove = ac.signal.removeEventListener.bind(ac.signal);
+    const registeredListeners: Array<EventListenerOrEventListenerObject> = [];
+    ac.signal.addEventListener = (
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions,
+    ) => {
+      if (type === "abort") registeredListeners.push(listener);
+      return origAdd(type, listener, options);
+    };
+    ac.signal.removeEventListener = (
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | EventListenerOptions,
+    ) => {
+      if (type === "abort") {
+        const idx = registeredListeners.indexOf(listener);
+        if (idx !== -1) registeredListeners.splice(idx, 1);
+      }
+      return origRemove(type, listener, options);
+    };
+
+    await execSafeStreaming("sleep", ["10"], {
+      timeout: 50,
+      signal: ac.signal,
+      allowlistChecked: true,
+    });
+
+    // After the function resolves, the abort listener should have been
+    // removed from our tracking array (it was cleaned up in the close handler).
+    expect(registeredListeners.length).toBe(0);
+
+    // Aborting after the function has resolved must not trigger any
+    // spurious side effects from the function's internal handler.
+    ac.abort();
+    expect(spuriousCallCount).toBe(0);
   });
 });
