@@ -24,6 +24,7 @@ export function sanitizeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     if (PRESERVE.has(key)) continue;
     if (
       key === "CLAUDECODE" ||
+      key === "ANTHROPIC_API_KEY" ||
       key.startsWith("CLAUDE_CODE_") ||
       key.startsWith("MCP_")
     ) {

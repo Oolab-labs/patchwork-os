@@ -98,11 +98,9 @@ describe("inboxRoutes — archive + delete", () => {
     await flush(result);
 
     expect(result.status).toBe(200);
-    const body = JSON.parse(result.body) as { ok: boolean; path: string };
+    const body = JSON.parse(result.body) as { ok: boolean };
     expect(body.ok).toBe(true);
-    expect(body.path.replace(/\\/g, "/").endsWith(`.archive/${filename}`)).toBe(
-      true,
-    );
+    // path is intentionally absent from the response (LOW #31 — no fs path exposure)
 
     const inboxDir = path.join(fakeHome, ".patchwork", "inbox");
     expect(existsSync(path.join(inboxDir, filename))).toBe(false);
@@ -195,6 +193,44 @@ describe("inboxRoutes — archive + delete", () => {
     expect(archived.filter((f) => f.startsWith("branch-health")).length).toBe(
       2,
     );
+  });
+
+  it("DELETE response does not expose absolute filesystem path (LOW #31)", async () => {
+    const filename = "secret-path-test.md";
+    const inboxDir = path.join(fakeHome, ".patchwork", "inbox");
+    writeFileSync(path.join(inboxDir, filename), "content");
+
+    const { res, result } = captureResponse();
+    const handled = tryHandleInboxRoute(
+      fakeRequest("DELETE"),
+      res,
+      new URL(`http://x/inbox/${filename}`),
+    );
+    expect(handled).toBe(true);
+    await flush(result);
+
+    expect(result.status).toBe(200);
+    // Response must NOT contain the absolute path to the temp dir.
+    expect(result.body).not.toMatch(fakeHome);
+  });
+
+  it("archive response does not expose absolute filesystem path (LOW #31)", async () => {
+    const filename = "secret-archive-path.md";
+    const inboxDir = path.join(fakeHome, ".patchwork", "inbox");
+    writeFileSync(path.join(inboxDir, filename), "content");
+
+    const { res, result } = captureResponse();
+    const handled = tryHandleInboxRoute(
+      fakeRequest("POST"),
+      res,
+      new URL(`http://x/inbox/${filename}/archive`),
+    );
+    expect(handled).toBe(true);
+    await flush(result);
+
+    expect(result.status).toBe(200);
+    // Response must NOT contain the absolute path to the temp dir.
+    expect(result.body).not.toMatch(fakeHome);
   });
 
   it("inbox list excludes the .archive directory", async () => {

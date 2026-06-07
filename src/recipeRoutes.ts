@@ -47,6 +47,24 @@ import type { RecipeDraft } from "./recipesHttp.js";
 import { invalidateRecipesCache } from "./recipesHttp.js";
 import { validateSafeUrl } from "./ssrfGuard.js";
 
+/**
+ * Sanitize error messages from storage operations before including them in
+ * HTTP responses. Node.js filesystem errors (ENOENT, EACCES, etc.) often
+ * contain absolute paths (e.g. "ENOENT: no such file or directory, open
+ * '/home/user/.patchwork/recipes/foo.yaml'"). These must not be returned
+ * verbatim to clients. Returns "Storage error" for any message that looks
+ * like a filesystem error (identified by Node.js errno code prefix);
+ * otherwise returns the message unchanged.
+ */
+function sanitizeStorageError(msg: string): string {
+  // Node.js filesystem errors always start with an errno code such as
+  // "ENOENT:", "EACCES:", "EPERM:", "EBUSY:", "EISDIR:", etc.
+  if (/^E[A-Z]+:/.test(msg)) {
+    return "Storage error";
+  }
+  return msg;
+}
+
 // 5-minute cache of the public template registry from the patchworkos/recipes
 // GitHub repo. Process-wide; hoisted out of Server class state.
 // Sentinel `false` marks a negative-cache entry (fetch failed) — distinct from
@@ -1614,7 +1632,10 @@ export function tryHandleRecipeRoute(
         res.writeHead(result.ok ? 200 : 400, {
           "Content-Type": "application/json",
         });
-        res.end(JSON.stringify(result));
+        const safeResult = result.error
+          ? { ...result, error: sanitizeStorageError(result.error) }
+          : result;
+        res.end(JSON.stringify(safeResult));
       } catch {
         respondInvalidJson(res);
       }
@@ -1644,7 +1665,10 @@ export function tryHandleRecipeRoute(
         ? 404
         : 400;
     res.writeHead(status, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(result));
+    const safeDeleteResult = result.error
+      ? { ...result, error: sanitizeStorageError(result.error) }
+      : result;
+    res.end(JSON.stringify(safeDeleteResult));
     return true;
   }
 
@@ -1669,7 +1693,10 @@ export function tryHandleRecipeRoute(
         ? 404
         : 400;
     res.writeHead(status, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(result));
+    const safeArchiveResult = result.error
+      ? { ...result, error: sanitizeStorageError(result.error) }
+      : result;
+    res.end(JSON.stringify(safeArchiveResult));
     return true;
   }
 

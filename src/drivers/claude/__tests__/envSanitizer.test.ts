@@ -26,12 +26,14 @@ describe("sanitizeEnv", () => {
     expect(out.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
   });
 
-  it("preserves ANTHROPIC_API_KEY", () => {
+  it("strips ANTHROPIC_API_KEY so non-Anthropic subprocesses do not receive it (LOW #21)", () => {
     const out = sanitizeEnv({
       ANTHROPIC_API_KEY: "sk-ant-api03-key",
       CLAUDECODE: "1",
+      PATH: "/usr/bin",
     });
-    expect(out.ANTHROPIC_API_KEY).toBe("sk-ant-api03-key");
+    expect(out.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(out.PATH).toBe("/usr/bin");
   });
 
   it("leaves the input env unmodified (returns a copy)", () => {
