@@ -16,7 +16,10 @@ interface BridgeLock {
 // call, ~5-10 syscalls each, amplified on every SSE tick. Stale entries expire
 // within 1s; a bridge restart triggers re-discovery on the next cache miss.
 let _cache: { lock: BridgeLock | null; expires: number } | null = null;
-const CACHE_TTL_MS = 1_000;
+// 5 s TTL (was 1 s). Lock files change only on bridge restart; 5 s stale window
+// reduces the scan from ~5 syscalls per proxy request to ~1 per 5 s on Windows
+// where each readdirSync + statSync + readFileSync passes through Defender.
+const CACHE_TTL_MS = 5_000;
 
 /** Exported for tests only — clears the lock-discovery cache between cases. */
 export function _clearBridgeCache(): void {
@@ -60,15 +63,21 @@ function _scanLockFiles(): BridgeLock | null {
     .filter((f) => /^\d+\.lock$/.test(f))
     .filter((f) => !pinned || f === `${pinned}.lock`)
     .sort((a, b) => {
-      try {
-        const ma = fs.statSync(path.join(dir, a)).mtimeMs;
-        const mb = fs.statSync(path.join(dir, b)).mtimeMs;
-        return mb - ma; // most recently modified first
-      } catch {
-        const pa = Number.parseInt(a, 10);
-        const pb = Number.parseInt(b, 10);
-        return pa - pb;
+      // On Windows, statSync triggers NTFS metadata serialisation + Defender
+      // per file. Fall through to port-number sort there (consistent enough
+      // since the bridge uses a fixed port across restarts).
+      if (process.platform !== "win32") {
+        try {
+          const ma = fs.statSync(path.join(dir, a)).mtimeMs;
+          const mb = fs.statSync(path.join(dir, b)).mtimeMs;
+          return mb - ma; // most recently modified first
+        } catch {
+          // fall through
+        }
       }
+      const pa = Number.parseInt(a, 10);
+      const pb = Number.parseInt(b, 10);
+      return pa - pb;
     });
   for (const f of files) {
     try {

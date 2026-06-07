@@ -213,12 +213,19 @@ export interface RunQuery {
   manualRunId?: string;
 }
 
+// Minimum ms between disk-stat checks in syncFromDisk(). Dashboard
+// auto-refresh hits query()/getBySeq() multiple times per second; each check
+// was statSync + optional readFileSync. 250 ms is imperceptible for run-list
+// freshness but reduces Defender/NTFS I/O by ~20× at steady state.
+const _SYNC_MIN_INTERVAL_MS = 250;
+
 export class RecipeRunLog {
   private runs: RecipeRun[] = [];
   private seq = 0;
   private readonly file: string;
   private readonly memoryCap: number;
   private lastFileSize = 0;
+  private _lastSyncMs = 0;
   private readonly now: () => number;
 
   constructor(private readonly opts: RunLogOptions) {
@@ -619,6 +626,9 @@ export class RecipeRunLog {
 
   /** Incrementally read any new lines appended to the file since last load. */
   private syncFromDisk(): void {
+    const now = Date.now();
+    if (now - this._lastSyncMs < _SYNC_MIN_INTERVAL_MS) return;
+    this._lastSyncMs = now;
     try {
       const size = statSync(this.file).size;
       if (size <= this.lastFileSize) return;

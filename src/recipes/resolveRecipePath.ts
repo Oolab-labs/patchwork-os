@@ -34,6 +34,24 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+// TTL cache for jail-root realpaths. Each resolveRecipePath call resolves
+// 3-4 roots; on Windows each hits GetFinalPathNameByHandle + Defender scan.
+// Roots change only on bridge restart — 30 s TTL is safe.
+const _rootRealpathCache = new Map<
+  string,
+  { resolved: string; expires: number }
+>();
+const _ROOT_REALPATH_TTL_MS = 30_000;
+
+function cachedRootRealpathSync(p: string): string {
+  const now = Date.now();
+  const cached = _rootRealpathCache.get(p);
+  if (cached && now < cached.expires) return cached.resolved;
+  const resolved = fs.realpathSync(p);
+  _rootRealpathCache.set(p, { resolved, expires: now + _ROOT_REALPATH_TTL_MS });
+  return resolved;
+}
+
 export type RecipePathJailError = Error & { code: "recipe_path_jail_escape" };
 
 /** Build a jail error with the canonical code. Never expose internals via message-matching. */
@@ -181,7 +199,7 @@ export function resolveRecipePath(
   const realRoots: string[] = [];
   for (const root of roots) {
     try {
-      realRoots.push(fs.realpathSync(root));
+      realRoots.push(cachedRootRealpathSync(root));
     } catch {
       // Root does not exist yet (e.g. ~/.patchwork on a fresh install).
       // Use the resolved (lexical) form — `mkdirSync({recursive:true})`
