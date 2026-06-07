@@ -111,7 +111,19 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  if (!bridgeCallbackBase || !bridgeCallbackBase.startsWith("https://")) {
+  // Audit 2026-06-03 MEDIUM #19: startsWith("https://") passes for the bare
+  // string "https://" (no hostname), but new URL("/path", "https://") throws
+  // TypeError. Validate with the URL constructor to catch this case.
+  let callbackBase: URL;
+  try {
+    callbackBase = new URL(bridgeCallbackBase as string);
+  } catch {
+    return NextResponse.json(
+      { error: "bridgeCallbackBase must be a valid HTTPS URL" },
+      { status: 400 },
+    );
+  }
+  if (callbackBase.protocol !== "https:") {
     return NextResponse.json(
       { error: "bridgeCallbackBase must be HTTPS" },
       { status: 400 },
@@ -142,8 +154,8 @@ export async function POST(req: Request) {
 
   // Construct the payload the SW expects. URL-construct (don't concat) so
   // a trailing slash on bridgeCallbackBase doesn't double up.
-  const approveUrl = new URL(`/approve/${callId}`, bridgeCallbackBase).toString();
-  const rejectUrl = new URL(`/reject/${callId}`, bridgeCallbackBase).toString();
+  const approveUrl = new URL(`/approve/${callId}`, callbackBase).toString();
+  const rejectUrl = new URL(`/reject/${callId}`, callbackBase).toString();
 
   const payload = JSON.stringify({
     callId,

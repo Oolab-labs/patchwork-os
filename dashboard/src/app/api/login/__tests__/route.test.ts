@@ -15,7 +15,7 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { POST } from "@/app/api/login/route";
-import { _config, _resetForTests } from "@/lib/authRateLimit";
+import { _config, _globalConfig, _resetForTests } from "@/lib/authRateLimit";
 
 const PASSWORD = "correct-horse-battery-staple";
 const SECRET = "0123456789abcdef0123456789abcdef";
@@ -105,6 +105,26 @@ describe("POST /api/login — long-password compare (audit 2026-06-03 HIGH #2)",
     const attempt = "x".repeat(256) + "z".repeat(44); // first 256 identical
     const r = await POST(req({ password: attempt }));
     expect(r.status).toBe(401);
+  });
+});
+
+describe("POST /api/login — global rate limit when no trusted proxy (audit 2026-06-03 MEDIUM #18)", () => {
+  // When BRIDGE_TRUST_PROXY is not configured, clientKey() returns "unknown"
+  // for every request. The previous code had no rate limiting for that bucket
+  // to avoid DoS-ing all users with a shared lockout. The fix adds a global
+  // fallback bucket with a much higher threshold (GLOBAL_MAX_FAILURES, default 50)
+  // so automated attacks are still bounded while legitimate users aren't locked out.
+  it("eventually rate-limits after GLOBAL_MAX_FAILURES wrong attempts from unknown IP", async () => {
+    let got429 = false;
+    for (let i = 0; i <= _globalConfig.GLOBAL_MAX_FAILURES; i++) {
+      const r = await POST(req({ password: "wrong" }));
+      if (r.status === 429) {
+        got429 = true;
+        break;
+      }
+      expect(r.status).toBe(401);
+    }
+    expect(got429).toBe(true);
   });
 });
 

@@ -428,7 +428,9 @@ export async function handleSlackCallback(
     return {
       status: 200,
       contentType: "text/html",
-      body: `<html><body><h2>Slack connected to ${escHtml((team.name as string) ?? "workspace")}</h2><script>try { window.opener.postMessage('patchwork:slack:connected', '*'); } catch(_) {} window.close();</script></body></html>`,
+      // Audit 2026-06-03 MEDIUM #6: use window.location.origin instead of
+      // the wildcard '*' so only the exact same origin receives the message.
+      body: `<html><body><h2>Slack connected to ${escHtml((team.name as string) ?? "workspace")}</h2><script>try { window.opener.postMessage('patchwork:slack:connected', window.location.origin); } catch(_) {} window.close();</script></body></html>`,
     };
   } catch (err) {
     return {

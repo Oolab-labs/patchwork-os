@@ -155,6 +155,20 @@ describe("POST /api/relay/push — payload validation", () => {
     );
     expect(r.status).toBe(400);
   });
+
+  it("400 when bridgeCallbackBase is 'https://' with no hostname (audit 2026-06-03 MEDIUM #19)", async () => {
+    // 'https://' passes startsWith('https://') but new URL('/path', 'https://')
+    // throws TypeError: Invalid URL — unhandled exception returning 500 instead of 400.
+    const r = await POST(
+      req(
+        { authorization: `Bearer ${TOKEN}` },
+        { ...validBody, bridgeCallbackBase: "https://" },
+      ),
+    );
+    expect(r.status).toBe(400);
+    const body = (await r.json()) as { error: string };
+    expect(body.error).toMatch(/url|HTTPS/i);
+  });
 });
 
 describe("POST /api/relay/push — fan-out", () => {

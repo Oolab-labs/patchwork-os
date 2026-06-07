@@ -121,7 +121,12 @@ function validateCommandArgs(
     if (arg.length > MAX_ARG_LENGTH) {
       throw new Error(`args[${i}] exceeds maximum length of ${MAX_ARG_LENGTH}`);
     }
-    const flag = arg.split("=")[0] ?? arg;
+    // Short flags may concatenate their value (-revil.js, -eeval-code).
+    // split("=") is a no-op when no "=" is present; take first 2 chars for
+    // short flags so "-revil.js" → "-r". Audit 2026-06-03 MEDIUM #15.
+    const flag = arg.startsWith("--")
+      ? (arg.split("=")[0] ?? arg)
+      : arg.slice(0, 2);
     if (isInterpreter && DANGEROUS_INTERPRETER_FLAGS.has(flag)) {
       throw new Error(
         `Flag "${flag}" is blocked for interpreter command "${command}" — it allows arbitrary code execution`,
