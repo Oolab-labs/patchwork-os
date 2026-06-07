@@ -306,8 +306,8 @@ describe("slack listChannels — cursor pagination (audit 2026-06-03 MEDIUM #8)"
     // Without the fix: only the first page is fetched → 1 channel.
     // With the fix: both pages are fetched → 2 channels.
     expect(channels).toHaveLength(2);
-    expect(channels[0].id).toBe("C1");
-    expect(channels[1].id).toBe("C2");
+    expect(channels[0]!.id).toBe("C1");
+    expect(channels[1]!.id).toBe("C2");
 
     // Second fetch must have included the cursor from the first response.
     const secondCallUrl = fetchMock.mock.calls[1]?.[0] as string;
