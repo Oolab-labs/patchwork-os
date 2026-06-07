@@ -263,3 +263,59 @@ describe("getDocumentSymbols: Rust grep fallback", () => {
     expect(st.kind).toBe("Struct");
   });
 });
+
+// ── LSP depth map: duplicate symbol names (audit 2026-06-03 MEDIUM #16) ─────
+
+describe("getDocumentSymbols: depth map with duplicate symbol names", () => {
+  // When two symbols share the same name, the `byName` Map used to compute
+  // parent-chain depth used last-write-wins, so the second entry silently
+  // overwrote the first. If the later duplicate had a different parent chain,
+  // the overwrite corrupted `depthOf()` for any symbol whose parent chain
+  // passed through the duplicate name — most visibly creating a phantom
+  // cycle that caused the cycle-guard to fire (returning depth 33) and
+  // incorrect maxDepth filtering.
+  //
+  // Fix: keep the FIRST occurrence (keep-first) so the original parent
+  // chain is preserved.
+
+  it("keeps child symbol when its parent chain is broken by a duplicate name (last-write-wins bug)", async () => {
+    const filePath = writeFile(
+      "dup-names.ts",
+      "// symbols with duplicate names",
+    );
+
+    // Scenario:
+    //   Container (depth 0, no parent)
+    //   method    (depth 1, parent: Container)
+    //   Container (depth ?, parent: method) ← duplicate "Container" at deeper level
+    //
+    // With last-write-wins: byName["Container"] = the second one (parent: "method").
+    //   depthOf(method) → walks Container₂ → method → Container₂ → ... → CYCLE → 33
+    //   maxDepth:1 filtering would DROP method (33 > 1).
+    //
+    // With keep-first: byName["Container"] = the first one (parent: null).
+    //   depthOf(method) = 1 (method → Container₁ → null).
+    //   maxDepth:1 keeps both Container₁ and method.
+
+    const symbols = [
+      { name: "Container", kind: "Class", line: 1, parent: null },
+      { name: "method", kind: "Function", line: 2, parent: "Container" },
+      { name: "Container", kind: "Class", line: 10, parent: "method" },
+    ];
+    const lspResult = { symbols, count: symbols.length };
+    const tool = createGetDocumentSymbolsTool(
+      workspace,
+      mockConnected(lspResult),
+    );
+
+    const result = await tool.handler({ filePath, maxDepth: 1 });
+    expect(result.isError).toBeFalsy();
+    const data = parse(result);
+
+    // With the fix, Container (depth 0) AND method (depth 1) are kept.
+    // Without the fix, depthOf(method) = 33 due to the cycle → method is
+    // filtered out and only Container (depth 0) survives.
+    const names: string[] = data.symbols.map((s: { name: string }) => s.name);
+    expect(names).toContain("method");
+  });
+});

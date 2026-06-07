@@ -203,3 +203,67 @@ describe("handleStripeDisconnect", () => {
     expect(JSON.parse(result.body).ok).toBe(true);
   });
 });
+
+// ── StripeConnector.normalizeError — 429 Retry-After (audit 2026-06-03 MEDIUM #7) ──
+
+describe("StripeConnector.normalizeError — 429 Retry-After (audit 2026-06-03 MEDIUM #7)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    delete process.env.STRIPE_SECRET_KEY;
+  });
+
+  it("includes retryAfterSec when 429 Response has Retry-After header", async () => {
+    vi.resetModules();
+    const { StripeConnector } = await import("../stripe.js");
+    const connector = new StripeConnector();
+    const response = new Response("Rate limited", {
+      status: 429,
+      headers: { "Retry-After": "30" },
+    });
+    const err = connector.normalizeError(response);
+    expect(err.code).toBe("rate_limited");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((err as any).retryAfterSec).toBe(30);
+  });
+
+  it("omits retryAfterSec when 429 Response has no Retry-After header", async () => {
+    vi.resetModules();
+    const { StripeConnector } = await import("../stripe.js");
+    const connector = new StripeConnector();
+    const response = new Response("Rate limited", { status: 429 });
+    const err = connector.normalizeError(response);
+    expect(err.code).toBe("rate_limited");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((err as any).retryAfterSec).toBeUndefined();
+  });
+
+  it("healthCheck returns rate_limited (not provider_error) when fetch returns 429", async () => {
+    vi.useFakeTimers();
+    process.env.STRIPE_SECRET_KEY = "sk_test_med7_stripe";
+    vi.resetModules();
+    const { StripeConnector } = await import("../stripe.js");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("Rate limited", {
+          status: 429,
+          headers: { "Retry-After": "30" },
+        }),
+      ),
+    );
+
+    const connector = new StripeConnector();
+    const promise = connector.healthCheck();
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("rate_limited");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((result.error as any)?.retryAfterSec).toBe(30);
+
+    vi.useRealTimers();
+  });
+});
