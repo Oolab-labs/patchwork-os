@@ -1631,13 +1631,18 @@ export class AutomationHooks {
     if (prevErrorCount > 0 && currentErrorCount === 0) {
       this._enqueueRun("onDiagnosticsCleared", { file: normalizedFile });
     }
-    this._enqueueRun("onDiagnosticsError", {
-      file: normalizedFile,
-      diagnostics: diagnosticsText,
-      diagnosticSources,
-      diagnosticSig,
-      count: String(diagnostics.length),
-    });
+    // Only fire onDiagnosticsError when there are actual errors/warnings.
+    // Firing with zero error count causes spurious Claude tasks to run with
+    // empty diagnostics lists (audit 2026-06-03 LOW #23).
+    if (currentErrorCount > 0) {
+      this._enqueueRun("onDiagnosticsError", {
+        file: normalizedFile,
+        diagnostics: diagnosticsText,
+        diagnosticSources,
+        diagnosticSig,
+        count: String(diagnostics.length),
+      });
+    }
   }
 
   /**
