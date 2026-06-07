@@ -287,3 +287,67 @@ describe("clearTokens deletes secure storage", () => {
     expect(deleteSecretJsonSync).toHaveBeenCalledWith("notion");
   });
 });
+
+// ── NotionConnector.normalizeError — 429 Retry-After (audit 2026-06-03 MEDIUM #7) ──
+
+describe("NotionConnector.normalizeError — 429 Retry-After (audit 2026-06-03 MEDIUM #7)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    delete process.env.NOTION_TOKEN;
+  });
+
+  it("includes retryAfterSec when 429 Response has Retry-After header", async () => {
+    vi.resetModules();
+    const { NotionConnector } = await import("../notion.js");
+    const connector = new NotionConnector();
+    const response = new Response("Rate limited", {
+      status: 429,
+      headers: { "Retry-After": "60" },
+    });
+    const err = connector.normalizeError(response);
+    expect(err.code).toBe("rate_limited");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((err as any).retryAfterSec).toBe(60);
+  });
+
+  it("omits retryAfterSec when 429 Response has no Retry-After header", async () => {
+    vi.resetModules();
+    const { NotionConnector } = await import("../notion.js");
+    const connector = new NotionConnector();
+    const response = new Response("Rate limited", { status: 429 });
+    const err = connector.normalizeError(response);
+    expect(err.code).toBe("rate_limited");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((err as any).retryAfterSec).toBeUndefined();
+  });
+
+  it("healthCheck returns rate_limited (not provider_error) when fetch returns 429", async () => {
+    vi.useFakeTimers();
+    process.env.NOTION_TOKEN = "secret_med7_notion";
+    vi.resetModules();
+    const { NotionConnector } = await import("../notion.js");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("Rate limited", {
+          status: 429,
+          headers: { "Retry-After": "60" },
+        }),
+      ),
+    );
+
+    const connector = new NotionConnector();
+    const promise = connector.healthCheck();
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("rate_limited");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((result.error as any)?.retryAfterSec).toBe(60);
+
+    vi.useRealTimers();
+  });
+});

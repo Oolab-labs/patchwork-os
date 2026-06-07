@@ -301,24 +301,49 @@ export async function listChannels(
     throw new Error(
       "Slack not connected. GET /connections/slack/authorize first.",
     );
-  const res = await slackGet(
-    "conversations.list",
-    {
+  // Audit 2026-06-03 MEDIUM #8: the previous implementation made a single
+  // request and stopped, silently dropping all channels past the first page.
+  // Slack's conversations.list API paginates via response_metadata.next_cursor.
+  const pageSize = Math.min(limit, 200);
+  const channels: SlackChannel[] = [];
+  let cursor = "";
+
+  while (channels.length < limit) {
+    const params: Record<string, string> = {
       types: "public_channel",
       exclude_archived: "true",
-      limit: String(Math.min(limit, 200)),
-    },
-    tokens.access_token,
-    signal,
-  );
-  const channels = (res.channels as Array<Record<string, unknown>>) ?? [];
-  return channels.map((c) => ({
-    id: (c.id as string) ?? "",
-    name: (c.name as string) ?? "",
-    isMember: Boolean(c.is_member),
-    isPrivate: Boolean(c.is_private),
-    numMembers: typeof c.num_members === "number" ? c.num_members : undefined,
-  }));
+      limit: String(Math.min(pageSize, limit - channels.length)),
+    };
+    if (cursor) params.cursor = cursor;
+
+    const res = await slackGet(
+      "conversations.list",
+      params,
+      tokens.access_token,
+      signal,
+    );
+    const page = (res.channels as Array<Record<string, unknown>>) ?? [];
+
+    for (const c of page) {
+      channels.push({
+        id: (c.id as string) ?? "",
+        name: (c.name as string) ?? "",
+        isMember: Boolean(c.is_member),
+        isPrivate: Boolean(c.is_private),
+        numMembers:
+          typeof c.num_members === "number" ? c.num_members : undefined,
+      });
+      if (channels.length >= limit) break;
+    }
+
+    const meta = res.response_metadata as Record<string, unknown> | undefined;
+    const nextCursor =
+      typeof meta?.next_cursor === "string" ? meta.next_cursor : "";
+    if (!nextCursor) break;
+    cursor = nextCursor;
+  }
+
+  return channels;
 }
 
 export interface SlackProfile {

@@ -2339,10 +2339,29 @@ export function tryHandleRecipeRoute(
           }
           fetchUrl = source;
           const urlParts = fetchUrl.split("/");
-          recipeName = (urlParts[urlParts.length - 1] ?? "recipe").replace(
+          const rawRecipeName = (urlParts[urlParts.length - 1] ?? "").replace(
             /\.ya?ml$/i,
             "",
           );
+          // Audit 2026-06-03 MEDIUM #17: the derived recipe name was written
+          // into the recipes directory without any sanitisation, opening a
+          // path-injection vector (e.g. `bad%20name`, `..evil`, etc.).
+          // Validate against the same SEGMENT_RE used for github: sources.
+          recipeName = rawRecipeName.toLowerCase();
+          const { SEGMENT_RE: installSegRE } = await import(
+            "./recipes/githubInstallSource.js"
+          );
+          if (!recipeName || !installSegRE.test(recipeName)) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: "Invalid recipe name in source URL",
+                code: "invalid_recipe_name",
+              }),
+            );
+            return;
+          }
         } else {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(

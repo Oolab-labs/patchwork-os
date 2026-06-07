@@ -40,6 +40,7 @@ export interface ConnectorError {
   providerDetail?: unknown;
   retryable: boolean;
   suggestedAction?: string;
+  retryAfterSec?: number;
 }
 
 export interface RateLimitState {

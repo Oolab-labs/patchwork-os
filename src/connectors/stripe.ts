@@ -106,7 +106,7 @@ export class StripeConnector extends BaseConnector {
         const res = await fetch(`${BASE_URL}/v1/balance`, {
           headers: this.buildHeaders(),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw res;
         return res.json();
       });
       if ("error" in result) return { ok: false, error: result.error };
@@ -138,13 +138,21 @@ export class StripeConnector extends BaseConnector {
           message: "Stripe resource not found",
           retryable: false,
         };
-      if (s === 429)
+      if (s === 429) {
+        // Audit 2026-06-03 MEDIUM #7: read Retry-After hint when present.
+        const retryAfter = error.headers.get("Retry-After");
+        const retryAfterSec =
+          retryAfter !== null ? Number.parseInt(retryAfter, 10) : undefined;
         return {
           code: "rate_limited",
           message: "Stripe API rate limit exceeded",
           retryable: true,
           suggestedAction: "Wait and retry",
+          ...(retryAfterSec !== undefined && !Number.isNaN(retryAfterSec)
+            ? { retryAfterSec }
+            : {}),
         };
+      }
       return {
         code: "provider_error",
         message: `Stripe API error: HTTP ${s}`,

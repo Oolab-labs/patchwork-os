@@ -229,3 +229,88 @@ describe("slack OAuth callback - postMessage targetOrigin (audit 2026-06-03 MEDI
     expect(result.body).toContain("window.location.origin");
   });
 });
+
+describe("slack listChannels — cursor pagination (audit 2026-06-03 MEDIUM #8)", () => {
+  // Slack's conversations.list API is paginated: when there are more
+  // channels than `limit`, the response includes a non-empty
+  // `response_metadata.next_cursor`. The old implementation made a single
+  // request and stopped, silently dropping all channels past the first page.
+  //
+  // Fix: follow `next_cursor` in a loop until it is empty.
+
+  const tmpDir = join(os.tmpdir(), `patchwork-slack-pagination-${Date.now()}`);
+  const homeDir = join(tmpDir, "home");
+  const patchworkHome = join(homeDir, ".patchwork");
+  const tokensDir = join(patchworkHome, "tokens");
+
+  beforeEach(() => {
+    process.env.HOME = homeDir;
+    process.env.PATCHWORK_HOME = patchworkHome;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    mkdirSync(tokensDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    delete process.env.HOME;
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("follows next_cursor and returns channels from all pages", async () => {
+    const { storeSecretJsonSync } = await import("../tokenStorage.js");
+    storeSecretJsonSync("slack", {
+      access_token: "xoxb-paginate-test",
+      bot_user_id: "U0",
+      team_id: "T0",
+      team_name: "Paginate",
+      connected_at: new Date().toISOString(),
+    });
+
+    // First page: 1 channel + non-empty cursor.
+    // Second page: 1 more channel + empty cursor (last page).
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            channels: [
+              { id: "C1", name: "general", is_member: true, is_private: false },
+            ],
+            response_metadata: { next_cursor: "cursor-page2" },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            channels: [
+              { id: "C2", name: "random", is_member: false, is_private: false },
+            ],
+            response_metadata: { next_cursor: "" },
+          }),
+          { status: 200 },
+        ),
+      );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    vi.resetModules();
+    const { listChannels } = await import("../slack.js");
+    const channels = await listChannels(100);
+
+    // Without the fix: only the first page is fetched → 1 channel.
+    // With the fix: both pages are fetched → 2 channels.
+    expect(channels).toHaveLength(2);
+    expect(channels[0].id).toBe("C1");
+    expect(channels[1].id).toBe("C2");
+
+    // Second fetch must have included the cursor from the first response.
+    const secondCallUrl = fetchMock.mock.calls[1]?.[0] as string;
+    expect(secondCallUrl).toContain("cursor=cursor-page2");
+  });
+});
