@@ -31,7 +31,7 @@ export interface LintIssue {
   message: string;
   /** 1-indexed line in the source YAML, when available (populated in a later phase). */
   line?: number;
-  /** 1-indexed column in the source YAML, when available. */
+  /** 0-indexed column in the source YAML, when available. */
   column?: number;
   /**
    * Stable, machine-readable code for UI keying. Schema-validation issues

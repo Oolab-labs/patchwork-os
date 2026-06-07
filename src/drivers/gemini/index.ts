@@ -181,23 +181,32 @@ export class GeminiSubprocessDriver implements ProviderDriver {
               }
               return;
             }
-            const parsed = JSON.parse(originalContent) as Record<
-              string,
-              unknown
-            >;
             if (previousBridgeEntry === undefined) {
+              // The bridge key did not exist before we ran — restore the
+              // original bytes verbatim. Re-parsing and re-stringifying would
+              // normalise formatting and drop any unknown top-level keys or
+              // non-standard whitespace present in the original file.
+              writeFileSync(settingsFile, originalContent, {
+                encoding: "utf-8",
+                mode: 0o600,
+              });
+            } else {
+              // The bridge key existed before — restore our previous value
+              // inside the parsed structure so other keys are preserved.
+              const parsed = JSON.parse(originalContent) as Record<
+                string,
+                unknown
+              >;
               const restoredServers = (parsed.mcpServers ?? {}) as Record<
                 string,
                 unknown
               >;
-              if (Object.hasOwn(restoredServers, "claude-ide-bridge")) {
-                delete restoredServers["claude-ide-bridge"];
-              }
+              restoredServers["claude-ide-bridge"] = previousBridgeEntry;
               parsed.mcpServers = restoredServers;
+              writeFileSync(settingsFile, JSON.stringify(parsed, null, 2), {
+                mode: 0o600,
+              });
             }
-            writeFileSync(settingsFile, JSON.stringify(parsed, null, 2), {
-              mode: 0o600,
-            });
             chmodSync(settingsFile, 0o600);
           } catch (err) {
             this.log(
