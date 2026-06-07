@@ -58,6 +58,45 @@ function makeStreamWithUsage(
   };
 }
 
+// ── LOW #19 — onChunk streaming must not exceed result.text bytes ──────────────
+describe("OpenAIApiDriver onChunk/result.text byte-cap consistency (LOW #19)", () => {
+  afterEach(() => {
+    mockCreate.mockReset();
+  });
+
+  it("sum of onChunk bytes never exceeds result.text byte length when stream crosses OUTPUT_CAP", async () => {
+    // OUTPUT_CAP is 50 * 1024 bytes. Emit chunks that cross the cap boundary.
+    // The last chunk straddles the cap so onChunk + result.text can diverge.
+    const CAP = 50 * 1024;
+    // Fill almost to the cap with ASCII
+    const bigChunk = "a".repeat(CAP - 10);
+    // This 20-char chunk straddles the cap
+    const bridgeChunk = "b".repeat(20);
+
+    mockCreate.mockResolvedValue(
+      makeStream([bigChunk, bridgeChunk, "extra text after cap"]),
+    );
+    const driver = new OpenAIApiDriver(log);
+    const chunks: string[] = [];
+    const result = await driver.run({
+      prompt: "fill up",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+      onChunk: (c) => chunks.push(c),
+    });
+
+    const onChunkTotal = Buffer.byteLength(chunks.join(""), "utf8");
+    const resultBytes = Buffer.byteLength(result.text, "utf8");
+
+    // After fix: onChunk sum === result.text bytes (both capped together).
+    // Before fix: onChunk sum > result.text bytes (full delta passed to onChunk,
+    // then result.text truncated later by truncateUtf8Bytes).
+    expect(onChunkTotal).toBe(resultBytes);
+    expect(resultBytes).toBeLessThanOrEqual(CAP);
+  });
+});
+
 describe("OpenAIApiDriver", () => {
   it("streams chunks and returns concatenated text", async () => {
     mockCreate.mockResolvedValue(makeStream(["Hello", ", ", "world"]));
