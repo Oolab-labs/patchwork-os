@@ -4097,11 +4097,23 @@ Steps performed:
         ? fallbackDocs
         : null;
     if (target) {
-      // Use execFile with argv (no shell) — exec(`code "${target}"`) was
-      // shell-evaluated and could be injected via `--workspace '"; ...'`
-      // since path.resolve preserves shell metachars. Audit 2026-05-17.
-      const { execFile } = await import("node:child_process");
-      execFile(ensureCmdShim("code"), [target], { timeout: 3000 }, () => {});
+      // Use execFile with argv — exec(`code "${target}"`) was shell-evaluated
+      // and could be injected via `--workspace '"; ...'`. Audit 2026-05-17.
+      // Windows: code is a .cmd shim; shell:true lets cmd.exe resolve it
+      // without needing ensureCmdShim (args-as-array prevents injection).
+      // Wrap in try-catch: in Node 22 on Windows, spawn errors can throw
+      // synchronously before the callback is registered.
+      try {
+        const { execFile } = await import("node:child_process");
+        execFile(
+          "code",
+          [target],
+          { timeout: 3000, shell: process.platform === "win32" },
+          () => {},
+        );
+      } catch {
+        // best-effort — VS Code may not be installed
+      }
     }
   }
 

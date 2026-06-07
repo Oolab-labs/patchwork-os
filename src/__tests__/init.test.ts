@@ -156,7 +156,7 @@ describe("init --workspace", () => {
     });
 
     // Exit 0 even if extension install warns
-    expect(result.status, `stderr: ${result.stderr}`).toBe(0);
+    expect(result.status).toBe(0);
 
     const claudeMd = path.join(ws, "CLAUDE.md");
     expect(fs.existsSync(claudeMd)).toBe(true);
