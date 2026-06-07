@@ -8,6 +8,7 @@ import {
   recordSuccess,
 } from "@/lib/authRateLimit";
 import { clientKey } from "@/lib/clientIp";
+import { requireSameOrigin } from "@/lib/csrf";
 import {
   DASHBOARD_API_BODY_CAPS,
   bodyTooLargeResponse,
@@ -39,6 +40,12 @@ function isSafeRedirect(next: unknown): next is string {
 }
 
 export async function POST(req: NextRequest) {
+  // LOW #37: CSRF guard — reject cross-origin form submissions.
+  // sec-fetch-site header is browser-enforced (cannot be set by page JS);
+  // falls back to Origin/Host equality check when the header is absent.
+  const csrfErr = requireSameOrigin(req);
+  if (csrfErr) return csrfErr;
+
   const expected = process.env.DASHBOARD_PASSWORD ?? "";
   const secret = process.env.DASHBOARD_SESSION_SECRET ?? "";
   if (!expected || !secret) {

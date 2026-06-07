@@ -129,4 +129,58 @@ describe("<ActivityTicker/>", () => {
     const { container: c2 } = render(<ActivityTicker />);
     expect(c2.firstChild).toBeNull();
   });
+
+  // LOW #44 — dedup set tests
+  it("deduplicates adjacent events with the same id", async () => {
+    const { container } = render(<ActivityTicker />);
+    const es = MockEventSource.instances[0]!;
+    await act(async () => {
+      es.emit({ kind: "tool", tool: "Bash", status: "success", id: 10 });
+      es.emit({ kind: "tool", tool: "Bash", status: "success", id: 10 }); // duplicate
+    });
+    // Should only appear once in the visible list
+    const items = container.querySelectorAll("li");
+    expect(items.length).toBe(1);
+  });
+
+  it("deduplicates non-adjacent events with the same id (LOW #44)", async () => {
+    // Non-adjacent duplicate — the old lastIdRef approach only caught adjacent
+    // duplicates (id5, id5) but missed (id5, id6, id5).
+    const { container } = render(<ActivityTicker />);
+    const es = MockEventSource.instances[0]!;
+    await act(async () => {
+      es.emit({ kind: "tool", tool: "First",  status: "success", id: 5 });
+      es.emit({ kind: "tool", tool: "Second", status: "success", id: 6 });
+      es.emit({ kind: "tool", tool: "First",  status: "success", id: 5 }); // duplicate of id:5
+    });
+    // Only 2 unique events (id:5 and id:6), not 3.
+    const items = container.querySelectorAll("li");
+    // With MAX_VISIBLE=3, all unique events show; but id:5 must appear only once.
+    const texts = Array.from(items).map((li) => li.textContent ?? "");
+    const firstCount = texts.filter((t) => /^First/.test(t)).length;
+    expect(firstCount).toBe(1);
+    expect(items.length).toBe(2);
+  });
+
+  it("allows the same id to be re-shown after the dedup window (set > 50) is evicted", async () => {
+    // Emit 51 distinct events to push id:1 out of the 50-slot window,
+    // then re-emit id:1 — it should reappear.
+    const { container } = render(<ActivityTicker />);
+    const es = MockEventSource.instances[0]!;
+    await act(async () => {
+      // First emit: id 1
+      es.emit({ kind: "tool", tool: "Original", status: "success", id: 1 });
+      // Flood with 50 more distinct ids to evict id:1 from the window
+      for (let i = 2; i <= 51; i++) {
+        es.emit({ kind: "tool", tool: `T${i}`, status: "success", id: i });
+      }
+      // Re-emit id:1 — should now be accepted (evicted from window)
+      es.emit({ kind: "tool", tool: "Reappeared", status: "success", id: 1 });
+    });
+    // The ticker shows MAX_VISIBLE=3 most recent. The last event re-emitted
+    // id:1 ("Reappeared"), so it should be in the visible list.
+    const items = container.querySelectorAll("li");
+    const texts = Array.from(items).map((li) => li.textContent ?? "");
+    expect(texts[0]).toMatch(/^Reappeared/);
+  });
 });
