@@ -411,4 +411,26 @@ describe("GeminiSubprocessDriver", () => {
     });
     expect(result.wasAborted).toBe(true);
   });
+
+  // ── POSIX grandchild cleanup (audit 2026-06-03 MEDIUM #13) ───────────────────
+  //
+  // treeKill() uses process.kill(-pid, signal) on POSIX — a process-group kill
+  // that only works when the child was spawned with detached:true (setsid →
+  // process-group leader). Without detached:true, process.kill(-pid) throws
+  // ESRCH (caught silently), leaving grandchild processes (tool subprocesses
+  // launched by Gemini) orphaned on abort/cancel.
+  it("spawns with detached:true so treeKill can send a process-group signal on POSIX (audit 2026-06-03 MEDIUM #13)", async () => {
+    makeChild([INIT, ASSISTANT("ok"), RESULT_OK]);
+    const driver = new GeminiSubprocessDriver("gemini", log);
+    await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+    });
+    const spawnOpts = vi.mocked(spawn).mock.calls[0]?.[2] as
+      | Record<string, unknown>
+      | undefined;
+    expect(spawnOpts?.detached).toBe(true);
+  });
 });
