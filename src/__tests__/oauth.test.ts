@@ -919,7 +919,7 @@ describe("OAuthServerImpl — auth code must not carry a dead `used` flag (LOW #
     const record = authCodes.get(code!);
     expect(record).toBeTruthy();
     // The dead `used` field must not exist on the stored record.
-    expect(Object.hasOwn(record, "used")).toBe(false);
+    expect(Object.hasOwn(record as object, "used")).toBe(false);
     oauth.destroy();
   });
 });
