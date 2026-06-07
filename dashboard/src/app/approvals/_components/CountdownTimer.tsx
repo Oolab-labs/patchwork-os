@@ -7,8 +7,16 @@ export function CountdownTimer({ expiresAt }: { expiresAt: number }) {
   );
 
   useEffect(() => {
+    // Don't start the interval when expiresAt is falsy (0 or not set) or
+    // already expired — remaining was initialised to 0 and nothing will change.
+    if (!expiresAt || expiresAt <= Date.now()) return;
+
     const id = setInterval(() => {
-      setRemaining(Math.max(0, expiresAt - Date.now()));
+      const left = Math.max(0, expiresAt - Date.now());
+      setRemaining(left);
+      if (left <= 0) {
+        clearInterval(id);
+      }
     }, 1000);
     return () => clearInterval(id);
   }, [expiresAt]);
