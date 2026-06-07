@@ -32,6 +32,8 @@ const TABLE: PriceTable = {
 };
 
 describe("resolveRouting — output token estimate (audit 2026-06-03 LOW #7)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it("estimated output tokens are less than estimated input tokens for a realistic prompt", () => {
     // 4000 chars → ROUTER_CHARS_PER_TOKEN=4 → 1000 input tokens
     const prompt = "a".repeat(4000);
