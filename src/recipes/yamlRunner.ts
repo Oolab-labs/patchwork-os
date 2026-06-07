@@ -1373,6 +1373,14 @@ export async function runYamlRecipe(
       // exhaustion with on_exhausted: "proceed").
       const pendingRevised = revised.value as RunContext[string];
 
+      // Budget gate (post-revise, pre-re-judge): the revise call may have
+      // exhausted the token budget. Check again before firing the re-judge so
+      // we don't make one extra LLM call over budget — audit 2026-06-03 LOW #2.
+      const postReviseAdmission = runBudget.admit();
+      if (!postReviseAdmission.admitted) {
+        break;
+      }
+
       // RE-JUDGE: rebuild the judge prompt against the revised artefact. The
       // judge reviews the STAGED draft, not ctx (which still holds the prior
       // accepted value).
@@ -2687,11 +2695,28 @@ export function providerMetaToUsage(
 const ROUTER_CHARS_PER_TOKEN = 4;
 
 /**
+ * Empirical output:input token ratio used for pre-dispatch cost estimates.
+ * LLMs typically produce far fewer output tokens than they consume on input for
+ * most agentic tasks (completion, classification, summarisation). The old 1:1
+ * assumption made models appear 2–5× more expensive than reality, causing
+ * unnecessary downshifts to cheaper models.
+ *
+ * 0.3 is a deliberately-conservative upper bound (real ratios are often 0.1–0.2
+ * for short-form steps). Using a higher-than-typical value avoids under-estimating
+ * cost and over-spending, while still being far more accurate than 1:1.
+ *
+ * The real cost is always reconciled after the call (see the cost-routing ADR),
+ * so this estimate only affects routing decisions, never final billing.
+ */
+const ROUTER_OUTPUT_RATIO = 0.3;
+
+/**
  * Apply opt-in cost-aware routing (Phase 4) to choose the driver/model for an
  * agent dispatch. Returns `preferred` UNCHANGED when there is no downshift list
  * or no USD cap is set (byte-identical to no routing). The output-token figure
- * is a deliberately-rough 1:1-of-input pre-dispatch estimate — enough to pick a
- * gear; the real cost is reconciled after the call (see the cost-routing ADR).
+ * uses a 0.3:1 output:input estimate (conservative upper bound; the 1:1 default
+ * doubled apparent cost and caused unnecessary model downshifts — audit
+ * 2026-06-03 LOW #7). The real cost is reconciled after the call.
  * Exported for unit testing.
  */
 export function resolveRouting(
@@ -2704,7 +2729,10 @@ export function resolveRouting(
   const remainingUsd = budget.remainingUsd();
   if (remainingUsd === undefined) return preferred; // no USD cap → no routing
   const estInputTokens = Math.ceil(promptText.length / ROUTER_CHARS_PER_TOKEN);
-  const estOutputTokens = estInputTokens; // rough 1:1 assumption (documented)
+  // Fix (audit 2026-06-03 LOW #7): use a realistic 0.3:1 output:input ratio
+  // instead of 1:1. LLMs produce far fewer output tokens than input for most
+  // tasks; 0.3 is a conservative upper bound that avoids under-estimating cost.
+  const estOutputTokens = Math.ceil(estInputTokens * ROUTER_OUTPUT_RATIO);
   return costRouter(preferred, downshift, {
     remainingUsd,
     quote: (driver, model) =>
