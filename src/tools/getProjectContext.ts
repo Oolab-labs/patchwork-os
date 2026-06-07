@@ -346,7 +346,9 @@ export function createGetProjectContextTool(
             };
             if (tag.kind === "module" && tag.path) {
               const rel = path.relative(workspace, tag.path);
-              const dir = rel.split("/")[0];
+              // On Windows path.relative returns backslash separators; normalise
+              // before splitting so backslash paths aren't returned as one token.
+              const dir = rel.replace(/\\/g, "/").split("/")[0];
               if (dir && !dir.startsWith(".") && dir !== "node_modules") {
                 moduleSet.add(dir);
               }

@@ -1,15 +1,9 @@
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { COMPANIONS } from "../companions/registry.js";
+import { writeFileAtomicSync } from "../writeFileAtomic.js";
 
 /** Return platform-specific Claude Desktop config path. */
 function getClaudeDesktopConfigPath(): string {
@@ -61,16 +55,9 @@ function readConfig(configPath: string): DesktopConfig {
 function writeConfigAtomic(configPath: string, config: DesktopConfig): void {
   const dir = path.dirname(configPath);
   mkdirSync(dir, { recursive: true });
-  const tmpPath = `${configPath}.tmp`;
-  try {
-    unlinkSync(tmpPath);
-  } catch {
-    /* not present */
-  }
-  writeFileSync(tmpPath, `${JSON.stringify(config, null, 2)}\n`, {
+  writeFileAtomicSync(configPath, `${JSON.stringify(config, null, 2)}\n`, {
     encoding: "utf-8",
   });
-  renameSync(tmpPath, configPath);
 }
 
 export async function runInstall(argv: string[]): Promise<void> {

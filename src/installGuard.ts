@@ -28,6 +28,11 @@ export interface SymlinkInstallInfo {
  * Returns null for normal installs or when the check cannot be performed.
  */
 export function detectWorkspaceSymlinkInstall(): SymlinkInstallInfo | null {
+  // This check only matters on macOS where TCC (Transparency Consent Control)
+  // silently blocks launchd-spawned processes from following npm symlinks under
+  // ~/Documents, ~/Desktop, ~/Downloads. On Windows/Linux there is no TCC and
+  // no symlink-via-launchd path — skip the npm spawn entirely.
+  if (process.platform !== "darwin") return null;
   try {
     // Get the global node_modules root from npm. Wrap "npm" via the
     // canonical shim helper so Windows resolves `npm.cmd` (without it,

@@ -10,6 +10,7 @@ afterEach(async () => {
   await server?.close();
   server = null;
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 // ── DNS rebinding protection ──────────────────────────────────────────────────
@@ -548,5 +549,46 @@ describe("Server: WebSocket abnormal close codes", () => {
       expect(outcome.code).not.toBe(1001);
     }
     // error event without a close frame is also a valid rejection signal
+  });
+});
+
+// ── NET-001: EADDRINUSE backoff retry on preferred port (Windows TIME_WAIT) ──
+
+describe("Server.findAndListen — EADDRINUSE retry (NET-001)", () => {
+  it("retries on EADDRINUSE and succeeds when port clears", async () => {
+    // On Windows, SO_REUSEADDR doesn't rebind ports in TIME_WAIT (~4 min).
+    // Supervisor restart with --port N crash-loops until the port clears.
+    // Fix: catch EADDRINUSE → exponential backoff retry, eventually listen(0).
+    // BEFORE FIX: findAndListen(preferredPort) throws EADDRINUSE immediately.
+    // AFTER FIX:  retries with backoff, succeeds on second attempt.
+    server = new Server("test-token", logger);
+
+    // Spy on the internal listen method to throw EADDRINUSE on first call then succeed
+    let listenCallCount = 0;
+    const realListen = (server as any).listen.bind(server);
+    vi.spyOn(server as any, "listen").mockImplementation(
+      async (...args: unknown[]) => {
+        const [port, addr] = args as [number, string];
+        listenCallCount++;
+        if (listenCallCount === 1 && port !== 0) {
+          const err = new Error(
+            "listen EADDRINUSE: address already in use",
+          ) as NodeJS.ErrnoException;
+          err.code = "EADDRINUSE";
+          throw err;
+        }
+        return realListen(port, addr);
+      },
+    );
+
+    vi.useFakeTimers();
+    const listenPromise = server.findAndListen(59991);
+    // Advance past the first backoff delay (1000ms) to trigger retry
+    await vi.advanceTimersByTimeAsync(1100);
+    const port = await listenPromise;
+
+    // After fix: gets a valid port (either preferred or OS-assigned fallback)
+    expect(port).toBeGreaterThan(0);
+    expect(listenCallCount).toBeGreaterThan(1);
   });
 });

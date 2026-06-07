@@ -897,7 +897,11 @@ export class BridgeConnection {
         fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
       }
       this.lockWatcher = fs.watch(dir, (_event, filename) => {
-        if (!filename?.endsWith(".lock")) return;
+        // On Windows fs.watch delivers rename events with filename=null for
+        // O_EXCL lock file creation. The old `!filename?.endsWith('.lock')`
+        // treated null as non-.lock and returned early, missing the fast
+        // reconnect path (fw-001). Null is now treated as a possible lock event.
+        if (filename !== null && !filename.endsWith(".lock")) return;
         if (this.disposed) return;
         if (
           this.state === ConnectionState.CONNECTED ||

@@ -260,7 +260,7 @@ export async function tokenEfficiencyBenchmark(args: string[]): Promise<void> {
   }
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("node", [benchmarkScript, ...args], {
+    const child = spawn(process.execPath, [benchmarkScript, ...args], {
       stdio: "inherit",
     });
     child.on("error", reject);

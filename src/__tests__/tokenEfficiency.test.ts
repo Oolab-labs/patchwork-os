@@ -176,7 +176,7 @@ describe("tokenEfficiencyBenchmark", () => {
 
     expect(childProcess.spawn).toHaveBeenCalledOnce();
     const [cmd, spawnArgs] = vi.mocked(childProcess.spawn).mock.calls[0];
-    expect(cmd).toBe("node");
+    expect(cmd).toBe(process.execPath);
     expect(spawnArgs).toContain("--iterations");
     expect(spawnArgs).toContain("10");
     expect(spawnArgs).toContain("--json");

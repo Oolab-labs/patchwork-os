@@ -95,7 +95,10 @@ export class SessionCheckpoint {
         }
       }
       // Ensure restrictive permissions even if the file pre-existed with a wider mode.
-      fs.chmodSync(this.checkpointPath, 0o600);
+      // No-op on NTFS (always reports 0o666) but still costs a syscall every 30 s.
+      if (process.platform !== "win32") {
+        fs.chmodSync(this.checkpointPath, 0o600);
+      }
     } catch (err) {
       // Best-effort — never block bridge operation. Log once per instance
       // so the operator sees something on disk-full / EACCES instead of
