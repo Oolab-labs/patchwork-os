@@ -217,7 +217,7 @@ export function tryHandleInboxRoute(
         }
         await unlink(filePath);
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, path: filePath }));
+        res.end(JSON.stringify({ ok: true }));
       } catch (err: unknown) {
         const code = (err as NodeJS.ErrnoException).code;
         if (code === "ENOENT") {
@@ -263,7 +263,7 @@ export function tryHandleInboxRoute(
         }
         await rename(filePath, dest);
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, path: dest }));
+        res.end(JSON.stringify({ ok: true }));
       } catch (err: unknown) {
         const code = (err as NodeJS.ErrnoException).code;
         if (code === "ENOENT") {
