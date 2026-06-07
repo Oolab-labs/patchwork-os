@@ -131,3 +131,47 @@ describe("duplicate step id", () => {
     );
   });
 });
+
+// LOW #4 — flattenValidationStep skips validation of conditional step fields
+// when `otherwise` is present. A branch entry like { if, step, otherwise }
+// should still validate the step fields even though `otherwise` is also present.
+describe("branch otherwise does not skip co-located step validation (audit 2026-06-03 LOW #4)", () => {
+  it("catches invalid step fields inside a branch entry that also has otherwise", () => {
+    const result = validateRecipeDefinition({
+      ...baseRecipe,
+      steps: [
+        {
+          branch: [
+            {
+              if: "{{some_var}}",
+              // prompt must be a string; 123 is invalid
+              agent: { prompt: 123 },
+              otherwise: { id: "fallback", agent: { prompt: "ok" } },
+            },
+          ],
+        },
+      ],
+    });
+    const errors = result.issues.filter((i) => i.level === "error");
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("still validates the otherwise block", () => {
+    const result = validateRecipeDefinition({
+      ...baseRecipe,
+      steps: [
+        {
+          branch: [
+            {
+              if: "{{some_var}}",
+              agent: { prompt: "valid prompt" },
+              otherwise: { id: "fallback", agent: { prompt: 999 } },
+            },
+          ],
+        },
+      ],
+    });
+    const errors = result.issues.filter((i) => i.level === "error");
+    expect(errors.length).toBeGreaterThan(0);
+  });
+});

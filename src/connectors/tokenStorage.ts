@@ -511,6 +511,14 @@ export interface KeychainOpsForTest {
   set: (key: string, value: string) => boolean;
   get: (key: string) => string | null;
   delete: (key: string) => boolean;
+  /**
+   * Optional: returns all provider keys currently stored in the (fake)
+   * keychain. When present, `listKeychainItems()` delegates here instead of
+   * calling the platform-specific implementation — avoids running the real
+   * `security` CLI in tests and lets the test assert which list strategy is
+   * used (LOW #10: `find-generic-password` per-key, not `dump-keychain`).
+   */
+  list?: () => string[];
 }
 let _keychainOverride: KeychainOpsForTest | null = null;
 export function __setKeychainOpsForTest(ops: KeychainOpsForTest | null): void {
@@ -551,8 +559,16 @@ function deleteKeychainItemSync(key: string): boolean {
 }
 
 function listKeychainItems(): string[] {
+  // Honour the test override first — lets tests verify the list path without
+  // invoking the real `security` CLI (LOW #10 fix: dump-keychain removed).
+  if (_keychainOverride?.list) return _keychainOverride.list();
+  // Use the file-based index as the candidate set, then probe each key with
+  // find-generic-password. This is O(n_providers) in targeted `security`
+  // calls instead of O(keychain_size) for a full dump, and avoids reading
+  // unrelated credentials from the user's keychain.
+  const candidates = listEncryptedFiles();
   if (process.platform === "darwin") {
-    return listMacOSKeychainItems();
+    return listMacOSKeychainItems(candidates);
   }
   if (process.platform === "win32") {
     // Handled by file listing
@@ -668,25 +684,29 @@ function deleteMacOSKeychainItemSync(key: string): boolean {
   }
 }
 
-function listMacOSKeychainItems(): string[] {
-  try {
-    const result = spawnSync("security", ["dump-keychain"], {
-      encoding: "utf-8",
-      timeout: 10000,
-    });
-    if (result.status !== 0) return [];
-
-    const providers: string[] = [];
-    const regex = new RegExp(`svce<blob>=${SERVICE_NAME}\\.([^\\s]+)`, "g");
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(result.stdout)) !== null) {
-      const provider = match[1];
-      if (provider) {
+/**
+ * List providers whose tokens exist in the macOS Keychain, probing only the
+ * candidate set. Uses `find-generic-password -s <key> -a <account>` per
+ * candidate — O(n_providers) targeted queries that never read unrelated
+ * keychain entries (replaces the old `dump-keychain` O(keychain_size) approach,
+ * audit 2026-06-03 LOW #10).
+ */
+function listMacOSKeychainItems(candidates: string[]): string[] {
+  const providers: string[] = [];
+  for (const provider of candidates) {
+    try {
+      const key = `${SERVICE_NAME}.${provider}`;
+      const result = spawnSync(
+        "security",
+        ["find-generic-password", "-s", key, "-a", SERVICE_NAME],
+        { encoding: "utf-8", timeout: 5000 },
+      );
+      if (result.status === 0) {
         providers.push(provider);
       }
+    } catch {
+      // Probe failed — treat as not present, continue.
     }
-    return providers;
-  } catch {
-    return [];
   }
+  return providers;
 }
