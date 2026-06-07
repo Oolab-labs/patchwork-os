@@ -8,7 +8,7 @@
  * Fix: use a more realistic default ratio (0.3 output tokens per input
  * token — 0.3:1) so the cost estimate is closer to reality.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PriceTable } from "../pricing/priceTable.js";
 import { RunBudget } from "../runBudget.js";
 import { resolveRouting } from "../yamlRunner.js";
