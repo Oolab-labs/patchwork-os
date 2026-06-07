@@ -33,7 +33,7 @@ describe("McpClient instance-level cache isolation (LOW #11)", () => {
     // result instead of making its own network call.
     let fetchCallCount = 0;
 
-    function makeSuccessResponse(id: number, value: string): Response {
+    function makeSuccessResponse(id: number, _value: string): Response {
       return new Response(
         JSON.stringify({
           jsonrpc: "2.0",
