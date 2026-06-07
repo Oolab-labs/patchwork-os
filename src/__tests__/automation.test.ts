@@ -272,6 +272,28 @@ describe("AutomationHooks.handleDiagnosticsChanged", () => {
     hooks.handleDiagnosticsChanged("/src/foo.ts", errorDiag);
     expect(orch.list().length).toBe(0);
   });
+
+  it("LOW#23 - does NOT enqueue a task when currentErrorCount === 0", () => {
+    // Bug: onDiagnosticsError was always enqueued even with zero errors.
+    // When diagnostics list is empty (or all info/hint severity), no task
+    // should be triggered.
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    // Call with an empty diagnostics array (zero error count)
+    hooks.handleDiagnosticsChanged("/src/foo.ts", []);
+    expect(orch.list().length).toBe(0);
+  });
 });
 
 // ── handleFileSaved tests ─────────────────────────────────────────────────────

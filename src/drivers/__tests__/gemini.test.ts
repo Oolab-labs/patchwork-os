@@ -360,6 +360,72 @@ describe("GeminiSubprocessDriver", () => {
     expect(result.stderrTail).toContain("[REDACTED_API_KEY]");
   });
 
+  it("LOW#20 - flushes final assistant line that lacks a trailing newline", async () => {
+    // Simulates a stream where the LAST assistant message is emitted without
+    // a trailing '\n'. Without the lineBuf flush fix, this partial line stays
+    // in lineBuf and is silently dropped, causing the last message to be lost.
+    const stdout = new EventEmitter() as EventEmitter & {
+      setEncoding: () => void;
+    };
+    stdout.setEncoding = () => {};
+    const stderr = new EventEmitter() as EventEmitter & {
+      setEncoding: () => void;
+    };
+    stderr.setEncoding = () => {};
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: typeof stdout;
+      stderr: typeof stderr;
+      stdin: null;
+      stdio: unknown[];
+      kill: () => void;
+      unref: () => void;
+      killed: boolean;
+      connected: boolean;
+      pid: number;
+      exitCode: number | null;
+    };
+    child.stdout = stdout;
+    child.stderr = stderr;
+    child.stdin = null;
+    child.stdio = [null, stdout, stderr];
+    child.killed = false;
+    child.connected = false;
+    child.pid = 12345;
+    child.exitCode = null;
+    child.kill = () => {};
+    child.unref = () => {};
+
+    vi.mocked(spawn).mockReturnValueOnce(
+      child as unknown as ReturnType<typeof spawn>,
+    );
+
+    // Emit RESULT_OK with a newline so doneFromResult fires, but emit the
+    // last assistant message WITHOUT a trailing newline — it stays in lineBuf
+    // until close, at which point it should be flushed.
+    const LAST_ASSISTANT_NO_NEWLINE = ASSISTANT("the-dropped-line");
+    setTimeout(() => {
+      stdout.emit("data", `${INIT}\n`);
+      stdout.emit("data", `${RESULT_OK}\n`);
+      // Emit LAST_ASSISTANT_NO_NEWLINE after result, without '\n'.
+      // This simulates any partial line left in the buffer at stream end.
+      stdout.emit("data", LAST_ASSISTANT_NO_NEWLINE); // no trailing '\n'
+      child.emit("close", 0);
+    }, 0);
+
+    const driver = new GeminiSubprocessDriver("gemini", log);
+    const chunks: string[] = [];
+    const result = await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+      onChunk: (c) => chunks.push(c),
+    });
+    // Without the fix, "the-dropped-line" is silently lost.
+    expect(chunks).toContain("the-dropped-line");
+    expect(result.text).toContain("the-dropped-line");
+  });
+
   it("returns wasAborted on AbortError", async () => {
     const ac = new AbortController();
     const stdout = new EventEmitter() as EventEmitter & {

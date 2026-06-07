@@ -85,7 +85,23 @@ export function createGetGitHotspotsTool(workspace: string) {
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       const days = optionalInt(args, "days", 1, 365) ?? 90;
       const limit = optionalInt(args, "limit", 1, 100) ?? 20;
-      const path = optionalString(args, "path");
+      const rawPath = optionalString(args, "path");
+
+      // Validate scopedTo path: reject absolute paths, null bytes, and path
+      // traversal sequences. The value is echoed back in the response so it
+      // must not reflect unvalidated user input (audit 2026-06-03 LOW #29).
+      if (rawPath !== undefined) {
+        if (
+          rawPath.includes("\0") ||
+          rawPath.startsWith("/") ||
+          rawPath.split(/[/\\]/).some((seg) => seg === "..")
+        ) {
+          return error(
+            `invalid path argument: "${rawPath}" (absolute paths and '..' traversal are not allowed)`,
+          );
+        }
+      }
+      const path = rawPath;
 
       // Verify git repo
       const check = await execSafe("git", ["rev-parse", "--git-dir"], {

@@ -371,6 +371,42 @@ export class GeminiSubprocessDriver implements ProviderDriver {
       }
       if (startupHandle) clearTimeout(startupHandle);
 
+      // Flush any partial line remaining in lineBuf after stdout closes.
+      // splitLines() leaves content without a trailing '\n' in the remainder;
+      // when the subprocess exits without a final newline the last JSON event
+      // (e.g. the last assistant message) is silently dropped. Process it now.
+      if (lineBuf.trim().length > 0) {
+        let event: GeminiEvent;
+        try {
+          event = JSON.parse(lineBuf) as GeminiEvent;
+          if (
+            event.type === "message" &&
+            event.role === "assistant" &&
+            event.content
+          ) {
+            if (firstAssistantAt === undefined) firstAssistantAt = Date.now();
+            const text = event.content;
+            accumulated += text;
+            if (outputBytesSent < OUTPUT_CAP) {
+              const { send, bytes } = truncateToBytes(
+                text,
+                OUTPUT_CAP - outputBytesSent,
+              );
+              if (send.length > 0) {
+                input.onChunk?.(send);
+                outputBytesSent += bytes;
+              }
+            }
+          } else if (event.type === "result") {
+            doneFromResult = true;
+            resultSuccess = event.status === "success";
+          }
+        } catch {
+          // Non-JSON remainder — ignore (same as the data handler)
+        }
+        lineBuf = "";
+      }
+
       if (startupTimedOut) {
         return {
           text: truncateUtf8Bytes(accumulated, OUTPUT_CAP),
