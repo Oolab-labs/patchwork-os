@@ -881,3 +881,91 @@ describe("OAuthServerImpl — token persistence", () => {
     expect(fs.existsSync(path.join(tmpDir, "tokens"))).toBe(false);
   });
 });
+
+// ── LOW #16 — dead `used` flag on auth codes ──────────────────────────────────
+
+describe("OAuthServerImpl — auth code must not carry a dead `used` flag (LOW #16)", () => {
+  it("stored AuthCode records do not have a `used` property", async () => {
+    // Single-use enforcement is handled by deleting the code from the Map on
+    // first use (see handleToken). The `used: boolean` field was dead code —
+    // it was set to `false` at creation but never written to `true`, so the
+    // check `if (record.used) return 400` could never fire.
+    // This test asserts that the stored record has no `used` key so the dead
+    // code cannot reappear silently.
+    const oauth = makeOAuthWithClient();
+    const { challenge } = makeVerifier();
+    const { nonce: csrfNonce, flowId } = await primeCsrfNonce(oauth, challenge);
+    const form = new URLSearchParams({
+      action: "approve",
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      code_challenge: challenge,
+      bridge_token: BRIDGE_TOKEN,
+      scope: "mcp",
+      state: "s1",
+      csrf_nonce: csrfNonce,
+      flow_id: flowId,
+    });
+    const req = makePostReq(form.toString());
+    const res = new MockResponse();
+    await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    const location = new URL(res.headers.location ?? "http://invalid");
+    const code = location.searchParams.get("code");
+    expect(code).toBeTruthy();
+
+    // Peek into internal authCodes Map.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const authCodes = (oauth as any).authCodes as Map<string, unknown>;
+    const record = authCodes.get(code!);
+    expect(record).toBeTruthy();
+    // The dead `used` field must not exist on the stored record.
+    expect(Object.hasOwn(record, "used")).toBe(false);
+    oauth.destroy();
+  });
+});
+
+// ── LOW #17 — GET /oauth/authorize must validate `scope` ─────────────────────
+
+describe("OAuthServerImpl — GET /oauth/authorize scope validation (LOW #17)", () => {
+  it("returns 400 for an unsupported scope value", async () => {
+    // RFC 6749 §3.3: if the requested scope is unknown the server MUST
+    // return invalid_scope. Before this fix the GET handler stored whatever
+    // scope was passed without checking it against SUPPORTED_SCOPES.
+    const oauth = makeOAuthWithClient();
+    const { challenge } = makeVerifier();
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      state: "abc",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      scope: "totally_unsupported_scope",
+    });
+    const req = makeGetReq(`/oauth/authorize?${params}`);
+    const res = new MockResponse();
+    await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toContain("invalid_scope");
+    oauth.destroy();
+  });
+
+  it("accepts a valid scope value", async () => {
+    const oauth = makeOAuthWithClient();
+    const { challenge } = makeVerifier();
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      state: "abc",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      scope: "mcp",
+    });
+    const req = makeGetReq(`/oauth/authorize?${params}`);
+    const res = new MockResponse();
+    await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    expect(res.statusCode).toBe(200);
+    oauth.destroy();
+  });
+});
