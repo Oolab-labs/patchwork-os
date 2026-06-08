@@ -84,7 +84,7 @@ export class GeminiAdapter implements ModelAdapter {
       contents,
       tools: this.translateTools(params.tools),
       generationConfig: {
-        maxOutputTokens: params.maxTokens,
+        maxOutputTokens: params.maxTokens ?? 4096,
         temperature: params.temperature,
       },
     };
@@ -158,7 +158,7 @@ export class GeminiAdapter implements ModelAdapter {
       contents,
       tools: this.translateTools(params.tools),
       generationConfig: {
-        maxOutputTokens: params.maxTokens,
+        maxOutputTokens: params.maxTokens ?? 4096,
         temperature: params.temperature,
       },
     };

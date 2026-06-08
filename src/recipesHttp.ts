@@ -1088,9 +1088,11 @@ export function listInstalledRecipes(
   recipesDir: string,
   opts: { disabledRecipes?: ReadonlyArray<string> } = {},
 ): ListRecipesResult {
-  // Cache only the production path (explicit disabledRecipes = test-only,
-  // varies per call, unsafe to cache).
-  const useCache = opts.disabledRecipes !== undefined;
+  // Cache the production path: no disabledRecipes (undefined) or empty list
+  // yields identical results for the same dir, safe to cache.
+  // Non-empty disabledRecipes varies per call → skip cache.
+  const useCache =
+    opts.disabledRecipes === undefined || opts.disabledRecipes.length === 0;
   if (useCache) {
     const cached = _listCache.get(recipesDir);
     if (cached) return cached;
