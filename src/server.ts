@@ -15,6 +15,11 @@ import {
 import { handleApprovalsStream, routeApprovalRequest } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import type { AttributedPermissionRules } from "./ccPermissions.js";
+import {
+  handleClaudeAuthCancel,
+  handleClaudeAuthComplete,
+  handleClaudeAuthStart,
+} from "./claudeAuthHttp.js";
 import { saveBridgeConfigDriver } from "./config.js";
 import {
   tryHandleConnectorRoute,
@@ -1579,6 +1584,34 @@ export class Server extends EventEmitter<ServerEvents> {
         }
         return;
       }
+      // /auth/claude/* — Claude Code subscription OAuth 2.0 + PKCE flow.
+      // start → returns a claude.ai auth URL; complete → exchanges code for token;
+      // cancel → discards the pending session. The dashboard "Connect Claude"
+      // button drives this flow; after complete the dashboard saves the returned
+      // token via POST /api/auth/anthropic-key → control-plane re-provisions
+      // the container with CLAUDE_CODE_OAUTH_TOKEN so subprocess driver works.
+      if (
+        parsedUrl.pathname === "/auth/claude/start" &&
+        req.method === "POST"
+      ) {
+        await handleClaudeAuthStart(req, res);
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/auth/claude/complete" &&
+        req.method === "POST"
+      ) {
+        await handleClaudeAuthComplete(req, res);
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/auth/claude/cancel" &&
+        req.method === "POST"
+      ) {
+        await handleClaudeAuthCancel(req, res);
+        return;
+      }
+
       if (parsedUrl.pathname === "/settings" && req.method === "POST") {
         // Kill-switch gate: during an incident a settings mutation can
         // defeat the panic posture (e.g. switching driver to one with a
