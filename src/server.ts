@@ -522,6 +522,14 @@ export class Server extends EventEmitter<ServerEvents> {
         args: Record<string, string>,
       ) => { ok: boolean; error?: string })
     | null = null;
+  /**
+   * Patchwork: the configured workspace root (set by bridge from --workspace).
+   * Routes that resolve workspace-relative state — decision-replay and CC
+   * permission attribution, approval routing — must use this, NOT process.cwd():
+   * the bridge can be started with --workspace pointing elsewhere, and a
+   * launchd/systemd cwd is unrelated to the workspace (audit 2026-06-08 server-3).
+   */
+  public workspace: string = process.cwd();
   /** Patchwork: set by bridge to list active agent sessions for the dashboard. */
   public sessionsFn: (() => SessionSummary[]) | null = null;
   /** Patchwork: set by bridge to answer GET /sessions/:id with per-session event stream + approvals. */
@@ -1429,7 +1437,7 @@ export class Server extends EventEmitter<ServerEvents> {
           : 0;
         const { computeDecisionReplay } = await import("./decisionReplay.js");
         const result = computeDecisionReplay(this.activityLog, {
-          workspace: process.cwd(),
+          workspace: this.workspace,
           sinceMs,
         });
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -1461,7 +1469,7 @@ export class Server extends EventEmitter<ServerEvents> {
         ) {
           this._explainRulesCache = {
             at: now,
-            rules: loadCcPermissionsAttributed(process.cwd()),
+            rules: loadCcPermissionsAttributed(this.workspace),
           };
         }
         const explanation = explainRules(
@@ -2754,7 +2762,7 @@ export class Server extends EventEmitter<ServerEvents> {
             },
             {
               queue: getApprovalQueue(),
-              workspace: process.cwd(),
+              workspace: this.workspace,
               managedSettingsPath: this.managedSettingsPath,
               onDecision: this.onApprovalDecision,
               webhookUrl: this.approvalWebhookUrl,

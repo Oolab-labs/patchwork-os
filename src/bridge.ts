@@ -189,6 +189,10 @@ export class Bridge {
     );
     this.server.bridgeConfigPath = config.configFilePath ?? undefined;
     this.server.webhookSecret = config.webhookSecret ?? null;
+    // Audit 2026-06-08 (server-3): workspace-relative routes (decision replay,
+    // CC permission attribution, approval routing) must use the configured
+    // workspace, not the bridge process's cwd.
+    this.server.workspace = config.workspace;
     if (config.issuerUrl) {
       this.oauthServer = new OAuthServerImpl(this.authToken, config.issuerUrl, {
         configDir,
