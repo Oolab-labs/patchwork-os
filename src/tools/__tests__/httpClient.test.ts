@@ -247,6 +247,66 @@ describe("sendHttpRequest — userinfo (credentials) stripped from URL", () => {
   });
 });
 
+describe("sendHttpRequest — credential headers stripped on cross-origin redirect", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function redirectThenOk(location: string) {
+    return vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+  }
+
+  it("HIGH: Authorization/Cookie/X-Api-Key are NOT forwarded to a cross-origin redirect (audit 2026-06-09 tools-http-1)", async () => {
+    const fetchSpy = redirectThenOk("https://evil.example.net/harvest");
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    } as never);
+
+    await tool.handler({
+      method: "GET",
+      url: "https://api.example.com/resource",
+      headers: {
+        Authorization: "Bearer SECRET_TOKEN",
+        Cookie: "session=abc",
+        "X-Api-Key": "APIKEY123",
+      },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const secondHeaders = (fetchSpy.mock.calls[1]?.[1] as RequestInit)
+      .headers as Record<string, string>;
+    expect(secondHeaders.authorization).toBeUndefined();
+    expect(secondHeaders.cookie).toBeUndefined();
+    expect(secondHeaders["x-api-key"]).toBeUndefined();
+  });
+
+  it("keeps credential headers on a same-origin redirect", async () => {
+    const fetchSpy = redirectThenOk("https://api.example.com/resource/v2");
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    } as never);
+
+    await tool.handler({
+      method: "GET",
+      url: "https://api.example.com/resource",
+      headers: { Authorization: "Bearer SECRET_TOKEN" },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const secondHeaders = (fetchSpy.mock.calls[1]?.[1] as RequestInit)
+      .headers as Record<string, string>;
+    expect(secondHeaders.authorization).toBe("Bearer SECRET_TOKEN");
+  });
+});
+
 describe("sendHttpRequest — Content-Length exceeded drains body", () => {
   afterEach(() => vi.restoreAllMocks());
 
