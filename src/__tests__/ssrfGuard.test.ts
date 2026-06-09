@@ -14,6 +14,7 @@ import {
   isPrivateHost,
   isPrivateNonLoopbackHost,
   validateSafeUrl,
+  validateWebhookUrl,
 } from "../ssrfGuard.js";
 
 describe("isPrivateHost", () => {
@@ -261,5 +262,68 @@ describe("isPrivateNonLoopbackHost — webhook fan-out gate", () => {
   it("permits public hosts", () => {
     expect(isPrivateNonLoopbackHost("github.com")).toBe(false);
     expect(isPrivateNonLoopbackHost("8.8.8.8")).toBe(false);
+  });
+});
+
+// audit 2026-06-08 (fp-5) — DNS-verified webhook gate (loopback allowed).
+describe("validateWebhookUrl", () => {
+  it("rejects malformed urls and non-http(s) protocols", async () => {
+    expect((await validateWebhookUrl("not a url")).reason).toBe("invalid_url");
+    expect((await validateWebhookUrl("ftp://example.org")).reason).toBe(
+      "unsupported_protocol",
+    );
+  });
+
+  it("blocks lexical private-non-loopback hosts (no DNS)", async () => {
+    const spy = vi.spyOn(dns, "lookup");
+    const r = await validateWebhookUrl("http://192.168.1.1/x");
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("private_host");
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("allows loopback without DNS (sidecar fan-out)", async () => {
+    const spy = vi.spyOn(dns, "lookup");
+    const r = await validateWebhookUrl("http://127.0.0.1:9000/x");
+    expect(r.ok).toBe(true);
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("blocks a public host that DNS-resolves to a private IP (split-horizon)", async () => {
+    vi.spyOn(dns, "lookup").mockResolvedValueOnce({
+      address: "10.1.2.3",
+      family: 4,
+    } as never);
+    const r = await validateWebhookUrl("https://evil.example.com/x");
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("private_host_after_dns");
+  });
+
+  it("allows a public host that resolves to a public IP", async () => {
+    vi.spyOn(dns, "lookup").mockResolvedValueOnce({
+      address: "93.184.216.34",
+      family: 4,
+    } as never);
+    const r = await validateWebhookUrl("https://example.com/x");
+    expect(r.ok).toBe(true);
+    expect(r.resolvedIp).toBe("93.184.216.34");
+  });
+
+  it("allowPrivate bypasses all checks", async () => {
+    const r = await validateWebhookUrl("http://192.168.1.1/x", {
+      allowPrivate: true,
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("permits a public host that resolves to loopback (loopback intentionally allowed)", async () => {
+    vi.spyOn(dns, "lookup").mockResolvedValueOnce({
+      address: "127.0.0.1",
+      family: 4,
+    } as never);
+    const r = await validateWebhookUrl("https://local-alias.example.com/x");
+    expect(r.ok).toBe(true);
   });
 });

@@ -3,7 +3,7 @@
  * AutomationProgram interpreter.
  */
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
-import { isPrivateNonLoopbackHost } from "../ssrfGuard.js";
+import { validateWebhookUrl } from "../ssrfGuard.js";
 import type { AutomationState } from "./automationState.js";
 
 // ── Backend interface ─────────────────────────────────────────────────────────
@@ -182,15 +182,21 @@ export class VsCodeBackend implements Backend {
       );
       return { ok: false, error };
     }
-    if (
-      !this.allowPrivateWebhooks &&
-      isPrivateNonLoopbackHost(parsed.hostname)
-    ) {
-      const error = `private/non-loopback host "${parsed.hostname}" blocked (use --automation-allow-private-webhooks to enable)`;
-      this.logger?.info(
-        `[automation-webhook] ${opts.hookKey} blocked: ${error}`,
-      );
-      return { ok: false, error };
+    // Audit 2026-06-08 (fp-5): DNS-verified SSRF check (not lexical-only) so a
+    // public hostname that resolves to a private/IMDS address via split-horizon
+    // DNS is blocked too. Loopback stays allowed for local sidecar fan-out.
+    if (!this.allowPrivateWebhooks) {
+      const safe = await validateWebhookUrl(opts.url, { allowPrivate: false });
+      if (!safe.ok) {
+        const error =
+          safe.reason === "private_host_after_dns"
+            ? `host "${parsed.hostname}" resolves to a private address (${safe.detail}) — blocked (use --automation-allow-private-webhooks to enable)`
+            : `private/non-loopback host "${parsed.hostname}" blocked (use --automation-allow-private-webhooks to enable)`;
+        this.logger?.info(
+          `[automation-webhook] ${opts.hookKey} blocked: ${error}`,
+        );
+        return { ok: false, error };
+      }
     }
 
     const headers: Record<string, string> = { ...opts.headers };

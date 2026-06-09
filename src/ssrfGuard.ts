@@ -215,3 +215,65 @@ export async function validateSafeUrl(
     return { ok: true, url: parsed };
   }
 }
+
+/**
+ * DNS-verified SSRF gate for webhook fan-out, where loopback is intentionally
+ * ALLOWED (local sidecar relays) but every other private range must be blocked
+ * — including a public hostname that resolves to a private/IMDS address via
+ * split-horizon DNS.
+ *
+ * Audit 2026-06-08 (fp-5): the automation webhook path previously used a
+ * lexical-only `isPrivateNonLoopbackHost(hostname)` check with no DNS re-check.
+ * This mirrors `validateSafeUrl` but keeps the loopback carve-out.
+ *
+ * Steps:
+ *   1. Parse + protocol check.
+ *   2. `allowPrivate` short-circuits (operator opted in).
+ *   3. Lexical block of private-non-loopback hosts.
+ *   4. Loopback hostnames are allowed and skip DNS.
+ *   5. Otherwise `dns.lookup()` and block when the resolved IP is private
+ *      (non-loopback). DNS failures fall through to ok (caller's fetch reports).
+ */
+export async function validateWebhookUrl(
+  urlString: string,
+  opts: { allowPrivate?: boolean } = {},
+): Promise<UrlValidationResult> {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlString);
+  } catch {
+    return { ok: false, reason: "invalid_url", detail: urlString };
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    return {
+      ok: false,
+      reason: "unsupported_protocol",
+      detail: parsed.protocol,
+    };
+  }
+
+  if (opts.allowPrivate) return { ok: true, url: parsed };
+
+  if (isPrivateNonLoopbackHost(parsed.hostname)) {
+    return { ok: false, reason: "private_host", detail: parsed.hostname };
+  }
+
+  // Loopback is allowed for webhook fan-out and needs no DNS re-check.
+  if (isLoopbackHost(parsed.hostname)) return { ok: true, url: parsed };
+
+  try {
+    const { address } = await dns.lookup(parsed.hostname);
+    if (isPrivateNonLoopbackHost(address)) {
+      return {
+        ok: false,
+        reason: "private_host_after_dns",
+        detail: `${parsed.hostname} → ${address}`,
+      };
+    }
+    return { ok: true, url: parsed, resolvedIp: address };
+  } catch {
+    // DNS failure — let the caller's fetch surface the actual error.
+    return { ok: true, url: parsed };
+  }
+}

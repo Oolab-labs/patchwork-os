@@ -67,4 +67,29 @@ describe("connectorRedirectUri", () => {
       "https://app.example.com/dashboard/connections/google-calendar/callback",
     );
   });
+
+  // audit 2026-06-08 (connectors-core-8) — validate the base URL instead of
+  // silently building a broken redirect_uri (→ provider redirect_uri_mismatch).
+  it("tolerates surrounding whitespace/newline from export X=$(cat file)", () => {
+    process.env.PATCHWORK_DASHBOARD_URL =
+      "  https://app.example.com/dashboard\n";
+    expect(connectorRedirectUri("slack")).toBe(
+      "https://app.example.com/dashboard/connections/slack/callback",
+    );
+  });
+
+  it("throws a clear, named error when the base URL is malformed", () => {
+    process.env.PATCHWORK_DASHBOARD_URL = "app.example.com";
+    expect(() => connectorCallbackBase()).toThrow(/PATCHWORK_DASHBOARD_URL/);
+  });
+
+  it("throws when the base URL is an empty string", () => {
+    process.env.PATCHWORK_BRIDGE_URL = "";
+    expect(() => connectorCallbackBase()).toThrow(/PATCHWORK_BRIDGE_URL/);
+  });
+
+  it("throws when the base URL uses a non-http(s) protocol", () => {
+    process.env.PATCHWORK_DASHBOARD_URL = "ftp://app.example.com";
+    expect(() => connectorCallbackBase()).toThrow(/http/i);
+  });
 });
