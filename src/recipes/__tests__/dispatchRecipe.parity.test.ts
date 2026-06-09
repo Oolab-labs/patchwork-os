@@ -348,3 +348,81 @@ describe("envelope divergence (current state — pin before refactor)", () => {
     expect(typeof chained.context).toBe("object");
   });
 });
+
+// ── 5. env allowlist parity — audit 2026-06-08 (recipe-support-3) ────────────
+//
+// The flat runner only injects env vars declared under a `context: [{type:env,
+// keys:[...]}]` block. The chained dispatch path used to spread the ENTIRE
+// process.env into the template context, so any `{{env.SECRET}}` in a chained
+// recipe could read undeclared process-level secrets. Both paths must enforce
+// the same declared-keys allowlist.
+describe("env allowlist parity (flat vs chained)", () => {
+  const UNDECLARED = "PATCHWORK_TEST_ENV_UNDECLARED_LEAK";
+  const DECLARED = "PATCHWORK_TEST_ENV_DECLARED_OK";
+
+  it("chained dispatch exposes ONLY declared env keys to templates", async () => {
+    process.env[UNDECLARED] = "leak-me";
+    process.env[DECLARED] = "ok-to-see";
+    try {
+      let resolvedParams: Record<string, unknown> | undefined;
+      const deps: ExecutionDeps = {
+        executeTool: vi.fn(async (_tool: string, resolved: unknown) => {
+          resolvedParams = resolved as Record<string, unknown>;
+          return "ok";
+        }),
+        executeAgent: vi.fn(),
+        loadNestedRecipe: vi.fn().mockResolvedValue(null),
+      };
+      const recipe = {
+        name: "chained-env",
+        trigger: { type: "chained" },
+        context: [{ type: "env", keys: [DECLARED] }],
+        steps: [
+          {
+            id: "s1",
+            tool: "t",
+            leaked: `{{env.${UNDECLARED}}}`,
+            allowed: `{{env.${DECLARED}}}`,
+          },
+        ],
+      };
+      await dispatchRecipe(recipe as never, {
+        ...baseDeps(),
+        chainedDeps: deps,
+      });
+      expect(resolvedParams).toBeDefined();
+      // Undeclared secret must resolve to empty string, NOT its real value.
+      expect(resolvedParams?.leaked).toBe("");
+      // Declared key still resolves normally.
+      expect(resolvedParams?.allowed).toBe("ok-to-see");
+    } finally {
+      delete process.env[UNDECLARED];
+      delete process.env[DECLARED];
+    }
+  });
+
+  it("flat runner already enforces the same allowlist (parity anchor)", async () => {
+    process.env[UNDECLARED] = "leak-me";
+    try {
+      const recipe = flatRecipe({
+        steps: [
+          {
+            tool: "file.write",
+            path: `${TMP}/env-leak-check`,
+            content: `{{env.${UNDECLARED}}}`,
+          },
+        ],
+      });
+      let written = "";
+      await dispatchRecipe(recipe, {
+        ...baseDeps(),
+        writeFile: (_p: string, c: string) => {
+          written = c;
+        },
+      });
+      expect(written).toBe("");
+    } finally {
+      delete process.env[UNDECLARED];
+    }
+  });
+});

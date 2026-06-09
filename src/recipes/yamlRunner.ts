@@ -957,6 +957,37 @@ function runTokenTotals(
   };
 }
 
+/**
+ * Extract ONLY the env vars a recipe explicitly declares via a
+ * `context: [{ type: "env", keys: [...] }]` block. Both the flat runner AND the
+ * chained/replay paths MUST use this so undeclared process-level secrets never
+ * reach `{{env.X}}` template expressions.
+ *
+ * Audit 2026-06-08 (recipe-support-3): the chained dispatch and replay paths
+ * previously spread the entire `process.env` into the template context, silently
+ * diverging from the flat runner's allowlist and exposing every process secret
+ * (API keys, OAuth/connector tokens, TLS material) to any chained recipe author.
+ */
+export function declaredRecipeEnv(
+  recipe: unknown,
+  processEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const blocks = (recipe as { context?: unknown })?.context;
+  if (!Array.isArray(blocks)) return out;
+  for (const block of blocks) {
+    const b = block as Record<string, unknown>;
+    if (b.type === "env" && Array.isArray(b.keys)) {
+      for (const key of b.keys) {
+        if (typeof key !== "string") continue;
+        const v = processEnv[key];
+        if (v !== undefined) out[key] = v;
+      }
+    }
+  }
+  return out;
+}
+
 export async function runYamlRecipe(
   recipe: YamlRecipe,
   deps: RunnerDeps = {},
@@ -968,29 +999,15 @@ export async function runYamlRecipe(
 
   const now = deps.now ? deps.now() : new Date();
 
-  // Resolve recipe-level context blocks (type: env) into seed context
-  const envCtx: RunContext = {};
+  // Resolve recipe-level context blocks (type: env) into seed context via the
+  // shared declared-keys allowlist (also used by the chained/replay paths).
+  const envCtx: RunContext = declaredRecipeEnv(recipe);
   // SECRETS-IN-VARS: track which ctx keys came from a `type: env` block so the
   // agent (LLM-facing) prompt can redact them. Their raw values still flow to
   // TOOL steps (an http header / DB password legitimately needs the secret),
   // but they must never reach the model verbatim — the secure default is
   // redaction. See PR body / docs/recipe-feature-investigation-2026-06-05.md.
-  const secretKeys = new Set<string>();
-  if (Array.isArray((recipe as unknown as Record<string, unknown>).context)) {
-    for (const block of (recipe as unknown as Record<string, unknown[]>)
-      .context ?? []) {
-      const b = block as Record<string, unknown>;
-      if (b.type === "env" && Array.isArray(b.keys)) {
-        for (const key of b.keys as string[]) {
-          const v = process.env[key];
-          if (v !== undefined) {
-            envCtx[key] = v;
-            secretKeys.add(key);
-          }
-        }
-      }
-    }
-  }
+  const secretKeys = new Set<string>(Object.keys(envCtx));
 
   const ctx: RunContext = {
     date: now.toISOString().slice(0, 10),
@@ -3187,8 +3204,11 @@ export async function dispatchRecipe(
       recipe as unknown as import("./chainedRunner.js").ChainedRecipe;
     const now = deps.now ? deps.now() : new Date();
     const options: import("./chainedRunner.js").RunOptions = {
+      // Audit 2026-06-08 (recipe-support-3): only the recipe's declared env
+      // keys reach the template context — NOT the full process.env. Parity with
+      // the flat runner; prevents undeclared-secret exposure via {{env.X}}.
       env: {
-        ...process.env,
+        ...declaredRecipeEnv(chainedRecipe),
         DATE: now.toISOString().slice(0, 10),
         TIME: now.toTimeString().slice(0, 5),
         ...seedContext,
