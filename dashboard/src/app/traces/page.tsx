@@ -501,6 +501,10 @@ export default function TracesPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"flat" | "tree">("tree");
   const [ksOnly, setKsOnly] = useState(false);
+  // Opt-in meaning-based ranking (cosine over the configured on-device
+  // embeddings model). Server-side it falls back to substring when no
+  // embeddings endpoint is configured, so this is always safe to toggle.
+  const [semantic, setSemantic] = useState(false);
 
   // Re-seed on URL change (e.g. user clicks another ?recipe= chip without
   // a full page nav). Keep this minimal — only re-apply when the inbound
@@ -540,9 +544,16 @@ export default function TracesPage() {
 
   const qs = useMemo(() => {
     const params = new URLSearchParams();
-    if (debouncedSearch.trim()) {
-      params.set("key", debouncedSearch.trim());
-      params.set("q", debouncedSearch.trim());
+    const term = debouncedSearch.trim();
+    if (term) {
+      params.set("q", term);
+      // `key` is a hard substring filter; skip it in meaning-mode so cosine
+      // ranks across ALL traces instead of only key-matching ones.
+      if (semantic) {
+        params.set("semantic", "true");
+      } else {
+        params.set("key", term);
+      }
     }
     const sinceMs = SINCE_OPTIONS.find((o) => o.k === since)?.ms;
     if (sinceMs != null) {
@@ -554,7 +565,7 @@ export default function TracesPage() {
     }
     const s = params.toString();
     return s ? `?${s}` : "";
-  }, [debouncedSearch, since, ksOnly]);
+  }, [debouncedSearch, since, ksOnly, semantic]);
 
   const { data, error, loading, refetch } = useBridgeFetch<TracesResponse>(
     `/api/bridge/traces${qs}`,
@@ -634,6 +645,16 @@ export default function TracesPage() {
               <span className="traces-search-loading" aria-label="Searching…" title="Searching…" />
             )}
           </div>
+          <button
+            type="button"
+            onClick={() => setSemantic((v) => !v)}
+            disabled={!debouncedSearch.trim()}
+            aria-pressed={semantic}
+            title="Rank results by meaning (on-device embeddings) instead of exact words. Falls back to word match when no local model is configured."
+            className={semantic ? "pill info traces-filter-pill" : "pill muted traces-filter-pill"}
+          >
+            By meaning
+          </button>
           <ExportButton disabled={traces.length === 0} />
         </div>
       </div>
