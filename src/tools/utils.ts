@@ -692,6 +692,10 @@ export async function execSafeStreaming(
     let linePartial = ""; // incomplete line being buffered
     let stderrBuf = "";
     let stdoutBytes = 0;
+    // Audit 2026-06-08 (tools-1): track stderr in BYTES like stdout. The old
+    // `stderrBuf.length + chunk.length` mixed string char-count (UTF-16 units)
+    // with Buffer byte-count, so multi-byte stderr overran maxBuffer.
+    let stderrBytes = 0;
     let timedOut = false;
 
     const timer = setTimeout(() => {
@@ -728,7 +732,8 @@ export async function execSafeStreaming(
 
     let stderrPartial = "";
     proc.stderr.on("data", (chunk: Buffer) => {
-      if (stderrBuf.length + chunk.length <= maxBuffer) {
+      stderrBytes += chunk.length;
+      if (stderrBytes <= maxBuffer) {
         const text = chunk.toString("utf-8");
         stderrBuf += text;
         if (onStderrLine) {

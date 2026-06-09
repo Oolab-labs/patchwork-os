@@ -139,7 +139,11 @@ export async function handleGetTerminalOutput(
     lines,
     lineCount: lines.length,
     totalLinesWritten: buf.totalWritten,
-    truncated: lineCount < buf.totalWritten,
+    // Audit 2026-06-08 (extension-7): `truncated` means OUTPUT WAS LOST — i.e.
+    // the ring buffer overflowed and dropped old lines. The old
+    // `lineCount < totalWritten` also fired when the caller simply requested
+    // fewer lines than exist (no data loss), which is misleading.
+    truncated: buf.totalWritten > MAX_LINES_PER_TERMINAL,
   };
 }
 
@@ -392,7 +396,10 @@ export async function handleExecuteInTerminal(
         [Symbol.asyncIterator]: () => readerIterator,
       }) {
         if (!truncated) {
-          outputBytes += chunk.length;
+          // Audit 2026-06-08 (extension-12): count actual UTF-8 bytes, not
+          // string .length (UTF-16 units), so the MAX_EXECUTE_OUTPUT_BYTES cap
+          // holds for multi-byte (CJK/emoji) output — mirrors the clipboard cap.
+          outputBytes += Buffer.byteLength(chunk, "utf8");
           if (outputBytes > MAX_EXECUTE_OUTPUT_BYTES) {
             truncated = true;
           } else {

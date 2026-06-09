@@ -250,6 +250,46 @@ describe("handleGetTerminalOutput", () => {
 
     deleteTerminalBuffer(t2 as any);
   });
+
+  // audit 2026-06-08 (extension-7) — `truncated` must mean OUTPUT LOST (ring
+  // buffer overflow), not "caller requested fewer lines than were written".
+  it("truncated is false when fewer lines are requested than written (no data loss)", async () => {
+    const t = _mockTerminal({ name: "t1" });
+    vscode.window.terminals = [t] as any;
+    setOutputCaptureEnabled(true);
+    const buf = getOrCreateBuffer(t as any)!;
+    writeToRingBuffer(buf, "a\nb\nc\n"); // 3 lines, well under the 5000 cap
+
+    const result = (await handleGetTerminalOutput({
+      name: "t1",
+      lines: 2, // ask for fewer than written
+    })) as any;
+    expect(result.lines).toHaveLength(2);
+    expect(result.totalLinesWritten).toBe(3);
+    expect(result.truncated).toBe(false);
+
+    deleteTerminalBuffer(t as any);
+  });
+
+  it("truncated is true only when the ring buffer overflowed (data loss)", async () => {
+    const t = _mockTerminal({ name: "t1" });
+    vscode.window.terminals = [t] as any;
+    setOutputCaptureEnabled(true);
+    const buf = getOrCreateBuffer(t as any)!;
+    // Write more than MAX_LINES_PER_TERMINAL (5000) so old lines are dropped.
+    let blob = "";
+    for (let i = 0; i < 5005; i++) blob += `line${i}\n`;
+    writeToRingBuffer(buf, blob);
+
+    const result = (await handleGetTerminalOutput({
+      name: "t1",
+      lines: 10,
+    })) as any;
+    expect(result.totalLinesWritten).toBe(5005);
+    expect(result.truncated).toBe(true);
+
+    deleteTerminalBuffer(t as any);
+  });
 });
 
 // ── handleCreateTerminal ──────────────────────────────────────

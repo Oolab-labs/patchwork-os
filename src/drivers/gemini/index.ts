@@ -332,11 +332,20 @@ export class GeminiSubprocessDriver implements ProviderDriver {
       });
 
       let stderr = "";
+      // Audit 2026-06-08 (drivers-5): cap stderr by BYTES, not string length.
+      // setEncoding("utf-8") yields string chunks, so `.length`/`.slice` counted
+      // UTF-16 units and let multi-byte stderr exceed OUTPUT_CAP (and split a
+      // surrogate pair on slice). truncateUtf8Bytes cuts on a byte boundary.
+      let stderrBytes = 0;
       child.stderr.setEncoding("utf-8");
       child.stderr.on("data", (chunk: string) => {
-        if (stderr.length < OUTPUT_CAP) {
+        if (stderrBytes < OUTPUT_CAP) {
           stderr += chunk;
-          if (stderr.length > OUTPUT_CAP) stderr = stderr.slice(0, OUTPUT_CAP);
+          stderrBytes += Buffer.byteLength(chunk, "utf-8");
+          if (stderrBytes > OUTPUT_CAP) {
+            stderr = truncateUtf8Bytes(stderr, OUTPUT_CAP);
+            stderrBytes = OUTPUT_CAP;
+          }
         }
       });
 
