@@ -67,6 +67,13 @@ export interface ChainedStep {
   retry?: number;
   /** Delay in ms between retries (default 1000). */
   retryDelay?: number;
+  /**
+   * Per-step wall-clock timeout (ms). When >0, the tool/agent dispatch is raced
+   * against a timer; on expiry the step fails with `step_timeout` (the
+   * underlying call keeps running but its result is ignored). Mirrors the flat
+   * yamlRunner's `timeout_ms` — audit 2026-06-08 (recipe-chained-4).
+   */
+  timeout_ms?: number;
   transform?: string; // template rendered after tool execution; $result = raw tool output
   expect?: StepExpect;
   [key: string]: unknown;
@@ -317,6 +324,32 @@ export function resolveStepTemplates(
   return { resolved, conditionResult, errors };
 }
 
+/**
+ * Race `work` against a per-step timeout. Returns `work` unchanged when no
+ * positive timeout is set. On expiry the returned promise rejects with a
+ * `step_timeout` error (executeChainedStep's catch turns that into a step
+ * failure). The underlying call is not cancellable here — it keeps running but
+ * its result is ignored — matching the flat runner's documented behaviour.
+ */
+function raceStepTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number | undefined,
+  label: string,
+): Promise<T> {
+  if (typeof timeoutMs !== "number" || timeoutMs <= 0) return work;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new Error(`step_timeout: exceeded ${timeoutMs}ms in step "${label}"`),
+      );
+    }, timeoutMs);
+  });
+  return Promise.race([work, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 /** Execute a single step */
 export async function executeChainedStep(
   ctx: StepExecutionContext,
@@ -565,7 +598,11 @@ export async function executeChainedStep(
       }
 
       const agentReturn = toChainedAgentResult(
-        await deps.executeAgent(prompt, dispatchModel, dispatchDriver),
+        await raceStepTimeout(
+          deps.executeAgent(prompt, dispatchModel, dispatchDriver),
+          step.timeout_ms,
+          step.id,
+        ),
       );
 
       // Reconcile REAL usage after dispatch (the closure now surfaces it
@@ -641,7 +678,11 @@ export async function executeChainedStep(
       };
     } else if (step.tool) {
       // Tool step
-      let result: unknown = await deps.executeTool(step.tool, resolved);
+      let result: unknown = await raceStepTimeout(
+        deps.executeTool(step.tool, resolved),
+        step.timeout_ms,
+        step.id,
+      );
       // Detect tool-level errors reported as JSON {ok: false, error: ...} (mirrors flat runner)
       if (typeof result === "string") {
         try {
