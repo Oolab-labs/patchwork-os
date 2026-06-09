@@ -9,7 +9,12 @@
 import http from "node:http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const replayMock = vi.fn(() => ({ decisions: [], summary: {} }));
+const replayMock = vi.fn(
+  (_log: unknown, _opts: { workspace: string; sinceMs: number }) => ({
+    decisions: [] as unknown[],
+    summary: {} as Record<string, unknown>,
+  }),
+);
 vi.mock("../decisionReplay.js", () => ({
   computeDecisionReplay: replayMock,
 }));
@@ -76,8 +81,8 @@ describe("Server workspace threading", () => {
 
     expect(res.status).toBe(200);
     expect(replayMock).toHaveBeenCalledTimes(1);
-    const opts = replayMock.mock.calls[0][1] as { workspace: string };
-    expect(opts.workspace).toBe(configured);
-    expect(opts.workspace).not.toBe(process.cwd());
+    const opts = replayMock.mock.calls[0]?.[1];
+    expect(opts?.workspace).toBe(configured);
+    expect(opts?.workspace).not.toBe(process.cwd());
   });
 });
