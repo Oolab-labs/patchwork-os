@@ -15,6 +15,11 @@ import { GET as gitlabCallback } from "../gitlab/callback/route";
 import { GET as slackCallback } from "../slack/callback/route";
 import { GET as gcalCallback } from "../google-calendar/callback/route";
 import { GET as gdriveCallback } from "../google-drive/callback/route";
+// Audit 2026-06-08 (unsurfaced-1): these three were offered + auth-capable but
+// had no dashboard callback route/page, so OAuth 404'd at the redirect-back.
+import { GET as googleDocsCallback } from "../google-docs/callback/route";
+import { GET as mondayCallback } from "../monday/callback/route";
+import { GET as salesforceCallback } from "../salesforce/callback/route";
 
 type Handler = (req: Request) => Promise<Response>;
 
@@ -26,6 +31,9 @@ const ROUTES: { name: string; bridgePath: string; handler: Handler }[] = [
   { name: "slack",            bridgePath: "/connections/slack/callback",            handler: slackCallback },
   { name: "google-calendar",  bridgePath: "/connections/google-calendar/callback",  handler: gcalCallback },
   { name: "google-drive",     bridgePath: "/connections/google-drive/callback",     handler: gdriveCallback },
+  { name: "google-docs",      bridgePath: "/connections/google-docs/callback",      handler: googleDocsCallback },
+  { name: "monday",           bridgePath: "/connections/monday/callback",           handler: mondayCallback },
+  { name: "salesforce",       bridgePath: "/connections/salesforce/callback",       handler: salesforceCallback },
 ];
 
 let origAllowUnauthenticated: string | undefined;
