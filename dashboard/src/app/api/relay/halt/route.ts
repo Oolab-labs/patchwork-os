@@ -1,6 +1,6 @@
-import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import webpush from "web-push";
+import { verifyBearerToken } from "@/lib/constantTimeEqual";
 import { getSubscriptionsFor, removeSubscription } from "@/lib/pushStore";
 import {
   DASHBOARD_API_BODY_CAPS,
@@ -50,23 +50,9 @@ function unauthorized(): NextResponse {
 }
 
 function verifyBearer(req: Request): boolean {
-  const expected = process.env.PATCHWORK_PUSH_TOKEN ?? "";
-  if (!expected) return false;
-  const header = req.headers.get("authorization") ?? "";
-  if (!header.startsWith("Bearer ")) return false;
-  const presented = header.slice(7);
-  // Pad BOTH to a fixed-size buffer so timingSafeEqual loop cost is
-  // identical regardless of token length — length-equality check runs AFTER
-  // (not before) to avoid leaking the expected token length via timing.
-  // Mirrors the PAD=256 pattern in /api/login/route.ts (PR #600).
-  const PAD = 256;
-  const a = Buffer.from(presented, "utf8");
-  const b = Buffer.from(expected, "utf8");
-  const pa = Buffer.alloc(PAD);
-  const pb = Buffer.alloc(PAD);
-  if (a.length <= PAD) a.copy(pa);
-  if (b.length <= PAD) b.copy(pb);
-  return crypto.timingSafeEqual(pa, pb) && a.length === b.length;
+  // Shared constant-time compare (src/lib/constantTimeEqual.ts) — see that
+  // file for the all-zeros-collision bug this avoids (audit 2026-06-08).
+  return verifyBearerToken(req, process.env.PATCHWORK_PUSH_TOKEN ?? "");
 }
 
 export async function POST(req: Request) {

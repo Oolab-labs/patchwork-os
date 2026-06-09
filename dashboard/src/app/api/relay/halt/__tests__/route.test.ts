@@ -88,6 +88,17 @@ describe("POST /api/relay/halt", () => {
     expect(r.status).toBe(401);
   });
 
+  // auth-bypass regression — audit 2026-06-08 HIGH (dash-api-1). See the push
+  // relay test for the full description of the all-zeros-collision bug.
+  it("401 when a wrong >256-byte token of equal length is presented", async () => {
+    process.env.PATCHWORK_PUSH_TOKEN = "A".repeat(300);
+    const r = await POST(
+      req({ authorization: `Bearer ${"B".repeat(300)}` }, validBody),
+    );
+    expect(r.status).toBe(401);
+    expect(webpush.sendNotification).not.toHaveBeenCalled();
+  });
+
   it("503 when VAPID keys are unset", async () => {
     delete process.env.VAPID_PRIVATE_KEY;
     const r = await POST(req({ authorization: `Bearer ${TOKEN}` }, validBody));
