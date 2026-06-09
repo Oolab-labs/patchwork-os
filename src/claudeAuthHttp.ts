@@ -39,6 +39,9 @@ const CLAUDE_OAUTH_SCOPES = "user:inference user:profile org:create_api_key";
 // browser flow, short enough not to accumulate stale entries.
 const SESSION_TTL_MS = 10 * 60 * 1000;
 
+// Hard ceiling on the Anthropic token-exchange request (audit 2026-06-08 auth-1).
+const TOKEN_EXCHANGE_TIMEOUT_MS = 15_000;
+
 // ---------------------------------------------------------------------------
 // In-memory session store
 // ---------------------------------------------------------------------------
@@ -180,7 +183,15 @@ export async function handleClaudeAuthComplete(
   }
 
   // Exchange authorization code + PKCE verifier for an access token.
+  // Audit 2026-06-08 HIGH (auth-1): bound the fetch with an AbortController so a
+  // slow/hung Anthropic endpoint can't keep the HTTP connection + session open
+  // indefinitely. Map an abort to a 504 (distinct from a 502 network error).
   let tokenRes: Response;
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    TOKEN_EXCHANGE_TIMEOUT_MS,
+  );
   try {
     tokenRes = await fetch(CLAUDE_OAUTH_TOKEN_URL, {
       method: "POST",
@@ -192,13 +203,21 @@ export async function handleClaudeAuthComplete(
         redirect_uri: CLAUDE_OAUTH_REDIRECT_URI,
         code_verifier: session.codeVerifier,
       }).toString(),
+      signal: controller.signal,
     });
   } catch (err) {
-    jsonReply(res, 502, {
-      error: "token_exchange_failed",
-      detail: `Network error contacting Anthropic: ${err instanceof Error ? err.message : String(err)}`,
+    const aborted =
+      err instanceof Error &&
+      (err.name === "AbortError" || controller.signal.aborted);
+    jsonReply(res, aborted ? 504 : 502, {
+      error: aborted ? "token_exchange_timeout" : "token_exchange_failed",
+      detail: aborted
+        ? "Timed out contacting Anthropic. Please try again."
+        : `Network error contacting Anthropic: ${err instanceof Error ? err.message : String(err)}`,
     });
     return;
+  } finally {
+    clearTimeout(timeout);
   }
 
   const tokenData = (await tokenRes.json().catch(() => ({}))) as {
