@@ -157,6 +157,11 @@ registerTool({
 
     const aggregate: IterResult[] = [];
 
+    // Hoist the lazy import outside the loop — dynamic imports cache the
+    // module after the first load so correctness is unaffected, but resolving
+    // the same promise on every iteration adds async overhead for each item.
+    const { render } = await import("../yamlRunner.js");
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       // Build per-iter ctx clone. Bind the loop variable as the raw item
@@ -168,10 +173,6 @@ registerTool({
       iterCtx[`${loopVar}_index`] = String(i);
       iterCtx[`${loopVar}_total`] = String(items.length);
 
-      // Deep-render the raw `do` sub-step against iterCtx, then dispatch
-      // via executeTool. We import render lazily to avoid a circular
-      // import with yamlRunner.
-      const { render } = await import("../yamlRunner.js");
       const innerParams: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(doObj)) {
         if (k === "tool") continue;

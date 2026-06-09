@@ -320,6 +320,50 @@ export class SubprocessDriver implements ProviderDriver {
     }
     if (startupHandle) clearTimeout(startupHandle);
 
+    // Flush any partial line remaining in lineBuf after stdout closes.
+    // splitLines() leaves content without a trailing '\n' in the remainder;
+    // when the subprocess exits without a final newline the last JSON event
+    // (e.g. the result event) is silently dropped. Process it now.
+    if (lineBuf.trim().length > 0) {
+      const parsed = parseStreamLine(lineBuf);
+      if (parsed.kind === "raw") {
+        accumulated += parsed.text;
+        if (outputBytesSent < OUTPUT_CAP) {
+          const { send, bytes } = truncateToBytes(
+            parsed.text,
+            OUTPUT_CAP - outputBytesSent,
+          );
+          if (bytes > 0) {
+            input.onChunk?.(send);
+            outputBytesSent += bytes;
+          }
+        }
+      } else {
+        const { event, text } = parsed;
+        if (event.type === "assistant") {
+          if (firstAssistantAt === undefined) firstAssistantAt = Date.now();
+          if (text.length > 0) {
+            accumulated += text;
+            if (outputBytesSent < OUTPUT_CAP) {
+              const { send, bytes } = truncateToBytes(
+                text,
+                OUTPUT_CAP - outputBytesSent,
+              );
+              if (bytes > 0) {
+                input.onChunk?.(send);
+                outputBytesSent += bytes;
+              }
+            }
+          }
+        } else if (event.type === "result") {
+          doneFromResult = true;
+          resultIsError = event.is_error === true;
+          resultText = text || accumulated;
+        }
+      }
+      lineBuf = "";
+    }
+
     const effectiveExitCode = doneFromResult
       ? resultIsError
         ? 1

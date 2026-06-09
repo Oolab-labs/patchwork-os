@@ -259,4 +259,56 @@ describe("Server recipe content routes", () => {
       error: "Recipe deletion unavailable",
     });
   });
+
+  it("does not expose filesystem path in PUT /recipes/:name error response (LOW #32)", async () => {
+    server!.saveRecipeContentFn = () => ({
+      ok: false,
+      error:
+        "ENOENT: no such file or directory, open '/home/user/.patchwork/recipes/test.yaml'",
+    });
+
+    const { status, body } = await makeRequest(
+      {
+        method: "PUT",
+        path: "/recipes/test",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ content: "name: test\n" }),
+    );
+
+    expect(status).toBe(400);
+    const parsed = JSON.parse(body) as { ok: boolean; error: string };
+    expect(parsed.ok).toBe(false);
+    // Must not expose the home directory path.
+    expect(parsed.error).not.toMatch(/\/home\//);
+    expect(parsed.error).not.toMatch(/\/Users\//);
+    expect(parsed.error).not.toMatch(/\.patchwork/);
+    expect(parsed.error).toBe("Storage error");
+  });
+
+  it("does not expose filesystem path in DELETE /recipes/:name error response (LOW #32)", async () => {
+    server!.deleteRecipeContentFn = () => ({
+      ok: false,
+      error:
+        "EACCES: permission denied, unlink '/home/user/.patchwork/recipes/test.yaml'",
+    });
+
+    const { status, body } = await makeRequest({
+      method: "DELETE",
+      path: "/recipes/test",
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+
+    expect(status).toBe(400);
+    const parsed = JSON.parse(body) as { ok: boolean; error: string };
+    expect(parsed.ok).toBe(false);
+    // Must not expose the home directory path.
+    expect(parsed.error).not.toMatch(/\/home\//);
+    expect(parsed.error).not.toMatch(/\/Users\//);
+    expect(parsed.error).not.toMatch(/\.patchwork/);
+    expect(parsed.error).toBe("Storage error");
+  });
 });

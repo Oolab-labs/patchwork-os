@@ -140,9 +140,14 @@ export function createGetDocumentSymbolsTool(
               // Build parent-depth map by walking the parent chain. LSP
               // returns a flattened list with `parent: <name|null>`; depth
               // is the chain length to a null parent.
+              // Audit 2026-06-03 MEDIUM #16: last-write-wins overwrote the
+              // first occurrence when two symbols shared a name, creating a
+              // phantom cycle in depthOf() and corrupting maxDepth filtering.
+              // Keep-first preserves the original parent chain.
               const byName = new Map<string, Sym>();
               for (const s of all) {
-                if (typeof s.name === "string") byName.set(s.name, s);
+                if (typeof s.name === "string" && !byName.has(s.name))
+                  byName.set(s.name, s);
               }
               const depthOf = (s: Sym): number => {
                 let d = 0;

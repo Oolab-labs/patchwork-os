@@ -224,7 +224,10 @@ export async function routeApprovalRequest(
   const approveMatch = /^\/approve\/([A-Za-z0-9-]+)$/.exec(path);
   if (method === "POST" && approveMatch) {
     const callId = approveMatch[1] as string;
-    // Phone path: validate single-use approval token if bearer auth wasn't used
+    // Phone path: validate single-use approval token when one was provided.
+    // This check runs regardless of whether Bearer auth also passed — a caller
+    // presenting an approvalToken must have a valid one even when they hold a
+    // valid Bearer credential (LOW #18: Bearer must not bypass the token check).
     if (req.approvalToken !== undefined) {
       const valid = deps.queue.validateToken(callId, req.approvalToken);
       if (!valid) {
@@ -258,7 +261,10 @@ export async function routeApprovalRequest(
   const rejectMatch = /^\/reject\/([A-Za-z0-9-]+)$/.exec(path);
   if (method === "POST" && rejectMatch) {
     const callId = rejectMatch[1] as string;
-    // Phone path: validate single-use approval token if bearer auth wasn't used
+    // Phone path: validate single-use approval token when one was provided.
+    // This check runs regardless of whether Bearer auth also passed — a caller
+    // presenting an approvalToken must have a valid one even when they hold a
+    // valid Bearer credential (LOW #18: Bearer must not bypass the token check).
     if (req.approvalToken !== undefined) {
       const valid = deps.queue.validateToken(callId, req.approvalToken);
       if (!valid) {

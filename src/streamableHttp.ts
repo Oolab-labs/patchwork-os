@@ -176,6 +176,11 @@ class HttpAdapter extends EventEmitter {
 
   /** Attach (or detach, when null) a GET /mcp SSE response for server-initiated notifications. */
   attachSSE(res: http.ServerResponse | null): void {
+    // LOW #15 — clear the heartbeat timer for the PREVIOUS SSE connection
+    // BEFORE storing the new one. If this step were omitted, the old interval
+    // would keep a reference to the old (now-superseded) `res` and continue
+    // writing heartbeats to a closed socket, causing write-after-close errors
+    // and preventing the socket from being GC'd.
     if (this.sseHeartbeatTimer) {
       clearInterval(this.sseHeartbeatTimer);
       this.sseHeartbeatTimer = null;

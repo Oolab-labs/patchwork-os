@@ -12,12 +12,105 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { McpClient } from "../mcpClient.js";
 
+// ── LOW #11 — module-level cache shared across instances ──────────────────────
+
 function jsonRpcResponse(id: number, result: unknown): Response {
   return new Response(JSON.stringify({ jsonrpc: "2.0", id, result }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
 }
+
+describe("McpClient instance-level cache isolation (LOW #11)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("two instances with the same cacheKey do not share cached results", async () => {
+    // Both clients call the same tool with the same cacheKey. Before the fix
+    // the module-level cache meant instanceB would return instanceA's cached
+    // result instead of making its own network call.
+    let fetchCallCount = 0;
+
+    function makeSuccessResponse(id: number, _value: string): Response {
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          result: { tools: [] },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    function makeToolResponse(id: number, text: string): Response {
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text }],
+            isError: false,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse((init?.body as string) ?? "{}") as {
+        method?: string;
+        id?: number;
+      };
+      fetchCallCount += 1;
+      if (body.method === "initialize")
+        return makeSuccessResponse(body.id ?? 0, "init");
+      if (body.method === "notifications/initialized")
+        return new Response("", { status: 202 });
+      if (body.method === "tools/call") {
+        // Return different payloads depending on call order so we can detect
+        // if the second client got the first client's cached response.
+        const responseText =
+          fetchCallCount <= 3 ? "result-from-client-A" : "result-from-client-B";
+        return makeToolResponse(body.id ?? 0, responseText);
+      }
+      return makeSuccessResponse(body.id ?? 0, "ok");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const clientA = new McpClient(
+      "https://mcp.test/mcp",
+      async () => "token-a",
+    );
+    const clientB = new McpClient(
+      "https://mcp.test/mcp",
+      async () => "token-b",
+    );
+
+    const CACHE_KEY = "shared-cache-key";
+    const resultA = await clientA.callTool(
+      "myTool",
+      {},
+      { cacheKey: CACHE_KEY, cacheTtlMs: 60_000 },
+    );
+    const resultB = await clientB.callTool(
+      "myTool",
+      {},
+      { cacheKey: CACHE_KEY, cacheTtlMs: 60_000 },
+    );
+
+    // After the fix each instance has its own cache so both make network calls
+    // and resultB carries the second response, not the first client's cached value.
+    const textA = resultA.content.find((c) => c.type === "text")?.text;
+    const textB = resultB.content.find((c) => c.type === "text")?.text;
+
+    // With the module-level cache (bug), clientB would return "result-from-client-A".
+    // With per-instance cache (fix), clientB makes its own call and gets a different value.
+    expect(textA).toBe("result-from-client-A");
+    expect(textB).not.toBe("result-from-client-A");
+  });
+});
 
 describe("McpClient 401 refresh + retry", () => {
   afterEach(() => {

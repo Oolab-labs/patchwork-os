@@ -183,7 +183,7 @@ export class NotionConnector extends BaseConnector {
         const res = await fetch(`${NOTION_API}/users/me`, {
           headers: this.buildHeaders(token),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw res;
         return res.json() as Promise<NotionUser>;
       });
       if ("error" in result) return { ok: false, error: result.error };
@@ -219,13 +219,22 @@ export class NotionConnector extends BaseConnector {
           message: "Notion page or database not found",
           retryable: false,
         };
-      if (status === 429)
+      if (status === 429) {
+        // Audit 2026-06-03 MEDIUM #7: read Retry-After hint when present.
+        const retryAfter =
+          error instanceof Response ? error.headers.get("Retry-After") : null;
+        const retryAfterSec =
+          retryAfter !== null ? Number.parseInt(retryAfter, 10) : undefined;
         return {
           code: "rate_limited",
           message: "Notion API rate limit exceeded",
           retryable: true,
           suggestedAction: "Wait and retry",
+          ...(retryAfterSec !== undefined && !Number.isNaN(retryAfterSec)
+            ? { retryAfterSec }
+            : {}),
         };
+      }
       return {
         code: "provider_error",
         message: `Notion API error: HTTP ${status}`,

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationPolicy } from "../../automation.js";
+import type {
+  AutomationCondition,
+  AutomationPolicy,
+} from "../../automation.js";
 import { parsePolicy } from "../policyParser.js";
 
 const INLINE_PROMPT = "check the file {{file}}";
@@ -370,6 +373,57 @@ describe("parsePolicy", () => {
           expect(src.promptName).toBe("project-status");
         }
       }
+    });
+  });
+
+  // ── LOW #24 — diagnosticsMinSeverity type alignment ────────────────────────
+
+  describe("AutomationCondition.diagnosticsMinSeverity (LOW #24)", () => {
+    it("accepts info as diagnosticsMinSeverity in AutomationCondition (type check)", () => {
+      // The bug: AutomationCondition typed only "error" | "warning", but the
+      // runtime evaluator (severityToNumber) handles "info" and "hint" too.
+      // The fix broadens the TypeScript type to "error" | "warning" | "info" | "hint".
+      // This test will fail to COMPILE if the type is still too narrow.
+      const condition: AutomationCondition = {
+        diagnosticsMinSeverity: "info",
+      };
+      // Should not throw — just verifying the type is assignable.
+      expect(condition.diagnosticsMinSeverity).toBe("info");
+    });
+
+    it("accepts hint as diagnosticsMinSeverity in AutomationCondition (type check)", () => {
+      const condition: AutomationCondition = {
+        diagnosticsMinSeverity: "hint",
+      };
+      expect(condition.diagnosticsMinSeverity).toBe("hint");
+    });
+
+    it("parses onFileSave with when.diagnosticsMinSeverity: info into a valid Hook", () => {
+      // Runtime path: when "info" is passed through the policy, the parser
+      // should forward it to the WhenCondition without error.
+      // After the fix AutomationCondition accepts "info" directly (no cast needed).
+      const condition: AutomationCondition = {
+        diagnosticsMinSeverity: "info",
+      };
+      const policy = minPolicy({
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          cooldownMs: 10_000,
+          prompt: "check {{file}}",
+          when: condition,
+        },
+      });
+      const result = parsePolicy(policy);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const top = result.value[0];
+      if (!top) throw new Error("expected first node");
+      // Walk to the Hook node to check the WhenCondition was preserved.
+      const hookNode = top._tag === "WithCooldown" ? top.program : undefined;
+      if (!hookNode || hookNode._tag !== "Hook")
+        throw new Error("expected Hook");
+      expect(hookNode.when?.diagnosticsMinSeverity).toBe("info");
     });
   });
 });

@@ -407,7 +407,13 @@ export async function completeAuthorize(
   gcPending();
   const p = pending.get(state);
   if (!p) throw new Error(`${config.vendor}: invalid or expired state`);
+  // Delete BEFORE checking TTL: consume-then-validate so a concurrent call
+  // with the same state always fails even if timing allows both to pass gcPending.
+  // LOW #12 audit 2026-06-03: gcPending uses strict `<` so an entry at exactly
+  // expiresAt === now is NOT removed by GC. Re-check here for defence-in-depth.
   pending.delete(state);
+  if (Date.now() >= p.expiresAt)
+    throw new Error(`${config.vendor}: invalid or expired state`);
   if (p.vendor !== config.vendor)
     throw new Error(`${config.vendor}: vendor mismatch on state`);
 

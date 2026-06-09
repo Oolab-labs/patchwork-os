@@ -2,8 +2,9 @@
  * InterpreterContext — backend interface + concrete implementations for the
  * AutomationProgram interpreter.
  */
+import * as dns from "node:dns/promises";
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
-import { validateWebhookUrl } from "../ssrfGuard.js";
+import { isLoopbackHost, isPrivateNonLoopbackHost } from "../ssrfGuard.js";
 import type { AutomationState } from "./automationState.js";
 
 // ── Backend interface ─────────────────────────────────────────────────────────
@@ -182,20 +183,37 @@ export class VsCodeBackend implements Backend {
       );
       return { ok: false, error };
     }
-    // Audit 2026-06-08 (fp-5): DNS-verified SSRF check (not lexical-only) so a
-    // public hostname that resolves to a private/IMDS address via split-horizon
-    // DNS is blocked too. Loopback stays allowed for local sidecar fan-out.
-    if (!this.allowPrivateWebhooks) {
-      const safe = await validateWebhookUrl(opts.url, { allowPrivate: false });
-      if (!safe.ok) {
-        const error =
-          safe.reason === "private_host_after_dns"
-            ? `host "${parsed.hostname}" resolves to a private address (${safe.detail}) — blocked (use --automation-allow-private-webhooks to enable)`
-            : `private/non-loopback host "${parsed.hostname}" blocked (use --automation-allow-private-webhooks to enable)`;
-        this.logger?.info(
-          `[automation-webhook] ${opts.hookKey} blocked: ${error}`,
-        );
-        return { ok: false, error };
+    if (
+      !this.allowPrivateWebhooks &&
+      isPrivateNonLoopbackHost(parsed.hostname)
+    ) {
+      const error = `private/non-loopback host "${parsed.hostname}" blocked (use --automation-allow-private-webhooks to enable)`;
+      this.logger?.info(
+        `[automation-webhook] ${opts.hookKey} blocked: ${error}`,
+      );
+      return { ok: false, error };
+    }
+
+    // LOW #25 — DNS pre-resolution SSRF guard.
+    // Lexical hostname checks pass for public-looking names that resolve to
+    // private IPs (e.g. DNS rebinding / split-horizon). Re-check after lookup.
+    // Loopback is intentionally allowed (sidecar pattern), so we only block
+    // private non-loopback resolved addresses. Skip for loopback hostnames
+    // (already checked above) and when allowPrivateWebhooks is true.
+    if (!this.allowPrivateWebhooks && !isLoopbackHost(parsed.hostname)) {
+      try {
+        const { address } = await dns.lookup(parsed.hostname);
+        if (isPrivateNonLoopbackHost(address)) {
+          const error = `private IP after DNS resolution: ${parsed.hostname} → ${address} (use --automation-allow-private-webhooks to enable)`;
+          this.logger?.info(
+            `[automation-webhook] ${opts.hookKey} blocked: ${error}`,
+          );
+          return { ok: false, error };
+        }
+      } catch {
+        // DNS failure is treated as non-blocking — let the subsequent fetch
+        // surface the real network error. This mirrors the policy in
+        // validateSafeUrl (ssrfGuard.ts) for non-install fetch paths.
       }
     }
 

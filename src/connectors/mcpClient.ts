@@ -41,26 +41,16 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-const cache = new Map<string, CacheEntry>();
-
 const DEFAULT_TIMEOUT = 15_000;
 
-function getCached(key: string): McpToolResult | null {
-  const e = cache.get(key);
-  if (!e) return null;
-  if (Date.now() > e.expiresAt) {
-    cache.delete(key);
-    return null;
-  }
-  return e.value;
-}
-
-function setCached(key: string, value: McpToolResult, ttlMs: number): void {
-  cache.set(key, { value, expiresAt: Date.now() + ttlMs });
-}
-
+/**
+ * No-op kept for backwards-compat — cache is now per-instance so there is no
+ * global map to clear. Call `client.clearCache()` on a specific instance if
+ * needed, or simply discard the instance.
+ * @deprecated Use McpClient#clearCache() on the specific instance.
+ */
 export function clearMcpCache(): void {
-  cache.clear();
+  // no-op — cache moved to McpClient instances (LOW #11 audit 2026-06-03)
 }
 
 /**
@@ -104,11 +94,36 @@ export class McpClient {
   private sessionId: string | null = null;
   private initialized = false;
   private nextId = 1;
+  /**
+   * Per-instance result cache. Moved from module level (LOW #11 audit 2026-06-03):
+   * a shared module-level cache meant two clients with different credentials but
+   * the same cacheKey would return each other's results.
+   */
+  private readonly _cache = new Map<string, CacheEntry>();
 
   constructor(
     private readonly endpoint: string,
     private readonly getAccessToken: () => Promise<string>,
   ) {}
+
+  private _getCached(key: string): McpToolResult | null {
+    const e = this._cache.get(key);
+    if (!e) return null;
+    if (Date.now() > e.expiresAt) {
+      this._cache.delete(key);
+      return null;
+    }
+    return e.value;
+  }
+
+  private _setCached(key: string, value: McpToolResult, ttlMs: number): void {
+    this._cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+  }
+
+  /** Clear this instance's result cache. */
+  clearCache(): void {
+    this._cache.clear();
+  }
 
   private async post(
     body: unknown,
@@ -216,7 +231,7 @@ export class McpClient {
     opts: McpCallOptions = {},
   ): Promise<McpToolResult> {
     if (opts.cacheKey) {
-      const hit = getCached(opts.cacheKey);
+      const hit = this._getCached(opts.cacheKey);
       if (hit) return hit;
     }
     await this.ensureInitialized(opts);
@@ -242,7 +257,7 @@ export class McpClient {
       throw new Error(`MCP tool ${name} returned error: ${msg || "unknown"}`);
     }
     if (opts.cacheKey && opts.cacheTtlMs) {
-      setCached(opts.cacheKey, result, opts.cacheTtlMs);
+      this._setCached(opts.cacheKey, result, opts.cacheTtlMs);
     }
     return result;
   }

@@ -1,9 +1,14 @@
 import { bridgeFetch } from "@/lib/bridge";
+import { requireCallbackSession } from "../../requireSession";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(req: Request): Promise<Response> {
+  // LOW #39: verify active dashboard session before forwarding OAuth code.
+  const authErr = await requireCallbackSession(req);
+  if (authErr) return authErr;
+
   const url = new URL(req.url);
   const allowed = ["code", "state", "error"];
   const qs = new URLSearchParams();

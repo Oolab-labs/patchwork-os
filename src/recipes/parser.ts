@@ -176,13 +176,25 @@ function parseTrigger(raw: unknown): Trigger {
         ...(typeof t.glob === "string" ? { glob: t.glob } : {}),
         ...(typeof t.filter === "string" ? { filter: t.filter } : {}),
       };
-    case "on_test_run":
-      // Runtime test-run trigger. `filter` ("any" | "failure" |
-      // "pass-after-fail") is optional; preserve when present.
+    case "on_test_run": {
+      // Runtime test-run trigger. `filter` must be one of the valid enum values
+      // when present; an unknown value silently does nothing at runtime, so
+      // surface the error at parse time.
+      const ON_TEST_RUN_FILTER = ["any", "failure", "pass-after-fail"] as const;
+      if (
+        typeof t.filter === "string" &&
+        !(ON_TEST_RUN_FILTER as readonly string[]).includes(t.filter)
+      ) {
+        throw new RecipeParseError(
+          `on_test_run trigger filter must be one of: ${ON_TEST_RUN_FILTER.join(", ")} (got "${t.filter}")`,
+          ["trigger", "filter"],
+        );
+      }
       return {
         type: "on_test_run",
         ...(typeof t.filter === "string" ? { filter: t.filter } : {}),
       };
+    }
     default:
       throw new RecipeParseError(`unknown trigger type '${String(t.type)}'`, [
         "trigger",

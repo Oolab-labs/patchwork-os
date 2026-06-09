@@ -860,8 +860,12 @@ export class Server extends EventEmitter<ServerEvents> {
         const now = Date.now();
         const entry = this.approvalIpCounts.get(remoteIp);
         if (entry && now - entry.windowStart < Server.APPROVAL_IP_WINDOW_MS) {
-          entry.count++;
-          if (entry.count > Server.APPROVAL_IP_MAX) {
+          // Check BEFORE incrementing so the counter is only advanced for
+          // requests that are allowed through.  Increment-first then check
+          // lets exactly one extra request slip past the limit (the rejected
+          // request still bumps the counter, making the effective window
+          // allow MAX+1 unique IDs in degenerate edge cases).
+          if (entry.count >= Server.APPROVAL_IP_MAX) {
             res.writeHead(429, { "Content-Type": "application/json" });
             res.end(
               JSON.stringify({
@@ -872,6 +876,7 @@ export class Server extends EventEmitter<ServerEvents> {
             );
             return;
           }
+          entry.count++;
         } else {
           this.approvalIpCounts.set(remoteIp, { count: 1, windowStart: now });
         }

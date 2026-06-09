@@ -18,6 +18,9 @@ import os from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// LOW #12 — completeAuthorize must reject expired state even when gcPending
+// ran just before the state was created (tight timing window bypasses GC)
+
 describe("mcpOAuth hardening", () => {
   const tmpDir = join(
     os.tmpdir(),
@@ -224,5 +227,82 @@ describe("mcpOAuth hardening", () => {
     const body = new URLSearchParams(String(init.body));
     expect(body.get("token")).toBe("only-access-token");
     expect(body.get("token_type_hint")).toBe(null);
+  });
+});
+
+// ── LOW #12 — completeAuthorize TTL re-check after deletion ──────────────────
+
+describe("completeAuthorize TTL re-validation (LOW #12)", () => {
+  const tmpDir = join(os.tmpdir(), `patchwork-mcp-oauth-ttl-${Date.now()}`);
+  const homeDir = join(tmpDir, "home");
+  const patchworkHome = join(homeDir, ".patchwork");
+  const tokensDir = join(patchworkHome, "tokens");
+
+  beforeEach(() => {
+    process.env.HOME = homeDir;
+    process.env.USERPROFILE = homeDir;
+    process.env.PATCHWORK_HOME = patchworkHome;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    mkdirSync(tokensDir, { recursive: true });
+    vi.resetModules();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete process.env.HOME;
+    delete process.env.USERPROFILE;
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    if (existsSync(tmpDir)) {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects completeAuthorize when the state TTL has elapsed exactly (borderline expiresAt === now)", async () => {
+    // The bug: gcPending() uses strict `<` so an entry at expiresAt === now is
+    // NOT removed by GC, but it IS expired. completeAuthorize must re-check
+    // expiry on the retrieved value so the borderline case is always rejected.
+    //
+    // Mock fetch so startAuthorize (dyn-reg) succeeds and the token exchange
+    // would succeed if expiry were not checked after GC.
+    const dynRegResponse = new Response(
+      JSON.stringify({ client_id: "dyn-client-id" }),
+      { status: 201, headers: { "Content-Type": "application/json" } },
+    );
+    const tokenResponse = new Response(
+      JSON.stringify({ access_token: "access", expires_in: 3600 }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(dynRegResponse)
+        .mockResolvedValueOnce(tokenResponse),
+    );
+
+    const { startAuthorize, completeAuthorize, vendorConfig } = await import(
+      "../mcpOAuth.js"
+    );
+    const config = vendorConfig("linear");
+
+    // Record the time BEFORE startAuthorize; the state will have expiresAt ~= now + 10min
+    const { state } = await startAuthorize(config);
+
+    // Advance time to EXACTLY the TTL boundary (10 minutes). At this point
+    // gcPending uses `v.expiresAt < now` which evaluates to `false` (equal, not
+    // less-than), so the entry is NOT removed by GC. Without the post-delete
+    // re-check, completeAuthorize would proceed with the expired state.
+    vi.advanceTimersByTime(10 * 60 * 1000);
+
+    // The fix: after pending.delete(state), verify p.expiresAt <= Date.now().
+    // Without the fix this call succeeds (bug) because gcPending skips the
+    // borderline entry and no second TTL check exists.
+    await expect(
+      completeAuthorize(config, "auth-code-xyz", state),
+    ).rejects.toThrow(/invalid or expired state/);
   });
 });

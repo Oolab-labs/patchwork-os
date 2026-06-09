@@ -58,6 +58,37 @@ describe("resolveYamlPositions", () => {
     const idx = resolveYamlPositions("- just\n- a\n- list\n");
     expect(idx.byPath.size).toBe(0);
   });
+
+  // LOW #6 — positionAt column off-by-one regression tests.
+  // The first character on any line must have column 0 (0-indexed).
+  // Previously `col` was initialised to 1, making all columns 1-indexed.
+
+  it("top-level key at start of file has column 0 (0-indexed)", () => {
+    const idx = resolveYamlPositions(SAMPLE);
+    // 'name' is the very first byte of the file — column 0.
+    expect(idx.byPath.get("name")?.column).toBe(0);
+  });
+
+  it("top-level key on a subsequent line has column 0", () => {
+    const idx = resolveYamlPositions(SAMPLE);
+    // 'description', 'trigger', 'steps' — all start at column 0.
+    expect(idx.byPath.get("description")?.column).toBe(0);
+    expect(idx.byPath.get("trigger")?.column).toBe(0);
+    expect(idx.byPath.get("steps")?.column).toBe(0);
+  });
+
+  it("2-space-indented key has column 2", () => {
+    const idx = resolveYamlPositions(SAMPLE);
+    // '  type: ...' and '  at: ...' → 'type' / 'at' start at column 2.
+    expect(idx.byPath.get("trigger.type")?.column).toBe(2);
+    expect(idx.byPath.get("trigger.at")?.column).toBe(2);
+  });
+
+  it("4-space-indented step key has column 4", () => {
+    const idx = resolveYamlPositions(SAMPLE);
+    // '    tool: ...' → 'tool' starts at column 4.
+    expect(idx.byPath.get("steps.0.tool")?.column).toBe(4);
+  });
 });
 
 describe("enrichIssuesWithPositions", () => {
@@ -81,7 +112,8 @@ describe("enrichIssuesWithPositions", () => {
     ];
     const out = enrichIssuesWithPositions(SAMPLE, issues);
     expect(out[0]?.line).toBe(5);
-    expect(out[0]?.column).toBeGreaterThanOrEqual(1);
+    // After fix: column is 0-indexed, so '  at:' → column 2.
+    expect(out[0]?.column).toBe(2);
   });
 
   it("falls back to parent path when the deep schema key isn't indexed", () => {

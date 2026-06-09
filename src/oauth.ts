@@ -54,7 +54,8 @@ interface AuthCode {
   codeChallenge: string;
   scope: string;
   expiresAt: number;
-  used: boolean;
+  // Note: single-use enforcement is handled by deleting the code from
+  // authCodes on first use (see handleToken). No `used` flag needed.
 }
 
 interface AccessToken {
@@ -602,7 +603,6 @@ export class OAuthServerImpl implements OAuthServer {
       codeChallenge,
       scope,
       expiresAt: Date.now() + CODE_TTL_MS,
-      used: false,
     });
 
     const dest = new URL(redirectUri);
@@ -675,15 +675,6 @@ export class OAuthServerImpl implements OAuthServer {
         400,
         "invalid_grant",
         "authorization code not found or expired",
-      );
-      return;
-    }
-    if (record.used) {
-      this.sendError(
-        res,
-        400,
-        "invalid_grant",
-        "authorization code already used",
       );
       return;
     }
@@ -1193,11 +1184,22 @@ export class OAuthServerImpl implements OAuthServer {
       return { error: "invalid_redirect_uri" };
     }
 
+    // RFC 6749 §3.3 — validate requested scope against the server's supported
+    // set. Unsupported scopes are rejected with invalid_scope so the client
+    // gets an explicit error rather than a silently-stored unknown scope.
+    const rawScope = url.searchParams.get("scope") ?? DEFAULT_SCOPE;
+    const requestedScopes = rawScope.split(" ").filter((s) => s.length > 0);
+    for (const s of requestedScopes) {
+      if (!SUPPORTED_SCOPES.includes(s)) {
+        return { error: "invalid_scope" };
+      }
+    }
+
     return {
       clientId,
       redirectUri,
       codeChallenge,
-      scope: url.searchParams.get("scope") ?? DEFAULT_SCOPE,
+      scope: rawScope,
       state: state ?? "",
     };
   }

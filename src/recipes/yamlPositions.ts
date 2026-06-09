@@ -24,7 +24,7 @@ import type { LintIssue } from "./validation.js";
 interface Position {
   /** 1-indexed line in the source YAML. */
   line: number;
-  /** 1-indexed column. */
+  /** 0-indexed column (character offset from the start of the line). */
   column: number;
 }
 
@@ -65,13 +65,18 @@ export function resolveYamlPositions(yamlText: string): YamlPositionIndex {
   // Pre-compute a (offset → {line, column}) translator. `lineCounter`
   // would be more correct but adds a yaml-package option requirement —
   // do the math ourselves from a single pass over the source.
+  //
+  // column is 0-indexed: the first character on any line has column 0.
+  // Previously `col` was initialised to 1, making all columns 1-indexed
+  // (off by one vs. what downstream consumers expect). Fix: start at 0
+  // and reset to 0 after each newline.
   const positionAt = (offset: number): Position => {
     let line = 1;
-    let col = 1;
+    let col = 0;
     for (let i = 0; i < offset && i < yamlText.length; i++) {
       if (yamlText.charCodeAt(i) === 0x0a) {
         line++;
-        col = 1;
+        col = 0;
       } else {
         col++;
       }

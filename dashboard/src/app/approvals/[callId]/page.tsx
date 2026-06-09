@@ -6,6 +6,7 @@ import { apiPath } from '@/lib/api';
 import { BackLink, RelationStrip } from "@/components/patchwork";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { syntaxHighlightJson } from "@/lib/syntaxHighlight";
 
 interface RiskSignal {
   kind: string;
@@ -611,27 +612,4 @@ function tierClass(t: string): string {
   return t === "high" ? "err" : t === "medium" ? "warn" : "ok";
 }
 
-/** Tokenise a JSON string into HTML spans with colour classes.
- *  Runs only in-browser on human-reviewed agent params — no XSS risk
- *  beyond what JSON.stringify already guarantees (no raw HTML in values).
- *  We escape angle brackets just in case. */
-function syntaxHighlightJson(json: string): string {
-  return json
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(
-      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
-      (match) => {
-        if (/^"/.test(match)) {
-          if (/:$/.test(match)) {
-            return `<span class="json-key">${match}</span>`;
-          }
-          return `<span class="json-str">${match}</span>`;
-        }
-        if (/true|false/.test(match)) return `<span class="json-bool">${match}</span>`;
-        if (/null/.test(match)) return `<span class="json-null">${match}</span>`;
-        return `<span class="json-num">${match}</span>`;
-      },
-    );
-}
+// syntaxHighlightJson imported from @/lib/syntaxHighlight (shared with approvals list page)

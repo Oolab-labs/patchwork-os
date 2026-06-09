@@ -98,4 +98,25 @@ describe("getGitHotspots", () => {
     const result = parse(await tool.handler({ path: "src/" }));
     expect(result.scopedTo).toBe("src/");
   });
+
+  it("LOW#29 - rejects path traversal in scopedTo (../../../etc/passwd)", async () => {
+    // Bug: scopedTo echoed unvalidated user input. A path with '..' should be
+    // rejected with an error rather than echoed back in the response.
+    mockExecSafe.mockResolvedValueOnce(ok(".git")); // rev-parse succeeds
+
+    const tool = createGetGitHotspotsTool(WORKSPACE);
+    const result = await tool.handler({ path: "../../../etc/passwd" });
+    // Should return an error, not a successful response with the traversal path
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("invalid");
+  });
+
+  it("LOW#29 - rejects absolute paths in scopedTo", async () => {
+    mockExecSafe.mockResolvedValueOnce(ok(".git")); // rev-parse succeeds
+
+    const tool = createGetGitHotspotsTool(WORKSPACE);
+    const result = await tool.handler({ path: "/etc/passwd" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("invalid");
+  });
 });

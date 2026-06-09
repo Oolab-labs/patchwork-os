@@ -97,7 +97,12 @@ const TONE_COLORS: Record<"ok" | "err" | "muted", string> = {
 export function ActivityTicker() {
   const [events, setEvents] = useState<TickerEvent[]>([]);
   const [dismissed, setDismissed] = useState(false);
-  const lastIdRef = useRef<number | undefined>(undefined);
+  // LOW #44: replace lastIdRef (single value) with a bounded Set so
+  // non-adjacent duplicates (id:5, id:6, id:5) are also deduplicated.
+  // Oldest ID is evicted once the set exceeds MAX_DEDUP_IDS entries.
+  const MAX_DEDUP_IDS = 50;
+  const seenIdsRef = useRef<Set<number>>(new Set());
+  const seenIdsOrderRef = useRef<number[]>([]);
 
   useEffect(() => {
     setDismissed(readDismissed());
@@ -106,10 +111,18 @@ export function ActivityTicker() {
   const onEvent = useCallback((_type: string, data: unknown) => {
     if (!data || typeof data !== "object") return;
     const e = data as TickerEvent;
-    // Dedup by id (the bridge emits monotonic IDs); ignore the rare
-    // case where the SSE replay sends an event we already have.
-    if (e.id !== undefined && lastIdRef.current === e.id) return;
-    if (e.id !== undefined) lastIdRef.current = e.id;
+    // Dedup by id using a bounded Set — catches both adjacent and non-adjacent
+    // duplicates (e.g. SSE replay of an ID we already showed).
+    if (e.id !== undefined) {
+      if (seenIdsRef.current.has(e.id)) return;
+      seenIdsRef.current.add(e.id);
+      seenIdsOrderRef.current.push(e.id);
+      // Evict oldest when window exceeds cap.
+      if (seenIdsOrderRef.current.length > MAX_DEDUP_IDS) {
+        const evicted = seenIdsOrderRef.current.shift();
+        if (evicted !== undefined) seenIdsRef.current.delete(evicted);
+      }
+    }
     setEvents((prev) => {
       const next: TickerEvent[] = [e, ...prev];
       // Keep a small window — older events leave the ticker quickly.

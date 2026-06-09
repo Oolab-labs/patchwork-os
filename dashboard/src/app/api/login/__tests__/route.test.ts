@@ -47,7 +47,8 @@ afterEach(() => {
 function req(body: unknown, headers: Record<string, string> = {}): NextRequest {
   return new NextRequest("http://localhost:3200/api/login", {
     method: "POST",
-    headers: { "content-type": "application/json", ...headers },
+    // sec-fetch-site: same-origin passes the CSRF guard (LOW #37 fix).
+    headers: { "content-type": "application/json", "sec-fetch-site": "same-origin", ...headers },
     body: JSON.stringify(body),
   });
 }

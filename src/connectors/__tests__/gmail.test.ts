@@ -130,3 +130,18 @@ describe("handleGmailTest", () => {
     expect(JSON.parse(result.body)).toMatchObject({ ok: false });
   });
 });
+
+describe("escHtml (LOW #13)", () => {
+  it("escapes single quotes as &#39; to prevent HTML attribute injection", async () => {
+    const { escHtml } = await import("../gmail.js");
+    expect(escHtml("it's a test")).toContain("&#39;");
+    expect(escHtml("it's a test")).toBe("it&#39;s a test");
+  });
+
+  it("still escapes the standard HTML special chars", async () => {
+    const { escHtml } = await import("../gmail.js");
+    expect(escHtml('<script>&"test"</script>')).toBe(
+      "&lt;script&gt;&amp;&quot;test&quot;&lt;/script&gt;",
+    );
+  });
+});

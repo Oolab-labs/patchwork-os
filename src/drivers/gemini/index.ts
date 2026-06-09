@@ -181,23 +181,32 @@ export class GeminiSubprocessDriver implements ProviderDriver {
               }
               return;
             }
-            const parsed = JSON.parse(originalContent) as Record<
-              string,
-              unknown
-            >;
             if (previousBridgeEntry === undefined) {
+              // The bridge key did not exist before we ran — restore the
+              // original bytes verbatim. Re-parsing and re-stringifying would
+              // normalise formatting and drop any unknown top-level keys or
+              // non-standard whitespace present in the original file.
+              writeFileSync(settingsFile, originalContent, {
+                encoding: "utf-8",
+                mode: 0o600,
+              });
+            } else {
+              // The bridge key existed before — restore our previous value
+              // inside the parsed structure so other keys are preserved.
+              const parsed = JSON.parse(originalContent) as Record<
+                string,
+                unknown
+              >;
               const restoredServers = (parsed.mcpServers ?? {}) as Record<
                 string,
                 unknown
               >;
-              if (Object.hasOwn(restoredServers, "claude-ide-bridge")) {
-                delete restoredServers["claude-ide-bridge"];
-              }
+              restoredServers["claude-ide-bridge"] = previousBridgeEntry;
               parsed.mcpServers = restoredServers;
+              writeFileSync(settingsFile, JSON.stringify(parsed, null, 2), {
+                mode: 0o600,
+              });
             }
-            writeFileSync(settingsFile, JSON.stringify(parsed, null, 2), {
-              mode: 0o600,
-            });
             chmodSync(settingsFile, 0o600);
           } catch (err) {
             this.log(
@@ -252,17 +261,20 @@ export class GeminiSubprocessDriver implements ProviderDriver {
         cwd: homedir(),
         env,
         signal: input.signal,
+        // Audit 2026-06-03 MEDIUM #13: detached:true makes the child a
+        // process-group leader (setsid on POSIX) so treeKill can send
+        // process.kill(-pid, signal) to kill the entire subtree. Without it,
+        // process.kill(-pid) throws ESRCH (not a group leader) and grandchild
+        // tool-processes spawned by Gemini are orphaned on abort/cancel.
+        // Mirrors the Claude subprocess driver (src/drivers/claude/subprocess.ts).
+        detached: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
-      // unref() so the bridge can exit without waiting for the subprocess,
-      // but keep detached=false so the subprocess dies cleanly with the bridge
-      // rather than getting SIGPIPE when the pipe closes mid-run.
+      // unref() so the bridge can exit without waiting for the subprocess.
       child.unref();
-      // Tree-kill on abort. Node's signal-driven auto-kill only signals the
-      // immediate child; gemini may spawn tool subprocesses that orphan on
-      // cancellation. On Windows this runs `taskkill /F /T /PID`; on POSIX
-      // (non-detached) it's effectively a no-op since there's no process
-      // group, leaving Node's auto-kill to handle the child.
+      // Tree-kill on abort: kills the immediate child AND its descendants.
+      // On Windows: taskkill /F /T /PID. On POSIX: process.kill(-pid, signal)
+      // (works because detached:true makes the child a process-group leader).
       const onAbort = () => treeKill(child);
       input.signal.addEventListener("abort", onAbort, { once: true });
       child.once("close", () => {
@@ -367,6 +379,42 @@ export class GeminiSubprocessDriver implements ProviderDriver {
         throw err;
       }
       if (startupHandle) clearTimeout(startupHandle);
+
+      // Flush any partial line remaining in lineBuf after stdout closes.
+      // splitLines() leaves content without a trailing '\n' in the remainder;
+      // when the subprocess exits without a final newline the last JSON event
+      // (e.g. the last assistant message) is silently dropped. Process it now.
+      if (lineBuf.trim().length > 0) {
+        let event: GeminiEvent;
+        try {
+          event = JSON.parse(lineBuf) as GeminiEvent;
+          if (
+            event.type === "message" &&
+            event.role === "assistant" &&
+            event.content
+          ) {
+            if (firstAssistantAt === undefined) firstAssistantAt = Date.now();
+            const text = event.content;
+            accumulated += text;
+            if (outputBytesSent < OUTPUT_CAP) {
+              const { send, bytes } = truncateToBytes(
+                text,
+                OUTPUT_CAP - outputBytesSent,
+              );
+              if (send.length > 0) {
+                input.onChunk?.(send);
+                outputBytesSent += bytes;
+              }
+            }
+          } else if (event.type === "result") {
+            doneFromResult = true;
+            resultSuccess = event.status === "success";
+          }
+        } catch {
+          // Non-JSON remainder — ignore (same as the data handler)
+        }
+        lineBuf = "";
+      }
 
       if (startupTimedOut) {
         return {

@@ -81,7 +81,8 @@ export class RunBudget {
   private readonly usdMax?: number;
   private readonly haltOnBreach: boolean;
   private readonly estimateUnmeasured: boolean;
-  private readonly priceTable?: PriceTable;
+  /** Mutable so refreshPrices() can swap in an updated table mid-run. */
+  private priceTable?: PriceTable;
   private inputTokens = 0;
   private outputTokens = 0;
   private usdSpent = 0;
@@ -105,6 +106,20 @@ export class RunBudget {
     if (this.usdMax !== undefined) {
       this.priceTable = priceTable ?? loadPriceTable();
     }
+  }
+
+  /**
+   * Replace the live price table. Call this at the start of each step (or
+   * once per hour) for long-running recipes so that an updated
+   * `~/.patchwork/prices.json` is picked up without restarting the run.
+   *
+   * Only meaningful when a `usdMax` cap is set; a no-op otherwise.
+   * Injected tables (unit tests) are also replaced by this call — tests that
+   * want stable prices should not call `refreshPrices()`.
+   */
+  refreshPrices(table?: PriceTable): void {
+    if (this.usdMax === undefined) return;
+    this.priceTable = table ?? loadPriceTable();
   }
 
   /** True when neither cap is configured — reconcile/admit are no-ops. */

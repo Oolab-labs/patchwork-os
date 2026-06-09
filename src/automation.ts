@@ -49,8 +49,16 @@ const DEFAULT_AUTOMATION_SYSTEM_PROMPT =
 export interface AutomationCondition {
   /** Only fire if the active file's diagnostic count meets this threshold. */
   minDiagnosticCount?: number;
-  /** Only fire if the active file has a diagnostic of at least this severity. */
-  diagnosticsMinSeverity?: "error" | "warning";
+  /**
+   * Only fire if the active file has a diagnostic of at least this severity.
+   *
+   * LOW #24 audit 2026-06-03: broadened from "error" | "warning" to include
+   * "info" and "hint" to match the runtime evaluator (severityToNumber in
+   * automationInterpreter.ts) which already handles all four values.
+   * Previously the TypeScript type was narrower than what the runtime accepts,
+   * causing a compile-time error when users set "info" or "hint".
+   */
+  diagnosticsMinSeverity?: "error" | "warning" | "info" | "hint";
   /** Only fire if the last test run for any runner had this outcome. */
   testRunnerLastStatus?: "passed" | "failed" | "any";
 }
@@ -1631,13 +1639,18 @@ export class AutomationHooks {
     if (prevErrorCount > 0 && currentErrorCount === 0) {
       this._enqueueRun("onDiagnosticsCleared", { file: normalizedFile });
     }
-    this._enqueueRun("onDiagnosticsError", {
-      file: normalizedFile,
-      diagnostics: diagnosticsText,
-      diagnosticSources,
-      diagnosticSig,
-      count: String(diagnostics.length),
-    });
+    // Only fire onDiagnosticsError when there are actual errors/warnings.
+    // Firing with zero error count causes spurious Claude tasks to run with
+    // empty diagnostics lists (audit 2026-06-03 LOW #23).
+    if (currentErrorCount > 0) {
+      this._enqueueRun("onDiagnosticsError", {
+        file: normalizedFile,
+        diagnostics: diagnosticsText,
+        diagnosticSources,
+        diagnosticSig,
+        count: String(diagnostics.length),
+      });
+    }
   }
 
   /**

@@ -1245,3 +1245,80 @@ describe("Streamable HTTP: tool-aware response timeout", () => {
     spy.mockRestore();
   });
 });
+
+// ── LOW #15 — SSE heartbeat must not fire on superseded connection ─────────────
+
+describe("Streamable HTTP: SSE heartbeat stops after supersession (LOW #15)", () => {
+  it("heartbeat timer is cleared when a new GET SSE supersedes the previous one", async () => {
+    // LOW #15: attachSSE() must clear the heartbeat timer for the PREVIOUS
+    // SSE connection before installing the new one. If the old interval were
+    // kept alive it would continue writing to a closed socket, causing
+    // write-after-close errors and preventing GC.
+    //
+    // We verify by peeking at the adapter's sseHeartbeatTimer field:
+    // after a second GET supersedes the first, the timer must not be null
+    // (a new one was set for the second stream) — and more importantly, only
+    // ONE timer exists (the old one was cleared, not leaked).
+    const { sid, token } = await initSession(port);
+
+    function openSse(): Promise<{
+      req: http.ClientRequest;
+      connected: Promise<void>;
+    }> {
+      return new Promise((resolve) => {
+        let resolved = false;
+        let resolveConnected!: () => void;
+        const connected = new Promise<void>((r) => (resolveConnected = r));
+        const req = http.request(
+          {
+            hostname: "127.0.0.1",
+            port,
+            path: "/mcp",
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${TOKEN}`,
+              "Mcp-Session-Id": sid,
+              "Mcp-Session-Token": token,
+            },
+          },
+          (res) => {
+            res.on("data", () => {
+              if (!resolved) {
+                resolved = true;
+                resolveConnected();
+              }
+            });
+            resolve({ req, connected });
+          },
+        );
+        req.on("error", () => {});
+        req.end();
+      });
+    }
+
+    // Open first SSE stream.
+    const { req: req1, connected: c1 } = await openSse();
+    await c1;
+
+    // Open second SSE stream — attachSSE() must clear the first timer.
+    const { req: req2, connected: c2 } = await openSse();
+    await c2;
+
+    // Peek at adapter internal state.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sessions = (handler as any).sessions as Map<string, { adapter: any }>;
+    const adapter = sessions.get(sid)?.adapter;
+    expect(adapter).toBeTruthy();
+
+    // After supersession the adapter must have exactly one active heartbeat
+    // timer (for the second stream), not two.
+    const timer = adapter.sseHeartbeatTimer;
+    expect(timer).not.toBeNull();
+
+    // The `sseRes` must be the second stream (not null'd by the first's close).
+    expect(adapter.sseRes).not.toBeNull();
+
+    req1.destroy();
+    req2.destroy();
+  });
+});

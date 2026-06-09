@@ -441,13 +441,22 @@ export function createGitBlameTool(workspace: string) {
 
       const rawPath = requireString(args, "filePath");
       const filePath = resolveFilePath(rawPath, workspace);
+
+      // LOW #28 audit 2026-06-03: clamp line numbers to a sensible upper bound.
+      // Without this, callers could pass 999_999_999 and git would receive it
+      // verbatim — harmless for small files but wasteful and unvalidated for large
+      // ones. 1_000_000 is larger than any realistic source file.
+      const MAX_BLAME_LINE = 1_000_000;
       const startLine =
         typeof args.startLine === "number"
-          ? Math.max(1, Math.floor(args.startLine))
+          ? Math.min(MAX_BLAME_LINE, Math.max(1, Math.floor(args.startLine)))
           : undefined;
       const endLine =
         typeof args.endLine === "number"
-          ? Math.max(1, Math.floor(args.endLine))
+          ? Math.min(
+              MAX_BLAME_LINE,
+              Math.max(startLine ?? 1, Math.floor(args.endLine)),
+            )
           : undefined;
 
       const blameArgs = ["blame", "--porcelain"];

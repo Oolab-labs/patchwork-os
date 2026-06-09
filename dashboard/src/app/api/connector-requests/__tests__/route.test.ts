@@ -228,4 +228,33 @@ describe("POST /api/connector-requests — persistence", () => {
     writeSpy.mockRestore();
     errSpy.mockRestore();
   });
+
+  // LOW #38 — within-process concurrent writes must both land (no lost update)
+  it("two concurrent POSTs both persist their entries (in-process write serialization)", async () => {
+    // Before the fix: two concurrent POSTs could both read the empty array,
+    // each push their entry, each write — last writer wins and one entry is lost.
+    // After the fix: the promise-chain serializes writes so both entries land.
+    //
+    // Note: the module-level writeChain only covers a single Node.js process.
+    // A multi-worker deployment would need an external lock. This test documents
+    // and verifies the in-process case.
+    const [res1, res2] = await Promise.all([
+      POST(makeReq({ name: "Connector-A" })),
+      POST(makeReq({ name: "Connector-B" })),
+    ]);
+
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+
+    // Both entries must be present — no silent last-writer-wins data loss.
+    const persisted = JSON.parse(fs.readFileSync(storeFile, "utf8")) as {
+      name: string;
+    }[];
+    const names = persisted.map((r) => r.name).sort();
+    // With the bug (no serialization): only one entry would survive.
+    // With the fix: both entries survive.
+    expect(names).toContain("Connector-A");
+    expect(names).toContain("Connector-B");
+    expect(persisted).toHaveLength(2);
+  });
 });

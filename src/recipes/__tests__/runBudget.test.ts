@@ -359,3 +359,51 @@ describe("RunBudget — estimateUnmeasured (opt-in ≈$ for subscription drivers
     expect(b.warnings().some((w) => /at list prices/i.test(w))).toBe(false);
   });
 });
+
+// LOW #8 — priceTable loaded once at construction; stale for long runs.
+// RunBudget must expose a refreshPrices() method and/or honour a TTL so that
+// a user updating their price config mid-run is eventually picked up.
+describe("RunBudget — stale price table refresh (audit 2026-06-03 LOW #8)", () => {
+  const initialTable: PriceTable = {
+    _meta: {
+      _generatedAt: "2026-01-01",
+      _unit: "usd_per_million_tokens",
+      _source: "test",
+      _note: "initial",
+    },
+    prices: { m1: { input: 1, output: 1 } }, // $1/1M each side
+  };
+
+  const updatedTable: PriceTable = {
+    _meta: {
+      _generatedAt: "2026-06-07",
+      _unit: "usd_per_million_tokens",
+      _source: "test",
+      _note: "updated",
+    },
+    prices: { m1: { input: 10, output: 10 } }, // $10/1M each side — 10× price change
+  };
+
+  it("refreshPrices() replaces the live price table and subsequent reconcile uses new prices", () => {
+    const b = new RunBudget({ usdMax: 100 }, initialTable);
+    // First reconcile: $1/1M → 1M in + 0 out = $1.
+    b.reconcile("openai", { inputTokens: 1_000_000, outputTokens: 0 }, "m1");
+    expect(b.totals().usd).toBeCloseTo(1, 6);
+
+    // Swap to the updated price table.
+    b.refreshPrices(updatedTable);
+
+    // Second reconcile: should use $10/1M → 1M in = $10.
+    b.reconcile("openai", { inputTokens: 1_000_000, outputTokens: 0 }, "m1");
+    // Total should be $1 (old) + $10 (new) = $11.
+    expect(b.totals().usd).toBeCloseTo(11, 6);
+  });
+
+  it("refreshPrices() affects quoteUsd estimates too", () => {
+    const b = new RunBudget({ usdMax: 100 }, initialTable);
+    expect(b.quoteUsd("openai", "m1", 1_000_000, 0)).toBeCloseTo(1, 6);
+
+    b.refreshPrices(updatedTable);
+    expect(b.quoteUsd("openai", "m1", 1_000_000, 0)).toBeCloseTo(10, 6);
+  });
+});

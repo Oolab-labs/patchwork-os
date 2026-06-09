@@ -36,11 +36,22 @@ const { GET: inboxItemGet } = await import("../../inbox/[filename]/route");
 const SENSITIVE_ERR = "ECONNREFUSED 127.0.0.1:54321 secret-detail";
 const SENSITIVE_UPSTREAM = "upstream-bridge-stacktrace-leak";
 
+let origAllowUnauthenticated: string | undefined;
+
 beforeEach(() => {
   bridgeFetchMock.mockReset();
   vi.spyOn(console, "error").mockImplementation(() => {});
+  // Bypass the session guard (LOW #39 fix) so proxy-behaviour tests
+  // don't need real signed session cookies.
+  origAllowUnauthenticated = process.env.DASHBOARD_ALLOW_UNAUTHENTICATED;
+  process.env.DASHBOARD_ALLOW_UNAUTHENTICATED = "1";
 });
 afterEach(() => {
+  if (origAllowUnauthenticated === undefined) {
+    delete process.env.DASHBOARD_ALLOW_UNAUTHENTICATED;
+  } else {
+    process.env.DASHBOARD_ALLOW_UNAUTHENTICATED = origAllowUnauthenticated;
+  }
   vi.restoreAllMocks();
 });
 

@@ -374,3 +374,51 @@ describe("renderTemplate", () => {
     ).toBe("");
   });
 });
+
+// LOW #5 — on_test_run trigger filter field accepted without enum validation
+// (audit 2026-06-03). Valid values: "any" | "failure" | "pass-after-fail".
+// on_file_save.filter is a free-form glob string — no enum constraint there.
+describe("on_test_run trigger filter enum validation (audit 2026-06-03 LOW #5)", () => {
+  it("rejects an invalid filter value on on_test_run trigger", () => {
+    expect(() =>
+      parseRecipe({
+        ...VALID,
+        trigger: { type: "on_test_run", filter: "invalid_value" },
+      }),
+    ).toThrow(RecipeParseError);
+  });
+
+  it("rejects another invalid filter value on on_test_run trigger", () => {
+    expect(() =>
+      parseRecipe({
+        ...VALID,
+        trigger: { type: "on_test_run", filter: "unknown" },
+      }),
+    ).toThrow(RecipeParseError);
+  });
+
+  it("accepts valid on_test_run filter values", () => {
+    for (const filter of ["any", "failure", "pass-after-fail"]) {
+      const r = parseRecipe({
+        ...VALID,
+        trigger: { type: "on_test_run", filter },
+      });
+      expect((r.trigger as { filter?: string }).filter).toBe(filter);
+    }
+  });
+
+  it("accepts on_test_run without filter (optional)", () => {
+    const r = parseRecipe({ ...VALID, trigger: { type: "on_test_run" } });
+    expect(r.trigger.type).toBe("on_test_run");
+    expect((r.trigger as { filter?: string }).filter).toBeUndefined();
+  });
+
+  it("accepts on_file_save with a free-form filter glob string (not an enum)", () => {
+    // on_file_save.filter is a file-filter glob, not an enum — any string is valid.
+    const r = parseRecipe({
+      ...VALID,
+      trigger: { type: "on_file_save", filter: "*.ts" },
+    });
+    expect((r.trigger as { filter?: string }).filter).toBe("*.ts");
+  });
+});
