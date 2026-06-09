@@ -361,6 +361,9 @@ describe("RecipeRunLog.record", () => {
         outputTokens: 80,
         total: 200,
         usd: 0.0042,
+        breached: false,
+        usdBreached: false,
+        haltOnBreach: false,
       },
     });
     const run = log.getBySeq(seq);
