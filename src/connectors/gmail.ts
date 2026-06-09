@@ -575,7 +575,7 @@ function callbackHtml(
 </div>
 <script>
   // Notify the opener tab that auth completed so it can poll.
-  if (window.opener) { try { window.opener.postMessage('patchwork:gmail:connected', 'http://localhost:3200'); } catch(_) {} }
+  if (window.opener) { try { window.opener.postMessage('patchwork:gmail:connected', window.location.origin); } catch(_) {} }
 </script>
 </body></html>`;
 }

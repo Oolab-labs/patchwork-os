@@ -166,10 +166,12 @@ export class McpClient {
       }
 
       if (!res.ok) {
-        const snippet = (await res.text()).slice(0, 300);
-        throw new Error(
-          `MCP HTTP ${res.status} at ${this.endpoint}: ${snippet}`,
-        );
+        // Drain the body so the connection can be reused, but never embed it in
+        // the thrown Error — upstream MCP error bodies can carry internal
+        // context, stack traces, or token values that propagate into recipe
+        // tool results and LLM context (audit 2026-06-09 connector-new-5).
+        await res.text().catch(() => {});
+        throw new Error(`MCP HTTP ${res.status} at ${this.endpoint}`);
       }
       return parseMcpResponse(res);
     }

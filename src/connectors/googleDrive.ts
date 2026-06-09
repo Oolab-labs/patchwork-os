@@ -3,6 +3,7 @@ import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
+import { safeOAuthErrorCode } from "./oauthError.js";
 import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
@@ -139,8 +140,10 @@ async function exchangeCode(
     }).toString(),
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Token exchange failed: ${res.status} ${body}`);
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `Token exchange failed: ${res.status} (${safeOAuthErrorCode(body)})`,
+    );
   }
   const json = (await res.json()) as {
     access_token: string;
@@ -181,8 +184,10 @@ async function refreshAccessToken(tokens: DriveTokens): Promise<DriveTokens> {
     }).toString(),
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Token refresh failed: ${res.status} ${body}`);
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `Token refresh failed: ${res.status} (${safeOAuthErrorCode(body)})`,
+    );
   }
   const json = (await res.json()) as {
     access_token: string;
