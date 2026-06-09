@@ -10,6 +10,7 @@ import { basename, extname, join } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { recordRecipeRun } from "./activationMetrics.js";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
+import { truncateUtf8Bytes } from "./drivers/outputCap.js";
 import { loadConfig } from "./patchworkConfig.js";
 import { getConfigDisabledNames } from "./recipes/disabledMarkers.js";
 import { summariseHalts } from "./recipes/haltCategory.js";
@@ -641,13 +642,16 @@ export class RecipeOrchestration {
       // dashboard distinguish "model produced 2 MB of garbage" from
       // "model emitted a 4 KB recipe".
       const truncationWarnings: string[] = [];
+      // Byte-accurate cap: task.output.length counts UTF-16 code units, but the
+      // cap is named/intended in bytes (audit 2026-06-09 orch-driver-5).
+      const outputBytes = Buffer.byteLength(task.output, "utf8");
       const cappedOutput =
-        task.output.length > MAX_MODEL_OUTPUT_BYTES
-          ? task.output.slice(0, MAX_MODEL_OUTPUT_BYTES)
+        outputBytes > MAX_MODEL_OUTPUT_BYTES
+          ? truncateUtf8Bytes(task.output, MAX_MODEL_OUTPUT_BYTES)
           : task.output;
-      if (task.output.length > MAX_MODEL_OUTPUT_BYTES) {
+      if (outputBytes > MAX_MODEL_OUTPUT_BYTES) {
         truncationWarnings.push(
-          `Model output exceeded ${MAX_MODEL_OUTPUT_BYTES}-byte cap (was ${task.output.length} bytes); truncated before parse. Regenerate with a shorter prompt if the recipe was cut off.`,
+          `Model output exceeded ${MAX_MODEL_OUTPUT_BYTES}-byte cap (was ${outputBytes} bytes); truncated before parse. Regenerate with a shorter prompt if the recipe was cut off.`,
         );
       }
 
@@ -810,13 +814,16 @@ export class RecipeOrchestration {
       }
 
       const truncationWarnings: string[] = [];
+      // Byte-accurate cap: task.output.length counts UTF-16 code units, but the
+      // cap is named/intended in bytes (audit 2026-06-09 orch-driver-5).
+      const outputBytes = Buffer.byteLength(task.output, "utf8");
       const cappedOutput =
-        task.output.length > MAX_MODEL_OUTPUT_BYTES
-          ? task.output.slice(0, MAX_MODEL_OUTPUT_BYTES)
+        outputBytes > MAX_MODEL_OUTPUT_BYTES
+          ? truncateUtf8Bytes(task.output, MAX_MODEL_OUTPUT_BYTES)
           : task.output;
-      if (task.output.length > MAX_MODEL_OUTPUT_BYTES) {
+      if (outputBytes > MAX_MODEL_OUTPUT_BYTES) {
         truncationWarnings.push(
-          `Model output exceeded ${MAX_MODEL_OUTPUT_BYTES}-byte cap (was ${task.output.length} bytes); truncated before parse.`,
+          `Model output exceeded ${MAX_MODEL_OUTPUT_BYTES}-byte cap (was ${outputBytes} bytes); truncated before parse.`,
         );
       }
 

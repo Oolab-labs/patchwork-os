@@ -143,6 +143,36 @@ describe("ctxGetTaskContext — issue flow", () => {
     expect(res.warnings).toEqual([]);
   });
 
+  it("caps the issue body by BYTES, not UTF-16 length (audit 2026-06-09 tools-ctx-1)", async () => {
+    // 400 CJK chars = 400 UTF-16 code units but 1200 UTF-8 bytes. The old
+    // raw.length check (400 <= 500) would NOT truncate, returning ~1200 bytes —
+    // 2-3x the intended 500-byte context budget.
+    const cjkBody = "あ".repeat(400);
+    mockExec
+      .mockResolvedValueOnce(ok("gh version 2")) // gh --version
+      .mockResolvedValueOnce(ok(".git")) // git rev-parse
+      .mockResolvedValueOnce(
+        ok(
+          JSON.stringify({
+            number: 7,
+            title: "CJK body",
+            state: "OPEN",
+            url: "https://gh/issues/7",
+            body: cjkBody,
+            labels: [],
+          }),
+        ),
+      );
+
+    const res = parse(
+      await createCtxGetTaskContextTool({ workspace: WS }).handler({
+        ref: "#7",
+      }),
+    );
+    expect(res.bodyTruncated).toBe(true);
+    expect(Buffer.byteLength(res.issue.body, "utf8")).toBeLessThanOrEqual(500);
+  });
+
   it("degrades gracefully when gh is unavailable", async () => {
     mockExec
       .mockResolvedValueOnce(fail("gh: command not found", 127))
