@@ -596,7 +596,14 @@ function listKeychainItems(): string[] {
 }
 
 // Linux Secret Service
-function setLinuxSecretSync(key: string, value: string): boolean {
+//
+// Same isValidKeychainKey allowlist guard as the macOS sinks (code-scanning
+// #135). secret-tool takes the key as a positional arg, not a shell string, so
+// the risk is lower — but PR #949 only guarded the macOS branch, leaving the
+// Linux path asymmetric (audit 2026-06-09 pr949-1). Guard all three sinks for
+// defence-in-depth so the taint path is provably sanitised on every platform.
+export function setLinuxSecretSync(key: string, value: string): boolean {
+  if (!isValidKeychainKey(key)) return false;
   try {
     const result = spawnSync(
       "secret-tool",
@@ -609,7 +616,8 @@ function setLinuxSecretSync(key: string, value: string): boolean {
   }
 }
 
-function getLinuxSecretSync(key: string): string | null {
+export function getLinuxSecretSync(key: string): string | null {
+  if (!isValidKeychainKey(key)) return null;
   try {
     const result = spawnSync(
       "secret-tool",
@@ -625,7 +633,8 @@ function getLinuxSecretSync(key: string): string | null {
   }
 }
 
-function deleteLinuxSecretSync(key: string): boolean {
+export function deleteLinuxSecretSync(key: string): boolean {
+  if (!isValidKeychainKey(key)) return false;
   try {
     const result = spawnSync(
       "secret-tool",
