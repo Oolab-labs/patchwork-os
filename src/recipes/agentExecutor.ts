@@ -43,9 +43,9 @@ export interface AgentResult {
 
 export interface AgentExecutorDeps {
   anthropicFn: (prompt: string, model: string) => Promise<AgentResult>;
-  /** Handles openai, grok, gemini — passes driver name through. */
+  /** Handles openai, grok, gemini, gemini-api — passes driver name through. */
   providerDriverFn: (
-    driver: "openai" | "grok" | "gemini",
+    driver: "openai" | "grok" | "gemini" | "gemini-api",
     prompt: string,
     model: string | undefined,
   ) => Promise<AgentResult>;
@@ -115,7 +115,12 @@ export async function executeAgent(
       deps.anthropicFn(prompt, model ?? DEFAULT_MODEL),
     );
   }
-  if (driver === "openai" || driver === "grok" || driver === "gemini") {
+  if (
+    driver === "openai" ||
+    driver === "grok" ||
+    driver === "gemini" ||
+    driver === "gemini-api"
+  ) {
     return stamp(driver, model, deps.providerDriverFn(driver, prompt, model));
   }
   if (driver === "subprocess" || driver === "claude-code") {

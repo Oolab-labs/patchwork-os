@@ -545,7 +545,7 @@ export interface RunnerDeps {
    * lazily construct a driver via createDriver() from drivers/index.js.
    */
   providerDriverFn?: (
-    driverName: "openai" | "grok" | "gemini",
+    driverName: "openai" | "grok" | "gemini" | "gemini-api",
     prompt: string,
     model: string | undefined,
   ) => Promise<string | AgentResult>;
@@ -2767,13 +2767,13 @@ export function resolveRouting(
 
 /** Returns a providerDriverFn with a per-run driver cache (not shared across runs). */
 export function makeProviderDriverFn(): (
-  driverName: "openai" | "grok" | "gemini",
+  driverName: "openai" | "grok" | "gemini" | "gemini-api",
   prompt: string,
   model: string | undefined,
 ) => Promise<string | AgentResult> {
   const cache = new Map<string, import("../drivers/types.js").ProviderDriver>();
   return async function defaultProviderDriverFn(
-    driverName: "openai" | "grok" | "gemini",
+    driverName: "openai" | "grok" | "gemini" | "gemini-api",
     prompt: string,
     model: string | undefined,
   ): Promise<string | AgentResult> {

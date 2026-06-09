@@ -103,6 +103,31 @@ describe('driver:"gemini"', () => {
   });
 });
 
+// ── 3b. Explicit driver:"gemini-api" (audit 2026-06-08 drivers-1) ─────────────
+// createDriver() supports "gemini-api" (GeminiApiDriver) but executeAgent's
+// dispatch only matched gemini/openai/grok, so a recipe step with
+// driver: gemini-api hit `throw new Error('Unknown driver')`.
+describe('driver:"gemini-api"', () => {
+  it("routes through providerDriverFn with gemini-api; servedBy=gemini-api", async () => {
+    const deps = makeDeps();
+    const result = await executeAgent(
+      { driver: "gemini-api", prompt: "hello", model: "gemini-2.5-pro" },
+      deps,
+    );
+    expect(result.text).toBe("gemini-api-result");
+    expect(result.servedBy).toEqual({
+      driver: "gemini-api",
+      model: "gemini-2.5-pro",
+    });
+    expect(deps.providerDriverFn).toHaveBeenCalledWith(
+      "gemini-api",
+      "hello",
+      "gemini-2.5-pro",
+    );
+    expect(deps.anthropicFn).not.toHaveBeenCalled();
+  });
+});
+
 // ── 4. Explicit driver:"subprocess" ─────────────────────────────────────────
 
 describe('driver:"subprocess"', () => {
