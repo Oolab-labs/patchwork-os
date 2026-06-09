@@ -152,6 +152,29 @@ describe("Bridge activation metrics", () => {
     }
   });
 
+  it("wires sessionDetailFn in start() so GET /sessions/:id is not a dead endpoint (audit 2026-06-08 server-1)", async () => {
+    // Regression guard for the same class as the sessionsFn bug: the Fn was
+    // declared on Server but never assigned in bridge.ts, so /sessions/:id
+    // 404'd forever. A route-with-stub test can't catch a missing wire.
+    const workspace = fs.mkdtempSync(path.join(tempDir, "workspace-sd-"));
+    const bridge = new Bridge(makeConfig(workspace));
+    try {
+      await bridge.start();
+      const server = (
+        bridge as unknown as {
+          server: {
+            sessionDetailFn: ((id: string) => { summary: unknown }) | null;
+          };
+        }
+      ).server;
+      expect(typeof server.sessionDetailFn).toBe("function");
+      // No sessions connected → unknown id → summary:null (route → 404).
+      expect(server.sessionDetailFn?.("nosuch")?.summary).toBeNull();
+    } finally {
+      await bridge.stop();
+    }
+  });
+
   it("records a successful YAML recipe run", async () => {
     yamlRunnerModule.dispatchRecipe.mockResolvedValue({
       success: true,
