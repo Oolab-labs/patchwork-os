@@ -6,6 +6,7 @@ import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
 import type { Config } from "../config.js";
 import { DecisionTraceLog } from "../decisionTraceLog.js";
+import { getLocalEmbedFn } from "../embeddings/index.js";
 import type { ExtensionClient } from "../extensionClient.js";
 import type { FileLock } from "../fileLock.js";
 import type { LoadedPluginTool } from "../pluginLoader.js";
@@ -783,6 +784,7 @@ export function registerAllTools(
       commitIssueLinkLog: commitIssueLinkLog ?? null,
       recipeRunLog: recipeRunLog ?? null,
       decisionTraceLog: decisionTraceLog ?? null,
+      embedFn: getLocalEmbedFn(),
     }),
     createCtxGetTaskContextTool({
       workspace,

@@ -21,6 +21,8 @@
     },
     "localEndpoint": { "type": "string", "format": "uri" },
     "localModel": { "type": "string" },
+    "localEmbeddingsEndpoint": { "type": "string", "format": "uri" },
+    "localEmbeddingsModel": { "type": "string" },
     "dashboard": {
       "type": "object",
       "required": ["port", "requireApproval"],

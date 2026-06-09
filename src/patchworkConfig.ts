@@ -38,6 +38,8 @@ export interface PatchworkConfig {
   };
   localEndpoint?: string;
   localModel?: string;
+  localEmbeddingsEndpoint?: string;
+  localEmbeddingsModel?: string;
   dashboard?: {
     port: number;
     requireApproval: Array<"low" | "medium" | "high">;

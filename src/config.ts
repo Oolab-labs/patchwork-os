@@ -590,6 +590,14 @@ export function parseConfig(argv: string[]): Config {
         process.env.LOCAL_ENDPOINT = pw.localEndpoint;
       if (pw.localModel && !process.env.LOCAL_MODEL)
         process.env.LOCAL_MODEL = pw.localModel;
+      // Seed dedicated embeddings endpoint/model (powers ctxQueryTraces semantic
+      // search). Falls back to LOCAL_ENDPOINT/LOCAL_MODEL in the provider when
+      // unset, so a single MLX/Ollama server serving both chat + embeddings
+      // needs only localEndpoint/localModel.
+      if (pw.localEmbeddingsEndpoint && !process.env.LOCAL_EMBEDDINGS_ENDPOINT)
+        process.env.LOCAL_EMBEDDINGS_ENDPOINT = pw.localEmbeddingsEndpoint;
+      if (pw.localEmbeddingsModel && !process.env.LOCAL_EMBEDDINGS_MODEL)
+        process.env.LOCAL_EMBEDDINGS_MODEL = pw.localEmbeddingsModel;
       // Seed API keys as env vars if not already set (non-destructive)
       if (pw.apiKeys) {
         if (pw.apiKeys.openai && !process.env.OPENAI_API_KEY)
