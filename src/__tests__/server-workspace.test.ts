@@ -7,6 +7,8 @@
  */
 
 import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const replayMock = vi.fn(
@@ -70,7 +72,7 @@ describe("Server workspace threading", () => {
 
   it("decision-replay route uses the configured workspace, not process.cwd()", async () => {
     server = new Server("tok", new Logger(false));
-    const configured = "/tmp/a-configured-workspace-dir";
+    const configured = path.join(os.tmpdir(), "a-configured-workspace-dir");
     server.workspace = configured;
     // The replay route 503s without a wired activity log; the computeDecisionReplay
     // mock ignores it, so a stub suffices.

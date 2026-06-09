@@ -183,6 +183,7 @@ afterEach(async () => {
   handler = null;
   await server?.close();
   server = null;
+  vi.restoreAllMocks();
 });
 
 // ── Session lifecycle ──────────────────────────────────────────────────────────
