@@ -359,15 +359,20 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
           deps.embedFn,
           limit,
         );
-        if (ranked) {
+        // A non-empty ranked array is a real semantic result. An EMPTY array
+        // means every candidate scored below the floor (or there were none) —
+        // treat that like a miss and fall through to substring search rather
+        // than returning zero results with no explanation (audit sem-2). null
+        // already signals embeddings unavailable.
+        if (ranked && ranked.length > 0) {
           return successStructured({
             traces: ranked,
             count: ranked.length,
             sources,
           });
         }
-        // Fallback: embeddings unavailable. Apply the substring filter we
-        // skipped in semantic mode, then recency-sort like the default path.
+        // Fallback: embeddings unavailable or all-below-floor. Apply the
+        // substring filter we skipped in semantic mode, then recency-sort.
         const qNeedle = qFilter.toLowerCase();
         filtered = filtered.filter((t) => matchesSubstring(t, qNeedle));
       }

@@ -960,6 +960,32 @@ export class Server extends EventEmitter<ServerEvents> {
           const q = parsedUrl.searchParams;
           const sinceStr = q.get("since");
           const limitStr = q.get("limit");
+          // Validate numeric ranges up front so an out-of-range value returns a
+          // 400 with an actionable message instead of bubbling an exception
+          // from ctxQueryTraces' optionalInt() into a generic 500 (audit sem-1).
+          if (limitStr !== null && /^\d+$/.test(limitStr)) {
+            const limitNum = Number(limitStr);
+            if (limitNum < 1 || limitNum > 500) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  error: "limit must be an integer between 1 and 500",
+                }),
+              );
+              return;
+            }
+          }
+          if (sinceStr !== null && /^\d+$/.test(sinceStr)) {
+            if (!Number.isSafeInteger(Number(sinceStr))) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  error: "since must be a safe integer (epoch ms)",
+                }),
+              );
+              return;
+            }
+          }
           const data = this.tracesFn
             ? await this.tracesFn({
                 traceType: q.get("traceType") ?? undefined,

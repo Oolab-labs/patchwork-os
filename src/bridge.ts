@@ -1269,15 +1269,20 @@ export class Bridge {
         nearby: nearby as unknown as Record<string, unknown>[],
       };
     };
+    // Build the traces tool + embeddings provider ONCE at startup. The
+    // dashboard polls /traces every few seconds; re-constructing the tool and
+    // re-allocating the embeddings provider on every request was pure waste
+    // (audit sem-4). The log references and embed fn are stable for the
+    // bridge's lifetime.
+    const tracesTool = createCtxQueryTracesTool({
+      activityLog: this.activityLog,
+      commitIssueLinkLog: this.commitIssueLinkLog,
+      recipeRunLog: this.recipeRunLog,
+      decisionTraceLog: this.decisionTraceLog,
+      embedFn: getLocalEmbedFn(),
+    });
     this.server.tracesFn = async (query) => {
-      const tool = createCtxQueryTracesTool({
-        activityLog: this.activityLog,
-        commitIssueLinkLog: this.commitIssueLinkLog,
-        recipeRunLog: this.recipeRunLog,
-        decisionTraceLog: this.decisionTraceLog,
-        embedFn: getLocalEmbedFn(),
-      });
-      const result = await tool.handler({
+      const result = await tracesTool.handler({
         ...(query.traceType && { traceType: query.traceType }),
         ...(query.key && { key: query.key }),
         ...(query.q && { q: query.q }),
