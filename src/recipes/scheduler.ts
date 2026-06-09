@@ -447,8 +447,12 @@ export function parseSchedule(schedule: string): ParsedSchedule | null {
     return { kind: "interval", intervalMs: n * multiplier };
   }
 
-  // 5-field cron expression (e.g. "0 8 * * 1-5")
-  if (/^\S+\s+\S+\s+\S+\s+\S+\s+\S+$/.test(trimmed)) {
+  // 5- or 6-field cron expression. node-cron accepts an optional leading
+  // seconds field (e.g. "0 0 8 * * 1-5" = every weekday 08:00:00), so accept
+  // both lengths and let cron.validate() decide correctness — previously a
+  // 6-field expression passed cron.validate() but was rejected here, silently
+  // never scheduling the recipe (audit 2026-06-09 sched-cron6-1).
+  if (/^\S+(?:\s+\S+){4,5}$/.test(trimmed)) {
     if (cron.validate(trimmed)) {
       return { kind: "cron5", expression: trimmed };
     }

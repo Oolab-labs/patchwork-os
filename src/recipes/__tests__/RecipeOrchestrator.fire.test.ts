@@ -372,4 +372,52 @@ describe("RecipeOrchestrator.fire()", () => {
 
     d2.resolve(makeRunResult());
   });
+
+  it("frees the in-flight slot after dispatchTimeoutMs when dispatch never settles (audit 2026-06-09 orch-hang-1)", async () => {
+    vi.useFakeTimers();
+    try {
+      const recipe = makeYamlRecipe("hang-recipe");
+      const loadYamlRecipe = vi.fn().mockReturnValue(recipe);
+      // Dispatch promise that NEVER settles — simulates a hung tool step.
+      const dispatchFn = vi
+        .fn()
+        .mockReturnValue(new Promise<RunResult>(() => {}));
+
+      const orchestrator = new RecipeOrchestrator(baseDeps(), {
+        loadYamlRecipe,
+        dispatchFn,
+        dispatchTimeoutMs: 1000,
+      });
+
+      const first = await orchestrator.fire({
+        filePath: "/recipes/hang-recipe.yaml",
+        name: "hang-recipe",
+        triggerSource: "test",
+      });
+      expect(first).toMatchObject({ ok: true });
+      expect(orchestrator.isInFlight("hang-recipe")).toBe(true);
+
+      // Before the TTL elapses, a second fire is still rejected.
+      const blocked = await orchestrator.fire({
+        filePath: "/recipes/hang-recipe.yaml",
+        name: "hang-recipe",
+        triggerSource: "test",
+      });
+      expect(blocked).toMatchObject({ ok: false, error: "already_in_flight" });
+
+      // After the TTL, the safety net frees the slot.
+      vi.advanceTimersByTime(1000);
+      expect(orchestrator.isInFlight("hang-recipe")).toBe(false);
+
+      const retried = await orchestrator.fire({
+        filePath: "/recipes/hang-recipe.yaml",
+        name: "hang-recipe",
+        triggerSource: "test",
+      });
+      expect(retried).toMatchObject({ ok: true });
+      expect(dispatchFn).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

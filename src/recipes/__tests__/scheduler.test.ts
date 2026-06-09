@@ -34,12 +34,25 @@ describe("parseSchedule", () => {
   });
 
   it.each([
+    ["0 0 8 * * 1-5"], // every weekday 08:00:00 (seconds field)
+    ["*/30 * * * * *"], // every 30 seconds
+  ])("parses 6-field cron expression %s (audit 2026-06-09 sched-cron6-1)", (input) => {
+    const result = parseSchedule(input);
+    expect(result).not.toBeNull();
+    expect(result?.kind).toBe("cron5");
+    expect((result as { kind: "cron5"; expression: string }).expression).toBe(
+      input.trim(),
+    );
+  });
+
+  it.each([
     "",
     "@every 0s",
     "@every -1m",
     "every 5m",
     "@every 5",
     "@every 5d",
+    "0 0 8 * * 1-5 7", // 7 fields — too many
   ])("rejects unsupported schedule %s", (input) => {
     expect(parseSchedule(input)).toBeNull();
   });
