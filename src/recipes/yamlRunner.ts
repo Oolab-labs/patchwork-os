@@ -1395,6 +1395,14 @@ export async function runYamlRecipe(
       // we don't make one extra LLM call over budget — audit 2026-06-03 LOW #2.
       const postReviseAdmission = runBudget.admit();
       if (!postReviseAdmission.admitted) {
+        // Audit 2026-06-08 (recipe-flat-1): the revision was produced but the
+        // budget ran out before we could re-judge it. On on_exhausted:"proceed"
+        // the user opted to accept best-effort output, so promote the revision
+        // instead of silently discarding it and keeping the stale pre-revision
+        // draft. On "halt" the run errors below, so leave ctx untouched.
+        if ((agentCfg.on_exhausted ?? "halt") === "proceed") {
+          ctx[reviewsKey] = pendingRevised;
+        }
         break;
       }
 

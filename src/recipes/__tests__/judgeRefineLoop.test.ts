@@ -222,4 +222,47 @@ describe("judge→refine: budget off-by-one (audit 2026-06-03 LOW #2)", () => {
     // on_exhausted: proceed → no overall error, the step itself is ok.
     expect(result.errorMessage).toBeUndefined();
   });
+
+  it("promotes the revised draft on the post-revise budget break (on_exhausted: proceed) — audit 2026-06-08 recipe-flat-1", async () => {
+    // Same token accounting as above: the loop breaks right after REVISE
+    // produced "REVISED v2" but before the re-judge. With the data-loss bug,
+    // ctx.draft kept the stale pre-revision "DRAFT v1" and the agent's revision
+    // was silently discarded. on_exhausted: proceed means "use best effort", so
+    // the most recent revision must be promoted.
+    const callCount = { n: 0 };
+    const recipe: YamlRecipe = {
+      name: "budget-judge-promote",
+      trigger: { type: "manual" },
+      budget: { tokensMax: 3000 },
+      steps: [
+        {
+          agent: {
+            prompt: "write the thing",
+            model: "claude-haiku-4-5-20251001",
+            driver: "anthropic",
+            into: "draft",
+          },
+        },
+        {
+          agent: {
+            kind: "judge",
+            reviews: "draft",
+            max_revisions: 3,
+            on_exhausted: "proceed",
+            prompt: "review the draft",
+            model: "claude-haiku-4-5-20251001",
+            driver: "anthropic",
+          },
+        },
+      ],
+    } as YamlRecipe;
+
+    const result = await runYamlRecipe(recipe, depsWithBudget(callCount));
+
+    // Re-judge still must NOT fire (budget off-by-one fix preserved).
+    expect(callCount.n).toBe(3);
+    // The agent's revision must be promoted, not discarded.
+    expect(result.context.draft).toBe("REVISED v2");
+    expect(result.errorMessage).toBeUndefined();
+  });
 });
