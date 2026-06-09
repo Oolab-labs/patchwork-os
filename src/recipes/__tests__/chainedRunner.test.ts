@@ -162,6 +162,77 @@ describe("executeChainedStep", () => {
     expect(result.data).toEqual({ ok: true });
   });
 
+  // audit 2026-06-08 (recipe-chained-4) — per-step timeout_ms on the chained
+  // runner, mirroring the flat yamlRunner. Previously silently ignored.
+  it("fails a tool step with step_timeout when it exceeds timeout_ms", async () => {
+    const reg = createOutputRegistry();
+    const slowDeps = {
+      executeTool: () =>
+        new Promise((resolve) => setTimeout(() => resolve("late"), 200)),
+      executeAgent: vi.fn(),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const result = await executeChainedStep(
+      {
+        registry: reg,
+        step: { id: "s", tool: "slow.tool", timeout_ms: 20 },
+        options: baseOptions,
+        recipe: { name: "r", steps: [] },
+        depth: 0,
+      },
+      slowDeps,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/step_timeout/);
+    expect(result.error).toContain("20ms");
+  });
+
+  it("does not time out a fast tool step under timeout_ms", async () => {
+    const reg = createOutputRegistry();
+    const fastDeps = {
+      executeTool: () =>
+        new Promise((resolve) => setTimeout(() => resolve("quick"), 5)),
+      executeAgent: vi.fn(),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const result = await executeChainedStep(
+      {
+        registry: reg,
+        step: { id: "s", tool: "fast.tool", timeout_ms: 500 },
+        options: baseOptions,
+        recipe: { name: "r", steps: [] },
+        depth: 0,
+      },
+      fastDeps,
+    );
+    expect(result.success).toBe(true);
+    expect(result.data).toBe("quick");
+  });
+
+  it("fails an agent step with step_timeout when it exceeds timeout_ms", async () => {
+    const reg = createOutputRegistry();
+    const slowDeps = {
+      executeTool: vi.fn(),
+      executeAgent: () =>
+        new Promise<string>((resolve) =>
+          setTimeout(() => resolve("late"), 200),
+        ),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const result = await executeChainedStep(
+      {
+        registry: reg,
+        step: { id: "s", agent: { prompt: "do it" }, timeout_ms: 20 },
+        options: baseOptions,
+        recipe: { name: "r", steps: [] },
+        depth: 0,
+      },
+      slowDeps,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/step_timeout/);
+  });
+
   it("executes agent step", async () => {
     const reg = createOutputRegistry();
     const result = await executeChainedStep(
