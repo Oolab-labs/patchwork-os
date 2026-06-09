@@ -846,7 +846,7 @@ All three authoring subcommands now have `--watch` mode and an exported library 
 - **POST `/launch-quick-task`** HTTP endpoint — bearer auth, 200 ok / 429 cooldown / 503 when no session connected.
 - **`McpTransport.invokeToolDirect()`** — public method for HTTP endpoints to dispatch tools without a full JSON-RPC session.
 - **`ToolErrorCodes.COOLDOWN_ACTIVE`** — new tool-level error code.
-- **`docs/perf-baseline.md`** — loopback p50/p95/p99 for 8 representative tool calls. All ≤ 1ms on M4 Max / 500 iterations. Anchor for future regression detection.
+- **`docs/perf-baseline.md`** — loopback p50/p95/p99 for 8 representative tool calls. All ≤ 1ms on Apple Silicon / 500 iterations. Anchor for future regression detection.
 
 ### Changed
 - Extension bumped to v1.4.7 (Windsurf cache invalidation).
