@@ -492,6 +492,8 @@ export class RecipeRunLog {
       assertionFailures?: RecipeRun["assertionFailures"];
       inboxOutputs?: RecipeRun["inboxOutputs"];
       budgetWarnings?: RecipeRun["budgetWarnings"];
+      tokenTotals?: RecipeRun["tokenTotals"];
+      budgetTotals?: RecipeRun["budgetTotals"];
     },
   ): void {
     const idx = this.runs.findIndex((r) => r.seq === seq);
@@ -523,6 +525,10 @@ export class RecipeRunLog {
         opts.budgetWarnings.length > 0 && {
           budgetWarnings: opts.budgetWarnings,
         }),
+      ...(opts.tokenTotals !== undefined && { tokenTotals: opts.tokenTotals }),
+      ...(opts.budgetTotals !== undefined && {
+        budgetTotals: opts.budgetTotals,
+      }),
     };
     this.runs[idx] = finalized;
     mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });

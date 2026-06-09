@@ -342,6 +342,46 @@ describe("RecipeRunLog.record", () => {
     expect(parsed.status).toBe("done");
   });
 
+  it("completeRun persists tokenTotals and budgetTotals (audit 2026-06-09 data-loss-1)", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    const seq = log.startRun({
+      taskId: "chained:cost:1",
+      recipeName: "cost",
+      trigger: "recipe",
+      createdAt: 1_000,
+    });
+    log.completeRun(seq, {
+      status: "done",
+      doneAt: 2_000,
+      durationMs: 1_000,
+      stepResults: [{ id: "a", status: "ok", durationMs: 100 }],
+      tokenTotals: { inputTokens: 120, outputTokens: 80, costUsd: 0.0042 },
+      budgetTotals: {
+        inputTokens: 120,
+        outputTokens: 80,
+        total: 200,
+        usd: 0.0042,
+        breached: false,
+        usdBreached: false,
+        haltOnBreach: false,
+      },
+    });
+    const run = log.getBySeq(seq);
+    expect(run?.tokenTotals).toEqual({
+      inputTokens: 120,
+      outputTokens: 80,
+      costUsd: 0.0042,
+    });
+    expect(run?.budgetTotals?.total).toBe(200);
+    // Must survive the round-trip to disk (bridge-path runs read the last row).
+    const lines = readFileSync(path.join(tmp, "runs.jsonl"), "utf-8")
+      .trim()
+      .split("\n");
+    const parsed = JSON.parse(lines[lines.length - 1]!);
+    expect(parsed.tokenTotals.inputTokens).toBe(120);
+    expect(parsed.budgetTotals.total).toBe(200);
+  });
+
   it("completeRun sets hadStepErrors=true when a step ended in error but the run is done", () => {
     const log = new RecipeRunLog({ dir: tmp });
     const seq = log.startRun({
