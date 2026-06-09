@@ -206,9 +206,10 @@ Ordered by dependency + ROI. `[A]` = local-AI thread, `[B]` = automation thread.
   JSON line"; `response_format: json_object` forces the *whole* response to be
   JSON. Proper fix = redesign the judge to emit pure structured JSON (assessment
   as a field) + update `parseJudgeVerdict` + re-verify the refine loop. The
-  driver seam is clean (`ProviderTaskInput.providerOptions` is already a
-  passthrough; add `response_format` in `openai/index.ts`'s `create()` body) —
-  the *judge-contract* change is the real work. Sensitive path; design first.
+  driver seam is **DONE** (commit `783a8e95`: `providerOptions.responseFormat` →
+  `response_format` in `openai/index.ts`, +4 tests, fail-safe) — so any step can
+  already request constrained output. Only the *judge-contract* redesign remains;
+  it's the sensitive part — design first.
 - **FlowSvg live run status** (§4) `[B]` — contained, but dashboard/React: needs
   visual verification (no unit test). A frontend session, not a backend one.
 
