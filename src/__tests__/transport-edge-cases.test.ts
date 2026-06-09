@@ -53,6 +53,34 @@ afterEach(async () => {
   transport = null;
 });
 
+// ── getToolTimeout (audit 2026-06-08 transport-1) ─────────────────────────────
+
+describe("McpTransport: getToolTimeout", () => {
+  it("returns a tool's declared timeoutMs, or the 60s default", () => {
+    const t = new McpTransport(new Logger(false));
+    t.registerTool(
+      {
+        name: "longTool",
+        description: "x",
+        inputSchema: { type: "object", properties: {} },
+        timeoutMs: 610_000,
+      },
+      async () => ({ content: [] }),
+    );
+    t.registerTool(
+      {
+        name: "plainTool",
+        description: "y",
+        inputSchema: { type: "object", properties: {} },
+      },
+      async () => ({ content: [] }),
+    );
+    expect(t.getToolTimeout("longTool")).toBe(610_000);
+    expect(t.getToolTimeout("plainTool")).toBe(60_000); // TOOL_TIMEOUT_MS default
+    expect(t.getToolTimeout("unknownTool")).toBe(60_000); // default for unknown
+  });
+});
+
 // ── Generation guard: stale ws1 does not respond after ws2 attaches ───────────
 
 describe("McpTransport: generation guard", () => {
