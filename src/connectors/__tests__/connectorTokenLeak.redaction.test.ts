@@ -59,45 +59,25 @@ describe("connector token-exchange error redaction", () => {
   const tokensDir = join(patchworkHome, "tokens");
 
   beforeEach(() => {
-    process.env.HOME = homeDir;
-    process.env.USERPROFILE = homeDir;
-    process.env.PATCHWORK_HOME = patchworkHome;
-    process.env.PATCHWORK_TOKEN_DIR = tokensDir;
-    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    vi.stubEnv("HOME", homeDir);
+    vi.stubEnv("USERPROFILE", homeDir);
+    vi.stubEnv("PATCHWORK_HOME", patchworkHome);
+    vi.stubEnv("PATCHWORK_TOKEN_DIR", tokensDir);
+    vi.stubEnv("PATCHWORK_TOKEN_STORAGE_BACKEND", "file");
     mkdirSync(tokensDir, { recursive: true });
     vi.resetModules();
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
-    for (const k of [
-      "HOME",
-      "USERPROFILE",
-      "PATCHWORK_HOME",
-      "PATCHWORK_TOKEN_DIR",
-      "PATCHWORK_TOKEN_STORAGE_BACKEND",
-      "DISCORD_CLIENT_ID",
-      "DISCORD_CLIENT_SECRET",
-      "ASANA_CLIENT_ID",
-      "ASANA_CLIENT_SECRET",
-      "GITLAB_CLIENT_ID",
-      "GITLAB_CLIENT_SECRET",
-      "MONDAY_CLIENT_ID",
-      "MONDAY_CLIENT_SECRET",
-      "GOOGLE_DOCS_CLIENT_ID",
-      "GOOGLE_DOCS_CLIENT_SECRET",
-      "GOOGLE_DRIVE_CLIENT_ID",
-      "GOOGLE_DRIVE_CLIENT_SECRET",
-    ]) {
-      delete process.env[k];
-    }
     if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
   });
 
   it("discord callback (HTML) does not leak the raw IdP body", async () => {
-    process.env.DISCORD_CLIENT_ID = "cid";
-    process.env.DISCORD_CLIENT_SECRET = "csecret";
+    vi.stubEnv("DISCORD_CLIENT_ID", "cid");
+    vi.stubEnv("DISCORD_CLIENT_SECRET", "csecret");
     const { handleDiscordAuthorize, handleDiscordCallback } = await import(
       "../discord.js"
     );
@@ -110,8 +90,8 @@ describe("connector token-exchange error redaction", () => {
   });
 
   it("asana callback (HTML) does not leak the raw IdP body", async () => {
-    process.env.ASANA_CLIENT_ID = "cid";
-    process.env.ASANA_CLIENT_SECRET = "csecret";
+    vi.stubEnv("ASANA_CLIENT_ID", "cid");
+    vi.stubEnv("ASANA_CLIENT_SECRET", "csecret");
     const { handleAsanaAuthorize, handleAsanaCallback } = await import(
       "../asana.js"
     );
@@ -124,8 +104,8 @@ describe("connector token-exchange error redaction", () => {
   });
 
   it("gitlab callback (HTML) does not leak the raw IdP body", async () => {
-    process.env.GITLAB_CLIENT_ID = "cid";
-    process.env.GITLAB_CLIENT_SECRET = "csecret";
+    vi.stubEnv("GITLAB_CLIENT_ID", "cid");
+    vi.stubEnv("GITLAB_CLIENT_SECRET", "csecret");
     const { handleGitLabAuthorize, handleGitLabCallback } = await import(
       "../gitlab.js"
     );
@@ -138,8 +118,8 @@ describe("connector token-exchange error redaction", () => {
   });
 
   it("monday callback (JSON) does not leak the raw IdP body", async () => {
-    process.env.MONDAY_CLIENT_ID = "cid";
-    process.env.MONDAY_CLIENT_SECRET = "csecret";
+    vi.stubEnv("MONDAY_CLIENT_ID", "cid");
+    vi.stubEnv("MONDAY_CLIENT_SECRET", "csecret");
     const { handleMondayAuthRedirect, handleMondayCallback } = await import(
       "../monday.js"
     );
@@ -152,8 +132,8 @@ describe("connector token-exchange error redaction", () => {
   });
 
   it("googleDocs callback (JSON) does not leak the raw IdP body", async () => {
-    process.env.GOOGLE_DOCS_CLIENT_ID = "cid";
-    process.env.GOOGLE_DOCS_CLIENT_SECRET = "csecret";
+    vi.stubEnv("GOOGLE_DOCS_CLIENT_ID", "cid");
+    vi.stubEnv("GOOGLE_DOCS_CLIENT_SECRET", "csecret");
     const { handleDocsAuthRedirect, handleDocsCallback } = await import(
       "../googleDocs.js"
     );
@@ -166,8 +146,8 @@ describe("connector token-exchange error redaction", () => {
   });
 
   it("googleDrive callback (JSON) does not leak the raw IdP body", async () => {
-    process.env.GOOGLE_DRIVE_CLIENT_ID = "cid";
-    process.env.GOOGLE_DRIVE_CLIENT_SECRET = "csecret";
+    vi.stubEnv("GOOGLE_DRIVE_CLIENT_ID", "cid");
+    vi.stubEnv("GOOGLE_DRIVE_CLIENT_SECRET", "csecret");
     const { handleDriveAuthRedirect, handleDriveCallback } = await import(
       "../googleDrive.js"
     );
