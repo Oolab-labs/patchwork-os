@@ -140,6 +140,32 @@ describe("GET /traces", () => {
     expect(received[0]?.limit).toBeUndefined();
   });
 
+  it("returns 400 (not 500) for an out-of-range limit (audit 2026-06-09 sem-1)", async () => {
+    let called = false;
+    await startServer(async () => {
+      called = true;
+      return { traces: [], count: 0, sources: {} };
+    });
+    const big = await get("/traces?limit=501");
+    expect(big.status).toBe(400);
+    expect(JSON.parse(big.body).error).toMatch(/limit/i);
+    const zero = await get("/traces?limit=0");
+    expect(zero.status).toBe(400);
+    // Validation happens before the backend is invoked.
+    expect(called).toBe(false);
+  });
+
+  it("accepts a limit at the boundary (500)", async () => {
+    const received: Array<Record<string, unknown>> = [];
+    await startServer(async (q) => {
+      received.push(q);
+      return { traces: [], count: 0, sources: {} };
+    });
+    const { status } = await get("/traces?limit=500");
+    expect(status).toBe(200);
+    expect(received[0]?.limit).toBe(500);
+  });
+
   it("returns 500 when tracesFn throws", async () => {
     await startServer(async () => {
       throw new Error("backend on fire");

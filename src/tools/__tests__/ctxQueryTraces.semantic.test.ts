@@ -128,6 +128,49 @@ describe("ctxQueryTraces semantic ranking", () => {
     );
   });
 
+  it("falls back to substring when ALL semantic scores are below the floor (audit 2026-06-09 sem-2)", async () => {
+    // Both traces are lexically about "widget" (below-floor vectors vs the
+    // query), so semanticRank returns an empty array. The handler must NOT
+    // return zero results — it should fall back to substring search, which
+    // matches "widget".
+    now = 1_000_000;
+    decisionTraceLog.record({
+      ref: "WIDGET-1",
+      problem: "widget alignment drift",
+      solution: "unrelated knob recalibration",
+      workspace: "/ws",
+      tags: ["widget"],
+    });
+    now = 2_000_000;
+    decisionTraceLog.record({
+      ref: "WIDGET-2",
+      problem: "widget jitter unrelated",
+      solution: "unrelated damping fix",
+      workspace: "/ws",
+      tags: ["widget"],
+    });
+
+    // Bespoke embedder: the query vector is orthogonal to every trace vector
+    // (cosine 0 < floor) regardless of text, so semanticRank returns []. The
+    // query string "widget" still substring-matches both traces, so the
+    // substring fallback must surface them.
+    const orthogonalEmbedFn = vi.fn((texts: string[]) =>
+      Promise.resolve(
+        texts.map((_t, i): number[] => (i === 0 ? [1, 0] : [0, 1])),
+      ),
+    );
+    const tool = createCtxQueryTracesTool({
+      decisionTraceLog,
+      embedFn: orthogonalEmbedFn,
+    });
+
+    const res = parse(await tool.handler({ q: "widget", semantic: true }));
+
+    expect(orthogonalEmbedFn).toHaveBeenCalled();
+    // Substring fallback finds both "widget" traces rather than returning empty.
+    expect(res.count).toBe(2);
+  });
+
   it("does NOT call embedFn when semantic is false / omitted", async () => {
     seedTwoDecisions();
     const embedFn = vi.fn(fakeEmbedFn);
