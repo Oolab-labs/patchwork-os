@@ -41,6 +41,7 @@ import {
 } from "./baseConnector.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
+import { safeOAuthErrorCode } from "./oauthError.js";
 import { readSecret } from "./secrets.js";
 import {
   deleteSecretJsonSync,
@@ -558,8 +559,10 @@ export async function handleDiscordCallback(
       body: params.toString(),
     });
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Token exchange HTTP ${res.status}: ${body}`);
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `Token exchange HTTP ${res.status} (${safeOAuthErrorCode(body)})`,
+      );
     }
     const json = (await res.json()) as {
       access_token?: string;
@@ -610,7 +613,7 @@ export async function handleDiscordCallback(
     return {
       status: 200,
       contentType: "text/html",
-      body: `<html><body><h2>Discord connected${username ? ` as ${escHtml(username)}` : ""}</h2><script>try { window.opener.postMessage('patchwork:discord:connected', '*'); } catch(_) {} window.close();</script></body></html>`,
+      body: `<html><body><h2>Discord connected${username ? ` as ${escHtml(username)}` : ""}</h2><script>try { window.opener.postMessage('patchwork:discord:connected', window.location.origin); } catch(_) {} window.close();</script></body></html>`,
     };
   } catch (err) {
     return {

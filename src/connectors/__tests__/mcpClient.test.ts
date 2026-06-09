@@ -165,6 +165,40 @@ describe("McpClient 401 refresh + retry", () => {
     expect(firstCallHeaders?.Authorization).toBe("Bearer stale-token");
   });
 
+  it("does not embed the upstream error body in the thrown Error (audit 2026-06-09 connector-new-5)", async () => {
+    // A non-401 upstream error whose body carries a secret. The thrown Error
+    // propagates into recipe tool results → LLM context, so it must surface only
+    // the status, never the raw body.
+    const leakyBody = JSON.stringify({
+      error: "internal",
+      token: "UPSTREAM_SECRET_TOKEN_42",
+      stack: "at Server.handler (/srv/secret/path.js:1:1)",
+    });
+    const getAccessToken = vi.fn(async () => "any-token");
+    const fetchMock = vi.fn(
+      async () => new Response(leakyBody, { status: 500 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new McpClient(
+      "https://mcp.example.test/mcp",
+      getAccessToken,
+    );
+
+    let caught: Error | undefined;
+    try {
+      await client.listTools();
+    } catch (e) {
+      caught = e as Error;
+    }
+    expect(caught).toBeDefined();
+    expect(caught?.message).not.toContain("UPSTREAM_SECRET_TOKEN_42");
+    expect(caught?.message).not.toContain("/srv/secret/path.js");
+    expect(caught?.message).not.toContain("token");
+    // Status is still surfaced for diagnosis.
+    expect(caught?.message).toMatch(/500/);
+  });
+
   it("does not retry more than once (no infinite loop) on repeated 401", async () => {
     const getAccessToken = vi.fn(async () => "any-token");
     const fetchMock = vi.fn(

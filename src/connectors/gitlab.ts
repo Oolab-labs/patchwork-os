@@ -39,6 +39,7 @@ import {
 } from "./baseConnector.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
+import { safeOAuthErrorCode } from "./oauthError.js";
 import { createOAuthStateStore } from "./oauthStateStore.js";
 import { readSecret } from "./secrets.js";
 import {
@@ -633,8 +634,10 @@ export async function handleGitLabCallback(
       body: params.toString(),
     });
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Token exchange HTTP ${res.status}: ${body}`);
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `Token exchange HTTP ${res.status} (${safeOAuthErrorCode(body)})`,
+      );
     }
     const json = (await res.json()) as {
       access_token?: string;
@@ -689,7 +692,7 @@ export async function handleGitLabCallback(
     return {
       status: 200,
       contentType: "text/html",
-      body: `<html><body><h2>GitLab connected${username ? ` as ${escHtml(username)}` : ""}</h2><script>try { window.opener.postMessage('patchwork:gitlab:connected', '*'); } catch(_) {} window.close();</script></body></html>`,
+      body: `<html><body><h2>GitLab connected${username ? ` as ${escHtml(username)}` : ""}</h2><script>try { window.opener.postMessage('patchwork:gitlab:connected', window.location.origin); } catch(_) {} window.close();</script></body></html>`,
     };
   } catch (err) {
     return {
