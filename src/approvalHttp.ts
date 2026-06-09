@@ -242,7 +242,16 @@ export async function routeApprovalRequest(
       // Audit 2026-06-03 (MEDIUM #27): fire the audit hook on APPROVE too —
       // previously only the reject path called onDecision, so approvals (the
       // higher-risk decision) left no audit/activity-log trail.
-      deps.onDecision?.("approval_decision", { callId, decision: "allow" });
+      deps.onDecision?.("approval_decision", {
+        callId,
+        decision: "allow",
+        // Provenance (audit 2026-06-09): which path the human decided from.
+        // A single-use approvalToken ⇒ phone (ntfy/push action button);
+        // otherwise a Bearer-authenticated HTTP caller — the dashboard
+        // approval UI in practice. Lets the audit log answer "approved from
+        // where", not just "who/what/when".
+        channel: req.approvalToken !== undefined ? "phone" : "dashboard",
+      });
       return { status: 200, body: { decision: "allow", callId } };
     }
     // Distinguish "callId never existed" from "callId was decided by a
@@ -289,6 +298,8 @@ export async function routeApprovalRequest(
         callId,
         decision: "deny",
         ...(reason !== undefined && { reason }),
+        // Provenance: phone (single-use token) vs dashboard/Bearer caller.
+        channel: req.approvalToken !== undefined ? "phone" : "dashboard",
       });
       return { status: 200, body: { decision: "deny", callId } };
     }

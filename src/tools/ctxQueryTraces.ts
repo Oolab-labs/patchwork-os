@@ -1,8 +1,16 @@
 import type { ActivityLog } from "../activityLog.js";
 import type { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
 import type { DecisionTraceLog } from "../decisionTraceLog.js";
+import { cosineSimilarity } from "../embeddings/index.js";
 import type { RecipeRunLog } from "../runLog.js";
 import { optionalInt, optionalString, successStructured } from "./utils.js";
+
+/**
+ * Minimum cosine score for a trace to survive semantic ranking. Below this
+ * floor a trace is dropped (treated as "not relevant"). Conservative — the
+ * intent is to filter obvious noise, not to gate borderline matches.
+ */
+const SEMANTIC_FLOOR = 0.25;
 
 /**
  * Unified view over the persistent decision trails that already exist:
@@ -43,6 +51,94 @@ export interface CtxQueryTracesDeps {
   commitIssueLinkLog?: CommitIssueLinkLog | null;
   activityLog?: ActivityLog | null;
   decisionTraceLog?: DecisionTraceLog | null;
+  /**
+   * Optional on-device embeddings function — wired from
+   * `createEmbeddingsProvider()?.embed` at the registration site. Returns one
+   * vector per input text, or `null` when embeddings are unavailable
+   * (unconfigured endpoint / error). Absent ⇒ semantic ranking is disabled and
+   * behavior is byte-identical to the substring path.
+   */
+  embedFn?: (texts: string[]) => Promise<number[][] | null>;
+}
+
+/**
+ * The default case-insensitive substring match: summary first, then the
+ * serialized body. Shared by the default path and the semantic fallback so
+ * the two produce byte-identical results when embeddings are unavailable.
+ */
+function matchesSubstring(t: DecisionTrace, qNeedle: string): boolean {
+  if (t.summary.toLowerCase().includes(qNeedle)) return true;
+  try {
+    return JSON.stringify(t.body).toLowerCase().includes(qNeedle);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Build the per-type text we vectorize for semantic ranking. Reads from the
+ * raw `body` row with safe typeof guards (never throws); falls back to the
+ * human summary when type-specific fields are absent.
+ */
+function semanticTextFor(t: DecisionTrace): string {
+  const b = t.body;
+  const str = (v: unknown): string => (typeof v === "string" ? v : "");
+  switch (t.traceType) {
+    case "decision": {
+      const tags = Array.isArray(b.tags)
+        ? b.tags.filter((x): x is string => typeof x === "string").join(" ")
+        : "";
+      return `${str(b.ref)} ${str(b.problem)} ${str(b.solution)} ${tags}`.trim();
+    }
+    case "enrichment":
+      return `${str(b.subject)} ${str(b.issueTitle)} ${str(b.ref)}`.trim();
+    case "recipe_run":
+      return `${str(b.recipeName)} ${str(b.errorMessage)} ${str(
+        b.outputTail,
+      )}`.trim();
+    case "approval":
+      return `${str(b.toolName)} ${str(b.decision)} ${str(b.reason)} ${str(
+        b.summary,
+      )}`.trim();
+    default:
+      return t.summary;
+  }
+}
+
+/**
+ * Rank `filtered` by cosine similarity to `query`. Returns the top-`limit`
+ * traces sorted score-descending (above {@link SEMANTIC_FLOOR}), or `null`
+ * to signal fail-soft fallback to the recency path (embeddings unavailable /
+ * error / empty pool). Never throws.
+ */
+async function semanticRank(
+  filtered: DecisionTrace[],
+  query: string,
+  embedFn: (texts: string[]) => Promise<number[][] | null>,
+  limit: number,
+): Promise<DecisionTrace[] | null> {
+  if (filtered.length === 0) return [];
+  try {
+    const texts = [query, ...filtered.map(semanticTextFor)];
+    const vectors = await embedFn(texts);
+    // Need the query vec + one per trace; anything else ⇒ fall back.
+    if (!vectors || vectors.length !== texts.length) return null;
+    const queryVec = vectors[0];
+    if (!queryVec) return null;
+    const scored: { trace: DecisionTrace; score: number }[] = [];
+    for (let i = 0; i < filtered.length; i++) {
+      const trace = filtered[i];
+      const vec = vectors[i + 1];
+      if (!trace || !vec) continue;
+      const score = cosineSimilarity(queryVec, vec);
+      if (score < SEMANTIC_FLOOR) continue;
+      scored.push({ trace, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit).map((s) => s.trace);
+  } catch {
+    return null;
+  }
 }
 
 function approvalTraces(activityLog: ActivityLog): DecisionTrace[] {
@@ -131,6 +227,11 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
             description:
               "Case-insensitive substring search across the trace summary and serialized body. Use for free-form lookup when the key schema doesn't fit.",
           },
+          semantic: {
+            type: "boolean",
+            description:
+              "When true AND an embeddings endpoint is configured AND q is set, rank results by on-device semantic similarity instead of recency. Falls back to substring match when embeddings are unavailable.",
+          },
           tag: {
             type: "string",
             description:
@@ -191,6 +292,7 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
         | "";
       const keyFilter = optionalString(args, "key");
       const qFilter = optionalString(args, "q");
+      const semantic = args.semantic === true;
       const tagFilter = optionalString(args, "tag");
       const since = optionalInt(args, "since", 0, Number.MAX_SAFE_INTEGER);
       const limit = optionalInt(args, "limit", 1, 500) ?? 100;
@@ -219,13 +321,19 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
         pools.push(...decisionTraces(deps.decisionTraceLog));
       }
 
+      // In semantic mode `q` is the similarity query, NOT a substring
+      // prefilter — using it to drop rows would gate out the very traces we
+      // want to rank. since/tag/key still apply as hard filters.
+      const semanticActive =
+        semantic && Boolean(qFilter) && Boolean(deps.embedFn);
+      const qNeedleActive = qFilter && !semanticActive;
       const needsFilter =
-        since !== undefined || tagFilter || keyFilter || qFilter;
+        since !== undefined || tagFilter || keyFilter || qNeedleActive;
       let filtered: DecisionTrace[];
       if (!needsFilter) {
         filtered = pools;
       } else {
-        const qNeedle = qFilter?.toLowerCase();
+        const qNeedle = qNeedleActive ? qFilter?.toLowerCase() : undefined;
         filtered = [];
         for (const t of pools) {
           if (since !== undefined && t.ts <= since) continue;
@@ -235,19 +343,33 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
             if (!Array.isArray(tags) || !tags.includes(tagFilter)) continue;
           }
           if (keyFilter && !t.key.includes(keyFilter)) continue;
-          if (qNeedle) {
-            let match = t.summary.toLowerCase().includes(qNeedle);
-            if (!match) {
-              try {
-                match = JSON.stringify(t.body).toLowerCase().includes(qNeedle);
-              } catch {
-                match = false;
-              }
-            }
-            if (!match) continue;
-          }
+          if (qNeedle && !matchesSubstring(t, qNeedle)) continue;
           filtered.push(t);
         }
+      }
+
+      // Opt-in semantic ranking: only when explicitly requested, a query is
+      // present, and an embeddings function is wired. Any miss (null vectors,
+      // error, unconfigured) returns null → fall through to the substring +
+      // recency path so behavior is byte-identical to a non-semantic call.
+      if (semanticActive && qFilter && deps.embedFn) {
+        const ranked = await semanticRank(
+          filtered,
+          qFilter,
+          deps.embedFn,
+          limit,
+        );
+        if (ranked) {
+          return successStructured({
+            traces: ranked,
+            count: ranked.length,
+            sources,
+          });
+        }
+        // Fallback: embeddings unavailable. Apply the substring filter we
+        // skipped in semantic mode, then recency-sort like the default path.
+        const qNeedle = qFilter.toLowerCase();
+        filtered = filtered.filter((t) => matchesSubstring(t, qNeedle));
       }
 
       filtered.sort((a, b) => b.ts - a.ts);

@@ -67,6 +67,17 @@ export class OpenAIApiDriver implements ProviderDriver {
       typeof opts.maxTokens === "number" ? opts.maxTokens : 4096;
     const temperature =
       typeof opts.temperature === "number" ? opts.temperature : undefined;
+    // Structured-output passthrough (audit 2026-06-09): when a caller sets
+    // providerOptions.responseFormat (e.g. { type: "json_object" } or
+    // { type: "json_schema", json_schema: {...} }), forward it to the API so
+    // OpenAI-compatible servers that support constrained decoding (vLLM/XGrammar,
+    // llama.cpp, LM Studio) enforce valid structured output at the token level.
+    // Endpoints that don't support it simply ignore the field. Foundation for
+    // hardening the judge→refine verdict JSON on local models.
+    const responseFormat =
+      opts.responseFormat && typeof opts.responseFormat === "object"
+        ? opts.responseFormat
+        : undefined;
 
     const contextNote =
       input.contextFiles && input.contextFiles.length > 0
@@ -110,6 +121,7 @@ export class OpenAIApiDriver implements ProviderDriver {
           ...(temperature !== undefined ? { temperature } : {}),
           messages,
           stream: true,
+          ...(responseFormat ? { response_format: responseFormat } : {}),
           // Ask the API to emit a final usage chunk (prompt/completion token
           // counts) so RunBudget can enforce a real token/USD budget instead
           // of failing open. Compliant OpenAI-style endpoints return it; an

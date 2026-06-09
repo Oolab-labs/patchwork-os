@@ -10,7 +10,7 @@ bridge. Results are point-in-time and loopback-only.
   elimination + post shape-mismatch CI gate + new launchQuickTask + CLI)
 - Transport: WebSocket on 127.0.0.1, no TLS, no proxy
 - Iterations: 500 per tool
-- Host: macOS (Darwin 25.3.0 arm64, Apple M4 Max), Node v24.4.1
+- Host: macOS (arm64 Apple Silicon), Node v24.4.1
 - Extension: not connected (probe-path tools exercised; extension-gated tools
   short-circuit and return `extension_required` faster than wire-RTT)
 - Captured: 2026-04-16 via `scripts/benchmark.mjs 55000 --iterations 500 --json`

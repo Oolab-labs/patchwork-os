@@ -16,6 +16,7 @@ import { CommitIssueLinkLog } from "./commitIssueLinkLog.js";
 import type { Config } from "./config.js";
 import { DecisionTraceLog } from "./decisionTraceLog.js";
 import { createDriver } from "./drivers/index.js";
+import { getLocalEmbedFn } from "./embeddings/index.js";
 import { ExtensionClient } from "./extensionClient.js";
 import { lockKillSwitchEnv, watchFlags } from "./featureFlags.js";
 import { FileLock } from "./fileLock.js";
@@ -1274,6 +1275,7 @@ export class Bridge {
         commitIssueLinkLog: this.commitIssueLinkLog,
         recipeRunLog: this.recipeRunLog,
         decisionTraceLog: this.decisionTraceLog,
+        embedFn: getLocalEmbedFn(),
       });
       const result = await tool.handler({
         ...(query.traceType && { traceType: query.traceType }),
