@@ -232,6 +232,11 @@ export function createSendHttpRequestTool(options?: {
         // against the real hostname (not the pinned IP), and so Host header
         // derivation uses the real name rather than the resolved IP address.
         let currentDisplayUrl = cleanUrlStr;
+        // Origin of the original request. Credential headers (Authorization,
+        // Cookie, etc.) must NOT be forwarded to a redirect destination on a
+        // different origin — any redirecting intermediary could otherwise
+        // harvest them (audit 2026-06-09 tools-http-1, mirrors browser fetch).
+        const originalOrigin = new URL(cleanUrlStr).origin;
         let redirectCount = 0;
         let resp: Response;
 
@@ -281,6 +286,20 @@ export function createSendHttpRequestTool(options?: {
           // Always set Host from the un-pinned display URL so a DNS failure
           // doesn't leave the previous hop's Host header on the new request.
           headers.host = nextDisplayUrl.hostname;
+
+          // Cross-origin hop → strip caller-supplied credential headers so a
+          // redirecting intermediary can't harvest them (audit tools-http-1).
+          // Header keys were lowercased when collected above.
+          if (nextDisplayUrl.origin !== originalOrigin) {
+            for (const h of [
+              "authorization",
+              "cookie",
+              "x-api-key",
+              "proxy-authorization",
+            ]) {
+              delete headers[h];
+            }
+          }
 
           // Strip any userinfo (user:password@) from the URL sent to fetch —
           // credentials must not be forwarded across redirect hops to new origins.
