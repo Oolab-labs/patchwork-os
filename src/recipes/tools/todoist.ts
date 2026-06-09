@@ -14,6 +14,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // todoist.list_tasks
@@ -72,7 +73,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getTodoistConnector } = await import("../../connectors/todoist.js");
     const connector = getTodoistConnector();
     const result = await connector.getTasks(
@@ -81,7 +82,7 @@ registerTool({
       typeof params.limit === "number" ? params.limit : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -149,7 +150,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getTodoistConnector } = await import("../../connectors/todoist.js");
     const connector = getTodoistConnector();
     const result = await connector.createTask(
@@ -161,7 +162,7 @@ registerTool({
       Array.isArray(params.labels) ? (params.labels as string[]) : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -194,7 +195,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getTodoistConnector } = await import("../../connectors/todoist.js");
     const connector = getTodoistConnector();
     const id = params.id as string;
@@ -203,7 +204,7 @@ registerTool({
     // satisfies the `string | null` execute contract and downstream
     // `{{steps.x.ok}}` references stay coherent.
     return JSON.stringify({ ok: true, id });
-  },
+  }),
 });
 
 // ============================================================================
@@ -242,10 +243,10 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async () => {
+  execute: wrapConnectorExecute(async () => {
     const { getTodoistConnector } = await import("../../connectors/todoist.js");
     const connector = getTodoistConnector();
     const result = await connector.getProjects();
     return JSON.stringify(result);
-  },
+  }),
 });

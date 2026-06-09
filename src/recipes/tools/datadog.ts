@@ -6,6 +6,7 @@
 
 import { assertWriteAllowed } from "../../featureFlags.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // datadog.queryMetrics
@@ -45,7 +46,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getDatadogConnector } = await import("../../connectors/datadog.js");
     const connector = getDatadogConnector();
     const result = await connector.queryMetrics(
@@ -54,7 +55,7 @@ registerTool({
       params.to as number,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -92,7 +93,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getDatadogConnector } = await import("../../connectors/datadog.js");
     const connector = getDatadogConnector();
     const monitors = await connector.listMonitors({
@@ -100,7 +101,7 @@ registerTool({
       perPage: typeof params.perPage === "number" ? params.perPage : undefined,
     });
     return JSON.stringify({ monitors, count: monitors.length });
-  },
+  }),
 });
 
 // ============================================================================
@@ -131,12 +132,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getDatadogConnector } = await import("../../connectors/datadog.js");
     const connector = getDatadogConnector();
     const monitor = await connector.getMonitor(params.monitorId as number);
     return JSON.stringify(monitor);
-  },
+  }),
 });
 
 // ============================================================================
@@ -165,12 +166,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params: _ }) => {
+  execute: wrapConnectorExecute(async ({ params: _ }) => {
     const { getDatadogConnector } = await import("../../connectors/datadog.js");
     const connector = getDatadogConnector();
     const alerts = await connector.listActiveAlerts();
     return JSON.stringify({ alerts, count: alerts.length });
-  },
+  }),
 });
 
 // ============================================================================
@@ -206,7 +207,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     assertWriteAllowed("datadog.muteMonitor");
     const { getDatadogConnector } = await import("../../connectors/datadog.js");
     const connector = getDatadogConnector();
@@ -219,7 +220,7 @@ registerTool({
       name: monitor.name,
       overall_state: monitor.overall_state,
     });
-  },
+  }),
 });
 
 // ============================================================================
@@ -252,12 +253,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getDatadogConnector } = await import("../../connectors/datadog.js");
     const connector = getDatadogConnector();
     const result = await connector.listIncidents({
       perPage: typeof params.perPage === "number" ? params.perPage : undefined,
     });
     return JSON.stringify({ data: result.data, count: result.data.length });
-  },
+  }),
 });

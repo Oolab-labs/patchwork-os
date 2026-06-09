@@ -6,6 +6,7 @@
 
 import { assertWriteAllowed } from "../../featureFlags.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // confluence.getPage
@@ -44,7 +45,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getConfluenceConnector } = await import(
       "../../connectors/confluence.js"
     );
@@ -66,7 +67,7 @@ registerTool({
       body: page.body?.storage?.value ?? null,
       url: page._links.webui,
     });
-  },
+  }),
 });
 
 // ============================================================================
@@ -100,7 +101,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getConfluenceConnector } = await import(
       "../../connectors/confluence.js"
     );
@@ -110,7 +111,7 @@ registerTool({
       typeof params.limit === "number" ? params.limit : 25,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -150,7 +151,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     assertWriteAllowed("confluence.createPage");
     const { getConfluenceConnector } = await import(
       "../../connectors/confluence.js"
@@ -168,7 +169,7 @@ registerTool({
       url: page._links.webui,
       version: page.version.number,
     });
-  },
+  }),
 });
 
 // ============================================================================
@@ -204,7 +205,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     assertWriteAllowed("confluence.appendToPage");
     const { getConfluenceConnector } = await import(
       "../../connectors/confluence.js"
@@ -220,7 +221,7 @@ registerTool({
       version: page.version.number,
       url: page._links.webui,
     });
-  },
+  }),
 });
 
 // ============================================================================
@@ -265,7 +266,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getConfluenceConnector } = await import(
       "../../connectors/confluence.js"
     );
@@ -283,5 +284,5 @@ registerTool({
       })),
       count: spaces.length,
     });
-  },
+  }),
 });

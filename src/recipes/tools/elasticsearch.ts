@@ -10,6 +10,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // elasticsearch.search
@@ -58,7 +59,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getElasticsearchConnector } = await import(
       "../../connectors/elasticsearch.js"
     );
@@ -72,7 +73,7 @@ registerTool({
       params._source,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -107,7 +108,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getElasticsearchConnector } = await import(
       "../../connectors/elasticsearch.js"
     );
@@ -117,7 +118,7 @@ registerTool({
       params.query as Record<string, unknown> | undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -143,14 +144,14 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async () => {
+  execute: wrapConnectorExecute(async () => {
     const { getElasticsearchConnector } = await import(
       "../../connectors/elasticsearch.js"
     );
     const connector = getElasticsearchConnector();
     const result = await connector.listIndices();
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -176,12 +177,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async () => {
+  execute: wrapConnectorExecute(async () => {
     const { getElasticsearchConnector } = await import(
       "../../connectors/elasticsearch.js"
     );
     const connector = getElasticsearchConnector();
     const result = await connector.clusterHealth();
     return JSON.stringify(result);
-  },
+  }),
 });

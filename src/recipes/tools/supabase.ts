@@ -8,6 +8,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // supabase.list_files
@@ -56,7 +57,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getSupabaseConnector } = await import(
       "../../connectors/supabase.js"
     );
@@ -67,7 +68,7 @@ registerTool({
       typeof params.limit === "number" ? params.limit : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -92,14 +93,14 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async () => {
+  execute: wrapConnectorExecute(async () => {
     const { getSupabaseConnector } = await import(
       "../../connectors/supabase.js"
     );
     const connector = getSupabaseConnector();
     const result = await connector.getSchema();
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -141,7 +142,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getSupabaseConnector } = await import(
       "../../connectors/supabase.js"
     );
@@ -153,5 +154,5 @@ registerTool({
       typeof params.contentType === "string" ? params.contentType : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });

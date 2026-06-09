@@ -10,6 +10,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // webflow.list_sites
@@ -56,12 +57,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async () => {
+  execute: wrapConnectorExecute(async () => {
     const { getWebflowConnector } = await import("../../connectors/webflow.js");
     const connector = getWebflowConnector();
     const result = await connector.listSites();
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -110,12 +111,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getWebflowConnector } = await import("../../connectors/webflow.js");
     const connector = getWebflowConnector();
     const result = await connector.listCollections(params.siteId as string);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -175,7 +176,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getWebflowConnector } = await import("../../connectors/webflow.js");
     const connector = getWebflowConnector();
     const result = await connector.listCollectionItems(
@@ -186,7 +187,7 @@ registerTool({
       },
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -245,7 +246,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getWebflowConnector } = await import("../../connectors/webflow.js");
     const connector = getWebflowConnector();
     const result = await connector.listFormSubmissions(
@@ -256,5 +257,5 @@ registerTool({
       },
     );
     return JSON.stringify(result);
-  },
+  }),
 });

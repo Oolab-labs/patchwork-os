@@ -8,6 +8,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // vercel.list_deployments
@@ -56,7 +57,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getVercelConnector } = await import("../../connectors/vercel.js");
     const connector = getVercelConnector();
     const result = await connector.listDeployments({
@@ -66,7 +67,7 @@ registerTool({
       state: typeof params.state === "string" ? params.state : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -100,12 +101,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getVercelConnector } = await import("../../connectors/vercel.js");
     const connector = getVercelConnector();
     const result = await connector.getDeployment(params.id as string);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -143,12 +144,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getVercelConnector } = await import("../../connectors/vercel.js");
     const connector = getVercelConnector();
     const result = await connector.listProjects({
       limit: typeof params.limit === "number" ? params.limit : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });

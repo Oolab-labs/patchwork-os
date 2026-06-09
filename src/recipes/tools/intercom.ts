@@ -6,6 +6,7 @@
 
 import { assertWriteAllowed } from "../../featureFlags.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // intercom.listConversations
@@ -48,7 +49,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getIntercomConnector } = await import(
       "../../connectors/intercom.js"
     );
@@ -65,7 +66,7 @@ registerTool({
       perPage: typeof params.perPage === "number" ? params.perPage : 20,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -98,7 +99,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getIntercomConnector } = await import(
       "../../connectors/intercom.js"
     );
@@ -107,7 +108,7 @@ registerTool({
       params.conversationId as string,
     );
     return JSON.stringify(conversation);
-  },
+  }),
 });
 
 // ============================================================================
@@ -147,7 +148,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     assertWriteAllowed("intercom.replyToConversation");
     const { getIntercomConnector } = await import(
       "../../connectors/intercom.js"
@@ -159,7 +160,7 @@ registerTool({
       (params.type as "comment" | "note" | undefined) ?? "comment",
     );
     return JSON.stringify({ id: conversation.id, state: conversation.state });
-  },
+  }),
 });
 
 // ============================================================================
@@ -191,7 +192,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     assertWriteAllowed("intercom.closeConversation");
     const { getIntercomConnector } = await import(
       "../../connectors/intercom.js"
@@ -201,7 +202,7 @@ registerTool({
       params.conversationId as string,
     );
     return JSON.stringify({ id: conversation.id, state: conversation.state });
-  },
+  }),
 });
 
 // ============================================================================
@@ -248,7 +249,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getIntercomConnector } = await import(
       "../../connectors/intercom.js"
     );
@@ -258,5 +259,5 @@ registerTool({
       perPage: typeof params.perPage === "number" ? params.perPage : 20,
     });
     return JSON.stringify(result);
-  },
+  }),
 });

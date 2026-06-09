@@ -14,6 +14,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // obsidian.list_vault
@@ -49,7 +50,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getObsidianConnector } = await import(
       "../../connectors/obsidian.js"
     );
@@ -58,7 +59,7 @@ registerTool({
       typeof params.vaultPath === "string" ? params.vaultPath : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -87,14 +88,14 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getObsidianConnector } = await import(
       "../../connectors/obsidian.js"
     );
     const connector = getObsidianConnector();
     const result = await connector.readNote(params.notePath as string);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -137,7 +138,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getObsidianConnector } = await import(
       "../../connectors/obsidian.js"
     );
@@ -146,7 +147,7 @@ registerTool({
     const append = params.append === true;
     await connector.writeNote(notePath, params.content as string, append);
     return JSON.stringify({ ok: true, path: notePath, append });
-  },
+  }),
 });
 
 // ============================================================================
@@ -183,12 +184,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getObsidianConnector } = await import(
       "../../connectors/obsidian.js"
     );
     const connector = getObsidianConnector();
     const result = await connector.searchVault(params.query as string);
     return JSON.stringify(result);
-  },
+  }),
 });

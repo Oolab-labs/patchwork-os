@@ -6,6 +6,7 @@
 
 import { assertWriteAllowed } from "../../featureFlags.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // hubspot.listContacts
@@ -41,7 +42,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getHubSpotConnector } = await import("../../connectors/hubspot.js");
     const connector = getHubSpotConnector();
     const result = await connector.listContacts({
@@ -49,7 +50,7 @@ registerTool({
       after: typeof params.after === "string" ? params.after : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -77,12 +78,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getHubSpotConnector } = await import("../../connectors/hubspot.js");
     const connector = getHubSpotConnector();
     const contact = await connector.getContact(params.contactId as string);
     return JSON.stringify({ contact });
-  },
+  }),
 });
 
 // ============================================================================
@@ -119,7 +120,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getHubSpotConnector } = await import("../../connectors/hubspot.js");
     const connector = getHubSpotConnector();
     const result = await connector.listDeals({
@@ -127,7 +128,7 @@ registerTool({
       stage: typeof params.stage === "string" ? params.stage : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -155,12 +156,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getHubSpotConnector } = await import("../../connectors/hubspot.js");
     const connector = getHubSpotConnector();
     const deal = await connector.getDeal(params.dealId as string);
     return JSON.stringify({ deal });
-  },
+  }),
 });
 
 // ============================================================================
@@ -198,7 +199,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     assertWriteAllowed("hubspot.createNote");
     const { getHubSpotConnector } = await import("../../connectors/hubspot.js");
     const connector = getHubSpotConnector();
@@ -208,7 +209,7 @@ registerTool({
       typeof params.dealId === "string" ? params.dealId : undefined,
     );
     return JSON.stringify({ id: note.id, createdAt: note.createdAt });
-  },
+  }),
 });
 
 // ============================================================================
@@ -240,10 +241,10 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getHubSpotConnector } = await import("../../connectors/hubspot.js");
     const connector = getHubSpotConnector();
     const results = await connector.searchContacts(params.query as string);
     return JSON.stringify({ results, count: results.length });
-  },
+  }),
 });

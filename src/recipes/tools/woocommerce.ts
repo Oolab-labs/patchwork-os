@@ -17,6 +17,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // woocommerce.list_orders
@@ -80,7 +81,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getWooCommerceConnector } = await import(
       "../../connectors/woocommerce.js"
     );
@@ -93,7 +94,7 @@ registerTool({
       before: typeof params.before === "string" ? params.before : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -136,14 +137,14 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getWooCommerceConnector } = await import(
       "../../connectors/woocommerce.js"
     );
     const connector = getWooCommerceConnector();
     const result = await connector.getOrder(params.id as number);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -205,7 +206,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getWooCommerceConnector } = await import(
       "../../connectors/woocommerce.js"
     );
@@ -218,7 +219,7 @@ registerTool({
         typeof params.category === "string" ? params.category : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -269,7 +270,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getWooCommerceConnector } = await import(
       "../../connectors/woocommerce.js"
     );
@@ -280,5 +281,5 @@ registerTool({
       page: typeof params.page === "number" ? params.page : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
