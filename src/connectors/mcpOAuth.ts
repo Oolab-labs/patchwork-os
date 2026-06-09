@@ -245,10 +245,10 @@ async function dynamicRegister(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const snippet = (await res.text()).slice(0, 300);
-    throw new Error(
-      `${config.vendor} dyn-reg failed ${res.status}: ${snippet}`,
-    );
+    // Audit 2026-06-08 (HIGH, connectors-core-2): do NOT echo the IdP response
+    // body — it can contain tokens/secrets and propagates into the browser
+    // response and logs. Surface only the status.
+    throw new Error(`${config.vendor} dyn-reg failed (${res.status})`);
   }
   const json = (await res.json()) as RegistrationResponse;
   if (!json.client_id)
@@ -368,10 +368,10 @@ async function exchangeCode(
     body: body.toString(),
   });
   if (!res.ok) {
-    const snippet = (await res.text()).slice(0, 300);
-    throw new Error(
-      `${config.vendor} token exchange ${res.status}: ${snippet}`,
-    );
+    // Audit 2026-06-08 (HIGH, connectors-core-2): do NOT echo the IdP response
+    // body — GitHub-style form-encoded errors can include an access_token, and
+    // this error reaches the browser response and logs. Surface only the status.
+    throw new Error(`${config.vendor} token exchange failed (${res.status})`);
   }
   // GitHub returns form-encoded by default unless Accept: application/json is honored
   const ct = res.headers.get("content-type") ?? "";
