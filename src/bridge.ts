@@ -49,6 +49,7 @@ import { classifyTool } from "./riskTier.js";
 import { RecipeRunLog } from "./runLog.js";
 import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
+import { buildSessionDetail } from "./sessionDetail.js";
 import { StreamableHttpHandler } from "./streamableHttp.js";
 import { initTelemetry, shutdownTelemetry } from "./telemetry.js";
 import { TokenUsageTracker } from "./tokenUsageTracker.js";
@@ -1400,6 +1401,19 @@ export class Bridge {
       }
       return out;
     };
+    // Wire `/sessions/:id` for the dashboard's session-detail page. Audit
+    // 2026-06-08 HIGH (server-1): sessionDetailFn was declared in server.ts but
+    // never assigned, so GET /sessions/:id returned 404 forever and the page
+    // was permanently blank. The dashboard navigates with the 8-char prefix
+    // sessionsFn emits (`s.id.slice(0,8)`), so resolve that (or a full id) to
+    // the active session, then slice the per-session activity from the log.
+    this.server.sessionDetailFn = (id) =>
+      buildSessionDetail(
+        id,
+        this.sessions.values(),
+        this.activityLog,
+        getApprovalQueue().list(),
+      );
     this.server.restartCheckFn = () => {
       let totalSessions = 0;
       let totalInFlight = 0;
