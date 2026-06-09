@@ -22,6 +22,7 @@ async function startServer(
     q?: string;
     since?: number;
     limit?: number;
+    semantic?: boolean;
   }) => Promise<Record<string, unknown>>,
 ): Promise<void> {
   server = new Server(TOKEN, logger);
@@ -110,7 +111,22 @@ describe("GET /traces", () => {
       q: "needle",
       since: 1_700_000_000_000,
       limit: 25,
+      semantic: false,
     });
+  });
+
+  it("parses ?semantic=true (and defaults to false otherwise)", async () => {
+    const received: Array<Record<string, unknown>> = [];
+    await startServer(async (q) => {
+      received.push(q);
+      return { traces: [], count: 0, sources: {} };
+    });
+    await get("/traces?q=auth+leak&semantic=true");
+    await get("/traces?q=auth+leak&semantic=false");
+    await get("/traces?q=auth+leak");
+    expect(received[0]?.semantic).toBe(true);
+    expect(received[1]?.semantic).toBe(false);
+    expect(received[2]?.semantic).toBe(false);
   });
 
   it("ignores non-numeric since / limit values", async () => {

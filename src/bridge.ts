@@ -1284,6 +1284,7 @@ export class Bridge {
         ...(query.tag && { tag: query.tag }),
         ...(query.since !== undefined && { since: query.since }),
         ...(query.limit !== undefined && { limit: query.limit }),
+        ...(query.semantic && { semantic: true }),
       });
       const structured = (result as { structuredContent?: unknown })
         .structuredContent;

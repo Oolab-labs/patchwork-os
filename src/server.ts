@@ -513,6 +513,7 @@ export class Server extends EventEmitter<ServerEvents> {
         tag?: string;
         since?: number;
         limit?: number;
+        semantic?: boolean;
       }) => Promise<Record<string, unknown>>)
     | null = null;
   /** Set by bridge to handle CC hook notify events via POST /notify */
@@ -973,6 +974,11 @@ export class Server extends EventEmitter<ServerEvents> {
                   limitStr !== null && /^\d+$/.test(limitStr)
                     ? Number(limitStr)
                     : undefined,
+                // Opt-in meaning-based ranking (?semantic=true). The bridge's
+                // tracesFn forwards it to ctxQueryTraces, which only ranks by
+                // cosine when an embeddings endpoint is configured — otherwise
+                // it falls back to the substring path. Safe default: false.
+                semantic: q.get("semantic") === "true",
               })
             : {
                 traces: [],
