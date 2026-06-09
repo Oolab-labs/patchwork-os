@@ -25,11 +25,34 @@
 /** Resolve the public base URL the OAuth callback is served from. */
 export function connectorCallbackBase(): string {
   const port = process.env.PATCHWORK_BRIDGE_PORT ?? "3101";
-  return (
+  // Identify the source env var so a misconfiguration produces an actionable
+  // error rather than a silently-broken redirect_uri (audit 2026-06-08
+  // connectors-core-8). `??` would treat an empty string as "set", so an
+  // accidentally-empty var still surfaces a clear error below.
+  const source =
+    process.env.PATCHWORK_DASHBOARD_URL !== undefined
+      ? "PATCHWORK_DASHBOARD_URL"
+      : process.env.PATCHWORK_BRIDGE_URL !== undefined
+        ? "PATCHWORK_BRIDGE_URL"
+        : "callback base URL";
+  const raw = (
     process.env.PATCHWORK_DASHBOARD_URL ??
     process.env.PATCHWORK_BRIDGE_URL ??
     `http://localhost:${port}`
-  ).replace(/\/+$/, "");
+  ).trim();
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`${source} is not a valid URL: ${JSON.stringify(raw)}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(
+      `${source} must be an http(s) URL, got "${parsed.protocol}" in ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw.replace(/\/+$/, "");
 }
 
 /**

@@ -14,6 +14,7 @@ const CIRCUIT_RESET_MS = 5_000;
 
 export class ChildBridgeClient {
   private sessionId: string | null = null;
+  private initInflight: Promise<boolean> | null = null;
   private circuitState: CircuitState = "closed";
   private circuitOpenedAt = 0;
   private consecutiveFailures = 0;
@@ -48,6 +49,19 @@ export class ChildBridgeClient {
   }
 
   async initSession(): Promise<boolean> {
+    // Audit 2026-06-08 HIGH (orchestrator-2): the health probe (listTools) and
+    // live callTool share this client + sessionId. Without coalescing, two
+    // concurrent initSession() calls each POST `initialize` and the second
+    // overwrites the first's sessionId mid-flight. Share one in-flight init so
+    // concurrent callers await the same result.
+    if (this.initInflight) return this.initInflight;
+    this.initInflight = this._initSessionOnce().finally(() => {
+      this.initInflight = null;
+    });
+    return this.initInflight;
+  }
+
+  private async _initSessionOnce(): Promise<boolean> {
     try {
       const body = JSON.stringify({
         jsonrpc: "2.0",

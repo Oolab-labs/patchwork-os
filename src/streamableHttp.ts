@@ -37,6 +37,9 @@ const SESSION_ID_RE =
 const MAX_HTTP_SESSIONS = 5;
 const BODY_SIZE_LIMIT = 1_048_576; // 1 MB
 const MAX_PENDING_SENDS = 100; // per-session response queue cap
+// Buffer added over a tool's own timeout when sizing the HTTP response wait, so
+// the wait always outlives the tool (audit 2026-06-08 transport-1).
+const HTTP_SEND_TIMEOUT_BUFFER_MS = 10_000;
 const SSE_HEARTBEAT_MS = 20_000; // keep SSE streams alive through proxies/firewalls
 const SSE_BUFFER_MAX = 100; // max events retained per session for Last-Event-ID replay
 const SSE_BUFFER_TTL_MS = 30_000; // events older than 30s are not replayed
@@ -627,11 +630,24 @@ export class StreamableHttpHandler {
       return;
     }
 
-    // Request → feed to adapter, wait for transport's response keyed by request ID
+    // Request → feed to adapter, wait for transport's response keyed by request ID.
+    // Audit 2026-06-08 HIGH (transport-1): for tools/call, size the HTTP wait
+    // ABOVE the tool's own declared timeout (+ buffer). Otherwise the POST 504s
+    // at the default 90s while a long tool (vscodeTasks 610s, runTests 300s,
+    // watchDiagnostics 120s) keeps running, and its eventual response is dropped.
     const requestId = (msg.id as string | number) ?? 0;
+    let waitMs: number | undefined;
+    if (msg.method === "tools/call") {
+      const toolName = (msg as { params?: { name?: unknown } }).params?.name;
+      if (typeof toolName === "string") {
+        waitMs =
+          session.transport.getToolTimeout(toolName) +
+          HTTP_SEND_TIMEOUT_BUFFER_MS;
+      }
+    }
     let responsePromise: Promise<string>;
     try {
-      responsePromise = session.adapter.waitForSend(requestId);
+      responsePromise = session.adapter.waitForSend(requestId, waitMs);
     } catch (err) {
       // Duplicate in-flight id — reject before feeding to transport so the
       // transport never sees a second message with the same id.

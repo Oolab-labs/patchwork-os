@@ -406,3 +406,63 @@ describe("ChildBridgeClient isError passthrough", () => {
     expect(result.structuredContent).toBeUndefined();
   });
 });
+
+// Audit 2026-06-08 HIGH (orchestrator-2): the health probe (listTools) and live
+// callTool share one ChildBridgeClient + sessionId. Concurrent initSession()
+// calls each POST `initialize`, and the second overwrites the first's session id
+// mid-flight. Init must be coalesced into a single in-flight request.
+describe("ChildBridgeClient concurrent init coalescing", () => {
+  let server: http.Server;
+  let client: ChildBridgeClient;
+
+  afterEach(async () => {
+    client.destroy();
+    await closeServer(server);
+  });
+
+  it("coalesces concurrent initSession() calls into a single initialize POST", async () => {
+    let initCount = 0;
+
+    ({ server } = await startMockBridge((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        const body = JSON.parse(
+          Buffer.concat(chunks).toString("utf-8"),
+        ) as Record<string, unknown>;
+        if (body.method === "initialize") {
+          initCount++;
+          const n = initCount;
+          // Delay the response so all concurrent callers overlap the in-flight
+          // init; without coalescing each would fire its own initialize.
+          setTimeout(() => {
+            res.setHeader("mcp-session-id", `sess-${n}`);
+            res.writeHead(200, { "content-type": "application/json" }).end(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: body.id,
+                result: { protocolVersion: "2025-11-25", capabilities: {} },
+              }),
+            );
+          }, 30);
+        } else if (body.method === "notifications/initialized") {
+          res.writeHead(204).end();
+        } else {
+          res.writeHead(200).end("{}");
+        }
+      });
+    }));
+
+    const { port } = server.address() as { port: number };
+    client = new ChildBridgeClient(port, AUTH_TOKEN);
+
+    const results = await Promise.all([
+      client.initSession(),
+      client.initSession(),
+      client.initSession(),
+    ]);
+    expect(results).toEqual([true, true, true]);
+    // Without the mutex this is 3 (one initialize per concurrent caller).
+    expect(initCount).toBe(1);
+  });
+});

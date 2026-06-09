@@ -88,6 +88,27 @@ describe("runRecipeEnable", () => {
       runRecipeEnable("nonexistent", { recipesDir: tmpRoot }),
     ).toThrow(/No installed recipe named "nonexistent"/);
   });
+
+  // audit 2026-06-08 HIGH (cli-1) — manifest-less GitHub installs live at a
+  // multi-segment "owner/repo" dir; enable/disable/uninstall must accept it.
+  it("enables a manifest-less GitHub recipe installed at owner/repo", () => {
+    makeInstalledRecipe(path.join("patchworkos", "my-recipe"), true);
+
+    const result = runRecipeEnable("patchworkos/my-recipe", {
+      recipesDir: tmpRoot,
+    });
+
+    expect(result.alreadyEnabled).toBe(false);
+    expect(
+      existsSync(path.join(tmpRoot, "patchworkos", "my-recipe", ".disabled")),
+    ).toBe(false);
+  });
+
+  it("still rejects path-traversal names", () => {
+    expect(() =>
+      runRecipeEnable("../../../etc/evil", { recipesDir: tmpRoot }),
+    ).toThrow(/invalid recipe name/i);
+  });
 });
 
 describe("runRecipeDisable", () => {

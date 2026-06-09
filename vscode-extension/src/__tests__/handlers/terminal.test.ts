@@ -351,6 +351,79 @@ describe("handleSendTerminalCommand", () => {
     }
   });
 
+  // audit 2026-06-08 HIGH (extension-3) — backslash is the native path
+  // separator on Windows; blocking it rejected every `dir C:\Users\foo`.
+  it("allows Windows backslash paths on win32", async () => {
+    const t = _mockTerminal({ name: "ps" });
+    vscode.window.terminals = [t] as any;
+    const original = process.platform;
+    Object.defineProperty(process, "platform", {
+      value: "win32",
+      configurable: true,
+    });
+    try {
+      const result = (await handleSendTerminalCommand({
+        text: "dir C:\\Users\\foo",
+        name: "ps",
+      })) as any;
+      expect(result.success).toBe(true);
+      expect(t.sendText).toHaveBeenCalledWith("dir C:\\Users\\foo", true);
+    } finally {
+      Object.defineProperty(process, "platform", {
+        value: original,
+        configurable: true,
+      });
+    }
+  });
+
+  it("still rejects command-chaining metacharacters on win32", async () => {
+    const t = _mockTerminal({ name: "ps" });
+    vscode.window.terminals = [t] as any;
+    const original = process.platform;
+    Object.defineProperty(process, "platform", {
+      value: "win32",
+      configurable: true,
+    });
+    try {
+      for (const char of [";", "&", "|", "`", "$", "(", ")", "\n"]) {
+        const result = (await handleSendTerminalCommand({
+          text: `dir${char}evil`,
+          name: "ps",
+        })) as any;
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("metacharacters");
+      }
+    } finally {
+      Object.defineProperty(process, "platform", {
+        value: original,
+        configurable: true,
+      });
+    }
+  });
+
+  it("still rejects backslash on non-Windows", async () => {
+    const t = _mockTerminal({ name: "bash" });
+    vscode.window.terminals = [t] as any;
+    const original = process.platform;
+    Object.defineProperty(process, "platform", {
+      value: "linux",
+      configurable: true,
+    });
+    try {
+      const result = (await handleSendTerminalCommand({
+        text: "echo a\\b",
+        name: "bash",
+      })) as any;
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("metacharacters");
+    } finally {
+      Object.defineProperty(process, "platform", {
+        value: original,
+        configurable: true,
+      });
+    }
+  });
+
   it("returns error when terminal not found", async () => {
     vscode.window.terminals = [];
     const result = (await handleSendTerminalCommand({

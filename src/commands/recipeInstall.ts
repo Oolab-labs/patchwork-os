@@ -642,9 +642,20 @@ function findInstalledRecipeDir(
   name: string,
   recipesDir: string,
 ): string | null {
-  if (!isSafeBasename(name)) {
+  // Audit 2026-06-08 HIGH (cli-1): manifest-less GitHub installs live at a
+  // multi-segment "owner/repo[/subdir]" directory, so a single-basename check
+  // broke enable/disable/uninstall for them. Allow path separators between
+  // valid segments but still reject empty / "." / ".." segments and control
+  // characters; the path-jail check below is the real traversal boundary.
+  const segments = typeof name === "string" ? name.split(/[/\\]/) : [];
+  const invalidName =
+    typeof name !== "string" ||
+    name.length === 0 ||
+    segments.length === 0 ||
+    segments.some((seg) => !isSafeBasename(seg));
+  if (invalidName) {
     throw new Error(
-      `Invalid recipe name "${name}" — must be a single directory name without path separators or control characters.`,
+      `Invalid recipe name "${name}" — no empty, ".", "..", or control-character path segments.`,
     );
   }
   const direct = path.join(recipesDir, name);

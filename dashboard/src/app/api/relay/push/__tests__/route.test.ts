@@ -109,6 +109,32 @@ describe("POST /api/relay/push — auth", () => {
     const r = await POST(req({ authorization: `Basic ${TOKEN}` }, validBody));
     expect(r.status).toBe(401);
   });
+
+  // ─── auth-bypass regression — audit 2026-06-08 HIGH (dash-api-1) ───────────
+  // The old verifyBearer padded into a 256-byte buffer but SKIPPED the copy
+  // when an input exceeded 256 bytes (`if (a.length <= PAD) a.copy(pa)`),
+  // leaving the buffer all-zeros. Two >256-byte inputs of equal length both
+  // compared as all-zeros → timingSafeEqual returned true and any same-length
+  // payload authenticated. login/route.ts was fixed for this (HIGH #2); the
+  // relays were never ported. Practical because PATCHWORK_PUSH_TOKEN can be a
+  // long random/JWT-style secret.
+  it("401 when a wrong >256-byte token of equal length is presented (no all-zeros collision)", async () => {
+    process.env.PATCHWORK_PUSH_TOKEN = "A".repeat(300);
+    const r = await POST(
+      req({ authorization: `Bearer ${"B".repeat(300)}` }, validBody),
+    );
+    expect(r.status).toBe(401);
+    expect(webpush.sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("200 when the correct >256-byte token is presented (over-cap secret still works up to CAP)", async () => {
+    const longToken = `tok-${"x".repeat(300)}`;
+    process.env.PATCHWORK_PUSH_TOKEN = longToken;
+    const r = await POST(
+      req({ authorization: `Bearer ${longToken}` }, validBody),
+    );
+    expect(r.status).toBe(200);
+  });
 });
 
 describe("POST /api/relay/push — VAPID config", () => {

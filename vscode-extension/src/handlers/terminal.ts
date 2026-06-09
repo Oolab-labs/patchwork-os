@@ -520,8 +520,21 @@ export async function handleDisposeTerminal(
   return { success: true, terminalName };
 }
 
-/** Shell metacharacters that could chain or inject additional commands */
-const SHELL_METACHAR_RE = /[;&|`$()<>{}!\\\n\r]/;
+/**
+ * Shell metacharacters that could chain or inject additional commands.
+ *
+ * Backslash is excluded on Windows because it's the native path separator
+ * (`dir C:\Users\foo` is a normal command, not an injection) — audit 2026-06-08
+ * (extension-3). Mirrors EXEC_METACHAR_RE. Evaluated per-call so the platform
+ * branch is exercisable in tests; newlines are always rejected.
+ */
+function hasShellMetachar(text: string): boolean {
+  const re =
+    process.platform === "win32"
+      ? /[;&|`$()<>{}!\n\r]/
+      : /[;&|`$()<>{}!\\\n\r]/;
+  return re.test(text);
+}
 
 export async function handleSendTerminalCommand(
   params: Record<string, unknown>,
@@ -531,7 +544,7 @@ export async function handleSendTerminalCommand(
   const text = params.text;
 
   // Defense-in-depth: block shell metacharacters even though the bridge validates too
-  if (SHELL_METACHAR_RE.test(text)) {
+  if (hasShellMetachar(text)) {
     return {
       success: false,
       error:

@@ -145,6 +145,15 @@ export function runNew(options: NewOptions): { path: string; content: string } {
   if (!options.name) {
     throw new Error("Recipe name is required");
   }
+  // Audit 2026-06-08 HIGH (cli-2): the non-interactive API interpolated `name`
+  // straight into the output path, so `../../../evil` escaped the recipes dir.
+  // Apply the same allowlist the interactive path uses.
+  if (!RECIPE_NAME_RE.test(options.name)) {
+    throw new Error(
+      `Invalid recipe name "${options.name}" — use lowercase letters, digits, "-" or "_" ` +
+        "(2–64 chars, no path separators)",
+    );
+  }
   if (!options.description) {
     throw new Error("Recipe description is required");
   }

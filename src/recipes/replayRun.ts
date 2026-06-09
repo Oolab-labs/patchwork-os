@@ -26,7 +26,7 @@ import type {
 } from "./chainedRunner.js";
 import { runChainedRecipe } from "./chainedRunner.js";
 import type { RunnerDeps } from "./yamlRunner.js";
-import { buildChainedDeps } from "./yamlRunner.js";
+import { buildChainedDeps, declaredRecipeEnv } from "./yamlRunner.js";
 
 export interface ReplayDeps {
   /** Long-lived run log so the new run shows up live in the dashboard. */
@@ -107,7 +107,10 @@ export async function replayMockedRun(opts: {
   );
 
   const runOptions: RunOptions = {
-    env: { ...process.env } as Record<string, string | undefined>,
+    // Audit 2026-06-08 (recipe-support-3): replay must enforce the same
+    // declared-keys env allowlist as the live chained/flat paths — never spread
+    // the full process.env into the template context.
+    env: { ...declaredRecipeEnv(recipe) } as Record<string, string | undefined>,
     maxConcurrency: Math.max(1, recipe.maxConcurrency ?? 4),
     maxDepth: recipe.maxDepth ?? 3,
     dryRun: false,

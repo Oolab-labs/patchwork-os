@@ -468,6 +468,40 @@ describe("OrchestratorBridge integration: child bridge goes down mid-session", (
   });
 });
 
+// Audit 2026-06-08 HIGH (orchestrator-1): routeToolCall's error returns must set
+// isError:true (ADR-0004) so the MCP client doesn't treat a routing failure as a
+// successful tool result. Unit-tests the REAL OrchestratorBridge.routeToolCall
+// (the integration scaffold above wires its own proxy handler, so it can't cover
+// this). routeToolCall is private — reached via a typed bracket cast.
+describe("OrchestratorBridge.routeToolCall — error results set isError", () => {
+  type RouteToolCall = (
+    toolName: string,
+    args: Record<string, unknown>,
+    session: null,
+  ) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
+
+  it("returns isError:true when no healthy bridge is available", async () => {
+    const lockDir = fs.mkdtempSync(path.join(os.tmpdir(), "orch-nohealthy-"));
+    const config: OrchestratorConfig = {
+      port: 0,
+      bindAddress: "127.0.0.1",
+      lockDir, // empty → registry has no bridges, getHealthy() is []
+      healthIntervalMs: 60_000,
+      verbose: false,
+      jsonl: false,
+    };
+    const orch = new OrchestratorBridge(config);
+    // Deliberately do NOT call start(): no children, no signal handlers.
+    const route = (
+      orch as unknown as { routeToolCall: RouteToolCall }
+    ).routeToolCall.bind(orch);
+
+    const result = await route("echo", { message: "x" }, null);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/No healthy bridge/i);
+  });
+});
+
 describe("OrchestratorBridge integration: two child bridges", () => {
   it("getOrchestratorStatus reports both bridges and listWorkspaces shows both workspaces", async () => {
     const lockDir = fs.mkdtempSync(path.join(os.tmpdir(), "orch-integ-two-"));

@@ -456,6 +456,16 @@ export class McpTransport {
     }
   }
 
+  /**
+   * Effective execution timeout for a registered tool — its declared timeoutMs
+   * or the default TOOL_TIMEOUT_MS. The HTTP transport sizes its response wait
+   * above this so a long-running tool's POST doesn't 504 before the tool's own
+   * timeout fires (audit 2026-06-08 transport-1). Unknown tools get the default.
+   */
+  getToolTimeout(name: string): number {
+    return this.tools.get(name)?.timeoutMs ?? TOOL_TIMEOUT_MS;
+  }
+
   /** Upsert a tool by name — replaces if already registered, inserts if new. */
   replaceTool(
     schema: ToolSchema,

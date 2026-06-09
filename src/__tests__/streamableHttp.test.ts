@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
 import { StreamableHttpHandler } from "../streamableHttp.js";
+import { McpTransport } from "../transport.js";
 
 // Mock registerAllTools so createSession doesn't require real tool deps.
 // The McpTransport will handle initialize/tools/list via its built-in MCP logic.
@@ -182,6 +183,7 @@ afterEach(async () => {
   handler = null;
   await server?.close();
   server = null;
+  vi.restoreAllMocks();
 });
 
 // ── Session lifecycle ──────────────────────────────────────────────────────────
@@ -1208,6 +1210,40 @@ describe("Streamable HTTP: session overflow eviction", () => {
     expect(res.status).toBe(503);
     const body = JSON.parse(res.body);
     expect(body.error.message).toContain("capacity");
+  });
+});
+
+// audit 2026-06-08 HIGH (transport-1) — the HTTP response wait must be sized
+// from the tool's declared timeout, not the fixed 90s default, or a long tool
+// (vscodeTasks 610s, runTests 300s) 504s while it's still running.
+describe("Streamable HTTP: tool-aware response timeout", () => {
+  it("derives the HTTP wait from the tool's timeout on tools/call", async () => {
+    const { sid } = await initSession(port);
+    const spy = vi.spyOn(McpTransport.prototype, "getToolTimeout");
+    await post(
+      port,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "watchDiagnostics", arguments: {} },
+      },
+      sid,
+    );
+    expect(spy).toHaveBeenCalledWith("watchDiagnostics");
+    spy.mockRestore();
+  });
+
+  it("does not consult the tool timeout for non-tools/call requests", async () => {
+    const { sid } = await initSession(port);
+    const spy = vi.spyOn(McpTransport.prototype, "getToolTimeout");
+    await post(
+      port,
+      { jsonrpc: "2.0", id: 3, method: "tools/list", params: {} },
+      sid,
+    );
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });
 

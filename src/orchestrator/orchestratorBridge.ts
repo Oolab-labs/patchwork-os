@@ -489,6 +489,9 @@ export class OrchestratorBridge {
             text: `[ORCHESTRATOR ERROR] No healthy bridge available to handle tool "${toolName}".\n${detail}`,
           },
         ],
+        // Audit 2026-06-08 HIGH (orchestrator-1): tool-level failure must set
+        // isError (ADR-0004) or the MCP client treats it as a success.
+        isError: true,
       };
     }
 
@@ -501,6 +504,7 @@ export class OrchestratorBridge {
             text: `[ORCHESTRATOR ERROR] Internal error: no client for bridge port ${targetPort}`,
           },
         ],
+        isError: true,
       };
     }
 
@@ -536,6 +540,7 @@ export class OrchestratorBridge {
             ].join("\n"),
           },
         ],
+        isError: true,
       };
     }
   }
