@@ -39,6 +39,24 @@ function storageKey(provider: string): string {
   return `${SERVICE_NAME}.${provider}`;
 }
 
+// Keychain keys derive from connector/provider names (user-influenced). They
+// reach the macOS keychain via `security` and, for writes, via a `/bin/sh -c`
+// wrapper (credential passed through env, never argv). Even though the key is
+// only ever a positional `$1` (not interpolated into the command string),
+// constrain it to a strict allowlist before it touches any spawn boundary.
+// Defence-in-depth against command-line injection (CWE-78/88) and keeps the
+// static analyser's taint path provably sanitised. Storage keys are always
+// `patchwork-os.<provider>` dotted identifiers — this charset is a superset.
+const KEYCHAIN_KEY_ALLOWLIST = /^[A-Za-z0-9._\-:@]+$/;
+export function isValidKeychainKey(key: string): boolean {
+  return (
+    typeof key === "string" &&
+    key.length > 0 &&
+    key.length <= 256 &&
+    KEYCHAIN_KEY_ALLOWLIST.test(key)
+  );
+}
+
 function parseJson<T>(json: string | null): T | null {
   if (json === null) {
     return null;
@@ -633,6 +651,7 @@ function setMacOSKeychainItemSync(key: string, value: string): boolean {
   // require elevated access to inspect on macOS. The shell reads $PATCHWORK_KCV
   // and expands it into security's -w argument; the bridge process itself never
   // carries the credential in its own arg list.
+  if (!isValidKeychainKey(key)) return false;
   try {
     const result = spawnSync(
       "/bin/sh",
@@ -656,6 +675,7 @@ function setMacOSKeychainItemSync(key: string, value: string): boolean {
 }
 
 function getMacOSKeychainItemSync(key: string): string | null {
+  if (!isValidKeychainKey(key)) return null;
   try {
     const result = spawnSync(
       "security",
@@ -672,6 +692,7 @@ function getMacOSKeychainItemSync(key: string): string | null {
 }
 
 function deleteMacOSKeychainItemSync(key: string): boolean {
+  if (!isValidKeychainKey(key)) return false;
   try {
     const result = spawnSync(
       "security",
