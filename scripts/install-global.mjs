@@ -27,6 +27,16 @@ function capture(cmd) {
   return execSync(cmd, { cwd, encoding: "utf-8" }).trim();
 }
 
+// Build FIRST. `npm pack` tars whatever is already in dist/ — it does NOT run
+// the build (only `prepublishOnly` builds, and that runs on `npm publish`, never
+// on `npm pack`). Without this, install:global silently ships a STALE dist (e.g.
+// freshly-merged code missing its latest wiring), and the global bridge runs old
+// behaviour even though the source is current. Always rebuild before packing.
+console.error(
+  "→ npm run build (fresh dist — npm pack alone tars a stale dist/)",
+);
+run("npm run build");
+
 console.error("→ npm pack");
 const packOutput = capture("npm pack --silent");
 // `npm pack --silent` prints the tarball name on stdout (last non-empty line).
