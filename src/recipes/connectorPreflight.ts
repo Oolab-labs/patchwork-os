@@ -72,6 +72,7 @@ export const TOOL_NAMESPACE_TO_CONNECTOR: Record<string, string> = {
   obsidian: "obsidian",
   paystack: "paystack",
   pipedrive: "pipedrive",
+  mongodb: "mongodb",
   postgres: "postgres",
   posthog: "posthog",
   redis: "redis",

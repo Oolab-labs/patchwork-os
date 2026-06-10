@@ -966,6 +966,25 @@ describe("expandParallelSteps", () => {
     expect(p2?.awaits).toContain("pre");
   });
 
+  it("throws a clear error on the parallel:{ each } object form (no silent no-op)", () => {
+    // The runtime map-reduce form iterates an array a prior step produces, which
+    // the static plan-time expander can't handle. It used to fall through and
+    // execute zero iterations (silent data loss); it must fail loud instead.
+    // (audit recipe-chained-1)
+    const steps = [
+      {
+        id: "loop",
+        parallel: {
+          each: "{{plan.items}}",
+          as: "item",
+          steps: [{ id: "s1", tool: "t", with: { x: "{{item}}" } }],
+        },
+      },
+    ] as unknown as Parameters<typeof expandParallelSteps>[0];
+    expect(() => expandParallelSteps(steps)).toThrow(/parallel:\{ each \}/);
+    expect(() => expandParallelSteps(steps)).toThrow(/fan_out/);
+  });
+
   it("steps after the group await all children not the group id", () => {
     const steps = [
       {
