@@ -65,7 +65,28 @@ import { PACKAGE_VERSION } from "./version.js";
 import { wireHaltPushDispatch } from "./wireHaltPushDispatch.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
-let globalHandlersRegistered = false;
+
+/**
+ * Process-level signal handlers must be registered exactly once per process,
+ * but a second Bridge.start() in the same process (orchestrator topology,
+ * in-process test restarts) must take OWNERSHIP of them rather than be skipped.
+ *
+ * core-infra-4: the old `let globalHandlersRegistered = false` boolean guard
+ * meant the FIRST bridge's `shutdown` closure was captured forever; a second
+ * bridge registered no handlers at all, so SIGTERM cleaned up the stale first
+ * bridge and never the second. We instead remember the currently-registered
+ * handler set and detach it before the new bridge attaches its own, so the
+ * most-recently-started bridge always owns process teardown without
+ * accumulating listeners (which would trigger MaxListenersExceededWarning).
+ */
+interface RegisteredSignalHandlers {
+  sigint: () => void;
+  sigterm: () => void;
+  sighup: () => void;
+  unhandledRejection: (reason: unknown) => void;
+  uncaughtException: (err: Error) => void;
+}
+let activeSignalHandlers: RegisteredSignalHandlers | null = null;
 
 /** Collect the union of openedFiles across all sessions in a checkpoint. */
 export function extractRestoredFiles(
@@ -1857,9 +1878,6 @@ export class Bridge {
       await shutdownTelemetry();
       process.exit(exitCode);
     };
-    // All process-level signal handlers are guarded by globalHandlersRegistered so
-    // that repeated start() calls (e.g. in tests or --watch restarts) don't
-    // accumulate process.once listeners and trigger MaxListenersExceededWarning.
     // Wire server callbacks so /restart and /shutdown invoke the bridge's
     // shutdown sequence directly. This is the only path that works on
     // Windows, where `process.kill(pid, 'SIGTERM')` is TerminateProcess
@@ -1871,12 +1889,24 @@ export class Bridge {
       void shutdown("SIGTERM", 0);
     };
 
-    if (!globalHandlersRegistered) {
-      globalHandlersRegistered = true;
-      process.once("SIGINT", () => shutdown("SIGINT", 130));
-      process.once("SIGTERM", () => shutdown("SIGTERM", 143));
-      process.once("SIGHUP", () => shutdown("SIGHUP", 143));
-      process.on("unhandledRejection", (reason) => {
+    // core-infra-4: take ownership of the process signal handlers. Detach any
+    // previously-registered set (from an earlier bridge in this process) first
+    // so we never accumulate listeners (MaxListenersExceededWarning) AND the
+    // most-recently-started bridge — whose `shutdown` closure references this
+    // bridge's sessions/logger — is the one that actually runs on teardown.
+    if (activeSignalHandlers) {
+      const prev = activeSignalHandlers;
+      process.removeListener("SIGINT", prev.sigint);
+      process.removeListener("SIGTERM", prev.sigterm);
+      process.removeListener("SIGHUP", prev.sighup);
+      process.removeListener("unhandledRejection", prev.unhandledRejection);
+      process.removeListener("uncaughtException", prev.uncaughtException);
+    }
+    const handlers: RegisteredSignalHandlers = {
+      sigint: () => void shutdown("SIGINT", 130),
+      sigterm: () => void shutdown("SIGTERM", 143),
+      sighup: () => void shutdown("SIGHUP", 143),
+      unhandledRejection: (reason) => {
         for (const [sid, session] of this.sessions) {
           const stats = session.transport.getStats();
           if (stats.inFlightTools.length > 0) {
@@ -1888,8 +1918,8 @@ export class Bridge {
         this.logger.error(
           `Unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,
         );
-      });
-      process.once("uncaughtException", (err) => {
+      },
+      uncaughtException: (err) => {
         for (const [sid, session] of this.sessions) {
           const stats = session.transport.getStats();
           if (stats.inFlightTools.length > 0) {
@@ -1899,9 +1929,15 @@ export class Bridge {
           }
         }
         this.logger.error(`Uncaught exception: ${err.stack ?? err.message}`);
-        shutdown("uncaughtException", 1);
-      });
-    }
+        void shutdown("uncaughtException", 1);
+      },
+    };
+    process.on("SIGINT", handlers.sigint);
+    process.on("SIGTERM", handlers.sigterm);
+    process.on("SIGHUP", handlers.sighup);
+    process.on("unhandledRejection", handlers.unhandledRejection);
+    process.on("uncaughtException", handlers.uncaughtException);
+    activeSignalHandlers = handlers;
 
     // Startup banner to stderr (not stdout) to avoid capture by parent processes
     this.logger.info("claude-ide-bridge ready");

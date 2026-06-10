@@ -881,14 +881,16 @@ export class Server extends EventEmitter<ServerEvents> {
         } else {
           this.approvalIpCounts.set(remoteIp, { count: 1, windowStart: now });
         }
-        // GC stale entries opportunistically — bounded growth alongside
-        // the same Map. 200 is well above any legitimate concurrent IP
-        // count; well below memory pressure.
-        if (this.approvalIpCounts.size > 200) {
-          for (const [k, v] of this.approvalIpCounts) {
-            if (now - v.windowStart > Server.APPROVAL_IP_WINDOW_MS) {
-              this.approvalIpCounts.delete(k);
-            }
+        // http-server-2: prune stale entries on EVERY phone-path request,
+        // not only once the map crosses 200. The old `size > 200` guard meant
+        // any deployment with fewer than 200 distinct IPs never evicted
+        // expired entries — a one-shot IP's 40-byte record survived for the
+        // whole process lifetime. Each window is short (APPROVAL_IP_WINDOW_MS)
+        // and the map is tiny in practice, so a full pass per request is
+        // cheap and keeps the map genuinely bounded.
+        for (const [k, v] of this.approvalIpCounts) {
+          if (now - v.windowStart > Server.APPROVAL_IP_WINDOW_MS) {
+            this.approvalIpCounts.delete(k);
           }
         }
       }
