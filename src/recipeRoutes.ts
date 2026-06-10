@@ -42,6 +42,7 @@ import {
 } from "./fp/tokenBucket.js";
 import { respondIfUnknownBodyKeys } from "./httpBodyValidation.js";
 import { respond500 } from "./httpErrorResponse.js";
+import { cancelRun } from "./recipes/runRegistry.js";
 import type { LintIssue } from "./recipes/validation.js";
 import type { RecipeDraft } from "./recipesHttp.js";
 import { invalidateRecipesCache } from "./recipesHttp.js";
@@ -1025,6 +1026,29 @@ export function tryHandleRecipeRoute(
         respond500(res, err, "runs/:seq detail");
       }
     })();
+    return true;
+  }
+
+  // POST /runs/:seq/cancel — cancel an in-flight recipe run. Aborts the run's
+  // registered AbortController so not-yet-started steps are skipped (and agent
+  // steps that honor the signal abort). 200 {cancelled:true} when a live run
+  // was found, 404 {cancelled:false} when the seq isn't currently running
+  // (already finished, unknown, or ran on a different process). (run-cancel)
+  const runCancelMatch =
+    req.method === "POST"
+      ? /^\/runs\/(\d+)\/cancel$/.exec(parsedUrl.pathname)
+      : null;
+  if (runCancelMatch?.[1]) {
+    const seq = Number.parseInt(runCancelMatch[1], 10);
+    try {
+      const cancelled = cancelRun(seq);
+      res.writeHead(cancelled ? 200 : 404, {
+        "Content-Type": "application/json",
+      });
+      res.end(JSON.stringify({ cancelled, seq }));
+    } catch (err) {
+      respond500(res, err, "runs/:seq/cancel");
+    }
     return true;
   }
 

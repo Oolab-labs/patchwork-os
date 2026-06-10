@@ -128,6 +128,48 @@ describe("executeWithDependencies", () => {
     expect(results.get("ok")?.success).toBe(true);
   });
 
+  it("skips all steps when the signal is already aborted (run-cancel)", async () => {
+    const g = buildDependencyGraph([{ id: "a" }, { id: "b", awaits: ["a"] }]);
+    const ctl = new AbortController();
+    ctl.abort("run cancelled by user");
+    const executed: string[] = [];
+    const results = await executeWithDependencies(
+      g,
+      async (id) => {
+        executed.push(id);
+      },
+      { maxConcurrency: 2, signal: ctl.signal },
+    );
+    expect(executed).toEqual([]);
+    expect(results.get("a")?.success).toBe(false);
+    expect(results.get("a")?.error?.message).toMatch(
+      /Cancelled: run cancelled by user/,
+    );
+    expect(results.get("b")?.success).toBe(false);
+  });
+
+  it("cancels the remaining steps when aborted mid-run (run-cancel)", async () => {
+    const g = buildDependencyGraph([
+      { id: "a" },
+      { id: "b", awaits: ["a"] },
+      { id: "c", awaits: ["b"] },
+    ]);
+    const ctl = new AbortController();
+    const executed: string[] = [];
+    const results = await executeWithDependencies(
+      g,
+      async (id) => {
+        executed.push(id);
+        if (id === "a") ctl.abort(); // cancel right after the first step runs
+      },
+      { maxConcurrency: 1, signal: ctl.signal },
+    );
+    expect(executed).toEqual(["a"]); // b and c never start
+    expect(results.get("a")?.success).toBe(true);
+    expect(results.get("b")?.success).toBe(false);
+    expect(results.get("c")?.success).toBe(false);
+  });
+
   it("respects dependency order (b runs after a)", async () => {
     const order: string[] = [];
     const g = buildDependencyGraph([{ id: "a" }, { id: "b", awaits: ["a"] }]);
