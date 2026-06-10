@@ -40,6 +40,9 @@ describe("KNOWN_SUBCOMMANDS dispatch allowlist", () => {
     "start-task", // L594 -> runStartTask
     "continue-handoff", // L598 -> runContinueHandoff
     "token-efficiency", // L762 -> tokenEfficiencyStatus/Benchmark
+    // cli-commands-2026-06-10: orchestrator is dispatched but was missing from
+    // the allowlist, so the typo suggester / help never surfaced it.
+    "orchestrator", // L4196 -> startOrchestrator
   ];
 
   it.each(

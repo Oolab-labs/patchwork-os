@@ -265,6 +265,14 @@ const GITHUB_REDIRECT_HOSTS = new Set<string>([
   "media.githubusercontent.com",
 ]);
 const HTTPS_GET_MAX_REDIRECTS = 5;
+/**
+ * Hard cap on a single httpsGet response body (cli-commands-2). A recipe
+ * install fetches GitHub contents listings and individual recipe files —
+ * legitimate payloads are well under a megabyte. 50 MB leaves generous
+ * headroom for an unusually large recipe tree while preventing a hostile or
+ * runaway response from streaming unbounded into process heap.
+ */
+const HTTPS_GET_MAX_BYTES = 50 * 1024 * 1024;
 
 function isAllowedGithubHost(hostname: string): boolean {
   return GITHUB_REDIRECT_HOSTS.has(hostname.toLowerCase());
@@ -345,8 +353,24 @@ async function httpsGet(url: string, hops = 0): Promise<Buffer> {
           return;
         }
 
+        // Cap the accumulated response so a malicious / accidentally huge
+        // GitHub payload can't stream unbounded into process heap and OOM the
+        // installer (cli-commands-2).
         const chunks: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        let totalBytes = 0;
+        res.on("data", (chunk: Buffer) => {
+          totalBytes += chunk.length;
+          if (totalBytes > HTTPS_GET_MAX_BYTES) {
+            res.destroy();
+            reject(
+              new Error(
+                `Response too large (>${HTTPS_GET_MAX_BYTES} bytes) fetching ${url}`,
+              ),
+            );
+            return;
+          }
+          chunks.push(chunk);
+        });
         res.on("end", () => resolve(Buffer.concat(chunks)));
         res.on("error", reject);
       },
@@ -356,6 +380,14 @@ async function httpsGet(url: string, hops = 0): Promise<Buffer> {
   });
 }
 // END A-PR2 EDIT BLOCK
+
+/**
+ * Test-only handle on the private `httpsGet` helper + its byte cap, exposed so
+ * the cli-commands-2 response-size regression can assert the abort path without
+ * widening the module's public install surface.
+ */
+export const _httpsGetForTests = httpsGet;
+export const _HTTPS_GET_MAX_BYTES_FOR_TESTS = HTTPS_GET_MAX_BYTES;
 
 interface GitHubContentItem {
   name: string;

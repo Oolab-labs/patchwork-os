@@ -38,6 +38,28 @@ import { readBodyWithCap, respond413 } from "./recipeRoutes.js";
  */
 const CONNECTOR_BODY_CAP = 16 * 1024;
 
+/**
+ * Short-lived in-memory cache for `GET /connections` (audit http-routes-5).
+ *
+ * `handleConnectionsList()` iterates every registered connector and calls
+ * each `getStatus()`, which performs keychain reads / disk I/O. With 45+
+ * connectors that is 45+ synchronous probes per request. The dashboard
+ * polls this endpoint on every page load and on a timer, serializing dozens
+ * of keychain probes on the event loop. A 5 s TTL collapses bursts of polls
+ * into a single probe pass while staying fresh enough that a
+ * just-completed connect/disconnect is reflected almost immediately —
+ * and any mutating `/connections/*` request (POST/DELETE, OAuth callback)
+ * eagerly invalidates the cache so changes never wait out the TTL.
+ */
+const CONNECTIONS_CACHE_TTL_MS = 5_000;
+let connectionsCache: { ts: number; result: ConnectorHandlerResult } | null =
+  null;
+
+/** Drop the cached `GET /connections` payload — call after any mutation. */
+function invalidateConnectionsCache(): void {
+  connectionsCache = null;
+}
+
 interface ConnectorHandlerResult {
   status: number;
   body: string;
@@ -86,6 +108,14 @@ export function tryHandlePublicConnectorRoute(
   res: ServerResponse,
   parsedUrl: URL,
 ): boolean {
+  // Completing an OAuth callback flips a connector from disconnected →
+  // connected, so drop the cached `GET /connections` payload (http-routes-5).
+  if (
+    parsedUrl.pathname.startsWith("/connections/") &&
+    parsedUrl.pathname.endsWith("/callback")
+  ) {
+    invalidateConnectionsCache();
+  }
   if (
     parsedUrl.pathname === "/connections/github/callback" &&
     req.method === "GET"
@@ -390,12 +420,38 @@ export function tryHandleConnectorRoute(
   res: ServerResponse,
   parsedUrl: URL,
 ): boolean {
+  // Any mutating `/connections/*` request (connect / disconnect / test) can
+  // change a connector's reported status, so eagerly drop the cached list
+  // (audit http-routes-5). The GET path below is the only reader.
+  if (
+    req.method !== "GET" &&
+    (parsedUrl.pathname === "/connections" ||
+      parsedUrl.pathname.startsWith("/connections/"))
+  ) {
+    invalidateConnectionsCache();
+  }
   // ── Gmail / Connections endpoints ───────────────────────────────────────
   if (parsedUrl.pathname === "/connections" && req.method === "GET") {
     void (async () => {
       try {
-        const { handleConnectionsList } = await import("./connectors/gmail.js");
-        const result = await handleConnectionsList();
+        const now = Date.now();
+        let result: ConnectorHandlerResult;
+        if (
+          connectionsCache &&
+          now - connectionsCache.ts < CONNECTIONS_CACHE_TTL_MS
+        ) {
+          result = connectionsCache.result;
+        } else {
+          const { handleConnectionsList } = await import(
+            "./connectors/gmail.js"
+          );
+          result = await handleConnectionsList();
+          // Only cache successful list responses; transient errors should
+          // be re-probed on the next request rather than pinned for the TTL.
+          if (result.status === 200) {
+            connectionsCache = { ts: now, result };
+          }
+        }
         res.writeHead(result.status, {
           "Content-Type": result.contentType ?? "application/json",
         });
@@ -553,27 +609,9 @@ export function tryHandleConnectorRoute(
     })();
     return true;
   }
-  if (
-    parsedUrl.pathname === "/connections/sentry/callback" &&
-    req.method === "GET"
-  ) {
-    void (async () => {
-      try {
-        const { handleSentryCallback } = await import("./connectors/sentry.js");
-        const code = parsedUrl.searchParams.get("code");
-        const state = parsedUrl.searchParams.get("state");
-        const error = parsedUrl.searchParams.get("error");
-        const result = await handleSentryCallback(code, state, error);
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "application/json",
-        });
-        res.end(result.body);
-      } catch (err) {
-        respond500(res, err);
-      }
-    })();
-    return true;
-  }
+  // OAuth callback for Sentry is registered in tryHandlePublicConnectorRoute
+  // (pre-auth) — the IdP redirect arrives without a bearer token. Do NOT
+  // re-register it here behind the auth gate (audit http-routes-3).
   if (
     parsedUrl.pathname === "/connections/sentry/test" &&
     req.method === "POST"
@@ -779,29 +817,9 @@ export function tryHandleConnectorRoute(
     })();
     return true;
   }
-  if (
-    parsedUrl.pathname === "/connections/discord/callback" &&
-    req.method === "GET"
-  ) {
-    void (async () => {
-      try {
-        const { handleDiscordCallback } = await import(
-          "./connectors/discord.js"
-        );
-        const code = parsedUrl.searchParams.get("code");
-        const state = parsedUrl.searchParams.get("state");
-        const error = parsedUrl.searchParams.get("error");
-        const result = await handleDiscordCallback(code, state, error);
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "text/html",
-        });
-        res.end(result.body);
-      } catch (err) {
-        respond500(res, err);
-      }
-    })();
-    return true;
-  }
+  // OAuth callback for Discord is registered in tryHandlePublicConnectorRoute
+  // (pre-auth) — the IdP redirect arrives without a bearer token. Do NOT
+  // re-register it here behind the auth gate (audit http-routes-3).
   if (
     parsedUrl.pathname === "/connections/discord/test" &&
     req.method === "POST"
@@ -948,27 +966,9 @@ export function tryHandleConnectorRoute(
     })();
     return true;
   }
-  if (
-    parsedUrl.pathname === "/connections/gitlab/callback" &&
-    req.method === "GET"
-  ) {
-    void (async () => {
-      try {
-        const { handleGitLabCallback } = await import("./connectors/gitlab.js");
-        const code = parsedUrl.searchParams.get("code");
-        const state = parsedUrl.searchParams.get("state");
-        const error = parsedUrl.searchParams.get("error");
-        const result = await handleGitLabCallback(code, state, error);
-        res.writeHead(result.status, {
-          "Content-Type": result.contentType ?? "text/html",
-        });
-        res.end(result.body);
-      } catch (err) {
-        respond500(res, err);
-      }
-    })();
-    return true;
-  }
+  // OAuth callback for GitLab is registered in tryHandlePublicConnectorRoute
+  // (pre-auth) — the IdP redirect arrives without a bearer token. Do NOT
+  // re-register it here behind the auth gate (audit http-routes-3).
   if (
     parsedUrl.pathname === "/connections/gitlab/test" &&
     req.method === "POST"

@@ -86,6 +86,33 @@ describe("recordTrigger", () => {
     // newest entry should be NOW
     expect(newState.taskTimestamps[9_999]).toBe(NOW);
   });
+
+  // fp-automation-1: activeTasks must be LRU-capped like lastTrigger so dynamic
+  // cooldown keys (e.g. per-file recipesave keys) can't grow it unboundedly.
+  it("caps activeTasks at 5 000 entries (LRU)", () => {
+    let state = EMPTY_AUTOMATION_STATE;
+    // Insert 5 000 distinct keys, then one more.
+    for (let i = 0; i < 5_000; i++) {
+      state = recordTrigger(state, `key-${i}`, `task-${i}`, NOW + i);
+    }
+    expect(state.activeTasks.size).toBe(5_000);
+    // The 5 001st distinct key evicts the oldest, keeping the cap at 5 000.
+    const after = recordTrigger(state, "key-overflow", "task-overflow", NOW);
+    expect(after.activeTasks.size).toBe(5_000);
+    // Newest key retained; oldest (key-0) evicted.
+    expect(after.activeTasks.get("key-overflow")).toBe("task-overflow");
+    expect(after.activeTasks.has("key-0")).toBe(false);
+  });
+
+  it("re-triggering an existing key moves it to MRU without growing activeTasks", () => {
+    let state = EMPTY_AUTOMATION_STATE;
+    state = recordTrigger(state, "a", "t1", NOW);
+    state = recordTrigger(state, "b", "t2", NOW + 1);
+    const sizeBefore = state.activeTasks.size;
+    state = recordTrigger(state, "a", "t3", NOW + 2);
+    expect(state.activeTasks.size).toBe(sizeBefore);
+    expect(state.activeTasks.get("a")).toBe("t3");
+  });
 });
 
 describe("isTaskActive", () => {

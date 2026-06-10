@@ -13,7 +13,7 @@ import {
   setTestRunnerStatus,
   tasksInLastHour,
 } from "./fp/automationState.js";
-import type { InterpreterContext } from "./fp/interpreterContext.js";
+import type { Backend, InterpreterContext } from "./fp/interpreterContext.js";
 import { VsCodeBackend } from "./fp/interpreterContext.js";
 import { parsePolicy } from "./fp/policyParser.js";
 import { parseJsonSanitized } from "./sanitizeParsedJson.js";
@@ -612,9 +612,17 @@ function validatePromptSource(hookName: string, cfg: PromptSource): void {
       `"${hookName}" must have a non-empty "prompt", "promptName", or "webhook"`,
     );
   }
-  if (hasPrompt && (cfg.prompt?.length ?? 0) > MAX_POLICY_PROMPT_CHARS) {
+  // Validate against UTF-8 byte length, not JS string .length (UTF-16 code
+  // units), so the check matches truncatePrompt's runtime enforcement
+  // (automationUtils.ts). Otherwise a multibyte prompt (e.g. 32K CJK chars =
+  // ~98K UTF-8 bytes) passes validation but is silently truncated at trigger
+  // time (audit fp-automation-4).
+  if (
+    hasPrompt &&
+    Buffer.byteLength(cfg.prompt ?? "", "utf8") > MAX_POLICY_PROMPT_CHARS
+  ) {
     throw new Error(
-      `"${hookName}.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+      `"${hookName}.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} bytes (UTF-8)`,
     );
   }
   if (hasPromptName) {
@@ -754,9 +762,23 @@ function expandDiscriminatedHook(
         string,
         unknown
       >;
-      if (disc === valueA) p[slotA] = rest;
-      else if (disc === valueB) p[slotB] = rest;
-      else
+      if (disc === valueA) {
+        // Reject a second entry with the same discriminator instead of
+        // silently overwriting the first (audit fp-automation-3).
+        if (p[slotA] !== undefined) {
+          throw new Error(
+            `"${unifiedKey}[]" has duplicate ${discriminatorKey} "${valueA}" — only one entry per discriminator value is allowed.`,
+          );
+        }
+        p[slotA] = rest;
+      } else if (disc === valueB) {
+        if (p[slotB] !== undefined) {
+          throw new Error(
+            `"${unifiedKey}[]" has duplicate ${discriminatorKey} "${valueB}" — only one entry per discriminator value is allowed.`,
+          );
+        }
+        p[slotB] = rest;
+      } else
         throw new Error(
           `"${unifiedKey}[].${discriminatorKey}" must be "${valueA}" or "${valueB}" (got ${JSON.stringify(disc)})`,
         );
@@ -1389,6 +1411,15 @@ export class AutomationHooks {
   private _lastFiredAt: string | null = null;
   /** Last interpreter run promise — allows tests to await completion. */
   private _lastRunPromise: Promise<void> = Promise.resolve();
+  /**
+   * Cancel functions for in-flight WithRetry timers (fp-automation-2). Each
+   * `scheduleRetry` returns a `clearTimeout` closure; we collect them so
+   * `destroy()` can cancel any timer that would otherwise fire after teardown
+   * and mutate a dead instance / enqueue a task post-shutdown.
+   */
+  private _retryCancels = new Set<() => void>();
+  /** Set by destroy(); guards retry callbacks that fire after teardown. */
+  private _isDestroyed = false;
 
   constructor(
     private readonly policy: AutomationPolicy,
@@ -1489,12 +1520,36 @@ export class AutomationHooks {
     eventData: Record<string, string>,
   ): Promise<void> {
     if (!this._programAST || !this._interpreterBackend) return;
+    if (this._isDestroyed) return;
+    const baseBackend = this._interpreterBackend;
+    // Wrap scheduleRetry so retry timers are tracked + guarded against firing
+    // after destroy() (fp-automation-2). Every other Backend method passes
+    // straight through to the real VsCodeBackend.
+    const backend: Backend = {
+      enqueueTask: (opts) => baseBackend.enqueueTask(opts),
+      notify: (msg) => baseBackend.notify(msg),
+      postWebhook: (opts) => baseBackend.postWebhook(opts),
+      scheduleRetry: (key, delayMs, fn) => {
+        let cancel: () => void = () => {};
+        const guardedFn = () => {
+          // Once the timer fires, drop its handle; if we've been destroyed in
+          // the meantime, swallow the callback rather than mutate a dead
+          // instance / enqueue post-shutdown.
+          this._retryCancels.delete(cancel);
+          if (this._isDestroyed) return;
+          fn();
+        };
+        cancel = baseBackend.scheduleRetry(key, delayMs, guardedFn);
+        this._retryCancels.add(cancel);
+        return cancel;
+      },
+    };
     const ctx: InterpreterContext = {
       state: this._automationState,
       now: Date.now(),
       eventType,
       eventData,
-      backend: this._interpreterBackend,
+      backend,
       log: this.log.bind(this),
       getLiveState: () => this._automationState,
       runRetryUnderLock: (work) => {
@@ -1525,6 +1580,9 @@ export class AutomationHooks {
     if (result.ok) {
       this._automationState = result.value.updatedState;
       if (result.value.taskIds.length > 0) {
+        // Record last successful fire so getStats()/bridgeDoctor surface a
+        // real timestamp instead of a permanently-null field (fp-automation-5).
+        this._lastFiredAt = new Date().toISOString();
         this.log(
           `[interpreter] ${eventType}: enqueued ${result.value.taskIds.length} task(s)`,
         );
@@ -1559,8 +1617,20 @@ export class AutomationHooks {
     await this._lastRunPromise;
   }
 
-  /** Tear down the instance: nulls interpreter references. */
+  /** Tear down the instance: cancels pending retries + nulls interpreter refs. */
   destroy(): void {
+    this._isDestroyed = true;
+    // Cancel any in-flight WithRetry timer so it can't fire post-shutdown and
+    // enqueue a task / mutate the destroyed instance (fp-automation-2).
+    for (const cancel of this._retryCancels) {
+      try {
+        cancel();
+      } catch {
+        // best-effort — a clearTimeout closure should never throw, but a
+        // single bad handle must not block the rest of teardown.
+      }
+    }
+    this._retryCancels.clear();
     this._programAST = null;
     this._interpreterBackend = null;
   }

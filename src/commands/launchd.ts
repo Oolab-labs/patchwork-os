@@ -18,6 +18,21 @@ const PLIST_DEST = path.join(
 );
 const LOG_DIR = path.join(homedir(), "Library", "Logs", "patchwork-os");
 
+/**
+ * Escape XML character-data special characters so a path containing `&`, `<`,
+ * `>`, `"`, or `'` doesn't corrupt the generated plist (cli-commands-4).
+ * `&` must be replaced first so the entity ampersands it introduces aren't
+ * double-escaped.
+ */
+export function xmlEscape(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
 function plistTemplate(): string {
   // Look for template relative to this file in dist/ → templates/
   const here = fileURLToPath(import.meta.url);
@@ -68,9 +83,13 @@ export async function runLaunchdInstall(_argv: string[]): Promise<void> {
   const home = homedir();
   const bin = binaryPath();
 
+  // Escape XML character-data special chars before substitution — the
+  // placeholders sit inside <string> elements. A binary path or HOME under a
+  // directory containing '&', '<', '>' would otherwise emit malformed XML and
+  // launchctl would silently reject the plist (cli-commands-4).
   let plist = plistTemplate();
-  plist = plist.replaceAll("__BINARY_PATH__", bin);
-  plist = plist.replaceAll("__HOME__", home);
+  plist = plist.replaceAll("__BINARY_PATH__", xmlEscape(bin));
+  plist = plist.replaceAll("__HOME__", xmlEscape(home));
 
   mkdirSync(LOG_DIR, { recursive: true });
   mkdirSync(path.dirname(PLIST_DEST), { recursive: true });

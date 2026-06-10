@@ -1327,7 +1327,7 @@ export function tryHandleRecipeRoute(
     return true;
   }
 
-  if (req.url === "/recipes" && req.method === "POST") {
+  if (parsedUrl.pathname === "/recipes" && req.method === "POST") {
     // A-PR2: bounded JSON read at RECIPE_ROUTE_BODY_CAPS.content (256 KB).
     void (async () => {
       const parsedBody = await readJsonBody<RecipeDraft>(
@@ -1740,7 +1740,10 @@ export function tryHandleRecipeRoute(
         ? 404
         : 400;
     res.writeHead(status, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(result));
+    const safeDuplicateResult = result.error
+      ? { ...result, error: sanitizeStorageError(result.error) }
+      : result;
+    res.end(JSON.stringify(safeDuplicateResult));
     return true;
   }
 
@@ -1813,7 +1816,7 @@ export function tryHandleRecipeRoute(
     return true;
   }
 
-  if (req.url === "/recipes" && req.method === "GET") {
+  if (parsedUrl.pathname === "/recipes" && req.method === "GET") {
     try {
       const data = deps.recipesFn?.() ?? { recipesDir: null, recipes: [] };
       res.writeHead(200, { "Content-Type": "application/json" });
