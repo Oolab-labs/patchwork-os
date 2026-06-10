@@ -259,6 +259,58 @@ describe("buildHeaders auth scheme (cloud + email API token)", () => {
   });
 });
 
+describe("listProjects request bound (connectors-vendors-4)", () => {
+  it("appends a maxResults page cap so a large org can't return all projects unbounded", async () => {
+    const { saveTokens, getJiraConnector } = await import("../jira.js");
+    saveTokens({
+      accessToken: "oauth-access-token",
+      instanceUrl: "https://acme.atlassian.net",
+      isCloud: true,
+      connected_at: "2026-06-10T00:00:00.000Z",
+    });
+
+    let capturedUrl = "";
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => [],
+      });
+    }) as unknown as typeof fetch;
+
+    await getJiraConnector().listProjects();
+
+    expect(capturedUrl).toContain("/project?maxResults=100");
+    expect(capturedUrl).toContain("startAt=0");
+  });
+
+  it("clamps an oversized caller-supplied maxResults to 100", async () => {
+    const { saveTokens, getJiraConnector } = await import("../jira.js");
+    saveTokens({
+      accessToken: "oauth-access-token",
+      instanceUrl: "https://acme.atlassian.net",
+      isCloud: true,
+      connected_at: "2026-06-10T00:00:00.000Z",
+    });
+
+    let capturedUrl = "";
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => [],
+      });
+    }) as unknown as typeof fetch;
+
+    await getJiraConnector().listProjects(99999);
+    expect(capturedUrl).toContain("maxResults=100");
+  });
+});
+
 describe("connectorRoutes /connections/jira/connect wiring", () => {
   it("connectorRoutes.ts references handleJiraConnect (regression: was 404)", async () => {
     const { readFileSync } = await import("node:fs");

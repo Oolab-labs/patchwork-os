@@ -16,6 +16,7 @@
  */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { isPrivateHost } from "../ssrfGuard.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -226,6 +227,13 @@ export class GrafanaConnector extends BaseConnector {
   }
 
   async getAlertRules(limit = 100): Promise<GrafanaAlertRule[]> {
+    // NOTE: the provisioning endpoint `/api/v1/provisioning/alert-rules` has no
+    // server-side pagination — it always returns the complete rule set, which we
+    // then truncate client-side. `limit` therefore controls how many rules we
+    // RETURN, not how many the server sends. Hard-cap it so an adversarial /
+    // mistaken caller can't force an unbounded client-side allocation copy
+    // (audit 2026-06-10 connectors-vendors-5).
+    const cap = Math.max(1, Math.min(limit, 500));
     const result = await this.apiCall(async () => {
       const res = await fetch(
         `${this.baseUrl()}/api/v1/provisioning/alert-rules`,
@@ -233,7 +241,7 @@ export class GrafanaConnector extends BaseConnector {
       );
       if (!res.ok) throw res;
       const rules = (await res.json()) as GrafanaAlertRule[];
-      return rules.slice(0, limit);
+      return rules.slice(0, cap);
     });
 
     if ("error" in result) throw new Error(result.error.message);
@@ -507,14 +515,42 @@ export async function handleGrafanaConnect(
     apiKey = parsed.apiKey;
     baseUrl = parsed.baseUrl.replace(/\/$/, "");
 
-    // Basic SSRF guard: must be http or https scheme
-    if (!/^https?:\/\//i.test(baseUrl)) {
+    // SSRF guard. The scheme-only check is not enough: a caller could supply
+    // `http://169.254.169.254/...` (cloud IMDS), `http://127.0.0.1:6443/`
+    // (local k8s API), or any RFC-1918 host and we would POST the apiKey as a
+    // Bearer token there. Require HTTPS and reject private/loopback/link-local
+    // hosts (audit 2026-06-10 connectors-vendors-3).
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(baseUrl);
+    } catch {
       return {
         status: 400,
         contentType: "application/json",
         body: JSON.stringify({
           ok: false,
           error: "baseUrl must start with http:// or https://",
+        }),
+      };
+    }
+    if (parsedUrl.protocol !== "https:") {
+      return {
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: false,
+          error: "baseUrl must use https:// for remote Grafana",
+        }),
+      };
+    }
+    if (isPrivateHost(parsedUrl.hostname)) {
+      return {
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: false,
+          error:
+            "baseUrl must not point at a private, loopback, or link-local address",
         }),
       };
     }

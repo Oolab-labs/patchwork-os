@@ -156,8 +156,13 @@ async function exchangeCode(code: string): Promise<GmailTokens> {
       : undefined,
     token_type: json.token_type,
     scope: json.scope,
-    _client_id: clientId() || undefined,
-    _client_secret: clientSecret() || undefined,
+    // Do NOT persist _client_id / _client_secret into the token record. Storing
+    // the OAuth client secret alongside the access/refresh tokens means any
+    // token-store exfiltration (backup, crash dump, keychain export) also yields
+    // the OAuth app secret — letting an attacker impersonate the app, not just
+    // replay tokens. refreshAccessToken() reads clientId()/clientSecret() from
+    // env first; when env is unavailable getStatus() now reports needs_reauth
+    // (audit 2026-06-10 connectors-core-3).
   };
 }
 

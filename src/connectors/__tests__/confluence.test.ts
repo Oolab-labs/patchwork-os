@@ -119,6 +119,48 @@ describe("ConfluenceConnector.healthCheck", () => {
   });
 });
 
+describe("ConfluenceConnector.search CQL injection (connectors-vendors-2)", () => {
+  it("escapes double-quotes in the query so it cannot break out of the text ~ filter", async () => {
+    let capturedUrl = "";
+    global.fetch = vi.fn().mockImplementation(async (url: string) => {
+      capturedUrl = url;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ results: [] }),
+        headers: { get: () => null },
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    vi.resetModules();
+    const { ConfluenceConnector } = await import("../confluence.js");
+    const conn = new ConfluenceConnector();
+    vi.spyOn(
+      conn as unknown as { authenticate: () => Promise<{ token: string }> },
+      "authenticate",
+    ).mockResolvedValue({ token: "t", scopes: [] });
+    (conn as unknown as { tokens: object }).tokens = {
+      accessToken: "t",
+      email: "dev@acme.com",
+      instanceUrl: "https://acme.atlassian.net",
+      connected_at: new Date().toISOString(),
+    };
+
+    // Attempt to close the text ~ "..." string and inject `OR type = blogpost`.
+    await conn.search('foo" OR type = blogpost AND title ~ "');
+
+    // The cql query param is URL-encoded. Decode it and verify the injected
+    // double-quote was escaped (\") rather than terminating the string, so the
+    // `AND type = page` filter remains intact.
+    const cqlParam = new URL(capturedUrl).searchParams.get("cql") ?? "";
+    expect(cqlParam).toContain('\\"');
+    // The literal sequence that would have bypassed the page filter (an
+    // un-escaped `" OR type = blogpost`) must not appear.
+    expect(cqlParam).not.toContain('foo" OR type = blogpost');
+    expect(cqlParam.endsWith("AND type = page")).toBe(true);
+  });
+});
+
 describe("handleConfluenceConnect", () => {
   it("returns 400 when token missing", async () => {
     vi.resetModules();

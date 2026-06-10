@@ -224,6 +224,29 @@ describe("handleSalesforceAuthRedirect", () => {
       "https://test.salesforce.com/services/oauth2/authorize",
     );
   });
+
+  // audit 2026-06-10 connectors-vendors-1: SALESFORCE_LOGIN_HOST must be
+  // allowlisted. An attacker-controlled host would otherwise receive the
+  // client_secret + auth code at the token-exchange endpoint.
+  it("rejects a non-allowlisted SALESFORCE_LOGIN_HOST (SSRF / credential redirect)", () => {
+    process.env.SALESFORCE_LOGIN_HOST = "attacker.example.com";
+    const result = handleSalesforceAuthRedirect();
+    expect(result.status).toBe(400);
+    const parsed = JSON.parse(result.body) as { ok: boolean; error?: string };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toMatch(/SALESFORCE_LOGIN_HOST/);
+    // The malicious host must never be interpolated into a redirect URL.
+    expect(result.redirect).toBeUndefined();
+  });
+
+  it("allows a *.my.salesforce.com My Domain login host", () => {
+    process.env.SALESFORCE_LOGIN_HOST = "acme.my.salesforce.com";
+    const result = handleSalesforceAuthRedirect();
+    expect(result.status).toBe(302);
+    expect(result.redirect).toContain(
+      "https://acme.my.salesforce.com/services/oauth2/authorize",
+    );
+  });
 });
 
 describe("handleSalesforceCallback", () => {

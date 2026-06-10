@@ -589,10 +589,33 @@ function listKeychainItems(): string[] {
     return listMacOSKeychainItems(candidates);
   }
   if (process.platform === "win32") {
-    // Handled by file listing
-    return [];
+    return listWindowsCredentials();
   }
   return listLinuxSecrets();
+}
+
+/**
+ * List DPAPI-protected credentials on Windows. Under the default `auto` backend,
+ * credentials are stored as `${LOCALAPPDATA}/PatchworkOS/tokens/<key>.bin` (not
+ * as `.enc` files), so the generic `.enc` file scan in listEncryptedFiles()
+ * misses them and listStoredProviders() returned [] even with connectors fully
+ * connected. Mirror listEncryptedFiles()'s provider-key mapping
+ * (audit 2026-06-10 connectors-core-4).
+ */
+function listWindowsCredentials(): string[] {
+  if (process.platform !== "win32") return [];
+  const localAppData = process.env.LOCALAPPDATA;
+  if (!localAppData) return [];
+  const dir = join(localAppData, "PatchworkOS", "tokens");
+  try {
+    return readdirSync(dir)
+      .filter((f: string) => f.endsWith(".bin"))
+      .map((f: string) =>
+        f.replace(`${SERVICE_NAME}.`, "").replace(".bin", ""),
+      );
+  } catch {
+    return [];
+  }
 }
 
 // Linux Secret Service

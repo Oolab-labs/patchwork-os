@@ -40,9 +40,36 @@ const REDIRECT_URI = connectorRedirectUri("salesforce");
 const API_VERSION = "v59.0";
 const DEFAULT_LOGIN_HOST = "login.salesforce.com";
 
+/**
+ * Allowlist of Salesforce front-door login hosts. SALESFORCE_LOGIN_HOST is
+ * interpolated into the token-exchange, refresh, and revoke endpoint URLs, so
+ * an unvalidated value lets a misconfigured (or attacker-influenced) env var
+ * exfiltrate client_secret + authorization code / refresh token to an arbitrary
+ * host. Mirrors datadog.ts's DATADOG_ALLOWED_SITES enum guard
+ * (audit 2026-06-10 connectors-vendors-1). `*.my.salesforce.com` is permitted
+ * for orgs that front their own My Domain login host.
+ */
+const ALLOWED_LOGIN_HOSTS: ReadonlySet<string> = new Set([
+  "login.salesforce.com",
+  "test.salesforce.com",
+]);
+
+function isAllowedLoginHost(host: string): boolean {
+  const h = host.toLowerCase();
+  return ALLOWED_LOGIN_HOSTS.has(h) || h.endsWith(".my.salesforce.com");
+}
+
 function loginHost(): string {
   const raw = process.env.SALESFORCE_LOGIN_HOST?.trim();
-  return raw && raw.length > 0 ? raw : DEFAULT_LOGIN_HOST;
+  if (raw && raw.length > 0) {
+    if (!isAllowedLoginHost(raw)) {
+      throw new Error(
+        "SALESFORCE_LOGIN_HOST must be login.salesforce.com, test.salesforce.com, or a *.my.salesforce.com host",
+      );
+    }
+    return raw;
+  }
+  return DEFAULT_LOGIN_HOST;
 }
 
 function authBase(): string {
@@ -335,7 +362,11 @@ async function refreshAccessToken(
     );
   }
   // Refresh against the host the user originally authed to (prod vs sandbox).
-  const host = tokens._login_host || loginHost();
+  // Re-validate the stored host so a tampered token file can't redirect the
+  // refresh POST (with client_secret) to an arbitrary endpoint.
+  const storedHost = tokens._login_host;
+  const host =
+    storedHost && isAllowedLoginHost(storedHost) ? storedHost : loginHost();
   const res = await fetch(`https://${host}/services/oauth2/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -397,7 +428,9 @@ export async function getValidAccessToken(): Promise<string> {
 }
 
 async function revokeToken(token: string): Promise<void> {
-  const host = loadTokens()?._login_host || loginHost();
+  const storedHost = loadTokens()?._login_host;
+  const host =
+    storedHost && isAllowedLoginHost(storedHost) ? storedHost : loginHost();
   await fetch(
     `https://${host}/services/oauth2/revoke?token=${encodeURIComponent(token)}`,
     { method: "POST" },
@@ -418,6 +451,24 @@ async function fetchIdentity(
   display_name?: string;
   organization_id?: string;
 }> {
+  // The `id` field comes from the token response. If the token endpoint were
+  // attacker-controlled the `id` URL would be too — sending the freshly-issued
+  // access_token there would exfiltrate it. Only call HTTPS salesforce.com hosts
+  // (audit 2026-06-10 connectors-vendors-1).
+  let parsed: URL;
+  try {
+    parsed = new URL(idUrl);
+  } catch {
+    return {};
+  }
+  const idHost = parsed.hostname.toLowerCase();
+  const isSalesforceHost =
+    parsed.protocol === "https:" &&
+    (idHost === "salesforce.com" ||
+      idHost.endsWith(".salesforce.com") ||
+      idHost === "login.salesforce.com" ||
+      idHost === "test.salesforce.com");
+  if (!isSalesforceHost) return {};
   try {
     const res = await fetchFn(idUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -699,8 +750,22 @@ export function handleSalesforceAuthRedirect(): ConnectorHandlerResult {
       }),
     };
   }
-  const state = generateState();
-  return { status: 302, body: "", redirect: buildAuthUrl(state) };
+  try {
+    const state = generateState();
+    return { status: 302, body: "", redirect: buildAuthUrl(state) };
+  } catch (err) {
+    // loginHost() throws when SALESFORCE_LOGIN_HOST is not allowlisted
+    // (audit 2026-06-10 connectors-vendors-1) — surface a clean 400 rather than
+    // an unhandled throw at the route layer.
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    };
+  }
 }
 
 export async function handleSalesforceCallback(
