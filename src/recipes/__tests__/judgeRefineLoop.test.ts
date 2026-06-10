@@ -348,3 +348,56 @@ describe("judge→refine: quality-aware escalation", () => {
     expect(reviseModels).toEqual(["claude-haiku-4-5-20251001"]);
   });
 });
+
+describe("judge: constrained decoding (response_format)", () => {
+  it("requests JSON response_format for a judge on a provider driver, not the writer", async () => {
+    const captured: Array<Record<string, unknown> | undefined> = [];
+    const recipe = {
+      name: "judge-constrained",
+      trigger: { type: "manual" },
+      steps: [
+        {
+          agent: {
+            prompt: "write the thing",
+            driver: "openai",
+            model: "gpt-x",
+            into: "draft",
+          },
+        },
+        {
+          agent: {
+            kind: "judge",
+            reviews: "draft",
+            prompt: "review the draft",
+            driver: "openai",
+            model: "gpt-x",
+          },
+        },
+      ],
+    } as YamlRecipe;
+
+    const deps: RunnerDeps = {
+      now: () => new Date("2026-06-03T08:00:00Z"),
+      logDir,
+      providerDriverFn: async (
+        _driver: string,
+        prompt: string,
+        _model: string | undefined,
+        providerOptions?: Record<string, unknown>,
+      ) => {
+        captured.push(providerOptions);
+        // Judge sees the <artefact> block; writer does not.
+        return prompt.includes("<artefact>") ? APPROVE : "DRAFT v1";
+      },
+    };
+
+    await runYamlRecipe(recipe, deps);
+
+    // Two provider calls: writer (no options) then judge (constrained).
+    expect(captured).toHaveLength(2);
+    expect(captured[0]).toBeUndefined(); // writer step — unconstrained
+    expect(captured[1]).toEqual({
+      responseFormat: { type: "json_object" },
+    });
+  });
+});
