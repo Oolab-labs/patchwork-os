@@ -125,7 +125,10 @@ describe("handleGmailCallback", () => {
 
     // Mock Google's token endpoint + the follow-up profile lookup.
     global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (typeof url === "string" && url.includes("oauth2.googleapis.com")) {
+      // Exact-hostname match (not substring) so CodeQL's incomplete-URL-
+      // sanitization rule is satisfied and the mock router is unambiguous.
+      const host = typeof url === "string" ? new URL(url).hostname : "";
+      if (host === "oauth2.googleapis.com") {
         return Promise.resolve({
           ok: true,
           status: 200,
