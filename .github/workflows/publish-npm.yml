@@ -34,7 +34,9 @@ jobs:
     # exchanges the GitHub Actions OIDC token for a short-lived registry
     # credential, so no NPM_TOKEN secret is stored or can expire.
     permissions:
-      contents: read
+      # write so the post-publish "Create GitHub pre-release" step
+      # (gh release create) can create the release; read 401'd it.
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
@@ -99,7 +101,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/') && contains(github.ref, '-beta')
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # write so the post-publish "Create GitHub pre-release" step
+      # (gh release create) can create the release; read 401'd it.
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
