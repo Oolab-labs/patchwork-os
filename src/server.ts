@@ -3207,6 +3207,10 @@ export class Server extends EventEmitter<ServerEvents> {
 
   async close(): Promise<void> {
     if (this.pingInterval) clearInterval(this.pingInterval);
+    // close() may run before listen() (failed startup, or tests that stub
+    // listen()); wss/httpServer are only created in listen(), so a pre-listen
+    // close is a safe no-op rather than a crash on undefined this.wss.
+    if (!this.wss) return;
     for (const client of this.wss.clients) {
       client.close(1001, "Server shutting down");
     }

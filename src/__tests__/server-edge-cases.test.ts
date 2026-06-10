@@ -563,12 +563,16 @@ describe("Server.findAndListen — EADDRINUSE retry (NET-001)", () => {
     // AFTER FIX:  retries with backoff, succeeds on second attempt.
     server = new Server("test-token", logger);
 
-    // Spy on the internal listen method to throw EADDRINUSE on first call then succeed
+    // Stub listen() entirely: throw EADDRINUSE on the first attempt, then
+    // resolve with the port. No real socket binding, so the test is
+    // deterministic under fake timers and parallel workers — the previous
+    // version called the real listen() on retry and hung when port 59991 was
+    // genuinely busy on a CI worker (real EADDRINUSE → a 2000ms backoff the
+    // test never advanced → 15s timeout).
     let listenCallCount = 0;
-    const realListen = (server as any).listen.bind(server);
     vi.spyOn(server as any, "listen").mockImplementation(
       async (...args: unknown[]) => {
-        const [port, addr] = args as [number, string];
+        const [port] = args as [number, string];
         listenCallCount++;
         if (listenCallCount === 1 && port !== 0) {
           const err = new Error(
@@ -577,18 +581,18 @@ describe("Server.findAndListen — EADDRINUSE retry (NET-001)", () => {
           err.code = "EADDRINUSE";
           throw err;
         }
-        return realListen(port, addr);
+        return port === 0 ? 50000 : port;
       },
     );
 
     vi.useFakeTimers();
     const listenPromise = server.findAndListen(59991);
-    // Advance past the first backoff delay (1000ms) to trigger retry
+    // Advance past the first backoff delay (1000ms) to trigger the retry
     await vi.advanceTimersByTimeAsync(1100);
     const port = await listenPromise;
 
-    // After fix: gets a valid port (either preferred or OS-assigned fallback)
-    expect(port).toBeGreaterThan(0);
-    expect(listenCallCount).toBeGreaterThan(1);
+    // Retried the preferred port and succeeded on the second attempt.
+    expect(port).toBe(59991);
+    expect(listenCallCount).toBe(2);
   });
 });
