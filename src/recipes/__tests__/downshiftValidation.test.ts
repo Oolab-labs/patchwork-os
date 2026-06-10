@@ -55,3 +55,31 @@ describe("agent.downshift validation", () => {
     ).toMatch(/not a known driver/);
   });
 });
+
+describe("agent.escalate validation (quality-aware, shares the route-list helper)", () => {
+  it("accepts a valid escalate list", () => {
+    expect(
+      agentErrors({
+        escalate: [{ model: "claude-opus-4-8" }, { driver: "anthropic" }],
+      }),
+    ).toBe("");
+  });
+
+  it("rejects a non-array escalate", () => {
+    expect(agentErrors({ escalate: "opus" })).toMatch(
+      /'escalate' must be an array/,
+    );
+  });
+
+  it("rejects an empty entry", () => {
+    expect(agentErrors({ escalate: [{}] })).toMatch(
+      /at least one of 'driver' or 'model'/,
+    );
+  });
+
+  it("rejects an unknown driver", () => {
+    expect(agentErrors({ escalate: [{ driver: "telepathy" }] })).toMatch(
+      /not a known driver/,
+    );
+  });
+});

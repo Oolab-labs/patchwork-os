@@ -266,3 +266,85 @@ describe("judge→refine: budget off-by-one (audit 2026-06-03 LOW #2)", () => {
     expect(result.errorMessage).toBeUndefined();
   });
 });
+
+describe("judge→refine: quality-aware escalation", () => {
+  it("re-runs the revision with escalate[0]'s model, not the base model", async () => {
+    const calls: Array<{ kind: string; model?: string }> = [];
+    const recipe = {
+      name: "judge-escalate",
+      trigger: { type: "manual" },
+      steps: [
+        {
+          agent: {
+            prompt: "write the thing",
+            driver: "anthropic",
+            model: "claude-haiku-4-5-20251001",
+            into: "draft",
+            // On judge rejection, escalate the revision to a stronger model.
+            escalate: [{ model: "claude-opus-4-8" }],
+          },
+        },
+        {
+          agent: {
+            kind: "judge",
+            reviews: "draft",
+            max_revisions: 1,
+            on_exhausted: "proceed",
+            prompt: "review the draft",
+            driver: "anthropic",
+            model: "claude-haiku-4-5-20251001",
+          },
+        },
+      ],
+    } as YamlRecipe;
+
+    const deps: RunnerDeps = {
+      now: () => new Date("2026-06-03T08:00:00Z"),
+      logDir,
+      claudeFn: async (prompt: string, model: string) => {
+        if (prompt.includes("<revision-request>")) {
+          calls.push({ kind: "revise", model });
+          return "REVISED v2";
+        }
+        if (prompt.includes("<artefact>")) {
+          calls.push({ kind: "judge", model });
+          return prompt.includes("REVISED v2") ? APPROVE : REQUEST_CHANGES;
+        }
+        calls.push({ kind: "draft", model });
+        return "DRAFT v1";
+      },
+    };
+
+    const result = await runYamlRecipe(recipe, deps);
+
+    const draft = calls.find((c) => c.kind === "draft");
+    const revise = calls.find((c) => c.kind === "revise");
+    // First pass used the cheap base model…
+    expect(draft?.model).toBe("claude-haiku-4-5-20251001");
+    // …and the rejection re-ran the revision on the escalated (stronger) model.
+    expect(revise).toBeDefined();
+    expect(revise?.model).toBe("claude-opus-4-8");
+    expect(result.errorMessage).toBeUndefined();
+  });
+
+  it("reuses the base model on revision when no escalate list is set", async () => {
+    const reviseModels: string[] = [];
+    const deps: RunnerDeps = {
+      now: () => new Date("2026-06-03T08:00:00Z"),
+      logDir,
+      claudeFn: async (prompt: string, model: string) => {
+        if (prompt.includes("<revision-request>")) {
+          reviseModels.push(model);
+          return "REVISED v2";
+        }
+        if (prompt.includes("<artefact>")) {
+          return prompt.includes("REVISED v2") ? APPROVE : REQUEST_CHANGES;
+        }
+        return "DRAFT v1";
+      },
+    };
+    await runYamlRecipe(judgeRecipe(1, "proceed"), deps);
+    // No escalate → the revision uses the reviewed agent's base model.
+    expect(reviseModels).toEqual(["claude-haiku-4-5-20251001"]);
+  });
+});

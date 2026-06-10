@@ -177,6 +177,16 @@ export interface YamlStep {
      * model is always used (byte-identical to no routing).
      */
     downshift?: import("./pricing/costRouter.js").RouteCandidate[];
+    /**
+     * OPT-IN quality-aware escalation (dual of `downshift`). Ordered MORE-capable
+     * fallbacks, each overriding `driver` and/or `model`. Consumed by the
+     * judge→refine loop: on a `request_changes` verdict the Nth revision re-runs
+     * the reviewed step with `escalate[N-1]` instead of the base model — i.e.
+     * start cheap/local, escalate to a stronger (cloud) model only when the
+     * output fails judgment. Requires `reviews` + `max_revisions > 0`. Absent ⇒
+     * every revision reuses the base model (byte-identical to prior behavior).
+     */
+    escalate?: import("./pricing/costRouter.js").RouteCandidate[];
   };
   into?: string;
   optional?: boolean;
@@ -1389,12 +1399,19 @@ export async function runYamlRecipe(
       const revisionPrompt =
         render(reviewedAgent.prompt, redactSecretsForPrompt(ctx, secretKeys)) +
         revisionBlock;
+      // Quality-aware escalation: on the Nth revision, re-run the reviewed step
+      // with the Nth more-capable candidate (`escalate[revisions]`) instead of
+      // the base model — local/cheap first, escalate to cloud only when the
+      // judge keeps rejecting. `revisions` is 0-based here (incremented after
+      // the re-judge below). When escalating we drop `downshift` for this call:
+      // escalation means "go stronger", so it must not be re-downshifted.
+      const escalateTo = reviewedAgent.escalate?.[revisions];
       const revised = await runAgentText(
         revisionPrompt,
-        reviewedAgent.driver,
-        reviewedAgent.model,
+        escalateTo?.driver ?? reviewedAgent.driver,
+        escalateTo?.model ?? reviewedAgent.model,
         reviewedAgent.mcpAccess,
-        reviewedAgent.downshift,
+        escalateTo ? undefined : reviewedAgent.downshift,
       );
       if (!revised.ok) {
         // A failed / empty revision can't be re-judged — stop and treat the

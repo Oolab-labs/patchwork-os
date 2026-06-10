@@ -50,6 +50,62 @@ export interface LintIssue {
   path?: string;
 }
 
+/**
+ * Validate an ordered route-candidate list (`downshift` / `escalate`): an array
+ * of `{driver?, model?}` where each entry sets at least one field and any
+ * `driver` is dispatch-known. Shared by both routing fields so they stay in
+ * lockstep. Codes are field-prefixed (`downshift-type`, `escalate-type`, …).
+ * (quality-aware-escalation)
+ */
+function validateRouteCandidateList(
+  field: "downshift" | "escalate",
+  value: unknown,
+  stepIndex: number,
+  issues: LintIssue[],
+): void {
+  if (value === undefined) return;
+  const base = `steps.${stepIndex}.agent.${field}`;
+  if (!Array.isArray(value)) {
+    issues.push({
+      level: "error",
+      message: `Step ${stepIndex + 1}: '${field}' must be an array of {driver?, model?} candidates`,
+      code: `${field}-type`,
+      path: base,
+    });
+    return;
+  }
+  value.forEach((entry: unknown, di: number) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      issues.push({
+        level: "error",
+        message: `Step ${stepIndex + 1}: ${field}[${di}] must be an object with 'driver' and/or 'model'`,
+        code: `${field}-entry-type`,
+        path: `${base}.${di}`,
+      });
+      return;
+    }
+    const e = entry as Record<string, unknown>;
+    const hasDriver = typeof e.driver === "string";
+    const hasModel = typeof e.model === "string";
+    if (!hasDriver && !hasModel) {
+      issues.push({
+        level: "error",
+        message: `Step ${stepIndex + 1}: ${field}[${di}] must set at least one of 'driver' or 'model'`,
+        code: `${field}-entry-empty`,
+        path: `${base}.${di}`,
+      });
+    }
+    if (hasDriver && !DOWNSHIFT_KNOWN_DRIVERS.has(e.driver as string)) {
+      issues.push({
+        level: "error",
+        message: `Step ${stepIndex + 1}: ${field}[${di}].driver '${String(e.driver)}' is not a known driver`,
+        code: `${field}-driver-enum`,
+        path: `${base}.${di}.driver`,
+      });
+    }
+  });
+}
+
 export interface LintResult {
   valid: boolean;
   issues: LintIssue[];
@@ -274,57 +330,11 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
             });
           }
 
-          // OPT-IN cost-aware routing (Phase 4). `downshift` is an ordered list
-          // of {driver?, model?} cheaper fallbacks; each entry must set at
-          // least one field and any driver must be dispatch-known.
-          if (agent.downshift !== undefined) {
-            if (!Array.isArray(agent.downshift)) {
-              issues.push({
-                level: "error",
-                message: `Step ${i + 1}: 'downshift' must be an array of {driver?, model?} candidates`,
-                code: "downshift-type",
-                path: `steps.${i}.agent.downshift`,
-              });
-            } else {
-              agent.downshift.forEach((entry: unknown, di: number) => {
-                if (
-                  typeof entry !== "object" ||
-                  entry === null ||
-                  Array.isArray(entry)
-                ) {
-                  issues.push({
-                    level: "error",
-                    message: `Step ${i + 1}: downshift[${di}] must be an object with 'driver' and/or 'model'`,
-                    code: "downshift-entry-type",
-                    path: `steps.${i}.agent.downshift.${di}`,
-                  });
-                  return;
-                }
-                const e = entry as Record<string, unknown>;
-                const hasDriver = typeof e.driver === "string";
-                const hasModel = typeof e.model === "string";
-                if (!hasDriver && !hasModel) {
-                  issues.push({
-                    level: "error",
-                    message: `Step ${i + 1}: downshift[${di}] must set at least one of 'driver' or 'model'`,
-                    code: "downshift-entry-empty",
-                    path: `steps.${i}.agent.downshift.${di}`,
-                  });
-                }
-                if (
-                  hasDriver &&
-                  !DOWNSHIFT_KNOWN_DRIVERS.has(e.driver as string)
-                ) {
-                  issues.push({
-                    level: "error",
-                    message: `Step ${i + 1}: downshift[${di}].driver '${String(e.driver)}' is not a known driver`,
-                    code: "downshift-driver-enum",
-                    path: `steps.${i}.agent.downshift.${di}.driver`,
-                  });
-                }
-              });
-            }
-          }
+          // OPT-IN routing fallbacks, both ordered {driver?, model?} lists:
+          // `downshift` (cost-aware, Phase 4 — go cheaper as budget depletes)
+          // and `escalate` (quality-aware — go more capable on judge rejection).
+          validateRouteCandidateList("downshift", agent.downshift, i, issues);
+          validateRouteCandidateList("escalate", agent.escalate, i, issues);
         }
 
         // Unconditional risk-enum check. `risk` was previously never
