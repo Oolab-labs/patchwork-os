@@ -231,6 +231,56 @@ describe("executeChainedStep", () => {
     expect(result.data).toBe("quick");
   });
 
+  // run-cancel: an in-flight step must abort promptly when the run signal
+  // fires, not block until its own (5s) work resolves.
+  it("aborts an in-flight step immediately when the signal is already aborted", async () => {
+    const reg = createOutputRegistry();
+    const ctl = new AbortController();
+    ctl.abort("run cancelled by user");
+    const slowDeps = {
+      executeTool: () =>
+        new Promise((resolve) => setTimeout(() => resolve("late"), 5000)),
+      executeAgent: vi.fn(),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const result = await executeChainedStep(
+      {
+        registry: reg,
+        step: { id: "s", tool: "slow.tool" },
+        options: { ...baseOptions, signal: ctl.signal },
+        recipe: { name: "r", steps: [] },
+        depth: 0,
+      },
+      slowDeps,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/step_cancelled/);
+  });
+
+  it("aborts an in-flight step when the signal fires mid-execution", async () => {
+    const reg = createOutputRegistry();
+    const ctl = new AbortController();
+    const slowDeps = {
+      executeTool: () =>
+        new Promise((resolve) => setTimeout(() => resolve("late"), 5000)),
+      executeAgent: vi.fn(),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    setTimeout(() => ctl.abort("run cancelled by user"), 10);
+    const result = await executeChainedStep(
+      {
+        registry: reg,
+        step: { id: "s", tool: "slow.tool" },
+        options: { ...baseOptions, signal: ctl.signal },
+        recipe: { name: "r", steps: [] },
+        depth: 0,
+      },
+      slowDeps,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/step_cancelled/);
+  });
+
   it("fails an agent step with step_timeout when it exceeds timeout_ms", async () => {
     const reg = createOutputRegistry();
     const slowDeps = {
