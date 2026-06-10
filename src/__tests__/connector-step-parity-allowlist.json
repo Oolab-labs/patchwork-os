@@ -1,4 +1,4 @@
 {
   "_README": "Backlog of connectors that authenticate but expose NO recipe-step tool yet, so they cannot be wired into a recipe. Enforced by connector-step-parity.test.ts. RULES: (1) entries may only be REMOVED \u2014 never added casually \u2014 as recipe steps are backfilled for each connector (a src/recipes/tools/<namespace>.ts module registering `<namespace>.<action>` tools); (2) a NEW connector added to the registry with no recipe step must be CONSCIOUSLY appended here (the test fails until it is); (3) once a connector gains a step it MUST be deleted from this list (the test fails if a listed connector now has steps). The list can only shrink. See also connectorRoutes-registry-parity.test.ts (#850 cross-layer parity).",
-  "connectorsWithoutSteps": ["mongodb"]
+  "connectorsWithoutSteps": []
 }

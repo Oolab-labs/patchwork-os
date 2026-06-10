@@ -38,6 +38,7 @@ import "./elasticsearch.js";
 import "./postgres.js";
 import "./redis.js";
 import "./snowflake.js";
+import "./mongodb.js";
 import "./caldiy.js";
 import "./cloudflare.js";
 import "./figma.js";
