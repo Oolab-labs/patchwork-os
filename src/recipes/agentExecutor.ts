@@ -48,6 +48,9 @@ export interface AgentExecutorDeps {
     driver: "openai" | "grok" | "gemini" | "gemini-api",
     prompt: string,
     model: string | undefined,
+    /** Opaque per-call driver options (e.g. responseFormat for constrained
+     * decoding). Forwarded to driver.run; drivers ignore keys they don't use. */
+    providerOptions?: Record<string, unknown>,
   ) => Promise<AgentResult>;
   claudeCliFn: (
     prompt: string,
@@ -71,6 +74,13 @@ export interface AgentExecutorInput {
    * Ignored by API drivers — they reach the bridge through other means.
    */
   mcpAccess?: boolean;
+  /**
+   * Opaque per-call driver options forwarded to the provider driver (e.g.
+   * `{ responseFormat: { type: "json_object" } }` for constrained decoding).
+   * Only the provider-driver path (openai/grok/gemini-api) consumes it; other
+   * drivers ignore it. Used by the judge to enforce parseable JSON verdicts.
+   */
+  providerOptions?: Record<string, unknown>;
 }
 
 /**
@@ -84,7 +94,7 @@ export async function executeAgent(
   input: AgentExecutorInput,
   deps: AgentExecutorDeps,
 ): Promise<AgentResult> {
-  const { prompt, driver, model, mcpAccess } = input;
+  const { prompt, driver, model, mcpAccess, providerOptions } = input;
   const cliOpts = mcpAccess !== undefined ? { mcpAccess } : undefined;
 
   // Stamp the driver that ACTUALLY ran onto the result. This is the single
@@ -121,7 +131,15 @@ export async function executeAgent(
     driver === "gemini" ||
     driver === "gemini-api"
   ) {
-    return stamp(driver, model, deps.providerDriverFn(driver, prompt, model));
+    return stamp(
+      driver,
+      model,
+      // Only pass the 4th arg when set so the common (unconstrained) call keeps
+      // its 3-arg shape — backward-compatible with callers/mocks.
+      providerOptions
+        ? deps.providerDriverFn(driver, prompt, model, providerOptions)
+        : deps.providerDriverFn(driver, prompt, model),
+    );
   }
   if (driver === "subprocess" || driver === "claude-code") {
     return stamp("subprocess", model, deps.claudeCliFn(prompt, cliOpts));

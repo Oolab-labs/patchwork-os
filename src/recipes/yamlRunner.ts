@@ -558,6 +558,7 @@ export interface RunnerDeps {
     driverName: "openai" | "grok" | "gemini" | "gemini-api",
     prompt: string,
     model: string | undefined,
+    providerOptions?: Record<string, unknown>,
   ) => Promise<string | AgentResult>;
   /** Mock connector replays used by `patchwork recipe test`. */
   mockConnectors?: Partial<Record<string, MockToolConnector>>;
@@ -1281,6 +1282,7 @@ export async function runYamlRecipe(
     model: string | undefined,
     mcpAccess: boolean | undefined,
     downshift?: RouteCandidate[],
+    providerOptions?: Record<string, unknown>,
   ): Promise<{ value: unknown; ok: boolean }> => {
     // Phase 4: route revisions too, so a downshift on the reviewed step also
     // applies to its refine-loop re-runs (no-op when downshift is absent).
@@ -1296,6 +1298,7 @@ export async function runYamlRecipe(
         driver: routed.driver === "api" ? "anthropic" : routed.driver,
         model: routed.model,
         ...(mcpAccess !== undefined && { mcpAccess }),
+        ...(providerOptions && { providerOptions }),
       },
       buildAgentExecutorDeps(stepDeps, deps),
     );
@@ -1454,6 +1457,9 @@ export async function runYamlRecipe(
         agentCfg.driver,
         agentCfg.model,
         agentCfg.mcpAccess,
+        undefined,
+        // Re-judge is a judge call → enforce JSON on supporting drivers.
+        { responseFormat: { type: "json_object" } },
       );
       if (!judged.ok) {
         // Audit 2026-06-03 (MEDIUM #17): a failed / silent-fail / empty
@@ -1677,6 +1683,12 @@ export async function runYamlRecipe(
               model: routed.model,
               ...(agentCfg.mcpAccess !== undefined && {
                 mcpAccess: agentCfg.mcpAccess,
+              }),
+              // Constrained decoding: enforce a pure-JSON verdict on judge steps
+              // (OpenAI-compatible drivers honor it; others ignore it). Pairs
+              // with the pure-JSON JUDGE_PROMPT_SUFFIX + tolerant parser.
+              ...(isJudge && {
+                providerOptions: { responseFormat: { type: "json_object" } },
               }),
             },
             buildAgentExecutorDeps(stepDeps, deps),
@@ -2623,8 +2635,19 @@ function buildAgentExecutorDeps(
   return {
     anthropicFn: async (prompt, model) =>
       toAgentResult(await stepDeps.claudeFn(prompt, model)),
-    providerDriverFn: async (driver, prompt, model) =>
-      toAgentResult(await stepDeps.providerDriverFn(driver, prompt, model)),
+    providerDriverFn: async (driver, prompt, model, providerOptions) =>
+      toAgentResult(
+        // Keep the 3-arg call shape when unconstrained (backward-compatible
+        // with deps.providerDriverFn mocks that assert exact arity).
+        providerOptions
+          ? await stepDeps.providerDriverFn(
+              driver,
+              prompt,
+              model,
+              providerOptions,
+            )
+          : await stepDeps.providerDriverFn(driver, prompt, model),
+      ),
     claudeCliFn: async (prompt, opts) =>
       toAgentResult(await claudeCliFn(prompt, opts)),
     localFn: async (prompt, model) =>
@@ -2834,12 +2857,14 @@ export function makeProviderDriverFn(): (
   driverName: "openai" | "grok" | "gemini" | "gemini-api",
   prompt: string,
   model: string | undefined,
+  providerOptions?: Record<string, unknown>,
 ) => Promise<string | AgentResult> {
   const cache = new Map<string, import("../drivers/types.js").ProviderDriver>();
   return async function defaultProviderDriverFn(
     driverName: "openai" | "grok" | "gemini" | "gemini-api",
     prompt: string,
     model: string | undefined,
+    providerOptions?: Record<string, unknown>,
   ): Promise<string | AgentResult> {
     try {
       let driver = cache.get(driverName);
@@ -2868,6 +2893,7 @@ export function makeProviderDriverFn(): (
           startupTimeoutMs,
           signal: controller.signal,
           model,
+          ...(providerOptions && { providerOptions }),
         });
         if (result.exitCode !== undefined && result.exitCode !== 0) {
           const detail = result.stderrTail ?? result.text ?? "";
