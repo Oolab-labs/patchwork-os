@@ -32,6 +32,7 @@ import type { RouteCandidate } from "./pricing/costRouter.js";
 import { loadPriceTable, type PriceTable } from "./pricing/priceTable.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
+import { registerRun, unregisterRun } from "./runRegistry.js";
 import type { BudgetPolicy, ErrorPolicy } from "./schema.js";
 import { captureForRunlog, detectSilentFail } from "./stepObservation.js";
 import type { TemplateContext, TemplateError } from "./templateEngine.js";
@@ -105,6 +106,13 @@ export interface RunOptions {
   maxDepth: number;
   dryRun: boolean;
   sourcePath?: string;
+  /**
+   * Run-level cancellation. Nested recipes inherit the parent's signal; the
+   * top-level run also registers its own AbortController via the run registry
+   * (keyed by RunLog seq) so `POST /runs/:seq/cancel` can abort it. When it
+   * fires, not-yet-started steps are skipped and the run drains. (run-cancel)
+   */
+  signal?: AbortSignal;
   onStepStart?: (stepId: string) => void;
   onStepComplete?: (stepId: string, error?: Error) => void;
   /**
@@ -1208,10 +1216,27 @@ export async function runChainedRecipe(
       : options.onStepComplete;
 
   // Execute with dependency tracking
+  // Run-level cancellation. The top-level run (depth 0) registers its own
+  // AbortController keyed by the RunLog seq so `POST /runs/:seq/cancel` can
+  // abort it; nested recipes inherit the parent's signal. Combine both so
+  // either source cancels. (run-cancel)
+  const runController =
+    depth === 0 && runSeq !== undefined ? registerRun(runSeq) : undefined;
+  const cancelSignals = [options.signal, runController?.signal].filter(
+    (s): s is AbortSignal => !!s,
+  );
+  const effectiveSignal =
+    cancelSignals.length === 0
+      ? undefined
+      : cancelSignals.length === 1
+        ? cancelSignals[0]
+        : AbortSignal.any(cancelSignals);
+
   const execOptions: ExecutionOptions = {
     maxConcurrency: options.maxConcurrency,
     onStepStart: wrappedOnStepStart,
     onStepComplete: wrappedOnStepComplete,
+    signal: effectiveSignal,
   };
 
   const stepExecutor: StepExecutor = async (stepId: string) => {
@@ -1317,11 +1342,19 @@ export async function runChainedRecipe(
     }
   };
 
-  const stepResults = await executeWithDependencies(
-    depGraph,
-    stepExecutor,
-    execOptions,
-  );
+  let stepResults: Map<string, { success: boolean; error?: Error }>;
+  try {
+    stepResults = await executeWithDependencies(
+      depGraph,
+      stepExecutor,
+      execOptions,
+    );
+  } finally {
+    // Drop the run from the registry as soon as execution finishes (success,
+    // failure, or cancel) so the seq can't be cancelled post-hoc and the map
+    // doesn't leak. Only the top-level run registered one. (run-cancel)
+    if (runController && runSeq !== undefined) unregisterRun(runSeq);
+  }
 
   // Merge timings into step results
   const enrichedResults = new Map<string, ChainedStepRunResult>();

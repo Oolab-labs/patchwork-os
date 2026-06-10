@@ -33,6 +33,13 @@ export interface ExecutionOptions {
   maxConcurrency: number;
   onStepStart?: (stepId: string) => void;
   onStepComplete?: (stepId: string, error?: Error) => void;
+  /**
+   * Run-level cancellation. When this aborts, steps that have not yet started
+   * are marked cancelled (like an upstream failure) so their dependents skip
+   * and the run drains promptly. In-flight steps finish unless their own
+   * executor honors the signal. (recipe run-cancel)
+   */
+  signal?: AbortSignal;
 }
 
 export type StepExecutor = (stepId: string) => Promise<void>;
@@ -197,6 +204,25 @@ export async function executeWithDependencies(
       failed.add(stepId);
       options.onStepComplete?.(stepId, err);
       // Unblock any steps waiting on this one
+      const waiting = resolvers.get(stepId) ?? [];
+      for (const resolve of waiting) resolve();
+      resolvers.delete(stepId);
+      return;
+    }
+
+    // Cooperative cancellation: if the run was aborted, don't start this step.
+    // Mark it cancelled (same shape as an upstream failure) so dependents skip
+    // and the queue drains. (recipe run-cancel)
+    if (options.signal?.aborted) {
+      const reason =
+        typeof options.signal.reason === "string"
+          ? options.signal.reason
+          : "run cancelled";
+      const err = new Error(`Cancelled: ${reason}`);
+      results.set(stepId, { success: false, error: err });
+      completed.add(stepId);
+      failed.add(stepId);
+      options.onStepComplete?.(stepId, err);
       const waiting = resolvers.get(stepId) ?? [];
       for (const resolve of waiting) resolve();
       resolvers.delete(stepId);
