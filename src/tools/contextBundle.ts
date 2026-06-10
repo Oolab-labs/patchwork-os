@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import type { ExtensionClient } from "../extensionClient.js";
 import { readNote } from "./handoffNote.js";
-import { execSafe, successStructured } from "./utils.js";
+import { execSafe, successStructured, truncateOutput } from "./utils.js";
 
 /**
  * contextBundle — composite tool that collects the most useful IDE context
@@ -140,12 +140,15 @@ export function createContextBundleTool(
             const end = Math.min(lines.length, start + 20);
             bundle.activeFileContent = lines.slice(start, end).join("\n");
           } else {
-            // Truncate to 16KB to keep context manageable
-            bundle.activeFileContent =
-              content.length > 16384
-                ? content.slice(0, 16384) +
-                  "\n[file truncated at 16KB — use getBufferContent for full content]"
-                : content;
+            // Truncate to 16 KB to keep context manageable. Use a byte-accurate
+            // cap (Buffer.byteLength) via truncateOutput — JS .length counts
+            // UTF-16 code units, so 16384 CJK/emoji chars would be 32–49 KB and
+            // blow past the intended gate (tools-rest-1). truncateOutput slices
+            // on a UTF-8 boundary so a multi-byte char is never split.
+            const { text, truncated } = truncateOutput(content, 16384);
+            bundle.activeFileContent = truncated
+              ? `${text}\n[file truncated at 16KB — use getBufferContent for full content]`
+              : text;
           }
         }
         if (typeof fc.languageId === "string") {

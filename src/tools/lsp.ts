@@ -5,6 +5,7 @@ import {
 import { lspDefinition, lspReferences } from "./headless/lspFallback.js";
 import {
   error,
+  execSafe,
   extensionRequired,
   languageIdFromPath,
   optionalInt,
@@ -985,6 +986,8 @@ export function createGetCallHierarchyTool(
           outgoing: { type: "array", items: { type: "object" } },
           incomingTotal: { type: "integer" },
           outgoingTotal: { type: "integer" },
+          incomingComplete: { type: "boolean" },
+          outgoingComplete: { type: "boolean" },
           nextCursor: { type: "string" },
         },
         required: ["found"],
@@ -1041,17 +1044,23 @@ export function createGetCallHierarchyTool(
         : [];
       const pageIncoming = allIncoming.slice(offset, offset + PAGE_SIZE);
       const pageOutgoing = allOutgoing.slice(offset, offset + PAGE_SIZE);
+      // The shared cursor advances both arrays together. When the two arrays
+      // have different lengths one is exhausted before the other while the
+      // cursor keeps advancing for the longer array. Emit per-direction
+      // completion flags so the client knows a 0-item page for one direction
+      // means "done", not "transient empty" (tools-rest-2).
+      const incomingComplete = offset + PAGE_SIZE >= allIncoming.length;
+      const outgoingComplete = offset + PAGE_SIZE >= allOutgoing.length;
       const out: Record<string, unknown> = {
         ...r,
         incoming: pageIncoming,
         outgoing: pageOutgoing,
         incomingTotal: allIncoming.length,
         outgoingTotal: allOutgoing.length,
+        incomingComplete,
+        outgoingComplete,
       };
-      if (
-        offset + PAGE_SIZE < allIncoming.length ||
-        offset + PAGE_SIZE < allOutgoing.length
-      ) {
+      if (!incomingComplete || !outgoingComplete) {
         out.nextCursor = encodeCursor(offset + PAGE_SIZE);
       }
       return successStructured(out);
@@ -1147,12 +1156,11 @@ async function searchWithCtags(
   maxResults: number,
   signal?: AbortSignal,
 ): Promise<ReturnType<typeof successStructured>> {
-  const { execFile } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const execFileAsync = promisify(execFile);
-
   try {
-    const { stdout } = await execFileAsync(
+    // Route through execSafe (not execFile directly) so the ctags subprocess
+    // gets the SAFE_BIN_BASENAMES allowlist check, minimal-env isolation (no
+    // ANTHROPIC_API_KEY / secret leakage), and Windows .cmd shim resolution.
+    const { stdout, exitCode } = await execSafe(
       "ctags",
       [
         "--output-format=json",
@@ -1163,8 +1171,12 @@ async function searchWithCtags(
         `-`,
         workspace,
       ],
-      { timeout: 15_000, maxBuffer: 10 * 1024 * 1024, signal },
+      { cwd: workspace, timeout: 15_000, maxBuffer: 10 * 1024 * 1024, signal },
     );
+    // execSafe never throws on non-zero exit; treat a failed run as "no results".
+    if (exitCode !== 0) {
+      return successStructured({ symbols: [], count: 0 });
+    }
 
     const lowerQuery = query.toLowerCase();
     const symbols: Array<{

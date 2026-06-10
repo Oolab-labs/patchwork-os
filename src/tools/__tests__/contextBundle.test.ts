@@ -130,6 +130,31 @@ describe("createContextBundleTool", () => {
     expect(content.activeFileContent).toContain("truncated at 16KB");
   });
 
+  // Regression: tools-rest-1 — the cap must be byte-accurate. A CJK string with
+  // .length === 16000 (under the old UTF-16 gate) is ~48 KB in UTF-8 and must
+  // be truncated to ~16 KB of bytes, not passed through whole.
+  it("truncates activeFileContent by BYTES, not UTF-16 length, for CJK", async () => {
+    // Each CJK char is 3 UTF-8 bytes. 16000 chars = 48000 bytes, well over 16 KB,
+    // but .length (16000) is under the old 16384 char gate that this fix replaces.
+    const cjk = "中".repeat(16000);
+    expect(cjk.length).toBeLessThan(16384);
+    expect(Buffer.byteLength(cjk, "utf8")).toBeGreaterThan(16384);
+
+    const client = makeExtensionClient({ fileContent: cjk });
+    const tool = createContextBundleTool("/workspace", client as never);
+    const result = await tool.handler({});
+    const content = JSON.parse(
+      (result.content as Array<{ text: string }>)[0]!.text,
+    );
+    expect(content.activeFileContent).toContain("truncated at 16KB");
+    // The kept slice must be at or under 16 KB of UTF-8 bytes (the marker text
+    // is appended after, so check the content portion before the marker).
+    const kept = (content.activeFileContent as string).split(
+      "\n[file truncated",
+    )[0] as string;
+    expect(Buffer.byteLength(kept, "utf8")).toBeLessThanOrEqual(16384);
+  });
+
   it("gracefully handles getDiagnostics failure", async () => {
     const client = makeExtensionClient();
     client.getDiagnostics = vi.fn(async () => {

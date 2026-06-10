@@ -162,4 +162,44 @@ describe("getCallHierarchy cursor pagination", () => {
     expect(second.incoming).toHaveLength(30);
     expect(second.nextCursor).toBeUndefined();
   });
+
+  // Regression: tools-rest-2 — with a shared cursor across two uneven arrays,
+  // per-direction completion flags must tell the client which direction is
+  // exhausted (so a 0-item page for one direction reads as "done").
+  it("emits per-direction completion flags when arrays differ in length", async () => {
+    const incoming = Array.from({ length: 80 }, (_, i) => ({ name: `fn${i}` }));
+    const outgoing = Array.from({ length: 10 }, (_, i) => ({
+      name: `dep${i}`,
+    }));
+    const client = makeExtensionClient({
+      getCallHierarchy: vi.fn(async () => ({
+        found: true,
+        incoming,
+        outgoing,
+      })),
+    });
+    const tool = createGetCallHierarchyTool(WS, client as never);
+
+    // Page 1: incoming still has more (80 > 50), outgoing exhausted (10 <= 50).
+    const first = parseTool(
+      await tool.handler({ filePath: FILE, line: 1, column: 1 }),
+    );
+    expect(first.incomingComplete).toBe(false);
+    expect(first.outgoingComplete).toBe(true);
+    expect(typeof first.nextCursor).toBe("string");
+
+    // Page 2: outgoing slice is empty but flagged complete, incoming finishes.
+    const second = parseTool(
+      await tool.handler({
+        filePath: FILE,
+        line: 1,
+        column: 1,
+        cursor: first.nextCursor,
+      }),
+    );
+    expect(second.outgoing).toHaveLength(0);
+    expect(second.outgoingComplete).toBe(true);
+    expect(second.incomingComplete).toBe(true);
+    expect(second.nextCursor).toBeUndefined();
+  });
 });
