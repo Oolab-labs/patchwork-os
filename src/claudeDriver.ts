@@ -552,7 +552,10 @@ export class SubprocessDriver implements IClaudeDriver {
     // orchestrator can set cancelReason: "startup_timeout".
     if (startupTimedOut) {
       return {
-        text: accumulated.slice(0, OUTPUT_CAP),
+        // Byte-accurate cap like every other return site in this driver — slice
+        // counts UTF-16 code units and would over-store CJK output (audit
+        // 2026-06-09 orch-driver-6).
+        text: truncateUtf8Bytes(accumulated, OUTPUT_CAP),
         exitCode: -1,
         durationMs: Date.now() - start,
         stderrTail: stderrTailOf(stderr),

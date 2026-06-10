@@ -1,5 +1,6 @@
 import type { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
 import { fetchIssue } from "../connectors/linear.js";
+import { truncateUtf8Bytes } from "../drivers/outputCap.js";
 import { runGitStdout } from "./git-utils.js";
 import {
   GH_NOT_AUTHED,
@@ -72,12 +73,17 @@ function detectRefType(raw: string): { type: RefType; id: string } {
   return { type: "unknown", id: trimmed };
 }
 
-const BODY_CAP = 500;
+const BODY_CAP_BYTES = 500;
 
 function trimBody(raw: unknown): { value: string | null; truncated: boolean } {
   if (typeof raw !== "string") return { value: null, truncated: false };
-  if (raw.length <= BODY_CAP) return { value: raw, truncated: false };
-  return { value: raw.slice(0, BODY_CAP), truncated: true };
+  // Byte-accurate cap: raw.length counts UTF-16 code units, so a 500-char CJK
+  // or emoji body could be ~1.5-2KB of UTF-8 — 2-3x the intended context budget
+  // (audit 2026-06-09 tools-ctx-1). Cap by bytes at a codepoint boundary.
+  if (Buffer.byteLength(raw, "utf8") <= BODY_CAP_BYTES) {
+    return { value: raw, truncated: false };
+  }
+  return { value: truncateUtf8Bytes(raw, BODY_CAP_BYTES), truncated: true };
 }
 
 async function fetchGhJson(
