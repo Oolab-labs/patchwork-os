@@ -6,6 +6,7 @@
 
 import { assertWriteAllowed } from "../../featureFlags.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // zendesk.listTickets
@@ -52,7 +53,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getZendeskConnector } = await import("../../connectors/zendesk.js");
     const connector = getZendeskConnector();
     const result = await connector.listTickets({
@@ -70,7 +71,7 @@ registerTool({
       perPage: typeof params.perPage === "number" ? params.perPage : 25,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -104,7 +105,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getZendeskConnector } = await import("../../connectors/zendesk.js");
     const connector = getZendeskConnector();
     const ticketId = params.ticketId as number;
@@ -115,7 +116,7 @@ registerTool({
         : Promise.resolve([]),
     ]);
     return JSON.stringify({ ticket, comments });
-  },
+  }),
 });
 
 // ============================================================================
@@ -152,7 +153,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     assertWriteAllowed("zendesk.addComment");
     const { getZendeskConnector } = await import("../../connectors/zendesk.js");
     const connector = getZendeskConnector();
@@ -166,7 +167,7 @@ registerTool({
       status: ticket.status,
       updated_at: ticket.updated_at,
     });
-  },
+  }),
 });
 
 // ============================================================================
@@ -201,7 +202,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     assertWriteAllowed("zendesk.updateStatus");
     const { getZendeskConnector } = await import("../../connectors/zendesk.js");
     const connector = getZendeskConnector();
@@ -220,7 +221,7 @@ registerTool({
       status: ticket.status,
       updated_at: ticket.updated_at,
     });
-  },
+  }),
 });
 
 // ============================================================================
@@ -270,7 +271,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getZendeskConnector } = await import("../../connectors/zendesk.js");
     const connector = getZendeskConnector();
     const users = await connector.listUsers(
@@ -278,5 +279,5 @@ registerTool({
       typeof params.perPage === "number" ? params.perPage : 50,
     );
     return JSON.stringify({ users, count: users.length });
-  },
+  }),
 });

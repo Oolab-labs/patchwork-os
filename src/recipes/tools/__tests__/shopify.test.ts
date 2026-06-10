@@ -261,4 +261,19 @@ describe("shopify recipe-step tools", () => {
       });
     });
   });
+
+  // Audit 2026-06-09 connector-tools-1/2/3: a connector throw must become the
+  // soft `{ ok:false, error }` envelope (via wrapConnectorExecute) so the
+  // recipe runner can continue instead of hard-halting with `tool_threw`.
+  describe("soft-error envelope on connector throw", () => {
+    it("returns { ok:false, error } instead of throwing", async () => {
+      listProducts.mockRejectedValue(new Error("Shopify token missing"));
+      const tool = getTool("shopify.list_products");
+      const out = await tool?.execute(ctx({}));
+      expect(out).toBeTypeOf("string");
+      const parsed = JSON.parse(out as string);
+      expect(parsed.ok).toBe(false);
+      expect(parsed.error).toContain("Shopify token missing");
+    });
+  });
 });

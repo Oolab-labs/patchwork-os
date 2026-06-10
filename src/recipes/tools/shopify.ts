@@ -15,6 +15,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // shopify.list_products
@@ -75,7 +76,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getShopifyConnector } = await import("../../connectors/shopify.js");
     const connector = getShopifyConnector();
     const result = await connector.listProducts({
@@ -86,7 +87,7 @@ registerTool({
         typeof params.productType === "string" ? params.productType : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -153,7 +154,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getShopifyConnector } = await import("../../connectors/shopify.js");
     const connector = getShopifyConnector();
     const result = await connector.listOrders({
@@ -169,7 +170,7 @@ registerTool({
           : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -211,12 +212,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getShopifyConnector } = await import("../../connectors/shopify.js");
     const connector = getShopifyConnector();
     const result = await connector.getOrder(params.orderId as string | number);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -271,7 +272,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getShopifyConnector } = await import("../../connectors/shopify.js");
     const connector = getShopifyConnector();
     const result = await connector.listCustomers({
@@ -279,5 +280,5 @@ registerTool({
       query: typeof params.query === "string" ? params.query : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });

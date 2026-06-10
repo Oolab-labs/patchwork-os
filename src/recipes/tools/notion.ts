@@ -6,6 +6,7 @@
 
 import { assertWriteAllowed } from "../../featureFlags.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // notion.queryDatabase
@@ -61,7 +62,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getNotionConnector } = await import("../../connectors/notion.js");
     const connector = getNotionConnector();
     const result = await connector.queryDatabase(
@@ -73,7 +74,7 @@ registerTool({
       typeof params.pageSize === "number" ? params.pageSize : 20,
     );
     return JSON.stringify({ ...result, count: result.results.length });
-  },
+  }),
 });
 
 // ============================================================================
@@ -109,12 +110,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getNotionConnector } = await import("../../connectors/notion.js");
     const connector = getNotionConnector();
     const page = await connector.getPage(params.pageId as string);
     return JSON.stringify(page);
-  },
+  }),
 });
 
 // ============================================================================
@@ -159,7 +160,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getNotionConnector } = await import("../../connectors/notion.js");
     const connector = getNotionConnector();
     const result = await connector.search(
@@ -168,7 +169,7 @@ registerTool({
       typeof params.pageSize === "number" ? params.pageSize : 10,
     );
     return JSON.stringify({ ...result, count: result.results.length });
-  },
+  }),
 });
 
 // ============================================================================
@@ -222,7 +223,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     assertWriteAllowed("notion.createPage");
     const { getNotionConnector } = await import("../../connectors/notion.js");
     const connector = getNotionConnector();
@@ -239,7 +240,7 @@ registerTool({
       created_time: page.created_time,
       ok: true,
     });
-  },
+  }),
 });
 
 // ============================================================================
@@ -291,7 +292,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     assertWriteAllowed("notion.appendBlock");
     const { getNotionConnector } = await import("../../connectors/notion.js");
     const connector = getNotionConnector();
@@ -303,5 +304,5 @@ registerTool({
       >[0]["blockType"],
     });
     return JSON.stringify({ ok: true, blockCount: result.results.length });
-  },
+  }),
 });

@@ -10,6 +10,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // paystack.list_transactions
@@ -65,7 +66,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPaystackConnector } = await import(
       "../../connectors/paystack.js"
     );
@@ -78,7 +79,7 @@ registerTool({
       status: typeof params.status === "string" ? params.status : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -117,7 +118,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPaystackConnector } = await import(
       "../../connectors/paystack.js"
     );
@@ -126,7 +127,7 @@ registerTool({
       params.reference as string,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -165,14 +166,14 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPaystackConnector } = await import(
       "../../connectors/paystack.js"
     );
     const connector = getPaystackConnector();
     const result = await connector.getTransaction(params.id as number);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -216,7 +217,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPaystackConnector } = await import(
       "../../connectors/paystack.js"
     );
@@ -226,5 +227,5 @@ registerTool({
       page: typeof params.page === "number" ? params.page : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });

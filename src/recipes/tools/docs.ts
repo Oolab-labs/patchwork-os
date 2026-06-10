@@ -17,6 +17,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // docs.get_document
@@ -53,10 +54,10 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getDocument } = await import("../../connectors/googleDocs.js");
     return JSON.stringify(await getDocument(params.documentId as string));
-  },
+  }),
 });
 
 // ============================================================================
@@ -92,9 +93,9 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getDocumentText } = await import("../../connectors/googleDocs.js");
     const text = await getDocumentText(params.documentId as string);
     return JSON.stringify({ text });
-  },
+  }),
 });

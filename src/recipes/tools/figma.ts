@@ -11,6 +11,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // figma.get_file
@@ -57,7 +58,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getFigmaConnector } = await import("../../connectors/figma.js");
     const connector = getFigmaConnector();
     const result = await connector.getFile(params.fileKey as string, {
@@ -65,7 +66,7 @@ registerTool({
       geometry: params.geometry === "paths" ? "paths" : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -96,12 +97,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getFigmaConnector } = await import("../../connectors/figma.js");
     const connector = getFigmaConnector();
     const result = await connector.getFileComments(params.fileKey as string);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -133,12 +134,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getFigmaConnector } = await import("../../connectors/figma.js");
     const connector = getFigmaConnector();
     const result = await connector.listProjectFiles(params.projectId as string);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -186,7 +187,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getFigmaConnector } = await import("../../connectors/figma.js");
     const connector = getFigmaConnector();
     const result = await connector.getImageUrls(params.fileKey as string, {
@@ -201,5 +202,5 @@ registerTool({
       scale: typeof params.scale === "number" ? params.scale : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });

@@ -15,6 +15,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // pipedrive.list_deals
@@ -65,7 +66,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPipedriveConnector } = await import(
       "../../connectors/pipedrive.js"
     );
@@ -84,7 +85,7 @@ registerTool({
       limit: typeof params.limit === "number" ? params.limit : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -138,7 +139,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPipedriveConnector } = await import(
       "../../connectors/pipedrive.js"
     );
@@ -162,7 +163,7 @@ registerTool({
           : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -205,7 +206,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPipedriveConnector } = await import(
       "../../connectors/pipedrive.js"
     );
@@ -215,7 +216,7 @@ registerTool({
       limit: typeof params.limit === "number" ? params.limit : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -250,12 +251,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async () => {
+  execute: wrapConnectorExecute(async () => {
     const { getPipedriveConnector } = await import(
       "../../connectors/pipedrive.js"
     );
     const connector = getPipedriveConnector();
     const result = await connector.getPipelines();
     return JSON.stringify(result);
-  },
+  }),
 });

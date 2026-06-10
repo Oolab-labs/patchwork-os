@@ -14,6 +14,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // postgres.list_tables
@@ -48,7 +49,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPostgresConnector } = await import(
       "../../connectors/postgres.js"
     );
@@ -57,7 +58,7 @@ registerTool({
       typeof params.schema === "string" ? params.schema : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -99,7 +100,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPostgresConnector } = await import(
       "../../connectors/postgres.js"
     );
@@ -109,7 +110,7 @@ registerTool({
       typeof params.schema === "string" ? params.schema : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -164,7 +165,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPostgresConnector } = await import(
       "../../connectors/postgres.js"
     );
@@ -175,7 +176,7 @@ registerTool({
       typeof params.rowLimit === "number" ? params.rowLimit : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -204,12 +205,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getPostgresConnector } = await import(
       "../../connectors/postgres.js"
     );
     const connector = getPostgresConnector();
     const result = await connector.explain(params.sql as string);
     return JSON.stringify(result);
-  },
+  }),
 });

@@ -8,6 +8,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // redis.get
@@ -33,12 +34,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getRedisConnector } = await import("../../connectors/redis.js");
     const connector = getRedisConnector();
     const result = await connector.get(params.key as string);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -74,7 +75,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getRedisConnector } = await import("../../connectors/redis.js");
     const connector = getRedisConnector();
     const result = await connector.keys(
@@ -82,7 +83,7 @@ registerTool({
       typeof params.limit === "number" ? params.limit : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -110,12 +111,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getRedisConnector } = await import("../../connectors/redis.js");
     const connector = getRedisConnector();
     const result = await connector.hgetall(params.key as string);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -147,12 +148,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getRedisConnector } = await import("../../connectors/redis.js");
     const connector = getRedisConnector();
     const result = await connector.info(
       typeof params.section === "string" ? params.section : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });

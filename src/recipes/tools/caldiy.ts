@@ -12,6 +12,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // caldiy.list_event_types
@@ -48,12 +49,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async () => {
+  execute: wrapConnectorExecute(async () => {
     const { getCalDiyConnector } = await import("../../connectors/caldiy.js");
     const connector = getCalDiyConnector();
     const result = await connector.getEventTypes();
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -120,7 +121,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getCalDiyConnector } = await import("../../connectors/caldiy.js");
     const connector = getCalDiyConnector();
     const result = await connector.getBookings({
@@ -134,7 +135,7 @@ registerTool({
       dateTo: typeof params.dateTo === "string" ? params.dateTo : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -181,12 +182,12 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getCalDiyConnector } = await import("../../connectors/caldiy.js");
     const connector = getCalDiyConnector();
     const result = await connector.getBooking(params.uid as string);
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -218,7 +219,7 @@ registerTool({
   riskDefault: "medium",
   isWrite: true,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getCalDiyConnector } = await import("../../connectors/caldiy.js");
     const connector = getCalDiyConnector();
     const result = await connector.cancelBooking(
@@ -226,5 +227,5 @@ registerTool({
       typeof params.reason === "string" ? params.reason : undefined,
     );
     return JSON.stringify(result);
-  },
+  }),
 });
