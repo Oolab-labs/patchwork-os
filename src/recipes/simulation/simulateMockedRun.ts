@@ -22,6 +22,7 @@
 import type { RecipeRunLog } from "../../runLog.js";
 import type { ChainedRecipe, ExecutionDeps } from "../chainedRunner.js";
 import { runChainedRecipe } from "../chainedRunner.js";
+import { declaredRecipeEnv } from "../yamlRunner.js";
 import { synthesizeMockedOutputs } from "./synthesizeMockedOutputs.js";
 
 /**
@@ -79,7 +80,15 @@ export async function simulateMockedRun(
     const result = await runChainedRecipe(
       recipe,
       {
-        env: { ...process.env } as Record<string, string | undefined>,
+        // SECURITY: only recipe-declared env keys (via `context: type:env`)
+        // are exposed to template resolution — mirrors the production dispatch
+        // path (yamlRunner.ts). Passing the raw `process.env` would make every
+        // undeclared secret resolvable via `{{env.X}}` and materialise it in
+        // memory even though the stub deps discard rendered values.
+        env: {
+          ...declaredRecipeEnv(recipe),
+          DATE: new Date().toISOString().slice(0, 10),
+        } as Record<string, string | undefined>,
         maxConcurrency: Math.max(1, recipe.maxConcurrency ?? 4),
         maxDepth: recipe.maxDepth ?? 3,
         dryRun: false,
@@ -97,9 +106,15 @@ export async function simulateMockedRun(
         mockedFrom: historyStepIds.has(id) ? "history" : "synthesized",
       });
     }
-  } catch {
+  } catch (err) {
     // Fail-soft: return whatever we have (possibly empty stepData). The
-    // caller falls back to the static report shape.
+    // caller falls back to the static report shape. Surface the error in logs
+    // so simulation-path bugs (wrong stub shapes, TypeErrors) are diagnosable
+    // instead of indistinguishable from a legitimate zero-step run.
+    console.warn(
+      "[simulateMockedRun] mocked run failed, falling back to static report:",
+      err,
+    );
   }
 
   return { stepData, historyStepIds, sampleRuns };

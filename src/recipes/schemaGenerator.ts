@@ -481,6 +481,11 @@ function generateRecipeSchema(
           "grok",
           "gemini",
           "anthropic",
+          // `local` (self-hosted Ollama / LM Studio) is a fully implemented
+          // runtime driver and already valid in the downshift enum below and in
+          // DOWNSHIFT_KNOWN_DRIVERS — omitting it here made FLAG_SCHEMA_LINT
+          // reject valid recipes (audit 2026-06-10 recipe-validation-2).
+          "local",
         ],
         description: "Driver for agent execution",
       },

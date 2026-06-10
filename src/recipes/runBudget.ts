@@ -40,7 +40,13 @@ import type { BudgetPolicy } from "./schema.js";
  * so it must not be priced at notional API rates and halted on spend that
  * never happened. Anything not in this set fails open with a one-time notice.
  */
-const BILLABLE_DRIVERS = new Set(["anthropic", "openai", "grok", "gemini"]);
+const BILLABLE_DRIVERS = new Set([
+  "anthropic",
+  "openai",
+  "grok",
+  "gemini",
+  "gemini-api",
+]);
 
 /** Rough chars-per-token used for the opt-in unmeasured-driver USD estimate. */
 const ESTIMATE_CHARS_PER_TOKEN = 4;
@@ -190,6 +196,22 @@ export class RunBudget {
       this.pushOnce(
         `unmeasured:${driver}`,
         `Driver "${driver}" does not report token usage — budget enforcement skipped for its calls. Set recipe.budget.onBreach="warn" or move to an API driver to fix.`,
+      );
+      return;
+    }
+
+    // Defend against malformed/adversarial token counts: a negative or
+    // non-finite count would otherwise *reduce* usdSpent (negative cost) and
+    // silently defeat the usdMax cap. Treat such a response as unmeasured.
+    if (
+      !Number.isFinite(usage.inputTokens) ||
+      usage.inputTokens < 0 ||
+      !Number.isFinite(usage.outputTokens) ||
+      usage.outputTokens < 0
+    ) {
+      this.pushOnce(
+        `bad-usage:${driver}`,
+        `Driver "${driver}" reported invalid token usage (negative or non-finite) — budget enforcement skipped for this call.`,
       );
       return;
     }

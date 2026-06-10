@@ -35,6 +35,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   rmSync(tmpDir, { recursive: true, force: true });
+  vi.restoreAllMocks();
 });
 
 /** Build an in-memory-backed RecipeRunLog seeded with the given runs. */
@@ -192,6 +193,78 @@ describe("simulateMockedRun — safety invariant", () => {
       text: "[simulated:agent]",
     });
     await expect(stub.loadNestedRecipe("n")).resolves.toBeNull();
+  });
+});
+
+// ── env-leak guard + fail-soft logging (audit 2026-06-10) ───────────────────
+
+describe("simulateMockedRun — env containment (recipe-misc-1)", () => {
+  it("does NOT expose undeclared process.env secrets via {{env.X}}", async () => {
+    const SECRET = "sk-ant-super-secret-XYZ";
+    process.env.AUDIT_TEST_SECRET = SECRET;
+    try {
+      const { log } = makeRunLog([{ recipeName: "r" }]);
+      const seenPrompts: string[] = [];
+      const stub = {
+        executeTool: vi.fn(async (tool: string) => `[simulated:${tool}]`),
+        executeAgent: vi.fn(async (prompt: string) => {
+          seenPrompts.push(prompt);
+          return { text: "[simulated:agent]" };
+        }),
+        loadNestedRecipe: vi.fn(async () => null),
+      };
+      // No `context: type:env` block declares AUDIT_TEST_SECRET, so it must
+      // NOT be resolvable — render should leave {{env.AUDIT_TEST_SECRET}} as
+      // an empty string, never the real secret.
+      const recipe: ChainedRecipe = {
+        name: "r",
+        steps: [
+          {
+            id: "leak",
+            agent: { prompt: "key: {{env.AUDIT_TEST_SECRET}}" },
+          },
+        ],
+      };
+      await simulateMockedRun(recipe, log, {}, stub);
+      expect(seenPrompts.join("\n")).not.toContain(SECRET);
+    } finally {
+      delete process.env.AUDIT_TEST_SECRET;
+    }
+  });
+});
+
+describe("simulateMockedRun — fail-soft logging (recipe-misc-4)", () => {
+  it("logs (does not swallow silently) when the mocked run throws", async () => {
+    const { log } = makeRunLog([{ recipeName: "r" }]);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const boom = {
+        executeTool: vi.fn(async () => {
+          throw new TypeError("stub blew up");
+        }),
+        // Force a step to actually run the stub by giving it no history.
+        executeAgent: vi.fn(async () => ({ text: "x" })),
+        loadNestedRecipe: vi.fn(async () => null),
+      };
+      const recipe: ChainedRecipe = {
+        name: "r",
+        // A step config that makes runChainedRecipe throw out of the try
+        // block (invalid recipe shape) so the catch path is exercised.
+        steps: null as unknown as ChainedRecipe["steps"],
+      };
+      const result = await simulateMockedRun(recipe, log, {}, boom);
+      // Fail-soft: still returns a (possibly empty) result.
+      expect(result.stepData).toBeInstanceOf(Map);
+      // …but the error is surfaced in logs, not swallowed.
+      expect(warnSpy).toHaveBeenCalled();
+      expect(
+        warnSpy.mock.calls.some((c) =>
+          String(c[0]).includes("[simulateMockedRun]"),
+        ),
+      ).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 

@@ -407,3 +407,58 @@ describe("RunBudget — stale price table refresh (audit 2026-06-03 LOW #8)", ()
     expect(b.quoteUsd("openai", "m1", 1_000_000, 0)).toBeCloseTo(10, 6);
   });
 });
+
+describe("RunBudget — gemini-api driver (audit 2026-06-10 recipe-budget-1)", () => {
+  it("charges metered gemini-api calls against usdMax (previously skipped)", () => {
+    const b = new RunBudget({ usdMax: 100 }, TABLE);
+    // $1/1M in → 1M input tokens = $1. Must be billed for "gemini-api".
+    b.reconcile(
+      "gemini-api",
+      { inputTokens: 1_000_000, outputTokens: 0 },
+      "m1",
+    );
+    expect(b.totals().usd).toBeCloseTo(1, 6);
+    // No "notbilled" warning should be emitted for a billable driver.
+    expect(b.warnings().some((w) => /not.*metered|notbilled/i.test(w))).toBe(
+      false,
+    );
+  });
+
+  it("enforces the usdMax cap for gemini-api spend", () => {
+    const b = new RunBudget({ usdMax: 0.5 }, TABLE);
+    b.reconcile(
+      "gemini-api",
+      { inputTokens: 1_000_000, outputTokens: 0 },
+      "m1",
+    );
+    // $1 spent > $0.5 cap → next admission must be refused.
+    expect(b.admit().admitted).toBe(false);
+  });
+});
+
+describe("RunBudget — adversarial token counts (audit 2026-06-10 recipe-budget-5)", () => {
+  it("ignores negative token counts instead of reducing usdSpent", () => {
+    const b = new RunBudget({ usdMax: 100 }, TABLE);
+    // Spend $1 legitimately.
+    b.reconcile("anthropic", { inputTokens: 1_000_000, outputTokens: 0 }, "m1");
+    expect(b.totals().usd).toBeCloseTo(1, 6);
+    // Adversarial negative usage must NOT decrease usdSpent.
+    b.reconcile(
+      "anthropic",
+      { inputTokens: -1_000_000, outputTokens: 0 },
+      "m1",
+    );
+    expect(b.totals().usd).toBeCloseTo(1, 6);
+    expect(b.totals().total).toBe(1_000_000); // negative tokens not added
+  });
+
+  it("ignores non-finite token counts", () => {
+    const b = new RunBudget({ tokensMax: 1000 });
+    b.reconcile("anthropic", {
+      inputTokens: Number.POSITIVE_INFINITY,
+      outputTokens: 0,
+    });
+    expect(b.totals().total).toBe(0);
+    expect(b.admit().admitted).toBe(true);
+  });
+});
