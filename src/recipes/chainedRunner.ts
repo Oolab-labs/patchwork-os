@@ -362,18 +362,50 @@ function raceStepTimeout<T>(
   work: Promise<T>,
   timeoutMs: number | undefined,
   label: string,
+  signal?: AbortSignal,
 ): Promise<T> {
-  if (typeof timeoutMs !== "number" || timeoutMs <= 0) return work;
+  const hasTimeout = typeof timeoutMs === "number" && timeoutMs > 0;
+  if (!hasTimeout && !signal) return work;
+
+  // Run-cancel: reject promptly when the run is aborted so an in-flight
+  // tool/agent step doesn't block the run from draining (the underlying call
+  // keeps running but its result is ignored — same contract as the timeout).
+  if (signal?.aborted) {
+    return Promise.reject(
+      new Error(`step_cancelled: run aborted before step "${label}" completed`),
+    );
+  }
+
+  const racers: Promise<never>[] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(
-        new Error(`step_timeout: exceeded ${timeoutMs}ms in step "${label}"`),
-      );
-    }, timeoutMs);
-  });
-  return Promise.race([work, timeout]).finally(() => {
+  if (hasTimeout) {
+    racers.push(
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error(
+              `step_timeout: exceeded ${timeoutMs}ms in step "${label}"`,
+            ),
+          );
+        }, timeoutMs);
+      }),
+    );
+  }
+  let onAbort: (() => void) | undefined;
+  if (signal) {
+    racers.push(
+      new Promise<never>((_, reject) => {
+        onAbort = () =>
+          reject(
+            new Error(`step_cancelled: run aborted during step "${label}"`),
+          );
+        signal.addEventListener("abort", onAbort, { once: true });
+      }),
+    );
+  }
+  return Promise.race([work, ...racers]).finally(() => {
     if (timer) clearTimeout(timer);
+    if (signal && onAbort) signal.removeEventListener("abort", onAbort);
   });
 }
 
@@ -637,6 +669,7 @@ export async function executeChainedStep(
           deps.executeAgent(prompt, dispatchModel, dispatchDriver),
           step.timeout_ms,
           step.id,
+          options.signal,
         ),
       );
 
@@ -734,6 +767,7 @@ export async function executeChainedStep(
         deps.executeTool(step.tool, resolved),
         step.timeout_ms,
         step.id,
+        options.signal,
       );
       // Detect tool-level errors reported as JSON {ok: false, error: ...} (mirrors flat runner)
       if (typeof result === "string") {
@@ -1250,6 +1284,10 @@ export async function runChainedRecipe(
       : cancelSignals.length === 1
         ? cancelSignals[0]
         : AbortSignal.any(cancelSignals);
+  // Expose the combined signal on the options that flow into executeChainedStep
+  // so an in-flight tool/agent step (via raceStepTimeout) also aborts on cancel,
+  // not just not-yet-started steps. Safe no-op when undefined. (run-cancel)
+  options.signal = effectiveSignal;
 
   const execOptions: ExecutionOptions = {
     maxConcurrency: options.maxConcurrency,
