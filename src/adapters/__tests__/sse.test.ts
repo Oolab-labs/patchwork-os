@@ -186,6 +186,39 @@ describe("OpenAIAdapter.stream (SSE)", () => {
       expect(done.result.usage).toEqual({ inputTokens: 5, outputTokens: 2 });
     }
   });
+
+  // drivers-orch-3 regression: the stream request body MUST set
+  // stream_options.include_usage so the API emits a final usage chunk. Without
+  // it the usage handler reads nothing and token counts stay 0.
+  it("requests stream_options.include_usage in the body", async () => {
+    const payload = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "ok" } }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join("");
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      body: stringToStream(payload),
+      text: async () => "",
+    })) as unknown as typeof fetch;
+
+    const a = new OpenAIAdapter({ apiKey: "sk", fetchImpl });
+    for await (const _ of a.stream({
+      systemPrompt: "",
+      messages: [{ role: "user", content: "hi" }],
+    })) {
+      // drain the stream
+    }
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [, init] = vi.mocked(fetchImpl).mock.calls[0] as [
+      unknown,
+      RequestInit,
+    ];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body.stream).toBe(true);
+    expect(body.stream_options).toEqual({ include_usage: true });
+  });
 });
 
 describe("GeminiAdapter.stream (SSE)", () => {

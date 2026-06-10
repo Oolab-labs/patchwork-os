@@ -181,6 +181,10 @@ export class OpenAIAdapter implements ModelAdapter {
       max_tokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
       temperature: params.temperature,
       stream: true,
+      // Without include_usage the OpenAI API never emits a final usage chunk,
+      // so the data handler below reads chunk.usage off nothing and
+      // inputTokens/outputTokens stay 0 (drivers-orch-3).
+      stream_options: { include_usage: true },
     };
 
     const headers: Record<string, string> = {

@@ -39,6 +39,41 @@ interface GeminiEvent {
   model?: string;
 }
 
+/**
+ * Destructive shell-command patterns blocked for every Gemini subprocess run
+ * (drivers-orch-6). GeminiSubprocessDriver spawns with `--approval-mode yolo`,
+ * which disables all interactive approval prompts; without a deny list the
+ * spawned agent can run arbitrary destructive shell commands. Mirrors the
+ * Claude subprocess DENY_LIST (src/drivers/claude/subprocessSettings.ts).
+ *
+ * Gemini CLI excludes command-scoped shell invocations via the
+ * `run_shell_command(<prefix>)` syntax. We write the same list under both
+ * `tools.exclude` (current schema) and top-level `excludeTools` (legacy
+ * schema) so the deny list takes effect across CLI versions.
+ */
+const GEMINI_SHELL_DENY_PATTERNS = [
+  // Filesystem destruction (all flag orderings Claude Code/Gemini match literally)
+  "run_shell_command(rm -rf)",
+  "run_shell_command(rm -fr)",
+  "run_shell_command(rm -r)",
+  "run_shell_command(rm --recursive)",
+  // Git history / remote destruction
+  "run_shell_command(git push)",
+  "run_shell_command(git reset --hard)",
+  "run_shell_command(git clean -f)",
+  "run_shell_command(git clean -d)",
+  "run_shell_command(git clean --force)",
+  // Publishing / release
+  "run_shell_command(npm publish)",
+  "run_shell_command(npm version)",
+  // Privilege escalation
+  "run_shell_command(sudo)",
+  "run_shell_command(chmod 777)",
+  // Process termination
+  "run_shell_command(kill -9)",
+  "run_shell_command(pkill)",
+];
+
 function scrubSecrets(text: string): string {
   return text
     .replace(/AIza[A-Za-z0-9_-]{35}/g, "[REDACTED_API_KEY]")
@@ -90,24 +125,22 @@ export class GeminiSubprocessDriver implements ProviderDriver {
     // ever flips falsy→truthy between the two calls, the gate skips the
     // mutex but _runLocked writes settings.json without a lock.
     const mcp = this.bridgeMcp?.();
-    if (mcp) {
-      // If we're going to mutate ~/.gemini/settings.json, wait for any prior
-      // Gemini run holding the same file to finish first.
-      const prior = GeminiSubprocessDriver.settingsMutex;
-      let releaseLock!: () => void;
-      const ourLock = new Promise<void>((resolve) => {
-        releaseLock = resolve;
-      });
-      GeminiSubprocessDriver.settingsMutex = ourLock;
-      try {
-        await prior;
-        return await this._runLocked(input, mcp);
-      } finally {
-        releaseLock();
-      }
+    // _runLocked ALWAYS mutates ~/.gemini/settings.json now — to inject the
+    // destructive-command deny list (drivers-orch-6) even when no MCP is
+    // injected — so EVERY run must hold the settings mutex, not just MCP runs.
+    // Wait for any prior Gemini run holding the same file to finish first.
+    const prior = GeminiSubprocessDriver.settingsMutex;
+    let releaseLock!: () => void;
+    const ourLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    GeminiSubprocessDriver.settingsMutex = ourLock;
+    try {
+      await prior;
+      return await this._runLocked(input, mcp);
+    } finally {
+      releaseLock();
     }
-    // No mcp injection → no settings file write → no mutex needed.
-    return this._runLocked(input, undefined);
   }
 
   private async _runLocked(
@@ -118,18 +151,23 @@ export class GeminiSubprocessDriver implements ProviderDriver {
     const approvalMode =
       typeof opts.approvalMode === "string" ? opts.approvalMode : "yolo";
 
-    // Inject bridge MCP into ~/.gemini/settings.json before spawning so the
-    // subprocess can call bridge tools. Gemini CLI reads settings.json at
-    // startup. We snapshot whatever was there before (or remember "absent")
-    // and restore it in a finally block at the end of run() — the bearer
-    // token must NOT outlive this single invocation in a shared-home file.
+    // Mutate ~/.gemini/settings.json before spawning so the subprocess (1) can
+    // call bridge tools when MCP is injected and (2) ALWAYS runs with a
+    // destructive-command deny list (drivers-orch-6). Gemini CLI reads
+    // settings.json at startup. We snapshot whatever was there before (or
+    // remember "absent") and restore it in a finally block at the end of run()
+    // — the deny list and the bearer token must NOT outlive this single
+    // invocation in a shared-home file.
     //
     // URL is rewritten to 127.0.0.1:<port> for the spawned subprocess: the
     // bridge may be bound 0.0.0.0 with a public --issuer-url, but the local
     // child should always dial loopback so neither the URL nor the token
     // ever leave this machine.
+    //
+    // This block runs on EVERY run (not only when mcp is present) so the deny
+    // list is applied even for non-MCP tasks running under --approval-mode yolo.
     let settingsCleanup: (() => void) | null = null;
-    if (mcp) {
+    {
       const settingsFile = join(homedir(), ".gemini", "settings.json");
       try {
         let originalContent: string | null = null;
@@ -148,21 +186,47 @@ export class GeminiSubprocessDriver implements ProviderDriver {
         )
           ? mcpServers["claude-ide-bridge"]
           : undefined;
-        const localUrl = (() => {
-          try {
-            const u = new URL(mcp.url);
-            // Force loopback — keeps token off the wire even if bridge bound 0.0.0.0
-            u.hostname = "127.0.0.1";
-            return u.toString();
-          } catch {
-            return mcp.url;
-          }
-        })();
-        mcpServers["claude-ide-bridge"] = {
-          url: localUrl,
-          headers: { Authorization: `Bearer ${mcp.authToken}` },
+        if (mcp) {
+          const localUrl = (() => {
+            try {
+              const u = new URL(mcp.url);
+              // Force loopback — keeps token off the wire even if bridge bound 0.0.0.0
+              u.hostname = "127.0.0.1";
+              return u.toString();
+            } catch {
+              return mcp.url;
+            }
+          })();
+          mcpServers["claude-ide-bridge"] = {
+            url: localUrl,
+            headers: { Authorization: `Bearer ${mcp.authToken}` },
+          };
+          settings.mcpServers = mcpServers;
+        }
+        // Apply the destructive-command deny list. Written under both the
+        // current (`tools.exclude`) and legacy (`excludeTools`) keys so the
+        // restriction is honored across Gemini CLI versions. Merge with any
+        // pre-existing excludes so operator-configured denials are preserved.
+        const existingTools = (settings.tools ?? {}) as Record<string, unknown>;
+        const existingToolsExclude = Array.isArray(existingTools.exclude)
+          ? (existingTools.exclude as unknown[]).filter(
+              (e): e is string => typeof e === "string",
+            )
+          : [];
+        settings.tools = {
+          ...existingTools,
+          exclude: Array.from(
+            new Set([...existingToolsExclude, ...GEMINI_SHELL_DENY_PATTERNS]),
+          ),
         };
-        settings.mcpServers = mcpServers;
+        const existingExcludeTools = Array.isArray(settings.excludeTools)
+          ? (settings.excludeTools as unknown[]).filter(
+              (e): e is string => typeof e === "string",
+            )
+          : [];
+        settings.excludeTools = Array.from(
+          new Set([...existingExcludeTools, ...GEMINI_SHELL_DENY_PATTERNS]),
+        );
         writeFileSync(settingsFile, JSON.stringify(settings, null, 2), {
           mode: 0o600,
         });

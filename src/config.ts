@@ -195,6 +195,14 @@ export const INTERPRETER_COMMANDS = new Set([
   "perl",
   "lua",
   "php",
+  // JS/TS runtimes that accept arbitrary code via -e / --eval / -c. tsx and
+  // ts-node also run an entry file; deno and bun additionally have eval flags.
+  // Without these, `--allow-command tsx` would pass the config gate and the
+  // DANGEROUS_INTERPRETER_FLAGS check would be skipped (tools-core-1).
+  "tsx",
+  "ts-node",
+  "deno",
+  "bun",
   // Windows shells & interpreters. cmd.exe `/c` and PowerShell `-Command`
   // both accept arbitrary command strings; `pwsh` is PowerShell 7+.
   "cmd",

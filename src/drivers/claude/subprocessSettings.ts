@@ -18,9 +18,18 @@ const DENY_LIST = [
   // Destructive git operations
   "Bash(git reset --hard*)",
   "Bash(git clean -f*)",
-  // Filesystem destruction
+  // git clean -d removes untracked directories even without -f in some configs;
+  // --force is the long form of -f (drivers-orch-5).
+  "Bash(git clean -d*)",
+  "Bash(git clean --force*)",
+  // Filesystem destruction. Claude Code matches the literal argument string,
+  // so reversed-flag and missing-flag variants are distinct patterns that must
+  // each be listed (drivers-orch-5).
   "Bash(rm -rf *)",
   "Bash(rm -rf/*)",
+  "Bash(rm -fr *)",
+  "Bash(rm -r *)",
+  "Bash(rm --recursive*)",
   // Privilege escalation
   "Bash(sudo *)",
   "Bash(chmod 777*)",
