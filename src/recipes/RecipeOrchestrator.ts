@@ -39,15 +39,28 @@ export interface FireDeps {
     deps: RunnerDeps,
     seedContext?: Record<string, string>,
   ) => Promise<RunResult | ChainedRunResult>;
+  /**
+   * Safety-net TTL (ms) for the in-flight dedup entry. If a dispatch promise
+   * never settles (a tool step hangs with no timeout_ms), the entry would
+   * otherwise be stuck forever, permanently rejecting every future fire() for
+   * that recipe with `already_in_flight` (audit 2026-06-09 orch-hang-1). When
+   * the timer fires, the slot is freed so the recipe can run again. Default
+   * 30 min. Set to 0 to disable.
+   */
+  dispatchTimeoutMs?: number;
   logger?: Logger;
 }
 
 type ResolvedFireDeps = Required<Omit<FireDeps, "logger">> &
   Pick<FireDeps, "logger">;
 
+const DEFAULT_DISPATCH_TIMEOUT_MS = 30 * 60_000;
+
 export class RecipeOrchestrator {
   private readonly inFlight = new Set<string>();
+  private readonly inFlightTimers = new Map<string, NodeJS.Timeout>();
   private readonly fireDeps: ResolvedFireDeps;
+  private readonly dispatchTimeoutMs: number;
 
   constructor(
     private readonly deps: RunnerDeps,
@@ -56,8 +69,21 @@ export class RecipeOrchestrator {
     this.fireDeps = {
       loadYamlRecipe: fireDeps.loadYamlRecipe ?? defaultLoadYamlRecipe,
       dispatchFn: fireDeps.dispatchFn ?? dispatchRecipe,
+      dispatchTimeoutMs:
+        fireDeps.dispatchTimeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS,
       logger: fireDeps.logger,
     };
+    this.dispatchTimeoutMs = this.fireDeps.dispatchTimeoutMs;
+  }
+
+  /** Free the in-flight slot for `name` and clear any pending safety timer. */
+  private clearInFlight(name: string): void {
+    this.inFlight.delete(name);
+    const timer = this.inFlightTimers.get(name);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.inFlightTimers.delete(name);
+    }
   }
 
   run(
@@ -87,9 +113,25 @@ export class RecipeOrchestrator {
     const taskId = `${name}-${Date.now()}`;
     this.inFlight.add(name);
 
+    // Safety net: if the dispatch promise never settles (a hung tool step),
+    // free the slot after the TTL so future fires aren't permanently rejected.
+    if (this.dispatchTimeoutMs > 0) {
+      const timer = setTimeout(() => {
+        if (this.inFlight.has(name)) {
+          this.fireDeps.logger?.warn?.(
+            `[orchestrator] recipe "${name}" dispatch exceeded ${this.dispatchTimeoutMs}ms — clearing in-flight slot (run may still be running)`,
+          );
+          this.clearInFlight(name);
+        }
+      }, this.dispatchTimeoutMs);
+      // Don't keep the process alive just for the safety timer.
+      timer.unref?.();
+      this.inFlightTimers.set(name, timer);
+    }
+
     dispatch(recipe, this.deps, seedContext)
       .finally(() => {
-        this.inFlight.delete(name);
+        this.clearInFlight(name);
       })
       .catch((err: unknown) => {
         this.fireDeps.logger?.warn?.(
