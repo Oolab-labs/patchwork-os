@@ -7,6 +7,11 @@ import {
 } from "./quickTaskPresets";
 import type { LockFileData } from "./types";
 
+// Bound bridge HTTP calls so a stalled/malicious bridge cannot hang the refresh
+// timer or OOM the extension host. Mirrors extension.ts getAnalyticsReport.
+const BRIDGE_CALL_TIMEOUT_MS = 5000;
+const BRIDGE_CALL_MAX_BYTES = 512 * 1024; // 512 KB
+
 export interface AnalyticsReport {
   generatedAt: string;
   windowHours: number;
@@ -265,6 +270,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
             Authorization: `Bearer ${lock.authToken}`,
             "Content-Length": Buffer.byteLength(initBody),
           },
+          timeout: BRIDGE_CALL_TIMEOUT_MS,
         },
         (res) => {
           const sid = res.headers["mcp-session-id"];
@@ -278,6 +284,9 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
         },
       );
       req.on("error", reject);
+      req.on("timeout", () => {
+        req.destroy(new Error("initialize request timed out"));
+      });
       req.write(initBody);
       req.end();
     });
@@ -300,6 +309,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
             "mcp-session-id": sessionId,
             "Content-Length": Buffer.byteLength(notifBody),
           },
+          timeout: BRIDGE_CALL_TIMEOUT_MS,
         },
         (res) => {
           res.resume();
@@ -307,6 +317,9 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
         },
       );
       req.on("error", reject);
+      req.on("timeout", () => {
+        req.destroy(new Error("notifications/initialized request timed out"));
+      });
       req.write(notifBody);
       req.end();
     });
@@ -323,6 +336,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
           params: { name: toolName, arguments: toolArgs },
         });
         let raw = "";
+        let bytes = 0;
         const req = http.request(
           {
             hostname: "127.0.0.1",
@@ -335,9 +349,16 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
               "mcp-session-id": sessionId,
               "Content-Length": Buffer.byteLength(callBody),
             },
+            timeout: BRIDGE_CALL_TIMEOUT_MS,
           },
           (res) => {
             res.on("data", (chunk: Buffer) => {
+              bytes += chunk.byteLength;
+              if (bytes > BRIDGE_CALL_MAX_BYTES) {
+                res.destroy();
+                resolve(null);
+                return;
+              }
               raw += chunk.toString();
             });
             res.on("end", () => {
@@ -362,6 +383,9 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
           },
         );
         req.on("error", reject);
+        req.on("timeout", () => {
+          req.destroy(new Error("tools/call request timed out"));
+        });
         req.write(callBody);
         req.end();
       });
@@ -374,6 +398,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
             port: lock.port,
             path: "/mcp",
             method: "DELETE",
+            timeout: BRIDGE_CALL_TIMEOUT_MS,
             headers: {
               Authorization: `Bearer ${lock.authToken}`,
               "mcp-session-id": sessionId,
@@ -385,6 +410,10 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
           },
         );
         req.on("error", () => resolve());
+        req.on("timeout", () => {
+          req.destroy();
+          resolve();
+        });
         req.end();
       });
     }

@@ -1,9 +1,49 @@
+import * as path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handleGetDebugState } from "../../handlers/debug";
+import * as vscode from "vscode";
+import { createDebugHandlers, handleGetDebugState } from "../../handlers/debug";
 import { __reset, _mockDebugSession, debug } from "../__mocks__/vscode";
 
 beforeEach(() => {
   __reset();
+});
+
+describe("setDebugBreakpoints workspace containment", () => {
+  const handler = () =>
+    createDebugHandlers({ getBridge: () => null }).handlers[
+      "extension/setDebugBreakpoints"
+    ];
+
+  // Regression: extension-3 — a breakpoint on an out-of-workspace path loads
+  // that file into the debug adapter, so the handler must reject it.
+  it("rejects file paths outside the workspace", async () => {
+    const outside = path.resolve("/outside-ws/secret.ts");
+    await expect(
+      handler()({ file: outside, breakpoints: [{ line: 1 }] }),
+    ).rejects.toThrow("outside the workspace");
+    expect(debug.addBreakpoints).not.toHaveBeenCalled();
+  });
+
+  it("allows file paths inside the workspace", async () => {
+    // The base vscode mock lacks Location/SourceBreakpoint constructors; stub
+    // them so the in-workspace path can flow past the containment guard.
+    (vscode as any).Location = class {
+      constructor(
+        public uri: unknown,
+        public position: unknown,
+      ) {}
+    };
+    (vscode as any).SourceBreakpoint = class {
+      constructor(public location: unknown) {}
+    };
+    const inside = path.resolve("/workspace/src/index.ts");
+    const result = (await handler()({
+      file: inside,
+      breakpoints: [{ line: 3 }],
+    })) as any;
+    expect(result.set).toBe(1);
+    expect(debug.addBreakpoints).toHaveBeenCalled();
+  });
 });
 
 describe("handleGetDebugState", () => {

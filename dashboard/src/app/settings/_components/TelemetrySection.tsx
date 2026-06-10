@@ -38,41 +38,13 @@ export function TelemetrySection({ flashSaved }: { flashSaved: () => void }) {
     return () => abortRef.current?.abort();
   }, []);
 
-  // Fetch analytics prefs (including lastSentAt + endpoint info) from bridge
-  useEffect(() => {
-    let alive = true;
-    const fetch_ = async () => {
-      try {
-        const res = await fetch(apiPath("/api/bridge/telemetry-prefs"));
-        if (res.ok) {
-          const data = (await res.json()) as {
-            lastSentAt?: string;
-            endpoint?: string;
-            endpointSource?: string;
-          };
-          if (!alive) return;
-          if (typeof data.lastSentAt === "string") {
-            setTelLastSentAt(data.lastSentAt);
-          }
-          if (typeof data.endpoint === "string") {
-            setTelEndpoint(data.endpoint);
-          }
-          if (typeof data.endpointSource === "string") {
-            setTelEndpointSource(data.endpointSource);
-          }
-        }
-      } catch {
-        // Bridge offline — no-op
-      }
-    };
-    fetch_();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
   // Load telemetry prefs on mount (once). Fail-soft — if bridge is offline
   // the toggles remain at their default values.
+  //
+  // Audit 2026-06-10 (dashboard-ui-1): a single fetch distributes all six
+  // fields. Previously two independent mount effects hit the same endpoint, so
+  // the endpoint info and the toggle values could reflect different server
+  // snapshots when the bridge changed state mid-flight.
   useEffect(() => {
     if (telInitialized.current) return;
     let cancel = false;
@@ -81,11 +53,23 @@ export function TelemetrySection({ flashSaved }: { flashSaved: () => void }) {
         const res = await fetch(apiPath("/api/bridge/telemetry-prefs"));
         if (!res.ok) return;
         const data = (await res.json()) as {
+          lastSentAt?: string;
+          endpoint?: string;
+          endpointSource?: string;
           crashReports?: boolean;
           usageStats?: boolean;
           localDiagnostics?: boolean;
         };
         if (cancel) return;
+        if (typeof data.lastSentAt === "string") {
+          setTelLastSentAt(data.lastSentAt);
+        }
+        if (typeof data.endpoint === "string") {
+          setTelEndpoint(data.endpoint);
+        }
+        if (typeof data.endpointSource === "string") {
+          setTelEndpointSource(data.endpointSource);
+        }
         if (typeof data.crashReports === "boolean")
           setTelCrash(data.crashReports);
         if (typeof data.usageStats === "boolean") setTelUsage(data.usageStats);

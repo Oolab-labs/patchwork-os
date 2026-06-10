@@ -167,6 +167,29 @@ describe("useBridgeFetch — enabled flag", () => {
   });
 });
 
+describe("useBridgeFetch — path change resets loading (dashboard-ui-3)", () => {
+  it("resets loading=true and clears stale data when path changes mid-flight", async () => {
+    // First path resolves quickly so data/loading settle.
+    fetchMock.mockResolvedValueOnce(jsonResponse({ which: "A" }));
+
+    const { result, rerender } = renderHook(
+      ({ p }: { p: string }) => useBridgeFetch<{ which: string }>(p),
+      { initialProps: { p: "/api/run-A" } },
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data).toEqual({ which: "A" });
+
+    // Second path never resolves — the hook must NOT keep showing path A's data
+    // with loading=false; it must flip back to the loading state immediately.
+    fetchMock.mockImplementationOnce(() => new Promise(() => {}));
+    rerender({ p: "/api/run-B" });
+
+    expect(result.current.loading).toBe(true);
+    expect(result.current.data).toBeNull();
+  });
+});
+
 describe("useBridgeFetch — initial state", () => {
   it("starts as { data: null, loading: true, status: null, unsupported: false, refetch: fn }", () => {
     fetchMock.mockImplementation(() => new Promise(() => {}));
