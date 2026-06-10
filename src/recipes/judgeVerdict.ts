@@ -50,13 +50,16 @@ export interface JudgeVerdict {
  */
 export const JUDGE_PROMPT_SUFFIX = `
 
-You are a cold-eyes reviewer. Respond with a brief assessment, then end
-with a single JSON object on its own line:
+You are a cold-eyes reviewer. Reply with ONLY a single JSON object — no prose,
+no markdown fences — of exactly this shape:
 
 {"verdict": "approve" | "request_changes", "reasons": ["..."], "fixList": ["..."]}
 
-The "fixList" is optional and only relevant when requesting changes.
-Output only the JSON object as the final line.`;
+Rules:
+- "verdict" MUST be exactly "approve" or "request_changes" (lowercase).
+- "reasons": short bullet strings explaining the call.
+- "fixList": include ONLY when requesting changes; omit it otherwise.
+Output nothing except that JSON object.`;
 
 /**
  * Build the artefact-injection block for a judge step that has a
@@ -140,6 +143,36 @@ function findBalancedObjectRanges(text: string): Array<[number, number]> {
 }
 
 /**
+ * Normalise a model-supplied verdict value to the canonical enum. Smaller /
+ * local models frequently deviate on case, spacing, hyphenation, or tense
+ * ("Approved", "request changes", "request-changes") — accepting those instead
+ * of failing to `unparseable` cuts judge→refine halts WITHOUT semantic guessing
+ * (genuinely ambiguous values still fall through). Conservative on purpose: no
+ * "reject"/"pass"/"lgtm" mapping, only spelling/format variants of the two
+ * canonical verbs.
+ */
+function normalizeVerdict(
+  raw: unknown,
+): "approve" | "request_changes" | undefined {
+  if (typeof raw !== "string") return undefined;
+  const v = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  if (v === "approve" || v === "approved" || v === "approval") return "approve";
+  if (
+    v === "request_changes" ||
+    v === "request_change" ||
+    v === "changes_requested" ||
+    v === "needs_changes" ||
+    v === "needs_change"
+  ) {
+    return "request_changes";
+  }
+  return undefined;
+}
+
+/**
  * Parse an agent response into a `JudgeVerdict`. Never throws.
  */
 export function parseJudgeVerdict(text: string): JudgeVerdict {
@@ -169,8 +202,8 @@ export function parseJudgeVerdict(text: string): JudgeVerdict {
     }
     if (!parsed || typeof parsed !== "object") continue;
     const obj = parsed as Record<string, unknown>;
-    const verdictRaw = obj.verdict;
-    if (verdictRaw !== "approve" && verdictRaw !== "request_changes") {
+    const verdict = normalizeVerdict(obj.verdict);
+    if (!verdict) {
       continue;
     }
     const reasons = Array.isArray(obj.reasons)
@@ -180,7 +213,7 @@ export function parseJudgeVerdict(text: string): JudgeVerdict {
       ? obj.fixList.filter((r): r is string => typeof r === "string")
       : undefined;
     return {
-      verdict: verdictRaw,
+      verdict,
       reasons,
       ...(fixList && fixList.length > 0 && { fixList }),
     };
