@@ -57,6 +57,20 @@ registerTool({
     const jqlInput = typeof params.jql === "string" ? params.jql.trim() : "";
     const projectInput =
       typeof params.project === "string" ? params.project.trim() : "";
+
+    // JQL injection guard: `project` is interpolated into the JQL string when
+    // no explicit `jql` is supplied. A value like `PROJ OR issue in
+    // allIssues()` would widen the query to every visible issue. Jira project
+    // keys are letters/digits/underscores starting with a letter (1–32 chars),
+    // so reject anything outside that shape rather than building injectable JQL.
+    const PROJECT_KEY_RE = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
+    if (!jqlInput && projectInput && !PROJECT_KEY_RE.test(projectInput)) {
+      return JSON.stringify({
+        count: 0,
+        items: [],
+        error: `Invalid Jira project key: ${projectInput}`,
+      });
+    }
     const jql = jqlInput
       ? jqlInput
       : projectInput

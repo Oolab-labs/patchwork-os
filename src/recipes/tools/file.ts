@@ -98,7 +98,10 @@ registerTool({
     const content = params.content as string;
     ensureDir(p);
     deps.writeFile(p, content);
-    return JSON.stringify({ path: p, bytesWritten: content.length });
+    return JSON.stringify({
+      path: p,
+      bytesWritten: Buffer.byteLength(content, "utf8"),
+    });
   },
 });
 
@@ -133,7 +136,7 @@ registerTool({
   },
   riskDefault: "medium",
   isWrite: true,
-  execute: async ({ params, step, deps }) => {
+  execute: async ({ params, step, ctx, deps }) => {
     assertWriteAllowed("file.append");
     const p = jailedPath(params.path as string, deps.workdir, true);
     const content = params.content as string;
@@ -142,13 +145,18 @@ registerTool({
     // fallback only runs when the registry is invoked directly (no runner),
     // and uses the limited evalCondition below — runner paths render the
     // template against the recipe's context first, which this fallback can't.
+    // Pass the run context so a `var > N` guard can resolve `var` against
+    // prior step outputs / vars instead of the old hard-coded 0.
     const when = step.when as string | undefined;
-    if (when && !evalCondition(when, {})) {
+    if (when && !evalCondition(when, (ctx ?? {}) as Record<string, unknown>)) {
       return null;
     }
     ensureDir(p);
     deps.appendFile(p, content);
-    return JSON.stringify({ path: p, bytesAppended: content.length });
+    return JSON.stringify({
+      path: p,
+      bytesAppended: Buffer.byteLength(content, "utf8"),
+    });
   },
 });
 
@@ -157,29 +165,43 @@ registerTool({
  * Note: yamlRunner.ts has a more complete evalWhen that runs before executeStep.
  * This is a fallback for direct registry usage.
  */
-function evalCondition(expr: string, _ctx: Record<string, unknown>): boolean {
+function evalCondition(expr: string, ctx: Record<string, unknown>): boolean {
   // Simple numeric comparisons: "N > 0"
   const match = expr.match(/^\s*(\w+)\s*([><=!]+)\s*(\d+)\s*$/);
   if (match) {
-    const [, _var, op, val] = match;
-    if (!op || !val) return false;
-    const num = 0; // Would resolve from ctx in full implementation
+    const [, varName, op, val] = match;
+    if (!op || !val || !varName) return false;
+    // Resolve the left-hand variable from the supplied context. The previous
+    // implementation hard-coded `num = 0`, so every `var > N` (N > 0) was
+    // permanently false and every `var <= N` permanently true regardless of
+    // the actual value. Look the variable up (own-property only, no prototype
+    // walk) and coerce to a finite number; absent/non-numeric resolves to 0.
+    const raw = Object.hasOwn(ctx, varName) ? ctx[varName] : undefined;
+    const num = typeof raw === "number" ? raw : Number(raw);
+    const resolved = Number.isFinite(num) ? num : 0;
     const cmp = parseInt(val, 10);
-    switch (op) {
-      case ">":
-        return num > cmp;
-      case ">=":
-        return num >= cmp;
-      case "<":
-        return num < cmp;
-      case "<=":
-        return num <= cmp;
-      case "==":
-        return num === cmp;
-      case "!=":
-        return num !== cmp;
-    }
+    return compareNumbers(resolved, op, cmp);
   }
   // Default: evaluate truthy
   return expr.length > 0;
+}
+
+/** Apply a comparison operator to two numbers; unknown operators are false. */
+function compareNumbers(num: number, op: string, cmp: number): boolean {
+  switch (op) {
+    case ">":
+      return num > cmp;
+    case ">=":
+      return num >= cmp;
+    case "<":
+      return num < cmp;
+    case "<=":
+      return num <= cmp;
+    case "==":
+      return num === cmp;
+    case "!=":
+      return num !== cmp;
+    default:
+      return false;
+  }
 }
