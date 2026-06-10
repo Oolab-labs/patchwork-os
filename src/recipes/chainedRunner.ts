@@ -922,6 +922,25 @@ export function expandParallelSteps(steps: ChainedStep[]): ChainedStep[] {
       }
 
       groupChildren.set(groupId, childIds);
+    } else if (
+      typeof step.parallel === "object" &&
+      step.parallel !== null &&
+      !Array.isArray(step.parallel) &&
+      "each" in (step.parallel as Record<string, unknown>)
+    ) {
+      // parallel: { each, as, steps } — runtime map-reduce over an array that a
+      // PRIOR step produces. Real support needs dynamic agent fan-out (per-iter
+      // budget/judge/silent-fail) the chained engine doesn't have yet, and the
+      // array isn't known at plan-expansion time. This object form used to fall
+      // through to the flat-step branch below and execute ZERO iterations —
+      // silent data loss with no signal. Fail loud instead. (audit
+      // recipe-chained-1)
+      throw new Error(
+        `Step "${step.id ?? `parallel_${i}`}" uses parallel:{ each } ` +
+          `(runtime map-reduce), which is not yet implemented in chained ` +
+          "recipes. Use the `fan_out` tool step for tool-only loops; agent " +
+          "fan-out over a runtime-produced array is not yet supported.",
+      );
     } else {
       if (step.id && seenIds.has(step.id)) {
         throw new Error(
