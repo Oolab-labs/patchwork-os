@@ -8,6 +8,7 @@
  */
 
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import { wrapConnectorExecute } from "./wrapConnectorExecute.js";
 
 // ============================================================================
 // sendgrid.send_email  (write-gated)
@@ -116,7 +117,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getSendGridConnector } = await import(
       "../../connectors/sendgrid.js"
     );
@@ -129,7 +130,7 @@ registerTool({
           : undefined,
     });
     return JSON.stringify(result);
-  },
+  }),
 });
 
 // ============================================================================
@@ -171,7 +172,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   isConnector: true,
-  execute: async ({ params }) => {
+  execute: wrapConnectorExecute(async ({ params }) => {
     const { getSendGridConnector } = await import(
       "../../connectors/sendgrid.js"
     );
@@ -187,5 +188,5 @@ registerTool({
           : undefined,
     });
     return JSON.stringify({ data });
-  },
+  }),
 });

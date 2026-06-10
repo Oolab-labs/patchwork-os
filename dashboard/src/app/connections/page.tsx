@@ -1601,7 +1601,16 @@ export default function ConnectionsPage() {
       const errMatch = /^patchwork:([a-z-]+):error(?::(.*))?$/.exec(e.data);
       if (errMatch) {
         const [, connectorId, reason] = errMatch;
-        const decoded = reason ? decodeURIComponent(reason) : "Authorization failed";
+        // Audit 2026-06-10 (dashboard-ui-2): `reason` is attacker/proxy-influenced
+        // text from the OAuth callback window. A malformed percent-sequence
+        // (e.g. "%ZZ") makes decodeURIComponent throw URIError, which would
+        // otherwise escape this listener and suppress the toast + cleanup.
+        let decoded = "Authorization failed";
+        try {
+          if (reason) decoded = decodeURIComponent(reason);
+        } catch {
+          decoded = reason || decoded;
+        }
         toast.error(`${connectorId}: ${decoded}`);
         return;
       }

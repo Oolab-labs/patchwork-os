@@ -51,6 +51,12 @@ export function useBridgeFetch<T>(
   useEffect(() => {
     if (!enabled) return;
 
+    // Audit 2026-06-10 (dashboard-ui-3): reset to the loading state whenever the
+    // effect re-runs (e.g. `path` changed). Otherwise the hook keeps loading=false
+    // and exposes the previous path's stale `data` until the new fetch lands.
+    setLoading(true);
+    setData(null);
+
     let alive = true;
     let failures = 0;
     let timerId: ReturnType<typeof setTimeout> | null = null;

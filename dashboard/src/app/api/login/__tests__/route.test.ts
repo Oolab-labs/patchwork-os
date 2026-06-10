@@ -53,6 +53,14 @@ function req(body: unknown, headers: Record<string, string> = {}): NextRequest {
   });
 }
 
+function rawReq(rawBody: string, headers: Record<string, string> = {}): NextRequest {
+  return new NextRequest("http://localhost:3200/api/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "sec-fetch-site": "same-origin", ...headers },
+    body: rawBody,
+  });
+}
+
 describe("POST /api/login — no trusted proxy (BRIDGE_TRUST_PROXY unset)", () => {
   it("does NOT lock out a subsequent correct login after many bad attempts", async () => {
     // Hammer the endpoint with more than MAX_FAILURES wrong passwords. All
@@ -126,6 +134,34 @@ describe("POST /api/login — global rate limit when no trusted proxy (audit 202
       expect(r.status).toBe(401);
     }
     expect(got429).toBe(true);
+  });
+});
+
+describe("POST /api/login — invalid-JSON body records a failure (audit 2026-06-10 dashboard-api-1)", () => {
+  // A malformed-JSON body used to return 400 WITHOUT recording a failure, so an
+  // attacker could flood the endpoint with invalid JSON to "rest" their lockout
+  // counter between valid wrong-password probes. Malformed bodies must now count.
+  beforeEach(() => {
+    process.env.BRIDGE_TRUST_PROXY = "true";
+  });
+
+  it("locks out an IP that floods malformed-JSON bodies", async () => {
+    const attacker = { "x-forwarded-for": "203.0.113.99" };
+    // Each malformed-JSON request records a failure (top-of-request checkLocked
+    // then enforces the lockout). MAX_FAILURES bad bodies fill the counter; the
+    // next request is rejected with 429 — proving malformed JSON is counted.
+    for (let i = 0; i < _config.MAX_FAILURES; i++) {
+      const r = await POST(rawReq("{{{not json", attacker));
+      expect(r.status).toBe(400);
+    }
+    const locked = await POST(rawReq("{{{not json", attacker));
+    expect(locked.status).toBe(429);
+  });
+
+  it("returns 400 for invalid JSON before lockout, not a silent free pass", async () => {
+    const attacker = { "x-forwarded-for": "203.0.113.100" };
+    const r = await POST(rawReq("{{{not json", attacker));
+    expect(r.status).toBe(400);
   });
 });
 

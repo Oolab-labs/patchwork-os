@@ -60,6 +60,28 @@ describe("resolveStepTemplates", () => {
     expect("agent" in resolved).toBe(false);
   });
 
+  // Regression (audit 2026-06-10 recipe-runners-5): expect / timeout_ms /
+  // silentFailDetection are runner-meta and must NOT be forwarded as tool
+  // params (the expect AJV schema object especially leaks into tool inputs).
+  it("skips expect, timeout_ms, silentFailDetection meta keys", () => {
+    const { resolved } = resolveStepTemplates(
+      {
+        id: "s",
+        tool: "t",
+        message: "hi",
+        expect: { contains: "x" },
+        timeout_ms: 1000,
+        silentFailDetection: false,
+      } as unknown as ChainedStep,
+      { steps: {}, env: {} },
+    );
+    expect("expect" in resolved).toBe(false);
+    expect("timeout_ms" in resolved).toBe(false);
+    expect("silentFailDetection" in resolved).toBe(false);
+    // Real tool params still pass through.
+    expect(resolved.message).toBe("hi");
+  });
+
   it("resolves agent prompt", () => {
     const ctx = { steps: {}, env: { Q: "question?" } };
     const { resolved } = resolveStepTemplates(
@@ -369,6 +391,60 @@ describe("executeChainedStep", () => {
     );
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/expect/i);
+  });
+
+  // Regression (audit 2026-06-10 recipe-runners-1): expect.on_fail:"warn"
+  // failures were silently dropped in the chained runner (the flat runner
+  // surfaced them). The step still succeeds, but the failures must be exposed
+  // via `expectWarnings`.
+  it("surfaces expect.on_fail:'warn' failures via expectWarnings (tool step)", async () => {
+    const reg = createOutputRegistry();
+    const warnDeps = {
+      ...noopDeps,
+      executeTool: vi.fn().mockResolvedValue("actual_output"),
+    };
+    const result = await executeChainedStep(
+      {
+        registry: reg,
+        step: {
+          id: "s",
+          tool: "t",
+          expect: { equals: "expected_output", on_fail: "warn" },
+        } as ChainedStep,
+        options: baseOptions,
+        recipe: { name: "r", steps: [] },
+        depth: 0,
+      },
+      warnDeps,
+    );
+    expect(result.success).toBe(true);
+    expect(result.expectWarnings).toBeDefined();
+    expect(result.expectWarnings?.length).toBeGreaterThan(0);
+  });
+
+  it("surfaces expect.on_fail:'warn' failures via expectWarnings (agent step)", async () => {
+    const reg = createOutputRegistry();
+    const warnDeps = {
+      ...noopDeps,
+      executeAgent: vi.fn().mockResolvedValue("actual_output"),
+    };
+    const result = await executeChainedStep(
+      {
+        registry: reg,
+        step: {
+          id: "s",
+          agent: { prompt: "hi" },
+          expect: { equals: "expected_output", on_fail: "warn" },
+        } as ChainedStep,
+        options: baseOptions,
+        recipe: { name: "r", steps: [] },
+        depth: 0,
+      },
+      warnDeps,
+    );
+    expect(result.success).toBe(true);
+    expect(result.expectWarnings).toBeDefined();
+    expect(result.expectWarnings?.length).toBeGreaterThan(0);
   });
 
   it("returns failure for step with no tool/agent/recipe", async () => {
@@ -943,6 +1019,23 @@ describe("expandParallelSteps", () => {
     );
   });
 
+  // Regression (audit 2026-06-10 recipe-runners-4): the group container id
+  // was not tracked in seenIds, so a later flat step reusing the group id was
+  // silently accepted and shadowed in the awaits-rewrite, corrupting the
+  // dependency graph. It must now be rejected as a duplicate.
+  it("detects a flat step reusing a parallel group's id", () => {
+    const steps: ChainedStep[] = [
+      {
+        id: "foo",
+        parallel: [{ id: "foo_a", tool: "t1" }],
+      } as ChainedStep,
+      { id: "foo", tool: "file.read" } as ChainedStep,
+    ];
+    expect(() => expandParallelSteps(steps)).toThrow(
+      /duplicate.*id|id.*duplicate/i,
+    );
+  });
+
   it("parallel group executes both steps end-to-end", async () => {
     const executed: string[] = [];
     const deps: ExecutionDeps = {
@@ -1050,6 +1143,50 @@ describe("runChainedRecipe — budget enforcement (S1 alignment)", () => {
     const stepC = result.stepResults.get("c");
     expect(stepC?.success).toBe(false);
     expect(stepC?.error?.message).toMatch(/budget_exceeded/);
+  });
+
+  // Regression (audit 2026-06-10 recipe-budget-3): when servedBy is absent
+  // (bare AgentResult, no downshift) and agent.driver === "api", the reconcile
+  // fallback must normalize "api" → "anthropic" so the metered call is charged
+  // against usdMax. Previously it reconciled against the non-billable "api"
+  // driver and the USD cap was silently unenforced.
+  it("normalizes the 'api' driver in the no-servedBy reconcile fallback", async () => {
+    const { RunBudget } = await import("../runBudget.js");
+    const { DEFAULT_MODEL } = await import("../agentExecutor.js");
+    const table: import("../pricing/priceTable.js").PriceTable = {
+      _meta: {
+        _generatedAt: "t",
+        _unit: "usd_per_million_tokens",
+        _source: "test",
+        _note: "test",
+      },
+      prices: { [DEFAULT_MODEL]: { input: 1, output: 1 } },
+    };
+    const budget = new RunBudget({ usdMax: 100 }, table);
+    const deps: ExecutionDeps = {
+      executeTool: vi.fn().mockResolvedValue({ ok: true }),
+      // Returns usage but NO servedBy → reconcile uses the dispatchDriver
+      // fallback ("api" from agent.driver), and no DEFAULT model in servedBy
+      // so dispatchModel (undefined) falls back to DEFAULT_MODEL pricing path.
+      executeAgent: vi.fn(async () => ({
+        text: "ok",
+        usage: { inputTokens: 1_000_000, outputTokens: 0 },
+      })),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const recipe: ChainedRecipe = {
+      name: "api-normalize",
+      budget: { usdMax: 100 },
+      steps: [
+        {
+          id: "a",
+          agent: { prompt: "x", driver: "api", model: DEFAULT_MODEL },
+        },
+      ],
+    };
+    await runChainedRecipe(recipe, { ...baseOptions, budget }, deps);
+    // $1/1M input * 1M = $1 charged — proves "api" was treated as billable.
+    expect(budget.totals().usd).toBeCloseTo(1, 6);
   });
 
   it("admits all dispatches when cumulative spend stays under tokensMax", async () => {

@@ -104,4 +104,23 @@ describe("ApiDriver", () => {
     expect(result.wasAborted).toBe(true);
     expect(result.errorMessage).toBeUndefined();
   });
+
+  // drivers-orch-2 regression: input.systemPrompt must be forwarded as Claude's
+  // top-level `system` parameter. Before the fix it was silently dropped.
+  it("forwards input.systemPrompt as the top-level `system` parameter", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
+    const driver = new ApiDriver(log);
+    await driver.run(makeInput({ systemPrompt: "You are a pirate." }));
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const [params] = mockCreate.mock.calls[0]!;
+    expect(params.system).toBe("You are a pirate.");
+  });
+
+  it("omits the `system` parameter when no systemPrompt is supplied", async () => {
+    mockCreate.mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
+    const driver = new ApiDriver(log);
+    await driver.run(makeInput());
+    const [params] = mockCreate.mock.calls[0]!;
+    expect("system" in params).toBe(false);
+  });
 });

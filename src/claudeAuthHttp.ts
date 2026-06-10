@@ -39,6 +39,12 @@ const CLAUDE_OAUTH_SCOPES = "user:inference user:profile org:create_api_key";
 // browser flow, short enough not to accumulate stale entries.
 const SESSION_TTL_MS = 10 * 60 * 1000;
 
+// http-routes-4: hard ceiling on the in-memory session map. An authenticated
+// caller flooding POST /auth/claude/start faster than the 10-minute TTL expires
+// entries would otherwise grow the map without bound (memory-exhaustion DoS).
+// 500 concurrent in-flight OAuth flows is far more than any real deployment.
+const MAX_SESSIONS = 500;
+
 // Hard ceiling on the Anthropic token-exchange request (audit 2026-06-08 auth-1).
 const TOKEN_EXCHANGE_TIMEOUT_MS = 15_000;
 
@@ -113,6 +119,16 @@ export async function handleClaudeAuthStart(
 ): Promise<void> {
   pruneExpiredSessions();
 
+  // http-routes-4: reject new sessions once the (post-prune) map is at
+  // capacity so a flood of /start requests can't exhaust memory.
+  if (sessions.size >= MAX_SESSIONS) {
+    jsonReply(res, 503, {
+      error: "too_many_sessions",
+      detail: "Too many in-flight authorization sessions. Try again shortly.",
+    });
+    return;
+  }
+
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = deriveCodeChallenge(codeVerifier);
   const sessionId = randomBytes(16).toString("hex");
@@ -141,6 +157,10 @@ export async function handleClaudeAuthComplete(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
+  // http-routes-4: keep the session map tidy on the completion path too —
+  // start() was the only pruning site, so abandoned flows lingered.
+  pruneExpiredSessions();
+
   let body: { sessionId?: unknown; code?: unknown };
   try {
     body = JSON.parse(await readBody(req)) as typeof body;

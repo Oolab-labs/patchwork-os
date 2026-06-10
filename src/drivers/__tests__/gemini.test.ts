@@ -640,4 +640,121 @@ describe("GeminiSubprocessDriver settings.json restoration (LOW #9)", () => {
     ).toBeUndefined();
     cleanupTmpHome();
   });
+
+  // Captures the bytes of ~/.gemini/settings.json *during* the run (before
+  // restoration deletes/reverts it) by reading the file inside the spawn mock.
+  function makeSettingsChildCapturing(
+    settingsFile: string,
+    capture: { content: string | null },
+    exitCode = 0,
+  ) {
+    const stdout = new EventEmitter() as EventEmitter & {
+      setEncoding: () => void;
+    };
+    stdout.setEncoding = () => {};
+    const stderr = new EventEmitter() as EventEmitter & {
+      setEncoding: () => void;
+    };
+    stderr.setEncoding = () => {};
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: typeof stdout;
+      stderr: typeof stderr;
+      stdin: null;
+      stdio: unknown[];
+      kill: () => void;
+      unref: () => void;
+      killed: boolean;
+      connected: boolean;
+      pid: number;
+      exitCode: number | null;
+    };
+    child.stdout = stdout;
+    child.stderr = stderr;
+    child.stdin = null;
+    child.stdio = [null, stdout, stderr];
+    child.killed = false;
+    child.connected = false;
+    child.pid = 12345;
+    child.exitCode = null;
+    child.kill = () => child.emit("close", 1);
+    child.unref = () => {};
+    vi.mocked(spawn).mockReturnValueOnce(
+      child as unknown as ReturnType<typeof spawn>,
+    );
+    const INIT = JSON.stringify({
+      type: "init",
+      session_id: "abc",
+      model: "gemini-2.5-flash",
+    });
+    const RESULT_OK = JSON.stringify({
+      type: "result",
+      status: "success",
+      stats: {},
+    });
+    setTimeout(() => {
+      // Read the settings file the child would see — captured before restore.
+      try {
+        capture.content = fs.readFileSync(settingsFile, "utf-8");
+      } catch {
+        capture.content = null;
+      }
+      stdout.emit("data", `${INIT}\n${RESULT_OK}\n`);
+      child.emit("close", exitCode);
+    }, 0);
+    return child;
+  }
+
+  // drivers-orch-6 regression: every Gemini subprocess run (even without MCP
+  // injection) must write a destructive-command deny list into
+  // ~/.gemini/settings.json, because the driver spawns with --approval-mode yolo
+  // (no interactive approval gate).
+  it("writes a destructive-command deny list during the run (no MCP)", async () => {
+    const settingsFile = path.join(tmpHome, ".gemini", "settings.json");
+    const capture: { content: string | null } = { content: null };
+    makeSettingsChildCapturing(settingsFile, capture);
+    // No bridgeMcp closure → exercises the non-MCP path.
+    const driver = new GeminiSubprocessDriver("gemini", log);
+    await driver.run({
+      prompt: "delete everything",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+    });
+
+    expect(capture.content).not.toBeNull();
+    const live = JSON.parse(capture.content as string) as {
+      tools?: { exclude?: string[] };
+      excludeTools?: string[];
+    };
+    const tools = live.tools?.exclude ?? [];
+    const legacy = live.excludeTools ?? [];
+    for (const pattern of [
+      "run_shell_command(rm -rf)",
+      "run_shell_command(rm -fr)",
+      "run_shell_command(git push)",
+      "run_shell_command(sudo)",
+    ]) {
+      expect(tools).toContain(pattern);
+      expect(legacy).toContain(pattern);
+    }
+    cleanupTmpHome();
+  });
+
+  // The injected deny list must NOT leak past the run: settings.json is
+  // deleted (file did not exist before) or reverted to the original snapshot.
+  it("removes the injected deny list after the run", async () => {
+    const settingsFile = path.join(tmpHome, ".gemini", "settings.json");
+    const capture: { content: string | null } = { content: null };
+    makeSettingsChildCapturing(settingsFile, capture);
+    const driver = new GeminiSubprocessDriver("gemini", log);
+    await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+    });
+    // The file did not exist before the run, so it must be gone afterward.
+    expect(fs.existsSync(settingsFile)).toBe(false);
+    cleanupTmpHome();
+  });
 });

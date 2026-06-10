@@ -67,6 +67,25 @@ describe("parseRecipe", () => {
       const r = parseRecipe({ ...VALID, version: "2.3.1" });
       expect(r.version).toBe("2.3.1");
     });
+
+    // Regression (audit 2026-06-10 recipe-validation-3): YAML parses
+    // `version: 1.2` as the JS number 1.2, which the old string-only check
+    // silently dropped and defaulted to "1.0.0". Coerce numerics to a string.
+    it("coerces a numeric version to a string", () => {
+      const r = parseRecipe({
+        ...VALID,
+        version: 1.2,
+      } as unknown as Record<string, unknown>);
+      expect(r.version).toBe("1.2");
+    });
+
+    it("coerces an integer numeric version to a string", () => {
+      const r = parseRecipe({
+        ...VALID,
+        version: 2,
+      } as unknown as Record<string, unknown>);
+      expect(r.version).toBe("2");
+    });
   });
 
   it("rejects empty steps", () => {

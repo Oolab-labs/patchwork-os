@@ -147,7 +147,27 @@ export function loadTokenFile(vendor: VendorId): McpTokenFile | null {
   }
 }
 
+/**
+ * Process-scoped access-token cache. getAccessToken() is called on every MCP POST
+ * (mcpClient.post) and unconditionally hit loadTokenFile() → getSecretJsonSync()
+ * → spawnSync('security'|'pwsh'…), spawning 1-2 blocking keychain processes
+ * (~50-200 ms each) per request and serializing all MCP calls through the OS
+ * keychain. Cache the fresh access token with a short TTL bounded by the token's
+ * own expiry, and invalidate on every save/delete so a refresh or revoke is
+ * picked up immediately (audit 2026-06-10 connectors-core-5).
+ */
+const _accessTokenCache = new Map<
+  VendorId,
+  { token: string; expires: number }
+>();
+const _ACCESS_TOKEN_CACHE_TTL_MS = 30_000;
+
+function invalidateAccessTokenCache(vendor: VendorId): void {
+  _accessTokenCache.delete(vendor);
+}
+
 function saveTokenFile(file: McpTokenFile): void {
+  invalidateAccessTokenCache(file.vendor);
   storeSecretJsonSync(tokenStorageProvider(file.vendor), file);
 
   const p = tokenPath(file.vendor);
@@ -159,6 +179,7 @@ function saveTokenFile(file: McpTokenFile): void {
 }
 
 function deleteTokenFile(vendor: VendorId): void {
+  invalidateAccessTokenCache(vendor);
   deleteSecretJsonSync(tokenStorageProvider(vendor));
 
   const p = tokenPath(vendor);
@@ -626,10 +647,32 @@ export function getAllConnectorStatuses(): ConnectorStatus[] {
 }
 
 export async function getAccessToken(vendor: VendorId): Promise<string> {
+  // Serve from the in-memory cache when warm — avoids a blocking keychain
+  // spawnSync on every MCP POST (audit 2026-06-10 connectors-core-5). The cache
+  // is invalidated on every saveTokenFile/deleteTokenFile (refresh/revoke), and
+  // on a 401 the caller (mcpClient.post) re-fetches; an explicit invalidate keeps
+  // a rotated-token-rejected path from re-serving the stale value.
+  const cached = _accessTokenCache.get(vendor);
+  if (cached && Date.now() < cached.expires) return cached.token;
+
   const file = loadTokenFile(vendor);
   if (!file) throw new Error(`${vendor}: not connected`);
   const config = vendorConfig(vendor);
   const fresh = await refreshIfNeeded(config, file);
+  // Bound the cache lifetime by the token's own expiry (with the same 5-min
+  // refresh buffer refreshIfNeeded uses) so we never serve a token past the
+  // point where refreshIfNeeded would have renewed it.
+  const refreshBufferMs = 300_000;
+  const expiryBound = fresh.expires_at
+    ? fresh.expires_at - refreshBufferMs
+    : Number.POSITIVE_INFINITY;
+  const expires = Math.min(
+    Date.now() + _ACCESS_TOKEN_CACHE_TTL_MS,
+    expiryBound,
+  );
+  if (expires > Date.now()) {
+    _accessTokenCache.set(vendor, { token: fresh.access_token, expires });
+  }
   return fresh.access_token;
 }
 

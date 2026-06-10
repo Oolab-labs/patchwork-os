@@ -58,6 +58,12 @@ export class ApiDriver implements ProviderDriver {
         {
           model: input.model ?? "claude-haiku-4-5-20251001",
           max_tokens: 4096,
+          // Forward the system prompt as Claude's top-level `system` param.
+          // Omit the key entirely when unset so the request shape is unchanged
+          // for callers that don't supply one (drivers-orch-2). OpenAIApiDriver
+          // forwards systemPrompt as a system message; this is the Anthropic
+          // equivalent.
+          ...(input.systemPrompt ? { system: input.systemPrompt } : {}),
           messages: [{ role: "user", content: input.prompt + contextNote }],
         },
         { signal: input.signal },

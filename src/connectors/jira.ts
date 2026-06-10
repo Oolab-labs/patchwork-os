@@ -275,10 +275,15 @@ export class JiraConnector extends BaseConnector {
     return result.data as JiraSearchResult;
   }
 
-  async listProjects(): Promise<JiraProject[]> {
+  async listProjects(maxResults = 100): Promise<JiraProject[]> {
+    // Bound the request. The Jira Cloud REST `/project` endpoint returns every
+    // visible project by default (no server-side page cap), so a large org
+    // (thousands of projects) yields a multi-MB body held entirely in the Node
+    // heap. Cap the page size (audit 2026-06-10 connectors-vendors-4).
+    const cap = Math.max(1, Math.min(maxResults, 100));
     const result = await this.apiCall(async (token) => {
       const api = this.getApiPath();
-      const url = `${this.tokens?.instanceUrl}${api}/project`;
+      const url = `${this.tokens?.instanceUrl}${api}/project?maxResults=${cap}&startAt=0`;
       const res = await fetch(url, {
         headers: this.buildHeaders(token),
       });

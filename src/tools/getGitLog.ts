@@ -3,6 +3,7 @@ import {
   optionalInt,
   optionalString,
   resolveFilePath,
+  sanitizeCommitSubject,
   successStructuredLarge,
 } from "./utils.js";
 
@@ -89,7 +90,10 @@ export function createGetGitLogTool(workspace: string) {
             hash: match[1],
             author: match[2],
             date: match[3],
-            subject: match[4],
+            // Sanitize the raw commit subject before it reaches LLM-visible
+            // output: strip control chars + Unicode bidi overrides, cap length.
+            // A crafted commit message must not be able to inject instructions.
+            subject: sanitizeCommitSubject(match[4]),
           });
         }
       }

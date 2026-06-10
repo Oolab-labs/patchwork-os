@@ -90,6 +90,11 @@ export async function POST(req: NextRequest) {
     DASHBOARD_API_BODY_CAPS.connectorRequest,
   );
   if (!parsed.ok) {
+    // Audit 2026-06-10 (dashboard-api-1): a malformed/oversized body is still a
+    // failed login attempt. Record it so an attacker can't flood the endpoint
+    // with invalid JSON to "rest" their lockout counter between valid probes.
+    if (trackable) recordFailure(ip);
+    else recordGlobalFailure();
     if (parsed.reason === "too_large") return bodyTooLargeResponse(parsed.maxBytes);
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }

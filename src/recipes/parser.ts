@@ -46,8 +46,15 @@ export function parseRecipe(raw: unknown): Recipe {
   // nor the yaml runner require it. Hard-rejecting a version-less recipe
   // here meant a recipe that lints + runs still failed at install with a
   // confusing "missing or empty 'version'". Default to "1.0.0" to match.
+  // Coerce a numeric YAML version (`version: 1.2` parses to the JS number 1.2,
+  // not the string "1.2") so the author's version metadata isn't silently
+  // dropped and defaulted to "1.0.0" (audit 2026-06-10 recipe-validation-3).
   const version =
-    typeof r.version === "string" && r.version ? r.version : "1.0.0";
+    typeof r.version === "string" && r.version
+      ? r.version
+      : typeof r.version === "number" && Number.isFinite(r.version)
+        ? String(r.version)
+        : "1.0.0";
   const trigger = parseTrigger(r.trigger);
   const stepsRaw = r.steps;
   if (!Array.isArray(stepsRaw) || stepsRaw.length === 0) {

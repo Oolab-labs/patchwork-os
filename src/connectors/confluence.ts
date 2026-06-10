@@ -223,8 +223,15 @@ export class ConfluenceConnector extends BaseConnector {
 
   async search(query: string, limit = 25): Promise<ConfluenceSearchResult> {
     const result = await this.apiCall(async (token) => {
-      // Use legacy v1 search which supports full-text CQL
-      const cql = encodeURIComponent(`text ~ "${query}" AND type = page`);
+      // Use legacy v1 search which supports full-text CQL.
+      // Escape backslash + double-quote so a query containing a literal `"`
+      // cannot close the `text ~ "..."` string and inject arbitrary CQL tokens
+      // (e.g. `foo" OR type = blogpost AND title ~ "`), which would bypass the
+      // `type = page` filter and leak other content types/spaces.
+      // encodeURIComponent only protects HTTP transport, not the CQL grammar.
+      // (audit 2026-06-10 connectors-vendors-2)
+      const safeQuery = query.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const cql = encodeURIComponent(`text ~ "${safeQuery}" AND type = page`);
       const url = `${this.tokens?.instanceUrl}/wiki/rest/api/search?cql=${cql}&limit=${limit}&expand=content.space`;
       const res = await fetch(url, { headers: this.buildHeaders(token) });
       if (!res.ok) throw res;

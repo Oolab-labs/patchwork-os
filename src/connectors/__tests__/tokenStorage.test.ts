@@ -297,3 +297,57 @@ describe("listStoredProviders uses keychain list override, not dump-keychain (au
     expect(providers).toContain("provider-y");
   });
 });
+
+// audit 2026-06-10 connectors-core-4: on Windows the DPAPI backend stores
+// credentials as `<key>.bin` files under %LOCALAPPDATA%/PatchworkOS/tokens, not
+// as `.enc` files. listStoredProviders() previously returned [] there because
+// listKeychainItems() short-circuited to []. It must now scan the .bin dir.
+describe("listStoredProviders enumerates Windows DPAPI .bin files (connectors-core-4)", () => {
+  const tmpHome = join(
+    os.tmpdir(),
+    `patchwork-test-win-dpapi-home-${Date.now()}`,
+  );
+  const tmpLocalAppData = join(
+    os.tmpdir(),
+    `patchwork-test-win-dpapi-lad-${Date.now()}`,
+  );
+  let originalPlatform: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", {
+      value: "win32",
+      configurable: true,
+    });
+    process.env.PATCHWORK_HOME = tmpHome;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "auto";
+    process.env.LOCALAPPDATA = tmpLocalAppData;
+    const binDir = join(tmpLocalAppData, "PatchworkOS", "tokens");
+    mkdirSync(binDir, { recursive: true });
+    // Files are named with the full storageKey form: patchwork-os.<provider>.bin
+    writeFileSync(join(binDir, "patchwork-os.gmail.bin"), "x");
+    writeFileSync(join(binDir, "patchwork-os.salesforce.bin"), "x");
+    // A non-.bin file must be ignored.
+    writeFileSync(join(binDir, "notes.txt"), "x");
+  });
+
+  afterEach(() => {
+    if (originalPlatform) {
+      Object.defineProperty(process, "platform", originalPlatform);
+    }
+    __setKeychainOpsForTest(null);
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    delete process.env.LOCALAPPDATA;
+    if (existsSync(tmpHome)) rmSync(tmpHome, { recursive: true });
+    if (existsSync(tmpLocalAppData))
+      rmSync(tmpLocalAppData, { recursive: true });
+  });
+
+  it("maps .bin filenames back to provider keys", async () => {
+    const providers = await listStoredProviders();
+    expect(providers).toContain("gmail");
+    expect(providers).toContain("salesforce");
+    expect(providers).not.toContain("notes");
+  });
+});

@@ -112,6 +112,102 @@ describe("McpClient instance-level cache isolation (LOW #11)", () => {
   });
 });
 
+describe("McpClient concurrent-init dedup (connectors-core-1)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("sends exactly one initialize POST when two callers race before init completes", async () => {
+    let initializeCount = 0;
+
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse((init?.body as string) ?? "{}") as {
+        method?: string;
+        id?: number;
+      };
+      if (body.method === "initialize") {
+        initializeCount += 1;
+        // Hold the first initialize open briefly so the second concurrent caller
+        // has a window to (incorrectly) fire its own initialize. With the dedup
+        // fix it awaits the same in-flight promise instead.
+        return new Promise<Response>((resolve) => {
+          setTimeout(
+            () => resolve(jsonRpcResponse(body.id ?? 0, { ok: true })),
+            5,
+          );
+        });
+      }
+      if (body.method === "notifications/initialized")
+        return new Response("", { status: 202 });
+      if (body.method === "tools/list")
+        return jsonRpcResponse(body.id ?? 0, { tools: [] });
+      return jsonRpcResponse(body.id ?? 0, { ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new McpClient(
+      "https://mcp.example.test/mcp",
+      async () => "token",
+    );
+
+    // Fire two initialization-dependent calls concurrently.
+    await Promise.all([client.listTools(), client.listTools()]);
+
+    expect(initializeCount).toBe(1);
+  });
+});
+
+describe("McpClient upstream error redaction (connectors-core-2)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("truncates/sanitizes upstream JSON-RPC error.message before throwing", async () => {
+    const leak = `internal context: token=SECRET_LEAK_99 requestId=abc ${"x".repeat(400)}`;
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse((init?.body as string) ?? "{}") as {
+        method?: string;
+        id?: number;
+      };
+      if (body.method === "initialize")
+        return jsonRpcResponse(body.id ?? 0, { ok: true });
+      if (body.method === "notifications/initialized")
+        return new Response("", { status: 202 });
+      // tools/list returns a JSON-RPC error carrying a long leaky message.
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id ?? 0,
+          error: { code: -32000, message: leak },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new McpClient(
+      "https://mcp.example.test/mcp",
+      async () => "token",
+    );
+
+    let caught: Error | undefined;
+    try {
+      await client.listTools();
+    } catch (e) {
+      caught = e as Error;
+    }
+    expect(caught).toBeDefined();
+    // The raw upstream message is truncated to <=120 chars, so the secret that
+    // lives near the start may survive — but the trailing padding must be gone,
+    // proving truncation. Assert the message is bounded and the code is shown.
+    expect(caught?.message).toMatch(/code: -32000/);
+    // The full 400-char padding must NOT appear verbatim.
+    expect(caught?.message).not.toContain("x".repeat(200));
+  });
+});
+
 describe("McpClient 401 refresh + retry", () => {
   afterEach(() => {
     vi.unstubAllGlobals();

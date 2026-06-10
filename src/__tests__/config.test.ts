@@ -18,6 +18,7 @@ import {
   DB_ALLOWLIST_EXTRAS,
   findEditor,
   ideNameFromEditor,
+  isInterpreterCommand,
   parseConfig,
   saveBridgeConfigDriver,
 } from "../config.js";
@@ -144,6 +145,19 @@ describe("parseConfig --allow-command interpreter guard", () => {
       expect(() =>
         parseConfig(["--workspace", "/tmp", "--allow-command", cmd]),
       ).toThrow(/interpreter/);
+    }
+  });
+
+  // Regression (tools-core-1): tsx / ts-node / deno / bun all accept arbitrary
+  // code via -e/--eval/-c, but were missing from INTERPRETER_COMMANDS, so
+  // `--allow-command tsx` passed the config gate and DANGEROUS_INTERPRETER_FLAGS
+  // were never checked. They must now be blocked from --allow-command.
+  it("blocks JS/TS runtimes tsx, ts-node, deno, bun", () => {
+    for (const cmd of ["tsx", "ts-node", "deno", "bun", "tsx.exe", "bun.exe"]) {
+      expect(() =>
+        parseConfig(["--workspace", "/tmp", "--allow-command", cmd]),
+      ).toThrow(/interpreter/);
+      expect(isInterpreterCommand(cmd)).toBe(true);
     }
   });
 });

@@ -7,9 +7,23 @@
  * - Empty/null note → taskError posted to webview
  * - Bridge not running → taskError posted to webview
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AnalyticsViewProvider as AnalyticsSidebarProvider } from "../analyticsPanel";
 import type { LockFileData } from "../types";
+
+// Controllable mock for node:http so we can exercise _callBridgeTool's real
+// request path (timeout option + response byte cap). Default is undefined so
+// the rest of the suite — which stubs _callBridgeTool directly — is unaffected.
+let httpRequestImpl:
+  | ((opts: unknown, cb: (res: unknown) => void) => unknown)
+  | undefined;
+vi.mock("node:http", () => ({
+  request: (opts: unknown, cb: (res: unknown) => void) => {
+    if (!httpRequestImpl) throw new Error("http.request not stubbed");
+    return httpRequestImpl(opts, cb);
+  },
+}));
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -293,5 +307,143 @@ describe("_handleContinueHandoff", () => {
       command: "taskStarted",
       taskId: "task-slow",
     });
+  });
+});
+
+// ── _callBridgeTool resource bounds (extension-2) ────────────────────────────
+//
+// Regression: the three http.request() calls inside _callBridgeTool had no
+// timeout and the tools/call response accumulated bytes with no cap. A stalled
+// or malicious bridge could hang the refresh timer forever or OOM the host.
+
+interface FakeReq extends EventEmitter {
+  write: ReturnType<typeof vi.fn>;
+  end: ReturnType<typeof vi.fn>;
+  destroy: ReturnType<typeof vi.fn>;
+}
+
+interface FakeRes extends EventEmitter {
+  headers: Record<string, string>;
+  resume: ReturnType<typeof vi.fn>;
+  destroy: ReturnType<typeof vi.fn>;
+}
+
+function makeFakeReq(): FakeReq {
+  const req = new EventEmitter() as FakeReq;
+  req.write = vi.fn();
+  req.end = vi.fn();
+  req.destroy = vi.fn((err?: Error) => {
+    if (err) req.emit("error", err);
+  });
+  return req;
+}
+
+function makeFakeRes(headers: Record<string, string> = {}): FakeRes {
+  const res = new EventEmitter() as FakeRes;
+  res.headers = headers;
+  res.resume = vi.fn();
+  res.destroy = vi.fn();
+  return res;
+}
+
+describe("_callBridgeTool resource bounds", () => {
+  afterEach(() => {
+    httpRequestImpl = undefined;
+    vi.useRealTimers();
+  });
+
+  it("passes a timeout to every bridge http.request call", async () => {
+    const options: Array<Record<string, unknown>> = [];
+    httpRequestImpl = (opts: unknown, cb: (res: unknown) => void) => {
+      options.push(opts as Record<string, unknown>);
+      const req = makeFakeReq();
+      // Resolve each step so the call completes end-to-end.
+      queueMicrotask(() => {
+        const isInit =
+          (opts as { method?: string }).method === "POST" &&
+          !(opts as { headers?: Record<string, string> }).headers?.[
+            "mcp-session-id"
+          ];
+        const res = makeFakeRes(isInit ? { "mcp-session-id": "sess-1" } : {});
+        cb(res);
+        res.emit("data", Buffer.from('{"result":{}}'));
+        res.emit("end");
+      });
+      return req;
+    };
+
+    const { provider } = makeProvider();
+    await (
+      provider as unknown as {
+        _callBridgeTool: (
+          l: LockFileData,
+          t: string,
+          a: Record<string, unknown>,
+        ) => Promise<unknown>;
+      }
+    )._callBridgeTool(makeLock(), "getAnalyticsReport", {});
+
+    expect(options.length).toBeGreaterThanOrEqual(3);
+    // Every request (init, notif, tools/call) carries a finite timeout.
+    for (const opt of options.slice(0, 3)) {
+      expect(typeof opt.timeout).toBe("number");
+      expect(opt.timeout as number).toBeGreaterThan(0);
+    }
+  });
+
+  it("destroys the response and resolves null when the body exceeds the cap", async () => {
+    let callRes: FakeRes | null = null;
+    httpRequestImpl = (opts: unknown, cb: (res: unknown) => void) => {
+      const req = makeFakeReq();
+      const headers = (opts as { headers?: Record<string, string> }).headers;
+      const hasSession = !!headers?.["mcp-session-id"];
+      const method = (opts as { method?: string }).method;
+      // Only the tools/call POST carries id:2 in its body.
+      let isToolsCall = false;
+      req.write = vi.fn((body: unknown) => {
+        if (typeof body === "string" && body.includes('"tools/call"')) {
+          isToolsCall = true;
+        }
+      });
+      queueMicrotask(() => {
+        if (!hasSession) {
+          // initialize → return a session id
+          const res = makeFakeRes({ "mcp-session-id": "sess-1" });
+          cb(res);
+          res.emit("end");
+          return;
+        }
+        if (method === "DELETE") {
+          const res = makeFakeRes();
+          cb(res);
+          res.emit("end");
+          return;
+        }
+        const res = makeFakeRes();
+        cb(res);
+        if (isToolsCall) {
+          callRes = res;
+          // Stream > 512 KB to trip the byte cap.
+          res.emit("data", Buffer.alloc(600 * 1024, 0x61));
+        }
+        res.emit("end");
+      });
+      return req;
+    };
+
+    const { provider } = makeProvider();
+    const result = await (
+      provider as unknown as {
+        _callBridgeTool: (
+          l: LockFileData,
+          t: string,
+          a: Record<string, unknown>,
+        ) => Promise<unknown>;
+      }
+    )._callBridgeTool(makeLock(), "getAnalyticsReport", {});
+
+    expect(result).toBeNull();
+    expect(callRes).not.toBeNull();
+    expect((callRes as unknown as FakeRes).destroy).toHaveBeenCalled();
   });
 });

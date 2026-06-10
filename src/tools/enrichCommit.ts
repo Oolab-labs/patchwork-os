@@ -2,7 +2,13 @@ import type { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
 import { runGitStdout } from "./git-utils.js";
 import { GH_NOT_AUTHED, isNotAuthed, isNotFound } from "./github/shared.js";
 import { classifyIssueLink, extractIssueRefs } from "./issueRefs.js";
-import { error, execSafe, optionalString, successStructured } from "./utils.js";
+import {
+  error,
+  execSafe,
+  optionalString,
+  sanitizeCommitSubject,
+  successStructured,
+} from "./utils.js";
 
 /**
  * Fetch a single issue via `gh issue view --json`. Returns `null` if the
@@ -137,7 +143,10 @@ export function createEnrichCommitTool(
       const sha = metaLines[0] ?? "";
       const author = metaLines[1] ?? "";
       const date = metaLines[2] ?? "";
-      const subject = metaLines[3] ?? "";
+      // Sanitize the raw commit subject before it is stored/returned to an LLM:
+      // strip control chars + Unicode bidi overrides, cap length. A crafted
+      // commit message must not be able to inject instructions (tools-rest-4).
+      const subject = sanitizeCommitSubject(metaLines[3] ?? "");
       const fullMessage = bodyPart.trim() || subject;
 
       const issueRefs = extractIssueRefs(fullMessage);

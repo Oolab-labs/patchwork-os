@@ -111,6 +111,60 @@ describe("handleGmailCallback", () => {
     const result = await handleGmailCallback("code", "unknown-state", null);
     expect(result.status).toBe(400);
   });
+
+  // audit 2026-06-10 connectors-core-3: the OAuth client_secret must NOT be
+  // persisted into the stored token record. Co-locating the secret with the
+  // tokens means a token-store leak also yields the OAuth app secret.
+  it("does not persist _client_secret / _client_id into the stored token record", async () => {
+    const gmail = await import("../gmail.js");
+
+    // Mint a valid OAuth state via the redirect handler, then extract it.
+    const redirect = gmail.handleGmailAuthRedirect();
+    const state = new URL(redirect.redirect ?? "").searchParams.get("state");
+    expect(state).toBeTruthy();
+
+    // Mock Google's token endpoint + the follow-up profile lookup.
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      // Exact-hostname match (not substring) so CodeQL's incomplete-URL-
+      // sanitization rule is satisfied and the mock router is unambiguous.
+      const host = typeof url === "string" ? new URL(url).hostname : "";
+      if (host === "oauth2.googleapis.com") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            access_token: "fresh-access",
+            refresh_token: "fresh-refresh",
+            expires_in: 3600,
+            token_type: "Bearer",
+            scope: "gmail.readonly",
+          }),
+          text: async () => "",
+          headers: { get: () => null },
+        });
+      }
+      // profile lookup
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ emailAddress: "dev@acme.com" }),
+        text: async () => "",
+        headers: { get: () => null },
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await gmail.handleGmailCallback("auth-code", state, null);
+    expect(result.status).toBe(200);
+
+    const stored = gmail.loadTokens();
+    expect(stored).not.toBeNull();
+    expect(stored?.access_token).toBe("fresh-access");
+    // The secret/client id must be absent from the persisted record.
+    expect(stored?._client_secret).toBeUndefined();
+    expect(stored?._client_id).toBeUndefined();
+    // And the serialized form must not contain the secret value.
+    expect(JSON.stringify(stored)).not.toContain("test-client-secret");
+  });
 });
 
 describe("handleGmailDisconnect", () => {

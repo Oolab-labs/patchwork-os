@@ -203,6 +203,44 @@ describe("ctxQueryTraces semantic ranking", () => {
     expect(res.traces[1].body.ref).toBe("ROCKET-1");
   });
 
+  // Regression: core-infra-3 — the embeddings request must be bounded so a
+  // large trace pool can't blow past the model's token limit. The batch is
+  // query + at most MAX_SEMANTIC_BATCH (200) trace texts, and each text is
+  // capped (≤ 512 chars).
+  it("bounds the embeddings batch and caps each text", async () => {
+    // Seed 300 traces. The log itself caps individual fields, so use a solution
+    // near the per-field limit (480 chars) — combined with ref/problem/tags the
+    // raw semantic text would exceed 512 without the per-text cap.
+    for (let i = 0; i < 300; i++) {
+      now = 1_000_000 + i;
+      decisionTraceLog.record({
+        ref: `ROCKET-${i}`,
+        problem: "thrust loss during launch",
+        solution: `rocket ${"z".repeat(480)}`,
+        workspace: "/ws",
+        tags: ["rocket"],
+      });
+    }
+
+    let capturedTexts: string[] = [];
+    const embedFn = vi.fn((texts: string[]) => {
+      capturedTexts = texts;
+      return Promise.resolve(texts.map(vectorFor));
+    });
+    const tool = createCtxQueryTracesTool({ decisionTraceLog, embedFn });
+
+    await tool.handler({ q: "rocket spacecraft", semantic: true });
+
+    expect(embedFn).toHaveBeenCalled();
+    // query (1) + at most MAX_SEMANTIC_BATCH (200) trace texts — NOT 301.
+    expect(capturedTexts.length).toBeLessThanOrEqual(201);
+    expect(capturedTexts.length).toBeGreaterThan(1);
+    // Each text capped at 512 chars by semanticTextFor.
+    for (const t of capturedTexts) {
+      expect(t.length).toBeLessThanOrEqual(512);
+    }
+  });
+
   it("filters out below-floor semantic scores", async () => {
     // One related trace, one wholly-unrelated trace whose vector is
     // near-orthogonal to the query (score below SEMANTIC_FLOOR).

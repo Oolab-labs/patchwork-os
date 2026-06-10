@@ -832,7 +832,11 @@ export class McpTransport {
             this.notifWindowStart = nowNotif;
           }
           this.notifCount++;
-          if (this.notifCount >= NOTIFICATION_RATE_LIMIT) {
+          // http-server-4: strict `>` so exactly NOTIFICATION_RATE_LIMIT
+          // notifications pass per window (the documented cap). The Nth
+          // notification is allowed; the (N+1)th is dropped. Using `>=`
+          // dropped the Nth, allowing only N-1 through.
+          if (this.notifCount > NOTIFICATION_RATE_LIMIT) {
             this.logger.warn(
               `Notification rate limit exceeded (${NOTIFICATION_RATE_LIMIT}/min) — dropping notification`,
             );
@@ -1420,23 +1424,53 @@ export class McpTransport {
                 this.inFlightToolNames.set(msg.id, params.name);
                 let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
                 if (this.approvalGate) {
-                  const decision = await this.approvalGate({
-                    toolName: params.name,
-                    params: toolArgs as Record<string, unknown>,
-                    sessionId: this.sessionId,
-                    // When a call is parked for human approval, tell agentic
-                    // clients that sent a progressToken instead of letting the
-                    // request look hung. Purely additive — never changes the
-                    // gate's decision.
-                    onPending: progressFn
-                      ? (callId) =>
-                          progressFn(
-                            0,
-                            undefined,
-                            `Awaiting human approval in the Patchwork dashboard (callId ${callId}); expires in ~5 min.`,
-                          )
-                      : undefined,
-                  });
+                  let decision:
+                    | "approved"
+                    | "rejected"
+                    | "expired"
+                    | "cancelled"
+                    | "bypass";
+                  try {
+                    decision = await this.approvalGate({
+                      toolName: params.name,
+                      params: toolArgs as Record<string, unknown>,
+                      sessionId: this.sessionId,
+                      // When a call is parked for human approval, tell agentic
+                      // clients that sent a progressToken instead of letting the
+                      // request look hung. Purely additive — never changes the
+                      // gate's decision.
+                      onPending: progressFn
+                        ? (callId) =>
+                            progressFn(
+                              0,
+                              undefined,
+                              `Awaiting human approval in the Patchwork dashboard (callId ${callId}); expires in ~5 min.`,
+                            )
+                        : undefined,
+                    });
+                  } catch (gateErr) {
+                    // http-server-1: the approval gate runs AFTER
+                    // inFlightControllers/inFlightToolNames/activeToolCalls
+                    // were set but BEFORE the inner try-finally that releases
+                    // them. If the gate throws, the outer catch below builds
+                    // the isError response but never touches those three
+                    // slots, permanently leaking a controller slot, a tool-name
+                    // slot, and the concurrency counter (after 10 throws all
+                    // new calls hit MAX_CONCURRENT_TOOLS). Release here —
+                    // generation-guarded like the inner finally — then rethrow.
+                    const wasSoftPreserved = this.detachSoftInflight.delete(
+                      msg.id,
+                    );
+                    if (gen === this.generation || wasSoftPreserved) {
+                      this.inFlightControllers.delete(msg.id);
+                      this.inFlightToolNames.delete(msg.id);
+                      this.activeToolCalls = Math.max(
+                        0,
+                        this.activeToolCalls - 1,
+                      );
+                    }
+                    throw gateErr;
+                  }
                   if (
                     decision === "rejected" ||
                     decision === "expired" ||
@@ -1540,12 +1574,17 @@ export class McpTransport {
                   // Inject _meta["anthropic/maxResultSizeChars"] for large results so
                   // Claude Code 2.1.91+ persists the full content rather than truncating
                   // it at its own internal limit (MCP tool result persistence override).
-                  const totalContentChars = Array.isArray(toolResult.content)
+                  // http-server-3: measure UTF-8 byte length, not UTF-16
+                  // code-unit count. META_SIZE_HINT_THRESHOLD is 50 KB; for
+                  // CJK/emoji content `.length` undercounts (a 50k-char CJK
+                  // string is ~150 KB) so the hint would fire far later than
+                  // intended. Buffer.byteLength matches the persisted size.
+                  const totalContentBytes = Array.isArray(toolResult.content)
                     ? toolResult.content.reduce(
                         (sum, item) =>
                           sum +
                           (typeof item.text === "string"
-                            ? item.text.length
+                            ? Buffer.byteLength(item.text, "utf8")
                             : 0),
                         0,
                       )
@@ -1555,15 +1594,15 @@ export class McpTransport {
                     params.name,
                     Math.max(
                       this.resultSizeTracker.get(params.name) ?? 0,
-                      totalContentChars,
+                      totalContentBytes,
                     ),
                   );
                   const resultWithMeta =
-                    totalContentChars > META_SIZE_HINT_THRESHOLD
+                    totalContentBytes > META_SIZE_HINT_THRESHOLD
                       ? {
                           ...toolResult,
                           _meta: {
-                            "anthropic/maxResultSizeChars": totalContentChars,
+                            "anthropic/maxResultSizeChars": totalContentBytes,
                           },
                         }
                       : toolResult;

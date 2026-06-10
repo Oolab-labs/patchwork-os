@@ -956,26 +956,42 @@ function collectParallelEachKeys(recipe: unknown): Set<string> {
   if (!recipe || typeof recipe !== "object" || Array.isArray(recipe))
     return keys;
   const steps = (recipe as Record<string, unknown>).steps;
-  if (!Array.isArray(steps)) return keys;
+  collectParallelEachKeysFromSteps(steps, keys);
+  return keys;
+}
+
+/**
+ * Walk a steps array, collecting parallel-each loop variable keys. Recurses
+ * into `parallel: [...]` group arrays so a nested map-reduce step inside a
+ * parallel group still contributes its loop variable (`as`) — otherwise
+ * `{{item}}` references in those child steps were flagged as unknown template
+ * references, blocking valid recipes (audit 2026-06-10 recipe-validation-4).
+ */
+function collectParallelEachKeysFromSteps(
+  steps: unknown,
+  keys: Set<string>,
+): void {
+  if (!Array.isArray(steps)) return;
   for (const step of steps) {
     if (!step || typeof step !== "object" || Array.isArray(step)) continue;
     const s = step as Record<string, unknown>;
-    if (
-      s.parallel &&
-      typeof s.parallel === "object" &&
-      !Array.isArray(s.parallel)
-    ) {
+    if (Array.isArray(s.parallel)) {
+      // Parallel GROUP array — recurse into its child steps.
+      collectParallelEachKeysFromSteps(s.parallel, keys);
+    } else if (s.parallel && typeof s.parallel === "object") {
+      // Parallel map-reduce (each/as) object.
       const par = s.parallel as Record<string, unknown>;
       if (typeof par.as === "string") keys.add(par.as);
       if (typeof s.id === "string") {
         keys.add(s.id);
         keys.add(`${s.id}.results`);
       }
+      // Recurse into the map-reduce body so deeper nesting is also covered.
+      collectParallelEachKeysFromSteps(par.steps, keys);
     }
     // Step-level each: "{{items}}" as: item — loop variable
     if (typeof s.as === "string") keys.add(s.as);
   }
-  return keys;
 }
 
 function validateTemplateReferences(
@@ -984,15 +1000,23 @@ function validateTemplateReferences(
   extraParallelKeys?: Set<string>,
 ): void {
   const builtinKeys = new Set<string>([
+    // Date/time tokens injected at runtime: `date`/`time` on the flat path and
+    // `DATE`/`TIME` on the chained dispatch path, plus the YYYY / YYYY-MM /
+    // YYYY-MM-DD / ISO_NOW / HH / MM / SS family — now injected on BOTH paths
+    // (yamlRunner.ts ctx + dispatchRecipe env), so {{YYYY-MM-DD}} etc. render
+    // real values AND pass lint. Keep in sync with the yamlRunner.ts injection
+    // sites. (audit 2026-06-10 recipe-validation-1)
     "date",
     "time",
+    "DATE",
+    "TIME",
     "YYYY",
     "YYYY-MM",
     "YYYY-MM-DD",
     "ISO_NOW",
-    "HH", // time component in datetime format strings
-    "MM", // time component in datetime format strings
-    "SS", // time component in datetime format strings
+    "HH",
+    "MM",
+    "SS",
     "this", // Handlebars loop current-item reference
   ]);
   const availableKeys = new Set<string>(builtinKeys);

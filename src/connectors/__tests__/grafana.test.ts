@@ -162,6 +162,35 @@ describe("getDashboards", () => {
   });
 });
 
+// ── getAlertRules (connectors-vendors-5) ────────────────────────────────────
+
+describe("getAlertRules limit cap", () => {
+  it("hard-caps the returned slice even when caller passes a huge limit", async () => {
+    process.env.GRAFANA_API_KEY = "glsa_test_key";
+    process.env.GRAFANA_BASE_URL = "http://localhost:3000";
+    const { getGrafanaConnector } = await import("../grafana.js");
+
+    // The provisioning endpoint has no server-side pagination, so it returns the
+    // full corpus and we truncate client-side. A caller-supplied limit above the
+    // hard cap (500) must not let the slice exceed 500 entries.
+    const corpus = Array.from({ length: 2000 }, (_, i) => ({
+      uid: `rule-${i}`,
+      title: `Rule ${i}`,
+      condition: "",
+      data: [],
+      intervalSeconds: 60,
+      orgId: 1,
+      namespaceUID: "ns",
+      ruleGroup: "g",
+    }));
+    installFetchMock(() => jsonResponse(corpus));
+
+    const c = getGrafanaConnector();
+    const result = await c.getAlertRules(100000);
+    expect(result.length).toBe(500);
+  });
+});
+
 // ── createAnnotation ───────────────────────────────────────────────────────
 
 describe("createAnnotation", () => {
@@ -359,6 +388,47 @@ describe("handleGrafanaConnect", () => {
     expect(r.body).toMatch(/http/i);
   });
 
+  // audit 2026-06-10 connectors-vendors-3: the user-supplied connect endpoint
+  // must require HTTPS and block private/loopback/link-local hosts; the
+  // scheme-only check allowed http://169.254.169.254 (IMDS) etc.
+  it("rejects plain http baseUrl (https required for the connect endpoint)", async () => {
+    const { handleGrafanaConnect, loadTokens } = await import("../grafana.js");
+    const r = await handleGrafanaConnect(
+      JSON.stringify({
+        apiKey: "glsa_test",
+        baseUrl: "http://grafana.example.com",
+      }),
+    );
+    expect(r.status).toBe(400);
+    expect(r.body).toMatch(/https/i);
+    expect(loadTokens()).toBeNull();
+  });
+
+  it("rejects https baseUrl pointing at the cloud metadata IP (SSRF)", async () => {
+    const { handleGrafanaConnect, loadTokens } = await import("../grafana.js");
+    const r = await handleGrafanaConnect(
+      JSON.stringify({
+        apiKey: "glsa_test",
+        baseUrl: "https://169.254.169.254/latest/meta-data",
+      }),
+    );
+    expect(r.status).toBe(400);
+    expect(r.body).toMatch(/private|loopback|link-local/i);
+    expect(loadTokens()).toBeNull();
+  });
+
+  it("rejects https baseUrl pointing at loopback (local k8s API SSRF)", async () => {
+    const { handleGrafanaConnect, loadTokens } = await import("../grafana.js");
+    const r = await handleGrafanaConnect(
+      JSON.stringify({
+        apiKey: "glsa_test",
+        baseUrl: "https://127.0.0.1:6443",
+      }),
+    );
+    expect(r.status).toBe(400);
+    expect(loadTokens()).toBeNull();
+  });
+
   it("validates via /api/org and stores tokens on success", async () => {
     const { handleGrafanaConnect, loadTokens } = await import("../grafana.js");
 
@@ -369,12 +439,12 @@ describe("handleGrafanaConnect", () => {
     const r = await handleGrafanaConnect(
       JSON.stringify({
         apiKey: "glsa_abc123",
-        baseUrl: "http://localhost:3000",
+        baseUrl: "https://grafana.example.com",
       }),
     );
 
     expect(r.status).toBe(200);
-    expect(calls[0]!.url).toBe("http://localhost:3000/api/org");
+    expect(calls[0]!.url).toBe("https://grafana.example.com/api/org");
     const headers = calls[0]!.init?.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer glsa_abc123");
 
@@ -388,7 +458,7 @@ describe("handleGrafanaConnect", () => {
 
     const stored = loadTokens();
     expect(stored?.apiKey).toBe("glsa_abc123");
-    expect(stored?.baseUrl).toBe("http://localhost:3000");
+    expect(stored?.baseUrl).toBe("https://grafana.example.com");
     expect(stored?.orgName).toBe("Main Org.");
   });
 
@@ -396,7 +466,10 @@ describe("handleGrafanaConnect", () => {
     const { handleGrafanaConnect, loadTokens } = await import("../grafana.js");
     installFetchMock(() => new Response("Unauthorized", { status: 401 }));
     const r = await handleGrafanaConnect(
-      JSON.stringify({ apiKey: "bad_key", baseUrl: "http://localhost:3000" }),
+      JSON.stringify({
+        apiKey: "bad_key",
+        baseUrl: "https://grafana.example.com",
+      }),
     );
     expect(r.status).toBe(401);
     expect(loadTokens()).toBeNull();
@@ -406,9 +479,12 @@ describe("handleGrafanaConnect", () => {
     const { handleGrafanaConnect, loadTokens } = await import("../grafana.js");
     installFetchMock(() => jsonResponse({ id: 1, name: "Org" }));
     await handleGrafanaConnect(
-      JSON.stringify({ apiKey: "glsa_x", baseUrl: "http://localhost:3000/" }),
+      JSON.stringify({
+        apiKey: "glsa_x",
+        baseUrl: "https://grafana.example.com/",
+      }),
     );
-    expect(loadTokens()?.baseUrl).toBe("http://localhost:3000");
+    expect(loadTokens()?.baseUrl).toBe("https://grafana.example.com");
   });
 });
 

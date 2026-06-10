@@ -128,8 +128,18 @@ export function recordTrigger(
     newLastTrigger.delete(oldestKey);
   }
 
+  // LRU-cap activeTasks the same way as lastTrigger (fp-automation-1).
+  // Dynamic cooldown keys (e.g. "recipesave:{{file}}" resolved per path) would
+  // otherwise grow this map unboundedly — clearActiveTask is never called from
+  // production code, so the entry would persist forever for every unique key.
   const newActiveTasks = new Map(state.activeTasks);
+  newActiveTasks.delete(key);
   newActiveTasks.set(key, taskId);
+  while (newActiveTasks.size > MAX_TRIGGER_KEYS) {
+    const oldestActiveKey = newActiveTasks.keys().next().value;
+    if (oldestActiveKey === undefined) break;
+    newActiveTasks.delete(oldestActiveKey);
+  }
 
   // Prune entries older than 1 hour while building the new array — keeps the
   // array small so tasksInLastHour() scans only recent entries.

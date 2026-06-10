@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { RequestHandler } from "../types";
+import { assertWithinWorkspace } from "./files";
 import { requireNumber, requireString } from "./validation";
 
 type FlatSymbol = {
@@ -51,6 +52,7 @@ export function createLspHandlers(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const line = requireNumber(params.line, "line") - 1;
     const column = requireNumber(params.column, "column") - 1;
     const uri = vscode.Uri.file(file);
@@ -92,6 +94,7 @@ export function createLspHandlers(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const line = requireNumber(params.line, "line") - 1;
     const column = requireNumber(params.column, "column") - 1;
     const uri = vscode.Uri.file(file);
@@ -127,6 +130,7 @@ export function createLspHandlers(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const line = requireNumber(params.line, "line") - 1;
     const column = requireNumber(params.column, "column") - 1;
     const uri = vscode.Uri.file(file);
@@ -174,6 +178,7 @@ export function createLspHandlers(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const startLine = requireNumber(params.startLine, "startLine") - 1;
     const startColumn = requireNumber(params.startColumn, "startColumn") - 1;
     const endLine = requireNumber(params.endLine, "endLine") - 1;
@@ -208,6 +213,7 @@ export function createLspHandlers(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const startLine = requireNumber(params.startLine, "startLine") - 1;
     const startColumn = requireNumber(params.startColumn, "startColumn") - 1;
     const endLine = requireNumber(params.endLine, "endLine") - 1;
@@ -294,6 +300,7 @@ export function createLspHandlers(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const startLine = requireNumber(params.startLine, "startLine") - 1;
     const startColumn = requireNumber(params.startColumn, "startColumn") - 1;
     const endLine = requireNumber(params.endLine, "endLine") - 1;
@@ -394,6 +401,7 @@ export function createLspHandlers(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const line = requireNumber(params.line, "line") - 1;
     const column = requireNumber(params.column, "column") - 1;
     const newName = requireString(params.newName, "newName");
@@ -477,6 +485,7 @@ export function createLspHandlers(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const uri = vscode.Uri.file(file);
     await vscode.workspace.openTextDocument(uri);
 
@@ -500,6 +509,7 @@ export function createLspHandlers(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const line = requireNumber(params.line, "line") - 1;
     const column = requireNumber(params.column, "column") - 1;
     const direction =
@@ -600,6 +610,7 @@ export function createLspHandlers(
 
   async function handlePrepareRename(params: Record<string, unknown>) {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const line = requireNumber(params.line, "line") - 1;
     const column = requireNumber(params.column, "column") - 1;
     const uri = vscode.Uri.file(file);
@@ -642,6 +653,7 @@ export function createLspHandlers(
 
   async function handleFormatRange(params: Record<string, unknown>) {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const startLine = requireNumber(params.startLine, "startLine") - 1;
     const endLine = requireNumber(params.endLine, "endLine") - 1;
     const uri = vscode.Uri.file(file);
@@ -677,6 +689,7 @@ export function createLspHandlers(
 
   async function handleSignatureHelp(params: Record<string, unknown>) {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const line = requireNumber(params.line, "line") - 1;
     const column = requireNumber(params.column, "column") - 1;
     const uri = vscode.Uri.file(file);
@@ -715,6 +728,7 @@ export function createLspHandlers(
 
   async function handleFoldingRanges(params: Record<string, unknown>) {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const uri = vscode.Uri.file(file);
     await vscode.workspace.openTextDocument(uri);
     let result: vscode.FoldingRange[] | undefined;
@@ -743,6 +757,7 @@ export function createLspHandlers(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const line = requireNumber(params.line, "line") - 1;
     const column = requireNumber(params.column, "column") - 1;
     const uri = vscode.Uri.file(file);
@@ -787,6 +802,7 @@ export function createLspHandlers(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const line = requireNumber(params.line, "line") - 1;
     const column = requireNumber(params.column, "column") - 1;
     const uri = vscode.Uri.file(file);
@@ -829,6 +845,7 @@ export function createLspHandlers(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const line = requireNumber(params.line, "line") - 1;
     const column = requireNumber(params.column, "column") - 1;
     const uri = vscode.Uri.file(file);
@@ -869,6 +886,7 @@ export function createLspHandlers(
 
   async function handleSelectionRanges(params: Record<string, unknown>) {
     const file = requireString(params.file, "file");
+    assertWithinWorkspace(file);
     const line = requireNumber(params.line, "line") - 1;
     const column = requireNumber(params.column, "column") - 1;
     const uri = vscode.Uri.file(file);

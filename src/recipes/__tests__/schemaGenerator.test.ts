@@ -115,6 +115,46 @@ describe("schemaGenerator", () => {
     });
   });
 
+  // Regression (audit 2026-06-10 recipe-validation-2): the agent step
+  // driver enum omitted "local" — a fully implemented runtime driver and
+  // valid in DOWNSHIFT_KNOWN_DRIVERS + the downshift enum — so a recipe with
+  // agent.driver: "local" failed the AJV schema check under FLAG_SCHEMA_LINT.
+  it("includes 'local' in the agent step driver enum (and the downshift enum)", () => {
+    registerTool({
+      id: "test.echo",
+      namespace: "test",
+      description: "Echo test",
+      paramsSchema: { type: "object", properties: {} },
+      outputSchema: { type: "string" },
+      riskDefault: "low",
+      isWrite: false,
+      execute: async () => "ok",
+    });
+    const schemas = generateSchemaSet();
+    const recipeSchema = schemas.recipe as {
+      properties?: {
+        steps?: { items?: { oneOf?: Array<Record<string, unknown>> } };
+      };
+    };
+    const agentStep = recipeSchema.properties?.steps?.items?.oneOf?.find(
+      (entry) =>
+        "properties" in entry &&
+        "agent" in ((entry.properties as Record<string, unknown>) ?? {}),
+    ) as
+      | {
+          properties?: {
+            agent?: { properties?: { driver?: { enum?: string[] } } };
+          };
+        }
+      | undefined;
+    const driverEnum = agentStep?.properties?.agent?.properties?.driver?.enum;
+    expect(driverEnum).toBeDefined();
+    expect(driverEnum).toContain("local");
+    // The other real drivers must still be present (no accidental truncation).
+    expect(driverEnum).toContain("anthropic");
+    expect(driverEnum).toContain("gemini");
+  });
+
   it("generates tool schema with merged properties", () => {
     registerTool({
       id: "file.write",

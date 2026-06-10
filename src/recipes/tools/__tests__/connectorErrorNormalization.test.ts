@@ -32,9 +32,38 @@ vi.mock("../../../connectors/monday.js", () => ({
 const getStripeConnector = vi.fn();
 vi.mock("../../../connectors/stripe.js", () => ({ getStripeConnector }));
 
+// ── Cluster C2 connector mocks (audit-5/6/7/8/9/10) ──────────────────────────
+// Each tool family must convert a connector throw into the soft
+// { ok:false, error } envelope rather than propagating and halting the run.
+const getPostgresConnector = vi.fn();
+vi.mock("../../../connectors/postgres.js", () => ({ getPostgresConnector }));
+
+const getNotionConnector = vi.fn();
+vi.mock("../../../connectors/notion.js", () => ({ getNotionConnector }));
+
+const getConfluenceConnector = vi.fn();
+vi.mock("../../../connectors/confluence.js", () => ({
+  getConfluenceConnector,
+}));
+
+const getHubSpotConnector = vi.fn();
+vi.mock("../../../connectors/hubspot.js", () => ({ getHubSpotConnector }));
+
+const getVercelConnector = vi.fn();
+vi.mock("../../../connectors/vercel.js", () => ({ getVercelConnector }));
+
+const getSendGridConnector = vi.fn();
+vi.mock("../../../connectors/sendgrid.js", () => ({ getSendGridConnector }));
+
 // Import AFTER mocks so the self-registering modules pick them up.
 import "../monday.js";
 import "../stripe.js";
+import "../postgres.js";
+import "../notion.js";
+import "../confluence.js";
+import "../hubspot.js";
+import "../vercel.js";
+import "../sendgrid.js";
 import { getTool } from "../../toolRegistry.js";
 import type { RunContext, StepDeps } from "../../yamlRunner.js";
 
@@ -108,6 +137,142 @@ describe("connector error normalization → soft { ok:false, error } envelope", 
 
       const out = await tool?.execute(ctx({}));
       expect(out).toBe(JSON.stringify(result));
+    });
+  });
+
+  // ── audit-6: postgres.* (read + write-gated query) ─────────────────────────
+  describe("postgres.* (audit-6)", () => {
+    it("postgres.list_tables returns the soft envelope when the connector throws", async () => {
+      getPostgresConnector.mockReturnValue({
+        listTables: vi.fn().mockRejectedValue(new Error("connection refused")),
+      });
+      const out = await getTool("postgres.list_tables")?.execute(ctx({}));
+      expect(out).toBe(
+        JSON.stringify({ ok: false, error: "connection refused" }),
+      );
+    });
+
+    it("postgres.query (write-gated) returns the soft envelope on a SQL error", async () => {
+      getPostgresConnector.mockReturnValue({
+        query: vi.fn().mockRejectedValue(new Error('syntax error at "FROM"')),
+      });
+      const out = await getTool("postgres.query")?.execute(
+        ctx({ sql: "SELECT bad FROM" }),
+      );
+      expect(out).toBe(
+        JSON.stringify({ ok: false, error: 'syntax error at "FROM"' }),
+      );
+    });
+  });
+
+  // ── audit-5: notion.* (read + write) ───────────────────────────────────────
+  describe("notion.* (audit-5)", () => {
+    it("notion.search returns the soft envelope when the connector throws", async () => {
+      getNotionConnector.mockReturnValue({
+        search: vi.fn().mockRejectedValue(new Error("token expired")),
+      });
+      const out = await getTool("notion.search")?.execute(ctx({ query: "x" }));
+      expect(out).toBe(JSON.stringify({ ok: false, error: "token expired" }));
+    });
+
+    it("notion.createPage (write) returns the soft envelope when the connector throws", async () => {
+      getNotionConnector.mockReturnValue({
+        createPage: vi.fn().mockRejectedValue(new Error("parent not found")),
+      });
+      const out = await getTool("notion.createPage")?.execute(
+        ctx({ parentId: "db1", title: "t" }),
+      );
+      expect(out).toBe(
+        JSON.stringify({ ok: false, error: "parent not found" }),
+      );
+    });
+  });
+
+  // ── audit-7: confluence.* (read + write) ───────────────────────────────────
+  describe("confluence.* (audit-7)", () => {
+    it("confluence.search returns the soft envelope when the connector throws", async () => {
+      getConfluenceConnector.mockReturnValue({
+        search: vi.fn().mockRejectedValue(new Error("CQL parse error")),
+      });
+      const out = await getTool("confluence.search")?.execute(
+        ctx({ query: "type=page" }),
+      );
+      expect(out).toBe(JSON.stringify({ ok: false, error: "CQL parse error" }));
+    });
+
+    it("confluence.createPage (write) returns the soft envelope when the connector throws", async () => {
+      getConfluenceConnector.mockReturnValue({
+        createPage: vi
+          .fn()
+          .mockRejectedValue(new Error("title already exists")),
+      });
+      const out = await getTool("confluence.createPage")?.execute(
+        ctx({ spaceId: "ENG", title: "t", body: "b" }),
+      );
+      expect(out).toBe(
+        JSON.stringify({ ok: false, error: "title already exists" }),
+      );
+    });
+  });
+
+  // ── audit-8: hubspot.* (read + write createNote) ───────────────────────────
+  describe("hubspot.* (audit-8)", () => {
+    it("hubspot.getContact returns the soft envelope when the connector throws", async () => {
+      getHubSpotConnector.mockReturnValue({
+        getContact: vi.fn().mockRejectedValue(new Error("404 not found")),
+      });
+      const out = await getTool("hubspot.getContact")?.execute(
+        ctx({ contactId: "999" }),
+      );
+      expect(out).toBe(JSON.stringify({ ok: false, error: "404 not found" }));
+    });
+
+    it("hubspot.createNote (write) returns the soft envelope when the connector throws", async () => {
+      getHubSpotConnector.mockReturnValue({
+        createNote: vi.fn().mockRejectedValue(new Error("rate limited")),
+      });
+      const out = await getTool("hubspot.createNote")?.execute(
+        ctx({ body: "n" }),
+      );
+      expect(out).toBe(JSON.stringify({ ok: false, error: "rate limited" }));
+    });
+  });
+
+  // ── audit-10: vercel.* (reads) ─────────────────────────────────────────────
+  describe("vercel.* (audit-10)", () => {
+    it("vercel.list_deployments returns the soft envelope when the connector throws", async () => {
+      getVercelConnector.mockReturnValue({
+        listDeployments: vi
+          .fn()
+          .mockRejectedValue(new Error("project not found")),
+      });
+      const out = await getTool("vercel.list_deployments")?.execute(
+        ctx({ projectId: "ghost" }),
+      );
+      expect(out).toBe(
+        JSON.stringify({ ok: false, error: "project not found" }),
+      );
+    });
+  });
+
+  // ── audit-9: sendgrid read tools (list_templates / get_stats) ──────────────
+  describe("sendgrid.* read tools (audit-9)", () => {
+    it("sendgrid.list_templates returns the soft envelope when the connector throws", async () => {
+      getSendGridConnector.mockReturnValue({
+        listTemplates: vi.fn().mockRejectedValue(new Error("403 forbidden")),
+      });
+      const out = await getTool("sendgrid.list_templates")?.execute(ctx({}));
+      expect(out).toBe(JSON.stringify({ ok: false, error: "403 forbidden" }));
+    });
+
+    it("sendgrid.get_stats returns the soft envelope when the connector throws", async () => {
+      getSendGridConnector.mockReturnValue({
+        getStats: vi.fn().mockRejectedValue(new Error("revoked key")),
+      });
+      const out = await getTool("sendgrid.get_stats")?.execute(
+        ctx({ startDate: "2026-06-01" }),
+      );
+      expect(out).toBe(JSON.stringify({ ok: false, error: "revoked key" }));
     });
   });
 });

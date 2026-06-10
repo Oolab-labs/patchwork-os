@@ -537,19 +537,26 @@ export class RecipeRunLog {
 
   private append(run: RecipeRun): void {
     try {
-      // Rotate first if the file is over the limit. Cheap stat call; only
-      // rewrites when needed. Without this, runs.jsonl grows unbounded.
-      try {
-        const st = statSync(this.file);
-        if (st.size > MAX_PERSIST_BYTES) this.rotateDisk();
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code !== "ENOENT") throw err;
-      }
       // Per-file lock — ADR-0007 multi-bridge concurrency. See the
       // matching block in src/decisionTraceLog.ts for the full
       // rationale; same pattern.
+      //
+      // core-infra-2: rotation MUST happen under the same advisory lock as
+      // the append. If rotateDisk() runs before the lock is acquired, a
+      // concurrent bridge can appendFileSync between the .tmp write and the
+      // renameSync — that row lands on the file about to be atomically
+      // replaced and is lost. Re-stat under the lock so the rotation
+      // decision is also serialized with respect to other writers.
       withFileLockSync(this.file, () => {
+        // Rotate first if the file is over the limit. Cheap stat call; only
+        // rewrites when needed. Without this, runs.jsonl grows unbounded.
+        try {
+          const st = statSync(this.file);
+          if (st.size > MAX_PERSIST_BYTES) this.rotateDisk();
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException).code;
+          if (code !== "ENOENT") throw err;
+        }
         appendFileSync(this.file, `${JSON.stringify(run)}\n`, { mode: 0o600 });
       });
     } catch (err) {
@@ -636,8 +643,14 @@ export class RecipeRunLog {
     if (now - this._lastSyncMs < _SYNC_MIN_INTERVAL_MS) return;
     this._lastSyncMs = now;
     try {
-      const size = statSync(this.file).size;
-      if (size <= this.lastFileSize) return;
+      const sizeBefore = statSync(this.file).size;
+      // core-infra-1: rotation detection. If the file shrank below the
+      // last-seen size, another bridge rotated (truncated/replaced) it —
+      // reset the cursor so we re-read the rotated content from scratch
+      // instead of treating the smaller post-rotation size as "no new
+      // rows" (which would silently skip every row after rotation).
+      if (sizeBefore < this.lastFileSize) this.lastFileSize = 0;
+      if (sizeBefore <= this.lastFileSize) return;
       const raw = readFileSync(this.file, "utf-8");
       const lines = raw.split("\n");
       for (const line of lines) {
@@ -654,7 +667,20 @@ export class RecipeRunLog {
           /* skip malformed */
         }
       }
-      this.lastFileSize = size;
+      // core-infra-1: re-stat AFTER readFileSync and store the SMALLER of
+      // the pre- and post-read sizes. If the file was rotated between the
+      // initial stat and the read, the pre-read size reflects the larger
+      // pre-rotation file; storing it would make the next sync see
+      // `newSize <= lastFileSize` and skip rows appended after rotation.
+      // Using the post-read size (clamped to the read) keeps lastFileSize
+      // consistent with the bytes we actually consumed.
+      let sizeAfter = sizeBefore;
+      try {
+        sizeAfter = statSync(this.file).size;
+      } catch {
+        /* file vanished between read and re-stat — keep sizeBefore */
+      }
+      this.lastFileSize = Math.min(sizeBefore, sizeAfter);
     } catch {
       /* file may not exist yet */
     }

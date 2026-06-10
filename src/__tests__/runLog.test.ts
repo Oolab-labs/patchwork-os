@@ -858,6 +858,107 @@ describe("RecipeRunLog.record", () => {
     expect(text).toContain('"taskId":"after-drop"');
   });
 
+  it("core-infra-1: syncFromDisk re-reads after an EXTERNAL rotation shrinks the file", () => {
+    // A separate bridge process rotates runs.jsonl (truncates/replaces it
+    // with a smaller, post-rotation file). The reading instance's
+    // lastFileSize still reflects the larger pre-rotation size. Pre-fix,
+    // `size <= lastFileSize` returned early forever and every row appended
+    // after rotation was silently invisible. The shrink-detection must reset
+    // the cursor and re-read.
+    const file = path.join(tmp, "runs.jsonl");
+    const fs = require("node:fs") as typeof import("node:fs");
+
+    // Seed a sizeable file and load it so lastFileSize is large.
+    const bigRun = (seq: number) =>
+      JSON.stringify({
+        seq,
+        taskId: `seed-${seq}`,
+        recipeName: "r",
+        trigger: "recipe",
+        status: "done",
+        createdAt: seq,
+        doneAt: seq + 1,
+        durationMs: 1,
+        pad: "x".repeat(4000),
+      });
+    const seed: string[] = [];
+    for (let i = 1; i <= 50; i++) seed.push(bigRun(i));
+    fs.writeFileSync(file, `${seed.join("\n")}\n`);
+    const log = new RecipeRunLog({ dir: tmp });
+    const beforeRotate = log.query({ limit: 500 }).length;
+    expect(beforeRotate).toBeGreaterThan(0);
+    const lastFileSizeBefore = (log as unknown as { lastFileSize: number })
+      .lastFileSize;
+    expect(lastFileSizeBefore).toBeGreaterThan(0);
+
+    // External process rotates: replace with a MUCH smaller file containing
+    // a single brand-new row. This is what another bridge's rotateDisk does.
+    const rotatedRow = {
+      seq: 100_000,
+      taskId: "after-external-rotation",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+    };
+    fs.writeFileSync(file, `${JSON.stringify(rotatedRow)}\n`);
+    expect(fs.statSync(file).size).toBeLessThan(lastFileSizeBefore);
+
+    // Force the sync interval to elapse so query() actually re-reads.
+    (log as unknown as { _lastSyncMs: number })._lastSyncMs = 0;
+
+    const refreshed = log.query({ limit: 500 });
+    const found = refreshed.find((r) => r.taskId === "after-external-rotation");
+    expect(found).toBeDefined();
+    expect(found!.seq).toBe(100_000);
+  });
+
+  it("core-infra-2: append() rotation runs under the file lock + leaves no .lock orphan", () => {
+    // Rotation must happen inside withFileLockSync (same lock as the append),
+    // otherwise a concurrent writer can append between rotateDisk's .tmp write
+    // and the renameSync and lose its row. We can't deterministically race two
+    // processes in a unit test, but we CAN assert the post-condition the fix
+    // guarantees: a rotation-triggering append completes correctly and the
+    // advisory lock sentinel is released (no `${file}.lock` left behind).
+    const file = path.join(tmp, "runs.jsonl");
+    const fs = require("node:fs") as typeof import("node:fs");
+    const longRun = JSON.stringify({
+      seq: 0,
+      taskId: "x".repeat(2000),
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+    });
+    const seedLines: string[] = [];
+    for (let i = 0; i < 600; i++) seedLines.push(longRun);
+    fs.writeFileSync(file, `${seedLines.join("\n")}\n`);
+    expect(fs.statSync(file).size).toBeGreaterThan(1024 * 1024);
+
+    const log = new RecipeRunLog({ dir: tmp });
+    log.appendDirect({
+      taskId: "rotated-under-lock",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 0,
+      startedAt: 0,
+      doneAt: 1,
+      durationMs: 1,
+    });
+
+    // Append landed, file rotated under cap, and the lock sentinel was
+    // released by withFileLockSync's finally.
+    const text = fs.readFileSync(file, "utf8");
+    expect(text).toContain('"taskId":"rotated-under-lock"');
+    expect(fs.statSync(file).size).toBeLessThan(1024 * 1024 + 4096);
+    expect(fs.existsSync(`${file}.lock`)).toBe(false);
+  });
+
   it("rotateDisk() leaves no orphaned `.tmp` file on success (atomic rename)", () => {
     // Atomic-write contract: rotate must write to a sibling `.tmp` and
     // renameSync it onto the target. Pre-fix, a direct writeFileSync to

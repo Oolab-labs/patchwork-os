@@ -13,6 +13,16 @@ import { optionalInt, optionalString, successStructured } from "./utils.js";
 const SEMANTIC_FLOOR = 0.25;
 
 /**
+ * Bounds for the single embeddings request issued by {@link semanticRank}.
+ * Without these, a full 500-trace pool — each recipe_run carrying a 2000-char
+ * outputTail — produces one giant batch that can exceed the embedding model's
+ * token limit (silent null fail-soft) or OOM on JSON serialization
+ * (core-infra-3). Cap each text and cap how many texts go in the batch.
+ */
+const MAX_SEMANTIC_TEXT_CHARS = 512;
+const MAX_SEMANTIC_BATCH = 200;
+
+/**
  * Unified view over the persistent decision trails that already exist:
  *   - approval decisions    (activityLog lifecycle rows, event = "approval_decision")
  *   - enrichment links      (CommitIssueLinkLog)
@@ -83,25 +93,32 @@ function matchesSubstring(t: DecisionTrace, qNeedle: string): boolean {
 function semanticTextFor(t: DecisionTrace): string {
   const b = t.body;
   const str = (v: unknown): string => (typeof v === "string" ? v : "");
+  const cap = (s: string): string => s.slice(0, MAX_SEMANTIC_TEXT_CHARS);
   switch (t.traceType) {
     case "decision": {
       const tags = Array.isArray(b.tags)
         ? b.tags.filter((x): x is string => typeof x === "string").join(" ")
         : "";
-      return `${str(b.ref)} ${str(b.problem)} ${str(b.solution)} ${tags}`.trim();
+      return cap(
+        `${str(b.ref)} ${str(b.problem)} ${str(b.solution)} ${tags}`.trim(),
+      );
     }
     case "enrichment":
-      return `${str(b.subject)} ${str(b.issueTitle)} ${str(b.ref)}`.trim();
+      return cap(`${str(b.subject)} ${str(b.issueTitle)} ${str(b.ref)}`.trim());
     case "recipe_run":
-      return `${str(b.recipeName)} ${str(b.errorMessage)} ${str(
-        b.outputTail,
-      )}`.trim();
+      return cap(
+        `${str(b.recipeName)} ${str(b.errorMessage)} ${str(
+          b.outputTail,
+        )}`.trim(),
+      );
     case "approval":
-      return `${str(b.toolName)} ${str(b.decision)} ${str(b.reason)} ${str(
-        b.summary,
-      )}`.trim();
+      return cap(
+        `${str(b.toolName)} ${str(b.decision)} ${str(b.reason)} ${str(
+          b.summary,
+        )}`.trim(),
+      );
     default:
-      return t.summary;
+      return cap(t.summary);
   }
 }
 
@@ -119,15 +136,22 @@ async function semanticRank(
 ): Promise<DecisionTrace[] | null> {
   if (filtered.length === 0) return [];
   try {
-    const texts = [query, ...filtered.map(semanticTextFor)];
+    // Bound the embeddings batch so a large pool can't exceed the model's token
+    // limit or OOM serialization. `filtered` arrives recency-ordered, so the
+    // most recent MAX_SEMANTIC_BATCH candidates are the ones we rank.
+    const pool =
+      filtered.length > MAX_SEMANTIC_BATCH
+        ? filtered.slice(0, MAX_SEMANTIC_BATCH)
+        : filtered;
+    const texts = [query, ...pool.map(semanticTextFor)];
     const vectors = await embedFn(texts);
     // Need the query vec + one per trace; anything else ⇒ fall back.
     if (!vectors || vectors.length !== texts.length) return null;
     const queryVec = vectors[0];
     if (!queryVec) return null;
     const scored: { trace: DecisionTrace; score: number }[] = [];
-    for (let i = 0; i < filtered.length; i++) {
-      const trace = filtered[i];
+    for (let i = 0; i < pool.length; i++) {
+      const trace = pool[i];
       const vec = vectors[i + 1];
       if (!trace || !vec) continue;
       const score = cosineSimilarity(queryVec, vec);

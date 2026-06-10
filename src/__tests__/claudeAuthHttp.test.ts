@@ -120,3 +120,29 @@ describe("handleClaudeAuthComplete", () => {
     );
   });
 });
+
+describe("handleClaudeAuthStart session-map cap (http-routes-4)", () => {
+  it("rejects new sessions with 503 once the map is at capacity", async () => {
+    // The session map is module-scoped and shared across tests in this file,
+    // so the starting count is non-zero. Keep firing /start; before the fix
+    // every call returned 200 (unbounded growth). After the fix, once the map
+    // reaches MAX_SESSIONS (500) the next /start returns 503. Cap iterations
+    // generously above the ceiling so the loop terminates either way.
+    let saw503 = false;
+    let last503Body = "";
+    for (let i = 0; i < 600 && !saw503; i++) {
+      const { res, result } = captureResponse();
+      await handleClaudeAuthStart(fakeReq("{}"), res);
+      if (result.status === 503) {
+        saw503 = true;
+        last503Body = result.body;
+      } else {
+        expect(result.status).toBe(200);
+      }
+    }
+    expect(saw503).toBe(true);
+    expect((JSON.parse(last503Body) as { error: string }).error).toBe(
+      "too_many_sessions",
+    );
+  });
+});

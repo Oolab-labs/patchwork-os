@@ -14,9 +14,23 @@
     const envPath = candidates.find(existsSync);
     if (envPath) {
       for (const line of readFileSync(envPath, "utf-8").split("\n")) {
-        const m = /^([A-Z_][A-Z0-9_]*)=(.*)$/.exec(line.trim());
+        const trimmed = line.trim();
+        // Skip blank lines and full-line comments outright.
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const m = /^([A-Z_][A-Z0-9_]*)=(.*)$/.exec(trimmed);
         if (m?.[1] && !process.env[m[1]]) {
-          process.env[m[1]] = m[2]?.replace(/^["']|["']$/g, "");
+          let raw = m[2] ?? "";
+          // Strip an inline comment, but only when the value is NOT quoted —
+          // a quoted value may legitimately contain '#' (cli-commands-6).
+          const isQuoted =
+            (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2) ||
+            (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2);
+          if (!isQuoted) {
+            const hashIdx = raw.indexOf("#");
+            if (hashIdx !== -1) raw = raw.slice(0, hashIdx);
+            raw = raw.trim();
+          }
+          process.env[m[1]] = raw.replace(/^["']|["']$/g, "");
         }
       }
     }
@@ -189,6 +203,7 @@ const KNOWN_SUBCOMMANDS = [
   "dashboard",
   "launchd",
   "start",
+  "orchestrator",
   "kill-switch",
   "panic",
   "halts",
@@ -720,13 +735,21 @@ if (process.argv[2] === "notify") {
 
   const notifyRest = notifyArgv.slice(1);
   const namedArgs: Record<string, string> = {};
-  for (let i = 0; i < notifyRest.length - 1; i++) {
+  // Iterate the full list (not length-1) so a trailing bare `--flag` with no
+  // following value is still recorded rather than silently dropped
+  // (cli-commands-5). A flag whose next token is another `--flag` (or which is
+  // last) is treated as an empty-valued flag, matching the existing `?? ""`.
+  for (let i = 0; i < notifyRest.length; i++) {
     const arg = notifyRest[i];
     if (arg?.startsWith("--")) {
       const key = arg.slice(2);
-      const val = notifyRest[i + 1] ?? "";
-      namedArgs[key] = val;
-      i++;
+      const next = notifyRest[i + 1];
+      if (next !== undefined && !next.startsWith("--")) {
+        namedArgs[key] = next;
+        i++;
+      } else {
+        namedArgs[key] = "";
+      }
     }
   }
 
@@ -4322,6 +4345,20 @@ Options:
   let lockPort: string | undefined;
 
   if (portArg) {
+    // Validate before path.join — path.join does not block traversal, so an
+    // unsanitized `--port ../../../etc/passwd` would read an arbitrary
+    // `*.lock` file outside lockDir and leak its JSON contents
+    // (cli-commands-1).
+    const portNum = Number(portArg);
+    if (
+      !/^\d{1,5}$/.test(portArg) ||
+      !Number.isInteger(portNum) ||
+      portNum < 1 ||
+      portNum > 65535
+    ) {
+      process.stderr.write("Error: --port must be a valid port number\n");
+      process.exit(1);
+    }
     lockFile = path.join(lockDir, `${portArg}.lock`);
     lockPort = portArg;
     if (!existsSync(lockFile)) {

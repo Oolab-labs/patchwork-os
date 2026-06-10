@@ -1016,7 +1016,11 @@ export default function RunDetailPage() {
       // when a queued run is picked up by the worker.
       intervalId = setInterval(() => {
         doFetch().then((r) => {
-          if (!isInFlight(r)) {
+          // Audit 2026-06-10 (dashboard-ui-4): doFetch() returns null on a
+          // transient error (the .catch already set runErr) AND on a terminal
+          // run state. Only stop polling for a real terminal state — a network
+          // blip must not freeze the page while the run keeps executing.
+          if (r !== null && !isInFlight(r)) {
             clearInterval(intervalId);
             intervalId = undefined;
           }

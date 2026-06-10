@@ -29,6 +29,7 @@ import {
 import type { OutputRegistry } from "./outputRegistry.js";
 import { createOutputRegistry } from "./outputRegistry.js";
 import type { RouteCandidate } from "./pricing/costRouter.js";
+import { loadPriceTable, type PriceTable } from "./pricing/priceTable.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import type { BudgetPolicy, ErrorPolicy } from "./schema.js";
@@ -157,6 +158,12 @@ export interface RunOptions {
    * `RunBudget` per run). Internal — callers don't set this.
    */
   budget?: RunBudget;
+  /**
+   * Price table loaded once per top-level run and inherited by nested recipe
+   * calls (same lifetime as `budget`) so per-step usage costing avoids a
+   * synchronous disk round-trip. Internal — callers don't set this.
+   */
+  priceTable?: PriceTable;
 }
 
 export interface StepExecutionContext {
@@ -167,6 +174,12 @@ export interface StepExecutionContext {
   depth: number;
   /** Shared per-run budget (admit before dispatch, reconcile after). */
   budget?: RunBudget;
+  /**
+   * Price table loaded ONCE per run and threaded through so each agent step's
+   * `computeAgentCallUsage` call avoids a synchronous existsSync/readFileSync
+   * round-trip (mirrors the flat runner, which loads it once at run start).
+   */
+  priceTable?: PriceTable;
 }
 
 export type ToolExecutor = (
@@ -245,6 +258,12 @@ export function resolveStepTemplates(
     "retry",
     "retryDelay",
     "parallel",
+    // Runner-meta declared on ChainedStep — must NOT be forwarded as tool
+    // params (the `expect` AJV schema object + numeric timeout especially leak
+    // internal runner config into tools that log their raw params).
+    "expect",
+    "timeout_ms",
+    "silentFailDetection",
   ]);
 
   // Resolve tool params
@@ -368,6 +387,13 @@ export async function executeChainedStep(
    * drivers. `costUsd` set only for a priceable billable model (never 0).
    */
   usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
+  /**
+   * `expect` assertion failures recorded when `on_fail: "warn"` — the step
+   * still succeeds (the run continues) but the warnings are surfaced on the
+   * persisted step row / dashboard. Mirrors the flat runner's
+   * `last.expectWarnings`. Absent when there are no warn-mode failures.
+   */
+  expectWarnings?: string[];
 }> {
   const { registry, step, options, depth } = ctx;
   const { dryRun } = options;
@@ -541,6 +567,7 @@ export async function executeChainedStep(
         sourcePath: nestedRecipe.sourcePath,
         env: { ...options.env, ...resolvedVars }, // Merge resolved vars into env
         budget: ctx.budget, // share the single per-run budget across the tree
+        priceTable: ctx.priceTable, // reuse the once-loaded price table
       };
 
       const childResult = await runChainedRecipe(
@@ -609,8 +636,16 @@ export async function executeChainedStep(
       // instead of discarding it). Subscription drivers report no usage →
       // RunBudget fails open with a one-time warning.
       if (budget) {
+        // Normalize the "api" alias to "anthropic" on the no-downshift
+        // fallback path too (the downshift branch already does this at line
+        // 596). Without this, a bare-string AgentExecutor return with
+        // `agent.driver: "api"` reconciles against a non-billable driver and
+        // the USD cap is silently unenforced even though the call was billed.
+        const reconcileDriver =
+          agentReturn.servedBy?.driver ??
+          (dispatchDriver === "api" ? "anthropic" : (dispatchDriver ?? "auto"));
         budget.reconcile(
-          agentReturn.servedBy?.driver ?? dispatchDriver ?? "auto",
+          reconcileDriver,
           agentReturn.usage,
           agentReturn.servedBy?.model ?? dispatchModel,
           {
@@ -623,9 +658,11 @@ export async function executeChainedStep(
       // P1: per-step agent token usage (chained = one agent call per step).
       // Attached to every return below so it lands on the persisted step row
       // regardless of success / failure. Absent for unmeasured drivers.
+      // Thread the once-loaded price table to avoid per-step disk I/O.
       const usage = computeAgentCallUsage(
         agentReturn.usage,
         agentReturn.servedBy,
+        ctx.priceTable,
       );
 
       let result: unknown = agentReturn.text;
@@ -659,15 +696,21 @@ export async function executeChainedStep(
           console.warn(`transform failed for step ${step.id}: ${err}`);
         }
       }
+      let agentExpectWarnings: string[] | undefined;
       if (step.expect) {
         const failures = await evaluateStepExpect(step.expect, result);
-        if (failures.length > 0 && (step.expect.on_fail ?? "halt") === "halt") {
-          return {
-            success: false,
-            error: `expect failed: ${failures.join("; ")}`,
-            resolvedParams: resolved,
-            ...(usage ? { usage } : {}),
-          };
+        if (failures.length > 0) {
+          if ((step.expect.on_fail ?? "halt") === "halt") {
+            return {
+              success: false,
+              error: `expect failed: ${failures.join("; ")}`,
+              resolvedParams: resolved,
+              ...(usage ? { usage } : {}),
+            };
+          }
+          // on_fail: "warn" — keep going but surface the failures (mirrors
+          // the flat runner's `last.expectWarnings`); previously dropped.
+          agentExpectWarnings = failures;
         }
       }
       return {
@@ -675,6 +718,7 @@ export async function executeChainedStep(
         data: result,
         resolvedParams: resolved,
         ...(usage ? { usage } : {}),
+        ...(agentExpectWarnings ? { expectWarnings: agentExpectWarnings } : {}),
       };
     } else if (step.tool) {
       // Tool step
@@ -711,17 +755,28 @@ export async function executeChainedStep(
           console.warn(`transform failed for step ${step.id}: ${err}`);
         }
       }
+      let toolExpectWarnings: string[] | undefined;
       if (step.expect) {
         const failures = await evaluateStepExpect(step.expect, result);
-        if (failures.length > 0 && (step.expect.on_fail ?? "halt") === "halt") {
-          return {
-            success: false,
-            error: `expect failed: ${failures.join("; ")}`,
-            resolvedParams: resolved,
-          };
+        if (failures.length > 0) {
+          if ((step.expect.on_fail ?? "halt") === "halt") {
+            return {
+              success: false,
+              error: `expect failed: ${failures.join("; ")}`,
+              resolvedParams: resolved,
+            };
+          }
+          // on_fail: "warn" — keep going but surface the failures (mirrors
+          // the flat runner's `last.expectWarnings`); previously dropped.
+          toolExpectWarnings = failures;
         }
       }
-      return { success: true, data: result, resolvedParams: resolved };
+      return {
+        success: true,
+        data: result,
+        resolvedParams: resolved,
+        ...(toolExpectWarnings ? { expectWarnings: toolExpectWarnings } : {}),
+      };
     } else {
       return { success: false, error: "Step has no tool, agent, or recipe" };
     }
@@ -742,6 +797,9 @@ interface StepExecResult {
   /** P1: agent token usage for this step — forwarded from
    *  `executeChainedStep`. Absent for tool / unmeasured-driver steps. */
   usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
+  /** `expect` assertion failures recorded under `on_fail: "warn"` — forwarded
+   *  from `executeChainedStep` so the runner can attach them to the step row. */
+  expectWarnings?: string[];
 }
 
 /** Upper bound on retries — clamps absurd/misconfigured values so a recipe
@@ -769,6 +827,15 @@ async function withRetry(
     }
     last = await fn();
     if (last.success) return last;
+    // Audit 2026-06-10 recipe-runners-2: do NOT retry on a step_timeout. The
+    // timed-out attempt's tool/agent call keeps running in the background
+    // (raceStepTimeout only abandons the wait, it does not cancel the call);
+    // re-issuing the step is pointless for write tools (the in-flight
+    // idempotency ledger short-circuits the retry to the same promise) and a
+    // duplicate-side-effect hazard for any tool the ledger cannot dedup. A
+    // true cancel needs an AbortSignal threaded through every tool/connector,
+    // which is out of scope; refusing to retry on timeout is the safe contract.
+    if (last.error?.startsWith("step_timeout:")) return last;
   }
   return last;
 }
@@ -819,6 +886,16 @@ export function expandParallelSteps(steps: ChainedStep[]): ChainedStep[] {
     if (Array.isArray(step.parallel) && step.parallel.length > 0) {
       // Generate a stable group id from position if the group has no id.
       const groupId = step.id ?? `parallel_${i}`;
+      // Track the group container id too — otherwise a later flat step reusing
+      // the same id passes the duplicate check and silently corrupts the
+      // dependency graph (dependents `awaits: [groupId]` are rewritten to the
+      // group's children, never the shadowed flat step).
+      if (seenIds.has(groupId)) {
+        throw new Error(
+          `expandParallelSteps: duplicate step id "${groupId}" — each step id must be unique`,
+        );
+      }
+      seenIds.add(groupId);
       const groupAwaits = step.awaits ?? [];
       const childIds: string[] = [];
 
@@ -902,6 +979,15 @@ export async function runChainedRecipe(
   // Absent `recipe.budget` → an empty RunBudget whose admit/reconcile are
   // no-ops, so there's no behaviour change for budget-less recipes.
   const budget = options.budget ?? new RunBudget(recipe.budget);
+  // True only when THIS call constructed the budget — used to gate
+  // refreshPrices() so an injected (unit-test) budget keeps its stable prices
+  // and nested calls don't double-refresh the shared parent budget.
+  const ownsBudget = options.budget === undefined;
+
+  // Load the price table ONCE per run (inherited by nested recipe calls via
+  // options.priceTable) so each agent step's computeAgentCallUsage avoids a
+  // synchronous existsSync/readFileSync round-trip — mirrors the flat runner.
+  const priceTable = options.priceTable ?? loadPriceTable();
 
   // Expand parallel: sugar into flat steps before building the dependency graph.
   const steps = expandParallelSteps(recipe.steps);
@@ -1031,6 +1117,9 @@ export async function runChainedRecipe(
     string,
     { inputTokens: number; outputTokens: number; costUsd?: number }
   >();
+  // `expect` warnings (on_fail: "warn") per depth-0 step, keyed by stepId, so
+  // they land on the persisted step row instead of being silently dropped.
+  const capturedExpectWarnings = new Map<string, string[]>();
 
   // VD-1 live-tail: when an `activityLog` is provided AND we have a `runSeq`
   // (depth 0, runLog supplied), broadcast `recipe_step_start` /
@@ -1129,6 +1218,12 @@ export async function runChainedRecipe(
     const step = stepMap.get(stepId);
     if (!step) throw new Error(`Step ${stepId} not found`);
 
+    // Honour the refreshPrices() contract for long-running recipes: pick up a
+    // mid-run ~/.patchwork/prices.json update for budget enforcement. No-op
+    // unless a usdMax cap is set; gated on ownsBudget so an injected
+    // (unit-test) budget keeps its stable prices.
+    if (ownsBudget) budget.refreshPrices();
+
     const ctx: StepExecutionContext = {
       registry,
       step,
@@ -1136,6 +1231,7 @@ export async function runChainedRecipe(
       recipe,
       depth,
       budget,
+      priceTable,
     };
 
     const retryCount = step.retry ?? recipe.on_error?.retry ?? 0;
@@ -1153,6 +1249,11 @@ export async function runChainedRecipe(
     // P1: stash this step's agent token usage (depth-0 persistence reads it).
     if (depth === 0 && result.usage) {
       capturedUsage.set(stepId, result.usage);
+    }
+    // Stash on_fail:"warn" expect failures so the persisted step row + the
+    // dashboard surface them (previously silently dropped in chained runs).
+    if (depth === 0 && result.expectWarnings?.length) {
+      capturedExpectWarnings.set(stepId, result.expectWarnings);
     }
 
     // Recipe-level on_error.fallback: "log_only" and "deliver_original" both
@@ -1284,6 +1385,8 @@ export async function runChainedRecipe(
         inputTokens?: number;
         outputTokens?: number;
         costUsd?: number;
+        // `expect` warnings (on_fail: "warn") — mirrors yamlRunner's StepResult.
+        expectWarnings?: string[];
       }> = [];
       // P1: run-level token aggregate, summed from per-step agent usage.
       const runTok = { inputTokens: 0, outputTokens: 0, measured: false };
@@ -1303,6 +1406,7 @@ export async function runChainedRecipe(
           status,
           error: errorMsg,
         });
+        const expectWarnings = capturedExpectWarnings.get(id);
         const usage = capturedUsage.get(id);
         if (usage) {
           runTok.measured = true;
@@ -1339,6 +1443,7 @@ export async function runChainedRecipe(
                   : {}),
               }
             : {}),
+          ...(expectWarnings?.length ? { expectWarnings } : {}),
         });
       }
       // P1: assemble run-level totals (only when any step reported usage) +

@@ -788,6 +788,13 @@ export async function loadRecipeServers(specs: string[]): Promise<void> {
   } as import("../logger.js").Logger;
 
   for (const spec of toLoad) {
+    // Mark the spec as loaded OPTIMISTICALLY before the async load so two
+    // concurrent recipe runs sharing a `servers:` spec don't both pass the
+    // `filter` dedup above and double-register the same plugin tools (the
+    // registry does not guard re-registration). On failure we remove it so a
+    // later run can retry.
+    if (loadedPluginSpecs.has(spec)) continue;
+    loadedPluginSpecs.add(spec);
     try {
       const loaded = await loadPluginsFull(
         [spec],
@@ -803,13 +810,13 @@ export async function loadRecipeServers(specs: string[]): Promise<void> {
         }));
         toolCount += registerPluginTools(pluginTools);
       }
-      loadedPluginSpecs.add(spec);
       if (toolCount > 0) {
         console.info(
           `[recipe servers] loaded "${spec}" — ${toolCount} tool(s) registered`,
         );
       }
     } catch (err) {
+      loadedPluginSpecs.delete(spec);
       console.warn(
         `[recipe servers] failed to load "${spec}": ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -829,6 +836,7 @@ const COST_BILLABLE_DRIVERS = new Set([
   "openai",
   "grok",
   "gemini",
+  "gemini-api",
 ]);
 
 /**
@@ -1009,9 +1017,20 @@ export async function runYamlRecipe(
   // redaction. See PR body / docs/recipe-feature-investigation-2026-06-05.md.
   const secretKeys = new Set<string>(Object.keys(envCtx));
 
+  const iso = now.toISOString();
   const ctx: RunContext = {
-    date: now.toISOString().slice(0, 10),
+    date: iso.slice(0, 10),
     time: now.toTimeString().slice(0, 5),
+    // Built-in date/time tokens, injected (not phantom) so {{YYYY-MM-DD}} etc.
+    // render real values at run time AND pass template-ref lint. Keep in sync
+    // with builtinKeys in validation.ts. (audit 2026-06-10 recipe-validation-1)
+    YYYY: iso.slice(0, 4),
+    "YYYY-MM": iso.slice(0, 7),
+    "YYYY-MM-DD": iso.slice(0, 10),
+    ISO_NOW: iso,
+    HH: iso.slice(11, 13),
+    MM: iso.slice(14, 16),
+    SS: iso.slice(17, 19),
     ...envCtx,
     ...seedContext,
   };
@@ -1502,6 +1521,10 @@ export async function runYamlRecipe(
       // log_only|deliver_original) never set `haltAfterFailure`, so they
       // still let the run continue exactly as before.
       if (haltAfterFailure) break;
+      // Pick up a `~/.patchwork/prices.json` update mid-run for long-running
+      // recipes (honours the refreshPrices() contract). No-op unless a usdMax
+      // cap is set; never disturbs injected (unit-test) price tables.
+      runBudget.refreshPrices();
       const stepIdForEmit = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
       const stepTs = Date.now();
       stepStartTs.set(stepIdForEmit, stepTs);
@@ -1927,6 +1950,20 @@ export async function runYamlRecipe(
           result = null;
         }
         if (!stepError && !thrownError) break;
+        // Audit 2026-06-10 recipe-runners-2: do NOT retry on a step_timeout.
+        // The timed-out attempt's underlying tool call keeps running in the
+        // background (Promise.race only abandons the wait, it does not cancel
+        // the call). Re-issuing the step here is, at best, pointless — for a
+        // write tool the in-flight idempotency ledger short-circuits the retry
+        // to the SAME promise (no second side effect, but also no progress) —
+        // and, at worst, a second side effect for any tool the ledger cannot
+        // dedup (non-write tools, or a write tool whose first attempt already
+        // committed its effect then threw). A true cancel needs an AbortSignal
+        // threaded through every tool/connector call, which is out of scope
+        // here; until then, refusing to retry on timeout is the safe contract.
+        // (Genuine transient failures — non-timeout throws / {ok:false} — still
+        // retry below.)
+        if (thrownError?.startsWith("step_timeout:")) break;
       }
 
       // Recipe-level fallback: log_only / deliver_original treat step failure
@@ -2712,6 +2749,16 @@ export function providerMetaToUsage(
   const inputTokens = meta.inputTokens;
   const outputTokens = meta.outputTokens;
   if (typeof inputTokens === "number" && typeof outputTokens === "number") {
+    // Reject NaN/Infinity/negative counts: a negative count would price to a
+    // negative cost and silently *reduce* usdSpent, defeating the usdMax cap.
+    if (
+      !Number.isFinite(inputTokens) ||
+      inputTokens < 0 ||
+      !Number.isFinite(outputTokens) ||
+      outputTokens < 0
+    ) {
+      return undefined;
+    }
     return { inputTokens, outputTokens };
   }
   return undefined;
@@ -2921,7 +2968,14 @@ export async function defaultClaudeFn(
     }
     const inputTokens = data.usage?.input_tokens;
     const outputTokens = data.usage?.output_tokens;
-    if (typeof inputTokens === "number" && typeof outputTokens === "number") {
+    if (
+      typeof inputTokens === "number" &&
+      typeof outputTokens === "number" &&
+      Number.isFinite(inputTokens) &&
+      inputTokens >= 0 &&
+      Number.isFinite(outputTokens) &&
+      outputTokens >= 0
+    ) {
       return { text, usage: { inputTokens, outputTokens } };
     }
     return { text };
@@ -3219,6 +3273,14 @@ export async function dispatchRecipe(
         ...declaredRecipeEnv(chainedRecipe),
         DATE: now.toISOString().slice(0, 10),
         TIME: now.toTimeString().slice(0, 5),
+        // Built-in date/time tokens (parity with the flat runner ctx + lint).
+        YYYY: now.toISOString().slice(0, 4),
+        "YYYY-MM": now.toISOString().slice(0, 7),
+        "YYYY-MM-DD": now.toISOString().slice(0, 10),
+        ISO_NOW: now.toISOString(),
+        HH: now.toISOString().slice(11, 13),
+        MM: now.toISOString().slice(14, 16),
+        SS: now.toISOString().slice(17, 19),
         ...seedContext,
       } as Record<string, string | undefined>,
       maxConcurrency: Math.max(1, chainedRecipe.maxConcurrency ?? 4),

@@ -78,6 +78,19 @@ async function parseMcpResponse(res: Response): Promise<unknown> {
   return JSON.parse(text);
 }
 
+/**
+ * Sanitize an upstream JSON-RPC error before embedding it in a thrown Error.
+ * Upstream MCP servers (Sentry/Linear/GitHub) can put internal context, auth
+ * hints, request IDs, or tokens in `error.message`; those Errors propagate into
+ * recipe tool results and LLM context. Surface only a short, truncated message
+ * plus the numeric code (audit 2026-06-10 connectors-core-2).
+ */
+function mcpErr(err: { message?: string; code?: number }): string {
+  const code = err.code ?? "unknown";
+  const msg = typeof err.message === "string" ? err.message.slice(0, 120) : "";
+  return msg ? `${msg} (code: ${code})` : `upstream error (code: ${code})`;
+}
+
 function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
   const ctl = new AbortController();
   const onAbort = () => ctl.abort(signal?.reason);
@@ -93,6 +106,14 @@ function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
 export class McpClient {
   private sessionId: string | null = null;
   private initialized = false;
+  /**
+   * In-flight initialize promise. Without this, two concurrent callTool/listTools
+   * invocations both see `initialized === false`, both POST an `initialize` to the
+   * upstream MCP server, and the second response can overwrite `sessionId` while
+   * the first is still in flight — leaving the client in an inconsistent state.
+   * Mirrors ChildBridgeClient.initInflight (audit 2026-06-10 connectors-core-1).
+   */
+  private initInflight: Promise<void> | null = null;
   private nextId = 1;
   /**
    * Per-instance result cache. Moved from module level (LOW #11 audit 2026-06-03):
@@ -179,6 +200,17 @@ export class McpClient {
 
   private async ensureInitialized(opts: McpCallOptions = {}): Promise<void> {
     if (this.initialized) return;
+    // Coalesce concurrent callers onto a single initialize handshake. The first
+    // caller starts it; everyone else awaits the same promise so only one
+    // `initialize` POST is sent (audit 2026-06-10 connectors-core-1).
+    if (this.initInflight) return this.initInflight;
+    this.initInflight = this._doInit(opts).finally(() => {
+      this.initInflight = null;
+    });
+    return this.initInflight;
+  }
+
+  private async _doInit(opts: McpCallOptions): Promise<void> {
     const id = this.nextId++;
     const resp = (await this.post(
       {
@@ -192,9 +224,9 @@ export class McpClient {
         },
       },
       opts,
-    )) as { error?: { message: string }; result?: unknown };
+    )) as { error?: { message: string; code?: number }; result?: unknown };
     if (resp?.error)
-      throw new Error(`MCP initialize failed: ${resp.error.message}`);
+      throw new Error(`MCP initialize failed: ${mcpErr(resp.error)}`);
     // Notify initialized (fire-and-forget, no id)
     await this.post(
       { jsonrpc: "2.0", method: "notifications/initialized" },
@@ -214,7 +246,7 @@ export class McpClient {
       { jsonrpc: "2.0", id, method: "tools/list" },
       opts,
     )) as {
-      error?: { message: string };
+      error?: { message: string; code?: number };
       result?: {
         tools: Array<{
           name: string;
@@ -223,7 +255,7 @@ export class McpClient {
         }>;
       };
     };
-    if (resp?.error) throw new Error(`tools/list: ${resp.error.message}`);
+    if (resp?.error) throw new Error(`tools/list: ${mcpErr(resp.error)}`);
     return resp.result?.tools ?? [];
   }
 
@@ -246,9 +278,12 @@ export class McpClient {
         params: { name, arguments: args },
       },
       opts,
-    )) as { error?: { message: string }; result?: McpToolResult };
+    )) as {
+      error?: { message: string; code?: number };
+      result?: McpToolResult;
+    };
     if (resp?.error)
-      throw new Error(`tools/call ${name}: ${resp.error.message}`);
+      throw new Error(`tools/call ${name}: ${mcpErr(resp.error)}`);
     const result = resp.result ?? { content: [] };
     if (result.isError) {
       const msg = result.content

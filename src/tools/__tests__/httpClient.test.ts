@@ -307,6 +307,126 @@ describe("sendHttpRequest — credential headers stripped on cross-origin redire
   });
 });
 
+describe("sendHttpRequest — redirect method/body downgrade (tools-core-4)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function redirectThenOk(status: number, location: string) {
+    return vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(null, { status, headers: { location } }),
+      )
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+  }
+
+  it("downgrades POST+body to GET with no body on a 302 redirect", async () => {
+    const fetchSpy = redirectThenOk(302, "https://evil.example.net/harvest");
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    } as never);
+
+    await tool.handler({
+      method: "POST",
+      url: "https://api.example.com/submit",
+      headers: { "content-type": "application/json" },
+      body: '{"secret":"do-not-leak"}',
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const secondInit = fetchSpy.mock.calls[1]?.[1] as RequestInit;
+    // Method downgraded, body dropped — the sensitive body is NOT resent.
+    expect(secondInit.method).toBe("GET");
+    expect(secondInit.body).toBeUndefined();
+    const secondHeaders = secondInit.headers as Record<string, string>;
+    expect(secondHeaders["content-type"]).toBeUndefined();
+  });
+
+  it("downgrades POST+body to GET on a 301 redirect", async () => {
+    const fetchSpy = redirectThenOk(301, "https://api.example.com/v2/submit");
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    } as never);
+
+    await tool.handler({
+      method: "POST",
+      url: "https://api.example.com/submit",
+      body: "payload",
+    });
+
+    const secondInit = fetchSpy.mock.calls[1]?.[1] as RequestInit;
+    expect(secondInit.method).toBe("GET");
+    expect(secondInit.body).toBeUndefined();
+  });
+
+  it("preserves method and body on a 307 redirect", async () => {
+    const fetchSpy = redirectThenOk(307, "https://api.example.com/v2/submit");
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    } as never);
+
+    await tool.handler({
+      method: "POST",
+      url: "https://api.example.com/submit",
+      body: "payload",
+    });
+
+    const secondInit = fetchSpy.mock.calls[1]?.[1] as RequestInit;
+    // 307 must preserve method + body per RFC.
+    expect(secondInit.method).toBe("POST");
+    expect(secondInit.body).toBe("payload");
+  });
+
+  it("converts any method to GET (no body) on a 303 redirect", async () => {
+    const fetchSpy = redirectThenOk(303, "https://api.example.com/result");
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    } as never);
+
+    await tool.handler({
+      method: "PUT",
+      url: "https://api.example.com/submit",
+      body: "payload",
+    });
+
+    const secondInit = fetchSpy.mock.calls[1]?.[1] as RequestInit;
+    expect(secondInit.method).toBe("GET");
+    expect(secondInit.body).toBeUndefined();
+  });
+});
+
+describe("sendHttpRequest — request body byte cap (tools-core-3)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("rejects a body whose UTF-8 byte size exceeds 1 MB even if .length is under", async () => {
+    // 4-byte emoji: 300k codepoints (.length === 300000, under any char cap)
+    // but ~1.2 MB in UTF-8 — must be rejected by the byte cap.
+    const body = "\u{1F600}".repeat(300_000);
+    expect(body.length).toBeLessThan(1024 * 1024);
+    expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(1024 * 1024);
+
+    // Mock DNS so no real network lookup happens before the body check.
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    } as never);
+    // fetch must never be reached — the byte cap rejects first.
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const result = await tool.handler({
+      method: "POST",
+      url: "https://example.com/",
+      body,
+    });
+    expect(result.isError).toBe(true);
+    expect(parse(result).error).toMatch(/body exceeds maximum size/i);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("sendHttpRequest — Content-Length exceeded drains body", () => {
   afterEach(() => vi.restoreAllMocks());
 

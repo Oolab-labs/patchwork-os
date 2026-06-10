@@ -406,6 +406,33 @@ export function toFileUri(absPath: string): string {
   return pathToFileURL(absPath).href;
 }
 
+/**
+ * Sanitize an untrusted commit subject (or similar single-line text from a
+ * repository) before it is placed into LLM-visible tool output.
+ *
+ * Strips ASCII control characters (except none — tab/newline have no place in a
+ * single-line subject), the DEL char, and Unicode bidirectional-override /
+ * directional-isolate codepoints that can be used to visually reorder injected
+ * text. Caps length at 500 chars. Mirrors the prompt-injection hardening
+ * applied to LSP diagnostic messages in getDiagnostics.ts (sanitizeMessage).
+ */
+const MAX_COMMIT_SUBJECT_LEN = 500;
+// Control chars + DEL, plus Unicode text-reordering codepoints:
+//   U+202A–U+202E  bidi embeddings/overrides
+//   U+2066–U+2069  bidi isolates
+//   U+200E/U+200F  LRM/RLM
+//   U+061C         Arabic letter mark
+// All can be abused to visually reorder injected instructions. \u escapes keep
+// the source ASCII-only (matches the sanitizeMessage style in getDiagnostics.ts).
+const COMMIT_SUBJECT_STRIP_RE =
+  /[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]/g;
+export function sanitizeCommitSubject(subject: unknown): string {
+  const s = typeof subject === "string" ? subject : String(subject ?? "");
+  return s
+    .replace(COMMIT_SUBJECT_STRIP_RE, " ")
+    .slice(0, MAX_COMMIT_SUBJECT_LEN);
+}
+
 export function truncateOutput(
   str: string,
   maxBytes: number,
@@ -463,6 +490,8 @@ const SAFE_BIN_BASENAMES = new Set([
   // `opts.allowlistChecked: true`.)
   "tsc",
   "pyright",
+  // Headless symbol-search fallback (searchWorkspaceSymbols) — Universal Ctags.
+  "ctags",
   // Linters / formatters / fixers
   "eslint",
   "biome",
@@ -486,6 +515,7 @@ const SAFE_BIN_BASENAMES = new Set([
   "git.exe",
   "gh.exe",
   "rg.exe",
+  "ctags.exe",
   "npm.cmd",
   "npx.cmd",
   "yarn.cmd",
@@ -744,6 +774,11 @@ export async function execSafeStreaming(
             if (line.length > 0) onStderrLine(line);
           }
         }
+      } else {
+        // Overflow: discard the buffered partial so a truncated fragment from
+        // before the overflow is not flushed as a complete line on close.
+        // Mirrors the stdout `linePartial = ""` clear above (tools-core-2).
+        stderrPartial = "";
       }
     });
 

@@ -1,22 +1,36 @@
 import { NextResponse } from "next/server";
 import webpush from "web-push";
-import { getSubscriptions } from "@/lib/pushStore";
+import { getSubscriptionsFor } from "@/lib/pushStore";
 import { requireSameOrigin } from "@/lib/csrf";
 
-const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
-const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY ?? "";
-const vapidSubject = process.env.VAPID_SUBJECT ?? "mailto:admin@example.com";
+// Audit 2026-06-10 (dashboard-api-3): read VAPID keys at request time, matching
+// the relay routes, so rotated keys take effect without a server restart.
+function readVapidConfig(): {
+  publicKey: string;
+  privateKey: string;
+  subject: string;
+} {
+  return {
+    publicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "",
+    privateKey: process.env.VAPID_PRIVATE_KEY ?? "",
+    subject: process.env.VAPID_SUBJECT ?? "mailto:admin@example.com",
+  };
+}
 
 export async function POST(req: Request) {
   const guard = requireSameOrigin(req);
   if (guard) return guard;
-  if (!vapidPublicKey || !vapidPrivateKey) {
+  const vapid = readVapidConfig();
+  if (!vapid.publicKey || !vapid.privateKey) {
     return NextResponse.json({ error: "VAPID keys not configured" }, { status: 503 });
   }
 
-  webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
+  webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey);
 
-  const subs = getSubscriptions();
+  // Audit 2026-06-10 (dashboard-api-2): the test payload is shaped like an
+  // approval notification, so honour the per-subscription `approvals` opt-out
+  // exactly as the production relay does.
+  const subs = getSubscriptionsFor("approvals");
   if (subs.length === 0) {
     return NextResponse.json({ error: "No subscriptions registered" }, { status: 404 });
   }

@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { RequestHandler } from "../types";
+import { assertWithinWorkspace } from "./files";
 
 const CUSTOM_REQUEST_TIMEOUT_MS = 8000;
 
@@ -237,6 +238,9 @@ const handleEvaluateInDebugger: RequestHandler = async (params) => {
 const handleSetDebugBreakpoints: RequestHandler = async (params) => {
   const file = params.file;
   if (typeof file !== "string") throw new Error("file is required");
+  // Reject breakpoints on files outside the workspace — setting a breakpoint
+  // loads the file into the debug adapter, so an arbitrary path is a read leak.
+  assertWithinWorkspace(file);
 
   const specs = Array.isArray(params.breakpoints) ? params.breakpoints : [];
   const uri = vscode.Uri.file(file);

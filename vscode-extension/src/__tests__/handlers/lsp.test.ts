@@ -24,7 +24,7 @@ describe("goToDefinition", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([loc]);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 5,
       column: 3,
     })) as any[];
@@ -42,7 +42,7 @@ describe("goToDefinition", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([link]);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 1,
     })) as any[];
@@ -51,12 +51,16 @@ describe("goToDefinition", () => {
 
   it("returns null when no definitions found", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
-    expect(await call({ file: "/test.ts", line: 1, column: 1 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/test.ts", line: 1, column: 1 }),
+    ).toBeNull();
   });
 
   it("returns null when result is null", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
-    expect(await call({ file: "/test.ts", line: 1, column: 1 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/test.ts", line: 1, column: 1 }),
+    ).toBeNull();
   });
 
   it("throws on missing file param", async () => {
@@ -64,8 +68,39 @@ describe("goToDefinition", () => {
   });
 
   it("throws on missing line param", async () => {
-    await expect(call({ file: "/test.ts", column: 1 })).rejects.toThrow("line");
+    await expect(
+      call({ file: "/workspace/test.ts", column: 1 }),
+    ).rejects.toThrow("line");
   });
+});
+
+// ── workspace containment (extension-4) ───────────────────────
+
+describe("LSP handler workspace containment", () => {
+  // Regression: extension-4 — LSP read handlers must reject out-of-workspace
+  // paths so a connected session can't load /etc/passwd, ssh keys, etc. into
+  // a VS Code buffer. Representative sample across handler families.
+  const methods = [
+    "extension/goToDefinition",
+    "extension/findReferences",
+    "extension/getHover",
+    "extension/getDocumentSymbols",
+    "extension/findImplementations",
+    "extension/goToTypeDefinition",
+    "extension/goToDeclaration",
+    "extension/selectionRanges",
+  ];
+
+  for (const method of methods) {
+    it(`${method} rejects paths outside the workspace`, async () => {
+      // Mock would otherwise succeed — the guard must fire first.
+      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
+      await expect(
+        handlers[method]({ file: "/outside-ws/secret.ts", line: 1, column: 1 }),
+      ).rejects.toThrow("outside the workspace");
+      expect(vscode.commands.executeCommand).not.toHaveBeenCalled();
+    });
+  }
 });
 
 // ── findReferences ────────────────────────────────────────────
@@ -79,7 +114,7 @@ describe("findReferences", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([loc]);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 1,
     })) as any;
@@ -91,7 +126,7 @@ describe("findReferences", () => {
   it("returns empty references when none found", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 1,
     })) as any;
@@ -101,7 +136,7 @@ describe("findReferences", () => {
   it("returns empty references when result is null", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 1,
     })) as any;
@@ -123,7 +158,7 @@ describe("getHover", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([hover]);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 1,
     })) as any;
@@ -133,7 +168,9 @@ describe("getHover", () => {
 
   it("returns null when no hover", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
-    expect(await call({ file: "/test.ts", line: 1, column: 1 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/test.ts", line: 1, column: 1 }),
+    ).toBeNull();
   });
 });
 
@@ -152,7 +189,7 @@ describe("getCodeActions", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([action]);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       startLine: 1,
       startColumn: 1,
       endLine: 1,
@@ -166,7 +203,7 @@ describe("getCodeActions", () => {
   it("returns empty when no actions", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       startLine: 1,
       startColumn: 1,
       endLine: 1,
@@ -182,7 +219,7 @@ describe("applyCodeAction", () => {
   const call = (params: Record<string, unknown>) =>
     handlers["extension/applyCodeAction"](params);
   const baseParams = {
-    file: "/test.ts",
+    file: "/workspace/test.ts",
     startLine: 1,
     startColumn: 1,
     endLine: 1,
@@ -266,7 +303,7 @@ describe("renameSymbol", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(edit);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 5,
       column: 3,
       newName: "bar",
@@ -280,7 +317,7 @@ describe("renameSymbol", () => {
   it("returns error when rename not supported", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 1,
       newName: "x",
@@ -294,7 +331,7 @@ describe("renameSymbol", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(edit);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 1,
       newName: "x",
@@ -305,7 +342,7 @@ describe("renameSymbol", () => {
 
   it("throws when newName is missing", async () => {
     await expect(
-      call({ file: "/test.ts", line: 1, column: 1 }),
+      call({ file: "/workspace/test.ts", line: 1, column: 1 }),
     ).rejects.toThrow("newName");
   });
 });
@@ -336,7 +373,7 @@ describe("getDocumentSymbols", () => {
 
   it("returns empty when no symbols", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(undefined);
-    const result = (await call({ file: "/test.ts" })) as any;
+    const result = (await call({ file: "/workspace/test.ts" })) as any;
     expect(result).toEqual({ symbols: [], count: 0 });
   });
 
@@ -344,7 +381,7 @@ describe("getDocumentSymbols", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
       makeDocSym("myFn", 11 /* Function */, 4, 10),
     ]);
-    const result = (await call({ file: "/test.ts" })) as any;
+    const result = (await call({ file: "/workspace/test.ts" })) as any;
     expect(result.count).toBe(1);
     expect(result.symbols[0]).toMatchObject({
       name: "myFn",
@@ -361,7 +398,7 @@ describe("getDocumentSymbols", () => {
         makeDocSym("myMethod", 5 /* Method */, 2, 8),
       ]),
     ]);
-    const result = (await call({ file: "/test.ts" })) as any;
+    const result = (await call({ file: "/workspace/test.ts" })) as any;
     expect(result.count).toBe(2);
     expect(result.symbols[0]).toMatchObject({ name: "MyClass", parent: null });
     expect(result.symbols[1]).toMatchObject({
@@ -375,7 +412,7 @@ describe("getDocumentSymbols", () => {
       makeDocSym("x", 12 /* Variable */, 0, 0, [], "string"),
       makeDocSym("y", 12, 1, 1, [], ""),
     ]);
-    const result = (await call({ file: "/test.ts" })) as any;
+    const result = (await call({ file: "/workspace/test.ts" })) as any;
     expect(result.symbols[0].detail).toBe("string");
     expect(result.symbols[1].detail).toBeNull();
   });
@@ -388,7 +425,7 @@ describe("getDocumentSymbols", () => {
         ]),
       ]),
     ]);
-    const result = (await call({ file: "/test.ts" })) as any;
+    const result = (await call({ file: "/workspace/test.ts" })) as any;
     expect(result.count).toBe(3);
     expect(result.symbols[0]).toMatchObject({ name: "MyClass", parent: null });
     expect(result.symbols[1]).toMatchObject({
@@ -425,12 +462,16 @@ describe("getCallHierarchy", () => {
 
   it("returns null when prepareCallHierarchy returns nothing", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(undefined);
-    expect(await call({ file: "/test.ts", line: 5, column: 3 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/test.ts", line: 5, column: 3 }),
+    ).toBeNull();
   });
 
   it("returns null for empty items array", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
-    expect(await call({ file: "/test.ts", line: 5, column: 3 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/test.ts", line: 5, column: 3 }),
+    ).toBeNull();
   });
 
   it("returns symbol with incoming and outgoing by default", async () => {
@@ -448,7 +489,7 @@ describe("getCallHierarchy", () => {
       ]);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 5,
       column: 3,
     })) as any;
@@ -472,7 +513,7 @@ describe("getCallHierarchy", () => {
       .mockResolvedValueOnce([]);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 5,
       column: 3,
       direction: "incoming",
@@ -489,7 +530,7 @@ describe("getCallHierarchy", () => {
       .mockResolvedValueOnce([]);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 5,
       column: 3,
       direction: "outgoing",
@@ -511,7 +552,7 @@ describe("getCallHierarchy", () => {
       .mockResolvedValueOnce([]);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 5,
       column: 3,
       maxResults: 5,
@@ -591,7 +632,7 @@ describe("prepareRename", () => {
     });
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 1,
     })) as any;
@@ -611,7 +652,7 @@ describe("prepareRename", () => {
     );
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 1,
     })) as any;
@@ -623,7 +664,7 @@ describe("prepareRename", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 1,
     })) as any;
@@ -645,7 +686,7 @@ describe("signatureHelp", () => {
     });
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 5,
     })) as any;
@@ -659,7 +700,11 @@ describe("signatureHelp", () => {
   it("returns null when executeCommand resolves null", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
 
-    const result = await call({ file: "/test.ts", line: 1, column: 1 });
+    const result = await call({
+      file: "/workspace/test.ts",
+      line: 1,
+      column: 1,
+    });
     expect(result).toBeNull();
   });
 
@@ -670,7 +715,11 @@ describe("signatureHelp", () => {
       signatures: [],
     });
 
-    const result = await call({ file: "/test.ts", line: 1, column: 1 });
+    const result = await call({
+      file: "/workspace/test.ts",
+      line: 1,
+      column: 1,
+    });
     expect(result).toBeNull();
   });
 });
@@ -687,7 +736,7 @@ describe("foldingRanges", () => {
       { start: 10, end: 19, kind: 2 }, // kind 2 = Imports
     ]);
 
-    const result = (await call({ file: "/test.ts" })) as any;
+    const result = (await call({ file: "/workspace/test.ts" })) as any;
     expect(result.ranges).toHaveLength(2);
     expect(result.ranges[0]).toEqual({
       startLine: 1,
@@ -704,7 +753,7 @@ describe("foldingRanges", () => {
   it("returns empty ranges array when result is empty", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
 
-    const result = (await call({ file: "/test.ts" })) as any;
+    const result = (await call({ file: "/workspace/test.ts" })) as any;
     expect(result.ranges).toEqual([]);
   });
 
@@ -713,7 +762,7 @@ describe("foldingRanges", () => {
       { start: 4, end: 7 },
     ]);
 
-    const result = (await call({ file: "/test.ts" })) as any;
+    const result = (await call({ file: "/workspace/test.ts" })) as any;
     expect(result.ranges[0].kind).toBeNull();
   });
 });
@@ -736,7 +785,7 @@ describe("selectionRanges", () => {
     ]);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 5,
     })) as any;
@@ -759,7 +808,7 @@ describe("selectionRanges", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
 
     const result = (await call({
-      file: "/test.ts",
+      file: "/workspace/test.ts",
       line: 1,
       column: 1,
     })) as any;
@@ -773,7 +822,7 @@ describe("formatRange", () => {
   const call = (params: Record<string, unknown>) =>
     handlers["extension/formatRange"](params);
 
-  const baseParams = { file: "/test.ts", startLine: 1, endLine: 5 };
+  const baseParams = { file: "/workspace/test.ts", startLine: 1, endLine: 5 };
 
   it("applies edits and returns formatted:true with editCount", async () => {
     const edit1 = { range: new Range(0, 0, 0, 2), newText: "  " };
@@ -823,7 +872,7 @@ describe("findImplementations", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([loc]);
 
     const result = (await call({
-      file: "/iface.ts",
+      file: "/workspace/iface.ts",
       line: 1,
       column: 1,
     })) as any;
@@ -841,7 +890,7 @@ describe("findImplementations", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([link]);
 
     const result = (await call({
-      file: "/iface.ts",
+      file: "/workspace/iface.ts",
       line: 1,
       column: 1,
     })) as any;
@@ -852,19 +901,25 @@ describe("findImplementations", () => {
 
   it("returns null when no implementations found", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
-    expect(await call({ file: "/iface.ts", line: 1, column: 1 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/iface.ts", line: 1, column: 1 }),
+    ).toBeNull();
   });
 
   it("returns null when result is null", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
-    expect(await call({ file: "/iface.ts", line: 1, column: 1 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/iface.ts", line: 1, column: 1 }),
+    ).toBeNull();
   });
 
   it("returns null when executeCommand throws", async () => {
     vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
       new Error("provider error"),
     );
-    expect(await call({ file: "/iface.ts", line: 1, column: 1 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/iface.ts", line: 1, column: 1 }),
+    ).toBeNull();
   });
 
   it("throws on missing file param", async () => {
@@ -883,7 +938,7 @@ describe("goToTypeDefinition", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([loc]);
 
     const result = (await call({
-      file: "/src.ts",
+      file: "/workspace/src.ts",
       line: 3,
       column: 5,
     })) as any;
@@ -901,7 +956,7 @@ describe("goToTypeDefinition", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([link]);
 
     const result = (await call({
-      file: "/src.ts",
+      file: "/workspace/src.ts",
       line: 1,
       column: 1,
     })) as any;
@@ -911,19 +966,25 @@ describe("goToTypeDefinition", () => {
 
   it("returns null when no type definitions found", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
-    expect(await call({ file: "/src.ts", line: 1, column: 1 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/src.ts", line: 1, column: 1 }),
+    ).toBeNull();
   });
 
   it("returns null when result is null", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
-    expect(await call({ file: "/src.ts", line: 1, column: 1 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/src.ts", line: 1, column: 1 }),
+    ).toBeNull();
   });
 
   it("returns null when executeCommand throws", async () => {
     vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
       new Error("provider error"),
     );
-    expect(await call({ file: "/src.ts", line: 1, column: 1 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/src.ts", line: 1, column: 1 }),
+    ).toBeNull();
   });
 
   it("throws on missing file param", async () => {
@@ -945,7 +1006,7 @@ describe("goToDeclaration", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([loc]);
 
     const result = (await call({
-      file: "/src.ts",
+      file: "/workspace/src.ts",
       line: 5,
       column: 8,
     })) as any;
@@ -963,7 +1024,7 @@ describe("goToDeclaration", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([link]);
 
     const result = (await call({
-      file: "/src.ts",
+      file: "/workspace/src.ts",
       line: 1,
       column: 1,
     })) as any;
@@ -973,19 +1034,25 @@ describe("goToDeclaration", () => {
 
   it("returns null when no declarations found", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
-    expect(await call({ file: "/src.ts", line: 1, column: 1 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/src.ts", line: 1, column: 1 }),
+    ).toBeNull();
   });
 
   it("returns null when result is null", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
-    expect(await call({ file: "/src.ts", line: 1, column: 1 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/src.ts", line: 1, column: 1 }),
+    ).toBeNull();
   });
 
   it("returns null when executeCommand throws", async () => {
     vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
       new Error("provider error"),
     );
-    expect(await call({ file: "/src.ts", line: 1, column: 1 })).toBeNull();
+    expect(
+      await call({ file: "/workspace/src.ts", line: 1, column: 1 }),
+    ).toBeNull();
   });
 
   it("throws on missing file param", async () => {
@@ -1003,7 +1070,11 @@ describe("goToDefinition — executeCommand throw path", () => {
     vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
       new Error("definition provider error"),
     );
-    const result = await call({ file: "/test.ts", line: 1, column: 1 });
+    const result = await call({
+      file: "/workspace/test.ts",
+      line: 1,
+      column: 1,
+    });
     expect(result).toBeNull();
   });
 });

@@ -191,7 +191,21 @@ export function createSendHttpRequestTool(options?: {
         headers.host = parsedUrl.hostname;
       }
 
-      const body = optionalString(args, "body", 1024 * 1024);
+      const MAX_BODY_BYTES = 1024 * 1024; // 1 MB, matches schema docs
+      // optionalString caps by UTF-16 .length; a string of 4-byte codepoints
+      // (emoji / CJK supplementary) can be ~4× larger in UTF-8 than its char
+      // count, blowing past the documented 1 MB. Allow optionalString a wider
+      // char ceiling, then enforce the real byte cap with Buffer.byteLength
+      // (tools-core-3).
+      const body = optionalString(args, "body", MAX_BODY_BYTES * 4);
+      if (
+        body !== undefined &&
+        Buffer.byteLength(body, "utf8") > MAX_BODY_BYTES
+      ) {
+        return error(
+          `Request body exceeds maximum size of ${MAX_BODY_BYTES} bytes`,
+        );
+      }
       const timeoutMs = Math.min(
         optionalInt(args, "timeoutMs", 1, 120_000) ?? 30_000,
         120_000,
@@ -227,6 +241,13 @@ export function createSendHttpRequestTool(options?: {
 
       const start = Date.now();
       try {
+        // Per-hop method/body. On a 301/302 redirect of a POST/PUT/PATCH these
+        // are downgraded to GET with no body (RFC 7231 §6.4.2-3, browser/fetch
+        // behavior) so the original request body — which may contain credentials
+        // — is NOT resent to the (possibly cross-origin) redirect target.
+        // 307/308 preserve method and body (tools-core-4).
+        let currentMethod = method;
+        let currentBody = requestBody;
         let currentUrl = initialUrl;
         // Track the un-pinned URL in parallel so relative redirects resolve
         // against the real hostname (not the pinned IP), and so Host header
@@ -243,9 +264,9 @@ export function createSendHttpRequestTool(options?: {
         // Manual redirect loop so we can cap hops and re-validate each location
         while (true) {
           resp = await fetch(currentUrl, {
-            method,
+            method: currentMethod,
             headers,
-            body: requestBody,
+            body: currentBody,
             signal: controller.signal,
             redirect: "manual", // always manual — we control the loop
           });
@@ -286,6 +307,26 @@ export function createSendHttpRequestTool(options?: {
           // Always set Host from the un-pinned display URL so a DNS failure
           // doesn't leave the previous hop's Host header on the new request.
           headers.host = nextDisplayUrl.hostname;
+
+          // Downgrade method/body per RFC 7231 + browser/fetch behavior:
+          //   301/302 of POST/PUT/PATCH  → GET, no body (treated as 303)
+          //   303                         → GET, no body (any method)
+          //   307/308                     → preserve method + body
+          // This prevents resending the original request body (incl. any
+          // credentials) to a redirect target, especially cross-origin.
+          if (
+            resp.status === 303 ||
+            ((resp.status === 301 || resp.status === 302) &&
+              currentMethod !== "GET" &&
+              currentMethod !== "HEAD")
+          ) {
+            currentMethod = "GET";
+            currentBody = undefined;
+            // Body-related request headers are now meaningless — drop them so
+            // the GET hop doesn't advertise a Content-Type/Length for no body.
+            delete headers["content-type"];
+            delete headers["content-length"];
+          }
 
           // Cross-origin hop → strip caller-supplied credential headers so a
           // redirecting intermediary can't harvest them (audit tools-http-1).
