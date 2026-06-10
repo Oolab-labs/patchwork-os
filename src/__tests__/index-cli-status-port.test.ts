@@ -17,15 +17,17 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
-const tsxBin = path.join(repoRoot, "node_modules", ".bin", "tsx");
 const indexTs = path.join(repoRoot, "src", "index.ts");
 
 function runStatus(portArg: string): { code: number; stderr: string } {
-  const res = spawnSync(tsxBin, [indexTs, "status", "--port", portArg], {
-    cwd: repoRoot,
-    encoding: "utf-8",
-    timeout: 60_000,
-  });
+  // Run the CLI via `node --import tsx` — cross-platform. The node_modules/.bin
+  // shim is `tsx.cmd` on Windows and is not directly spawnable by spawnSync
+  // without a shell (status came back null → the test saw -1 on windows-latest).
+  const res = spawnSync(
+    process.execPath,
+    ["--import", "tsx", indexTs, "status", "--port", portArg],
+    { cwd: repoRoot, encoding: "utf-8", timeout: 60_000 },
+  );
   return { code: res.status ?? -1, stderr: `${res.stderr}${res.stdout}` };
 }
 
