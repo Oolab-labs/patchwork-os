@@ -547,6 +547,32 @@ function generateRecipeSchema(
           },
         },
       },
+      escalate: {
+        type: "array",
+        description:
+          "OPT-IN quality-aware escalation (dual of downshift). Ordered MORE-capable fallbacks. In a judge→refine loop (reviews + max_revisions>0), the Nth request_changes revision re-runs the reviewed step with escalate[N-1] instead of the base model — start local/cheap, escalate to a stronger model only when output fails judgment. Each entry overrides driver and/or model.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: {
+            driver: {
+              type: "string",
+              enum: [
+                "claude",
+                "claude-code",
+                "api",
+                "openai",
+                "grok",
+                "gemini",
+                "anthropic",
+                "local",
+              ],
+            },
+            model: { type: "string" },
+          },
+        },
+      },
     },
   };
   const toolRefs = Object.keys(namespaceSchemas).map((ns) => ({
