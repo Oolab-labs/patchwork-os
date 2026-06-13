@@ -10,6 +10,7 @@ vi.mock("vscode");
 let lastCreatedBridge: any = null;
 
 vi.mock("../connection", () => ({
+  // biome-ignore lint/complexity/useArrowFunction: Vitest 4 requires function keyword for constructor mocks
   BridgeConnection: vi.fn(function () {
     const instance = {
       output: null as any,
@@ -45,6 +46,7 @@ let lastCreatedProcess: any = null;
 const mockSpawn = vi.fn(async () => {});
 
 vi.mock("../bridgeProcess", () => ({
+  // biome-ignore lint/complexity/useArrowFunction: Vitest 4 requires function keyword for constructor mocks
   BridgeProcess: vi.fn(function () {
     const proc = {
       onStarted: null as ((e: any) => void) | null,
@@ -62,6 +64,7 @@ vi.mock("../bridgeProcess", () => ({
 // Mock BridgeInstaller
 const mockEnsureInstalled = vi.fn(async () => {});
 vi.mock("../bridgeInstaller", () => ({
+  // biome-ignore lint/complexity/useArrowFunction: Vitest 4 requires function keyword for constructor mocks
   BridgeInstaller: vi.fn(function () {
     return { ensureInstalled: mockEnsureInstalled };
   }),
@@ -105,12 +108,17 @@ vi.mock("../lspReadiness", () => ({
   })),
 }));
 vi.mock("../analyticsPanel", () => ({
+  // biome-ignore lint/complexity/useArrowFunction: Vitest 4 requires function keyword for constructor mocks
   AnalyticsViewProvider: vi.fn(function () {
     return {};
   }),
 }));
 vi.mock("ws", () => ({
-  default: Object.assign(vi.fn(function () {}), { OPEN: 1, CLOSED: 3 }),
+  // biome-ignore lint/complexity/useArrowFunction: Vitest 4 requires function keyword for constructor mocks
+  default: Object.assign(
+    vi.fn(function () {}),
+    { OPEN: 1, CLOSED: 3 },
+  ),
 }));
 
 // ── Import activate after mocks ────────────────────────────────────────────
