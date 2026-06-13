@@ -218,8 +218,8 @@
     "@types/vscode": "^1.93.0",
     "@types/ws": "^8.5.10",
     "@vscode/codicons": "^0.0.45",
-    "esbuild": "^0.27.4",
+    "esbuild": "^0.28.1",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.8"
   }
 }
