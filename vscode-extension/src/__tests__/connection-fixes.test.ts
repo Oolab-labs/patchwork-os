@@ -43,6 +43,7 @@ import { readLockFilesAsync } from "../lockfiles";
 const mockLockData = { port: 9999, authToken: "tok", pid: 123, workspace: "" };
 
 beforeEach(() => {
+  vi.clearAllMocks();
   __reset();
   vi.useFakeTimers({ shouldAdvanceTime: false });
   vi.mocked(readLockFilesAsync).mockResolvedValue(null);

@@ -10,7 +10,7 @@ vi.mock("vscode");
 let lastCreatedBridge: any = null;
 
 vi.mock("../connection", () => ({
-  BridgeConnection: vi.fn(() => {
+  BridgeConnection: vi.fn(function () {
     const instance = {
       output: null as any,
       logLevel: "",
@@ -19,6 +19,7 @@ vi.mock("../connection", () => ({
       lockDataFallback: null as any,
       onStateChange: null as any,
       onConnected: null as any,
+      onLockFileRead: null as any,
       startWatchingLockDir: vi.fn(),
       tryConnect: vi.fn(),
       connectDirect: vi.fn(),
@@ -26,8 +27,13 @@ vi.mock("../connection", () => ({
       setOnDispose: vi.fn(),
       dispose: vi.fn(),
       log: vi.fn(),
+      logDebug: vi.fn(),
       ws: null,
       claudeConnected: false,
+      refreshContextAge: vi.fn(),
+      getLiveStatusText: vi.fn(() => null),
+      forceReconnect: vi.fn(),
+      sendNotification: vi.fn(),
     };
     lastCreatedBridge = instance;
     return instance;
@@ -39,7 +45,7 @@ let lastCreatedProcess: any = null;
 const mockSpawn = vi.fn(async () => {});
 
 vi.mock("../bridgeProcess", () => ({
-  BridgeProcess: vi.fn(() => {
+  BridgeProcess: vi.fn(function () {
     const proc = {
       onStarted: null as ((e: any) => void) | null,
       onStartupFailed: null as ((msg: string) => void) | null,
@@ -56,7 +62,9 @@ vi.mock("../bridgeProcess", () => ({
 // Mock BridgeInstaller
 const mockEnsureInstalled = vi.fn(async () => {});
 vi.mock("../bridgeInstaller", () => ({
-  BridgeInstaller: vi.fn(() => ({ ensureInstalled: mockEnsureInstalled })),
+  BridgeInstaller: vi.fn(function () {
+    return { ensureInstalled: mockEnsureInstalled };
+  }),
 }));
 
 // Mock lockfiles
@@ -64,6 +72,7 @@ const mockReadLockFileForWorkspace = vi.fn(async () => null as any);
 vi.mock("../lockfiles", () => ({
   readLockFileForWorkspace: (...args: any[]) =>
     mockReadLockFileForWorkspace(...args),
+  readLockFilesAsync: vi.fn(async () => null),
   readAllMatchingLockFiles: vi.fn(async () => []),
 }));
 
@@ -88,6 +97,20 @@ vi.mock("../handlers/decorations", () => ({
 }));
 vi.mock("../handlers/terminal", () => ({
   clearAllTerminalBuffers: vi.fn(),
+}));
+vi.mock("../lspReadiness", () => ({
+  createLspReadinessTracker: vi.fn(() => ({
+    resendAll: vi.fn(),
+    dispose: vi.fn(),
+  })),
+}));
+vi.mock("../analyticsPanel", () => ({
+  AnalyticsViewProvider: vi.fn(function () {
+    return {};
+  }),
+}));
+vi.mock("ws", () => ({
+  default: Object.assign(vi.fn(function () {}), { OPEN: 1, CLOSED: 3 }),
 }));
 
 // ── Import activate after mocks ────────────────────────────────────────────
