@@ -212,7 +212,7 @@
     "package": "npx @vscode/vsce package --no-dependencies"
   },
   "dependencies": {
-    "ws": "^8.20.1"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.93.0",
