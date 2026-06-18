@@ -1,7 +1,7 @@
 {
   "name": "patchwork-os",
   "version": "0.2.0-beta.12",
-  "description": "Your personal AI runtime, local-first. Patchwork OS gives any AI model a consistent set of tools, YAML recipes, a delegation policy with approval queue, and a durable trace memory — all on your machine, all under your policy.",
+  "description": "Your personal AI runtime, local-first. Patchwork OS gives any AI model a consistent set of tools, YAML recipes, a delegation policy with approval queue, and a durable trace memory \u2014 all on your machine, all under your policy.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -152,5 +152,8 @@
   },
   "lint-staged": {
     "{src,vscode-extension/src,scripts,deploy}/**/*.{ts,js,mjs,cjs,json}": "biome check --no-errors-on-unmatched"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
   }
 }
