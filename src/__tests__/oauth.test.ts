@@ -438,6 +438,35 @@ describe("OAuthServerImpl — POST /oauth/token", () => {
       "invalid_request",
     );
   });
+
+  it("M20: code is invalidated after client_id mismatch — cannot be reused with correct credentials", async () => {
+    // Before the fix, only expiry or successful use deleted the code. A wrong
+    // clientId returned 400 but left the code alive, allowing an attacker to
+    // retry with a corrected clientId (e.g. after enumerating registered clients).
+    const oauth = makeOAuthWithClient();
+    const { code, verifier } = await issueCode(oauth);
+    // First attempt: wrong client_id
+    const bad = await issueToken(oauth, code, verifier, {
+      client_id: "wrong-client",
+    });
+    expect(bad.res.statusCode).toBe(400);
+    // Second attempt: correct credentials — must fail because the code is now gone
+    const retry = await issueToken(oauth, code, verifier);
+    expect(retry.res.statusCode).toBe(400);
+    expect(retry.data.error).toBe("invalid_grant");
+  });
+
+  it("M20: code is invalidated after PKCE mismatch — cannot be reused with correct verifier", async () => {
+    const oauth = makeOAuthWithClient();
+    const { code, verifier } = await issueCode(oauth);
+    // First attempt: wrong code_verifier
+    const bad = await issueToken(oauth, code, "wrong-verifier-aaaaaaaaaaa");
+    expect(bad.res.statusCode).toBe(400);
+    // Second attempt: correct verifier — code must already be gone
+    const retry = await issueToken(oauth, code, verifier);
+    expect(retry.res.statusCode).toBe(400);
+    expect(retry.data.error).toBe("invalid_grant");
+  });
 });
 
 // ── POST /oauth/revoke ────────────────────────────────────────────────────────
