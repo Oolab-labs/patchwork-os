@@ -601,3 +601,23 @@ describe("handleRedisTest / handleRedisDisconnect", () => {
     expect(loadTokens()).toBeNull();
   });
 });
+
+describe("RedisConnector.getClient — double-connect race (M2)", () => {
+  it("creates exactly one client when two getClient() calls race concurrently", async () => {
+    seed();
+    const { client } = makeFakeClient({ pingReply: "PONG" });
+    __setRedisModuleForTest(makeFakeModule(client));
+
+    const connector = new RedisConnector();
+    // Race two concurrent getClient() calls — before the fix both would call
+    // createClient + connect independently, creating duplicate connections.
+    const [c1, c2] = await Promise.all([
+      connector.getClient(),
+      connector.getClient(),
+    ]);
+    // Both calls must resolve to the same client object
+    expect(c1).toBe(c2);
+    // connect must be called exactly once — no double-connect
+    expect(client.connect).toHaveBeenCalledTimes(1);
+  });
+});

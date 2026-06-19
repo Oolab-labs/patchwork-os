@@ -125,9 +125,11 @@ async function loadMongoModule(): Promise<MongoDriverLike> {
 
 let _client: MongoClientLike | null = null;
 let _clientUri: string | null = null;
+let _connectInflight: Promise<MongoClientLike> | null = null;
 
 async function getClient(uri: string): Promise<MongoClientLike> {
   if (_client && _clientUri === uri) return _client;
+  if (_connectInflight && _clientUri === uri) return _connectInflight;
   if (_client && _clientUri !== uri) {
     try {
       await _client.close();
@@ -135,13 +137,18 @@ async function getClient(uri: string): Promise<MongoClientLike> {
       // Best-effort close
     }
     _client = null;
+    _connectInflight = null;
   }
-  const mod = await loadMongoModule();
-  const client = new mod.MongoClient(uri);
-  await client.connect();
-  _client = client;
   _clientUri = uri;
-  return client;
+  _connectInflight = (async () => {
+    const mod = await loadMongoModule();
+    const client = new mod.MongoClient(uri);
+    await client.connect();
+    _client = client;
+    _connectInflight = null;
+    return client;
+  })();
+  return _connectInflight;
 }
 
 async function disconnectClient(): Promise<void> {
