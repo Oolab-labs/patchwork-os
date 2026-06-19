@@ -4,6 +4,10 @@
  * LOW #25: the webhook SSRF guard was lexical-only (hostname string check).
  * A public-looking hostname that resolves to a private IP bypassed the guard.
  * Fix: add DNS pre-resolution and re-check the resolved IP.
+ *
+ * M15: After the DNS check passes, fetch() was called with the original hostname,
+ * creating a TOCTOU window (DNS rebinding attack). Fix: pin the resolved IP in
+ * the fetch URL and set the Host header to the original hostname.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -129,6 +133,35 @@ describe("VsCodeBackend.postWebhook — SSRF DNS pre-resolution (LOW #25)", () =
     });
 
     expect(result.ok).toBe(true);
+  });
+
+  it("pins resolved IP in fetch URL to prevent TOCTOU DNS rebinding (M15)", async () => {
+    vi.mocked(dns.lookup).mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    });
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+
+    const backend = makeBackend(false);
+    await backend.postWebhook({
+      url: "http://example.com/hook",
+      method: "POST",
+      headers: {},
+      body: { x: 1 },
+      hookKey: "test",
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [calledUrl, calledOpts] = fetchMock.mock.calls[0] as [
+      string,
+      RequestInit & { headers: Record<string, string> },
+    ];
+    // URL must use the resolved IP, not the original hostname.
+    expect(calledUrl).toContain("93.184.216.34");
+    expect(calledUrl).not.toContain("example.com");
+    // Host header must carry the original hostname.
+    const headers = calledOpts.headers as Record<string, string>;
+    expect(headers["Host"] ?? headers["host"]).toBe("example.com");
   });
 
   it("allows private IPs when allowPrivateWebhooks=true", async () => {

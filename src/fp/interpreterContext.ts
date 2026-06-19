@@ -200,9 +200,17 @@ export class VsCodeBackend implements Backend {
     // Loopback is intentionally allowed (sidecar pattern), so we only block
     // private non-loopback resolved addresses. Skip for loopback hostnames
     // (already checked above) and when allowPrivateWebhooks is true.
+    //
+    // M15 — IP pinning to close the TOCTOU window.
+    // After the check passes, we replace the hostname in the fetch URL with
+    // the resolved IP so the subsequent fetch() cannot be redirected to a
+    // different address via a second DNS resolution (DNS rebinding). The Host
+    // header is set to the original hostname so the server still receives the
+    // correct SNI/vhost value.
+    let fetchUrl = opts.url;
     if (!this.allowPrivateWebhooks && !isLoopbackHost(parsed.hostname)) {
       try {
-        const { address } = await dns.lookup(parsed.hostname);
+        const { address, family } = await dns.lookup(parsed.hostname);
         if (isPrivateNonLoopbackHost(address)) {
           const error = `private IP after DNS resolution: ${parsed.hostname} → ${address} (use --automation-allow-private-webhooks to enable)`;
           this.logger?.info(
@@ -210,6 +218,9 @@ export class VsCodeBackend implements Backend {
           );
           return { ok: false, error };
         }
+        // Pin the resolved IP: replace hostname with IP in the URL.
+        const pinnedHost = family === 6 ? `[${address}]` : address;
+        fetchUrl = opts.url.replace(parsed.hostname, pinnedHost);
       } catch {
         // DNS failure is treated as non-blocking — let the subsequent fetch
         // surface the real network error. This mirrors the policy in
@@ -222,11 +233,16 @@ export class VsCodeBackend implements Backend {
       (k) => k.toLowerCase() === "content-type",
     );
     if (!hasContentType) headers["Content-Type"] = "application/json";
+    // If we pinned an IP, set the Host header so the server receives the
+    // original hostname (required for virtual-host routing and TLS SNI).
+    if (fetchUrl !== opts.url) {
+      headers["Host"] = parsed.hostname;
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
     try {
-      const res = await fetch(opts.url, {
+      const res = await fetch(fetchUrl, {
         method: opts.method,
         headers,
         body: JSON.stringify(opts.body),
