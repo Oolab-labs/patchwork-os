@@ -646,6 +646,52 @@ describe("singleton", () => {
   });
 });
 
+// H1 — audit 2026-06-19: SSRF via private/internal Elasticsearch node URLs.
+// The driver is stubbed to succeed so that without an SSRF guard the handler
+// would return 200 — the test fails before the fix (200 != 400).
+describe("handleElasticsearchConnect — SSRF guard (H1)", () => {
+  const tmpDir = join(os.tmpdir(), `patchwork-es-ssrf-${Date.now()}`);
+  const homeDir = join(tmpDir, "home");
+  const patchworkHome = join(homeDir, ".patchwork");
+  const tokensDir = join(patchworkHome, "tokens");
+
+  beforeEach(() => {
+    process.env.HOME = homeDir;
+    process.env.PATCHWORK_HOME = patchworkHome;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    mkdirSync(tokensDir, { recursive: true });
+  });
+  afterEach(async () => {
+    await resetElasticsearchConnector();
+    __setEsModuleForTest(null);
+    delete process.env.HOME;
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("rejects a private IPv4 node URL (AWS metadata) with 400 even when driver stub succeeds", async () => {
+    // Install a successful stub so the handler would return 200 if no SSRF guard.
+    const { mod } = makeStub();
+    __setEsModuleForTest(mod);
+    const r = await handleElasticsearchConnect(
+      JSON.stringify({ node: "http://169.254.169.254:9200", apiKey: "k" }),
+    );
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body)).toMatchObject({ ok: false });
+  });
+
+  it("rejects a private IPv4 node URL (10.x.x.x) with 400 even when driver stub succeeds", async () => {
+    const { mod } = makeStub();
+    __setEsModuleForTest(mod);
+    const r = await handleElasticsearchConnect(
+      JSON.stringify({ node: "http://10.0.0.1:9200", apiKey: "k" }),
+    );
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body)).toMatchObject({ ok: false });
+  });
+});
+
 // ------------------------------------------------------------------ driver-missing
 
 describe("lazy driver", () => {

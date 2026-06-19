@@ -534,6 +534,27 @@ describe("mongodb connector", () => {
     });
   });
 
+  // H1 — audit 2026-06-19: SSRF via private/internal MongoDB connection strings
+  describe("handleMongoConnect — SSRF guard (H1)", () => {
+    it("rejects a private IPv4 host (AWS metadata) with 400", async () => {
+      const mod = await import("../mongodb.js");
+      const res = await mod.handleMongoConnect({
+        connectionString: "mongodb://169.254.169.254:27017",
+      });
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body)).toMatchObject({ ok: false });
+    });
+
+    it("rejects a private IPv4 host (10.x.x.x) with 400", async () => {
+      const mod = await import("../mongodb.js");
+      const res = await mod.handleMongoConnect({
+        connectionString: "mongodb://10.0.0.1:27017",
+      });
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body)).toMatchObject({ ok: false });
+    });
+  });
+
   describe("lazy driver loader", () => {
     it("surfaces a friendly error when mongodb is not installed", async () => {
       // No injected module + a forced import failure path: easiest way is to

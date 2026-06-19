@@ -409,4 +409,33 @@ describe("handlePostgresConnect", () => {
     expect(r.status).toBe(401);
     expect(loadTokens()).toBeNull();
   });
+
+  // H1 — audit 2026-06-19: SSRF via private/internal host values
+  it("rejects a private IPv4 host (AWS metadata) with 400 (H1)", async () => {
+    const { handlePostgresConnect } = await import("../postgres.js");
+    const r = await handlePostgresConnect(
+      JSON.stringify({
+        host: "169.254.169.254",
+        database: "db",
+        user: "u",
+        password: "p",
+      }),
+    );
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body)).toMatchObject({ ok: false });
+  });
+
+  it("rejects a private IPv4 host (10.x.x.x) with 400 (H1)", async () => {
+    const { handlePostgresConnect } = await import("../postgres.js");
+    const r = await handlePostgresConnect(
+      JSON.stringify({
+        host: "10.0.0.1",
+        database: "db",
+        user: "u",
+        password: "p",
+      }),
+    );
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body)).toMatchObject({ ok: false });
+  });
 });

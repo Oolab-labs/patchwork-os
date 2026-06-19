@@ -16,6 +16,7 @@
  * errors flow through normalizeError directly.
  */
 
+import { isPrivateHost } from "../ssrfGuard.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -576,6 +577,18 @@ export async function handleRedisConnect(
       ok: false,
       error: 'URL must use the "redis://" or "rediss://" scheme',
     });
+  }
+  // SSRF guard: block non-loopback private/reserved hosts (H1, audit 2026-06-19).
+  {
+    const h = parsedUrl.hostname.toLowerCase();
+    const isLoopback =
+      h === "localhost" || h.endsWith(".localhost") || /^127\./.test(h);
+    if (!isLoopback && isPrivateHost(parsedUrl.hostname)) {
+      return jsonRes(400, {
+        ok: false,
+        error: "Private or reserved hostname not allowed",
+      });
+    }
   }
 
   const tokens: RedisTokens = {

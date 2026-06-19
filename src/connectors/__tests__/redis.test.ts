@@ -568,6 +568,25 @@ describe("handleRedisConnect", () => {
   });
 });
 
+// H1 — audit 2026-06-19: SSRF via private/internal Redis URL values
+describe("handleRedisConnect — SSRF guard (H1)", () => {
+  it("rejects a private IPv4 URL (AWS metadata) with 400", async () => {
+    const r = await handleRedisConnect(
+      JSON.stringify({ url: "redis://169.254.169.254:6379" }),
+    );
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body)).toMatchObject({ ok: false });
+  });
+
+  it("rejects a private IPv4 URL (10.x.x.x) with 400", async () => {
+    const r = await handleRedisConnect(
+      JSON.stringify({ url: "redis://10.0.0.1:6379" }),
+    );
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body)).toMatchObject({ ok: false });
+  });
+});
+
 describe("handleRedisTest / handleRedisDisconnect", () => {
   it("test returns 400 when no tokens stored", async () => {
     const r = await handleRedisTest();

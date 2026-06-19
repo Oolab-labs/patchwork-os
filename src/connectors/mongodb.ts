@@ -17,6 +17,7 @@
  *   DELETE /connections/mongodb            — disconnect + delete token
  */
 
+import { isPrivateHost } from "../ssrfGuard.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -514,6 +515,28 @@ export async function handleMongoConnect(
       database?: unknown;
     };
     connectionString = validateConnectionString(parsed.connectionString);
+    // SSRF guard: extract the first hostname from the connection string and
+    // reject non-loopback private/reserved ranges (H1, audit 2026-06-19).
+    try {
+      const csUrl = new URL(
+        connectionString.replace(/^mongodb(\+srv)?:\/\//, "https://"),
+      );
+      const h = csUrl.hostname.toLowerCase();
+      const isLoopback =
+        h === "localhost" || h.endsWith(".localhost") || /^127\./.test(h);
+      if (!isLoopback && isPrivateHost(csUrl.hostname)) {
+        throw new Error("Private or reserved hostname not allowed");
+      }
+    } catch (e) {
+      if (
+        e instanceof Error &&
+        e.message === "Private or reserved hostname not allowed"
+      ) {
+        throw e;
+      }
+      // URL parse failure on exotic connection strings — fall through, the
+      // driver will reject them at connect time.
+    }
     if (parsed.database !== undefined) {
       if (typeof parsed.database !== "string") {
         throw new Error("database must be a string");
