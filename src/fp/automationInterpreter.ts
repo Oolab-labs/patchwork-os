@@ -17,6 +17,7 @@ import {
   clearPendingRetry,
   isDeduped,
   isOnCooldown,
+  recordCooldownKey,
   recordDedup,
   recordPendingRetry,
   recordTrigger,
@@ -650,7 +651,9 @@ async function interpret(
       }
       if (newTaskIds.length > 0) {
         const lastTaskId = newTaskIds[newTaskIds.length - 1] ?? "";
-        const newState = recordTrigger(
+        // Use recordCooldownKey (not recordTrigger) to avoid double-appending
+        // to taskTimestamps — the inner Hook case already recorded the timestamp.
+        const newState = recordCooldownKey(
           innerAcc.state,
           cooldownKey,
           lastTaskId,
