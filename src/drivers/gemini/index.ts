@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   readFileSync,
   unlinkSync,
   writeFileSync,
@@ -227,6 +228,7 @@ export class GeminiSubprocessDriver implements ProviderDriver {
         settings.excludeTools = Array.from(
           new Set([...existingExcludeTools, ...GEMINI_SHELL_DENY_PATTERNS]),
         );
+        mkdirSync(join(homedir(), ".gemini"), { recursive: true });
         writeFileSync(settingsFile, JSON.stringify(settings, null, 2), {
           mode: 0o600,
         });
@@ -305,9 +307,16 @@ export class GeminiSubprocessDriver implements ProviderDriver {
 
       // Strip MCP_* and CLAUDECODE vars; preserve GEMINI_API_KEY + GOOGLE_* vars
       const env = sanitizeEnv(process.env);
-      // Also strip Claude-specific auth vars that could confuse Gemini
+      // Also strip Claude-specific auth vars that must not reach the Gemini process.
+      // CLAUDE_CODE_OAUTH_TOKEN is the user's Anthropic subscription token — any
+      // shell command the Gemini agent runs (printenv, curl, etc.) can read it from
+      // the environment (H5, audit 2026-06-19).
       for (const key of Object.keys(env)) {
-        if (key.startsWith("ANTHROPIC_") || key === "CLAUDE_API_KEY") {
+        if (
+          key.startsWith("ANTHROPIC_") ||
+          key === "CLAUDE_API_KEY" ||
+          key === "CLAUDE_CODE_OAUTH_TOKEN"
+        ) {
           delete env[key];
         }
       }
