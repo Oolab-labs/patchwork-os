@@ -162,7 +162,7 @@ const _accessTokenCache = new Map<
 >();
 const _ACCESS_TOKEN_CACHE_TTL_MS = 30_000;
 
-function invalidateAccessTokenCache(vendor: VendorId): void {
+export function invalidateAccessTokenCache(vendor: VendorId): void {
   _accessTokenCache.delete(vendor);
 }
 
