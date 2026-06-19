@@ -216,6 +216,40 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
       validateTriggerVarsList(trigger.inputs, "inputs", issues);
     }
 
+    // M26: parallel:{each} map-reduce is not implemented in chained recipes.
+    // Check raw recipe.steps (before flattening) so the parallel wrapper is visible.
+    const rawRecipe =
+      recipe && typeof recipe === "object" && !Array.isArray(recipe)
+        ? (recipe as Record<string, unknown>)
+        : null;
+    const isChainedRecipe =
+      rawRecipe?.trigger &&
+      typeof rawRecipe.trigger === "object" &&
+      !Array.isArray(rawRecipe.trigger) &&
+      (rawRecipe.trigger as Record<string, unknown>).type === "chained";
+    if (isChainedRecipe && Array.isArray(rawRecipe?.steps)) {
+      const rawSteps = rawRecipe!.steps as unknown[];
+      for (let i = 0; i < rawSteps.length; i++) {
+        const rawStep = rawSteps[i];
+        if (rawStep && typeof rawStep === "object" && !Array.isArray(rawStep)) {
+          const rs = rawStep as Record<string, unknown>;
+          if (
+            rs.parallel &&
+            typeof rs.parallel === "object" &&
+            !Array.isArray(rs.parallel) &&
+            "each" in (rs.parallel as Record<string, unknown>)
+          ) {
+            issues.push({
+              level: "error",
+              message: `Step ${i + 1}: parallel:{each} map-reduce is not supported in chained recipes. Use the \`fan_out\` tool step for tool-only loops.`,
+              path: `steps.${i}.parallel`,
+              code: "chained-parallel-each-unsupported",
+            });
+          }
+        }
+      }
+    }
+
     if (!Array.isArray(r.steps) || r.steps.length === 0) {
       issues.push({
         level: "error",
