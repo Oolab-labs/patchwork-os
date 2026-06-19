@@ -7,7 +7,7 @@ import { Glossary } from "@/components/patchwork";
 import {
   type HaltCategory,
   type HaltSummary,
-  HALT_HALT_CATEGORY_LABEL,
+  HALT_CATEGORY_LABEL,
 } from "@/lib/haltCategory";
 
 /**
