@@ -882,6 +882,8 @@ async function withRetry(
     // true cancel needs an AbortSignal threaded through every tool/connector,
     // which is out of scope; refusing to retry on timeout is the safe contract.
     if (last.error?.startsWith("step_timeout:")) return last;
+    // Do not retry cancelled steps — the run was aborted intentionally.
+    if (last.error?.startsWith("step_cancelled:")) return last;
   }
   return last;
 }

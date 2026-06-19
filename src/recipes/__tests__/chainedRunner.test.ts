@@ -677,6 +677,27 @@ describe("runChainedRecipe", () => {
     expect(alwaysFailDeps.executeTool).toHaveBeenCalledTimes(21);
   });
 
+  it("M1: does not retry a cancelled step (step_cancelled error)", async () => {
+    // withRetry previously re-ran the step even when it was cancelled via AbortSignal,
+    // wasting resources on a run that was already intentionally stopped.
+    let callCount = 0;
+    const cancelledDeps = {
+      ...noopDeps,
+      executeTool: vi.fn().mockImplementation(() => {
+        callCount++;
+        throw new Error("step_cancelled: run aborted during step");
+      }),
+    };
+    const recipe: ChainedRecipe = {
+      name: "test",
+      steps: [{ id: "a", tool: "t", retry: 3, retryDelay: 0 }],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, cancelledDeps);
+    expect(result.success).toBe(false);
+    // Must have been called exactly once — no retries after step_cancelled
+    expect(callCount).toBe(1);
+  });
+
   it("counts skipped steps correctly", async () => {
     const recipe: ChainedRecipe = {
       name: "test",
