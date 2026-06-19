@@ -52,7 +52,7 @@ interface GeminiEvent {
  * `tools.exclude` (current schema) and top-level `excludeTools` (legacy
  * schema) so the deny list takes effect across CLI versions.
  */
-const GEMINI_SHELL_DENY_PATTERNS = [
+export const GEMINI_SHELL_DENY_PATTERNS = [
   // Filesystem destruction (all flag orderings Claude Code/Gemini match literally)
   "run_shell_command(rm -rf)",
   "run_shell_command(rm -fr)",
@@ -60,6 +60,8 @@ const GEMINI_SHELL_DENY_PATTERNS = [
   "run_shell_command(rm --recursive)",
   // Git history / remote destruction
   "run_shell_command(git push)",
+  "run_shell_command(git tag)",
+  "run_shell_command(gh release)",
   "run_shell_command(git reset --hard)",
   "run_shell_command(git clean -f)",
   "run_shell_command(git clean -d)",
@@ -67,9 +69,15 @@ const GEMINI_SHELL_DENY_PATTERNS = [
   // Publishing / release
   "run_shell_command(npm publish)",
   "run_shell_command(npm version)",
+  "run_shell_command(yarn publish)",
+  "run_shell_command(pnpm publish)",
+  "run_shell_command(npx semantic-release)",
+  "run_shell_command(npx release-it)",
   // Privilege escalation
   "run_shell_command(sudo)",
   "run_shell_command(chmod 777)",
+  // Arbitrary code execution
+  "run_shell_command(eval)",
   // Process termination
   "run_shell_command(kill -9)",
   "run_shell_command(pkill)",
