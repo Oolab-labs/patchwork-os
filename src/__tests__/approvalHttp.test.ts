@@ -232,7 +232,7 @@ describe("routeApprovalRequest", () => {
     });
   });
 
-  it("POST /approvals in auto mode → allow without queuing", async () => {
+  it("POST /approvals with permissionMode:auto in body → falls through to gate (H7 fix: body auto ignored)", async () => {
     const queue = new ApprovalQueue();
     const res = await routeApprovalRequest(
       {
@@ -242,9 +242,11 @@ describe("routeApprovalRequest", () => {
       },
       { queue, workspace: "/tmp", ccLoader: emptyRules() },
     );
+    // After fix: auto_mode bypass is removed; gate is off by default so tool
+    // is allowed via gate_off (server-controlled), NOT via client-supplied mode.
     expect(res.body).toMatchObject({
       decision: "allow",
-      reason: "auto_mode",
+      reason: "gate_off",
     });
     expect(queue.size()).toBe(0);
   });
@@ -483,14 +485,14 @@ describe("routeApprovalRequest", () => {
       });
     });
 
-    it("captures params + tier on auto_mode path", async () => {
+    it("captures params + tier when permissionMode:auto in body (falls through to gate_off after H7 fix)", async () => {
       const meta = await recordOne({
         toolName: "Read",
         params: { file_path: "/tmp/x.txt" },
         permissionMode: "auto",
       });
       expect(meta).toMatchObject({
-        reason: "auto_mode",
+        reason: "gate_off",
         tier: "medium",
         params: { file_path: "/tmp/x.txt" },
       });
@@ -808,8 +810,8 @@ describe("routeApprovalRequest", () => {
     });
   });
 
-  describe("permission-mode: auto", () => {
-    it("auto mode → allow without queueing", async () => {
+  describe("permission-mode: auto (H7 fix: body value ignored)", () => {
+    it("permissionMode:auto in body → falls through to server gate (gate_off by default)", async () => {
       const queue = new ApprovalQueue();
       const res = await routeApprovalRequest(
         {
@@ -821,7 +823,7 @@ describe("routeApprovalRequest", () => {
       );
       expect(res.body).toMatchObject({
         decision: "allow",
-        reason: "auto_mode",
+        reason: "gate_off",
       });
       expect(queue.size()).toBe(0);
     });
@@ -1431,5 +1433,28 @@ describe("push notification dispatch", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  // H7 — audit 2026-06-19: client-supplied permissionMode:"auto" must NOT
+  // bypass the approval queue. The server must ignore this field from the
+  // request body for the "auto" case and fall through to the human dashboard.
+  it("POST /approvals with client-supplied permissionMode:auto must NOT bypass the approval queue (H7)", async () => {
+    const queue = new ApprovalQueue();
+    // Fire the request asynchronously so we can inspect the queue while it waits.
+    const pending = routeApprovalRequest(
+      {
+        method: "POST",
+        path: "/approvals",
+        body: { toolName: "gitPush", permissionMode: "auto" },
+      },
+      { queue, workspace: "/tmp", ccLoader: emptyRules(), approvalGate: "all" },
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    // The request must be queued, not auto-approved.
+    expect(queue.size()).toBeGreaterThan(0);
+    // Clean up.
+    const list = queue.list();
+    if (list[0]) queue.reject(list[0].callId);
+    await pending;
   });
 });

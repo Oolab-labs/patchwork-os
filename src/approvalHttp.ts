@@ -841,16 +841,6 @@ async function handleApprovalRequest(
     };
   }
 
-  // `auto` mode: CC's classifier owns escalation decisions autonomously.
-  // Queuing for a human dashboard would block indefinitely — allow through.
-  if (permissionMode === "auto") {
-    emit("allow", "auto_mode");
-    return {
-      status: 200,
-      body: { decision: "allow", reason: "auto_mode" },
-    };
-  }
-
   // `plan` mode: CC blocks all write operations at its own layer.
   // Read-only tools → allow (CC won't block them anyway).
   // Write/exec tools → deny without queuing (CC would reject the write even
