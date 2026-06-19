@@ -81,6 +81,7 @@ import {
 } from "./pricing/priceTable.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
+import { registerRun, unregisterRun } from "./runRegistry.js";
 import type { ErrorPolicy } from "./schema.js";
 import { detectSilentFail, redactSecretsForPrompt } from "./stepObservation.js";
 // Import tool registry and trigger tool self-registration
@@ -1166,6 +1167,9 @@ export async function runYamlRecipe(
       // Non-fatal — run-log failures must never break recipe execution.
     }
   }
+  // Register this run so POST /runs/:seq/cancel can abort it (H11).
+  // Mirrors chainedRunner.ts:1277 — only the top-level run registers.
+  const runController = runSeq !== undefined ? registerRun(runSeq) : undefined;
 
   const outputs: string[] = [];
   const stepResults: StepResult[] = [];
@@ -1544,6 +1548,11 @@ export async function runYamlRecipe(
       // log_only|deliver_original) never set `haltAfterFailure`, so they
       // still let the run continue exactly as before.
       if (haltAfterFailure) break;
+      // Run-level cancel: abort when the registry controller fires (H11).
+      if (runController?.signal.aborted) {
+        runError = runError ?? "recipe run cancelled";
+        break;
+      }
       // Pick up a `~/.patchwork/prices.json` update mid-run for long-running
       // recipes (honours the refreshPrices() contract). No-op unless a usdMax
       // cap is set; never disturbs injected (unit-test) price tables.
@@ -2124,6 +2133,12 @@ export async function runYamlRecipe(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     runError = runError ?? `recipe run aborted: ${msg}`;
+  } finally {
+    // Drop the run from the registry (success, failure, or cancel) so
+    // the seq can't be cancelled post-hoc and the map doesn't leak (H11).
+    if (runController !== undefined && runSeq !== undefined) {
+      unregisterRun(runSeq);
+    }
   }
 
   // Evaluate expect block before persisting so failures are stored in the

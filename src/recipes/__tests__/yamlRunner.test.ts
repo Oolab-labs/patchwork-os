@@ -4158,3 +4158,42 @@ describe("runYamlRecipe — env secret redaction (agent vs tool)", () => {
     expect(writtenContent[0]).not.toContain("[REDACTED]");
   });
 });
+
+describe("runYamlRecipe — run registry registration (H11)", () => {
+  it("registers run in registry when runLog is provided so POST /runs/:seq/cancel can abort it", async () => {
+    const { isRunActive, unregisterRun } = await import("../runRegistry.js");
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "yamlrunner-h11-"));
+    let capturedSeq: number | undefined;
+    let wasRegisteredDuringRun = false;
+    try {
+      const runLog = new RecipeRunLog({ dir: tmp });
+      const recipe = makeRecipe({
+        name: "h11-cancel-test",
+        steps: [{ agent: { prompt: "do something", into: "result" } }],
+      });
+      await runYamlRecipe(recipe, {
+        ...noop(),
+        runLog,
+        claudeFn: async () => {
+          // Capture the seq assigned by startRun
+          const runs = runLog.query({ limit: 1 });
+          capturedSeq = runs[0]?.seq;
+          if (capturedSeq !== undefined) {
+            wasRegisteredDuringRun = isRunActive(capturedSeq);
+          }
+          return "done";
+        },
+      });
+      // During the run the seq must have been active in the registry.
+      expect(wasRegisteredDuringRun).toBe(true);
+      // After the run finishes the registry entry must be cleaned up.
+      if (capturedSeq !== undefined) {
+        expect(isRunActive(capturedSeq)).toBe(false);
+      }
+    } finally {
+      if (capturedSeq !== undefined) unregisterRun(capturedSeq);
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
