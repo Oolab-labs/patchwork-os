@@ -1778,11 +1778,11 @@ export async function runYamlRecipe(
                 const parsed = sanitizeParsed(
                   JSON.parse((jsonMatch[1] ?? "").trim()),
                 ) as RunContext[string];
-                ctx[intoKey] = parsed;
+                if (!isJudge) ctx[intoKey] = parsed;
               } catch {
-                ctx[intoKey] = stripped;
+                if (!isJudge) ctx[intoKey] = stripped;
               }
-              outputs.push(intoKey);
+              if (!isJudge) outputs.push(intoKey);
               // PR3a: parse + stash the judge verdict on the step result.
               // Augment-only: a `request_changes` verdict still yields
               // `status: "ok"`. The verdict surfaces via the runlog +
@@ -1893,7 +1893,9 @@ export async function runYamlRecipe(
       const stepStart = Date.now();
       const stepId = step.into ?? `step_${stepsRun}`;
       // Resolve retry policy: step-level overrides recipe-level.
-      const retryCount = step.retry ?? recipe.on_error?.retry ?? 0;
+      // Clamp to 0 as a safety net against negative values slipping past
+      // schema validation (M31: negative retry loops 0 times, skipping step).
+      const retryCount = Math.max(0, step.retry ?? recipe.on_error?.retry ?? 0);
       const retryDelayMs =
         step.retryDelay ?? recipe.on_error?.retryDelay ?? 1000;
       let result: string | null = null;

@@ -3077,6 +3077,55 @@ describe("agent kind: 'judge' — augment-only invariant (PR3a)", () => {
     expect(lastPrompt).toContain("An old silent pond");
     expect(lastPrompt).toContain("cold-eyes reviewer");
   });
+
+  it("M30: judge step does not overwrite the reviewed artifact in ctx", async () => {
+    // The draft step writes ctx["draft"]. The judge step uses into:"review".
+    // After the judge runs, ctx["draft"] must still equal the original draft
+    // content — judge verdict text must never land in ctx["draft"].
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "Make a haiku.",
+            model: "claude-haiku-4-5-20251001",
+            into: "draft",
+          },
+        },
+        {
+          agent: {
+            prompt: "Review the haiku. {{draft}}",
+            model: "claude-haiku-4-5-20251001",
+            into: "draft", // same key as the draft step — the bug re-used this key
+            kind: "judge",
+            reviews: "draft",
+          },
+        },
+        {
+          agent: {
+            prompt: "Polish: {{draft}}",
+            model: "claude-haiku-4-5-20251001",
+            into: "polished",
+          },
+        },
+      ],
+    });
+    let calls = 0;
+    let thirdStepPrompt = "";
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async (prompt) => {
+        calls++;
+        if (calls === 1) return "An old silent pond...";
+        if (calls === 2) return `{"verdict": "approve", "reasons": ["good"]}`;
+        thirdStepPrompt = prompt;
+        return "An old silent pond... (polished)";
+      },
+    });
+    expect(result.stepResults).toHaveLength(3);
+    // The third step's prompt must contain the original draft text, not the verdict JSON
+    expect(thirdStepPrompt).toContain("An old silent pond");
+    expect(thirdStepPrompt).not.toContain('"verdict"');
+  });
 });
 
 // ── judge → refine loop (opt-in; departs augment-only when fields present) ────
