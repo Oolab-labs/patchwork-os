@@ -117,6 +117,25 @@ describe("POST /api/login — long-password compare (audit 2026-06-03 HIGH #2)",
   });
 });
 
+describe("POST /api/login — missing-password probe counted globally (M4)", () => {
+  // Without BRIDGE_TRUST_PROXY, all IPs resolve to "unknown". A missing/non-string
+  // password body only called recordFailure(ip) for trackable IPs, but never
+  // called recordGlobalFailure() for the global bucket — leaving an attacker
+  // free to probe for auth misconfiguration without consuming rate-limit tokens.
+  it("missing password field counts toward the global failure bucket", async () => {
+    let got429 = false;
+    for (let i = 0; i <= _globalConfig.GLOBAL_MAX_FAILURES; i++) {
+      const r = await POST(req({ notPassword: "probe" }));
+      if (r.status === 429) {
+        got429 = true;
+        break;
+      }
+      expect(r.status).toBe(400);
+    }
+    expect(got429).toBe(true);
+  });
+});
+
 describe("POST /api/login — global rate limit when no trusted proxy (audit 2026-06-03 MEDIUM #18)", () => {
   // When BRIDGE_TRUST_PROXY is not configured, clientKey() returns "unknown"
   // for every request. The previous code had no rate limiting for that bucket
