@@ -214,3 +214,24 @@ describe.skipIf(!rgAvailable)("searchAndReplace tool", () => {
     vi.restoreAllMocks();
   });
 });
+
+describe("searchAndReplace — null byte validation (M29)", () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sar-m29-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("rejects a replacement string containing a null byte (M29)", async () => {
+    const tool = createSearchAndReplaceTool(tmpDir);
+    const result = await tool.handler({
+      pattern: "hello",
+      replacement: "hel\x00lo",
+    });
+    expect(result.isError).toBe(true);
+    const text = result.content.at(0)?.text ?? "";
+    expect(text).toMatch(/null byte/i);
+  });
+});

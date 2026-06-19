@@ -114,6 +114,11 @@ export function createSearchAndReplaceTool(workspace: string) {
       if (pattern.includes("\x00")) {
         return error("pattern must not contain a null byte");
       }
+      // Null bytes in replacement permanently corrupt the file (M29):
+      // git treats it as binary, tsc/editors refuse to open it.
+      if (replacement.includes("\x00")) {
+        return error("replacement must not contain a null byte");
+      }
       // Compile regex once (used for both counting matches and replacement)
       let regex: RegExp | null = null;
       if (isRegex) {

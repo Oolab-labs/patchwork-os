@@ -194,13 +194,15 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
         // src/recipes/scheduler.ts:parseSchedule.
         const at = trigger.at.trim();
         const isInterval = /^@every\s+[1-9]\d*\s*(ms|s|m|h)$/i.test(at);
-        const isCron5 = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+$/.test(at);
-        if (!isInterval && !isCron5) {
+        // Accept 5-field and 6-field cron (M24: node-cron supports 6 fields
+        // with a seconds column; reject only if fewer than 5 fields).
+        const isCronExpr = /^\S+(?:\s+\S+){4,5}$/.test(at);
+        if (!isInterval && !isCronExpr) {
           issues.push({
             level: "error",
-            message: `trigger.at "${at}" is not a valid schedule — expected 5-field cron (e.g. "0 9 * * 1-5") or "@every Ns|Nm|Nh"`,
+            message: `trigger.at "${at}" is not a valid schedule — expected 5- or 6-field cron (e.g. "0 9 * * 1-5") or "@every Ns|Nm|Nh"`,
           });
-        } else if (isCron5 && !cron.validate(at)) {
+        } else if (isCronExpr && !cron.validate(at)) {
           // node-cron catches range/step typos a field-count check
           // misses — e.g. "0 25 * * *", "* / 5 * * *".
           issues.push({
@@ -251,6 +253,23 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
             message: `Step ${i + 1}: Must have 'tool', 'agent', 'recipe', or 'chain' field`,
           });
         }
+        // M31: step-level retry: -1 silently skips tool steps (loop body
+        // iterates 0 times when retryCount < 0). Reject at lint time.
+        if (step.retry !== undefined) {
+          const retryVal = step.retry;
+          if (
+            typeof retryVal !== "number" ||
+            !Number.isInteger(retryVal) ||
+            retryVal < 0
+          ) {
+            issues.push({
+              level: "error",
+              message: `Step ${i + 1}: retry must be a non-negative integer (got ${JSON.stringify(retryVal)})`,
+              path: `steps.${i}.retry`,
+            });
+          }
+        }
+
         if (step.agent && typeof step.agent === "object") {
           const agent = step.agent as Record<string, unknown>;
           if (!agent.prompt || typeof agent.prompt !== "string") {
