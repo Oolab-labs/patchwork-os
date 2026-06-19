@@ -15,13 +15,10 @@
 
 import { describe, expect, it } from "vitest";
 import type { Candle } from "../../types.js";
-import type { DetectResult } from "../accrualEmitter.js";
 import {
-  ALWAYS_LISTED,
   type CellSpec,
   cellBacktest,
   GATE_DECIDED,
-  type GateState,
   holmAdjust,
   runBattery,
 } from "../cellBacktest.js";
@@ -56,61 +53,6 @@ function flatSeries(n: number, price = BASE_PRICE, vol = 100): Candle[] {
     volume: vol,
     closeTime: i * 86_400_000 + 86_399_999,
   }));
-}
-
-/**
- * Series where bars at EVERY even index fire the detector AND the method arm
- * wins almost every time (price rockets after fire). Used to fabricate a cell
- * with genuine GRADED-quality stats.
- */
-function strongEdgeSeries(n: number): {
-  candles: Candle[];
-  detect: CellSpec["detect"];
-} {
-  const firePrices: Map<number, number> = new Map(); // openTime → fire close
-  const candles: Candle[] = [];
-  for (let i = 0; i < n; i++) {
-    const isFireBar = i > 210 && i % 3 === 0; // fire every 3rd bar after warmup
-    const close = isFireBar ? BASE_PRICE * 0.98 : BASE_PRICE; // slight dip = climax hint
-    const vol = isFireBar ? 10000 : 100; // extreme volume on fire bars
-    candles.push({
-      openTime: i * 86_400_000,
-      open: BASE_PRICE,
-      high: isFireBar ? BASE_PRICE * 1.005 : BASE_PRICE * 1.01,
-      low: isFireBar ? close * 0.995 : BASE_PRICE * 0.99,
-      close,
-      volume: vol,
-      closeTime: i * 86_400_000 + 86_399_999,
-    });
-    if (isFireBar) firePrices.set(candles[candles.length - 1]!.openTime, close);
-  }
-
-  // After a fire bar, inject a strong up-move in the next 5 bars.
-  for (let i = 1; i < candles.length; i++) {
-    const prev = candles[i - 1]!;
-    if (firePrices.has(prev.openTime)) {
-      for (let j = i; j < Math.min(i + 5, candles.length); j++) {
-        candles[j]!.high = BASE_PRICE * 1.06; // rRef = close + 1× stopDist ≈ +2%
-        candles[j]!.close = BASE_PRICE * 1.04;
-      }
-    }
-  }
-
-  const detect: CellSpec["detect"] = (visible: Candle[]): DetectResult => {
-    const bar = visible[visible.length - 1];
-    if (!bar) return false;
-    if (bar.volume < 5000) return false;
-    if (bar.close >= BASE_PRICE * 0.99) return false; // must be a slight dip
-    const stopDist = bar.close * 0.02;
-    return {
-      direction: "long",
-      lastClose: bar.close,
-      invalidation: bar.close - stopDist,
-      rRef: bar.close + stopDist,
-    };
-  };
-
-  return { candles, detect };
 }
 
 // ── Survivorship block ─────────────────────────────────────────────────────────

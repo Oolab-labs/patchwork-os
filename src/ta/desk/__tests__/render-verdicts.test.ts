@@ -41,9 +41,15 @@ function makeVerdict(overrides: Partial<Verdict> = {}): Verdict {
     permutationP: 0.088,
     familyAdjustedP: 0.088,
     perRegime: [
-      { regime: "bull", N: 60, winRate: 0.62, edge: 0.12 },
-      { regime: "bear", N: 30, winRate: 0.5, edge: 0.0 },
-      { regime: "chop", N: 25, winRate: 0.48, edge: -0.02 },
+      { regime: "bull", decided: 60, methodWins: 37, nullWins: 30, edge: 0.12 },
+      { regime: "bear", decided: 30, methodWins: 15, nullWins: 15, edge: 0.0 },
+      {
+        regime: "chop",
+        decided: 25,
+        methodWins: 12,
+        nullWins: 13,
+        edge: -0.02,
+      },
     ],
     signConsistent: false,
     gateState: "WATCH",

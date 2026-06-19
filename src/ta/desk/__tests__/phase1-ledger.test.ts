@@ -18,13 +18,12 @@
  *     normal bars.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Candle } from "../../types.js";
 import { startupCheck } from "../accrualEmitter.js";
 import {
   detectVolumeClimax,
   OUTCOME_WINDOW_BARS,
-  REJECTION_THRESHOLD,
   VOL_MULTIPLIER,
   VOL_SMA_BARS,
 } from "../cells/wpVolumeClimax.js";
