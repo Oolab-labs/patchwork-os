@@ -60,6 +60,11 @@ export const DANGEROUS_FLAGS_FOR_COMMAND: Record<string, Set<string>> = {
   node: new Set(["-r"]),
   "ts-node": new Set(["-r"]),
   tsx: new Set(["-r"]),
+  // --node-options passes raw V8/Node.js flags (e.g. --require, --eval) to the
+  // underlying node process, bypassing the interpreter command guard (H10).
+  npm: new Set(["--node-options"]),
+  yarn: new Set(["--node-options"]),
+  pnpm: new Set(["--node-options"]),
 };
 
 export const PATH_FLAG_EXEMPTIONS: Record<string, Set<string>> = {
