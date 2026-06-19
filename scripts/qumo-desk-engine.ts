@@ -14,7 +14,30 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { emitTodayCards, startupCheck } from "../src/ta/desk/accrualEmitter.js";
+import {
+  emitTodayCards,
+  registerDetector,
+  startupCheck,
+} from "../src/ta/desk/accrualEmitter.js";
+import {
+  appendVerdict,
+  readLatestVerdicts,
+} from "../src/ta/desk/cellBacktest.js";
+import {
+  wpMaRejectionDetector,
+  wpMaRejectionSpec,
+} from "../src/ta/desk/cells/wpMaRejection.js";
+import {
+  FAMILY_N,
+  wpVolumeClimaxDetector,
+  wpVolumeClimaxSpec,
+} from "../src/ta/desk/cells/wpVolumeClimax.js";
+import { readLiqTape } from "../src/ta/desk/liqTape.js";
+
+// Phase 4: register all battery detectors (look-ahead self-tests run at import).
+registerDetector(wpVolumeClimaxDetector);
+registerDetector(wpMaRejectionDetector);
+
 import { collectAll, offlineCollected } from "../src/ta/desk/collectors.js";
 import {
   assemblePayload,
@@ -107,6 +130,24 @@ async function main(): Promise<void> {
     return;
   }
 
+  // --gate: run the full battery through cellBacktest with shared Holm correction.
+  if (args.has("--gate")) {
+    console.log(
+      `Running cellBacktest battery (${FAMILY_N} cells, shared Holm)...`,
+    );
+    const { runBattery } = await import("../src/ta/desk/cellBacktest.js");
+    const specs = [wpVolumeClimaxSpec, wpMaRejectionSpec];
+    const verdicts = runBattery(specs, FAMILY_N);
+    for (const v of verdicts) {
+      appendVerdict(v);
+      console.log(`\n--- ${v.cellName} ---`);
+      console.log(JSON.stringify(v, null, 2));
+      console.log(`GATE STATE: ${v.gateState}`);
+      if (v.failReason) console.log(`FAIL REASON: ${v.failReason}`);
+    }
+    return;
+  }
+
   // Compute path (dry-run + default).
   let feeds: Collected;
   try {
@@ -128,6 +169,8 @@ async function main(): Promise<void> {
   const trade = readTrade();
   const tri = triCount(nowMs);
   const ledger = readLedgerSummary();
+  const verdicts = readLatestVerdicts();
+  const liqTape = readLiqTape(nowMs);
   const cachedLedger = !existsSync(
     path.join(homedir(), ".patchwork", "qumo-ledger-summary.json"),
   );
@@ -144,6 +187,8 @@ async function main(): Promise<void> {
         tri,
         nowMs,
         cachedLedger,
+        verdicts,
+        liqTape,
       });
     } catch (err) {
       if (err instanceof ContractError) {
