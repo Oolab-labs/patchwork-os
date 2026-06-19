@@ -330,21 +330,25 @@ export function resolveStepTemplates(
 
   // Evaluate when condition
   let conditionResult = true;
-  if (step.when) {
-    const compiled = compileTemplate(step.when);
-    const result = compiled.evaluate(context);
-    if ("error" in result) {
-      errors.push(result.error);
+  if (step.when !== undefined) {
+    if (step.when === false) {
       conditionResult = false;
-    } else {
-      // Simple truthiness check (empty string, "0", "false" are falsy)
-      const val = result.value.trim().toLowerCase();
-      conditionResult =
-        !!val &&
-        val !== "0" &&
-        val !== "false" &&
-        val !== "null" &&
-        val !== "undefined";
+    } else if (step.when) {
+      const compiled = compileTemplate(step.when);
+      const result = compiled.evaluate(context);
+      if ("error" in result) {
+        errors.push(result.error);
+        conditionResult = false;
+      } else {
+        // Simple truthiness check (empty string, "0", "false" are falsy)
+        const val = result.value.trim().toLowerCase();
+        conditionResult =
+          !!val &&
+          val !== "0" &&
+          val !== "false" &&
+          val !== "null" &&
+          val !== "undefined";
+      }
     }
   }
 

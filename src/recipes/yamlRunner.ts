@@ -1573,8 +1573,14 @@ export async function runYamlRecipe(
       // A falsy guard records the step as `skipped`, increments stepsRun, and
       // continues — it is NOT a failure. Bridge-dev iMessage recipes rely on
       // this to suppress the iMessage agent step when phone is empty.
-      if (typeof step.when === "string" && step.when.length > 0) {
-        const rendered = render(step.when, ctx).trim().toLowerCase();
+      if (
+        step.when === false ||
+        (typeof step.when === "string" && step.when.length > 0)
+      ) {
+        const rendered =
+          step.when === false
+            ? "false"
+            : render(step.when, ctx).trim().toLowerCase();
         const truthy =
           !!rendered &&
           rendered !== "0" &&

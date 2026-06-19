@@ -1027,6 +1027,33 @@ describe("runYamlRecipe — step.when guard", () => {
       expect(written[path.join(TMP, "x.md")]).toBeUndefined();
     }
   });
+
+  it("M25: skips step when when: false (YAML boolean, not string)", async () => {
+    // YAML deserialises `when: false` as boolean false. The previous guard
+    // `if (typeof step.when === "string")` missed this case and the step ran.
+    let agentCalls = 0;
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "should not run",
+            model: "claude-haiku-4-5-20251001",
+            into: "result",
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          when: false as any,
+        },
+      ],
+    });
+    await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => {
+        agentCalls++;
+        return "ran";
+      },
+    });
+    expect(agentCalls).toBe(0);
+  });
 });
 
 // ── recipe-level context blocks (type: env) ───────────────────────────────────
