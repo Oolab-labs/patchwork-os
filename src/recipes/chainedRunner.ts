@@ -331,7 +331,9 @@ export function resolveStepTemplates(
   // Evaluate when condition
   let conditionResult = true;
   if (step.when !== undefined) {
-    if (step.when === false) {
+    // M25: YAML may deliver `when: false` as a boolean even though the TS type
+    // says string — cast to unknown before comparing to silence the type error.
+    if ((step.when as unknown) === false) {
       conditionResult = false;
     } else if (step.when) {
       const compiled = compileTemplate(step.when);
