@@ -76,8 +76,8 @@ export const VERDICTS_FILE = path.join(
 const PATCHWORK = path.join(homedir(), ".patchwork");
 
 export const GATE_DECIDED = 40; // per arm, per the kill-gate spec
-const PERMUTATION_SEED = 777; // frozen
-const NULL_SEED = 4242; // frozen
+const _PERMUTATION_SEED = 777; // frozen
+const _NULL_SEED = 4242; // frozen
 const PERMUTATION_REPS = 1000; // frozen
 const SMA_REGIME_BARS = 200; // for bull/bear/chop classification
 const MIN_REGIME_DECIDED = 5; // exclude regime if too thin
@@ -85,7 +85,7 @@ const NULL_STOP_PCT = 0.03; // ±3% random stop for matched-date-dart null
 
 /** Always-listed universe — the ONLY symbols a CellSpec may include. */
 export const ALWAYS_LISTED = ["BTCUSDT", "ETHUSDT"] as const;
-type AlwaysListed = (typeof ALWAYS_LISTED)[number];
+type _AlwaysListed = (typeof ALWAYS_LISTED)[number];
 
 // ── CellSpec ──────────────────────────────────────────────────────────────────
 
@@ -380,7 +380,7 @@ interface FireRecord {
 function walkForward(
   spec: CellSpec,
   candles: Candle[],
-  asset: string,
+  _asset: string,
 ): FireRecord[] {
   const W = spec.outcomeWindowBars;
   const nullRng = mulberry32(spec.seeds.null);

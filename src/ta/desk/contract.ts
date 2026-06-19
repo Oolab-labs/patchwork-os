@@ -92,7 +92,8 @@ export function assemblePayload(input: AssembleInput): QumoPayload {
     btcCandles && btcCandles.length > 0
       ? btcCandles[btcCandles.length - 1]?.close
       : null;
-  const geoMid = typeof depth.mid === "number" ? depth.mid : lastClose;
+  const geoMid =
+    typeof depth.mid === "number" ? depth.mid : (lastClose ?? null);
   const liqGeo = liqGeometrySurface(geoMid, feeds.oiNotional.value);
   const stopBand = stopVsBand(trade, liqGeo);
 

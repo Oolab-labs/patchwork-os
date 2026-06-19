@@ -168,7 +168,7 @@ export function runBacktest(
           baselineRate: s.baselineRate,
           edge: Number(s.edge.toFixed(2)),
         });
-        if (status === "GRADED") gradedClaims++;
+        if ((status as string) === "GRADED") gradedClaims++;
       }
     }
   }
@@ -205,7 +205,10 @@ export function runBacktest(
       d[r.type] = slot;
       byDate.set(dk, d);
     }
-    const decided = Math.min(totals[arm]?.decided, totals.dartboard?.decided);
+    const decided = Math.min(
+      totals[arm]?.decided ?? 0,
+      totals.dartboard?.decided ?? 0,
+    );
     if (decided < GATE) {
       cells.push({
         type: arm,
@@ -233,9 +236,10 @@ export function runBacktest(
         if (s / Math.max(1, deltas.length) >= meanD) ge++;
       }
       const p = (1 + ge) / 1001;
-      const holdRate = totals[arm]?.wins / totals[arm]?.decided;
+      const holdRate = (totals[arm]?.wins ?? 0) / (totals[arm]?.decided ?? 1);
       const baseRate =
-        totals.dartboard?.wins / Math.max(1, totals.dartboard?.decided);
+        (totals.dartboard?.wins ?? 0) /
+        Math.max(1, totals.dartboard?.decided ?? 0);
       const edge = holdRate - baseRate;
       cells.push({
         type: arm,
