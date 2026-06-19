@@ -204,3 +204,14 @@ describe("useBridgeFetch — initial state", () => {
     });
   });
 });
+
+describe("useBridgeFetch — cache: no-store (M6)", () => {
+  it("passes cache: no-store on every fetch call so stale 404s are not served after bridge restart", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    const { result } = renderHook(() => useBridgeFetch("/api/x"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(fetchMock).toHaveBeenCalled();
+    const [, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(opts?.cache).toBe("no-store");
+  });
+});
