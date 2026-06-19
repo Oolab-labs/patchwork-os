@@ -54,19 +54,21 @@ const SETTINGS_CONTENT = JSON.stringify({
  */
 export function createSubprocessSettings(log: (msg: string) => void): {
   path: string;
-  write: () => void;
+  write: () => boolean;
 } {
   const path = join(
     tmpdir(),
     `claude-ide-bridge-subprocess-settings-${process.pid}.json`,
   );
-  const write = () => {
+  const write = (): boolean => {
     try {
       writeFileSync(path, SETTINGS_CONTENT, "utf-8");
+      return true;
     } catch (err) {
       log(
-        `[SubprocessSettings] WARN: could not write settings file at ${path}: ${err instanceof Error ? err.message : String(err)} — subprocess hooks may fire`,
+        `[SubprocessSettings] ERROR: could not write settings file at ${path}: ${err instanceof Error ? err.message : String(err)} — deny list NOT applied; refusing to spawn claude -p`,
       );
+      return false;
     }
   };
   return { path, write };

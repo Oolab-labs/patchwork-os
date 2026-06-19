@@ -410,6 +410,7 @@ export default function RunsPage() {
   const stats = useMemo(() => {
     const list = windowedRuns ?? [];
     const s = { ok: 0, err: 0, running: 0, cancelled: 0, interrupted: 0, totalMs: 0 };
+    let finishedCount = 0;
     for (const r of list) {
       if (r.assertionFailures && r.assertionFailures.length > 0) s.err++;
       else if (r.status === "done") s.ok++;
@@ -417,9 +418,13 @@ export default function RunsPage() {
       else if (r.status === "running") s.running++;
       else if (r.status === "cancelled") s.cancelled++;
       else if (r.status === "interrupted") s.interrupted++;
-      s.totalMs += r.durationMs;
+      // M9: only include finished runs in avg — running jobs have durationMs=0
+      if (r.status !== "running") {
+        s.totalMs += r.durationMs;
+        finishedCount++;
+      }
     }
-    const avgMs = list.length ? Math.round(s.totalMs / list.length) : 0;
+    const avgMs = finishedCount > 0 ? Math.round(s.totalMs / finishedCount) : 0;
     return { ...s, avgMs, total: list.length };
   }, [windowedRuns]);
 

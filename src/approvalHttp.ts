@@ -104,6 +104,15 @@ export interface ApprovalHttpDeps {
    * schedules.
    */
   enableTimeOfDayAnomaly?: boolean;
+  /**
+   * M23: HMAC secret for signing ntfy callback URLs. When set, the approval
+   * token is NOT embedded in ntfy action headers (visible to all topic
+   * subscribers). Instead, callback URLs carry an HMAC-SHA256 `sig` param
+   * computed over `"${action}:${callId}"` with this secret. The approve/reject
+   * handlers verify the signature before accepting the request.
+   * Recommend: set to the bridge auth token (`lockFile.authToken`).
+   */
+  ntfyHmacSecret?: string;
 }
 
 export interface HttpRequest {
@@ -224,11 +233,34 @@ export async function routeApprovalRequest(
   const approveMatch = /^\/approve\/([A-Za-z0-9-]+)$/.exec(path);
   if (method === "POST" && approveMatch) {
     const callId = approveMatch[1] as string;
-    // Phone path: validate single-use approval token when one was provided.
-    // This check runs regardless of whether Bearer auth also passed — a caller
-    // presenting an approvalToken must have a valid one even when they hold a
-    // valid Bearer credential (LOW #18: Bearer must not bypass the token check).
-    if (req.approvalToken !== undefined) {
+    // M23: when ntfyHmacSecret is configured, verify the HMAC sig query param
+    // instead of (or in addition to) the x-approval-token header. The sig is
+    // HMAC-SHA256(secret, "approve:callId") so the approval token never appears
+    // in the ntfy notification body that all topic subscribers can read.
+    const ntfySig = req.query?.get("sig") ?? undefined;
+    if (deps.ntfyHmacSecret && ntfySig !== undefined) {
+      const { createHmac, timingSafeEqual } = await import("node:crypto");
+      const expected = createHmac("sha256", deps.ntfyHmacSecret)
+        .update(`approve:${callId}`)
+        .digest("hex");
+      const sigBuf = Buffer.from(
+        ntfySig.length === expected.length ? ntfySig : "",
+        "hex",
+      );
+      const expBuf = Buffer.from(expected, "hex");
+      const valid =
+        sigBuf.length === expBuf.length && timingSafeEqual(sigBuf, expBuf);
+      if (!valid) {
+        return {
+          status: 401,
+          body: { error: "invalid ntfy callback signature" },
+        };
+      }
+    } else if (req.approvalToken !== undefined) {
+      // Phone path: validate single-use approval token when one was provided.
+      // This check runs regardless of whether Bearer auth also passed — a caller
+      // presenting an approvalToken must have a valid one even when they hold a
+      // valid Bearer credential (LOW #18: Bearer must not bypass the token check).
       const valid = deps.queue.validateToken(callId, req.approvalToken);
       if (!valid) {
         return {
@@ -270,11 +302,31 @@ export async function routeApprovalRequest(
   const rejectMatch = /^\/reject\/([A-Za-z0-9-]+)$/.exec(path);
   if (method === "POST" && rejectMatch) {
     const callId = rejectMatch[1] as string;
-    // Phone path: validate single-use approval token when one was provided.
-    // This check runs regardless of whether Bearer auth also passed — a caller
-    // presenting an approvalToken must have a valid one even when they hold a
-    // valid Bearer credential (LOW #18: Bearer must not bypass the token check).
-    if (req.approvalToken !== undefined) {
+    // M23: mirror the HMAC sig verification from the approve path.
+    const ntfySig = req.query?.get("sig") ?? undefined;
+    if (deps.ntfyHmacSecret && ntfySig !== undefined) {
+      const { createHmac, timingSafeEqual } = await import("node:crypto");
+      const expected = createHmac("sha256", deps.ntfyHmacSecret)
+        .update(`reject:${callId}`)
+        .digest("hex");
+      const sigBuf = Buffer.from(
+        ntfySig.length === expected.length ? ntfySig : "",
+        "hex",
+      );
+      const expBuf = Buffer.from(expected, "hex");
+      const valid =
+        sigBuf.length === expBuf.length && timingSafeEqual(sigBuf, expBuf);
+      if (!valid) {
+        return {
+          status: 401,
+          body: { error: "invalid ntfy callback signature" },
+        };
+      }
+    } else if (req.approvalToken !== undefined) {
+      // Phone path: validate single-use approval token when one was provided.
+      // This check runs regardless of whether Bearer auth also passed — a caller
+      // presenting an approvalToken must have a valid one even when they hold a
+      // valid Bearer credential (LOW #18: Bearer must not bypass the token check).
       const valid = deps.queue.validateToken(callId, req.approvalToken);
       if (!valid) {
         return {
@@ -518,6 +570,8 @@ async function dispatchNtfyApproval(
     summary?: string;
     approvalToken: string;
     bridgeCallbackBase: string;
+    /** M23: when set, sign callback URLs with HMAC instead of embedding token in headers */
+    hmacSecret?: string;
   },
 ): Promise<void> {
   if (!ntfyServer.startsWith("https://")) {
@@ -544,17 +598,34 @@ async function dispatchNtfyApproval(
   if (await hostResolvesToBlockedIp(hostname, "ntfy")) return;
 
   const callbackBase = payload.bridgeCallbackBase.replace(/\/+$/, "");
-  // SECURITY (audit 2026-06-03 HIGH #6): carry the single-use approval token in
-  // the x-approval-token action header, NOT a ?token= query param. URL query
-  // strings are recorded in the ntfy server's and bridge's HTTP access logs;
-  // anyone with log access could replay the token before the approver taps the
-  // button. The server reads x-approval-token first (server.ts phone-path).
-  const approveUrl = `${callbackBase}/approve/${payload.callId}`;
-  const rejectUrl = `${callbackBase}/reject/${payload.callId}`;
-  const actionHeaders = {
-    "Content-Type": "application/json",
-    "x-approval-token": payload.approvalToken,
-  };
+  const { createHmac } = await import("node:crypto");
+  let approveUrl: string;
+  let rejectUrl: string;
+  let actionHeaders: Record<string, string>;
+
+  if (payload.hmacSecret) {
+    // M23: sign callback URLs with HMAC-SHA256 so the approval token never
+    // appears in the ntfy notification body (visible to all topic subscribers).
+    // sig = HMAC(secret, "approve:callId") / HMAC(secret, "reject:callId").
+    const approveSig = createHmac("sha256", payload.hmacSecret)
+      .update(`approve:${payload.callId}`)
+      .digest("hex");
+    const rejectSig = createHmac("sha256", payload.hmacSecret)
+      .update(`reject:${payload.callId}`)
+      .digest("hex");
+    approveUrl = `${callbackBase}/approve/${payload.callId}?sig=${approveSig}`;
+    rejectUrl = `${callbackBase}/reject/${payload.callId}?sig=${rejectSig}`;
+    actionHeaders = { "Content-Type": "application/json" };
+  } else {
+    // Legacy path: embed token in action headers. Still better than a URL
+    // query param (not in access logs) but visible to all topic subscribers.
+    approveUrl = `${callbackBase}/approve/${payload.callId}`;
+    rejectUrl = `${callbackBase}/reject/${payload.callId}`;
+    actionHeaders = {
+      "Content-Type": "application/json",
+      "x-approval-token": payload.approvalToken,
+    };
+  }
   const body = JSON.stringify({
     topic: payload.topic,
     title: `Approve ${payload.toolName}? (${payload.tier})`,
@@ -965,6 +1036,7 @@ async function handleApprovalRequest(
       summary,
       approvalToken,
       bridgeCallbackBase: deps.pushServiceBaseUrl,
+      hmacSecret: deps.ntfyHmacSecret,
     }).catch(() => {});
   }
 

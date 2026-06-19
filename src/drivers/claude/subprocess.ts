@@ -91,6 +91,7 @@ export class SubprocessDriver implements ProviderDriver {
       | undefined,
   ) {
     this.settings = createSubprocessSettings(log);
+    // Best-effort initial write; per-run write in run() is the enforcement gate.
     this.settings.write();
   }
 
@@ -110,7 +111,13 @@ export class SubprocessDriver implements ProviderDriver {
       useAnt ? this.antBinary : this.binary,
     );
     // Re-write before each run — /tmp may be cleared on long-running servers.
-    this.settings.write();
+    // M11: abort if write fails — spawning without the settings file would run
+    // claude -p without the deny list, bypassing the command block entirely.
+    if (!this.settings.write()) {
+      throw new Error(
+        "[SubprocessDriver] Failed to write settings file — cannot spawn claude -p without deny list",
+      );
+    }
 
     // Defense-in-depth: reject argv-confusable user-controlled strings. Spawn
     // is called with an array (no shell), so this is not shell-injection
