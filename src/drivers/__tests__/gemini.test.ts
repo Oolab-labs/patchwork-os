@@ -630,11 +630,11 @@ describe("GeminiSubprocessDriver settings.json restoration (LOW #9)", () => {
       fs.readFileSync(settingsFile, "utf-8"),
     ) as Record<string, unknown>;
     // Unknown keys must survive.
-    expect(restored["customSetting"]).toBe("preserved");
-    expect((restored["nestedObj"] as Record<string, unknown>)["deep"]).toBe(1);
+    expect(restored.customSetting).toBe("preserved");
+    expect((restored.nestedObj as Record<string, unknown>).deep).toBe(1);
     // The claude-ide-bridge key we added must be gone.
     expect(
-      (restored["mcpServers"] as Record<string, unknown> | undefined)?.[
+      (restored.mcpServers as Record<string, unknown> | undefined)?.[
         "claude-ide-bridge"
       ],
     ).toBeUndefined();
@@ -810,11 +810,15 @@ describe("GeminiSubprocessDriver env sanitization (H5)", () => {
 
   it("CLAUDE_CODE_OAUTH_TOKEN is not passed to the Gemini subprocess env (H5)", async () => {
     const FAKE_TOKEN = "sk-ant-oat01-test-token-for-h5";
-    process.env["CLAUDE_CODE_OAUTH_TOKEN"] = FAKE_TOKEN;
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = FAKE_TOKEN;
 
     let capturedEnv: NodeJS.ProcessEnv | undefined;
     vi.mocked(spawn).mockImplementationOnce(
-      (_cmd: string, _args: string[], opts?: { env?: NodeJS.ProcessEnv }) => {
+      (
+        _cmd: string,
+        _args: readonly string[],
+        opts?: { env?: NodeJS.ProcessEnv },
+      ) => {
         capturedEnv = opts?.env;
         const stdout = Object.assign(new EventEmitter(), {
           setEncoding: () => {},
@@ -860,9 +864,9 @@ describe("GeminiSubprocessDriver env sanitization (H5)", () => {
       signal: AbortSignal.timeout(5000),
     });
 
-    delete process.env["CLAUDE_CODE_OAUTH_TOKEN"];
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
 
     expect(capturedEnv).toBeDefined();
-    expect(capturedEnv!["CLAUDE_CODE_OAUTH_TOKEN"]).toBeUndefined();
+    expect(capturedEnv!.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
   });
 });

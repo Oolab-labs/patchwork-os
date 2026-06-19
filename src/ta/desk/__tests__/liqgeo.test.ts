@@ -355,6 +355,7 @@ describe("computeRektShield — capitalAtRiskPct accounts for leverage (H9)", ()
     // 10x long from 100k, stop at 99k → 1% price risk, but at 10x leverage
     // the capital at risk is 10% of the margin. Without the fix this returned 1.
     const trade: QumoTrade = {
+      symbol: "BTCUSDT",
       side: "long",
       entry: 100_000,
       stop: 99_000,
@@ -370,6 +371,7 @@ describe("computeRektShield — capitalAtRiskPct accounts for leverage (H9)", ()
 
   it("capitalAtRiskPct at 1x leverage equals the raw price-delta percentage", () => {
     const trade: QumoTrade = {
+      symbol: "ETHUSDT",
       side: "short",
       entry: 50_000,
       stop: 51_000,
