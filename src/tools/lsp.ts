@@ -223,7 +223,34 @@ export function createGoToDefinitionTool(
             message: "No definition found at this position",
           });
         }
-        return successStructured(result);
+        // M16: extension returns a raw array of {file,line,...} — normalise to
+        // the documented outputSchema shape {found, uri, range, locations}.
+        // If the result is not an array (already schema-shaped or from a mock),
+        // pass it through with a found:true guard.
+        if (!Array.isArray(result)) {
+          const r = result as Record<string, unknown>;
+          if (r.found !== undefined) return successStructured(r);
+          return successStructured({ found: true, ...r });
+        }
+        const locs = result as Array<Record<string, unknown>>;
+        if (locs.length === 0) {
+          return successStructured({
+            found: false,
+            message: "No definition found at this position",
+          });
+        }
+        const first = locs[0]!;
+        return successStructured({
+          found: true,
+          uri: `file://${String(first.file)}`,
+          range: {
+            startLine: first.line,
+            startColumn: first.column,
+            endLine: first.endLine,
+            endColumn: first.endColumn,
+          },
+          locations: locs,
+        });
       }
 
       // Headless fallback via typescript-language-server
@@ -345,14 +372,29 @@ export function createFindReferencesTool(
         if (result === null) {
           return successStructured({ found: false, references: [], total: 0 });
         }
-        const allRefs = Array.isArray(
+        const rawRefs = Array.isArray(
           (result as { references?: unknown[] }).references,
         )
           ? (result as { references: unknown[] }).references
           : [];
+        // M17: normalise per-ref shape from extension {file,line,...} to the
+        // outputSchema-declared {uri, range} shape.
+        const allRefs = rawRefs.map((r) => {
+          const rec = r as Record<string, unknown>;
+          if (rec.uri !== undefined) return rec;
+          return {
+            uri: `file://${String(rec.file)}`,
+            range: {
+              startLine: rec.line,
+              startColumn: rec.column,
+              endLine: rec.endLine,
+              endColumn: rec.endColumn,
+            },
+          };
+        });
         const page = allRefs.slice(offset, offset + PAGE_SIZE);
         const out: Record<string, unknown> = {
-          ...(result as Record<string, unknown>),
+          found: allRefs.length > 0,
           references: page,
           total: allRefs.length,
         };
@@ -465,7 +507,21 @@ export function createGetHoverTool(
           message: "No hover information at this position",
         });
       }
-      return successStructured(applyLspVerbosity(result, lspVerbosity));
+      // M18: extension returns {contents: string[], range} but outputSchema
+      // declares contents as a scalar string. Apply verbosity first (it
+      // operates on the array), then join and add found:true.
+      const hoverRec = result as Record<string, unknown>;
+      const afterVerbosity = applyLspVerbosity(
+        { ...hoverRec, found: true },
+        lspVerbosity,
+      ) as Record<string, unknown>;
+      const normalized: Record<string, unknown> = {
+        ...afterVerbosity,
+        contents: Array.isArray(afterVerbosity.contents)
+          ? (afterVerbosity.contents as string[]).join("\n\n")
+          : afterVerbosity.contents,
+      };
+      return successStructured(normalized);
     },
   };
 }
