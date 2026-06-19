@@ -43,6 +43,16 @@ import type { RecipeRunLog } from "./runLog.js";
 import type { Server } from "./server.js";
 
 // ---------------------------------------------------------------------------
+// Shared constants
+// ---------------------------------------------------------------------------
+
+// M22: all recipe enqueue call sites (webhook, git-hook, file-watch, manual,
+// cron) must share the same timeout so task budgets are consistent regardless
+// of trigger path. Previously the webhook path used 600_000ms (10 min) while
+// all others used 1_800_000ms (30 min).
+export const RECIPE_TASK_TIMEOUT_MS = 1_800_000;
+
+// ---------------------------------------------------------------------------
 // Public interfaces
 // ---------------------------------------------------------------------------
 
@@ -321,7 +331,7 @@ export class RecipeOrchestration {
           const task = await orch.runAndWait({
             prompt,
             triggerSource: `replay:${seq}:agent`,
-            timeoutMs: 600_000,
+            timeoutMs: 1_800_000,
             ...(callOpts?.mcpAccess !== undefined && {
               mcpAccess: callOpts.mcpAccess,
             }),
@@ -448,7 +458,7 @@ export class RecipeOrchestration {
         const taskId = orchestrator.enqueue({
           prompt: renderWebhookPrompt(loaded.prompt, payload),
           triggerSource: `webhook:${match.name}`,
-          timeoutMs: 600_000,
+          timeoutMs: RECIPE_TASK_TIMEOUT_MS,
         });
         return { ok: true, taskId, name: match.name };
       } catch (err) {
@@ -517,7 +527,7 @@ export class RecipeOrchestration {
           const taskId = orchestrator.enqueue({
             prompt,
             triggerSource: `recipe:${name}`,
-            timeoutMs: 600_000,
+            timeoutMs: 1_800_000,
           });
           return { ok: true, taskId };
         } catch (err) {
@@ -918,7 +928,7 @@ export class RecipeOrchestration {
       const task = await orch.runAndWait({
         prompt,
         triggerSource: `${opts.triggerSourceSuffix}:agent`,
-        timeoutMs: 600_000,
+        timeoutMs: 1_800_000,
         ...(callOpts?.mcpAccess !== undefined && {
           mcpAccess: callOpts.mcpAccess,
         }),
