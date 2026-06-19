@@ -1461,7 +1461,9 @@ export async function runYamlRecipe(
         agentCfg.driver,
         agentCfg.model,
         agentCfg.mcpAccess,
-        undefined,
+        // M32: pass the judge step's downshift so cost-aware routing applies
+        // to re-judge calls in the refine loop, not just the initial judge.
+        agentCfg.downshift,
         // Re-judge is a judge call → enforce JSON on supporting drivers.
         { responseFormat: { type: "json_object" } },
       );
