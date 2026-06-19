@@ -449,14 +449,28 @@ describe("handleDriveDisconnect", () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("calls Google revoke endpoint when access_token present", async () => {
-    mockTokens();
+  it("M3: revokes refresh_token (not access_token) when both present", async () => {
+    // Google's token revocation API accepts either token, but revoking the
+    // refresh_token invalidates the entire grant; revoking only the access_token
+    // leaves the persistent refresh_token alive.
+    mockTokens(); // sets refresh_token: "rt_test", access_token: "at_test"
     mockFetch.mockResolvedValueOnce(jsonResponse({}));
     const result = await handleDriveDisconnect();
     expect(result.status).toBe(200);
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url] = mockFetch.mock.calls[0] as [string];
     expect(url).toContain("oauth2.googleapis.com/revoke");
+    expect(url).toContain("token=rt_test");
+    expect(url).not.toContain("token=at_test");
+  });
+
+  it("falls back to access_token when no refresh_token present", async () => {
+    mockTokens({ refresh_token: undefined });
+    mockFetch.mockResolvedValueOnce(jsonResponse({}));
+    const result = await handleDriveDisconnect();
+    expect(result.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0] as [string];
     expect(url).toContain("token=at_test");
   });
 

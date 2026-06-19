@@ -442,7 +442,10 @@ export async function handleDriveTest(): Promise<ConnectorHandlerResult> {
 
 export async function handleDriveDisconnect(): Promise<ConnectorHandlerResult> {
   const tokens = loadTokens();
-  if (tokens?.access_token) await revokeToken(tokens.access_token);
+  // Prefer revoking the refresh_token — it invalidates the entire grant.
+  // Falling back to access_token only short-circuits the current session.
+  const tokenToRevoke = tokens?.refresh_token ?? tokens?.access_token;
+  if (tokenToRevoke) await revokeToken(tokenToRevoke);
   deleteTokens();
   return {
     status: 200,

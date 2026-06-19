@@ -174,6 +174,29 @@ describe("handleGmailDisconnect", () => {
     expect(result.status).toBe(200);
     expect(JSON.parse(result.body)).toMatchObject({ ok: true });
   });
+
+  it("M3: revokes refresh_token (not access_token) when both present", async () => {
+    vi.resetModules();
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", mockFetch);
+    // Seed tokens directly via tokenStorage (saveTokens is not exported from gmail.ts)
+    const { storeSecretJsonSync } = await import("../tokenStorage.js");
+    storeSecretJsonSync("gmail", {
+      access_token: "at_test",
+      refresh_token: "rt_test",
+      expiry_date: Date.now() + 3600_000,
+      token_type: "Bearer",
+    });
+    const { handleGmailDisconnect } = await import("../gmail.js");
+    const result = await handleGmailDisconnect();
+    expect(result.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0] as [string];
+    expect(url).toContain("oauth2.googleapis.com/revoke");
+    expect(url).toContain("token=rt_test");
+    expect(url).not.toContain("token=at_test");
+    vi.unstubAllGlobals();
+  });
 });
 
 describe("handleGmailTest", () => {

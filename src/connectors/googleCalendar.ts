@@ -494,7 +494,8 @@ export async function handleCalendarTest(): Promise<ConnectorHandlerResult> {
 
 export async function handleCalendarDisconnect(): Promise<ConnectorHandlerResult> {
   const tokens = loadTokens();
-  if (tokens?.access_token) await revokeToken(tokens.access_token);
+  const tokenToRevoke = tokens?.refresh_token ?? tokens?.access_token;
+  if (tokenToRevoke) await revokeToken(tokenToRevoke);
   deleteTokens();
   return {
     status: 200,
