@@ -141,9 +141,12 @@ export function computeRektShield(
 
   const long = side === "long";
   // Liquidation price for an isolated linear perp (maintenance-margin proxy).
-  const liqFrac = 1 / leverage - MAINTENANCE_MARGIN;
+  // M27: clamp to a minimum fraction — at leverage >= 200x the naive formula
+  // yields a non-positive liqFrac (e.g. 250x: 1/250 - 0.005 = -0.001), which
+  // would place liqPrice above entry on a long trade (impossible).
+  const liqFrac = Math.max(1 / leverage - MAINTENANCE_MARGIN, 0.0001);
   const liqPrice = long ? entry * (1 - liqFrac) : entry * (1 + liqFrac);
-  const liqDistancePct = Number((Math.abs(liqFrac) * 100).toFixed(1));
+  const liqDistancePct = Number((liqFrac * 100).toFixed(1));
 
   const riskLeg = Math.abs(entry - stop);
   const rewardLeg = Math.abs(target - entry);

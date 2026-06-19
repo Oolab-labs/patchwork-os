@@ -425,7 +425,7 @@ export default function RunsPage() {
       }
     }
     const avgMs = finishedCount > 0 ? Math.round(s.totalMs / finishedCount) : 0;
-    return { ...s, avgMs, total: list.length };
+    return { ...s, avgMs, total: list.length, finishedCount };
   }, [windowedRuns]);
 
   const maxDur = useMemo(() => {
@@ -710,7 +710,7 @@ export default function RunsPage() {
         >
           <div className="runs-stat-label runs-stat-label--ok">✓ Successful</div>
           <div className="runs-stat-value"><AnimatedNumber value={stats.ok} /></div>
-          <div className="runs-stat-foot">{stats.total > 0 ? Math.round(stats.ok / stats.total * 100) + "%" : "—"} success rate</div>
+          <div className="runs-stat-foot">{stats.finishedCount > 0 ? Math.round(stats.ok / stats.finishedCount * 100) + "%" : "—"} success rate</div>
         </button>
         <button
           type="button"
@@ -723,7 +723,7 @@ export default function RunsPage() {
         >
           <div className="runs-stat-label runs-stat-label--err">✗ Errored</div>
           <div className={`runs-stat-value${stats.err > 0 ? " runs-stat-value--err" : ""}`}><AnimatedNumber value={stats.err} /></div>
-          <div className="runs-stat-foot">{stats.total > 0 ? Math.round(stats.err / stats.total * 100) + "%" : "—"} error rate</div>
+          <div className="runs-stat-foot">{stats.finishedCount > 0 ? Math.round(stats.err / stats.finishedCount * 100) + "%" : "—"} error rate</div>
         </button>
       </div>
 

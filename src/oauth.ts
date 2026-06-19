@@ -534,7 +534,7 @@ export class OAuthServerImpl implements OAuthServer {
     if (
       !storedCsrf ||
       storedCsrf.expiresAt < Date.now() ||
-      storedCsrf.clientId !== clientId ||
+      !timingSafeStringEqual(storedCsrf.clientId, clientId) || // L29: use timing-safe compare
       !timingSafeStringEqual(csrfNonce, storedCsrf.nonce)
     ) {
       res.writeHead(403, { "Content-Type": "text/plain" });

@@ -150,6 +150,12 @@ export class TokenUsageTracker {
     if (!message) return;
     const id = typeof message.id === "string" ? message.id : null;
     if (!id || this.seenMessageIds.has(id)) return;
+    // L9: prevent unbounded growth on long-lived bridges — evict oldest IDs
+    // when the set exceeds 50 000 entries (~4 MB for typical 80-char IDs).
+    if (this.seenMessageIds.size >= 50_000) {
+      const first = this.seenMessageIds.values().next().value;
+      if (first !== undefined) this.seenMessageIds.delete(first);
+    }
     const usage = message.usage as Record<string, unknown> | undefined;
     if (!usage) return;
     const input = numField(usage, "input_tokens");
