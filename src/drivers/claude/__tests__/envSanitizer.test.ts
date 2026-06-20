@@ -26,6 +26,15 @@ describe("sanitizeEnv", () => {
     expect(out.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
   });
 
+  it("strips an EMPTY CLAUDE_CODE_OAUTH_TOKEN so the CLI falls back to the credentials file", () => {
+    const out = sanitizeEnv({
+      CLAUDE_CODE_OAUTH_TOKEN: "",
+      PATH: "/usr/bin",
+    });
+    expect("CLAUDE_CODE_OAUTH_TOKEN" in out).toBe(false);
+    expect(out.PATH).toBe("/usr/bin");
+  });
+
   it("strips ANTHROPIC_API_KEY so non-Anthropic subprocesses do not receive it (LOW #21)", () => {
     const out = sanitizeEnv({
       ANTHROPIC_API_KEY: "sk-ant-api03-key",

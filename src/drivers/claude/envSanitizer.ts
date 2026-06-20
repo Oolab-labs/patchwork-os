@@ -21,7 +21,16 @@ const PRESERVE = new Set(["CLAUDE_CODE_OAUTH_TOKEN"]);
 export function sanitizeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const clean: NodeJS.ProcessEnv = { ...env };
   for (const key of Object.keys(clean)) {
-    if (PRESERVE.has(key)) continue;
+    // Preserve CLAUDE_CODE_OAUTH_TOKEN only when it carries a real value. An
+    // EMPTY token (e.g. a systemd unit that sets `CLAUDE_CODE_OAUTH_TOKEN=`)
+    // is a falsy sentinel: forwarding it makes the subprocess depend on the
+    // claude CLI treating "" as absent. Strip it so the CLI falls back to the
+    // credentials file unambiguously.
+    if (PRESERVE.has(key)) {
+      if (clean[key]) continue;
+      delete clean[key];
+      continue;
+    }
     if (
       key === "CLAUDECODE" ||
       key === "ANTHROPIC_API_KEY" ||

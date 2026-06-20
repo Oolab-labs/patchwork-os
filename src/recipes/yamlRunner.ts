@@ -220,7 +220,14 @@ export interface YamlStep {
    * the underlying tool is NOT aborted — it continues running to
    * completion in the background. This is a halt signal, not a process
    * kill; pair with `optional: true` / `on_error.fallback` for fail-open
-   * behavior. Agent steps are not currently subject to this timeout.
+   * behavior.
+   *
+   * Agent steps bypass the `Promise.race` wrapper above (they take a separate
+   * dispatch path). On the local `claude -p` path, `timeout_ms` IS forwarded to
+   * the spawn timeout via `defaultClaudeCodeFn`; on the bridge-dispatched
+   * subprocess path the step runs under the orchestrator task timeout
+   * (`ClaudeOrchestrator.DEFAULT_TIMEOUT_MS`, 30 min). Either way the 600s
+   * cliff that silently truncated long agent steps is gone.
    */
   timeout_ms?: number;
   [key: string]: unknown;
@@ -2704,7 +2711,7 @@ export function resolveClaudeBinary(): string {
 
 export function defaultClaudeCodeFn(
   prompt: string,
-  opts?: { mcpAccess?: boolean },
+  opts?: { mcpAccess?: boolean; timeoutMs?: number },
 ): Promise<string> {
   const binary = resolveClaudeBinary();
   // Resolve a workspace cwd so the spawned `claude -p` doesn't inherit the
@@ -2751,7 +2758,11 @@ export function defaultClaudeCodeFn(
         // hygiene. Preserves CLAUDE_CODE_OAUTH_TOKEN (subscription auth).
         env: sanitizeEnv(process.env),
         encoding: "utf-8",
-        timeout: 600_000,
+        // Honor a caller-supplied per-step timeout (step.timeout_ms), falling
+        // back to a 30 min floor. The old 600s hardcap silently SIGKILLed long
+        // agent steps mid-stream, yielding truncated "narration-only" output
+        // (2026-06-20 crypto-daily-brief incident).
+        timeout: opts?.timeoutMs ?? 1_800_000,
         maxBuffer: 10 * 1024 * 1024,
       },
     );

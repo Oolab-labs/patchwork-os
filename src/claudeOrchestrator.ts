@@ -153,7 +153,11 @@ export class ClaudeOrchestrator {
   static readonly MAX_CONCURRENT = 10;
   static readonly MAX_QUEUE = 20;
   static readonly MAX_HISTORY = 500;
-  static readonly DEFAULT_TIMEOUT_MS = 600_000;
+  // 30 min. Aligns with RECIPE_TASK_TIMEOUT_MS (recipeOrchestration.ts) used at
+  // every recipe enqueue site. A 600s floor silently cancelled long agent steps
+  // (e.g. a multi-section brief synthesis needs ~20 min) — see the 2026-06-20
+  // crypto-daily-brief incident where the draft step was killed at 10 min.
+  static readonly DEFAULT_TIMEOUT_MS = 1_800_000;
   /** Maximum total estimated tokens in-flight across all running tasks. */
   static readonly MAX_TOKEN_BUDGET = 500_000;
 
