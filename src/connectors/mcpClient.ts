@@ -125,6 +125,7 @@ export class McpClient {
   constructor(
     private readonly endpoint: string,
     private readonly getAccessToken: () => Promise<string>,
+    private readonly opts: { onUnauthorized?: () => void } = {},
   ) {}
 
   private _getCached(key: string): McpToolResult | null {
@@ -183,6 +184,10 @@ export class McpClient {
         retried = true;
         // Drain the body so the connection can be reused, then loop to refresh.
         await res.text().catch(() => {});
+        // Invalidate the caller's token cache before retrying so the next
+        // getAccessToken() fetches a fresh token rather than the stale one
+        // that just got rejected (audit 2026-06-19 H3).
+        this.opts.onUnauthorized?.();
         continue;
       }
 

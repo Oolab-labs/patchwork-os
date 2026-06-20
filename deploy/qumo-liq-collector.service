@@ -1,0 +1,19 @@
+[Unit]
+Description=QUMO liquidation tape collector (Binance forceOrder stream)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bridge
+WorkingDirectory=/home/bridge/patchwork-os
+ExecStart=/usr/bin/node --experimental-vm-modules /home/bridge/patchwork-os/dist/scripts/qumo-liq-collector.js
+Restart=always
+RestartSec=10
+Environment=QUMO_LIQ_DIR=/home/bridge/.patchwork
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=qumo-liq-collector
+
+[Install]
+WantedBy=multi-user.target

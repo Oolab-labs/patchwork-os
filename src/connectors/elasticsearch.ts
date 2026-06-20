@@ -17,6 +17,7 @@
  * is not installed. Use `__setEsModuleForTest` in tests to inject a stub.
  */
 
+import { isPrivateHost } from "../ssrfGuard.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -618,6 +619,27 @@ export async function handleElasticsearchConnect(
           error: "node URL is malformed",
         }),
       };
+    }
+    // SSRF guard (H1, audit 2026-06-19): block non-loopback private/reserved
+    // hosts. Grafana.ts uses isPrivateHost directly but blocks localhost too;
+    // for DB connectors we allow loopback so local dev works.
+    try {
+      const u = new URL(node);
+      const h = u.hostname.toLowerCase();
+      const isLoopback =
+        h === "localhost" || h.endsWith(".localhost") || /^127\./.test(h);
+      if (!isLoopback && isPrivateHost(u.hostname)) {
+        return {
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: false,
+            error: "Private or reserved hostname not allowed",
+          }),
+        };
+      }
+    } catch {
+      // URL already validated above; this branch is unreachable in practice.
     }
   }
 

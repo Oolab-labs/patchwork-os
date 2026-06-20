@@ -295,6 +295,30 @@ describe("McpClient 401 refresh + retry", () => {
     expect(caught?.message).toMatch(/500/);
   });
 
+  it("calls onUnauthorized callback before retrying on 401 so stale token cache is invalidated (H3)", async () => {
+    const getAccessToken = vi.fn(async () => "stale-token");
+    const onUnauthorized = vi.fn();
+    const fetchMock = vi.fn(
+      async () => new Response("unauthorized", { status: 401 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new McpClient(
+      "https://mcp.example.test/mcp",
+      getAccessToken,
+      { onUnauthorized },
+    );
+
+    const ok = await client.ping();
+    expect(ok).toBe(false);
+
+    // onUnauthorized must have been called before the retry so callers can
+    // invalidate their token cache — otherwise the second getAccessToken()
+    // returns the same stale token (audit 2026-06-19 H3).
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("does not retry more than once (no infinite loop) on repeated 401", async () => {
     const getAccessToken = vi.fn(async () => "any-token");
     const fetchMock = vi.fn(

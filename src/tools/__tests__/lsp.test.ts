@@ -213,7 +213,10 @@ describe("createGetHoverTool", () => {
     expect(result.content[0]?.text).toContain("timed out");
   });
 
-  it("minimal verbosity strips documentation, keeps type sig", async () => {
+  it("minimal verbosity strips documentation, keeps type sig (M18: scalar output)", async () => {
+    // Extension returns string[] but outputSchema declares contents as scalar.
+    // applyLspVerbosity filters the array (minimal = keep first), then it is
+    // joined into a scalar string.
     const hover = {
       contents: ["const x: number", "A numeric value used for counting."],
       range: null,
@@ -226,11 +229,11 @@ describe("createGetHoverTool", () => {
     const result = await tool.handler(baseArgs());
     expect((result as any).isError).toBeFalsy();
     const data = parse(result);
-    expect(data.contents).toHaveLength(1);
-    expect(data.contents[0]).toBe("const x: number");
+    expect(typeof data.contents).toBe("string");
+    expect(data.contents).toBe("const x: number");
   });
 
-  it("normal verbosity returns all contents", async () => {
+  it("normal verbosity returns all contents joined as scalar (M18)", async () => {
     const hover = {
       contents: ["const x: number", "A numeric value."],
       range: null,
@@ -241,10 +244,13 @@ describe("createGetHoverTool", () => {
       "normal",
     );
     const result = await tool.handler(baseArgs());
-    expect(parse(result).contents).toHaveLength(2);
+    const data = parse(result);
+    expect(typeof data.contents).toBe("string");
+    expect(data.contents).toContain("const x: number");
+    expect(data.contents).toContain("A numeric value.");
   });
 
-  it("minimal verbosity is no-op when contents has 0 or 1 items", async () => {
+  it("minimal verbosity is no-op when contents has 0 or 1 items (M18: scalar output)", async () => {
     const hover = { contents: ["const x: number"], range: null };
     const tool = createGetHoverTool(
       workspace,
@@ -252,7 +258,9 @@ describe("createGetHoverTool", () => {
       "minimal",
     );
     const result = await tool.handler(baseArgs());
-    expect(parse(result).contents).toHaveLength(1);
+    const data = parse(result);
+    expect(typeof data.contents).toBe("string");
+    expect(data.contents).toBe("const x: number");
   });
 });
 

@@ -305,6 +305,9 @@ export function createGetDiagnosticsTool(
                 const result: Record<string, unknown> = {
                   ...rec,
                   message: sanitizeMessage(rec.message),
+                  // M19: single-file extension path omits `file`; inject it so
+                  // the outputSchema `required: ["file"]` guarantee holds.
+                  ...(rec.file === undefined && uri ? { file: uri } : {}),
                 };
                 if (Array.isArray(rec.relatedInformation)) {
                   result.relatedInformation = rec.relatedInformation

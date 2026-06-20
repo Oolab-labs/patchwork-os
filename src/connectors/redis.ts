@@ -16,6 +16,7 @@
  * errors flow through normalizeError directly.
  */
 
+import { isPrivateHost } from "../ssrfGuard.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -203,6 +204,7 @@ export class RedisConnector extends BaseConnector {
   readonly providerName = "redis";
   protected cachedTokens: RedisTokens | null = null;
   private client: RedisClientLike | null = null;
+  private connectInflight: Promise<RedisClientLike> | null = null;
 
   protected getOAuthConfig() {
     return null;
@@ -223,6 +225,7 @@ export class RedisConnector extends BaseConnector {
   /** Get (or lazily create + connect) the singleton client. */
   async getClient(): Promise<RedisClientLike> {
     if (this.client) return this.client;
+    if (this.connectInflight) return this.connectInflight;
     const tokens = this.cachedTokens ?? loadTokens();
     if (!tokens) {
       throw new Error(
@@ -230,23 +233,27 @@ export class RedisConnector extends BaseConnector {
       );
     }
     this.cachedTokens = tokens;
-    const mod = await loadRedisModule();
-    const client = mod.createClient({
-      url: tokens.url,
-      username: tokens.username,
-      password: tokens.password,
-      database: tokens.database,
-    });
-    // Swallow background error events so an idle connection drop doesn't
-    // bubble up as an unhandled error; commands surface their own errors.
-    try {
-      client.on("error", () => {});
-    } catch {
-      /* some fakes don't implement .on */
-    }
-    await client.connect();
-    this.client = client;
-    return client;
+    this.connectInflight = (async () => {
+      const mod = await loadRedisModule();
+      const client = mod.createClient({
+        url: tokens.url,
+        username: tokens.username,
+        password: tokens.password,
+        database: tokens.database,
+      });
+      // Swallow background error events so an idle connection drop doesn't
+      // bubble up as an unhandled error; commands surface their own errors.
+      try {
+        client.on("error", () => {});
+      } catch {
+        /* some fakes don't implement .on */
+      }
+      await client.connect();
+      this.client = client;
+      this.connectInflight = null;
+      return client;
+    })();
+    return this.connectInflight;
   }
 
   /** Tear down the client (used by disconnect HTTP handler + tests). */
@@ -576,6 +583,18 @@ export async function handleRedisConnect(
       ok: false,
       error: 'URL must use the "redis://" or "rediss://" scheme',
     });
+  }
+  // SSRF guard: block non-loopback private/reserved hosts (H1, audit 2026-06-19).
+  {
+    const h = parsedUrl.hostname.toLowerCase();
+    const isLoopback =
+      h === "localhost" || h.endsWith(".localhost") || /^127\./.test(h);
+    if (!isLoopback && isPrivateHost(parsedUrl.hostname)) {
+      return jsonRes(400, {
+        ok: false,
+        error: "Private or reserved hostname not allowed",
+      });
+    }
   }
 
   const tokens: RedisTokens = {

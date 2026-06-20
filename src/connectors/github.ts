@@ -19,6 +19,7 @@ import { McpClient } from "./mcpClient.js";
 import {
   completeAuthorize,
   getAccessToken,
+  invalidateAccessTokenCache,
   isConnected,
   loadTokenFile,
   revoke,
@@ -92,8 +93,10 @@ export interface ConnectorHandlerResult {
 let _client: McpClient | null = null;
 function client(): McpClient {
   if (!_client) {
-    _client = new McpClient(GITHUB_MCP_ENDPOINT, () =>
-      getAccessToken("github"),
+    _client = new McpClient(
+      GITHUB_MCP_ENDPOINT,
+      () => getAccessToken("github"),
+      { onUnauthorized: () => invalidateAccessTokenCache("github") },
     );
   }
   return _client;

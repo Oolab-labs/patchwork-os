@@ -214,3 +214,46 @@ describe("buildCommandDescription — arg validation", () => {
     );
   });
 });
+
+describe("buildCommandDescription — H10: --node-options blocked for npm/yarn/pnpm", () => {
+  it("blocks npm --node-options (arbitrary V8/Node.js flags bypass interpreter guard)", () => {
+    expect(() =>
+      build({
+        command: "npm",
+        args: ["run", "build", "--node-options=--require=/tmp/evil.js"],
+      }),
+    ).toThrow(/--node-options.*blocked/);
+  });
+
+  it("blocks yarn --node-options", () => {
+    const yarnConfig: CommandConfig = {
+      ...config,
+      commandAllowlist: [...config.commandAllowlist, "yarn"],
+    };
+    expect(() =>
+      build(
+        {
+          command: "yarn",
+          args: ["--node-options", "--inspect-brk=0.0.0.0:9229"],
+        },
+        yarnConfig,
+      ),
+    ).toThrow(/--node-options.*blocked/);
+  });
+
+  it("blocks pnpm --node-options", () => {
+    const pnpmConfig: CommandConfig = {
+      ...config,
+      commandAllowlist: [...config.commandAllowlist, "pnpm"],
+    };
+    expect(() =>
+      build(
+        {
+          command: "pnpm",
+          args: ["run", "test", "--node-options=--eval=require('fs')"],
+        },
+        pnpmConfig,
+      ),
+    ).toThrow(/--node-options.*blocked/);
+  });
+});

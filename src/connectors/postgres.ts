@@ -16,6 +16,7 @@
  * (MongoDB, Redis, Elasticsearch). Keep the shape consistent.
  */
 
+import { isPrivateHost } from "../ssrfGuard.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -540,6 +541,22 @@ export async function handlePostgresConnect(
         status: 400,
         contentType: "application/json",
         body: JSON.stringify({ ok: false, error: "password is required" }),
+      };
+    }
+    // SSRF guard: block non-loopback private/reserved hosts (VPC ranges,
+    // metadata endpoints). Loopback (localhost/127.x) is allowed — the user
+    // may legitimately connect to a local DB (H1, audit 2026-06-19).
+    const h = parsed.host.toLowerCase();
+    const isLoopback =
+      h === "localhost" || h.endsWith(".localhost") || /^127\./.test(h);
+    if (!isLoopback && isPrivateHost(parsed.host)) {
+      return {
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: false,
+          error: "Private or reserved hostname not allowed",
+        }),
       };
     }
     candidate.host = parsed.host;

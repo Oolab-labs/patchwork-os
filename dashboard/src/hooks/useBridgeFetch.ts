@@ -63,7 +63,7 @@ export function useBridgeFetch<T>(
 
     const tick = async () => {
       try {
-        const res = await fetch(apiPath(path));
+        const res = await fetch(apiPath(path), { cache: "no-store" });
         if (!alive) return;
         setStatus(res.status);
 

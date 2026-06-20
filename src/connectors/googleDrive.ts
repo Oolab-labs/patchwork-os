@@ -160,8 +160,11 @@ async function exchangeCode(
       : undefined,
     token_type: json.token_type,
     scope: json.scope,
-    _client_id: clientId() || undefined,
-    _client_secret: clientSecret() || undefined,
+    // Do NOT persist _client_id / _client_secret into the token record. Storing
+    // the OAuth client secret alongside tokens means any credential-store
+    // exfiltration also yields the OAuth app secret. refreshAccessToken() reads
+    // clientId()/clientSecret() from env; when env is absent it throws "reconnect"
+    // (mirrors gmail.ts:159-165, H2 fix — audit 2026-06-19).
   };
 }
 
@@ -439,7 +442,10 @@ export async function handleDriveTest(): Promise<ConnectorHandlerResult> {
 
 export async function handleDriveDisconnect(): Promise<ConnectorHandlerResult> {
   const tokens = loadTokens();
-  if (tokens?.access_token) await revokeToken(tokens.access_token);
+  // Prefer revoking the refresh_token — it invalidates the entire grant.
+  // Falling back to access_token only short-circuits the current session.
+  const tokenToRevoke = tokens?.refresh_token ?? tokens?.access_token;
+  if (tokenToRevoke) await revokeToken(tokenToRevoke);
   deleteTokens();
   return {
     status: 200,

@@ -330,21 +330,27 @@ export function resolveStepTemplates(
 
   // Evaluate when condition
   let conditionResult = true;
-  if (step.when) {
-    const compiled = compileTemplate(step.when);
-    const result = compiled.evaluate(context);
-    if ("error" in result) {
-      errors.push(result.error);
+  if (step.when !== undefined) {
+    // M25: YAML may deliver `when: false` as a boolean even though the TS type
+    // says string — cast to unknown before comparing to silence the type error.
+    if ((step.when as unknown) === false) {
       conditionResult = false;
-    } else {
-      // Simple truthiness check (empty string, "0", "false" are falsy)
-      const val = result.value.trim().toLowerCase();
-      conditionResult =
-        !!val &&
-        val !== "0" &&
-        val !== "false" &&
-        val !== "null" &&
-        val !== "undefined";
+    } else if (step.when) {
+      const compiled = compileTemplate(step.when);
+      const result = compiled.evaluate(context);
+      if ("error" in result) {
+        errors.push(result.error);
+        conditionResult = false;
+      } else {
+        // Simple truthiness check (empty string, "0", "false" are falsy)
+        const val = result.value.trim().toLowerCase();
+        conditionResult =
+          !!val &&
+          val !== "0" &&
+          val !== "false" &&
+          val !== "null" &&
+          val !== "undefined";
+      }
     }
   }
 
@@ -878,6 +884,8 @@ async function withRetry(
     // true cancel needs an AbortSignal threaded through every tool/connector,
     // which is out of scope; refusing to retry on timeout is the safe contract.
     if (last.error?.startsWith("step_timeout:")) return last;
+    // Do not retry cancelled steps — the run was aborted intentionally.
+    if (last.error?.startsWith("step_cancelled:")) return last;
   }
   return last;
 }

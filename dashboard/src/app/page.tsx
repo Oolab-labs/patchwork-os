@@ -693,6 +693,7 @@ export default function HomePage() {
   const [pendingApprovals, setPendingApprovals] = useState<Pending[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [runs, setRuns] = useState<LiveRun[]>([]);
+  const [haltCount24hState, setHaltCount24h] = useState<number | null>(null);
   const [toolCallTotal, setToolCallTotal] = useState(0);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [syncSpinning, setSyncSpinning] = useState(false);
@@ -703,7 +704,7 @@ export default function HomePage() {
     let alive = true;
     const tick = async () => {
       try {
-        const [approvalsRes, metricsRes, recipesRes, activityRes, runsRes] =
+        const [approvalsRes, metricsRes, recipesRes, activityRes, runsRes, haltRes] =
           await Promise.all([
             fetch(apiPath("/api/bridge/approvals")),
             fetch(apiPath("/api/bridge/metrics")),
@@ -719,6 +720,9 @@ export default function HomePage() {
             // catch() so an older bridge missing the endpoint just shows
             // empty surfaces — the rest of Overview keeps working.
             fetch(apiPath("/api/bridge/runs")).catch(() => null),
+            // M7: use halt-summary for accurate haltCount24h (run list is
+            // capped at 100 and undercounts on busy workspaces).
+            fetch(apiPath("/api/bridge/runs/halt-summary?sinceMs=86400000")).catch(() => null),
           ]);
         if (!alive) return;
 
@@ -743,11 +747,17 @@ export default function HomePage() {
         const runsData = runsRes?.ok
           ? ((await runsRes.json()) as { runs?: LiveRun[] })
           : { runs: [] };
+        const haltData = haltRes?.ok
+          ? ((await haltRes.json()) as { total?: number })
+          : null;
 
         setToolCallTotal(total);
         setPendingApprovals(Array.isArray(approvalsData) ? approvalsData : []);
         setRecipes(list);
         setRuns(Array.isArray(runsData.runs) ? runsData.runs : []);
+        if (haltData != null && typeof haltData.total === "number") {
+          setHaltCount24h(haltData.total);
+        }
         setActivityEvents(
           (activityData.events ?? []).map(withAt),
         );
@@ -783,9 +793,11 @@ export default function HomePage() {
   // a permanent zero on a healthy workspace.
   const dayMs = 24 * 60 * 60 * 1000;
   const runsCount24h = runs.filter((r) => Date.now() - r.startedAt < dayMs).length;
-  const haltCount24h = runs.filter(
-    (r) => Date.now() - r.startedAt < dayMs && isHaltStatus(r.status),
-  ).length;
+  // M7: prefer the halt-summary endpoint total (uncapped) over a local
+  // filter of the capped run list (max 100 runs on older bridges).
+  const haltCount24h =
+    haltCount24hState ??
+    runs.filter((r) => Date.now() - r.startedAt < dayMs && isHaltStatus(r.status)).length;
   const runs24h = runs.filter((r) => Date.now() - r.startedAt < dayMs);
   const errCount24h = runs24h.filter(
     (r) => r.status === "error" || r.status === "failed",

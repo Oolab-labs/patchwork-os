@@ -81,6 +81,7 @@ import {
 } from "./pricing/priceTable.js";
 import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
+import { registerRun, unregisterRun } from "./runRegistry.js";
 import type { ErrorPolicy } from "./schema.js";
 import { detectSilentFail, redactSecretsForPrompt } from "./stepObservation.js";
 // Import tool registry and trigger tool self-registration
@@ -1166,6 +1167,9 @@ export async function runYamlRecipe(
       // Non-fatal — run-log failures must never break recipe execution.
     }
   }
+  // Register this run so POST /runs/:seq/cancel can abort it (H11).
+  // Mirrors chainedRunner.ts:1277 — only the top-level run registers.
+  const runController = runSeq !== undefined ? registerRun(runSeq) : undefined;
 
   const outputs: string[] = [];
   const stepResults: StepResult[] = [];
@@ -1457,7 +1461,9 @@ export async function runYamlRecipe(
         agentCfg.driver,
         agentCfg.model,
         agentCfg.mcpAccess,
-        undefined,
+        // M32: pass the judge step's downshift so cost-aware routing applies
+        // to re-judge calls in the refine loop, not just the initial judge.
+        agentCfg.downshift,
         // Re-judge is a judge call → enforce JSON on supporting drivers.
         { responseFormat: { type: "json_object" } },
       );
@@ -1544,6 +1550,11 @@ export async function runYamlRecipe(
       // log_only|deliver_original) never set `haltAfterFailure`, so they
       // still let the run continue exactly as before.
       if (haltAfterFailure) break;
+      // Run-level cancel: abort when the registry controller fires (H11).
+      if (runController?.signal.aborted) {
+        runError = runError ?? "recipe run cancelled";
+        break;
+      }
       // Pick up a `~/.patchwork/prices.json` update mid-run for long-running
       // recipes (honours the refreshPrices() contract). No-op unless a usdMax
       // cap is set; never disturbs injected (unit-test) price tables.
@@ -1564,8 +1575,14 @@ export async function runYamlRecipe(
       // A falsy guard records the step as `skipped`, increments stepsRun, and
       // continues — it is NOT a failure. Bridge-dev iMessage recipes rely on
       // this to suppress the iMessage agent step when phone is empty.
-      if (typeof step.when === "string" && step.when.length > 0) {
-        const rendered = render(step.when, ctx).trim().toLowerCase();
+      if (
+        step.when === false ||
+        (typeof step.when === "string" && step.when.length > 0)
+      ) {
+        const rendered =
+          step.when === false
+            ? "false"
+            : render(step.when, ctx).trim().toLowerCase();
         const truthy =
           !!rendered &&
           rendered !== "0" &&
@@ -1769,11 +1786,11 @@ export async function runYamlRecipe(
                 const parsed = sanitizeParsed(
                   JSON.parse((jsonMatch[1] ?? "").trim()),
                 ) as RunContext[string];
-                ctx[intoKey] = parsed;
+                if (!isJudge) ctx[intoKey] = parsed;
               } catch {
-                ctx[intoKey] = stripped;
+                if (!isJudge) ctx[intoKey] = stripped;
               }
-              outputs.push(intoKey);
+              if (!isJudge) outputs.push(intoKey);
               // PR3a: parse + stash the judge verdict on the step result.
               // Augment-only: a `request_changes` verdict still yields
               // `status: "ok"`. The verdict surfaces via the runlog +
@@ -1884,7 +1901,9 @@ export async function runYamlRecipe(
       const stepStart = Date.now();
       const stepId = step.into ?? `step_${stepsRun}`;
       // Resolve retry policy: step-level overrides recipe-level.
-      const retryCount = step.retry ?? recipe.on_error?.retry ?? 0;
+      // Clamp to 0 as a safety net against negative values slipping past
+      // schema validation (M31: negative retry loops 0 times, skipping step).
+      const retryCount = Math.max(0, step.retry ?? recipe.on_error?.retry ?? 0);
       const retryDelayMs =
         step.retryDelay ?? recipe.on_error?.retryDelay ?? 1000;
       let result: string | null = null;
@@ -2124,6 +2143,12 @@ export async function runYamlRecipe(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     runError = runError ?? `recipe run aborted: ${msg}`;
+  } finally {
+    // Drop the run from the registry (success, failure, or cancel) so
+    // the seq can't be cancelled post-hoc and the map doesn't leak (H11).
+    if (runController !== undefined && runSeq !== undefined) {
+      unregisterRun(runSeq);
+    }
   }
 
   // Evaluate expect block before persisting so failures are stored in the

@@ -19,6 +19,7 @@ import { McpClient } from "./mcpClient.js";
 import {
   completeAuthorize,
   getAccessToken,
+  invalidateAccessTokenCache,
   loadTokenFile,
   revoke,
   startAuthorize,
@@ -53,11 +54,15 @@ export interface ConnectorHandlerResult {
 let _client: McpClient | null = null;
 function client(): McpClient {
   if (!_client) {
-    _client = new McpClient(LINEAR_MCP_ENDPOINT, async () => {
-      const envKey = process.env.LINEAR_API_KEY;
-      if (envKey) return envKey;
-      return getAccessToken("linear");
-    });
+    _client = new McpClient(
+      LINEAR_MCP_ENDPOINT,
+      async () => {
+        const envKey = process.env.LINEAR_API_KEY;
+        if (envKey) return envKey;
+        return getAccessToken("linear");
+      },
+      { onUnauthorized: () => invalidateAccessTokenCache("linear") },
+    );
   }
   return _client;
 }

@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { Glossary } from "@/components/patchwork";
+import {
+  type HaltCategory,
+  type HaltSummary,
+  HALT_CATEGORY_LABEL,
+} from "@/lib/haltCategory";
 
 /**
  * "Recent halts (24h)" panel for /activity.
@@ -17,33 +22,6 @@ import { Glossary } from "@/components/patchwork";
  * Renders nothing when there are no halts in the window (don't add
  * noise to an otherwise-quiet page).
  */
-
-type HaltCategory =
-  | "agent_silent_fail"
-  | "agent_narration_only"
-  | "agent_threw"
-  | "tool_threw"
-  | "tool_error"
-  | "kill_switch"
-  | "run_level"
-  | "unknown";
-
-interface HaltSummary {
-  total: number;
-  byCategory: Partial<Record<HaltCategory, number>>;
-  recent: Array<{ reason: string; category: HaltCategory; runSeq: number }>;
-}
-
-const CATEGORY_LABEL: Record<HaltCategory, string> = {
-  agent_silent_fail: "silent fail",
-  agent_narration_only: "narration-only",
-  agent_threw: "agent threw",
-  tool_threw: "tool threw",
-  tool_error: "tool error",
-  kill_switch: "kill switch",
-  run_level: "run-level",
-  unknown: "unknown",
-};
 
 const SINCE_24H_MS = 24 * 60 * 60 * 1000;
 
@@ -157,7 +135,7 @@ export function RecentHaltsPanel() {
                 color: "var(--ink-2)",
               }}
             >
-              {CATEGORY_LABEL[cat]} <strong style={{ color: "var(--ink-1)" }}>{n}</strong>
+              {HALT_CATEGORY_LABEL[cat]} <strong style={{ color: "var(--ink-1)" }}>{n}</strong>
             </span>
           ))}
         </div>
@@ -197,7 +175,7 @@ export function RecentHaltsPanel() {
                 #{h.runSeq}
               </Link>
               <span style={{ color: "var(--ink-3)", flexShrink: 0 }}>
-                {CATEGORY_LABEL[h.category]}
+                {HALT_CATEGORY_LABEL[h.category]}
               </span>
               <span
                 style={{

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GeminiSubprocessDriver } from "../gemini/index.js";
 
 // Mock spawn to simulate Gemini stream-json output
@@ -630,11 +630,11 @@ describe("GeminiSubprocessDriver settings.json restoration (LOW #9)", () => {
       fs.readFileSync(settingsFile, "utf-8"),
     ) as Record<string, unknown>;
     // Unknown keys must survive.
-    expect(restored["customSetting"]).toBe("preserved");
-    expect((restored["nestedObj"] as Record<string, unknown>)["deep"]).toBe(1);
+    expect(restored.customSetting).toBe("preserved");
+    expect((restored.nestedObj as Record<string, unknown>).deep).toBe(1);
     // The claude-ide-bridge key we added must be gone.
     expect(
-      (restored["mcpServers"] as Record<string, unknown> | undefined)?.[
+      (restored.mcpServers as Record<string, unknown> | undefined)?.[
         "claude-ide-bridge"
       ],
     ).toBeUndefined();
@@ -756,5 +756,117 @@ describe("GeminiSubprocessDriver settings.json restoration (LOW #9)", () => {
     // The file did not exist before the run, so it must be gone afterward.
     expect(fs.existsSync(settingsFile)).toBe(false);
     cleanupTmpHome();
+  });
+
+  // H4 — audit 2026-06-19: when ~/.gemini/ does not exist, writeFileSync
+  // throws ENOENT, the catch logs a warning and falls through, and the
+  // subprocess is spawned WITHOUT the deny list (fail-open). The subprocess
+  // must NOT be spawned when the deny-list write fails; or alternatively the
+  // directory must be created so the write always succeeds.
+  it("deny list is applied even when ~/.gemini/ directory does not exist (H4)", async () => {
+    // Remove the .gemini directory that beforeEach created — simulate first-ever Gemini install.
+    fs.rmSync(path.join(tmpHome, ".gemini"), { recursive: true, force: true });
+    const settingsFile = path.join(tmpHome, ".gemini", "settings.json");
+    const capture: { content: string | null } = { content: null };
+    makeSettingsChildCapturing(settingsFile, capture, 0);
+    const driver = new GeminiSubprocessDriver("gemini", log);
+    await driver.run({
+      prompt: "delete everything",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+    });
+    // The deny list must have been written — capture.content is non-null.
+    expect(capture.content).not.toBeNull();
+    const live = JSON.parse(capture.content as string) as {
+      tools?: { exclude?: string[] };
+    };
+    expect(live.tools?.exclude).toContain("run_shell_command(rm -rf)");
+    cleanupTmpHome();
+  });
+});
+
+// H5 — audit 2026-06-19: CLAUDE_CODE_OAUTH_TOKEN must NOT appear in the
+// environment of the spawned Gemini subprocess. The Gemini CLI has no use
+// for this token; any shell command the Gemini agent runs can exfiltrate it.
+describe("GeminiSubprocessDriver env sanitization (H5)", () => {
+  let tmpHome: string;
+
+  beforeEach(() => {
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "gemini-env-test-"));
+    fs.mkdirSync(path.join(tmpHome, ".gemini"), { recursive: true });
+    vi.mocked(os.homedir).mockReturnValue(tmpHome);
+    log.mockReset();
+    vi.mocked(spawn).mockReset();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  });
+
+  it("CLAUDE_CODE_OAUTH_TOKEN is not passed to the Gemini subprocess env (H5)", async () => {
+    const FAKE_TOKEN = "sk-ant-oat01-test-token-for-h5";
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = FAKE_TOKEN;
+
+    let capturedEnv: NodeJS.ProcessEnv | undefined;
+    vi.mocked(spawn).mockImplementationOnce(
+      (
+        _cmd: string,
+        _args: readonly string[],
+        opts?: { env?: NodeJS.ProcessEnv },
+      ) => {
+        capturedEnv = opts?.env;
+        const stdout = Object.assign(new EventEmitter(), {
+          setEncoding: () => {},
+        });
+        const stderr = Object.assign(new EventEmitter(), {
+          setEncoding: () => {},
+        });
+        const child = Object.assign(new EventEmitter(), {
+          stdout,
+          stderr,
+          stdin: null,
+          stdio: [null, stdout, stderr],
+          killed: false,
+          connected: false,
+          pid: 99999,
+          exitCode: null,
+          kill: () => {},
+          unref: () => {},
+        });
+        const INIT = JSON.stringify({
+          type: "init",
+          session_id: "x",
+          model: "gemini-2.5-flash",
+        });
+        const RESULT = JSON.stringify({
+          type: "result",
+          status: "success",
+          stats: {},
+        });
+        setTimeout(() => {
+          stdout.emit("data", `${INIT}\n${RESULT}\n`);
+          child.emit("close", 0);
+        }, 0);
+        return child as unknown as ReturnType<typeof spawn>;
+      },
+    );
+
+    const driver = new GeminiSubprocessDriver("gemini", log);
+    await driver.run({
+      prompt: "hello",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+    });
+
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+
+    expect(capturedEnv).toBeDefined();
+    expect(capturedEnv!.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
   });
 });

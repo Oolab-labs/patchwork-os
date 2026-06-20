@@ -410,6 +410,7 @@ export default function RunsPage() {
   const stats = useMemo(() => {
     const list = windowedRuns ?? [];
     const s = { ok: 0, err: 0, running: 0, cancelled: 0, interrupted: 0, totalMs: 0 };
+    let finishedCount = 0;
     for (const r of list) {
       if (r.assertionFailures && r.assertionFailures.length > 0) s.err++;
       else if (r.status === "done") s.ok++;
@@ -417,10 +418,14 @@ export default function RunsPage() {
       else if (r.status === "running") s.running++;
       else if (r.status === "cancelled") s.cancelled++;
       else if (r.status === "interrupted") s.interrupted++;
-      s.totalMs += r.durationMs;
+      // M9: only include finished runs in avg — running jobs have durationMs=0
+      if (r.status !== "running") {
+        s.totalMs += r.durationMs;
+        finishedCount++;
+      }
     }
-    const avgMs = list.length ? Math.round(s.totalMs / list.length) : 0;
-    return { ...s, avgMs, total: list.length };
+    const avgMs = finishedCount > 0 ? Math.round(s.totalMs / finishedCount) : 0;
+    return { ...s, avgMs, total: list.length, finishedCount };
   }, [windowedRuns]);
 
   const maxDur = useMemo(() => {
@@ -705,7 +710,7 @@ export default function RunsPage() {
         >
           <div className="runs-stat-label runs-stat-label--ok">✓ Successful</div>
           <div className="runs-stat-value"><AnimatedNumber value={stats.ok} /></div>
-          <div className="runs-stat-foot">{stats.total > 0 ? Math.round(stats.ok / stats.total * 100) + "%" : "—"} success rate</div>
+          <div className="runs-stat-foot">{stats.finishedCount > 0 ? Math.round(stats.ok / stats.finishedCount * 100) + "%" : "—"} success rate</div>
         </button>
         <button
           type="button"
@@ -718,7 +723,7 @@ export default function RunsPage() {
         >
           <div className="runs-stat-label runs-stat-label--err">✗ Errored</div>
           <div className={`runs-stat-value${stats.err > 0 ? " runs-stat-value--err" : ""}`}><AnimatedNumber value={stats.err} /></div>
-          <div className="runs-stat-foot">{stats.total > 0 ? Math.round(stats.err / stats.total * 100) + "%" : "—"} error rate</div>
+          <div className="runs-stat-foot">{stats.finishedCount > 0 ? Math.round(stats.err / stats.finishedCount * 100) + "%" : "—"} error rate</div>
         </button>
       </div>
 

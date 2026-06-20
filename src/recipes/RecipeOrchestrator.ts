@@ -54,7 +54,10 @@ export interface FireDeps {
 type ResolvedFireDeps = Required<Omit<FireDeps, "logger">> &
   Pick<FireDeps, "logger">;
 
-const DEFAULT_DISPATCH_TIMEOUT_MS = 30 * 60_000;
+// M21: safety-net must exceed the per-step task timeout (1_800_000ms) so
+// that clearing the in-flight slot never races a still-running first dispatch.
+// Set to 4× the step timeout (2 hours) to give long recipes headroom.
+export const DEFAULT_DISPATCH_TIMEOUT_MS = 4 * 1_800_000;
 
 export class RecipeOrchestrator {
   private readonly inFlight = new Set<string>();

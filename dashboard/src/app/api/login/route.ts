@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
 
   if (typeof password !== "string") {
     if (trackable) recordFailure(ip);
+    else recordGlobalFailure();
     return NextResponse.json({ error: "missing password" }, { status: 400 });
   }
 

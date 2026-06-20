@@ -162,6 +162,37 @@ export function recordTrigger(
   };
 }
 
+/**
+ * Like recordTrigger but does NOT append to taskTimestamps.
+ * Use from WithCooldown wrappers to update the cooldown key without
+ * double-counting the timestamp that the inner Hook case already recorded.
+ */
+export function recordCooldownKey(
+  state: AutomationState,
+  key: string,
+  taskId: string,
+  now: number,
+): AutomationState {
+  const MAX_TRIGGER_KEYS = 5_000;
+  const newLastTrigger = new Map(state.lastTrigger);
+  newLastTrigger.delete(key);
+  newLastTrigger.set(key, now);
+  while (newLastTrigger.size > MAX_TRIGGER_KEYS) {
+    const oldestKey = newLastTrigger.keys().next().value;
+    if (oldestKey === undefined) break;
+    newLastTrigger.delete(oldestKey);
+  }
+  const newActiveTasks = new Map(state.activeTasks);
+  newActiveTasks.delete(key);
+  newActiveTasks.set(key, taskId);
+  while (newActiveTasks.size > MAX_TRIGGER_KEYS) {
+    const oldestActiveKey = newActiveTasks.keys().next().value;
+    if (oldestActiveKey === undefined) break;
+    newActiveTasks.delete(oldestActiveKey);
+  }
+  return { ...state, lastTrigger: newLastTrigger, activeTasks: newActiveTasks };
+}
+
 // ── Active-task helpers ───────────────────────────────────────────────────────
 
 /**

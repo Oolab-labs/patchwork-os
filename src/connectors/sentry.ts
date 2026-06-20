@@ -19,6 +19,7 @@ import { McpClient } from "./mcpClient.js";
 import {
   completeAuthorize,
   getAccessToken,
+  invalidateAccessTokenCache,
   loadTokenFile,
   revoke,
   startAuthorize,
@@ -53,8 +54,10 @@ export interface ConnectorHandlerResult {
 let _client: McpClient | null = null;
 function client(): McpClient {
   if (!_client) {
-    _client = new McpClient(SENTRY_MCP_ENDPOINT, () =>
-      getAccessToken("sentry"),
+    _client = new McpClient(
+      SENTRY_MCP_ENDPOINT,
+      () => getAccessToken("sentry"),
+      { onUnauthorized: () => invalidateAccessTokenCache("sentry") },
     );
   }
   return _client;

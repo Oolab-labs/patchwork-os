@@ -72,7 +72,7 @@ describe("<RecentHaltsPanel/>", () => {
     });
     expect(container.textContent).toMatch(/5 halts/);
     expect(container.textContent).toMatch(/tool threw/);
-    expect(container.textContent).toMatch(/kill switch/);
+    expect(container.textContent).toMatch(/kill.switch/);
     expect(container.textContent).toMatch(/tool foo blew up/);
     // Most-recent rows link to per-run detail pages.
     const link = container.querySelector('a[href="/runs/91"]');

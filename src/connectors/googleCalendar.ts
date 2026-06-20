@@ -197,8 +197,8 @@ async function exchangeCode(
       : undefined,
     token_type: json.token_type,
     scope: json.scope,
-    _client_id: clientId() || undefined,
-    _client_secret: clientSecret() || undefined,
+    // Do NOT persist _client_id / _client_secret — mirrors gmail.ts:159-165
+    // (H2 fix — audit 2026-06-19).
   };
 }
 
@@ -494,7 +494,8 @@ export async function handleCalendarTest(): Promise<ConnectorHandlerResult> {
 
 export async function handleCalendarDisconnect(): Promise<ConnectorHandlerResult> {
   const tokens = loadTokens();
-  if (tokens?.access_token) await revokeToken(tokens.access_token);
+  const tokenToRevoke = tokens?.refresh_token ?? tokens?.access_token;
+  if (tokenToRevoke) await revokeToken(tokenToRevoke);
   deleteTokens();
   return {
     status: 200,

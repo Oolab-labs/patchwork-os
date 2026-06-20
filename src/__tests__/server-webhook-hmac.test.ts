@@ -165,4 +165,51 @@ describe("POST /hooks/* — HMAC-SHA256 webhook auth", () => {
     // Empty body — payload is undefined (no JSON parse attempted on empty input)
     expect(calls[0]!.payload).toBeUndefined();
   });
+
+  // H6 — audit 2026-06-19: duplicate X-Hub-Signature-256 headers must NOT
+  // bypass both bearer auth and HMAC verification.
+  // node's http.IncomingMessage merges duplicate headers into a string[] array.
+  // Before the fix: !!headers['x-hub-signature-256'] is truthy for an array
+  // → isHmacWebhookCandidate=true → bearer gate bypassed.
+  // typeof sigHeader === 'string' is false for an array → HMAC check skipped.
+  // Net: the request goes through with no valid credential of any kind.
+  it("duplicate X-Hub-Signature-256 headers must NOT bypass bearer auth and HMAC (H6)", async () => {
+    await startServer({ secret: SECRET });
+    const body = JSON.stringify({ action: "opened" });
+    // Use a raw TCP socket to send duplicate X-Hub-Signature-256 headers;
+    // the high-level http.request API collapses duplicate headers, so we
+    // craft the bytes manually.
+    const net = await import("node:net");
+    const raw =
+      `POST /hooks/test-recipe HTTP/1.1\r\n` +
+      `Host: 127.0.0.1:${port}\r\n` +
+      `Content-Type: application/json\r\n` +
+      `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+      `X-Hub-Signature-256: sha256=invalid1\r\n` +
+      `X-Hub-Signature-256: sha256=invalid2\r\n` +
+      `\r\n` +
+      body;
+    const result = await new Promise<{ status: number }>((resolve, reject) => {
+      const sock = net.connect(port, "127.0.0.1", () => {
+        sock.write(raw);
+      });
+      let resp = "";
+      sock.on("data", (d) => {
+        resp += d.toString();
+        if (resp.includes("\r\n\r\n")) {
+          const statusLine = resp.split("\r\n")[0] ?? "";
+          const statusCode = Number(statusLine.split(" ")[1]);
+          sock.destroy();
+          resolve({ status: statusCode });
+        }
+      });
+      sock.on("error", reject);
+      sock.on("close", () => {
+        if (!resp) resolve({ status: 0 });
+      });
+    });
+    // Must be rejected — not 200.
+    expect(result.status).not.toBe(200);
+    expect(calls).toHaveLength(0);
+  });
 });

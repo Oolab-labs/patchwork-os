@@ -449,14 +449,28 @@ describe("handleDriveDisconnect", () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("calls Google revoke endpoint when access_token present", async () => {
-    mockTokens();
+  it("M3: revokes refresh_token (not access_token) when both present", async () => {
+    // Google's token revocation API accepts either token, but revoking the
+    // refresh_token invalidates the entire grant; revoking only the access_token
+    // leaves the persistent refresh_token alive.
+    mockTokens(); // sets refresh_token: "rt_test", access_token: "at_test"
     mockFetch.mockResolvedValueOnce(jsonResponse({}));
     const result = await handleDriveDisconnect();
     expect(result.status).toBe(200);
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url] = mockFetch.mock.calls[0] as [string];
     expect(url).toContain("oauth2.googleapis.com/revoke");
+    expect(url).toContain("token=rt_test");
+    expect(url).not.toContain("token=at_test");
+  });
+
+  it("falls back to access_token when no refresh_token present", async () => {
+    mockTokens({ refresh_token: undefined });
+    mockFetch.mockResolvedValueOnce(jsonResponse({}));
+    const result = await handleDriveDisconnect();
+    expect(result.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0] as [string];
     expect(url).toContain("token=at_test");
   });
 
@@ -466,5 +480,63 @@ describe("handleDriveDisconnect", () => {
     const result = await handleDriveDisconnect();
     expect(result.status).toBe(200);
     expect(JSON.parse(result.body)).toEqual({ ok: true });
+  });
+});
+
+// H2 — audit 2026-06-19: exchangeCode must NOT persist _client_secret
+// alongside the tokens in the keychain/credential store. An attacker who
+// exfiltrates the token store (backup, crash dump, keychain export) must not
+// also get the OAuth app secret that lets them impersonate the entire app.
+// Gmail already does NOT store it (see comment in gmail.ts:159-165). Drive,
+// Calendar, and Docs still did before this fix.
+describe("handleDriveCallback — must not persist _client_secret in token store (H2)", () => {
+  it("exchangeCode return value does not include _client_secret", async () => {
+    // Spy on saveTokens via storeSecretJsonSync (the secure storage layer
+    // that handleDriveCallback → exchangeCode → saveTokens calls).
+    // We capture the JSON.stringify argument by intercepting JSON.stringify
+    // during the storeSecretJsonSync call — simplest approach given the
+    // encrypted-file backend writes ciphertext, not raw JSON.
+    let capturedTokenObject: unknown = null;
+    const origStringify = JSON.stringify;
+    const stringifySpy = vi
+      .spyOn(JSON, "stringify")
+      .mockImplementation((...args) => {
+        const result = origStringify(
+          ...(args as Parameters<typeof JSON.stringify>),
+        );
+        // Only capture plain objects with access_token (the token write)
+        const val = args[0];
+        if (
+          val &&
+          typeof val === "object" &&
+          !Array.isArray(val) &&
+          "access_token" in (val as object)
+        ) {
+          capturedTokenObject = val;
+        }
+        return result;
+      });
+
+    try {
+      const auth = handleDriveAuthRedirect();
+      const state = /state=([a-f0-9]+)/.exec(auth.redirect ?? "")?.[1] ?? "";
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse({
+          access_token: "at_h2",
+          refresh_token: "rt_h2",
+          expires_in: 3600,
+          token_type: "Bearer",
+          scope: "drive.readonly",
+        }),
+      );
+      await handleDriveCallback("code", state, null);
+    } finally {
+      stringifySpy.mockRestore();
+    }
+
+    expect(capturedTokenObject).not.toBeNull();
+    const tok = capturedTokenObject as Record<string, unknown>;
+    expect(tok["_client_secret"]).toBeUndefined();
+    expect(tok["_client_id"]).toBeUndefined();
   });
 });

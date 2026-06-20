@@ -28,6 +28,7 @@ import {
   validateRecipeDefinition,
 } from "./recipes/validation.js";
 import { enrichIssuesWithPositions } from "./recipes/yamlPositions.js";
+import { writeFileAtomicSync } from "./writeFileAtomic.js";
 
 // ── Per-recipesDir caches ─────────────────────────────────────────────────────
 // Keyed by resolved recipesDir. Populated on first call, cleared by
@@ -427,7 +428,10 @@ export function saveRecipe(
     if (deepError) {
       return { ok: false, error: deepError.message };
     }
-    writeFileSync(candidate, JSON.stringify(payload, null, 2), "utf-8");
+    // L10: use atomic tmp+rename to avoid truncating the file on crash/ENOSPC.
+    writeFileAtomicSync(candidate, JSON.stringify(payload, null, 2), {
+      encoding: "utf-8",
+    });
     return { ok: true, path: candidate };
   } catch (err) {
     return {
@@ -614,12 +618,13 @@ export function saveRecipeContent(
     if (!candidate.startsWith(base + path.sep)) {
       return { ok: false, error: "Invalid path" };
     }
-    writeFileSync(
+    // L10: use atomic tmp+rename to avoid truncating the file on crash/ENOSPC.
+    writeFileAtomicSync(
       candidate,
       normalizedContent.endsWith("\n")
         ? normalizedContent
         : `${normalizedContent}\n`,
-      "utf-8",
+      { encoding: "utf-8" },
     );
     return {
       ok: true,

@@ -167,14 +167,12 @@ async function semanticRank(
 
 function approvalTraces(activityLog: ActivityLog): DecisionTrace[] {
   const out: DecisionTrace[] = [];
-  // queryTimeline returns combined tool+lifecycle; filter to approval rows.
-  // Use a generous `last` — the tool's own `limit` arg is applied after
-  // cross-source merge.
-  const timeline = activityLog.queryTimeline({ last: 500 });
-  for (const entry of timeline) {
-    if (entry.kind !== "lifecycle") continue;
+  // M13: use queryApprovalDecisions (cap 1000) instead of queryTimeline (cap
+  // 200) so approval decisions older than ~a few hours aren't silently dropped
+  // on busy bridges where tool entries fill the timeline window.
+  const entries = activityLog.queryApprovalDecisions({ last: 1000 });
+  for (const entry of entries) {
     const meta = (entry.metadata ?? {}) as Record<string, unknown>;
-    if (entry.event !== "approval_decision") continue;
     const tool = typeof meta.toolName === "string" ? meta.toolName : "";
     const decision = typeof meta.decision === "string" ? meta.decision : "";
     const reason = typeof meta.reason === "string" ? meta.reason : "";
@@ -372,6 +370,10 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
         }
       }
 
+      // M12: sort before truncation in semanticRank so the MAX_SEMANTIC_BATCH
+      // window is the most-recent candidates, not an arbitrary mix of sources.
+      filtered.sort((a, b) => b.ts - a.ts);
+
       // Opt-in semantic ranking: only when explicitly requested, a query is
       // present, and an embeddings function is wired. Any miss (null vectors,
       // error, unconfigured) returns null → fall through to the substring +
@@ -401,7 +403,6 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
         filtered = filtered.filter((t) => matchesSubstring(t, qNeedle));
       }
 
-      filtered.sort((a, b) => b.ts - a.ts);
       const traces = filtered.slice(0, limit);
 
       return successStructured({

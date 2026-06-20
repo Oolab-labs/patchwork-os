@@ -534,6 +534,52 @@ describe("mongodb connector", () => {
     });
   });
 
+  // H1 — audit 2026-06-19: SSRF via private/internal MongoDB connection strings
+  describe("handleMongoConnect — SSRF guard (H1)", () => {
+    it("rejects a private IPv4 host (AWS metadata) with 400", async () => {
+      const mod = await import("../mongodb.js");
+      const res = await mod.handleMongoConnect({
+        connectionString: "mongodb://169.254.169.254:27017",
+      });
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body)).toMatchObject({ ok: false });
+    });
+
+    it("rejects a private IPv4 host (10.x.x.x) with 400", async () => {
+      const mod = await import("../mongodb.js");
+      const res = await mod.handleMongoConnect({
+        connectionString: "mongodb://10.0.0.1:27017",
+      });
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body)).toMatchObject({ ok: false });
+    });
+  });
+
+  describe("getClient — double-connect race (M2)", () => {
+    it("creates exactly one MongoClient when two listDatabases() calls race concurrently", async () => {
+      // Fresh module state so _client is null
+      vi.resetModules();
+      const mod = await import("../mongodb.js");
+      const fake = makeFakeMongo();
+      mod.__setMongoModuleForTest(fake.module);
+      // Seed tokens so listDatabases() can proceed without connect
+      mod.saveTokens({
+        connectionString: "mongodb://localhost:27017",
+        connected_at: new Date().toISOString(),
+      });
+
+      // Race two concurrent listDatabases() calls — both internally call getClient()
+      // which must not double-connect.
+      const [r1, r2] = await Promise.all([
+        mod.listDatabases(),
+        mod.listDatabases(),
+      ]);
+      expect(r1).toEqual(r2);
+      // connect() must have been called exactly once
+      expect(fake.calls.connect).toBe(1);
+    });
+  });
+
   describe("lazy driver loader", () => {
     it("surfaces a friendly error when mongodb is not installed", async () => {
       // No injected module + a forced import failure path: easiest way is to

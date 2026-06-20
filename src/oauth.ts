@@ -534,7 +534,7 @@ export class OAuthServerImpl implements OAuthServer {
     if (
       !storedCsrf ||
       storedCsrf.expiresAt < Date.now() ||
-      storedCsrf.clientId !== clientId ||
+      !timingSafeStringEqual(storedCsrf.clientId, clientId) || // L29: use timing-safe compare
       !timingSafeStringEqual(csrfNonce, storedCsrf.nonce)
     ) {
       res.writeHead(403, { "Content-Type": "text/plain" });
@@ -683,20 +683,26 @@ export class OAuthServerImpl implements OAuthServer {
       this.sendError(res, 400, "invalid_grant", "authorization code expired");
       return;
     }
+    // RFC 6749 §4.1.2: auth codes are single-use. Invalidate on ANY validation
+    // failure to prevent replay/probe attacks (M20). An attacker must not be
+    // able to retry a valid code with different clientId/redirectUri/PKCE guesses.
     if (!timingSafeStringEqual(record.clientId, clientId)) {
+      this.authCodes.delete(code);
       this.sendError(res, 400, "invalid_grant", "client_id mismatch");
       return;
     }
     if (!timingSafeStringEqual(record.redirectUri, redirectUri)) {
+      this.authCodes.delete(code);
       this.sendError(res, 400, "invalid_grant", "redirect_uri mismatch");
       return;
     }
     if (!this.pkceVerify(verifier, record.codeChallenge)) {
+      this.authCodes.delete(code);
       this.sendError(res, 400, "invalid_grant", "code_verifier mismatch");
       return;
     }
 
-    // RFC 6749 §4.1.2: delete the auth code immediately on use.
+    // Delete the auth code immediately on successful use.
     // A missing code naturally rejects replay attempts (the !record check above).
     this.authCodes.delete(code);
 

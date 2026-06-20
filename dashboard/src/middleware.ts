@@ -92,7 +92,21 @@ export async function middleware(req: NextRequest) {
   }
 
   // Dev override: bypass all auth checks.
-  if (ALLOW_UNAUTHENTICATED) return NextResponse.next();
+  // M5: refuse to skip auth in production when a password is configured.
+  if (ALLOW_UNAUTHENTICATED) {
+    if (process.env.NODE_ENV === "production" && expected) {
+      console.error(
+        "[dashboard] DANGEROUS: DASHBOARD_ALLOW_UNAUTHENTICATED=1 is set in production " +
+          "while DASHBOARD_PASSWORD is configured. Auth is bypassed for all requests. " +
+          "Unset DASHBOARD_ALLOW_UNAUTHENTICATED to restore authentication.",
+      );
+      return new NextResponse(
+        "Misconfigured: DASHBOARD_ALLOW_UNAUTHENTICATED cannot be used in production when DASHBOARD_PASSWORD is set. Remove DASHBOARD_ALLOW_UNAUTHENTICATED.",
+        { status: 503 },
+      );
+    }
+    return NextResponse.next();
+  }
 
   // Login page itself must be reachable without a session. Next.js
   // strips basePath before matching, so the internal pathname is

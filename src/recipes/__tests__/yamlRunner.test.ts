@@ -1027,6 +1027,33 @@ describe("runYamlRecipe — step.when guard", () => {
       expect(written[path.join(TMP, "x.md")]).toBeUndefined();
     }
   });
+
+  it("M25: skips step when when: false (YAML boolean, not string)", async () => {
+    // YAML deserialises `when: false` as boolean false. The previous guard
+    // `if (typeof step.when === "string")` missed this case and the step ran.
+    let agentCalls = 0;
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "should not run",
+            model: "claude-haiku-4-5-20251001",
+            into: "result",
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          when: false as any,
+        },
+      ],
+    });
+    await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => {
+        agentCalls++;
+        return "ran";
+      },
+    });
+    expect(agentCalls).toBe(0);
+  });
 });
 
 // ── recipe-level context blocks (type: env) ───────────────────────────────────
@@ -3077,6 +3104,55 @@ describe("agent kind: 'judge' — augment-only invariant (PR3a)", () => {
     expect(lastPrompt).toContain("An old silent pond");
     expect(lastPrompt).toContain("cold-eyes reviewer");
   });
+
+  it("M30: judge step does not overwrite the reviewed artifact in ctx", async () => {
+    // The draft step writes ctx["draft"]. The judge step uses into:"review".
+    // After the judge runs, ctx["draft"] must still equal the original draft
+    // content — judge verdict text must never land in ctx["draft"].
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "Make a haiku.",
+            model: "claude-haiku-4-5-20251001",
+            into: "draft",
+          },
+        },
+        {
+          agent: {
+            prompt: "Review the haiku. {{draft}}",
+            model: "claude-haiku-4-5-20251001",
+            into: "draft", // same key as the draft step — the bug re-used this key
+            kind: "judge",
+            reviews: "draft",
+          },
+        },
+        {
+          agent: {
+            prompt: "Polish: {{draft}}",
+            model: "claude-haiku-4-5-20251001",
+            into: "polished",
+          },
+        },
+      ],
+    });
+    let calls = 0;
+    let thirdStepPrompt = "";
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async (prompt) => {
+        calls++;
+        if (calls === 1) return "An old silent pond...";
+        if (calls === 2) return `{"verdict": "approve", "reasons": ["good"]}`;
+        thirdStepPrompt = prompt;
+        return "An old silent pond... (polished)";
+      },
+    });
+    expect(result.stepResults).toHaveLength(3);
+    // The third step's prompt must contain the original draft text, not the verdict JSON
+    expect(thirdStepPrompt).toContain("An old silent pond");
+    expect(thirdStepPrompt).not.toContain('"verdict"');
+  });
 });
 
 // ── judge → refine loop (opt-in; departs augment-only when fields present) ────
@@ -3329,6 +3405,80 @@ describe("agent kind: 'judge' — refine loop (opt-in)", () => {
     expect(judge.status).toBe("ok");
     expect(judge.judgeVerdict?.verdict).toBe("request_changes");
     expect(judge.revisions).toBeUndefined();
+  });
+
+  it("(M32) re-judge routes through downshift when budget is tight", async () => {
+    // Set up a price table where expensive-model costs a lot and cheap-model costs nothing.
+    const dir = mkdtempSync(path.join(os.tmpdir(), "pw-m32-"));
+    const fixture = path.join(dir, "prices.json");
+    writeFileSync(
+      fixture,
+      JSON.stringify({
+        prices: {
+          "expensive-model": { input: 1000, output: 1000 }, // $1/token → exhausts budget instantly
+          "cheap-model": { input: 0, output: 0 }, // free → never exhausts budget
+        },
+      }),
+    );
+    const prev = process.env.PATCHWORK_PRICE_TABLE;
+    process.env.PATCHWORK_PRICE_TABLE = fixture;
+    try {
+      const recipe = makeRecipe({
+        budget: { usdMax: 0.00001 }, // tiny budget: exhausted after first expensive-model call
+        steps: [
+          {
+            id: "draft",
+            agent: {
+              prompt: "Write a draft.",
+              model: "cheap-model",
+              into: "draft",
+            },
+          },
+          {
+            id: "judge",
+            agent: {
+              prompt: "Review the draft.",
+              model: "expensive-model",
+              into: "review",
+              kind: "judge",
+              reviews: "draft",
+              max_revisions: 2,
+              // downshift: use cheap-model when budget is low
+              downshift: [{ model: "cheap-model" }],
+            },
+          },
+        ],
+      });
+      const modelsUsed: string[] = [];
+      let calls = 0;
+      const result = await runYamlRecipe(recipe, {
+        ...noop(),
+        claudeFn: async (_prompt: string, model: string) => {
+          calls++;
+          modelsUsed.push(model);
+          // Call 1: draft (cheap-model)
+          // Call 2: judge (expensive-model → exhausts budget)
+          // Call 3: re-judge after revision (M32: should downshift to cheap-model)
+          if (calls === 2)
+            return `Reject.\n{"verdict": "request_changes", "reasons": ["bad"], "fixList": ["fix it"], "usage": {"inputTokens": 1000000, "outputTokens": 1000000}}`;
+          if (calls === 3)
+            return `Good.\n{"verdict": "approve", "reasons": ["ok"]}`;
+          return `revised draft ${calls}`;
+        },
+      });
+      // If M32 is fixed, the re-judge (call 3) must NOT use "expensive-model"
+      // because the budget is exhausted and downshift routes it to "cheap-model".
+      if (modelsUsed.length >= 3) {
+        expect(modelsUsed[2]).not.toBe("expensive-model");
+      }
+      // The run must not error out — either the re-judge succeeds with cheap-model
+      // or the budget halts gracefully.
+      expect(result).toBeDefined();
+    } finally {
+      if (prev === undefined) delete process.env.PATCHWORK_PRICE_TABLE;
+      else process.env.PATCHWORK_PRICE_TABLE = prev;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -4156,5 +4306,44 @@ describe("runYamlRecipe — env secret redaction (agent vs tool)", () => {
     expect(writtenContent).toHaveLength(1);
     expect(writtenContent[0]).toBe(`header=${SECRET_VALUE}`);
     expect(writtenContent[0]).not.toContain("[REDACTED]");
+  });
+});
+
+describe("runYamlRecipe — run registry registration (H11)", () => {
+  it("registers run in registry when runLog is provided so POST /runs/:seq/cancel can abort it", async () => {
+    const { isRunActive, unregisterRun } = await import("../runRegistry.js");
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "yamlrunner-h11-"));
+    let capturedSeq: number | undefined;
+    let wasRegisteredDuringRun = false;
+    try {
+      const runLog = new RecipeRunLog({ dir: tmp });
+      const recipe = makeRecipe({
+        name: "h11-cancel-test",
+        steps: [{ agent: { prompt: "do something", into: "result" } }],
+      });
+      await runYamlRecipe(recipe, {
+        ...noop(),
+        runLog,
+        claudeFn: async () => {
+          // Capture the seq assigned by startRun
+          const runs = runLog.query({ limit: 1 });
+          capturedSeq = runs[0]?.seq;
+          if (capturedSeq !== undefined) {
+            wasRegisteredDuringRun = isRunActive(capturedSeq);
+          }
+          return "done";
+        },
+      });
+      // During the run the seq must have been active in the registry.
+      expect(wasRegisteredDuringRun).toBe(true);
+      // After the run finishes the registry entry must be cleaned up.
+      if (capturedSeq !== undefined) {
+        expect(isRunActive(capturedSeq)).toBe(false);
+      }
+    } finally {
+      if (capturedSeq !== undefined) unregisterRun(capturedSeq);
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

@@ -317,6 +317,25 @@ describe("WithCooldown", () => {
   });
 });
 
+describe("WithCooldown — M14: does not double-append to taskTimestamps", () => {
+  it("adds exactly one taskTimestamps entry when a cooldown-wrapped hook fires", async () => {
+    const backend = new TestBackend();
+    const h = hook({
+      hookType: "onFileSave",
+      enabled: true,
+      promptSource: INLINE_SOURCE,
+    });
+    const wc = withCooldown("save:*", 60_000, h);
+    const ctx = makeCtx({ backend, state: EMPTY_AUTOMATION_STATE });
+
+    const result = await executeAutomationPolicy([wc], ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Each trigger must add exactly ONE timestamp — not two (hookType + cooldownKey).
+    expect(result.value.updatedState.taskTimestamps).toHaveLength(1);
+  });
+});
+
 // ── WithRateLimit ─────────────────────────────────────────────────────────────
 
 describe("WithRateLimit", () => {
