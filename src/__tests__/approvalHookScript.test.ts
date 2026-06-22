@@ -186,14 +186,44 @@ describe.skipIf(process.platform === "win32")(
       expect(lastRequest).toBeNull();
     });
 
-    it("fails open when bridge is unreachable", async () => {
+    // ADR-0014: the gate fails CLOSED when the bridge is unreachable.
+    it("fails closed (exit 2 deny) when bridge request fails", async () => {
       // Kill the server before invoking the hook.
       await new Promise<void>((resolve) => server.close(() => resolve()));
       const r = await runHook(buildPayload(), {
         CLAUDE_CONFIG_DIR: tmp,
         PATCHWORK_BRIDGE_PORT: String(port),
       });
+      expect(r.code).toBe(2);
+      const out = JSON.parse(r.stdout);
+      expect(out.hookSpecificOutput.permissionDecision).toBe("deny");
+      expect(r.stderr).toContain("failing closed");
+    });
+
+    it("fails closed (exit 2) when no bridge lock can be discovered", async () => {
+      // A config dir with no ide/ lock directory → no bridge discoverable.
+      const emptyCfg = mkdtempSync(path.join(os.tmpdir(), "patchwork-nolock-"));
+      try {
+        const r = await runHook(buildPayload(), {
+          CLAUDE_CONFIG_DIR: emptyCfg,
+          PATCHWORK_BRIDGE_PORT: "59999",
+        });
+        expect(r.code).toBe(2);
+        expect(r.stderr).toContain("no_bridge");
+      } finally {
+        rmSync(emptyCfg, { recursive: true, force: true });
+      }
+    });
+
+    it("PATCHWORK_APPROVAL_FAIL_OPEN=1 restores allow-on-unreachable (exit 0)", async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      const r = await runHook(buildPayload(), {
+        CLAUDE_CONFIG_DIR: tmp,
+        PATCHWORK_BRIDGE_PORT: String(port),
+        PATCHWORK_APPROVAL_FAIL_OPEN: "1",
+      });
       expect(r.code).toBe(0);
+      expect(r.stderr).toContain("PATCHWORK_APPROVAL_FAIL_OPEN set");
     });
 
     it("ignores injection attempts in tool_input (parsed as JSON, not shell)", async () => {
@@ -223,8 +253,11 @@ describe.skipIf(process.platform === "win32")(
         CLAUDE_CONFIG_DIR: tmp,
         PATCHWORK_BRIDGE_PORT: String(port),
       });
-      // Malformed response → decision defaults to "allow" → exit 0.
-      expect(r.code).toBe(0);
+      // ADR-0014: a malformed/non-object response is a degenerate bridge reply
+      // → treated as unreachable → fail closed (exit 2), never silent allow.
+      // The injection still must not execute regardless of exit code.
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain("bad_response");
       expect(r.stdout).not.toContain("pwned");
       expect(r.stderr).not.toContain("pwned");
     });

@@ -31,6 +31,41 @@ set -euo pipefail
 
 LOCK_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/ide"
 
+# ADR-0016: this gate fails CLOSED. If the bridge is unreachable (not running,
+# or the /approvals POST errors/times out) the hook DENIES the tool call by
+# default — an attacker who can crash or partition the bridge must not thereby
+# disable the approval gate. Set PATCHWORK_APPROVAL_FAIL_OPEN=1 to restore the
+# legacy allow-on-unreachable behavior (e.g. for offline/dev use where the
+# hook is installed but no bridge is expected to be running).
+PATCHWORK_APPROVAL_FAIL_OPEN="${PATCHWORK_APPROVAL_FAIL_OPEN:-0}"
+
+# Emit a structured CC deny + exit 2. $1 = human-readable reason.
+emit_deny() {
+  export PATCHWORK_DENY_REASON="${1:-patchwork rejected}"
+  python3 - <<'PY' 2>/dev/null || true
+import json, os
+print(json.dumps({
+    "hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": os.environ.get("PATCHWORK_DENY_REASON", "patchwork rejected"),
+    }
+}))
+PY
+  echo "Patchwork: $1" >&2
+  exit 2
+}
+
+# Bridge unreachable handler. $1 = short reason token (e.g. "no_bridge").
+# Fails closed unless PATCHWORK_APPROVAL_FAIL_OPEN is set truthy.
+handle_unreachable() {
+  if [[ "$PATCHWORK_APPROVAL_FAIL_OPEN" == "1" || "$PATCHWORK_APPROVAL_FAIL_OPEN" == "true" ]]; then
+    echo "Patchwork: bridge unreachable ($1) — PATCHWORK_APPROVAL_FAIL_OPEN set, allowing" >&2
+    exit 0
+  fi
+  emit_deny "approval bridge unreachable ($1) — failing closed (set PATCHWORK_APPROVAL_FAIL_OPEN=1 to override)"
+}
+
 # Read the full stdin payload — CC always sends JSON here for PreToolUse.
 # Fall back to env vars for backwards compat + manual invocation.
 PATCHWORK_HOOK_PAYLOAD=""
@@ -101,9 +136,10 @@ elif [[ -d "$LOCK_DIR" ]]; then
   fi
 fi
 
-# No bridge running → allow by default so CC keeps working offline.
+# No bridge running → fail closed (ADR-0016). Override with
+# PATCHWORK_APPROVAL_FAIL_OPEN=1 for offline/dev use.
 if [[ -z "$port" || -z "$token" ]]; then
-  exit 0
+  handle_unreachable "no_bridge"
 fi
 
 # Build request body. Fields are passed through env to python to avoid
@@ -145,45 +181,48 @@ PY
 )
 
 # 5-minute timeout matches ApprovalQueue TTL.
-response=$(curl -sS --max-time 310 \
+# ADR-0016: a curl transport failure (bridge crashed mid-request, timeout,
+# connection refused) is treated as unreachable → fail closed, NOT allow.
+if ! response=$(curl -sS --max-time 310 \
   -H "Authorization: Bearer $token" \
   -H "Content-Type: application/json" \
   -X POST \
   -d "$request_body" \
-  "http://127.0.0.1:$port/approvals" 2>/dev/null || echo '{"decision":"allow","reason":"bridge_unreachable"}')
+  "http://127.0.0.1:$port/approvals" 2>/dev/null); then
+  handle_unreachable "request_failed"
+fi
+# Empty body with a clean exit is also a degenerate/unreachable response.
+if [[ -z "$response" ]]; then
+  handle_unreachable "empty_response"
+fi
 
 # Parse decision via env — never interpolate $response into python -c.
+# ADR-0016: an unparseable / non-JSON response is a degenerate bridge reply
+# (partial write, proxy error page) → treated as unreachable, fail closed.
 export PATCHWORK_HOOK_RESPONSE="$response"
 decision_reason=$(python3 - <<'PY' 2>/dev/null || true
 import json, os
 try:
     d = json.loads(os.environ.get("PATCHWORK_HOOK_RESPONSE", "") or "{}")
+    if not isinstance(d, dict):
+        raise ValueError("not an object")
 except Exception:
-    d = {}
-print(d.get("decision", "allow"))
-print(d.get("reason", ""))
+    print("__parse_error__")
+    print("")
+else:
+    print(d.get("decision", "allow"))
+    print(d.get("reason", ""))
 PY
 )
 decision=$(sed -n '1p' <<<"$decision_reason")
 reason=$(sed -n '2p' <<<"$decision_reason")
-decision="${decision:-allow}"
+
+if [[ "$decision" == "__parse_error__" || -z "$decision" ]]; then
+  handle_unreachable "bad_response"
+fi
 
 if [[ "$decision" == "deny" ]]; then
-  # Emit structured output for modern CC; exit 2 for older versions.
-  # Use python to embed the reason safely (handles quotes/special chars).
-  export PATCHWORK_DENY_REASON="${reason:-patchwork rejected}"
-  python3 - <<'PY'
-import json, os
-print(json.dumps({
-    "hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "permissionDecision": "deny",
-        "permissionDecisionReason": os.environ.get("PATCHWORK_DENY_REASON", "patchwork rejected"),
-    }
-}))
-PY
-  echo "Patchwork: approval denied for $tool_name${reason:+ ($reason)}" >&2
-  exit 2
+  emit_deny "approval denied for $tool_name${reason:+ ($reason)}"
 fi
 
 # Allow path: exit 0 silently. CC defaults to allow on clean exit.
