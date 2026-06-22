@@ -10,9 +10,12 @@
  *   2. `summarizeRunRisk` — a transparent 0–100 workflow score derived from
  *      step counts, returned WITH its components so it is never a black box.
  *
- * Risk tier source is `riskDefault` (already enriched onto the plan step),
- * NOT `classifyTool` — which mis-tiers namespaced recipe tool ids to a uniform
- * "medium" (see the investigation report, §3b).
+ * Risk tier source is `riskDefault` (already enriched onto the plan step) —
+ * the registry's authoritative value. `classifyTool` now agrees for namespaced
+ * recipe tool ids (it consults the same registry via a resolver hook, with a
+ * read/write verb fallback), so the approval gate and this simulation no longer
+ * disagree. We keep reading `riskDefault` directly here since it's already on
+ * the step — no need to re-look-up.
  */
 
 import type {

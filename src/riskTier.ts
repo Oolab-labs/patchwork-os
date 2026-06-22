@@ -150,7 +150,49 @@ export function inferTierFromName(toolName: string): RiskTier {
   return "medium";
 }
 
+/**
+ * Read vs write verb heuristics for namespaced recipe tool ids
+ * (`namespace.verb`, e.g. `github.list_issues`). Mirrors the recipe tool
+ * registry's default convention (`isWrite ? "medium" : "low"`) so the approval
+ * gate agrees with the simulation/registry even when the registry has not been
+ * loaded (e.g. a bare classifyTool call in a transport module).
+ */
+const NAMESPACED_READ_VERB =
+  /^(list|get|search|fetch|read|describe|resolve|lookup|view|count|find|query|export|download|preview|check|status|stats?)/;
+const NAMESPACED_WRITE_VERB =
+  /^(create|post|send|update|add|delete|remove|comment|write|set|merge|close|archive|move|upload|publish|reply|assign|transition|edit|put|patch|cancel|run|trigger|invite|react|upsert)/;
+
+function inferTierFromNamespacedId(id: string): RiskTier {
+  const verb = id.slice(id.indexOf(".") + 1).toLowerCase();
+  if (NAMESPACED_READ_VERB.test(verb)) return "low";
+  if (NAMESPACED_WRITE_VERB.test(verb)) return "medium";
+  return "medium"; // unknown verb → conservative default
+}
+
+/**
+ * Optional authoritative resolver, populated by the recipe tool registry with
+ * each tool's declared `riskDefault`. When set and it returns a tier for a
+ * namespaced id, that tier wins over the heuristic — keeping a single source of
+ * truth. The dependency points registry → riskTier (riskTier imports nothing),
+ * so there is no import cycle.
+ */
+export type TierResolver = (toolName: string) => RiskTier | undefined;
+let tierResolver: TierResolver | null = null;
+
+export function registerTierResolver(fn: TierResolver | null): void {
+  tierResolver = fn;
+}
+
 export function classifyTool(toolName: string): RiskTier {
+  // Namespaced recipe tool ids (`namespace.verb`) never appear in TIER_MAP and
+  // do not match the camelCase heuristics — they previously fell through to the
+  // uniform "medium" default. MCP tool names match /^[a-zA-Z0-9_]+$/ (no dot),
+  // so a "." reliably marks a recipe tool id.
+  if (toolName.includes(".")) {
+    const resolved = tierResolver?.(toolName);
+    if (resolved !== undefined) return resolved;
+    return inferTierFromNamespacedId(toolName);
+  }
   // Object.hasOwn guards against prototype keys ("valueOf", "toString",
   // "constructor", etc.) which would otherwise resolve to Object.prototype
   // members instead of falling through to the heuristic.

@@ -10,6 +10,7 @@
  */
 
 import { assertWriteAllowed } from "../featureFlags.js";
+import { registerTierResolver } from "../riskTier.js";
 import { deriveIdempotencyKey } from "./idempotencyKey.js";
 import type { RunContext, StepDeps } from "./yamlRunner.js";
 
@@ -54,6 +55,12 @@ export interface RegisteredTool extends ToolMetadata {
 
 /** Internal registry map */
 const registry = new Map<string, RegisteredTool>();
+
+// Make the recipe tool registry the authoritative source of risk tiers for
+// namespaced tool ids in classifyTool (approval gate, simulation, dashboard).
+// Lazy: resolves at call time so it reflects whatever has registered so far.
+// (Dependency points registry → riskTier; riskTier imports nothing → no cycle.)
+registerTierResolver((id) => registry.get(id)?.riskDefault);
 
 /**
  * Register a tool. Duplicate IDs throw.
