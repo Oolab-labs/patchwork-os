@@ -18,3 +18,5 @@ This directory contains Architecture Decision Records (ADRs) for claude-ide-brid
 - [ADR-0012: `windows-latest` CI Blocking](0012-windows-ci-blocking.md) — graduate Windows matrix from advisory to required check
 - [ADR-0013: Write-Tier Kill-Switch](0013-kill-switch.md) — `/kill-switch` endpoint, multi-bridge CLI fan-out, fs.watch convergence, SSE
 - [ADR-0014: /tasks Pagination over Virtualization](0014-tasks-pagination-over-virtualization.md) — capped row render + "show more" instead of `react-virtual`
+- [ADR-0015: Cost-Aware Routing](0015-cost-aware-routing.md) — price table, `budget.usdMax` enforcement, per-step downshift gearbox
+- [ADR-0016: Approval Hook Fails Closed](0016-approval-hook-fail-closed.md) — `PreToolUse` hook denies on unreachable bridge; `PATCHWORK_APPROVAL_FAIL_OPEN` escape hatch

@@ -99,6 +99,32 @@ export { corsOrigin };
 // Implementation lives in src/crypto.ts — see there for security notes.
 const timingSafeTokenCompare = timingSafeStringEqual;
 
+/**
+ * H6 (audit 2026-06-19): the webhook auth gate must treat the
+ * `X-Hub-Signature-256` header identically at the bearer-bypass decision
+ * and at the HMAC verification step. A multi-valued header (duplicate
+ * lines collapsed to a `string[]` by an upstream proxy / HTTP-2 layer, or
+ * Node's comma-join) is NOT a usable single signature and must be rejected,
+ * never silently skipped. This returns the lone string only when exactly
+ * one usable value is present; otherwise `null`.
+ *
+ * - `undefined`        → null (absent)
+ * - single string      → that string
+ * - comma-joined string (Node merge of duplicates) → null (multi-valued)
+ * - `string[]`         → null (multi-valued)
+ */
+export function readSingleSignatureHeader(
+  value: string | string[] | undefined,
+): string | null {
+  if (Array.isArray(value)) return null;
+  if (typeof value !== "string") return null;
+  // Node merges duplicate non-special headers with ", ". A genuine GitHub
+  // signature is a single `sha256=<hex>` token and never contains a comma,
+  // so any comma marks a multi-valued (spoofed) header.
+  if (value.includes(",")) return null;
+  return value;
+}
+
 function setupPongHandler(ws: AliveWebSocket): void {
   ws.on("pong", (_data: Buffer) => {
     ws.isAlive = true;
@@ -821,22 +847,30 @@ export class Server extends EventEmitter<ServerEvents> {
         !isStaticToken && this.oauthServer
           ? this.oauthServer.resolveBearerToken(bearer)
           : null;
-      // Phone-path: approve/reject with x-approval-token header or ?token= query param bypass bearer check.
-      // The token itself is validated inside routeApprovalRequest via queue.validateToken.
+      // Phone-path: approve/reject bypass the bearer check when they carry
+      // either the x-approval-token header (legacy ntfy/push) or the HMAC
+      // ?sig= query param (M23 signed callback). Both credentials are
+      // validated inside routeApprovalRequest. L43: the legacy ?token= query
+      // param is no longer accepted here — tokens in URLs leak into access
+      // logs, proxy logs, and Referer headers; use the header instead.
       const isPhoneApprovalPath =
         req.method === "POST" &&
         /^\/(approve|reject)\/[A-Za-z0-9-]+$/.test(parsedUrl.pathname) &&
         !!(
-          req.headers["x-approval-token"] || parsedUrl.searchParams.get("token")
+          req.headers["x-approval-token"] || parsedUrl.searchParams.get("sig")
         );
       // GitHub-style webhook bypass: when --webhook-secret is configured,
       // POST /hooks/* requests carrying X-Hub-Signature-256 bypass the
       // bearer-token gate. Signature itself is verified inside the
       // /hooks/* handler after the body has been read.
+      // H6: only a single usable signature value counts as a webhook bypass
+      // candidate. A multi-valued header is rejected here (falls through to
+      // the bearer requirement — fail closed) and again at the HMAC step.
       const isHmacWebhookCandidate =
         req.method === "POST" &&
         parsedUrl.pathname.startsWith("/hooks/") &&
-        !!req.headers["x-hub-signature-256"] &&
+        readSingleSignatureHeader(req.headers["x-hub-signature-256"]) !==
+          null &&
         this.webhookSecret !== null;
       // Rate-limit the phone bypass surface. Only applies when this is
       // actually a phone-path request that's relying on the bypass — a
@@ -1299,7 +1333,18 @@ export class Server extends EventEmitter<ServerEvents> {
         // computed over the raw on-the-wire bytes (read.bytes), not the
         // utf-8-decoded string — non-UTF-8 or denormalized payloads must
         // round-trip identically to validate.
-        const sigHeader = req.headers["x-hub-signature-256"];
+        // H6: reject multi-valued signature headers outright. The raw header
+        // is present-but-unusable → 401, never a silent skip of HMAC.
+        const rawSig = req.headers["x-hub-signature-256"];
+        if (
+          rawSig !== undefined &&
+          readSingleSignatureHeader(rawSig) === null
+        ) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "invalid_signature" }));
+          return;
+        }
+        const sigHeader = readSingleSignatureHeader(rawSig);
         if (typeof sigHeader === "string" && sigHeader.length > 0) {
           if (!this.webhookSecret) {
             res.writeHead(401, { "Content-Type": "application/json" });
@@ -2146,12 +2191,10 @@ export class Server extends EventEmitter<ServerEvents> {
                 changes.ntfyTopic = ntfyTopicTrimmed ? "***" : "";
               if (ntfyServerTrimmed !== undefined)
                 changes.ntfyServer = ntfyServerTrimmed || "";
-              const remoteAddr =
-                (req.headers["x-forwarded-for"] as string | undefined)
-                  ?.split(",")[0]
-                  ?.trim() ||
-                req.socket.remoteAddress ||
-                "unknown";
+              // L44: honor X-Forwarded-For only from trusted proxies. Routed
+              // through getClientIp so an untrusted client cannot spoof the
+              // audited actor IP.
+              const remoteAddr = this.getClientIp(req) ?? "unknown";
               this.activityLog.recordEvent("settings.change", {
                 actor: "http",
                 ip: remoteAddr,
@@ -2489,12 +2532,8 @@ export class Server extends EventEmitter<ServerEvents> {
           if (this.activityLog) {
             this.activityLog.recordEvent("telemetry.reset", {
               actor: "http",
-              ip:
-                (req.headers["x-forwarded-for"] as string | undefined)
-                  ?.split(",")[0]
-                  ?.trim() ||
-                req.socket.remoteAddress ||
-                "unknown",
+              // L44: trusted-proxy-gated client IP (see getClientIp).
+              ip: this.getClientIp(req) ?? "unknown",
             });
           }
           res.writeHead(200, { "Content-Type": "application/json" });
@@ -2794,9 +2833,12 @@ export class Server extends EventEmitter<ServerEvents> {
               path: parsedUrl.pathname,
               body: parsedBody,
               query: parsedUrl.searchParams,
+              // L43: read the approval token from the header ONLY. A token in
+              // ?token= leaks into HTTP access logs, proxy logs, and Referer
+              // headers. (The separately-signed `sig` query param — see
+              // approvalHttp.ts — is an HMAC over the path and is unaffected.)
               approvalToken:
                 (req.headers["x-approval-token"] as string | undefined) ??
-                parsedUrl.searchParams.get("token") ??
                 undefined,
             },
             {

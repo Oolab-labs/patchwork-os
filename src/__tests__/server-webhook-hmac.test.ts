@@ -10,7 +10,7 @@ import { createHmac } from "node:crypto";
 import http from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Logger } from "../logger.js";
-import { Server } from "../server.js";
+import { readSingleSignatureHeader, Server } from "../server.js";
 
 const logger = new Logger(false);
 const TOKEN = "test-hmac-bearer-token-000000000000";
@@ -211,5 +211,30 @@ describe("POST /hooks/* — HMAC-SHA256 webhook auth", () => {
     // Must be rejected — not 200.
     expect(result.status).not.toBe(200);
     expect(calls).toHaveLength(0);
+  });
+});
+
+// H6 — direct coverage of the array/multi-valued reproduction that the raw
+// HTTP path cannot produce (Node comma-joins duplicate headers into a single
+// string). An upstream reverse-proxy or HTTP/2 frontend CAN hand the bridge a
+// string[] for x-hub-signature-256; before the fix the outer gate saw it as
+// truthy (bearer bypass) and the inner gate's `typeof === "string"` skipped
+// HMAC entirely — auth bypass with no valid credential.
+describe("readSingleSignatureHeader — H6 multi-valued rejection", () => {
+  it("returns the lone string for a single valid value", () => {
+    expect(readSingleSignatureHeader("sha256=abc")).toBe("sha256=abc");
+  });
+  it("returns null for undefined (absent)", () => {
+    expect(readSingleSignatureHeader(undefined)).toBeNull();
+  });
+  it("returns null for a string[] (duplicate headers via proxy/HTTP-2)", () => {
+    expect(
+      readSingleSignatureHeader(["sha256=invalid1", "sha256=invalid2"]),
+    ).toBeNull();
+  });
+  it("returns null for a comma-joined string (Node duplicate-header merge)", () => {
+    expect(
+      readSingleSignatureHeader("sha256=invalid1, sha256=invalid2"),
+    ).toBeNull();
   });
 });
