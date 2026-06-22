@@ -97,6 +97,7 @@
     "test:smoke:dashboard": "node scripts/smoke/dashboard-walk.mjs",
     "schema:generate": "node scripts/generate-schemas.mjs",
     "schema:check": "node scripts/audit-schema-changes.mjs",
+    "parity:check": "node scripts/audit-parity-xfails.mjs",
     "schema:update": "node scripts/audit-schema-changes.mjs --update",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",

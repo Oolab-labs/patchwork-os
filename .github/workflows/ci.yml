@@ -95,6 +95,8 @@ jobs:
         run: node scripts/audit-shape-safety.mjs
       - name: Audit IntelliJ ↔ VSCode wire-method parity
         run: node scripts/audit-intellij-parity.mjs
+      - name: Audit runner-parity xfail ratchet (#850)
+        run: node scripts/audit-parity-xfails.mjs
 
   plugin-validate:
     name: Validate plugin manifest
