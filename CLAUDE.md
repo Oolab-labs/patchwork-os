@@ -1,5 +1,12 @@
 # Claude IDE Bridge — Project Instructions
 
+## Repository Scope
+
+This repo is the **single-tenant Patchwork OS** (one bridge, one workspace, one user's policy). The **multi-tenant SaaS** (self-service signup, container-per-tenant, control plane, reverse proxy) is a **separate repo** at `../patchwork-multitenant` by explicit decision — **never add multi-tenant / control-plane / per-tenant-container code here.**
+
+- That repo **vendors a verbatim copy** of this bridge's `src/` (the tenant image builds `COPY src/`). Any bridge-side change is made **here first**, then snapshotted file-for-file into `patchwork-multitenant/src/` — otherwise the tenant image goes stale. Core features stay tenant-agnostic (e.g. the recipe approval gate keys off the local bridge, not a tenant control plane).
+- VPS/deploy scripts (`redeploy.sh`, `.env.prod`) live on the production box, not in either repo.
+
 ## Documentation
 
 Comply with all docs in `/documents/`. Consult before changes:
