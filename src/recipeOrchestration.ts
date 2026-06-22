@@ -52,6 +52,39 @@ import type { Server } from "./server.js";
 // all others used 1_800_000ms (30 min).
 export const RECIPE_TASK_TIMEOUT_MS = 1_800_000;
 
+/**
+ * M3 — build the flat-runner approval fn backed by the bridge ApprovalQueue.
+ * Returns true (allow) for steps below the gate threshold; otherwise queues a
+ * human approval and resolves true only on an explicit "approved" decision
+ * (a reject / expire / cancel halts the run — fail-closed, ADR-0016 spirit).
+ */
+async function makeRecipeApprovalFn(
+  gate: "high" | "all",
+): Promise<
+  (input: {
+    toolId: string;
+    tier: import("./riskTier.js").RiskTier;
+    summary?: string;
+    params?: Record<string, unknown>;
+  }) => Promise<boolean>
+> {
+  const { getApprovalQueue } = await import("./approvalQueue.js");
+  const queue = getApprovalQueue();
+  return async (input) => {
+    // Below-threshold steps don't need sign-off.
+    if (gate === "high" && input.tier !== "high") return true;
+    const { promise } = queue.request({
+      toolName: input.toolId,
+      params: input.params ?? {},
+      tier: input.tier,
+      sessionId: "recipe",
+      ...(input.summary !== undefined && { summary: input.summary }),
+    });
+    const decision = await promise;
+    return decision === "approved";
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Public interfaces
 // ---------------------------------------------------------------------------
@@ -935,7 +968,21 @@ export class RecipeOrchestration {
       });
       return task.output ?? task.errorMessage ?? "";
     };
-    const runnerDeps = { workdir: this.deps.workdir, claudeCodeFn };
+    // M3 — flat-runner approval gate. Inject a queue-backed approval fn
+    // whenever the bridge's approvalGate is engaged. The flat runner only
+    // consults it for `manual`-triggered runs (safe-by-default: automated
+    // cron/webhook runs never block mid-flight), so this injection does not
+    // need to inspect the trigger type here.
+    const approvalGate = this.deps.server?.approvalGate ?? "off";
+    const requireApprovalFn =
+      approvalGate === "off"
+        ? undefined
+        : await makeRecipeApprovalFn(approvalGate);
+    const runnerDeps = {
+      workdir: this.deps.workdir,
+      claudeCodeFn,
+      ...(requireApprovalFn && { requireApprovalFn }),
+    };
     // Pass the bridge's long-lived RecipeRunLog so chainedRunner can flip the
     // run from `running` → terminal in-place via startRun/completeRun. The
     // dashboard reads the same instance, so /runs surfaces the live entry

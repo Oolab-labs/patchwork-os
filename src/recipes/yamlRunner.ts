@@ -42,6 +42,7 @@ import { sanitizeEnv } from "../drivers/claude/envSanitizer.js";
 import { isLoopbackOrPrivateEndpoint } from "../localEndpointGuard.js";
 import { loadConfig as loadPatchworkConfigSync } from "../patchworkConfig.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
+import { classifyTool } from "../riskTier.js";
 import type { RecipeRunLog } from "../runLog.js";
 /**
  * Local alias for `sanitizeParsedJson` from `src/sanitizeParsedJson.ts`.
@@ -483,6 +484,15 @@ export interface YamlRecipe {
   on_error?: ErrorPolicy;
   /** PR2b — per-recipe token budget (see `BudgetPolicy` in schema.ts). */
   budget?: import("./schema.js").BudgetPolicy;
+  /**
+   * M3 — per-recipe opt-out of the flat-runner approval gate. The gate is
+   * safe-by-default: it only ever engages for `manual`-triggered runs (so
+   * automated cron/webhook runs never block mid-flight) and only when the
+   * bridge injects a `requireApprovalFn` (i.e. approvalGate != "off"). Set
+   * `requireApproval: false` to disable the gate for this recipe even on a
+   * manual run.
+   */
+  requireApproval?: boolean;
 }
 
 export type RunContext = Record<string, string>;
@@ -581,6 +591,21 @@ export interface RunnerDeps {
    * semantics). Caller-supplied; left unset for cron / webhook runs.
    */
   manualRunId?: string;
+  /**
+   * M3 — flat-runner approval gate. When the bridge injects this (only when
+   * `approvalGate != "off"`), the runner calls it before each step on a
+   * `manual`-triggered run and HALTS the run if it resolves `false` (human
+   * rejected). The fn itself applies the gate threshold (high/all) against the
+   * step's tier and returns `true` for steps that don't need sign-off, so the
+   * runner only has to act on an explicit rejection. Never consulted for
+   * automated (cron/webhook/recipe) triggers, so crons can't block mid-run.
+   */
+  requireApprovalFn?: (input: {
+    toolId: string;
+    tier: import("../riskTier.js").RiskTier;
+    summary?: string;
+    params?: Record<string, unknown>;
+  }) => Promise<boolean>;
 }
 
 export interface RunResult {
@@ -684,6 +709,9 @@ export type StepDeps = Required<
     | "ledgerDir"
     | "manualRunId"
     | "activityLog"
+    // M3 — approval gate runs in the run loop against `deps`, not per-step
+    // StepDeps; keep it off StepDeps so it isn't forced Required here.
+    | "requireApprovalFn"
   >
 > & {
   workdir: string;
@@ -1642,6 +1670,48 @@ export async function runYamlRecipe(
         persistLiveStepResults();
         emitStepDone(stepIdForEmit);
         continue;
+      }
+
+      // M3 — flat-runner approval gate. Safe-by-default: only engages for
+      // `manual`-triggered runs (cron/webhook/recipe runs never block
+      // mid-flight) and only when the bridge injected `requireApprovalFn`
+      // (i.e. approvalGate != "off"). Per-recipe opt-out via
+      // `requireApproval: false`. The injected fn applies the tier threshold
+      // itself and returns `true` for steps that don't need sign-off; a
+      // `false` result is an explicit human rejection → halt the run.
+      if (
+        deps.requireApprovalFn &&
+        recipeTriggerKind === "manual" &&
+        recipe.requireApproval !== false
+      ) {
+        const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
+        const approved = await deps.requireApprovalFn({
+          toolId: approvalToolId,
+          tier: classifyTool(approvalToolId),
+          summary: step.agent
+            ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
+            : `tool ${approvalToolId}`,
+          params: step.agent ? undefined : (step as Record<string, unknown>),
+        });
+        if (!approved) {
+          const reason = `Step rejected by approval gate — approval_rejected.`;
+          runError = runError ?? reason;
+          haltAfterFailure = true;
+          const rejId = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
+          stepResults.push({
+            id: rejId,
+            tool: step.agent ? "agent" : step.tool,
+            status: "error",
+            error: reason,
+            haltReason: reason,
+            haltCategory: "approval_rejected",
+            durationMs: 0,
+          });
+          stepsRun++;
+          persistLiveStepResults();
+          emitStepDone(stepIdForEmit);
+          continue;
+        }
       }
 
       // Handle agent steps separately

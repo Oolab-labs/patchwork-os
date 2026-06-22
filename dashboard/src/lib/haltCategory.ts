@@ -21,6 +21,7 @@ export type HaltCategory =
   | "rate_limited"
   | "network_error"
   | "missing_connector"
+  | "approval_rejected"
   | "run_level"
   | "unknown";
 
@@ -44,6 +45,7 @@ export const HALT_CATEGORY_LABEL: Record<HaltCategory, string> = {
   rate_limited: "rate limited",
   network_error: "network error",
   missing_connector: "missing connector",
+  approval_rejected: "approval rejected",
   run_level: "run-level halt",
   unknown: "uncategorised",
 };
@@ -76,6 +78,8 @@ export const HALT_CATEGORY_HINT: Record<HaltCategory, string> = {
     "Transport-level failure (DNS, refused, timeout). Check connectivity to the upstream service.",
   missing_connector:
     "Recipe references a connector that isn't configured. Install/connect from /connections.",
+  approval_rejected:
+    "A step was rejected at the approval gate. Approve it from the dashboard, or set requireApproval: false on the recipe.",
   run_level:
     "Whole-recipe failure (no step ran). Check the recipe for circular deps / parse errors.",
   unknown: "Uncategorised halt. Open the run trace for the raw error.",
