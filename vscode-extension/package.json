@@ -2,7 +2,7 @@
   "name": "claude-ide-bridge-extension",
   "displayName": "Claude IDE Bridge",
   "description": "MCP bridge between Claude Code and your IDE. 177 tools — diagnostics, LSP, debugger, terminal, git. Optional Patchwork OS layer adds recipes, oversight, and approval queue.",
-  "version": "1.4.20",
+  "version": "1.4.21",
   "extensionKind": [
     "workspace"
   ],
@@ -212,14 +212,14 @@
     "package": "npx @vscode/vsce package --no-dependencies"
   },
   "dependencies": {
-    "ws": "^8.20.1"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.93.0",
     "@types/ws": "^8.5.10",
     "@vscode/codicons": "^0.0.45",
-    "esbuild": "^0.27.4",
+    "esbuild": "^0.28.1",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.8"
   }
 }

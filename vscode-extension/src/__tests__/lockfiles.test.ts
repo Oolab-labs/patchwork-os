@@ -26,6 +26,7 @@ import { readLockFilesAsync } from "../lockfiles";
 const NOW = 1_700_000_000_000; // fixed "now" in ms
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
   vi.spyOn(process, "kill").mockImplementation(() => true as any);

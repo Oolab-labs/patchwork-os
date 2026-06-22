@@ -482,6 +482,14 @@ export function __reset() {
   window.showInformationMessage.mockReset();
   window.showWarningMessage.mockReset();
   window.showErrorMessage.mockReset();
+  window.onDidChangeActiveTextEditor
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
+  window.onDidChangeTextEditorSelection
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
+  window.onDidOpenTerminal.mockReset().mockReturnValue({ dispose: vi.fn() });
+  window.onDidCloseTerminal.mockReset().mockReturnValue({ dispose: vi.fn() });
   window.onDidEndTerminalShellExecution
     .mockReset()
     .mockReturnValue({ dispose: vi.fn() });
@@ -506,6 +514,9 @@ export function __reset() {
     .mockReturnValue({ dispose: vi.fn() });
 
   languages.getDiagnostics.mockReset().mockReturnValue([]);
+  languages.onDidChangeDiagnostics
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
   commands.executeCommand.mockReset().mockResolvedValue(undefined);
   commands.registerCommand.mockReset().mockReturnValue({ dispose: vi.fn() });
   commands.getCommands.mockReset().mockResolvedValue([]);
