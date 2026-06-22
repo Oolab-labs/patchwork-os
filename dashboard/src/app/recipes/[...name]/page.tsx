@@ -340,8 +340,11 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
   // Deep-link: `?diagnose=1` (from the recipes list / failed-run views)
   // auto-runs the Doctor panel and scrolls to it.
   const autoDiagnose = useSearchParams().get("diagnose") === "1";
-  // Deep-link: `?simulate=1` auto-runs the What-If Preview panel + scrolls to it.
-  const autoSimulate = useSearchParams().get("simulate") === "1";
+  // M3 — the What-If Preview is the DEFAULT pre-run affordance: it auto-runs on
+  // every recipe view so the operator sees what a run would do (risk tiers,
+  // writes, blast radius) before clicking Run. Opt out with `?simulate=0`.
+  // `?simulate=1` still works (and scrolls to the panel via the deep-link).
+  const autoSimulate = useSearchParams().get("simulate") !== "0";
 
   // Reusable list fetch for the recipe row (matches layout's data source).
   const { data: recipes, refetch: refetchRecipes } = useBridgeFetch<Recipe[]>(

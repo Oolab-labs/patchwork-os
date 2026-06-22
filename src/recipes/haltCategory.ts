@@ -52,6 +52,11 @@ export type HaltCategory =
    * Actionable: install/connect from /connections.
    */
   | "missing_connector"
+  /**
+   * A human rejected the step at the flat-runner approval gate (M3). Distinct
+   * from a tool failure — the run was deliberately stopped by an operator.
+   */
+  | "approval_rejected"
   /** Whole-recipe failure (e.g. circular dependencies) — has no step row. */
   | "run_level"
   | "unknown";
@@ -76,6 +81,7 @@ export const HALT_CATEGORY_LABELS: Record<HaltCategory, string> = {
   rate_limited: "rate limited",
   network_error: "network error",
   missing_connector: "missing connector",
+  approval_rejected: "approval rejected",
   run_level: "run-level halt",
   unknown: "uncategorised",
 };
@@ -101,6 +107,8 @@ export const HALT_CATEGORY_HINTS: Record<HaltCategory, string> = {
   rate_limited: "back off cron cadence or wait",
   network_error: "check connectivity to upstream",
   missing_connector: "install/connect from /connections",
+  approval_rejected:
+    "approve the step from the dashboard, or set requireApproval: false",
   run_level: "check recipe for circular deps / parse errors",
   unknown: "open run trace for raw error",
 };
@@ -118,6 +126,8 @@ export function categoriseHaltReason(reason: string | undefined): HaltCategory {
   if (/kill[- _]?switch/i.test(reason)) return "kill_switch";
   if (/budget[_ ]?exceeded|exceeded its token budget/i.test(reason))
     return "budget_exceeded";
+  if (/approval[_ ]?rejected|rejected by .*approval/i.test(reason))
+    return "approval_rejected";
   if (/^expect_failed/i.test(reason)) return "expect_failed";
   // Opt-in judge→refine loop exhaustion (`judge "x" did not approve after N
   // revisions`). Must precede the generic `Agent step ... threw` matcher.
