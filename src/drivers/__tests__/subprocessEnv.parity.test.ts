@@ -74,7 +74,10 @@ describe("driver env parity — subprocess drivers route through sanitizeEnv", (
   for (const d of SUBPROCESS_DRIVERS) {
     it(`${d.name} driver builds its child env via sanitizeEnv`, () => {
       const src = readFileSync(path.join(driversRoot, d.file), "utf8");
-      expect(src).toMatch(/sanitizeEnv\s*\(\s*process\.env\s*\)/);
+      // `sanitizeEnv(process.env)` or `sanitizeEnv(process.env, { preserve })`
+      // — the optional second arg (Tier-0 #3, audit 2026-06-22) lets a driver
+      // keep its OWN provider creds while still routing through the shared seam.
+      expect(src).toMatch(/sanitizeEnv\s*\(\s*process\.env\s*[,)]/);
     });
   }
 

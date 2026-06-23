@@ -200,4 +200,43 @@ describe("resumeClaudeTask", () => {
     expect("isError" in result && result.isError).toBe(true);
     expect(parse(result).error).toMatch(/positive number/i);
   });
+
+  // ── Tier-0 #2 (audit 2026-06-22): the automation-chain guard + execution
+  // context must survive a resume. Dropping isAutomationTask re-ran an
+  // automation task WITHOUT the infinite-chain guard; dropping
+  // systemPrompt/useAnt/mcpAccess silently changed the resumed task's
+  // identity/binary/capabilities vs the original.
+  it("forwards isAutomationTask/systemPrompt/useAnt/mcpAccess from the original task", async () => {
+    const task = makeTask({
+      status: "error",
+      isAutomationTask: true,
+      systemPrompt: "you are an automation worker",
+      useAnt: true,
+      mcpAccess: true,
+    });
+    const orch = makeOrchestrator(task);
+    const tool = createResumeClaudeTaskTool(orch, "session-1");
+    await tool.handler({ taskId: "task-abc" });
+    expect(orch.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isAutomationTask: true,
+        systemPrompt: "you are an automation worker",
+        useAnt: true,
+        mcpAccess: true,
+      }),
+    );
+  });
+
+  it("does not invent automation fields when the original task lacks them", async () => {
+    const task = makeTask({ status: "done" });
+    const orch = makeOrchestrator(task);
+    const tool = createResumeClaudeTaskTool(orch, "session-1");
+    await tool.handler({ taskId: "task-abc" });
+    const opts =
+      (orch.enqueue as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] ?? {};
+    expect("isAutomationTask" in opts).toBe(false);
+    expect("systemPrompt" in opts).toBe(false);
+    expect("useAnt" in opts).toBe(false);
+    expect("mcpAccess" in opts).toBe(false);
+  });
 });

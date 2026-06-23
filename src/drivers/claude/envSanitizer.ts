@@ -18,15 +18,65 @@
  */
 const PRESERVE = new Set(["CLAUDE_CODE_OAUTH_TOKEN"]);
 
-export function sanitizeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+/**
+ * Cross-provider LLM credentials (Tier-0 #3, audit 2026-06-22).
+ *
+ * A bridge-spawned subprocess agent authenticates as exactly ONE provider.
+ * Every OTHER provider's API key sitting in its environment is pure
+ * exfiltration surface — a prompt-injected agent can read it with `printenv`
+ * and ship it out with a single `curl`. The sanitizer previously stripped only
+ * Anthropic/MCP vars, so OPENAI/XAI/GEMINI/etc. keys leaked into both the
+ * Claude and Gemini subprocess drivers.
+ *
+ * These are stripped by default. A driver that legitimately needs one of them
+ * (e.g. the Gemini driver needs GEMINI_API_KEY / GOOGLE_*) passes the keys it
+ * needs via the `preserve` option so only the OTHER providers' keys are removed.
+ */
+const CROSS_PROVIDER_SECRETS = new Set([
+  "OPENAI_API_KEY",
+  "OPENAI_ORG_ID",
+  "XAI_API_KEY",
+  "GROK_API_KEY",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "GOOGLE_GENAI_API_KEY",
+  "GOOGLE_APPLICATION_CREDENTIALS",
+  "MISTRAL_API_KEY",
+  "GROQ_API_KEY",
+  "COHERE_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "PERPLEXITY_API_KEY",
+  "TOGETHER_API_KEY",
+  "OPENROUTER_API_KEY",
+  "FIREWORKS_API_KEY",
+  "REPLICATE_API_TOKEN",
+]);
+
+export interface SanitizeEnvOptions {
+  /**
+   * Provider-credential env keys to KEEP even though they would otherwise be
+   * stripped as cross-provider secrets. Used by a driver to retain its own
+   * provider's credentials (e.g. the Gemini driver preserves GEMINI_API_KEY).
+   */
+  preserve?: Iterable<string>;
+}
+
+export function sanitizeEnv(
+  env: NodeJS.ProcessEnv,
+  opts?: SanitizeEnvOptions,
+): NodeJS.ProcessEnv {
+  const preserve = new Set(PRESERVE);
+  for (const key of opts?.preserve ?? []) preserve.add(key);
+
   const clean: NodeJS.ProcessEnv = { ...env };
   for (const key of Object.keys(clean)) {
-    if (PRESERVE.has(key)) continue;
+    if (preserve.has(key)) continue;
     if (
       key === "CLAUDECODE" ||
       key === "ANTHROPIC_API_KEY" ||
       key.startsWith("CLAUDE_CODE_") ||
-      key.startsWith("MCP_")
+      key.startsWith("MCP_") ||
+      CROSS_PROVIDER_SECRETS.has(key)
     ) {
       delete clean[key];
     }

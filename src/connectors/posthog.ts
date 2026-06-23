@@ -12,6 +12,7 @@
  * Extends BaseConnector for unified auth, retry, rate-limit, error handling.
  */
 
+import { isPrivateHost } from "../ssrfGuard.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -506,6 +507,31 @@ export async function handlePostHogConnect(
         body: JSON.stringify({
           ok: false,
           error: "host must start with https://",
+        }),
+      };
+    }
+    // SSRF guard (audit 2026-06-22 #7): the `startsWith("https://")` check
+    // blocks http:// but NOT `https://169.254.169.254` (cloud IMDS) or any
+    // RFC-1918 host — we'd POST the apiKey there as a Bearer token. Reject
+    // private/loopback/link-local hosts, mirroring the DB + Grafana connectors.
+    let parsedHost: URL;
+    try {
+      parsedHost = new URL(host);
+    } catch {
+      return {
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: false, error: "host is not a valid URL" }),
+      };
+    }
+    if (isPrivateHost(parsedHost.hostname)) {
+      return {
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: false,
+          error:
+            "host must not point at a private, loopback, or link-local address",
         }),
       };
     }

@@ -22,6 +22,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { isPrivateHost } from "../ssrfGuard.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -452,6 +453,40 @@ export async function handleCalDiyConnect(
       status: 400,
       contentType: "application/json",
       body: JSON.stringify({ ok: false, error: "Invalid JSON body" }),
+    };
+  }
+
+  // SSRF guard (audit 2026-06-22 #7): `baseUrl` is user-supplied (self-hosted
+  // Cal.diy) and was previously accepted verbatim — a caller could point it at
+  // cloud IMDS or an internal service and have us POST the apiKey there as a
+  // Bearer token. Require a parseable https URL with a non-private host,
+  // mirroring the DB + Grafana connectors.
+  let parsedBaseUrl: URL;
+  try {
+    parsedBaseUrl = new URL(baseUrl);
+  } catch {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: false, error: "baseUrl is not a valid URL" }),
+    };
+  }
+  if (parsedBaseUrl.protocol !== "https:") {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: false, error: "baseUrl must use https://" }),
+    };
+  }
+  if (isPrivateHost(parsedBaseUrl.hostname)) {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: false,
+        error:
+          "baseUrl must not point at a private, loopback, or link-local address",
+      }),
     };
   }
 
