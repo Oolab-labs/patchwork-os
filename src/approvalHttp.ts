@@ -256,6 +256,18 @@ export async function routeApprovalRequest(
           body: { error: "invalid ntfy callback signature" },
         };
       }
+    } else if (ntfySig !== undefined) {
+      // Tier-0 #1 (audit 2026-06-22): a sig was presented but no ntfyHmacSecret
+      // is configured to verify it against. server.ts bypasses the Bearer gate
+      // for /approve|reject whenever a ?sig= is present, so falling through here
+      // would call queue.approve() UNAUTHENTICATED. Fail closed instead.
+      return {
+        status: 401,
+        body: {
+          error:
+            "ntfy callback signature rejected: no signing secret configured",
+        },
+      };
     } else if (req.approvalToken !== undefined) {
       // Phone path: validate single-use approval token when one was provided.
       // This check runs regardless of whether Bearer auth also passed — a caller
@@ -322,6 +334,18 @@ export async function routeApprovalRequest(
           body: { error: "invalid ntfy callback signature" },
         };
       }
+    } else if (ntfySig !== undefined) {
+      // Tier-0 #1 (audit 2026-06-22): mirror the approve path — a sig presented
+      // without a configured ntfyHmacSecret cannot be verified, and server.ts
+      // bypassed the Bearer gate to get here. Fail closed rather than fall
+      // through to an unauthenticated queue.reject().
+      return {
+        status: 401,
+        body: {
+          error:
+            "ntfy callback signature rejected: no signing secret configured",
+        },
+      };
     } else if (req.approvalToken !== undefined) {
       // Phone path: validate single-use approval token when one was provided.
       // This check runs regardless of whether Bearer auth also passed — a caller

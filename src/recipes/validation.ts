@@ -313,6 +313,26 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
             });
           }
 
+          // Tier-1 #8 (audit 2026-06-22): the judge→refine loop is implemented
+          // ONLY in the flat runner. A chained recipe (trigger.type:"chained")
+          // treats a `kind: judge` step as a plain agent step and silently
+          // ignores `max_revisions` — the refinement never runs. Reject at lint
+          // time so users aren't misled into thinking it works here.
+          if (isChainedRecipe) {
+            const mrChained = agent.max_revisions;
+            const judgeRequested =
+              agent.kind === "judge" ||
+              (typeof mrChained === "number" && mrChained > 0);
+            if (judgeRequested) {
+              issues.push({
+                level: "error",
+                message: `Step ${i + 1}: judge→refine (kind: judge / max_revisions) is not supported in chained recipes (trigger.type: chained) — it only runs in the flat runner and would silently no-op here.`,
+                code: "chained-judge-unsupported",
+                path: `steps.${i}.agent`,
+              });
+            }
+          }
+
           // `driver: claude|anthropic` routes to the Anthropic API (needs
           // ANTHROPIC_API_KEY), NOT the Claude Code subscription — a common
           // trap. Warn at lint time when the key is absent so the step

@@ -13,6 +13,7 @@
  */
 
 import { createHmac } from "node:crypto";
+import { isPrivateHost } from "../ssrfGuard.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -638,6 +639,40 @@ export async function handleWooCommerceConnect(
       status: 400,
       contentType: "application/json",
       body: JSON.stringify({ ok: false, error: "Invalid JSON body" }),
+    };
+  }
+
+  // SSRF guard (audit 2026-06-22 #7): `storeUrl` is user-supplied and was
+  // accepted verbatim — a caller could point it at cloud IMDS or an internal
+  // service and have us send the consumer key/secret there as Basic auth.
+  // Require a parseable https URL with a non-private host, mirroring the DB +
+  // Grafana connectors.
+  let parsedStoreUrl: URL;
+  try {
+    parsedStoreUrl = new URL(storeUrl);
+  } catch {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: false, error: "storeUrl is not a valid URL" }),
+    };
+  }
+  if (parsedStoreUrl.protocol !== "https:") {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: false, error: "storeUrl must use https://" }),
+    };
+  }
+  if (isPrivateHost(parsedStoreUrl.hostname)) {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: false,
+        error:
+          "storeUrl must not point at a private, loopback, or link-local address",
+      }),
     };
   }
 

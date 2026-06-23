@@ -192,6 +192,23 @@ export function createResumeClaudeTaskTool(
           fallbackModel,
           maxBudgetUsd,
           startupTimeoutMs,
+          // Tier-0 #2 (audit 2026-06-22): forward the automation-chain guard +
+          // execution context, matching every other re-enqueue site
+          // (claudeOrchestrator persist/reload). Dropping isAutomationTask let a
+          // resumed automation task lose its infinite-chain guard; dropping
+          // systemPrompt/useAnt/mcpAccess silently changed the resumed task's
+          // identity (system prompt), binary (useAnt), and capabilities
+          // (mcpAccess) vs the original.
+          ...(original.isAutomationTask !== undefined && {
+            isAutomationTask: original.isAutomationTask,
+          }),
+          ...(original.systemPrompt !== undefined && {
+            systemPrompt: original.systemPrompt,
+          }),
+          ...(original.useAnt !== undefined && { useAnt: original.useAnt }),
+          ...(original.mcpAccess !== undefined && {
+            mcpAccess: original.mcpAccess,
+          }),
         });
         return successStructured({
           newTaskId,

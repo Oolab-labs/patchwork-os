@@ -7,6 +7,7 @@
  *   - Dry-run mode
  */
 
+import { classifyTool, type RiskTier } from "../riskTier.js";
 import type { AgentResult } from "./agentExecutor.js";
 import type { ExecutionOptions, StepExecutor } from "./dependencyGraph.js";
 import {
@@ -34,12 +35,17 @@ import { resolveRecipePath } from "./resolveRecipePath.js";
 import { RunBudget } from "./runBudget.js";
 import { registerRun, unregisterRun } from "./runRegistry.js";
 import type { BudgetPolicy, ErrorPolicy } from "./schema.js";
-import { captureForRunlog, detectSilentFail } from "./stepObservation.js";
+import {
+  captureForRunlog,
+  detectSilentFail,
+  redactSecretsForPrompt,
+} from "./stepObservation.js";
 import type { TemplateContext, TemplateError } from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
 import type { StepExpect } from "./yamlRunner.js";
 import {
   computeAgentCallUsage,
+  declaredRecipeEnv,
   evaluateStepExpect,
   resolveRouting,
 } from "./yamlRunner.js";
@@ -219,6 +225,27 @@ export interface ExecutionDeps {
     name: string,
     parentSourcePath?: string,
   ) => Promise<{ recipe: ChainedRecipe; sourcePath?: string } | null>;
+  /**
+   * Tier-1 #4 (audit 2026-06-22) — approval gate, mirroring the flat runner's
+   * `RunnerDeps.requireApprovalFn`. Injected by the bridge ONLY when
+   * `approvalGate != "off"`. When present, `executeChainedStep` calls it before
+   * dispatching each agent/tool step of the TOP-LEVEL run (depth 0) and HALTS
+   * the step (and, via the dependency graph, its dependents) if it resolves
+   * `false`. Gating is depth-scoped rather than trigger-scoped because a
+   * chained recipe's `trigger.type` is always `"chained"` (never "manual"/
+   * "cron") — cron/webhook route to the flat runner, so a top-level chained run
+   * is the interactive case. Nested chained recipes (depth > 0) are not
+   * re-gated. The fn itself applies the gate threshold (high/all) against the
+   * step's tier and returns `true` for steps that don't need sign-off, so the
+   * runner only acts on an explicit rejection. Per-recipe opt-out via
+   * `requireApproval: false`.
+   */
+  requireApprovalFn?: (input: {
+    toolId: string;
+    tier: RiskTier;
+    summary?: string;
+    params?: Record<string, unknown>;
+  }) => Promise<boolean>;
 }
 
 function nestedRecipeRef(step: ChainedStep): string | undefined {
@@ -241,6 +268,7 @@ export function buildTemplateContext(
 export function resolveStepTemplates(
   step: ChainedStep,
   context: TemplateContext,
+  secretKeys?: ReadonlySet<string>,
 ): {
   resolved: Record<string, unknown>;
   conditionResult: boolean;
@@ -317,10 +345,24 @@ export function resolveStepTemplates(
     resolveRecipePath(resolved.path, { write: toolId !== "file.read" });
   }
 
-  // Resolve agent prompt if present
+  // Resolve agent prompt if present.
   if (step.agent && typeof step.agent.prompt === "string") {
     const compiled = compileTemplate(step.agent.prompt);
-    const result = compiled.evaluate(context);
+    // Tier-1 #5 (audit 2026-06-22): redact recipe-declared secrets (`type: env`
+    // vars) from the LLM-facing prompt. Their raw values still flow to TOOL
+    // params above (an http header / DB password legitimately needs the
+    // secret), but must never reach the model verbatim. Mirrors the flat runner.
+    const promptContext =
+      secretKeys && secretKeys.size > 0
+        ? {
+            ...context,
+            env: redactSecretsForPrompt(
+              context.env as Record<string, string>,
+              secretKeys,
+            ),
+          }
+        : context;
+    const result = compiled.evaluate(promptContext);
     if ("error" in result) {
       errors.push(result.error);
     } else {
@@ -441,16 +483,24 @@ export async function executeChainedStep(
    */
   expectWarnings?: string[];
 }> {
-  const { registry, step, options, depth } = ctx;
+  const { registry, step, options, depth, recipe } = ctx;
   const { dryRun } = options;
 
   // Build template context
   const templateContext = buildTemplateContext(registry, options.env);
 
+  // Tier-1 #5 (audit 2026-06-22): keys declared via a recipe-level `type: env`
+  // block are secrets — redacted from the LLM-facing agent prompt (but kept
+  // real for tool params). Mirrors the flat runner's `secretKeys`.
+  const secretKeys = new Set<string>(
+    Object.keys(declaredRecipeEnv(recipe, options.env)),
+  );
+
   // Resolve templates
   const { resolved, conditionResult, errors } = resolveStepTemplates(
     step,
     templateContext,
+    secretKeys,
   );
 
   if (errors.length > 0) {
@@ -547,6 +597,64 @@ export async function executeChainedStep(
 
   // Execute based on step type
   try {
+    // Tier-1 #6 (audit 2026-06-22): budget admission BEFORE dispatch, gating
+    // ALL step types — not just agent steps. The admission check used to live
+    // inside the `if (step.agent)` branch, so a breached budget kept executing
+    // tool / nested-recipe steps unbounded. admit() is a pure read-only breach
+    // check (no counter side-effects), so gating every step is safe;
+    // subscription drivers report no usage and fail open inside RunBudget, so
+    // this is a no-op until a measured agent step breaches the cap. Mirrors the
+    // flat runner ("Bug (3)").
+    const budget = ctx.budget;
+    if (budget) {
+      const admission = budget.admit();
+      if (!admission.admitted) {
+        return {
+          success: false,
+          error:
+            admission.reason ?? "Run exceeded its budget — budget_exceeded.",
+          resolvedParams: resolved,
+        };
+      }
+    }
+
+    // Tier-1 #4 (audit 2026-06-22): approval gate, mirroring the flat runner.
+    // Engages only when the bridge injected `requireApprovalFn` (approvalGate
+    // != "off"), respects the per-recipe `requireApproval: false` opt-out, and
+    // gates only the TOP-LEVEL run (depth === 0). Safe-by-default rationale: a
+    // chained recipe always has `trigger.type: "chained"` (that's how
+    // dispatchRecipe routes it), so cron/webhook can never fire one directly —
+    // they route to the flat runner. A top-level chained run is therefore the
+    // user-dispatched (interactive) case the flat runner gates as "manual"; a
+    // NESTED chained recipe (depth > 0) runs under a parent whose own gating
+    // already governed admission, so re-gating every nested step would block
+    // automated parents mid-flight. The injected fn applies the tier threshold
+    // itself and returns `true` for steps that don't need sign-off; a `false`
+    // result is an explicit human rejection → halt the step (and, via the
+    // dependency graph, its dependents). Only agent/tool steps are gated;
+    // nested-recipe steps are gated through their own inner steps.
+    if (
+      deps.requireApprovalFn &&
+      depth === 0 &&
+      (step.agent || step.tool) &&
+      (recipe as { requireApproval?: boolean }).requireApproval !== false
+    ) {
+      const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
+      const approved = await deps.requireApprovalFn({
+        toolId: approvalToolId,
+        tier: classifyTool(approvalToolId),
+        summary: step.agent ? "agent step" : `tool ${approvalToolId}`,
+        params: step.agent ? undefined : (resolved as Record<string, unknown>),
+      });
+      if (!approved) {
+        return {
+          success: false,
+          error: "Step rejected by approval gate — approval_rejected.",
+          resolvedParams: resolved,
+        };
+      }
+    }
+
     const recipeRef = nestedRecipeRef(step);
     if (recipeRef) {
       // Nested recipe call
@@ -638,22 +746,9 @@ export async function executeChainedStep(
       // Agent step
       const prompt = (resolved.agentPrompt as string) ?? step.agent.prompt;
 
-      // Budget admission BEFORE dispatch — mirrors the flat path. A denied
-      // admission halts this step (and, via the dependency graph, its
-      // dependents) with a `budget_exceeded`-categorised reason. SECURITY:
-      // without this the chained path made UNBOUNDED API calls.
-      const budget = ctx.budget;
-      if (budget) {
-        const admission = budget.admit();
-        if (!admission.admitted) {
-          return {
-            success: false,
-            error:
-              admission.reason ?? "Run exceeded its budget — budget_exceeded.",
-            resolvedParams: resolved,
-          };
-        }
-      }
+      // Budget admission already happened at the top of this try block
+      // (Tier-1 #6) — it now gates every step type, so the agent-only check
+      // that used to live here was removed. `budget` is the try-scoped const.
 
       // Phase 4: opt-in cost-aware routing. No-op when the step has no
       // `downshift` list or no USD cap is set on the run budget.

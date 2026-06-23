@@ -3376,7 +3376,17 @@ export function buildChainedDeps(
     return null;
   };
 
-  return { executeTool, executeAgent, loadNestedRecipe };
+  return {
+    executeTool,
+    executeAgent,
+    loadNestedRecipe,
+    // Tier-1 #4 (audit 2026-06-22): forward the approval gate into the chained
+    // path so it is no longer flat-only. Undefined when the bridge didn't
+    // inject one (approvalGate == "off") — the chained gate then no-ops.
+    ...(runnerDeps.requireApprovalFn && {
+      requireApprovalFn: runnerDeps.requireApprovalFn,
+    }),
+  };
 }
 
 /**

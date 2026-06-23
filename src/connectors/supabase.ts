@@ -12,6 +12,7 @@
  */
 
 import crypto from "node:crypto";
+import { isPrivateHost } from "../ssrfGuard.js";
 import {
   type AuthContext,
   BaseConnector,
@@ -674,6 +675,40 @@ export async function handleSupabaseConnect(
       status: 400,
       contentType: "application/json",
       body: JSON.stringify({ ok: false, error: "Invalid JSON body" }),
+    };
+  }
+
+  // SSRF guard (audit 2026-06-22 #7): `url` is user-supplied and was accepted
+  // verbatim — a caller could point it at cloud IMDS or an internal service and
+  // have us send the service-role key there as a Bearer token. Require a
+  // parseable https URL with a non-private host, mirroring the DB + Grafana
+  // connectors.
+  let parsedSupabaseUrl: URL;
+  try {
+    parsedSupabaseUrl = new URL(url);
+  } catch {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: false, error: "url is not a valid URL" }),
+    };
+  }
+  if (parsedSupabaseUrl.protocol !== "https:") {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: false, error: "url must use https://" }),
+    };
+  }
+  if (isPrivateHost(parsedSupabaseUrl.hostname)) {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: false,
+        error:
+          "url must not point at a private, loopback, or link-local address",
+      }),
     };
   }
 
