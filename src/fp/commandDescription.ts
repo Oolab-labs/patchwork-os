@@ -65,6 +65,9 @@ export const DANGEROUS_FLAGS_FOR_COMMAND: Record<string, Set<string>> = {
   npm: new Set(["--node-options"]),
   yarn: new Set(["--node-options"]),
   pnpm: new Set(["--node-options"]),
+  // npx runs an arbitrary package binary, so --node-options is the same
+  // interpreter-bypass vector as npm/yarn/pnpm (H10 sibling — was missed).
+  npx: new Set(["--node-options"]),
 };
 
 export const PATH_FLAG_EXEMPTIONS: Record<string, Set<string>> = {

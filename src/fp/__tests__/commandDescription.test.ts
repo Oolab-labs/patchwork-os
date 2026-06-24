@@ -256,4 +256,20 @@ describe("buildCommandDescription — H10: --node-options blocked for npm/yarn/p
       ),
     ).toThrow(/--node-options.*blocked/);
   });
+
+  it("blocks npx --node-options (same interpreter bypass as npm/yarn/pnpm)", () => {
+    const npxConfig: CommandConfig = {
+      ...config,
+      commandAllowlist: [...config.commandAllowlist, "npx"],
+    };
+    expect(() =>
+      build(
+        {
+          command: "npx",
+          args: ["tsx", "--node-options=--require=/tmp/evil.js", "x.ts"],
+        },
+        npxConfig,
+      ),
+    ).toThrow(/--node-options.*blocked/);
+  });
 });
