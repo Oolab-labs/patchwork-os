@@ -79,7 +79,6 @@
     "scripts/gen-claude-desktop-config.sh",
     "scripts/smoke/run-all.mjs",
     "templates",
-    "deploy",
     "LICENSE",
     "README.md"
   ],

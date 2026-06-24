@@ -200,10 +200,10 @@ function bulletLines(lines: string[]): string[] {
 /**
  * Extract display names / emails from a line of inline chips. Handles three
  * formats Drive emits across export modes:
- *   1. Markdown link form: `[Stephanie M](mailto:sm@wamae.com)`
+ *   1. Markdown link form: `[Jane Doe](mailto:jane@example.com)`
  *   2. Tab / 2+ space separated tokens (markdown export of bare chips)
  *   3. Single-space separated tokens with emails as boundaries
- *      (`text/plain` export form): `kwkarago@gmail.com Stephanie M sm@x.com`
+ *      (`text/plain` export form): `alice@example.com Jane Doe jane@example.com`
  *      where multi-word names are several capitalised tokens in a row.
  */
 function extractChips(line: string): string[] {
