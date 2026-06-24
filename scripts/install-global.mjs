@@ -14,8 +14,15 @@
  * Use:  npm run install:global
  */
 import { execSync } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
+import { cpSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
+
+// Private, gitignored recipe tools. They are EXCLUDED from the published npm
+// tarball (package.json `files`) so they never leak to the public registry,
+// but the local global install still needs them for the local crypto brief —
+// so we copy them back from the freshly-built local dist after `npm install -g`.
+const PRIVATE_TOOL_BASES = ["altscan", "market", "ta", "taLedger", "watchlist"];
+const PRIVATE_TOOL_EXTS = [".js", ".d.ts", ".js.map"];
 
 const cwd = process.cwd();
 
@@ -63,6 +70,35 @@ try {
   } catch {
     /* ignore */
   }
+}
+
+// Restore the private tools the published tarball intentionally omits. Fail-soft:
+// a clean checkout without the private sources simply has nothing to copy.
+try {
+  const globalRoot = capture("npm root -g");
+  const srcDir = join(cwd, "dist", "recipes", "tools");
+  const destDir = join(globalRoot, "patchwork-os", "dist", "recipes", "tools");
+  let copied = 0;
+  if (existsSync(destDir)) {
+    for (const base of PRIVATE_TOOL_BASES) {
+      for (const ext of PRIVATE_TOOL_EXTS) {
+        const from = join(srcDir, `${base}${ext}`);
+        if (existsSync(from)) {
+          cpSync(from, join(destDir, `${base}${ext}`));
+          copied++;
+        }
+      }
+    }
+  }
+  if (copied > 0) {
+    console.error(
+      `  restored ${copied} private tool file(s) into the global install`,
+    );
+  }
+} catch (e) {
+  console.error(
+    `  (skipped private-tool restore: ${e instanceof Error ? e.message : String(e)})`,
+  );
 }
 
 console.error("✓ installed globally as a real copy");
