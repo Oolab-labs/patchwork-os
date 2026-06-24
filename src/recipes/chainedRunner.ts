@@ -778,14 +778,30 @@ export async function executeChainedStep(
       // instead of discarding it). Subscription drivers report no usage →
       // RunBudget fails open with a one-time warning.
       if (budget) {
-        // Normalize the "api" alias to "anthropic" on the no-downshift
-        // fallback path too (the downshift branch already does this at line
-        // 596). Without this, a bare-string AgentExecutor return with
-        // `agent.driver: "api"` reconciles against a non-billable driver and
-        // the USD cap is silently unenforced even though the call was billed.
+        // Resolve the driver this call should be BILLED against, mirroring the
+        // flat runner exactly (#850 parity):
+        //   1. Prefer the driver `_executeAgent` actually resolved+stamped
+        //      (`servedBy.driver`) — the single source of auto-detect truth.
+        //   2. Normalize the "api" alias to "anthropic" (the downshift branch
+        //      already does this) so a metered call with `agent.driver: "api"`
+        //      and no `servedBy` is charged, not silently dropped.
+        //   3. When the step declares NO driver and the call left no
+        //      `servedBy`, default to "anthropic" — the same API path
+        //      `_executeAgent`'s auto-detect lands on for an unspecified
+        //      driver. The flat runner reaches this default via `servedBy`
+        //      (it always routes through `_executeAgent`); the chained runner
+        //      may be handed an injected `executeAgent` that returns measured
+        //      usage without a `servedBy`, so it must apply the same default
+        //      here or usdMax would be enforced on one runner and not the
+        //      other for identical recipes. A subscription/CLI call that
+        //      genuinely incurs no metered cost stamps `servedBy.driver:
+        //      "subprocess"` via `_executeAgent`, so it never reaches this
+        //      default and stays correctly fail-open.
         const reconcileDriver =
           agentReturn.servedBy?.driver ??
-          (dispatchDriver === "api" ? "anthropic" : (dispatchDriver ?? "auto"));
+          (dispatchDriver === "api" || dispatchDriver === undefined
+            ? "anthropic"
+            : dispatchDriver);
         budget.reconcile(
           reconcileDriver,
           agentReturn.usage,

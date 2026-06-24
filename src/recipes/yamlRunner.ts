@@ -3442,6 +3442,20 @@ export async function dispatchRecipe(
       activityLog: deps.chainedOptions?.activityLog,
       mockedOutputs: deps.chainedOptions?.mockedOutputs,
       taskIdPrefix: deps.chainedOptions?.taskIdPrefix,
+      // Parity (#850): forward the run-level budget, price table, and
+      // cancellation signal that the chained runner honours. Without these the
+      // chained path silently diverged from the flat path —
+      //   - `budget`     lets a caller inject a shared RunBudget (and is the
+      //                  hook the chained runner uses to enforce usdMax).
+      //   - `priceTable` reuses an already-loaded table instead of forcing the
+      //                  chained RunBudget to re-load it from disk.
+      //   - `signal`     wires AbortSignal-based cancellation into the run; a
+      //                  pre-aborted signal now prevents dispatch on the
+      //                  chained path too (parity target — flat cancellation
+      //                  is still a separate gap).
+      budget: deps.chainedOptions?.budget,
+      priceTable: deps.chainedOptions?.priceTable,
+      signal: deps.chainedOptions?.signal,
     };
     if (!deps.chainedDeps) {
       throw new Error(

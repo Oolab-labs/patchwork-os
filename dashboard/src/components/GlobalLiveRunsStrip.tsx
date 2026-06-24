@@ -93,8 +93,13 @@ export function GlobalLiveRunsStrip() {
       >
         {announce}
       </p>
-      {visible.map((r) => {
+      {visible.map((r, i) => {
         const p = pct(r);
+        // A recipe can be in flight more than once, so keying by
+        // recipeName collides (React drops/duplicates rows). Prefer the
+        // unique per-run seq with an index fallback — mirrors LiveRunsStrip.
+        const rowKey =
+          r.runSeq && r.runSeq > 0 ? `run-${r.runSeq}` : `${r.recipeName}-${i}`;
         const label =
           r.status === "running"
             ? r.totalSteps > 0
@@ -119,7 +124,7 @@ export function GlobalLiveRunsStrip() {
         );
         return href ? (
           <Link
-            key={r.recipeName}
+            key={rowKey}
             href={href}
             className="global-live-runs-strip-row"
             title={`Open run #${r.runSeq}`}
@@ -127,7 +132,7 @@ export function GlobalLiveRunsStrip() {
             {inner}
           </Link>
         ) : (
-          <span key={r.recipeName} className="global-live-runs-strip-row">
+          <span key={rowKey} className="global-live-runs-strip-row">
             {inner}
           </span>
         );
