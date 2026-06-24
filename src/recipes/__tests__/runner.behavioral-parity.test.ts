@@ -250,7 +250,7 @@ describe("parity: budget halt on usdMax (price table)", () => {
   // and the USD cap is silently ignored. tokensMax works (no pricing needed);
   // usdMax does not. The flat runner (above) enforces it. Backlog: thread a
   // loaded priceTable into the chained dispatch options (M3/Phase 5).
-  it.fails("chained runner refuses the 2nd dispatch after usdMax breach (NOT YET — dispatch threads no price table)", async () => {
+  it("chained runner refuses the 2nd dispatch after usdMax breach", async () => {
     await withPriceTable(async () => {
       const { deps, calls } = chainedAgentDeps(HEAVY);
       const recipe = chainedAgentRecipe(
@@ -699,7 +699,7 @@ describe("DIVERGENCE (xfail): AbortSignal is not threaded through dispatchRecipe
   // has no signal plumbing at all. A pre-aborted run therefore still executes
   // every step on BOTH paths. Backlog: thread signal through dispatch + wire
   // cancellation into the flat runner (M3/Phase 5).
-  it.fails("chained run is cancelled when chainedOptions.signal is pre-aborted (NOT YET — dispatch drops signal)", async () => {
+  it("chained run is cancelled when chainedOptions.signal is pre-aborted", async () => {
     const ctl = new AbortController();
     ctl.abort("cancelled");
     const executeAgent = vi.fn(async () => ({

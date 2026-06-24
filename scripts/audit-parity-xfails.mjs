@@ -35,10 +35,8 @@ const target = path.join(
 
 // Baseline = the documented divergences that exist today. Lower this (never
 // raise it) as gaps are closed. Current xfails:
-//   1. chained usdMax not enforced through dispatchRecipe (no price table threaded)
-//   2. AbortSignal not threaded through dispatchRecipe to chainedRunner
-//   3. flat runner has no AbortSignal / cancellation seam
-const BASELINE = 3;
+//   1. flat runner has no AbortSignal / cancellation seam
+const BASELINE = 1;
 
 const raw = readFileSync(target, "utf8");
 
