@@ -279,6 +279,71 @@ describe("RecipeRunLog.record", () => {
     expect(log.getBySeq(99)).toBeNull(); // non-existent seq, must not throw
   });
 
+  it("dedups duplicate/stale rows per seq on load, keeping the latest state", () => {
+    // The on-disk runs.jsonl is append-only: one run (one seq) gets
+    // multiple rows over its lifecycle (running → terminal), and the
+    // restart sweep historically appended a fresh "interrupted" row each
+    // boot. Without dedup, loadExisting pushes EVERY row into this.runs,
+    // so query()/getBySeq return stale/duplicate rows after restarts.
+    const file = path.join(tmp, "runs.jsonl");
+    const base = {
+      seq: 5,
+      taskId: "dup",
+      recipeName: "r",
+      trigger: "recipe",
+      createdAt: 1,
+      doneAt: 0,
+      durationMs: 0,
+    };
+    const distinct = {
+      seq: 6,
+      taskId: "other",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 10,
+      doneAt: 20,
+      durationMs: 10,
+    };
+    require("node:fs").writeFileSync(
+      file,
+      [
+        // seq=5 appears 3×: running, then interrupted, then interrupted again.
+        JSON.stringify({ ...base, status: "running", doneAt: 0 }),
+        JSON.stringify({
+          ...base,
+          status: "interrupted",
+          doneAt: 100,
+          durationMs: 99,
+        }),
+        JSON.stringify({
+          ...base,
+          status: "interrupted",
+          doneAt: 200,
+          durationMs: 199,
+        }),
+        JSON.stringify(distinct),
+        "",
+      ].join("\n"),
+    );
+
+    const log = new RecipeRunLog({ dir: tmp });
+
+    // query() must return exactly ONE row for seq=5, terminal status.
+    const seq5 = log.query().filter((r) => r.seq === 5);
+    expect(seq5).toHaveLength(1);
+    expect(seq5[0]!.status).toBe("interrupted");
+
+    // getBySeq must return the latest (terminal) row, not the stale running one.
+    expect(log.getBySeq(5)?.status).toBe("interrupted");
+
+    // The distinct run is untouched.
+    expect(log.getBySeq(6)?.status).toBe("done");
+
+    // Total in-memory rows: one per seq (5 and 6).
+    expect(log.size()).toBe(2);
+  });
+
   // ── VD-0: running-state run entries ──────────────────────────────────────
   // Recipe runs are now visible while in flight. `startRun` allocates a seq
   // and adds a `status:"running"` entry to the in-memory ring (no disk write,

@@ -1365,6 +1365,8 @@ export class Bridge {
                 t.doneAt !== undefined && {
                   durationMs: t.doneAt - t.startedAt,
                 }),
+              ...(t.startedAt !== undefined && { startedAt: t.startedAt }),
+              ...(t.doneAt !== undefined && { completedAt: t.doneAt }),
               createdAt: new Date(t.createdAt).toISOString(),
               ...(t.output !== undefined && {
                 output: t.output.slice(0, 2000),

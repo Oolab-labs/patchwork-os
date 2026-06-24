@@ -5,6 +5,7 @@ import Link from "next/link";
 import { relTime } from "@/components/time";
 import { apiPath } from "@/lib/api";
 import { canonicalRecipeKey } from "@/lib/entityKey";
+import { traceStatus } from "@/lib/traceStatus";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useDebounced } from "@/hooks/useDebounced";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
@@ -63,13 +64,6 @@ const TYPE_THEME: Record<
   recipe_run: { fg: "var(--blue)", bg: "var(--blue-soft)", pill: "info" },
   decision: { fg: "var(--purple)", bg: "var(--purple-soft)", pill: "purp" },
 };
-
-function traceStatus(t: DecisionTrace): "done" | "error" | "running" {
-  const s = String(t.body?.status ?? t.body?.outcome ?? "").toLowerCase();
-  if (s === "ok" || s === "done" || s === "success" || s === "approved") return "done";
-  if (s === "error" || s === "failed" || s === "rejected" || s === "errored") return "error";
-  return "running";
-}
 
 // ------------------------------------------------------------------ detail panel
 

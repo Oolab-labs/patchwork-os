@@ -714,6 +714,15 @@ export class RecipeRunLog {
         // skip malformed line — never let one bad row break startup
       }
     }
+    // Dedup by seq, keeping the latest-appended row per run. The append-only log
+    // writes multiple rows per seq (running → terminal), and the sweep below
+    // historically appended a fresh "interrupted" row each restart; without this,
+    // query()/getBySeq return stale/duplicate rows after a restart.
+    const bySeq = new Map<number, RecipeRun>();
+    for (const r of this.runs) bySeq.set(r.seq, r);
+    const deduped = Array.from(bySeq.values()).sort((a, b) => a.seq - b.seq);
+    this.runs.length = 0;
+    this.runs.push(...deduped);
     if (this.runs.length > this.memoryCap) {
       this.runs.splice(0, this.runs.length - this.memoryCap);
     }
