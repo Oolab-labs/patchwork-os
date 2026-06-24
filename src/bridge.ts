@@ -1331,13 +1331,20 @@ export class Bridge {
       const wh =
         typeof windowHours === "number" && windowHours >= 1 ? windowHours : 24;
       const cutoff = Date.now() - wh * 3_600 * 1_000;
-      const statsMap = this.activityLog.stats();
+      // Respect the requested window for tool counts (was all-time `stats()`).
+      const statsMap = this.activityLog.windowedStats(wh * 3_600 * 1_000);
+      // Per-tool latency percentiles. `percentiles()` is computed over the
+      // bounded duration-sample buffer (not windowed) and omits any tool with
+      // <2 samples — default those to 0 so the dashboard ToolStat shape is
+      // always satisfied.
+      const pctMap = this.activityLog.percentiles();
       const topTools = Object.entries(statsMap)
         .map(([tool, s]) => ({
           tool,
           calls: s.count,
           errors: s.errors,
-          avgMs: s.avgDurationMs,
+          p50Ms: pctMap[tool]?.p50 ?? 0,
+          p95Ms: pctMap[tool]?.p95 ?? 0,
         }))
         .sort((a, b) => b.calls - a.calls)
         .slice(0, 10);

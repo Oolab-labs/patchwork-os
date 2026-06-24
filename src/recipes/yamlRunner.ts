@@ -718,6 +718,13 @@ export type StepDeps = Required<
   logDir?: string;
   recordFixturesDir?: string;
   runLog?: RecipeRunLog;
+  /**
+   * Bridge ActivityLog (optional). When wired, `toolRegistry.executeTool`
+   * records each recipe/agent tool execution so the dashboard tool-call
+   * telemetry counts recipe-driven work — not just MCP-session tool calls.
+   * Omitted in CLI / test runs without a bridge (recording is fail-soft).
+   */
+  activityLog?: import("../activityLog.js").ActivityLog;
   testMode: boolean;
   /**
    * PR5a — per-run idempotency ledger. When present, `executeTool`
@@ -2687,6 +2694,7 @@ function resolveStepDeps(
         return getValidAccessToken();
       }),
     logDir: deps.logDir,
+    activityLog: deps.activityLog,
     testMode: deps.testMode ?? false,
     // PR5a/b: per-attempt idempotency ledger. Disk-backed when
     // `ledgerDir` + `manualRunId` + recipe name are all available so a
