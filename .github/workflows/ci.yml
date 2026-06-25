@@ -97,6 +97,8 @@ jobs:
         run: node scripts/audit-intellij-parity.mjs
       - name: Audit runner-parity xfail ratchet (#850)
         run: node scripts/audit-parity-xfails.mjs
+      - name: Audit docs⇒wired parity (#850)
+        run: node scripts/audit-docs-wired.mjs
 
   plugin-validate:
     name: Validate plugin manifest

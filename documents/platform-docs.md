@@ -1,6 +1,6 @@
 # Claude IDE Bridge — Platform Documentation
 
-177 tools · 36 MCP prompts · 20 automation hooks · 46 connectors (OAuth/PAT integrations — Slack, GitHub, Linear, Gmail, Google Calendar, Google Drive, Sentry, Notion, Confluence, Datadog, HubSpot, Intercom, Stripe, Zendesk, Jira, PagerDuty, Discord, Asana, GitLab — plus database/data connectors like Postgres, MongoDB, Redis; see [README](../README.md) for the canonical list) — current version in [package.json](../package.json)
+177 tools · 36 MCP prompts · 24 automation hooks · 46 connectors (OAuth/PAT integrations — Slack, GitHub, Linear, Gmail, Google Calendar, Google Drive, Sentry, Notion, Confluence, Datadog, HubSpot, Intercom, Stripe, Zendesk, Jira, PagerDuty, Discord, Asana, GitLab — plus database/data connectors like Postgres, MongoDB, Redis; see [README](../README.md) for the canonical list) — current version in [package.json](../package.json)
 
 > **Deployment model:** Remote deployment (VPS + reverse proxy, systemd service, `--bind 0.0.0.0 --issuer-url <https-url>`) is a first-class, production-ready pattern and is the recommended architecture for team or cloud access. Local mode (`127.0.0.1`, no `--issuer-url`) is for individual development.
 
@@ -533,7 +533,7 @@ Multi-step workflows using `previewEdit`, transaction tools, `explainDiagnostic`
 
 ## Automation Hooks
 
-When started with `--automation --automation-policy <file>`, the bridge enqueues Claude tasks in response to IDE events. The policy is a JSON file with any of these 18 hook keys:
+When started with `--automation --automation-policy <file>`, the bridge enqueues Claude tasks in response to IDE events. The policy is a JSON file with any of these 24 accepted hook keys (the 21 internal `HookType` slots plus the 3 unified aliases — `onCompaction`, `onDiagnosticsStateChange`, `onDebugSession` — that the loader expands into them; the legacy split names remain accepted but emit a deprecation warning):
 
 | Hook | Trigger | Placeholders |
 |------|---------|--------------|
