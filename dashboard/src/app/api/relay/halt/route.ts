@@ -40,6 +40,9 @@ interface RelayHaltBody {
   status?: "halted" | "error";
   haltReason?: string;
   haltCategory?: string;
+  /** Actionable fix hint (rendered by the bridge from HALT_CATEGORY_HINTS) —
+   *  forwarded verbatim so the service worker can show "what to do". */
+  actionHint?: string;
   stepId?: string;
   errorMessage?: string;
   occurredAt?: number;
@@ -108,6 +111,7 @@ export async function POST(req: Request) {
     status,
     haltReason: body.haltReason,
     haltCategory: body.haltCategory,
+    actionHint: body.actionHint,
     stepId: body.stepId,
     errorMessage: body.errorMessage,
     occurredAt: body.occurredAt ?? now,

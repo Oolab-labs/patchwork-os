@@ -37,6 +37,7 @@ const validBody = {
   status: "halted" as const,
   haltReason: "Agent step 'summarize' returned only narration",
   haltCategory: "agent_narration_only",
+  actionHint: "tighten prompt or add `into:` target",
   stepId: "summarize",
 };
 
@@ -148,6 +149,9 @@ describe("POST /api/relay/halt", () => {
       runSeq: 42,
       status: "halted",
       stepId: "summarize",
+      // Actionable enrichment forwarded to the service worker (#850/A).
+      haltCategory: "agent_narration_only",
+      actionHint: "tighten prompt or add `into:` target",
     });
   });
 

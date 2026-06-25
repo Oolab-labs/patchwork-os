@@ -51,6 +51,51 @@ describe("wireHaltPushDispatch", () => {
         runSeq: 42,
         status: "error",
         errorMessage: "Agent silent-fail in step summarize",
+        // Actionable enrichment (#850/A): the bridge now classifies the halt
+        // and attaches the fix hint so the phone shows "what + how to fix",
+        // not a raw error string.
+        haltReason: "Agent silent-fail in step summarize",
+        haltCategory: "agent_silent_fail",
+        actionHint: "inspect prompt + check trace",
+      }),
+    );
+  });
+
+  it("classifies an auth-failure halt and attaches the reconnect hint", () => {
+    wireHaltPushDispatch({ activityLog, getPushConfig: () => CFG });
+    activityLog.recordEvent("recipe_done", {
+      runSeq: 7,
+      recipeName: "pr-triage",
+      status: "error",
+      errorMessage:
+        'Tool "github.list_prs" reported an error: 401 unauthorized',
+    });
+    expect(dispatchHaltPushNotification).toHaveBeenCalledWith(
+      CFG.url,
+      CFG.token,
+      expect.objectContaining({
+        haltCategory: "auth_failure",
+        actionHint: "reconnect from /connections",
+      }),
+    );
+  });
+
+  it("prefers an explicit haltReason from the event over errorMessage", () => {
+    wireHaltPushDispatch({ activityLog, getPushConfig: () => CFG });
+    activityLog.recordEvent("recipe_done", {
+      runSeq: 8,
+      recipeName: "spend",
+      status: "error",
+      haltReason: "budget_exceeded: run exceeded its token budget",
+      errorMessage: "step 3 failed",
+    });
+    expect(dispatchHaltPushNotification).toHaveBeenCalledWith(
+      CFG.url,
+      CFG.token,
+      expect.objectContaining({
+        haltReason: "budget_exceeded: run exceeded its token budget",
+        haltCategory: "budget_exceeded",
+        actionHint: "raise tokensMax / usdMax or shrink prompts",
       }),
     );
   });
