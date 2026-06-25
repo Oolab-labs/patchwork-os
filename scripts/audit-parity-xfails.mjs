@@ -35,8 +35,8 @@ const target = path.join(
 
 // Baseline = the documented divergences that exist today. Lower this (never
 // raise it) as gaps are closed. Current xfails:
-//   1. flat runner has no AbortSignal / cancellation seam
-const BASELINE = 1;
+//   (none — flat/chained behavioral parity is fully enforced)
+const BASELINE = 0;
 
 const raw = readFileSync(target, "utf8");
 

@@ -693,12 +693,11 @@ describe("parity: when:false skips the step on both runners", () => {
   });
 });
 
-describe("DIVERGENCE (xfail): AbortSignal is not threaded through dispatchRecipe", () => {
-  // dispatchRecipe builds chained RunOptions WITHOUT forwarding
-  // chainedOptions.signal (yamlRunner.ts dispatchRecipe), and the flat runner
-  // has no signal plumbing at all. A pre-aborted run therefore still executes
-  // every step on BOTH paths. Backlog: thread signal through dispatch + wire
-  // cancellation into the flat runner (M3/Phase 5).
+describe("parity: AbortSignal cancellation stops both runners", () => {
+  // Both paths now honour an abort: dispatchRecipe forwards chainedOptions.signal
+  // to the chained runner (#998), and the flat runner checks deps.signal at the
+  // top of its step loop (#850 — this change). A pre-aborted run makes no
+  // dispatch; an abort mid-run stops before the next step is started.
   it("chained run is cancelled when chainedOptions.signal is pre-aborted", async () => {
     const ctl = new AbortController();
     ctl.abort("cancelled");
@@ -723,23 +722,24 @@ describe("DIVERGENCE (xfail): AbortSignal is not threaded through dispatchRecipe
     expect(executeAgent).not.toHaveBeenCalled();
   });
 
-  it.fails("flat run is cancelled when caller requests abort (NOT YET — flat has no signal)", async () => {
-    // The flat runner exposes no signal seam, so there is no way to stop a
-    // run mid-flight. This marker documents that gap for M3.
+  it("flat run is cancelled when the caller's signal is aborted mid-run", async () => {
     let calls = 0;
+    const ctl = new AbortController();
     const recipe = flatAgentRecipe([
       { agent: { prompt: "a", model: HAIKU, into: "o0" } },
       { agent: { prompt: "b", model: HAIKU, into: "o1" } },
     ]);
     const result = (await dispatchRecipe(recipe, {
       ...baseDeps(),
+      signal: ctl.signal,
       claudeFn: async () => {
         calls++;
+        ctl.abort(); // cancel after step 1's agent runs
         return { text: "x", usage: { inputTokens: 1, outputTokens: 1 } };
       },
     })) as RunResult;
-    // Parity target: a cancellation seam would let us stop after step 1.
-    // Today there is none, so both steps run.
+    // The signal is checked at the top of the loop, so once the run is aborted
+    // after step 1, step 2 is never dispatched.
     expect(calls).toBe(1);
     expect(result.stepResults).toHaveLength(1);
   });
