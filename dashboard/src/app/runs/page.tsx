@@ -13,6 +13,7 @@ import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useDebounced } from "@/hooks/useDebounced";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
+import { dedupeRunsByKey } from "@/lib/dedupeRuns";
 
 interface AssertionFailure {
   assertion: string;
@@ -278,7 +279,10 @@ export default function RunsPage() {
         });
         if (!res.ok) throw new Error(`/runs ${res.status}`);
         const data = (await res.json()) as { runs?: Run[] };
-        setRuns(data.runs ?? []);
+        // De-dupe by (taskId, seq): the response can repeat a run when the
+        // poll races the SSE reload, which collides the `${taskId}-${seq}`
+        // row key and triggers React's duplicate-key error + miscounts.
+        setRuns(dedupeRunsByKey(data.runs ?? []));
         setErr(undefined);
       } catch (e) {
         // AbortError on unmount / dep change is expected — don't surface.
@@ -519,8 +523,8 @@ export default function RunsPage() {
               // Only tint the Halts chip when halts actually exist; otherwise
               // it sits ghost-neutral like its siblings (facelift P3-12).
               { label: "Halts", href: "/runs?halt=1", tone: (haltSummary?.total ?? 0) > 0 ? "err" : undefined, title: "Runs that hit a halt reason" },
-              { label: "Traces", href: "/traces", title: "Decision logs for these runs" },
-              { label: "Activity", href: "/activity", title: "Live event firehose" },
+              // Traces + Activity (Live) are siblings in the ActivityTabs above —
+              // not repeated here. The relation strip is cross-cluster links only.
             ]}
           />
         </div>
@@ -736,7 +740,7 @@ export default function RunsPage() {
         />
       )}
       {err && runs && runs.length > 0 && (
-        <div className="alert-err">Refresh failed — {err}</div>
+        <div className="alert-err" role="alert">Refresh failed — {err}</div>
       )}
 
       {windowedRuns === null && !err ? (

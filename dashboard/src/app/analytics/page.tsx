@@ -4,7 +4,7 @@ import { StatCard } from "@/components/StatCard";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { AreaChart, EmptyState, ErrorState, RelationStrip, ToolChip } from "@/components/patchwork";
 import type { AreaChartSeries } from "@/components/patchwork";
-import { SkeletonList } from "@/components/Skeleton";
+import { Skeleton, SkeletonList } from "@/components/Skeleton";
 import { isHaltStatus } from "@/lib/runStatus";
 
 interface ToolStat {
@@ -203,14 +203,14 @@ export default function AnalyticsPage() {
           onRetry={refetch}
         />
       )}
-      {error && data && <div className="alert-err">Refresh failed — {error}</div>}
+      {error && data && <div className="alert-err" role="alert">Refresh failed — {error}</div>}
 
       {(!error || data) && (
         <>
           <div className="stat-grid">
             <StatCard
               label="Total tool calls"
-              value={loading ? "—" : animatedCalls.toLocaleString()}
+              value={loading ? <Skeleton width={48} height={26} /> :animatedCalls.toLocaleString()}
               foot="Last 24h"
               icon={
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(var(--orange-rgb), 0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--orange)" }}>
@@ -220,7 +220,7 @@ export default function AnalyticsPage() {
             />
             <StatCard
               label="Unique tools"
-              value={loading ? "—" : animatedTools.toLocaleString()}
+              value={loading ? <Skeleton width={48} height={26} /> :animatedTools.toLocaleString()}
               foot="Distinct tools invoked"
               icon={
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--purple-soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--purple)" }}>
@@ -230,7 +230,7 @@ export default function AnalyticsPage() {
             />
             <StatCard
               label="Hooks fired"
-              value={loading ? "—" : animatedHooks.toLocaleString()}
+              value={loading ? <Skeleton width={48} height={26} /> :animatedHooks.toLocaleString()}
               foot="Automation hook triggers"
               icon={
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--green-soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--green)" }}>
@@ -240,7 +240,7 @@ export default function AnalyticsPage() {
             />
             <StatCard
               label="Error rate"
-              value={loading ? "—" : `${errorRate.toFixed(1)}%`}
+              value={loading ? <Skeleton width={48} height={26} /> :`${errorRate.toFixed(1)}%`}
               foot="Errors / total calls"
               icon={
                 <div style={{
@@ -307,8 +307,12 @@ export default function AnalyticsPage() {
             <SkeletonList rows={5} columns={3} />
           ) : topTools.length === 0 ? (
             <EmptyState
-              title="No data yet — run some recipes to see analytics"
-              description="Usage data builds up as your agents work. Run a recipe or make a Claude request to see your first stats."
+              title="No tool calls recorded yet"
+              description={
+                recentTasks.length > 0
+                  ? "Tool-call telemetry appears here once your agents invoke tools — recent recipe tasks are listed below."
+                  : "Tool-call telemetry appears here once your agents invoke tools. Run a recipe or make a Claude request to get started."
+              }
             />
           ) : (
             <div className="table-wrap">

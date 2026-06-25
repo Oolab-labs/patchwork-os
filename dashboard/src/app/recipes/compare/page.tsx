@@ -186,12 +186,12 @@ function PlanColumn({
             ))}
           </div>
         )}
-        {error && <div className="alert-err" style={{ fontSize: "var(--fs-s)" }}>{error}</div>}
+        {error && <div className="alert-err" role="alert" style={{ fontSize: "var(--fs-s)" }}>{error}</div>}
 
         {plan && (
           <>
             {plan.lint.errors.length > 0 && (
-              <div className="alert-err" style={{ marginBottom: 8, fontSize: "var(--fs-s)" }}>
+              <div className="alert-err" role="alert" style={{ marginBottom: 8, fontSize: "var(--fs-s)" }}>
                 {plan.lint.errors.join(" · ")}
               </div>
             )}

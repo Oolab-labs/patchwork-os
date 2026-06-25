@@ -7,6 +7,7 @@ import { EntityTimeline, RelationStrip, RelatedPanel } from "@/components/patchw
 import type { TimelineEvent, RelatedGroup } from "@/components/patchwork";
 import { RecipeChip, RunChip, ToolChip, InboxChip } from "@/components/patchwork/entity";
 import { StepDiffHover } from "@/components/StepDiffHover";
+import { Skeleton, SkeletonList } from "@/components/Skeleton";
 import { Dialog } from "@/components/Dialog";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
 import {
@@ -1442,7 +1443,7 @@ export default function RunDetailPage() {
         </div>
       </Dialog>
 
-      {runErr && <div className="alert-err">Failed to load run: {runErr}</div>}
+      {runErr && <div className="alert-err" role="alert">Failed to load run: {runErr}</div>}
       {!seqIsValid ? (
         <div className="empty-state">
           <h3>Invalid run id</h3>
@@ -1452,7 +1453,16 @@ export default function RunDetailPage() {
           </p>
         </div>
       ) : (
-        !run && !runErr && <div className="empty-state" role="status"><p>Loading run…</p></div>
+        !run && !runErr && (
+          // Skeleton instead of a bare "Loading run…" line: approximates the
+          // run-detail shape (title + meta + step list) so the page doesn't
+          // flash an empty box then snap to a full layout.
+          <div aria-busy="true" aria-label="Loading run" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <Skeleton height={30} width="42%" />
+            <Skeleton height={16} width="60%" />
+            <SkeletonList rows={6} columns={2} />
+          </div>
+        )
       )}
 
       {run && (
@@ -1735,7 +1745,7 @@ export default function RunDetailPage() {
                 <div style={{ padding: 20, color: "var(--ink-2)", fontSize: "var(--fs-m)" }}>Generating…</div>
               )}
               {planErr && (
-                <div className="alert-err" style={{ margin: 16 }}>
+                <div className="alert-err" role="alert" style={{ margin: 16 }}>
                   {planErr === "__not_found__"
                     ? `Recipe file not found on disk for "${run.recipeName}" — plan generation requires the recipe YAML to be present.`
                     : `Plan error: ${planErr}`}

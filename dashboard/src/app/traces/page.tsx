@@ -748,7 +748,7 @@ export default function TracesPage() {
         />
       )}
       {error && traces.length > 0 && (
-        <div className="alert-err">
+        <div className="alert-err" role="alert">
           {error.startsWith("/traces")
             ? `Response shape unexpected (bridge version mismatch?): ${error}`
             : `Refresh failed — ${error}`}
@@ -756,15 +756,43 @@ export default function TracesPage() {
       )}
 
       {visible.length === 0 && !loading ? (
-        <EmptyState
-          title="No decisions recorded yet"
-          description="Every approval, recipe run, and agent decision is saved here automatically. Run a recipe or approve a tool call to see your first entry."
-          action={
-            <Link href="/recipes" className="btn sm">
-              Browse recipes
-            </Link>
-          }
-        />
+        // Filter-aware empty state: when a search/filter is narrowing the
+        // list, "nothing recorded yet" is wrong (there ARE decisions, just
+        // none matching) — offer to clear instead.
+        (() => {
+          const hasActiveFilter =
+            !!debouncedSearch.trim() || ksOnly || semantic || since !== "24h";
+          return hasActiveFilter ? (
+            <EmptyState
+              title="No matching decisions"
+              description="No decisions match the current search and filters. Try widening the time window or clearing the filters."
+              action={
+                <button
+                  type="button"
+                  className="btn sm ghost"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setKsOnly(false);
+                    setSemantic(false);
+                    setSince("24h");
+                  }}
+                >
+                  Clear filters
+                </button>
+              }
+            />
+          ) : (
+            <EmptyState
+              title="No decisions recorded yet"
+              description="Every approval, recipe run, and agent decision is saved here automatically. Run a recipe or approve a tool call to see your first entry."
+              action={
+                <Link href="/recipes" className="btn sm">
+                  Browse recipes
+                </Link>
+              }
+            />
+          );
+        })()
       ) : view === "flat" ? (
         // #600: switch `overflow: hidden` → `overflow-x: auto` so the
         // wide 7-col table can horizontally scroll INSIDE the card on

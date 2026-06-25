@@ -287,9 +287,9 @@ export default function ApprovalDetailPage() {
         </div>
       </div>
 
-      {decideErr && <div className="alert-err">{decideErr}</div>}
+      {decideErr && <div className="alert-err" role="alert">{decideErr}</div>}
       {error && !data && (
-        <div className="alert-err">Unreachable: {error}</div>
+        <div className="alert-err" role="alert">Unreachable: {error}</div>
       )}
       {!loading && !data && status === 404 && (
         <div className="empty-state">

@@ -125,7 +125,7 @@ export default function ReplayPage() {
       {loading && rows.length === 0 && (
         <SkeletonList rows={6} columns={4} />
       )}
-      {error && <div className="alert-err">Unreachable: {error}</div>}
+      {error && <div className="alert-err" role="alert">Unreachable: {error}</div>}
 
       {!loading && !error && data && data.totalRows === 0 && (
         <EmptyState

@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
 import { apiPath } from "@/lib/api";
-import { CodeBlock, EmptyState, HintCard, KeyChip, RelationStrip } from "@/components/patchwork";
+import { CodeBlock, EmptyState, HintCard, KeyChip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
 import { useToast } from "@/components/Toast";
@@ -969,19 +969,12 @@ function ApprovalsContent() {
               return `~/.patchwork/inbox · ${pending.length} pending${oldestTs ? ` · oldest ${relTime(oldestTs)}` : ""}`;
             })()}
           </div>
-          <RelationStrip
-            items={[
-              { label: "Insights", href: "/insights", title: "Approve/reject patterns across tools" },
-              {
-                label: "Suggestions",
-                href: "/suggestions",
-                tone: pending.length > 0 ? "accent" : "neutral",
-                title: "Policy tweaks the system suggests",
-              },
-              { label: "Settings", href: "/settings#approvals", title: "Configure approval rules" },
-              { label: "Knowledge", href: "/decisions", title: "Saved reasoning your agents wrote down" },
-            ]}
-          />
+          {/* The related-links strip (Insights / Suggestions / Settings /
+              Knowledge) was redundant here: Suggested + Knowledge are the
+              DecisionsTabs above, and Insights is the "See approval
+              patterns" link below. Dropped the strip to declutter the
+              header; the one unique destination (approval rule settings)
+              moves into the hint row. */}
           <div className="kbd-hint-row" aria-label="Keyboard shortcuts">
             <span><KeyChip>J</KeyChip> next</span>
             <span><KeyChip>K</KeyChip> prev</span>
@@ -990,6 +983,8 @@ function ApprovalsContent() {
             <span><KeyChip>⌘K</KeyChip> palette</span>
             <span className="kbd-hint-sep" aria-hidden="true">·</span>
             <Link href="/insights">See approval patterns →</Link>
+            <span className="kbd-hint-sep" aria-hidden="true">·</span>
+            <Link href="/settings#approvals">Configure rules →</Link>
           </div>
         </div>
         <span className={`pill ${pending.length > 0 ? "warn" : "ok"}`}>
@@ -1112,7 +1107,7 @@ function ApprovalsContent() {
         </div>
       )}
 
-      {err && <div className="alert-err">Unreachable: {err}</div>}
+      {err && <div className="alert-err" role="alert">Unreachable: {err}</div>}
 
       {sessionFilter && (
         <div className="alert-info">

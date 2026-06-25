@@ -91,26 +91,9 @@ export function PWAInstallPrompt() {
 		<div
 			role="dialog"
 			aria-label="Install Patchwork as an app"
-			style={{
-				position: "fixed",
-				left: 12,
-				right: 12,
-				bottom: 12,
-				zIndex: 100,
-				padding: "10px 14px",
-				background: "var(--bg-1)",
-				border: "1px solid var(--line-2)",
-				borderRadius: 10,
-				boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
-				display: "flex",
-				alignItems: "center",
-				gap: 10,
-				flexWrap: "wrap",
-				maxWidth: 480,
-				margin: "0 auto",
-			}}
+			className="pwa-install-prompt"
 		>
-			<span style={{ fontSize: "var(--fs-s)", flex: 1, minWidth: 180 }}>
+			<span className="pwa-install-prompt-text">
 				Install Patchwork as an app for faster access + push notifications.
 			</span>
 			<button

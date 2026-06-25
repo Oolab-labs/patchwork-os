@@ -638,7 +638,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {err && <div className="alert-err">Unreachable: {err}</div>}
+      {err && <div className="alert-err" role="alert">Unreachable: {err}</div>}
 
       {unsupported ? (
         <EmptyState

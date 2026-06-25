@@ -1561,7 +1561,7 @@ function NewRecipePageInner() {
             </div>
 
             {/* Actions */}
-            {submitError && <div className="alert-err">{submitError}</div>}
+            {submitError && <div className="alert-err" role="alert">{submitError}</div>}
             {submitNotice && (
               <div
                 role="status"
@@ -1584,7 +1584,7 @@ function NewRecipePageInner() {
                 alignItems: "center",
               }}
             >
-              <button type="submit" className="btn" disabled={saving} style={{ display: "inline-flex", alignItems: "center", gap: 0 }}>
+              <button type="submit" className="btn primary" disabled={saving} style={{ display: "inline-flex", alignItems: "center", gap: 0 }}>
                 {saving && <span className="new-recipe-spinner" aria-hidden="true" />}
                 {saving ? "Creating…" : "Create YAML draft"}
               </button>

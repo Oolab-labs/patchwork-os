@@ -2487,18 +2487,30 @@ a.btn { text-decoration: none; }
 }
 .quilt-greeting {
   /* Theme-redesign AP-07: sans + tighter tracking (0.06em was the widest in
-     the app); reserve mono for code/identifiers. */
+     the app); reserve mono for code/identifiers. A small accent dot replaces
+     the old leading "—" so the greeting reads as a designed eyebrow. */
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-family: var(--font-sans);
   font-size: var(--fs-xs);
   letter-spacing: 0.01em;
   color: var(--ink-3);
   margin-bottom: 12px;
 }
+.quilt-greeting::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  flex-shrink: 0;
+}
 .quilt-title {
-  font-size: clamp(20px, 2.2vw, 28px);
+  font-size: clamp(21px, 2.4vw, 30px);
   font-weight: 700;
-  line-height: 1.28;
-  letter-spacing: -0.018em;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
   color: var(--ink-0);
   margin: 0 0 14px;
 }
@@ -3398,6 +3410,49 @@ a.btn { text-decoration: none; }
   bottom: calc(16px + var(--bottom-nav-h, 0px) + env(safe-area-inset-bottom, 0px));
   right: 16px;
   z-index: 1100;
+}
+
+/*
+  PWA "Install as an app" prompt. Previously a centered, content-width
+  bottom bar (left:12/right:12, max-width 480, margin auto) that floated
+  ON TOP of page CTAs on every route — it covered the recipe Controls
+  card, connected-connector cards, telemetry tiles, and the inbox reader.
+  Now anchored bottom-right like .toast-viewport: a compact card that
+  lifts above the mobile bottom-nav and never spans the content column.
+  Sits just under the toast viewport (z 1090 < 1100) so an action toast
+  still stacks above it.
+*/
+.pwa-install-prompt {
+  position: fixed;
+  right: 16px;
+  left: auto;
+  bottom: calc(16px + var(--bottom-nav-h, 0px) + env(safe-area-inset-bottom, 0px));
+  z-index: 1090;
+  width: min(340px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-3, 10px);
+  box-shadow: var(--shadow-m, 0 8px 24px rgba(0, 0, 0, 0.18));
+}
+.pwa-install-prompt-text {
+  flex: 1;
+  min-width: 150px;
+  font-size: var(--fs-s);
+  color: var(--ink-1);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pwa-install-prompt {
+    animation: pwaPromptIn 260ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  @keyframes pwaPromptIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
 }
 
 /* Settings page layout — desktop has a sticky 200px in-page nav next to
@@ -4795,10 +4850,12 @@ a.btn { text-decoration: none; }
   line-height: 1;
 }
 
-/* Three-column grid */
+/* Three-column grid. Proportional, not equal: Active (what's running) and
+   Draft (what you're building) get more room; the Paused archive — usually
+   the bulk of recipes — is narrowed so it stops dominating the board. */
 .rag3-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1.15fr 1fr 0.85fr;
   gap: 14px;
   align-items: stretch;
 }
@@ -4884,6 +4941,11 @@ a.btn { text-decoration: none; }
 .rag3-col[data-kind="active"] {
   border-color: color-mix(in srgb, var(--ok) 35%, var(--line-2));
   border-top: 2px solid color-mix(in srgb, var(--ok) 75%, transparent);
+  /* Spotlight the live column: a faint green wash + soft glow so the eye
+     lands on what's actually running, reinforcing the Active-first order. */
+  background: color-mix(in srgb, var(--ok) 6%, var(--bg-2));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok) 12%, transparent),
+              0 6px 20px color-mix(in srgb, var(--ok) 8%, transparent);
 }
 
 /* Column header */
@@ -5251,7 +5313,7 @@ a.btn { text-decoration: none; }
   transition: background var(--motion-fast) var(--ease-out);
 }
 /* Per-segment colored accent on top (overrides the unified panel top border within hover state) */
-[data-theme="dark"] .stat-card.stat-card--runs      { border-top: 2px solid var(--accent); }
+[data-theme="dark"] .stat-card.stat-card--runs      { border-top: 2px solid var(--ok); }
 [data-theme="dark"] .stat-card.stat-card--approvals { border-top: 2px solid var(--amber);  }
 [data-theme="dark"] .stat-card.stat-card--halts     { border-top: 2px solid var(--err);    }
 [data-theme="dark"] .stat-card.stat-card--tools     { border-top: 2px solid var(--accent-cool); }
@@ -5430,7 +5492,7 @@ a.btn { text-decoration: none; }
 /* ── Overview page UI upgrades ────────────────────────────────────────── */
 
 /* Stat tile colored top-border variants */
-.stat-card.stat-card--runs      { border-top: 2px solid var(--accent); }
+.stat-card.stat-card--runs      { border-top: 2px solid var(--ok); }
 .stat-card.stat-card--approvals { border-top: 2px solid var(--amber);  }
 .stat-card.stat-card--halts     { border-top: 2px solid var(--err);    }
 .stat-card.stat-card--tools     { border-top: 2px solid var(--accent-cool); }
@@ -5597,9 +5659,11 @@ a.btn { text-decoration: none; }
   align-items: center;
   gap: 8px;
   font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  font-weight: 500;
-  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink-2);
   white-space: nowrap;
 }
 .pg-section-head-bar {
@@ -6455,9 +6519,9 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .inbox-md-hr { border: none; border-top: 1px solid var(--line-2); margin: 20px 0; }
 .inbox-md-strong { color: var(--ink-0); }
 .inbox-md-li { font-size: 13.5px; line-height: 1.65; margin-bottom: 4px; color: var(--ink-1); overflow-wrap: break-word; word-break: break-word; }
-.inbox-md-pre { background: var(--recess); border: 1px solid var(--line-2); border-radius: var(--r-s); padding: 10px 14px; margin: 8px 0 12px; font-size: var(--fs-xs); font-family: var(--font-mono); line-height: 1.6; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+.inbox-md-pre { background: var(--recess); border: 1px solid var(--line-2); border-radius: var(--r-s); padding: 10px 14px; margin: 8px 0 12px; font-size: var(--fs-xs); font-family: var(--font-mono); line-height: 1.6; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .inbox-md-code-block { font-family: var(--font-mono); font-size: var(--fs-xs); }
-.inbox-md-code-inline { font-family: var(--font-mono); font-size: 0.875em; background: var(--recess); border: 1px solid var(--line-1); border-radius: 4px; padding: 1px 5px; word-break: break-all; }
+.inbox-md-code-inline { font-family: var(--font-mono); font-size: 0.875em; background: var(--recess); border: 1px solid var(--line-1); border-radius: 4px; padding: 1px 5px; overflow-wrap: anywhere; }
 
 /* -- page layout -- */
 .inbox-page-section { display: flex; flex-direction: column; height: calc(100dvh - 120px); min-height: 500px; }
@@ -7826,6 +7890,19 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   box-shadow: 0 2px 8px color-mix(in srgb, var(--ink-0) 10%, transparent);
 }
 .hub-control-btn:active:not(:disabled) { transform: translateY(0); }
+
+/* Recipe-detail primary action bar — Run now / Enable / Edit, lifted to
+   the top of the hub so the primary action isn't buried mid-stack. The
+   Run now button is sized up a touch so it reads as the page's primary CTA. */
+.hub-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  align-items: center;
+}
+.hub-action-bar .btn.primary {
+  font-weight: 600;
+}
 
 /* --- marketplace/submit/page.tsx --- */
 @media (min-width: 1024px) {

@@ -81,13 +81,13 @@ function SessionSummaryPanel({
         <span>
           <span style={{ color: "var(--ink-2)" }}>session</span> · {shortId}
         </span>
-        <a
+        <Link
           href={`/sessions/${encodeURIComponent(session.id)}`}
           className="btn sm ghost"
           style={{ fontSize: "var(--fs-xs)" }}
         >
           Open detail →
-        </a>
+        </Link>
       </div>
       <div
         style={{
@@ -158,8 +158,7 @@ export default function SessionsPage() {
           </div>
           <RelationStrip
             items={[
-              { label: "Tasks", href: "/tasks", title: "Subprocess invocations from these sessions" },
-              { label: "Activity", href: "/activity", title: "Events emitted by these sessions" },
+              // Tasks + Activity are siblings in the ActivityTabs above.
               { label: "Approvals", href: "/approvals", title: "Approvals these sessions are waiting on" },
               { label: "Connections", href: "/connections", title: "Configured services these sessions can call" },
             ]}
@@ -180,7 +179,7 @@ export default function SessionsPage() {
         />
       )}
       {error && sessions.length > 0 && (
-        <div className="alert-err">Refresh failed — {error}</div>
+        <div className="alert-err" role="alert">Refresh failed — {error}</div>
       )}
 
       {loading && sessions.length === 0 && (

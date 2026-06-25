@@ -258,7 +258,7 @@ export default function TransactionsPage() {
         />
       )}
       {error && transactions.length > 0 && (
-        <div className="alert-err">Refresh failed — {error}</div>
+        <div className="alert-err" role="alert">Refresh failed — {error}</div>
       )}
 
       {!loading && transactions.length === 0 && (
@@ -350,6 +350,7 @@ export default function TransactionsPage() {
                 className="btn danger"
                 disabled={state === "rolling-back" || state === "discarded"}
                 onClick={() => void rollback(tx.id)}
+                aria-label={`Discard transaction ${tx.id}`}
               >
                 {state === "rolling-back" ? "Discarding…" : "Discard"}
               </button>

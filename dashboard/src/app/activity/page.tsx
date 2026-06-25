@@ -433,8 +433,7 @@ export default function ActivityPage() {
           )}
           <RelationStrip
             items={[
-              { label: "Sessions", href: "/sessions", title: "Sessions that produced this activity" },
-              { label: "Runs", href: "/runs", title: "Recipe runs visible here" },
+              // Sessions + Runs are siblings in the ActivityTabs above.
               { label: "Approvals", href: "/approvals", title: "Approval decisions in the stream" },
             ]}
           />

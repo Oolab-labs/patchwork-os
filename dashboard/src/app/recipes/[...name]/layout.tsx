@@ -18,6 +18,7 @@ import { canonicalRecipeKey } from "@/lib/entityKey";
 import { detectConnectorsForRecipe } from "@/lib/recipeConnectors";
 import { Breadcrumb, RelationStrip, StatusPill } from "@/components/patchwork";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { statusPillFor } from "@/lib/recipeHeaderStatus";
 
 interface RecipeSummary {
   name: string;
@@ -144,16 +145,6 @@ function RecipeBreadcrumb({ name }: { name: string }) {
   );
 }
 
-function statusPillFor(recipe: RecipeSummary | undefined): {
-  tone: "ok" | "warn" | "err" | "muted";
-  label: string;
-} {
-  if (!recipe) return { tone: "muted", label: "loading" };
-  if (recipe.lint && recipe.lint.ok === false) return { tone: "err", label: "lint error" };
-  if (recipe.enabled === false) return { tone: "muted", label: "disabled" };
-  return { tone: "ok", label: "enabled" };
-}
-
 export default function RecipeDetailLayout({
   children,
   params,
@@ -203,7 +194,11 @@ export default function RecipeDetailLayout({
     };
   }, [name]);
 
-  const { tone, label } = statusPillFor(recipe);
+  // `recipes` is undefined until the list resolves; once it's an array
+  // (even empty) the list has loaded, so an absent recipe is "not found".
+  const recipesLoaded = recipes !== undefined;
+  const notFound = recipesLoaded && !recipe;
+  const { tone, label } = statusPillFor(recipe, recipesLoaded);
   const connectors = useMemo(
     () => (recipe ? detectConnectorsForRecipe(recipe) : []),
     [recipe],
@@ -226,8 +221,10 @@ export default function RecipeDetailLayout({
     for (const c of connectors) {
       items.push({ label: c, href: `/connections#${c}`, title: `Connector: ${c}` });
     }
-    items.push({ label: "Edit", href: `/recipes/${enc}/edit`, title: "Edit YAML" });
-    items.push({ label: "Plan", href: `/recipes/${enc}/plan`, title: "Dry-run plan" });
+    // Edit + Plan intentionally omitted here — they're the section tabs
+    // directly below this strip, so listing them again as relation chips
+    // was a confusing duplicate. The strip is for cross-surface links
+    // (Runs/Halts/Traces/Inbox/Approvals/connectors) the tabs don't cover.
     return items;
   }, [name, connectors]);
 
@@ -274,10 +271,18 @@ export default function RecipeDetailLayout({
             {recipe.description}
           </div>
         )}
-        <div className="recipe-relation-strip">
-          <RelationStrip items={relationItems} />
-        </div>
-        <TabBar name={name} />
+        {/* When the recipe doesn't exist, the relation links + section
+            tabs all point at a nonexistent recipe (Runs/Traces/Edit/Plan
+            of nothing). Suppress them so the not-found body is the only
+            thing on screen. */}
+        {!notFound && (
+          <>
+            <div className="recipe-relation-strip">
+              <RelationStrip items={relationItems} />
+            </div>
+            <TabBar name={name} />
+          </>
+        )}
       </div>
       {children}
     </section>
