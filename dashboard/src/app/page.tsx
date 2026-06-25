@@ -1008,7 +1008,7 @@ export default function HomePage() {
         * load ring. WeatherRing is the closest existing primitive; swap when
         * the buddy-quilt component spec lands. See screenshots @ 19.00.07. */}
       <QuiltHero
-        greeting={greet ? `— ${greet.toLowerCase()}` : "— welcome"}
+        greeting={greet ? greet.toLowerCase() : "welcome"}
         headline={headline}
         summary={summary}
         stats={(() => {

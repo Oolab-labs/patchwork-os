@@ -2487,18 +2487,30 @@ a.btn { text-decoration: none; }
 }
 .quilt-greeting {
   /* Theme-redesign AP-07: sans + tighter tracking (0.06em was the widest in
-     the app); reserve mono for code/identifiers. */
+     the app); reserve mono for code/identifiers. A small accent dot replaces
+     the old leading "—" so the greeting reads as a designed eyebrow. */
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-family: var(--font-sans);
   font-size: var(--fs-xs);
   letter-spacing: 0.01em;
   color: var(--ink-3);
   margin-bottom: 12px;
 }
+.quilt-greeting::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  flex-shrink: 0;
+}
 .quilt-title {
-  font-size: clamp(20px, 2.2vw, 28px);
+  font-size: clamp(21px, 2.4vw, 30px);
   font-weight: 700;
-  line-height: 1.28;
-  letter-spacing: -0.018em;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
   color: var(--ink-0);
   margin: 0 0 14px;
 }
@@ -5647,9 +5659,11 @@ a.btn { text-decoration: none; }
   align-items: center;
   gap: 8px;
   font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  font-weight: 500;
-  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink-2);
   white-space: nowrap;
 }
 .pg-section-head-bar {
