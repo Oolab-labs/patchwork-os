@@ -672,6 +672,46 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
         running={runStarting}
       />
 
+      {/* PRIMARY ACTIONS — lifted above the fold so Run now / Enable / Edit
+          are reachable immediately instead of buried in the Controls card
+          near the bottom of a 7-card stack. Secondary + destructive actions
+          (Plan, Simulate, Compare, Uninstall) stay in the Controls card. */}
+      {recipe && (
+        <div className="hub-action-bar">
+          <button
+            type="button"
+            className="btn primary hub-control-btn"
+            onClick={() => setRunModalOpen(true)}
+            disabled={recipe.enabled === false}
+            title="Execute this recipe now"
+          >
+            ▶ Run now
+          </button>
+          <button
+            type="button"
+            className="btn ghost hub-control-btn"
+            onClick={() => void handleToggle()}
+            disabled={toggling}
+            aria-pressed={recipe.enabled !== false}
+          >
+            {toggling
+              ? recipe.enabled === false
+                ? "Enabling…"
+                : "Disabling…"
+              : recipe.enabled === false
+                ? "Enable"
+                : "Disable"}
+          </button>
+          <Link
+            href={`/recipes/${encodeURIComponent(name)}/edit`}
+            className="btn ghost hub-control-btn"
+            style={{ textDecoration: "none" }}
+          >
+            Edit
+          </Link>
+        </div>
+      )}
+
       {/* SUMMARY */}
       <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animationDelay: "0ms", animation: "hubCardIn 200ms ease both" }}>
         <SectionHeader>Summary</SectionHeader>
@@ -873,31 +913,8 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
       <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 260ms 140ms ease both", animationFillMode: "both" }}>
         <SectionHeader>Controls</SectionHeader>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s-3)" }}>
-          <button
-            type="button"
-            className="btn primary hub-control-btn"
-            onClick={() => setRunModalOpen(true)}
-            disabled={!recipe || recipe.enabled === false}
-            title="Execute this recipe now"
-          >
-            ▶ Run now
-          </button>
-          <button
-            type="button"
-            className="btn ghost hub-control-btn"
-            onClick={() => void handleToggle()}
-            disabled={!recipe || toggling}
-            aria-pressed={recipe?.enabled !== false}
-          >
-            {toggling ? (recipe?.enabled === false ? "Enabling…" : "Disabling…") : (recipe?.enabled === false ? "Enable" : "Disable")}
-          </button>
-          <Link
-            href={`/recipes/${encodeURIComponent(name)}/edit`}
-            className="btn ghost hub-control-btn"
-            style={{ textDecoration: "none" }}
-          >
-            Edit
-          </Link>
+          {/* Run now / Enable / Edit live in the top action bar; this card
+              holds the secondary + destructive actions. */}
           <Link
             href={`/recipes/${encodeURIComponent(name)}/plan`}
             className="btn ghost hub-control-btn"

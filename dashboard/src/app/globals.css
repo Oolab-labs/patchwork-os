@@ -7870,6 +7870,19 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 }
 .hub-control-btn:active:not(:disabled) { transform: translateY(0); }
 
+/* Recipe-detail primary action bar — Run now / Enable / Edit, lifted to
+   the top of the hub so the primary action isn't buried mid-stack. The
+   Run now button is sized up a touch so it reads as the page's primary CTA. */
+.hub-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  align-items: center;
+}
+.hub-action-bar .btn.primary {
+  font-weight: 600;
+}
+
 /* --- marketplace/submit/page.tsx --- */
 @media (min-width: 1024px) {
   .recipe-submit-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) !important; }
