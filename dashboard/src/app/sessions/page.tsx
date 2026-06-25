@@ -158,8 +158,7 @@ export default function SessionsPage() {
           </div>
           <RelationStrip
             items={[
-              { label: "Tasks", href: "/tasks", title: "Subprocess invocations from these sessions" },
-              { label: "Activity", href: "/activity", title: "Events emitted by these sessions" },
+              // Tasks + Activity are siblings in the ActivityTabs above.
               { label: "Approvals", href: "/approvals", title: "Approvals these sessions are waiting on" },
               { label: "Connections", href: "/connections", title: "Configured services these sessions can call" },
             ]}

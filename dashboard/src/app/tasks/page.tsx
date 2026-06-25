@@ -548,9 +548,8 @@ function TasksContent() {
           </div>
           <RelationStrip
             items={[
-              { label: "Sessions", href: "/sessions", title: "Clients that spawned these tasks" },
-              { label: "Runs", href: "/runs", title: "Recipe runs that enqueued tasks" },
-              { label: "Activity", href: "/activity", title: "Tool calls emitted by tasks" },
+              // Sessions / Runs / Activity are siblings in the ActivityTabs
+              // above; the relation strip carries only cross-cluster links.
               { label: "Approvals", href: "/approvals", title: "Tasks waiting on a human nod" },
             ]}
           />

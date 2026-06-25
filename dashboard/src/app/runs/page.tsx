@@ -523,8 +523,8 @@ export default function RunsPage() {
               // Only tint the Halts chip when halts actually exist; otherwise
               // it sits ghost-neutral like its siblings (facelift P3-12).
               { label: "Halts", href: "/runs?halt=1", tone: (haltSummary?.total ?? 0) > 0 ? "err" : undefined, title: "Runs that hit a halt reason" },
-              { label: "Traces", href: "/traces", title: "Decision logs for these runs" },
-              { label: "Activity", href: "/activity", title: "Live event firehose" },
+              // Traces + Activity (Live) are siblings in the ActivityTabs above —
+              // not repeated here. The relation strip is cross-cluster links only.
             ]}
           />
         </div>
