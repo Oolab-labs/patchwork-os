@@ -3895,10 +3895,18 @@ Steps performed:
   }
 
   // Step 3b: Wire CC hooks in ~/.claude/settings.json
-  const ccSettingsPath = path.join(
-    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
-    "settings.json",
-  );
+  const ccConfigDir =
+    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+  const ccSettingsPath = path.join(ccConfigDir, "settings.json");
+  // On a truly fresh machine ~/.claude/ may not exist yet. Every settings.json
+  // writer below (CC hooks, the IDE-skip env step, the PreToolUse hook) does an
+  // atomic write that needs the parent dir to exist — without this, all three
+  // silently fail with ENOENT and the user's onboarding state is never persisted.
+  try {
+    mkdirSync(ccConfigDir, { recursive: true });
+  } catch {
+    // best-effort — the individual writers below surface their own warnings
+  }
   const CC_HOOK_NOTIFY_CMDS: Record<string, string> = {
     PreCompact: "claude-ide-bridge notify PreCompact",
     PostCompact: "claude-ide-bridge notify PostCompact",
@@ -3982,6 +3990,40 @@ Steps performed:
     );
   }
 
+  // Step 3c: Persist CLAUDE_CODE_IDE_SKIP_VALID_CHECK into the settings.json
+  // `env` block so `claude --ide` connects without the user prefixing the var
+  // on every launch. The bridge writes its own ~/.claude/ide/<port>.lock, but
+  // Claude Code's `--ide` "valid check" is an in-IDE-terminal detection that a
+  // standalone bridge can't satisfy by lock-file shape alone — so we set the
+  // skip flag where Patchwork already manages CC config (NOT the shell rc).
+  try {
+    const { registerSkipIdeValidCheckEnv } = await import("./settingsEnv.js");
+    const envResult = registerSkipIdeValidCheckEnv(ccSettingsPath);
+    if (envResult.action === "added") {
+      process.stderr.write(
+        `  ✓ IDE connect — set CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true in ${ccSettingsPath}\n     You can now run a plain \`claude --ide\` — no env-var prefix needed.\n\n`,
+      );
+    } else if (envResult.action === "already-present") {
+      process.stderr.write(
+        `  ✓ IDE connect — CLAUDE_CODE_IDE_SKIP_VALID_CHECK already set in ${ccSettingsPath}\n\n`,
+      );
+    } else if (envResult.action === "preserved-user-value") {
+      process.stderr.write(
+        `  [info] IDE connect — left your CLAUDE_CODE_IDE_SKIP_VALID_CHECK="${envResult.existingValue}" untouched.\n` +
+          `         If \`claude --ide\` won't connect, set it to "true" in ${ccSettingsPath}.\n\n`,
+      );
+    } else {
+      process.stderr.write(
+        `  [warn] IDE connect — could not set CLAUDE_CODE_IDE_SKIP_VALID_CHECK (${envResult.error}).\n` +
+          `         Add { "env": { "CLAUDE_CODE_IDE_SKIP_VALID_CHECK": "true" } } to ${ccSettingsPath} manually.\n\n`,
+      );
+    }
+  } catch (err) {
+    process.stderr.write(
+      `  [warn] IDE connect — ${err instanceof Error ? err.message : String(err)}\n\n`,
+    );
+  }
+
   // Patchwork: register PreToolUse approval hook so the dashboard can
   // approve/reject CC tool calls in real time.
   try {
@@ -4049,8 +4091,14 @@ Steps performed:
       "Next steps:\n" +
       `  1. Start the bridge:    claude-ide-bridge --watch   (runs in this workspace)\n` +
       "  2. Restart your IDE once so it picks up the new extension + MCP config.\n" +
-      "  3. Open Claude Code and type /mcp — the claude-ide-bridge server should show as connected.\n" +
-      "  4. Type /ide to see live workspace state (open editors, diagnostics, git status).\n\n",
+      "  3. Connect Claude Code: claude --ide   (the IDE-detection skip flag is\n" +
+      "       already set in ~/.claude/settings.json — no env-var prefix needed).\n" +
+      "  4. Type /mcp — the claude-ide-bridge server should show as connected,\n" +
+      "       then /ide to see live workspace state (open editors, diagnostics, git).\n" +
+      "  5. Run your first recipe (no connectors needed — local git + a brief):\n" +
+      "       patchwork recipe run daily-status --local\n" +
+      "       Writes a morning brief to ~/.patchwork/inbox/. Try --dry-run first to\n" +
+      "       see the plan without spending tokens.\n\n",
   );
 
   if (inWorktree) {
