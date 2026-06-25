@@ -307,8 +307,12 @@ export default function AnalyticsPage() {
             <SkeletonList rows={5} columns={3} />
           ) : topTools.length === 0 ? (
             <EmptyState
-              title="No data yet — run some recipes to see analytics"
-              description="Usage data builds up as your agents work. Run a recipe or make a Claude request to see your first stats."
+              title="No tool calls recorded yet"
+              description={
+                recentTasks.length > 0
+                  ? "Tool-call telemetry appears here once your agents invoke tools — recent recipe tasks are listed below."
+                  : "Tool-call telemetry appears here once your agents invoke tools. Run a recipe or make a Claude request to get started."
+              }
             />
           ) : (
             <div className="table-wrap">
