@@ -4838,10 +4838,12 @@ a.btn { text-decoration: none; }
   line-height: 1;
 }
 
-/* Three-column grid */
+/* Three-column grid. Proportional, not equal: Active (what's running) and
+   Draft (what you're building) get more room; the Paused archive — usually
+   the bulk of recipes — is narrowed so it stops dominating the board. */
 .rag3-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1.15fr 1fr 0.85fr;
   gap: 14px;
   align-items: stretch;
 }
@@ -4927,6 +4929,11 @@ a.btn { text-decoration: none; }
 .rag3-col[data-kind="active"] {
   border-color: color-mix(in srgb, var(--ok) 35%, var(--line-2));
   border-top: 2px solid color-mix(in srgb, var(--ok) 75%, transparent);
+  /* Spotlight the live column: a faint green wash + soft glow so the eye
+     lands on what's actually running, reinforcing the Active-first order. */
+  background: color-mix(in srgb, var(--ok) 6%, var(--bg-2));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok) 12%, transparent),
+              0 6px 20px color-mix(in srgb, var(--ok) 8%, transparent);
 }
 
 /* Column header */
