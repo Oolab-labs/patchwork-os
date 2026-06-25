@@ -981,6 +981,13 @@ export class RecipeOrchestration {
     const runnerDeps = {
       workdir: this.deps.workdir,
       claudeCodeFn,
+      // Bug 2026-06-24: forward the bridge ActivityLog into runnerDeps so
+      // buildChainedDeps → resolveStepDeps carries it onto StepDeps and the
+      // executeTool chokepoint records chained recipe tool calls. Previously
+      // activityLog reached only `chainedOptions` (live-tail SSE), not the
+      // StepDeps used for tool dispatch — so chained tool calls were never
+      // counted in dashboard telemetry.
+      ...(this.deps.activityLog && { activityLog: this.deps.activityLog }),
       ...(requireApprovalFn && { requireApprovalFn }),
     };
     // Pass the bridge's long-lived RecipeRunLog so chainedRunner can flip the

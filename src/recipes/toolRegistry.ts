@@ -125,23 +125,53 @@ export async function executeTool(
   if (!tool) {
     throw new Error(`Unknown tool: "${id}"`);
   }
-  if (tool.isWrite) {
-    assertWriteAllowed(id);
 
-    // PR5a — idempotency dedup. Within a single recipe run, the same
-    // write tool with the same params must execute exactly once. If a
-    // parallel branch (chained recipe) or a re-dispatch reaches this
-    // function with a key already in the ledger, return the cached
-    // output so downstream `{{steps.x.data}}` references stay coherent.
-    // Errors are NOT recorded — retry-after-failure still re-executes
-    // (correct: a failed call may not have completed its side effect).
-    const ledger = context.deps.writeEffectLedger;
-    if (ledger) {
-      const key = deriveIdempotencyKey(id, context.params);
-      return ledger.getOrExecute(key, () => tool.execute(context));
+  // Telemetry chokepoint (bug 2026-06-24): record every recipe/agent tool
+  // execution to the bridge ActivityLog so dashboard tool-call telemetry
+  // counts recipe-driven work — not just MCP-session calls. Fail-soft: CLI /
+  // test runs without a bridge omit `activityLog`, so `?.record` no-ops.
+  // Both the flat (yaml) runner and the chained runner funnel tool dispatch
+  // through this function (chained: buildChainedDeps → executeStep →
+  // executeTool), so instrumenting here covers both.
+  const activityLog = context.deps.activityLog;
+  const start = Date.now();
+  const recordOutcome = (ok: boolean, errMsg?: string): void => {
+    activityLog?.record(
+      id,
+      Date.now() - start,
+      ok ? "success" : "error",
+      errMsg,
+    );
+  };
+
+  const run = async (): Promise<string | null> => {
+    if (tool.isWrite) {
+      assertWriteAllowed(id);
+
+      // PR5a — idempotency dedup. Within a single recipe run, the same
+      // write tool with the same params must execute exactly once. If a
+      // parallel branch (chained recipe) or a re-dispatch reaches this
+      // function with a key already in the ledger, return the cached
+      // output so downstream `{{steps.x.data}}` references stay coherent.
+      // Errors are NOT recorded — retry-after-failure still re-executes
+      // (correct: a failed call may not have completed its side effect).
+      const ledger = context.deps.writeEffectLedger;
+      if (ledger) {
+        const key = deriveIdempotencyKey(id, context.params);
+        return ledger.getOrExecute(key, () => tool.execute(context));
+      }
     }
+    return tool.execute(context);
+  };
+
+  try {
+    const result = await run();
+    recordOutcome(true);
+    return result;
+  } catch (err) {
+    recordOutcome(false, err instanceof Error ? err.message : String(err));
+    throw err;
   }
-  return tool.execute(context);
 }
 
 /**
