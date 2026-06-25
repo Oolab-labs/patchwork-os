@@ -3400,6 +3400,49 @@ a.btn { text-decoration: none; }
   z-index: 1100;
 }
 
+/*
+  PWA "Install as an app" prompt. Previously a centered, content-width
+  bottom bar (left:12/right:12, max-width 480, margin auto) that floated
+  ON TOP of page CTAs on every route — it covered the recipe Controls
+  card, connected-connector cards, telemetry tiles, and the inbox reader.
+  Now anchored bottom-right like .toast-viewport: a compact card that
+  lifts above the mobile bottom-nav and never spans the content column.
+  Sits just under the toast viewport (z 1090 < 1100) so an action toast
+  still stacks above it.
+*/
+.pwa-install-prompt {
+  position: fixed;
+  right: 16px;
+  left: auto;
+  bottom: calc(16px + var(--bottom-nav-h, 0px) + env(safe-area-inset-bottom, 0px));
+  z-index: 1090;
+  width: min(340px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-3, 10px);
+  box-shadow: var(--shadow-m, 0 8px 24px rgba(0, 0, 0, 0.18));
+}
+.pwa-install-prompt-text {
+  flex: 1;
+  min-width: 150px;
+  font-size: var(--fs-s);
+  color: var(--ink-1);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pwa-install-prompt {
+    animation: pwaPromptIn 260ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  @keyframes pwaPromptIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+}
+
 /* Settings page layout — desktop has a sticky 200px in-page nav next to
    cards; on mobile (≤768px) the nav stacks above the cards instead of
    eating half the viewport width. */
@@ -6455,9 +6498,9 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .inbox-md-hr { border: none; border-top: 1px solid var(--line-2); margin: 20px 0; }
 .inbox-md-strong { color: var(--ink-0); }
 .inbox-md-li { font-size: 13.5px; line-height: 1.65; margin-bottom: 4px; color: var(--ink-1); overflow-wrap: break-word; word-break: break-word; }
-.inbox-md-pre { background: var(--recess); border: 1px solid var(--line-2); border-radius: var(--r-s); padding: 10px 14px; margin: 8px 0 12px; font-size: var(--fs-xs); font-family: var(--font-mono); line-height: 1.6; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+.inbox-md-pre { background: var(--recess); border: 1px solid var(--line-2); border-radius: var(--r-s); padding: 10px 14px; margin: 8px 0 12px; font-size: var(--fs-xs); font-family: var(--font-mono); line-height: 1.6; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .inbox-md-code-block { font-family: var(--font-mono); font-size: var(--fs-xs); }
-.inbox-md-code-inline { font-family: var(--font-mono); font-size: 0.875em; background: var(--recess); border: 1px solid var(--line-1); border-radius: 4px; padding: 1px 5px; word-break: break-all; }
+.inbox-md-code-inline { font-family: var(--font-mono); font-size: 0.875em; background: var(--recess); border: 1px solid var(--line-1); border-radius: 4px; padding: 1px 5px; overflow-wrap: anywhere; }
 
 /* -- page layout -- */
 .inbox-page-section { display: flex; flex-direction: column; height: calc(100dvh - 120px); min-height: 500px; }

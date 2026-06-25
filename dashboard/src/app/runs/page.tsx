@@ -13,6 +13,7 @@ import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useDebounced } from "@/hooks/useDebounced";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
+import { dedupeRunsByKey } from "@/lib/dedupeRuns";
 
 interface AssertionFailure {
   assertion: string;
@@ -278,7 +279,10 @@ export default function RunsPage() {
         });
         if (!res.ok) throw new Error(`/runs ${res.status}`);
         const data = (await res.json()) as { runs?: Run[] };
-        setRuns(data.runs ?? []);
+        // De-dupe by (taskId, seq): the response can repeat a run when the
+        // poll races the SSE reload, which collides the `${taskId}-${seq}`
+        // row key and triggers React's duplicate-key error + miscounts.
+        setRuns(dedupeRunsByKey(data.runs ?? []));
         setErr(undefined);
       } catch (e) {
         // AbortError on unmount / dep change is expected — don't surface.
