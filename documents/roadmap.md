@@ -4,9 +4,9 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Status (2026-05-16)
+## Status (2026-06-25)
 
-Current: `0.2.0-beta.9` (bridge), `1.4.20` (extension). 177 tools registered. Recent waves:
+Current: `0.2.0-beta.13` (bridge), `1.4.22` (extension). 177 tools registered. Newer work (beta.10–beta.13: security-audit waves, npm-package leak fix, recipe runner-parity, dashboard data-accuracy) is in [CHANGELOG.md](../CHANGELOG.md); the waves below are historical (beta.9 era):
 
 - **Native Windows support** — smoke harness + extension suites green on `windows-latest` CI; advisory→blocking flip in PR #537. Helpers: `winShim`, `processTree`, `fsWatchWithFallback`. ADRs 0010-0012.
 - **Write-tier kill-switch** — `patchwork kill-switch engage|release|status` + `panic` alias, multi-bridge HTTP fan-out, dashboard toggle, fs.watch convergence. Issue #422 design; ADR 0013.
