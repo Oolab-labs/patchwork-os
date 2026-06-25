@@ -93,7 +93,7 @@ export function JudgeVerdictPill({ verdict }: { verdict: JudgeVerdict }) {
             flexDirection: "column",
             gap: 2,
             paddingLeft: 8,
-            borderLeft: "2px solid var(--border)",
+            borderLeft: "2px solid var(--line-2)",
           }}
         >
           <span

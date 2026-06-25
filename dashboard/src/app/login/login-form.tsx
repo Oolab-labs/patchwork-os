@@ -77,9 +77,9 @@ export function LoginForm({ next }: { next: string }) {
         type="submit"
         disabled={busy || !pw}
         style={{
-          fontSize: "var(--fs-s)",
+          fontSize: "var(--fs-base)",
           fontWeight: 600,
-          padding: "8px 14px",
+          padding: "10px 14px",
           borderRadius: "var(--r-2)",
           border: "none",
           background: "var(--accent)",
@@ -91,7 +91,7 @@ export function LoginForm({ next }: { next: string }) {
         {busy ? "Signing in…" : "Sign in"}
       </button>
       {err && (
-        <p style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--err)" }}>{err}</p>
+        <p role="alert" aria-live="polite" style={{ margin: 0, fontSize: "var(--fs-s)", color: "var(--err)" }}>{err}</p>
       )}
     </form>
   );

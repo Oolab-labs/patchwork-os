@@ -10,6 +10,7 @@ import {
 import { relTime } from "@/components/time";
 import { useRunRecipe } from "@/hooks/useRunRecipe";
 import { canonicalRecipeKey } from "@/lib/entityKey";
+import { recipeDisplayName } from "@/lib/recipeDisplay";
 
 /**
  * Recipe activity leaderboard for the Overview page. Replaces the old
@@ -172,7 +173,7 @@ export function RecipeLeaderboard({
                       className="leaderboard-live-dot"
                     />
                   )}
-                  <span>{a.name}</span>
+                  <span>{recipeDisplayName(a.name)}</span>
                 </Link>
                 <span className="lbrd-sparkbars" aria-hidden="true">
                   <RunSparkBars runs={a.runs.slice(0, 8)} slots={8} width={84} height={16} />

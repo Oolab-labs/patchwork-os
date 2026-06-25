@@ -81,13 +81,13 @@ function SessionSummaryPanel({
         <span>
           <span style={{ color: "var(--ink-2)" }}>session</span> · {shortId}
         </span>
-        <a
+        <Link
           href={`/sessions/${encodeURIComponent(session.id)}`}
           className="btn sm ghost"
           style={{ fontSize: "var(--fs-xs)" }}
         >
           Open detail →
-        </a>
+        </Link>
       </div>
       <div
         style={{
