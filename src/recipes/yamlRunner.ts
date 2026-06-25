@@ -547,6 +547,15 @@ export interface RunnerDeps {
    */
   activityLog?: import("../activityLog.js").ActivityLog;
   /**
+   * Optional caller-provided cancellation signal. When it (or the internal
+   * registry/kill-switch controller) is aborted, the run stops before the next
+   * step is dispatched — the flat-runner counterpart to the chained runner's
+   * `RunOptions.signal` (#850 parity; makes `POST /runs/:seq/cancel` effective
+   * on flat YAML recipes too). Between-steps granularity: an already-dispatched
+   * step completes; the next one is not started.
+   */
+  signal?: AbortSignal;
+  /**
    * Optional Anthropic API caller for agent steps. Defaults to fetch-based
    * impl. May return either a raw string (legacy / tests) or `AgentResult`
    * carrying usage tokens (bridge wrappers, real adapters). The runner
@@ -712,6 +721,9 @@ export type StepDeps = Required<
     // M3 — approval gate runs in the run loop against `deps`, not per-step
     // StepDeps; keep it off StepDeps so it isn't forced Required here.
     | "requireApprovalFn"
+    // Cancellation is checked in the run loop against `deps`, not per-step;
+    // keep it off StepDeps so it isn't forced Required here.
+    | "signal"
   >
 > & {
   workdir: string;
@@ -1585,8 +1597,11 @@ export async function runYamlRecipe(
       // log_only|deliver_original) never set `haltAfterFailure`, so they
       // still let the run continue exactly as before.
       if (haltAfterFailure) break;
-      // Run-level cancel: abort when the registry controller fires (H11).
-      if (runController?.signal.aborted) {
+      // Run-level cancel: abort when the registry controller fires (H11) OR
+      // when a caller-provided signal is aborted (#850 parity — external
+      // cancellation, e.g. POST /runs/:seq/cancel). An in-flight step is
+      // allowed to finish; the next step is not dispatched.
+      if (runController?.signal.aborted || deps.signal?.aborted) {
         runError = runError ?? "recipe run cancelled";
         break;
       }
