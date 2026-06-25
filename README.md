@@ -89,11 +89,22 @@ claude-ide-bridge install-extension
 claude-ide-bridge --workspace .
 
 # 4. Connect Claude Code (in another terminal)
-#    The env var skips Claude Code's built-in IDE-detection check — the bridge
-#    manages this connection itself. Add `export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true`
-#    to your shell profile so `claude --ide` is all you need going forward.
-CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide
+claude --ide
 ```
+
+> **First time `claude --ide` says it can't find an IDE?** Claude Code's `--ide`
+> flag runs an in-terminal IDE-detection check; a standalone bridge launched from
+> a plain terminal trips it, so you need to set `CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true`.
+> `patchwork init` writes this into your `~/.claude/settings.json` for you (so a
+> plain `claude --ide` just works). If you're only running the bridge (no `init`),
+> add it once yourself — Claude Code applies its `env` block to every session:
+>
+> ```json
+> // ~/.claude/settings.json
+> { "env": { "CLAUDE_CODE_IDE_SKIP_VALID_CHECK": "true" } }
+> ```
+>
+> Or prefix it for a single run: `CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide`.
 
 Type `/ide` in Claude Code to confirm the connection. That's it — Claude now sees your diagnostics, open files, and editor state, and can call 177 tools to act on them.
 

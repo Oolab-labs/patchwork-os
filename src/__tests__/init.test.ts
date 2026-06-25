@@ -227,6 +227,33 @@ describe("init --workspace", () => {
     expect(parsed.mcpServers).toBeDefined();
     expect(parsed.mcpServers?.["claude-ide-bridge"]).toBeDefined();
   });
+
+  it("persists CLAUDE_CODE_IDE_SKIP_VALID_CHECK in settings.json env so `claude --ide` needs no prefix", () => {
+    const ws = makeTmpDir();
+    const fakeHome = makeTmpDir();
+    const configDir = path.join(fakeHome, ".claude");
+    const settingsPath = path.join(configDir, "settings.json");
+
+    // NOTE: do NOT pass CLAUDE_CODE_IDE_SKIP_VALID_CHECK in the spawn env here —
+    // this test asserts that `init` itself writes it into settings.json.
+    const result = spawnSync("node", [distIndex, "init", "--workspace", ws], {
+      input: "n\n",
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        CLAUDE_CONFIG_DIR: configDir,
+        HOME: fakeHome,
+      },
+      timeout: 30_000,
+    });
+
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(settingsPath)).toBe(true);
+    const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8")) as {
+      env?: Record<string, unknown>;
+    };
+    expect(settings.env?.CLAUDE_CODE_IDE_SKIP_VALID_CHECK).toBe("true");
+  });
 });
 
 // ---------------------------------------------------------------------------
