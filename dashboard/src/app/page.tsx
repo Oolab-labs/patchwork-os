@@ -540,10 +540,14 @@ function RecipesAtAGlance({
     return (bs?.lastAt ?? 0) - (as?.lastAt ?? 0);
   });
 
+  // Active first: it's what's actually running and the column the operator
+  // cares about. Paused is an archive (often the bulk of recipes) and reads
+  // last so it stops dominating the board's prominent middle. Draft sits
+  // between as the "not yet live" middle ground.
   const cols = [
+    { kind: "active" as const, label: "Active", items: active },
     { kind: "draft"  as const, label: "Draft",  items: draft  },
     { kind: "paused" as const, label: "Paused", items: paused },
-    { kind: "active" as const, label: "Active", items: active },
   ];
 
   const defaultTab = active.length > 0 ? "active" : draft.length > 0 ? "draft" : "paused";
@@ -898,41 +902,29 @@ export default function HomePage() {
     return { toolsToday: today, toolsTrendLabel: label };
   })();
 
-  // Hero copy follows the design's narrative shape — "stitched N patches
-   // overnight, drafted M things that need a nod, and woke up clean" — but
-   // every number is driven from real bridge data instead of hardcoded floors.
-   // Falls back to a neutral line when the bridge is offline.
+  // Hero headline — lead with the one thing the operator should act on.
+  // Approvals waiting come first (they block agent work and need a human),
+  // then a calm "what happened" summary, then a reassuring quiet state.
+  // Every number is real bridge data; the copy stays scannable instead of
+  // burying the signal in narrative ("stitched N patches… needs a nod").
   const patchesStitched = activityEvents.filter(
     (e) => e.kind === "recipe" || e.kind === "tool",
   ).length;
   const headline = bridgeStatus.ok ? (
-    patchesStitched > 0 && pendingCount > 0 ? (
+    pendingCount > 0 ? (
       <>
-        Your agents stitched{" "}
-        <span className="num">{patchesStitched.toLocaleString()}</span>{" "}
-        {patchesStitched === 1 ? "patch" : "patches"} overnight, drafted{" "}
         <span className="num">{pendingCount}</span>{" "}
-        <span className="accent">
-          {pendingCount === 1 ? "thing that needs a nod." : "things that need a nod."}
-        </span>
+        {pendingCount === 1 ? "approval is" : "approvals are"}{" "}
+        <span className="accent">waiting for you.</span>
       </>
     ) : patchesStitched > 0 ? (
       <>
-        Your agents stitched{" "}
         <span className="num">{patchesStitched.toLocaleString()}</span>{" "}
-        {patchesStitched === 1 ? "patch" : "patches"} overnight,{" "}
-        <span className="accent">and woke up clean.</span>
-      </>
-    ) : pendingCount > 0 ? (
-      <>
-        Your agents drafted{" "}
-        <span className="num">{pendingCount}</span>{" "}
-        <span className="accent">
-          {pendingCount === 1 ? "thing that needs a nod." : "things that need a nod."}
-        </span>
+        agent {patchesStitched === 1 ? "action" : "actions"} overnight —{" "}
+        <span className="accent">all clear.</span>
       </>
     ) : (
-      <>Your agents are quiet. <span className="accent">No activity overnight, no approvals pending.</span></>
+      <>Your agents are quiet. <span className="accent">Nothing needs you right now.</span></>
     )
   ) : (
     <>Bridge offline — start it to see live agent activity here.</>
