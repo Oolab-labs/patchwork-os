@@ -717,7 +717,7 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
             className="btn primary hub-control-btn"
             onClick={() => setRunModalOpen(true)}
             disabled={recipe.enabled === false}
-            title="Execute this recipe now"
+            title={recipe.enabled === false ? "Recipe is disabled — enable it first" : "Execute this recipe now"}
           >
             ▶ Run now
           </button>
