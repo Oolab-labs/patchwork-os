@@ -1561,7 +1561,7 @@ function NewRecipePageInner() {
             </div>
 
             {/* Actions */}
-            {submitError && <div className="alert-err">{submitError}</div>}
+            {submitError && <div className="alert-err" role="alert">{submitError}</div>}
             {submitNotice && (
               <div
                 role="status"

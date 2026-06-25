@@ -575,7 +575,7 @@ function TasksContent() {
         />
       )}
       {err && tasks.length > 0 && (
-        <div className="alert-err">Refresh failed — {err}</div>
+        <div className="alert-err" role="alert">Refresh failed — {err}</div>
       )}
 
       {tasks.length > 0 && (

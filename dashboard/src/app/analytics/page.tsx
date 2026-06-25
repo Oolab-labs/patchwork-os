@@ -203,7 +203,7 @@ export default function AnalyticsPage() {
           onRetry={refetch}
         />
       )}
-      {error && data && <div className="alert-err">Refresh failed — {error}</div>}
+      {error && data && <div className="alert-err" role="alert">Refresh failed — {error}</div>}
 
       {(!error || data) && (
         <>

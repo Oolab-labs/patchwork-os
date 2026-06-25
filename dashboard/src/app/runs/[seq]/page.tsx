@@ -1443,7 +1443,7 @@ export default function RunDetailPage() {
         </div>
       </Dialog>
 
-      {runErr && <div className="alert-err">Failed to load run: {runErr}</div>}
+      {runErr && <div className="alert-err" role="alert">Failed to load run: {runErr}</div>}
       {!seqIsValid ? (
         <div className="empty-state">
           <h3>Invalid run id</h3>
@@ -1745,7 +1745,7 @@ export default function RunDetailPage() {
                 <div style={{ padding: 20, color: "var(--ink-2)", fontSize: "var(--fs-m)" }}>Generating…</div>
               )}
               {planErr && (
-                <div className="alert-err" style={{ margin: 16 }}>
+                <div className="alert-err" role="alert" style={{ margin: 16 }}>
                   {planErr === "__not_found__"
                     ? `Recipe file not found on disk for "${run.recipeName}" — plan generation requires the recipe YAML to be present.`
                     : `Plan error: ${planErr}`}

@@ -740,7 +740,7 @@ export default function RunsPage() {
         />
       )}
       {err && runs && runs.length > 0 && (
-        <div className="alert-err">Refresh failed — {err}</div>
+        <div className="alert-err" role="alert">Refresh failed — {err}</div>
       )}
 
       {windowedRuns === null && !err ? (

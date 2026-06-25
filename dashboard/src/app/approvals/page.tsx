@@ -1107,7 +1107,7 @@ function ApprovalsContent() {
         </div>
       )}
 
-      {err && <div className="alert-err">Unreachable: {err}</div>}
+      {err && <div className="alert-err" role="alert">Unreachable: {err}</div>}
 
       {sessionFilter && (
         <div className="alert-info">

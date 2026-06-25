@@ -298,7 +298,7 @@ function DecisionsContent() {
         />
       )}
       {error && traces.length > 0 && (
-        <div className="alert-err">Refresh failed — {error}</div>
+        <div className="alert-err" role="alert">Refresh failed — {error}</div>
       )}
 
       {!loading && traces.length === 0 && !error ? (

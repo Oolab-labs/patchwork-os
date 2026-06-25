@@ -263,7 +263,7 @@ export default function SessionDetailPage() {
       </div>
 
       {error && !data && (
-        <div className="alert-err">
+        <div className="alert-err" role="alert">
           {error.startsWith("/sessions/:id")
             ? `Response shape unexpected (bridge version mismatch?): ${error}`
             : `Unreachable: ${error}`}
