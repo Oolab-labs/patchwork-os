@@ -187,7 +187,7 @@ function DecisionsContent() {
           <RelationStrip
             items={[
               { label: "Traces", href: "/traces", title: "Underlying decision-trace stream" },
-              { label: "Approvals", href: "/approvals", title: "Per-call approvals" },
+              // Pending (Approvals) is a DecisionsTabs sibling above.
               { label: "Insights", href: "/insights", title: "Per-tool approval aggregates" },
               { label: "Recipes", href: "/recipes", title: "Recipes whose decisions are saved here" },
             ]}
