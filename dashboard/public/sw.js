@@ -127,11 +127,24 @@ self.addEventListener("push", (event) => {
   // and halt pushes (kind === "halt") render different notifications
   // and have different click targets.
   if (data.kind === "halt") {
-    const { recipeName, runSeq, status, haltReason, stepId, errorMessage } =
-      data;
+    const {
+      recipeName,
+      runSeq,
+      status,
+      haltReason,
+      haltCategory,
+      actionHint,
+      stepId,
+      errorMessage,
+    } = data;
     const isError = status === "error";
     const title = `${isError ? "⚠️ Run errored" : "Run halted"}: ${recipeName ?? "recipe"}`;
-    const body = haltReason || errorMessage || (isError ? "Run errored" : "Run halted");
+    // Show "what + how to fix": the reason followed by the actionable hint
+    // (e.g. "401 unauthorized — reconnect from /connections"), so a halt seen
+    // on a phone is recoverable without opening a laptop.
+    const reason =
+      haltReason || errorMessage || (isError ? "Run errored" : "Run halted");
+    const body = actionHint ? `${reason} — ${actionHint}` : reason;
     // Coalesce repeat fires for the same run so flapping doesn't spam.
     const tag = `halt-${runSeq ?? recipeName ?? "unknown"}`;
     event.waitUntil(
@@ -141,7 +154,7 @@ self.addEventListener("push", (event) => {
         icon: "/icons/icon-192.png",
         badge: "/icons/icon-192.png",
         requireInteraction: false,
-        data: { kind: "halt", runSeq, stepId },
+        data: { kind: "halt", runSeq, stepId, haltCategory },
       }),
     );
     return;
@@ -191,11 +204,23 @@ self.addEventListener("notificationclick", (event) => {
   // Halt notifications deep-link to the failing run/step. No inline
   // actions — the user inspects the run in the dashboard.
   if (notifData.kind === "halt") {
-    const { runSeq, stepId } = notifData;
-    if (!runSeq) return;
-    const targetUrl = stepId
-      ? `./runs/${runSeq}#step-${encodeURIComponent(stepId)}`
-      : `./runs/${runSeq}`;
+    const { runSeq, stepId, haltCategory } = notifData;
+    // Connection-class halts (auth failure / missing connector) are fixed on
+    // the /connections page, not the run page — deep-link there so the user
+    // can reconnect straight from the notification tap. Everything else opens
+    // the failing run/step.
+    const fixOnConnections =
+      haltCategory === "auth_failure" || haltCategory === "missing_connector";
+    let targetUrl;
+    if (fixOnConnections) {
+      targetUrl = "./connections";
+    } else if (runSeq) {
+      targetUrl = stepId
+        ? `./runs/${runSeq}#step-${encodeURIComponent(stepId)}`
+        : `./runs/${runSeq}`;
+    } else {
+      return;
+    }
     event.waitUntil(
       self.clients
         .matchAll({ type: "window", includeUncontrolled: true })

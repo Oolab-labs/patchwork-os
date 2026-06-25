@@ -18,6 +18,10 @@
 
 import type { ActivityLog } from "./activityLog.js";
 import { dispatchHaltPushNotification } from "./haltPushDispatch.js";
+import {
+  categoriseHaltReason,
+  HALT_CATEGORY_HINTS,
+} from "./recipes/haltCategory.js";
 
 interface WireHaltPushDispatchDeps {
   activityLog: ActivityLog;
@@ -68,6 +72,15 @@ export function wireHaltPushDispatch(
     const runSeq = typeof md.runSeq === "number" ? md.runSeq : 0;
     const errorMessage =
       typeof md.errorMessage === "string" ? md.errorMessage : undefined;
+    // Classify the halt + attach the actionable fix hint so the push (and the
+    // service worker) can show "what + how to fix" instead of a raw error
+    // string — the difference between "github.list_prs: 401" and
+    // "auth failure → reconnect from /connections" on a phone at 3am.
+    // Prefer an explicit haltReason from the event; fall back to errorMessage.
+    const haltReason =
+      typeof md.haltReason === "string" ? md.haltReason : errorMessage;
+    const haltCategory = categoriseHaltReason(haltReason);
+    const actionHint = HALT_CATEGORY_HINTS[haltCategory];
 
     // Dedup: skip if this runSeq fired a push within the window.
     // runSeq 0 is the "unknown" sentinel — never dedup it, since two
@@ -86,6 +99,9 @@ export function wireHaltPushDispatch(
       recipeName,
       runSeq,
       status: "error",
+      haltReason,
+      haltCategory,
+      actionHint,
       errorMessage,
       occurredAt: at,
     }).catch((err) => {

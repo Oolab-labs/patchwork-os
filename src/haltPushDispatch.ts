@@ -37,6 +37,10 @@ export interface HaltPushPayload {
   status: "error" | "halted";
   haltReason?: string;
   haltCategory?: string;
+  /** Actionable one-liner for this category (HALT_CATEGORY_HINTS) — lets the
+   *  push notification / SW show "what to do" without importing the TS hint
+   *  map. Source of truth: src/recipes/haltCategory.ts. */
+  actionHint?: string;
   stepId?: string;
   errorMessage?: string;
   occurredAt?: number;
