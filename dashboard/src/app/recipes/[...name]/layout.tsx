@@ -221,8 +221,10 @@ export default function RecipeDetailLayout({
     for (const c of connectors) {
       items.push({ label: c, href: `/connections#${c}`, title: `Connector: ${c}` });
     }
-    items.push({ label: "Edit", href: `/recipes/${enc}/edit`, title: "Edit YAML" });
-    items.push({ label: "Plan", href: `/recipes/${enc}/plan`, title: "Dry-run plan" });
+    // Edit + Plan intentionally omitted here — they're the section tabs
+    // directly below this strip, so listing them again as relation chips
+    // was a confusing duplicate. The strip is for cross-surface links
+    // (Runs/Halts/Traces/Inbox/Approvals/connectors) the tabs don't cover.
     return items;
   }, [name, connectors]);
 

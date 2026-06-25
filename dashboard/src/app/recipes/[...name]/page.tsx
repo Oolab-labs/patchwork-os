@@ -787,7 +787,7 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
             textAlign: "center",
           }}>
             <span style={{ fontSize: 24, opacity: 0.4 }}>▷</span>
-            No runs yet. Use <strong style={{ color: "var(--ink-2)" }}>Run now</strong> below to start one.
+            No runs yet. Use <strong style={{ color: "var(--ink-2)" }}>Run now</strong> above to start one.
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column" }}>
