@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parse as parseYaml } from "yaml";
+import { enableSelfCorrection } from "@/lib/selfCorrection";
 import { apiPath } from "@/lib/api";
 // BackLink and RelationStrip are rendered by the shared recipes/[name]/layout.tsx
 import { useToast } from "@/components/Toast";
@@ -703,6 +704,21 @@ export default function RecipeEditPage({ name }: { name: string }) {
     setRepairProposal(null);
   }
 
+  // One-click "enable self-correction": inject a judge→refine loop + a
+  // more-capable escalation ladder onto an agent step. Operates on the raw
+  // YAML (the structured form is a lossy subset that doesn't model
+  // judge/escalate), so it's only offered in YAML mode and writes the result
+  // straight back into the editor for review before saving.
+  function handleSelfCorrect() {
+    const result = enableSelfCorrection(content);
+    if (result.changed) {
+      setContent(result.yaml);
+      toast.success(result.message);
+    } else {
+      toast.info(result.message);
+    }
+  }
+
   return (
     <section>
       {/* The layout at recipes/[name]/layout.tsx already renders
@@ -744,6 +760,17 @@ export default function RecipeEditPage({ name }: { name: string }) {
           ))}
         </div>
         <div style={{ display: "flex", gap: "var(--s-2)", alignItems: "center", marginLeft: "auto" }}>
+          {editMode === "yaml" && (
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={handleSelfCorrect}
+              disabled={loading}
+              title="Add a judge→refine self-correction loop (with a model-escalation ladder) to the last agent step. Edits the YAML for you to review."
+            >
+              ✨ Self-correct
+            </button>
+          )}
           <Link
             href={`/recipes/${encodeURIComponent(name)}/plan`}
             className="btn ghost"
