@@ -7,6 +7,7 @@ import { EntityTimeline, RelationStrip, RelatedPanel } from "@/components/patchw
 import type { TimelineEvent, RelatedGroup } from "@/components/patchwork";
 import { RecipeChip, RunChip, ToolChip, InboxChip } from "@/components/patchwork/entity";
 import { StepDiffHover } from "@/components/StepDiffHover";
+import { Skeleton, SkeletonList } from "@/components/Skeleton";
 import { Dialog } from "@/components/Dialog";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
 import {
@@ -1452,7 +1453,16 @@ export default function RunDetailPage() {
           </p>
         </div>
       ) : (
-        !run && !runErr && <div className="empty-state" role="status"><p>Loading run…</p></div>
+        !run && !runErr && (
+          // Skeleton instead of a bare "Loading run…" line: approximates the
+          // run-detail shape (title + meta + step list) so the page doesn't
+          // flash an empty box then snap to a full layout.
+          <div aria-busy="true" aria-label="Loading run" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <Skeleton height={30} width="42%" />
+            <Skeleton height={16} width="60%" />
+            <SkeletonList rows={6} columns={2} />
+          </div>
+        )
       )}
 
       {run && (

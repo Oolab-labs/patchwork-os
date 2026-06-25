@@ -45,6 +45,7 @@ import {
 import type { TimelineEvent, RelatedGroup } from "@/components/patchwork";
 import { detectConnectorsForRecipe } from "@/lib/recipeConnectors";
 import { fmtDuration } from "@/components/time";
+import { Skeleton } from "@/components/Skeleton";
 
 interface RecipeVar {
   name: string;
@@ -606,6 +607,39 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
     const label = partialFail ? "completed with errors" : lastRun.status;
     return { tone, label, when: relTime(lastRun.startedAt) };
   }, [lastRun]);
+
+  // Still fetching the recipe list — render a skeleton in the hub body shape
+  // rather than the full layout pre-filled with "manual"/"never"/"—"
+  // placeholders, which read as real (but empty) data on every navigation.
+  if (recipes === undefined) {
+    return (
+      <div className="recipe-hub-layout">
+        <div
+          className="recipe-hub-main"
+          style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)", minWidth: 0 }}
+          aria-busy="true"
+          aria-label="Loading recipe"
+        >
+          <Skeleton height={116} />
+          <Skeleton height={140} />
+          <Skeleton height={96} />
+        </div>
+        <aside
+          style={{
+            position: "sticky",
+            top: 80,
+            padding: "var(--s-4, 16px)",
+            background: "var(--bg-1)",
+            borderRadius: "var(--r-2, 8px)",
+            border: "1px solid var(--line-2)",
+            minWidth: 0,
+          }}
+        >
+          <Skeleton height={120} />
+        </aside>
+      </div>
+    );
+  }
 
   if (recipes && !recipe) {
     return (
