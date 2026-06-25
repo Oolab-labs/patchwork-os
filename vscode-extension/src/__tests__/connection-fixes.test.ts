@@ -297,6 +297,46 @@ describe("heartbeat — sleep/wake active probe", () => {
   });
 });
 
+// ── P0-3: RTT pong refreshes liveness baseline (no 120s false-positive 1006) ──
+
+describe("heartbeat — RTT pong refreshes liveness baseline (P0-3)", () => {
+  it("does not force-reconnect a healthy idle connection kept alive only by RTT pongs (bridge sends no 'ping' frames)", () => {
+    const conn = new BridgeConnection();
+    const handleDisconnectSpy = vi
+      .spyOn(conn as any, "handleDisconnect")
+      .mockImplementation(() => {});
+    const { EventEmitter } = require("node:events");
+    const fakeSock: any = new EventEmitter();
+    fakeSock.readyState = 1; // WebSocket.OPEN
+    fakeSock.ping = vi.fn();
+    fakeSock.terminate = vi.fn();
+    fakeSock.close = vi.fn();
+    fakeSock.send = vi.fn();
+    (conn as any).ws = fakeSock;
+
+    (conn as any).stopHeartbeat();
+    (conn as any).startHeartbeat();
+
+    // Simulate >120s of a healthy idle connection. The bridge never emits its
+    // own 'ping' frames (regression: the extension socket is not in the server
+    // ping set), so the only liveness signal is the extension's own 45s RTT
+    // ping, which always gets a pong back — direct proof the bridge is alive.
+    // Run 3 heartbeat ticks (~135s), delivering the RTT pong after each tick.
+    for (let i = 0; i < 3; i++) {
+      vi.advanceTimersByTime(45_001);
+      // Each normal tick sends an RTT ping and registers a once('pong') handler.
+      fakeSock.emit("pong", Buffer.from(String((conn as any).lastPingTime)));
+    }
+
+    // Fix: the RTT pong refreshes lastBridgePong, so the 120s staleness check
+    // (connection.ts) never trips. Without it, lastBridgePong stagnates at
+    // startHeartbeat time and tick 3 (~135s) force-reconnects → 1006 churn.
+    expect(handleDisconnectSpy).not.toHaveBeenCalled();
+    expect(fakeSock.terminate).not.toHaveBeenCalled();
+    conn.dispose();
+  });
+});
+
 // ── sendNotification dispose guard (1e) ───────────────────────────────────────
 
 describe("sendNotification — dispose guard", () => {
