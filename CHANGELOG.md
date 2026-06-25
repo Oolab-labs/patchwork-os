@@ -6,6 +6,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-beta.13] — 2026-06-25
+
+Two security-audit waves · npm-package leak closed · recipe runner-parity (budget + cancellation) · dashboard data-accuracy fixes. Rolls up the previously un-noted beta.12 (#966–#972).
+
+### Security
+
+- **2026-06-19 audit remediation** — all 11 HIGH + 32 MED/LOW findings, signature-header bypass (H6), approval-hook fail-closed (ADR-0016), CodeQL clears (#990, #992).
+- **2026-06-22 audit Tier-0+Tier-1** — 8 findings (5 HIGH / 3 MED); undici → 6.27.0 (#997).
+- **`npx --node-options` interpreter bypass** closed — sibling of the npm/yarn/pnpm H10 guard (#999).
+- **npm tarball hardening** — the published package no longer ships the `deploy/` scripts (one hardcoded a server IP), sample email addresses, or the private crypto tools. Private tools are restored into the local global install by `install:global` instead (#1000).
+- Dependency hardening: protobufjs 7.6.4, esbuild 0.28.1, undici 6.27.0 (dashboard 7.28.0), ws 8.21.0 (#988, #994, #989, #984).
+
+### Fixed
+
+- **Chained recipes now enforce `budget.usdMax` and honor cancellation** — both were silent no-ops on the DAG path (`POST /runs/:seq/cancel` did nothing; the USD cap was ignored). Parity-xfail ratchet baseline 3 → 1 (#998).
+- **`/runs` duplicate-key crash** — the live-runs strip keyed rows by recipe name, dropping/duplicating rows when one recipe had multiple runs (#998).
+- **`/traces` + `/analytics` accuracy** — interrupted/cancelled runs are no longer mislabeled "running"; run-log dedup-on-load stops duplicate rows accumulating across restarts; analytics shows real Time/Duration (#1001).
+- **Tool-call telemetry** — recipe/agent tool executions are now recorded, so `/analytics` and the overview no longer report 0 tool calls despite active runs; analytics respects the time window and reports p50/p95 latency (#1002).
+
+### Changed
+
+- **M3 "safe-half"** — namespaced `classifyTool` tiering fix, flat-runner approval gate, SimulatePanel default (#995).
+- **Runner behavioral-parity test + xfail ratchet** — machine-enforces flat/chained runner parity so new divergences can't land silently (#993).
+- Repo scope codified as single-tenant, with the multi-tenant separation rule documented (#996).
+
+---
+
 ## [0.2.0-beta.11] — 2026-06-06
 
 What-If Preview simulation engine · marketplace/install security hardening · Grok Build onboarding · dashboard theme redesign · CI flake fixes (#881–#926). (Supersedes the un-noted beta.10.)
