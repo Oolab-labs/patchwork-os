@@ -1171,42 +1171,40 @@ export default function HomePage() {
               />
             </div>
             <div className="stat-card-wrap" style={{ animationDelay: "180ms", animation: "pw-slide-up 0.3s ease both" }}>
-              {(() => {
-                const toolsDelta = (() => {
-                  const m = toolsTrendLabel.match(/([+-]\d+)%/);
-                  return m ? m[1] + "%" : undefined;
-                })();
-                return (
-                  <StatCard
-                    label="Tools called today"
-                    className="stat-card--tools"
-                    icon={<span className="stat-tile-icon stat-tile-icon--tools" style={{ color: "var(--accent-cool)" }}><TileIconShell /></span>}
-                    value={<AnimatedNumber value={toolsToday} />}
-                    delta={toolsDelta}
-                    foot={
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          {toolsToday > 0 && (
-                            <span className="pw-live-dot" aria-label="Active today" />
-                          )}
-                        </div>
-                        {curveSeries.some((v) => v > 0) && (
-                          <div className="mt-1">
-                            <Sparkline
-                              values={curveSeries}
-                              color="var(--accent-cool)"
-                              height={22}
-                              labels={hours24Labels}
-                              unit="calls"
-                            />
-                          </div>
-                        )}
+              {/* Foot shows the trend label ("no calls yet" / "↑ +12% vs
+                  yesterday") so this tile carries context like its siblings
+                  ("2 ok" / "none pending" / "clean") instead of an empty foot.
+                  The trend label folds in the arrow + %, so the separate delta
+                  badge — the only one across the four tiles — is dropped for
+                  consistency. */}
+              <StatCard
+                label="Tools called today"
+                className="stat-card--tools"
+                icon={<span className="stat-tile-icon stat-tile-icon--tools" style={{ color: "var(--accent-cool)" }}><TileIconShell /></span>}
+                value={<AnimatedNumber value={toolsToday} />}
+                foot={
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {toolsToday > 0 && (
+                        <span className="pw-live-dot" aria-label="Active today" />
+                      )}
+                      <span>{toolsTrendLabel}</span>
+                    </div>
+                    {curveSeries.some((v) => v > 0) && (
+                      <div className="mt-1">
+                        <Sparkline
+                          values={curveSeries}
+                          color="var(--accent-cool)"
+                          height={22}
+                          labels={hours24Labels}
+                          unit="calls"
+                        />
                       </div>
-                    }
-                    href="/activity"
-                  />
-                );
-              })()}
+                    )}
+                  </div>
+                }
+                href="/activity"
+              />
             </div>
           </>
         )}
@@ -1222,8 +1220,10 @@ export default function HomePage() {
           <span aria-hidden="true" className="pg-section-head-bar" />
           Recipes
         </span>
+        {/* No "view all" here — the RecipesAtAGlance card header below has
+            its own "View all" + "+ New"; two view-all links 40px apart was
+            redundant. The eyebrow keeps just the label + rule for rhythm. */}
         <div className="pg-section-head-rule" aria-hidden="true" />
-        <Link href="/recipes" className="btn sm ghost">view all →</Link>
       </div>
       <RecipesAtAGlance runs={runs} recipes={recipes} />
 

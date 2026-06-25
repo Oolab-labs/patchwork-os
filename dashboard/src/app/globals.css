@@ -5313,7 +5313,7 @@ a.btn { text-decoration: none; }
   transition: background var(--motion-fast) var(--ease-out);
 }
 /* Per-segment colored accent on top (overrides the unified panel top border within hover state) */
-[data-theme="dark"] .stat-card.stat-card--runs      { border-top: 2px solid var(--accent); }
+[data-theme="dark"] .stat-card.stat-card--runs      { border-top: 2px solid var(--ok); }
 [data-theme="dark"] .stat-card.stat-card--approvals { border-top: 2px solid var(--amber);  }
 [data-theme="dark"] .stat-card.stat-card--halts     { border-top: 2px solid var(--err);    }
 [data-theme="dark"] .stat-card.stat-card--tools     { border-top: 2px solid var(--accent-cool); }
@@ -5492,7 +5492,7 @@ a.btn { text-decoration: none; }
 /* ── Overview page UI upgrades ────────────────────────────────────────── */
 
 /* Stat tile colored top-border variants */
-.stat-card.stat-card--runs      { border-top: 2px solid var(--accent); }
+.stat-card.stat-card--runs      { border-top: 2px solid var(--ok); }
 .stat-card.stat-card--approvals { border-top: 2px solid var(--amber);  }
 .stat-card.stat-card--halts     { border-top: 2px solid var(--err);    }
 .stat-card.stat-card--tools     { border-top: 2px solid var(--accent-cool); }
