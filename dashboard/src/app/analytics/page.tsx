@@ -271,7 +271,7 @@ export default function AnalyticsPage() {
             style={{ padding: "14px 20px 10px", marginTop: "var(--s-4)", marginBottom: "var(--s-4)" }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)", marginBottom: 8 }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-2xs)", fontWeight: 500, color: "var(--ink-3)" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", fontWeight: 600, color: "var(--ink-2)" }}>
                 Calls — last 24 hours
               </span>
               <span style={{ flex: 1 }} />

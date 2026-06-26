@@ -538,9 +538,9 @@ export default function ActivityPage() {
           <div
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: "var(--fs-2xs)",
-              fontWeight: 500,
-              color: "var(--ink-3)",
+              fontSize: "var(--fs-xs)",
+              fontWeight: 600,
+              color: "var(--ink-2)",
               marginBottom: 10,
             }}
           >
