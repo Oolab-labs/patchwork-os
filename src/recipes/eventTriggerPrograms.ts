@@ -191,3 +191,23 @@ function compileFromFile(
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+
+/**
+ * Decide whether the bridge should auto-enable a policy-less AutomationHooks so
+ * installed event-trigger recipes fire WITHOUT an explicit `--automation`
+ * policy.
+ *
+ * Safety floor: `hasDriver` must be true — auto-enable only when the operator
+ * already enabled a subprocess driver (i.e. already opted into Claude task
+ * spawning). Never auto-enable when automation was explicitly configured (that
+ * path owns construction) or when no event-trigger recipe is installed.
+ */
+export function shouldAutoEnableAutomation(opts: {
+  automationEnabled: boolean;
+  hasDriver: boolean;
+  eventProgramCount: number;
+}): boolean {
+  return (
+    !opts.automationEnabled && opts.hasDriver && opts.eventProgramCount > 0
+  );
+}
