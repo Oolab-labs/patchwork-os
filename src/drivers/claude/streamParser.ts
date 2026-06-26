@@ -12,6 +12,19 @@ export interface StreamJsonEvent {
   is_error?: boolean;
   /** Present on type === "system" — session identifier. */
   session_id?: string;
+  /** Present on type === "result" — token usage for the run. */
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
+  /** Present on type === "result" — total billed cost in USD (0 under subscription auth). */
+  total_cost_usd?: number;
+  /** Present on type === "result" — number of agent turns. */
+  num_turns?: number;
+  /** Present on type === "result" — wall-clock duration in ms. */
+  duration_ms?: number;
 }
 
 export interface ParsedLine {
