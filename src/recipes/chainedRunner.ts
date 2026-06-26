@@ -60,6 +60,12 @@ export interface ChainedStep {
     /** Cost-aware routing fallbacks (Phase 4) — mirrors the flat path. */
     downshift?: RouteCandidate[];
     mcpAccess?: boolean;
+    /** Tool allowlist enforced via --allowed-tools when `sandbox` is true. */
+    tools?: string[];
+    /** Opt-in tool sandbox — drop --dangerously-skip-permissions, enforce allowlist. */
+    sandbox?: boolean;
+    /** Deny rules via --disallowed-tools in any mode. */
+    disallowedTools?: string[];
   };
   recipe?: NestedRecipeConfig["recipe"];
   chain?: NestedRecipeConfig["recipe"];
@@ -211,6 +217,12 @@ export type AgentExecutor = (
   prompt: string,
   model?: string,
   driver?: string,
+  opts?: {
+    mcpAccess?: boolean;
+    sandbox?: boolean;
+    allowedTools?: string[];
+    disallowedTools?: string[];
+  },
 ) => Promise<string | AgentResult>;
 
 /** Normalise the union AgentExecutor return into an AgentResult. */
@@ -767,7 +779,20 @@ export async function executeChainedStep(
 
       const agentReturn = toChainedAgentResult(
         await raceStepTimeout(
-          deps.executeAgent(prompt, dispatchModel, dispatchDriver),
+          deps.executeAgent(prompt, dispatchModel, dispatchDriver, {
+            ...(step.agent.mcpAccess !== undefined && {
+              mcpAccess: step.agent.mcpAccess,
+            }),
+            ...(step.agent.sandbox !== undefined && {
+              sandbox: step.agent.sandbox,
+            }),
+            ...(step.agent.tools !== undefined && {
+              allowedTools: step.agent.tools,
+            }),
+            ...(step.agent.disallowedTools !== undefined && {
+              disallowedTools: step.agent.disallowedTools,
+            }),
+          }),
           step.timeout_ms,
           step.id,
           options.signal,

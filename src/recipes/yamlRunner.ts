@@ -129,6 +129,12 @@ export interface YamlStep {
      * trace queries, etc.).
      */
     mcpAccess?: boolean;
+    /** Tool allowlist enforced via --allowed-tools when `sandbox` is true. */
+    tools?: string[];
+    /** Opt-in tool sandbox — drop --dangerously-skip-permissions, enforce allowlist. */
+    sandbox?: boolean;
+    /** Deny rules via --disallowed-tools in any mode. */
+    disallowedTools?: string[];
     /**
      * PR3a — judge step (cold-eyes review). When `kind: "judge"` the
      * runner appends a structured-verdict instruction to the prompt and
@@ -565,7 +571,12 @@ export interface RunnerDeps {
   /** Optional Claude Code CLI caller for agent steps with driver: claude-code. */
   claudeCodeFn?: (
     prompt: string,
-    opts?: { mcpAccess?: boolean },
+    opts?: {
+      mcpAccess?: boolean;
+      sandbox?: boolean;
+      allowedTools?: string[];
+      disallowedTools?: string[];
+    },
   ) => Promise<string | AgentResult>;
   /** Optional local LLM caller (Ollama / LM Studio) for agent steps with driver: local or model: local. */
   localFn?: (prompt: string, model: string) => Promise<string | AgentResult>;
@@ -1334,6 +1345,13 @@ export async function runYamlRecipe(
     mcpAccess: boolean | undefined,
     downshift?: RouteCandidate[],
     providerOptions?: Record<string, unknown>,
+    // P0-5: carry the reviewed/judge step's opt-in tool sandbox into refine-loop
+    // re-runs so a sandboxed step STAYS sandboxed across revisions/re-judges.
+    sandboxOpts?: {
+      sandbox?: boolean;
+      tools?: string[];
+      disallowedTools?: string[];
+    },
   ): Promise<{ value: unknown; ok: boolean }> => {
     // Phase 4: route revisions too, so a downshift on the reviewed step also
     // applies to its refine-loop re-runs (no-op when downshift is absent).
@@ -1349,6 +1367,15 @@ export async function runYamlRecipe(
         driver: routed.driver === "api" ? "anthropic" : routed.driver,
         model: routed.model,
         ...(mcpAccess !== undefined && { mcpAccess }),
+        ...(sandboxOpts?.sandbox !== undefined && {
+          sandbox: sandboxOpts.sandbox,
+        }),
+        ...(sandboxOpts?.tools !== undefined && {
+          allowedTools: sandboxOpts.tools,
+        }),
+        ...(sandboxOpts?.disallowedTools !== undefined && {
+          disallowedTools: sandboxOpts.disallowedTools,
+        }),
         ...(providerOptions && { providerOptions }),
       },
       buildAgentExecutorDeps(stepDeps, deps),
@@ -1466,6 +1493,19 @@ export async function runYamlRecipe(
         escalateTo?.model ?? reviewedAgent.model,
         reviewedAgent.mcpAccess,
         escalateTo ? undefined : reviewedAgent.downshift,
+        undefined,
+        // P0-5: the revision re-runs the REVIEWED step → keep its sandbox.
+        {
+          ...(reviewedAgent.sandbox !== undefined && {
+            sandbox: reviewedAgent.sandbox,
+          }),
+          ...(reviewedAgent.tools !== undefined && {
+            tools: reviewedAgent.tools,
+          }),
+          ...(reviewedAgent.disallowedTools !== undefined && {
+            disallowedTools: reviewedAgent.disallowedTools,
+          }),
+        },
       );
       if (!revised.ok) {
         // A failed / empty revision can't be re-judged — stop and treat the
@@ -1513,6 +1553,14 @@ export async function runYamlRecipe(
         agentCfg.downshift,
         // Re-judge is a judge call → enforce JSON on supporting drivers.
         { responseFormat: { type: "json_object" } },
+        // P0-5: the re-judge re-runs the JUDGE step → keep its sandbox.
+        {
+          ...(agentCfg.sandbox !== undefined && { sandbox: agentCfg.sandbox }),
+          ...(agentCfg.tools !== undefined && { tools: agentCfg.tools }),
+          ...(agentCfg.disallowedTools !== undefined && {
+            disallowedTools: agentCfg.disallowedTools,
+          }),
+        },
       );
       if (!judged.ok) {
         // Audit 2026-06-03 (MEDIUM #17): a failed / silent-fail / empty
@@ -1792,6 +1840,18 @@ export async function runYamlRecipe(
               model: routed.model,
               ...(agentCfg.mcpAccess !== undefined && {
                 mcpAccess: agentCfg.mcpAccess,
+              }),
+              // P0-5 opt-in tool sandbox: thread sandbox + allow/deny lists onto
+              // the executor input so the subprocess driver can enforce them via
+              // --allowed-tools / --disallowed-tools / --permission-mode dontAsk.
+              ...(agentCfg.sandbox !== undefined && {
+                sandbox: agentCfg.sandbox,
+              }),
+              ...(agentCfg.tools !== undefined && {
+                allowedTools: agentCfg.tools,
+              }),
+              ...(agentCfg.disallowedTools !== undefined && {
+                disallowedTools: agentCfg.disallowedTools,
               }),
               // Constrained decoding: enforce a pure-JSON verdict on judge steps
               // (OpenAI-compatible drivers honor it; others ignore it). Pairs
@@ -2746,7 +2806,12 @@ function buildAgentExecutorDeps(
   runnerDeps: RunnerDeps,
   claudeCodeFnOverride?: (
     prompt: string,
-    opts?: { mcpAccess?: boolean },
+    opts?: {
+      mcpAccess?: boolean;
+      sandbox?: boolean;
+      allowedTools?: string[];
+      disallowedTools?: string[];
+    },
   ) => Promise<string | AgentResult>,
 ): AgentExecutorDeps {
   const claudeCliFn = claudeCodeFnOverride ?? stepDeps.claudeCodeFn;
@@ -2822,7 +2887,12 @@ export function resolveClaudeBinary(): string {
 
 export function defaultClaudeCodeFn(
   prompt: string,
-  opts?: { mcpAccess?: boolean },
+  opts?: {
+    mcpAccess?: boolean;
+    sandbox?: boolean;
+    allowedTools?: string[];
+    disallowedTools?: string[];
+  },
 ): Promise<string> {
   const binary = resolveClaudeBinary();
   // Resolve a workspace cwd so the spawned `claude -p` doesn't inherit the
@@ -2846,33 +2916,49 @@ export function defaultClaudeCodeFn(
       "[agent step failed: recipe_mcp_unsupported — defaultClaudeCodeFn does not support mcpAccess:true; route via SubprocessDriver or unset the mcpAccess flag on this step]",
     );
   }
+  // P0-5 opt-in tool sandbox on the `recipe run --local` / non-bridge path.
+  // Without this the sandbox would be silently ignored here (a one-path gap);
+  // mirror the SubprocessDriver argv rule (§3): filter argv-injection values,
+  // run in --permission-mode dontAsk + --allowed-tools when sandbox is active,
+  // and always apply --disallowed-tools regardless of mode.
+  const sandboxAllowed = (
+    Array.isArray(opts?.allowedTools) ? opts.allowedTools : []
+  ).filter((t) => typeof t === "string" && t.length > 0 && !t.startsWith("-"));
+  const sandboxDenied = (
+    Array.isArray(opts?.disallowedTools) ? opts.disallowedTools : []
+  ).filter((t) => typeof t === "string" && t.length > 0 && !t.startsWith("-"));
+  const localArgs = [
+    "-p",
+    prompt,
+    // --strict-mcp-config: never load ~/.claude.json or .mcp.json. Recipes
+    // are sandboxed by default (mcpAccess defaults to false above). This
+    // also prevents accidental session attachment when the parent process
+    // had a bridge MCP entry in ~/.claude.json.
+    "--strict-mcp-config",
+    "--system-prompt",
+    "You are a helpful assistant processing a recipe task. Use ONLY the data explicitly provided in the user message — treat it as ground truth. Do not call tools to look up git history, emails, or any other information; all necessary data is already included.",
+    "--no-session-persistence",
+  ];
+  if (opts?.sandbox === true && sandboxAllowed.length > 0) {
+    localArgs.push("--permission-mode", "dontAsk");
+    localArgs.push("--allowed-tools", ...sandboxAllowed);
+  }
+  // Deny rules apply in ANY mode.
+  if (sandboxDenied.length > 0) {
+    localArgs.push("--disallowed-tools", ...sandboxDenied);
+  }
   try {
-    const result = spawnSync(
-      binary,
-      [
-        "-p",
-        prompt,
-        // --strict-mcp-config: never load ~/.claude.json or .mcp.json. Recipes
-        // are sandboxed by default (mcpAccess defaults to false above). This
-        // also prevents accidental session attachment when the parent process
-        // had a bridge MCP entry in ~/.claude.json.
-        "--strict-mcp-config",
-        "--system-prompt",
-        "You are a helpful assistant processing a recipe task. Use ONLY the data explicitly provided in the user message — treat it as ground truth. Do not call tools to look up git history, emails, or any other information; all necessary data is already included.",
-        "--no-session-persistence",
-      ],
-      {
-        cwd: workspace.path,
-        // sanitizeEnv strips CLAUDECODE / CLAUDE_CODE_* / MCP_* from the
-        // child so the spawn doesn't re-authenticate as, or nest under,
-        // the parent Claude Code session. Mirrors SubprocessDriver.run
-        // hygiene. Preserves CLAUDE_CODE_OAUTH_TOKEN (subscription auth).
-        env: sanitizeEnv(process.env),
-        encoding: "utf-8",
-        timeout: 600_000,
-        maxBuffer: 10 * 1024 * 1024,
-      },
-    );
+    const result = spawnSync(binary, localArgs, {
+      cwd: workspace.path,
+      // sanitizeEnv strips CLAUDECODE / CLAUDE_CODE_* / MCP_* from the
+      // child so the spawn doesn't re-authenticate as, or nest under,
+      // the parent Claude Code session. Mirrors SubprocessDriver.run
+      // hygiene. Preserves CLAUDE_CODE_OAUTH_TOKEN (subscription auth).
+      env: sanitizeEnv(process.env),
+      encoding: "utf-8",
+      timeout: 600_000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
     if (result.error) {
       // Surface the configured binary path in the error so users diagnosing
       // ENOENT can see whether resolveClaudeBinary picked up their override.
@@ -3216,7 +3302,12 @@ export function buildChainedDeps(
   runnerDeps: RunnerDeps,
   claudeCodeFnOverride?: (
     prompt: string,
-    opts?: { mcpAccess?: boolean },
+    opts?: {
+      mcpAccess?: boolean;
+      sandbox?: boolean;
+      allowedTools?: string[];
+      disallowedTools?: string[];
+    },
   ) => Promise<string | AgentResult>,
 ): import("./chainedRunner.js").ExecutionDeps {
   const stepDeps = resolveStepDeps(runnerDeps);
@@ -3279,19 +3370,36 @@ export function buildChainedDeps(
     prompt: string,
     model?: string,
     driver?: string,
-    mcpAccess?: boolean,
+    opts?: {
+      mcpAccess?: boolean;
+      sandbox?: boolean;
+      allowedTools?: string[];
+      disallowedTools?: string[];
+    },
   ): Promise<AgentResult> => {
     // Surface the FULL AgentResult (text + usage + servedBy) so the chained
     // runner can reconcile real spend against the run budget — alignment with
     // the flat path, which already reads `.usage`. (Previously this closure
     // discarded everything but `.text`, leaving the chained path's budget
     // unenforced — the S1 SECURITY finding.)
+    //
+    // P0-5 + parity fix: the prior 4th param was `mcpAccess?: boolean`, but the
+    // AgentExecutor type was 3-arg and the chained call site passed only 3 args
+    // → chained recipes silently dropped mcpAccess (and would have dropped the
+    // new sandbox fields too). Threading an opts object closes both gaps.
     return _executeAgent(
       {
         prompt,
         model,
         driver: driver === "api" ? "anthropic" : driver,
-        ...(mcpAccess !== undefined && { mcpAccess }),
+        ...(opts?.mcpAccess !== undefined && { mcpAccess: opts.mcpAccess }),
+        ...(opts?.sandbox !== undefined && { sandbox: opts.sandbox }),
+        ...(opts?.allowedTools !== undefined && {
+          allowedTools: opts.allowedTools,
+        }),
+        ...(opts?.disallowedTools !== undefined && {
+          disallowedTools: opts.disallowedTools,
+        }),
       },
       buildAgentExecutorDeps(stepDeps, runnerDeps, claudeCodeFnOverride),
     );

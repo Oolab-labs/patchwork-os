@@ -133,6 +133,24 @@ export class SubprocessDriver implements ProviderDriver {
     const mcpAccess = opts.mcpAccess === true;
     const mcp = mcpAccess ? this.bridgeMcp?.() : undefined;
 
+    // P0-5 opt-in tool sandbox. Filter argv-injection-confusable values up front
+    // (leading `-` could be misread as a flag by the child's parser), then key
+    // the sandbox branch off the FILTERED allowlist being non-empty.
+    const sandbox = opts.sandbox === true;
+    const allowedTools = (
+      Array.isArray(opts.allowedTools) ? (opts.allowedTools as string[]) : []
+    ).filter(
+      (t) => typeof t === "string" && t.length > 0 && !t.startsWith("-"),
+    );
+    const disallowedTools = (
+      Array.isArray(opts.disallowedTools)
+        ? (opts.disallowedTools as string[])
+        : []
+    ).filter(
+      (t) => typeof t === "string" && t.length > 0 && !t.startsWith("-"),
+    );
+    const sandboxActive = sandbox && allowedTools.length > 0;
+
     const args = [
       "-p",
       input.prompt,
@@ -173,8 +191,23 @@ export class SubprocessDriver implements ProviderDriver {
     }
     if (maxBudgetUsd !== undefined)
       args.push("--max-budget-usd", String(maxBudgetUsd));
-    // Always skip permissions: headless subprocesses can't respond to prompts.
-    args.push("--dangerously-skip-permissions");
+    if (sandboxActive) {
+      // Sandbox: enforce the allowlist. --dangerously-skip-permissions VOIDS
+      // --allowed-tools (per CC docs), so they are mutually exclusive — drop
+      // skip-permissions and run in dontAsk mode (no interactive prompt, but
+      // permission rules are honored). --allowed-tools is variadic: push the
+      // flag once followed by all (already argv-filtered) tool values.
+      args.push("--permission-mode", "dontAsk");
+      args.push("--allowed-tools", ...allowedTools);
+    } else {
+      // Default (no sandbox): headless subprocesses can't respond to prompts.
+      args.push("--dangerously-skip-permissions");
+    }
+    // Deny rules apply in ANY mode — even under --dangerously-skip-permissions.
+    // --disallowed-tools is variadic: one flag, all (filtered) values.
+    if (disallowedTools.length > 0) {
+      args.push("--disallowed-tools", ...disallowedTools);
+    }
     for (const f of input.contextFiles ?? []) {
       if (typeof f === "string" && f.length > 0 && !f.startsWith("-")) {
         args.push("--add-dir", f);

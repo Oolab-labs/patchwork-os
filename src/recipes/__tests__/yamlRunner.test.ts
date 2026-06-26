@@ -1603,6 +1603,63 @@ describe("runYamlRecipe — agent step with driver: claude-code", () => {
     expect(result.context.summary).toBe("cli response");
   });
 
+  // P0-5 — runner seam: the opt-in tool sandbox fields must thread from the
+  // YAML agent step through the flat runner into the claudeCodeFn opts (HOPs
+  // 0b/1/2). Proven without spawning a subprocess by capturing the opts arg.
+  it("threads sandbox/tools/disallowedTools through the FLAT runner into claudeCodeFn opts", async () => {
+    const seen: Array<{ prompt: string; opts: unknown }> = [];
+    const claudeCodeFn = vi.fn(async (prompt: string, opts?: unknown) => {
+      seen.push({ prompt, opts });
+      return "ok";
+    });
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "Do the thing",
+            driver: "claude-code",
+            sandbox: true,
+            tools: ["getDiagnostics"],
+            disallowedTools: ["runCommand"],
+            into: "result",
+          },
+        },
+      ],
+    });
+    await runYamlRecipe(recipe, { ...noop(), claudeCodeFn }, {});
+    expect(claudeCodeFn).toHaveBeenCalledTimes(1);
+    expect(seen[0]!.opts).toEqual({
+      sandbox: true,
+      allowedTools: ["getDiagnostics"],
+      disallowedTools: ["runCommand"],
+    });
+  });
+
+  // P0-5 + parity fix (Edit 8): the chained runner closure previously dropped
+  // its 4th arg (mcpAccess) because AgentExecutor was 3-arg. Now it forwards an
+  // opts object — proving both the sandbox fields AND mcpAccess thread through.
+  it("threads sandbox/tools/disallowedTools (and mcpAccess) through the CHAINED executeAgent into claudeCodeFn opts", async () => {
+    const seen: Array<{ prompt: string; opts: unknown }> = [];
+    const claudeCodeFn = vi.fn(async (prompt: string, opts?: unknown) => {
+      seen.push({ prompt, opts });
+      return "cc result";
+    });
+    const deps = buildChainedDeps({ ...noop(), testMode: true }, claudeCodeFn);
+    await deps.executeAgent("review this", undefined, "claude-code", {
+      mcpAccess: true,
+      sandbox: true,
+      allowedTools: ["getGitStatus"],
+      disallowedTools: ["gitPush"],
+    });
+    expect(claudeCodeFn).toHaveBeenCalledTimes(1);
+    expect(seen[0]!.opts).toEqual({
+      mcpAccess: true,
+      sandbox: true,
+      allowedTools: ["getGitStatus"],
+      disallowedTools: ["gitPush"],
+    });
+  });
+
   it("stores claudeCodeFn output in context key", async () => {
     const recipe = makeRecipe({
       steps: [

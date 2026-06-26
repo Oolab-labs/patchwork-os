@@ -498,6 +498,23 @@ function generateRecipeSchema(
         description:
           "When true, grants the agent step access to MCP tools registered on the bridge. Defaults to false for subprocess driver steps.",
       },
+      tools: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Tool allowlist. When `sandbox` is true, enforced via --allowed-tools on the spawned claude -p.",
+      },
+      sandbox: {
+        type: "boolean",
+        description:
+          "Opt-in tool sandbox: enforce the `tools` allowlist by running claude -p with --permission-mode dontAsk + --allowed-tools (drops --dangerously-skip-permissions). Default off. Pure pass-through with mcpAccess: when both are set, MCP tool names must be listed in `tools` or they will be blocked (no auto-injection).",
+      },
+      disallowedTools: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Deny rules applied via --disallowed-tools regardless of sandbox mode.",
+      },
       kind: {
         type: "string",
         enum: ["judge"],
