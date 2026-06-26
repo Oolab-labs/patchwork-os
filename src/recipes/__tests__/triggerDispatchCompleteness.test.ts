@@ -39,18 +39,17 @@ const TRIGGER_DISPATCH: Record<TriggerType, DispatchPath> = {
   webhook: "webhook",
   manual: "cli",
   chained: "chained-runner",
-  // No compiler `mapTrigger` case yet — the bridge fires onFileSave/onTestRun,
-  // but compileRecipe() can't target them, so these recipes don't auto-fire.
-  // Flip to "automation-hook" once the compiler maps them (the runtime check
-  // then enforces collection end-to-end). Tracked follow-up to PR #1016.
-  on_file_save: "UNWIRED",
-  on_test_run: "UNWIRED",
+  // Wired: compileRecipe maps on_file_save→onFileSave and on_test_run→
+  // onTestRun / onTestPassAfterFailure (by filter). The runtime check below
+  // enforces that they are actually collected end-to-end.
+  on_file_save: "automation-hook",
+  on_test_run: "automation-hook",
 };
 
-const KNOWN_UNWIRED: ReadonlySet<TriggerType> = new Set<TriggerType>([
-  "on_file_save",
-  "on_test_run",
-]);
+// Every TriggerType now has a live dispatch path. If a new trigger lands
+// unwired, classify it "UNWIRED" here AND add it to this set in the same
+// change — the drift check below then keeps the gap explicit.
+const KNOWN_UNWIRED: ReadonlySet<TriggerType> = new Set<TriggerType>([]);
 
 const NAME: Record<TriggerType, string> = {
   webhook: "g-webhook",
@@ -127,10 +126,15 @@ describe("recipe trigger dispatch completeness", () => {
     }
   });
 
-  it("the automation-hook set is exactly file_watch + git_hook", () => {
+  it("the automation-hook set matches the compiler's event triggers", () => {
     const hookTriggers = ALL_TRIGGERS.filter(
       (t) => TRIGGER_DISPATCH[t] === "automation-hook",
     ).sort();
-    expect(hookTriggers).toEqual(["file_watch", "git_hook"]);
+    expect(hookTriggers).toEqual([
+      "file_watch",
+      "git_hook",
+      "on_file_save",
+      "on_test_run",
+    ]);
   });
 });

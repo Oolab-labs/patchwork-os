@@ -68,18 +68,16 @@ export function installRecipeFromFile(
   // respectively. Synthesize an empty CompiledRecipe stub so the caller API
   // stays uniform; file_watch and git_hook still run through compile.
   //
-  // `chained`, `on_file_save`, and `on_test_run` are runtime-only triggers
-  // (ChainedRecipeRunner / yamlRunner + the bridge's automation hooks) that
-  // the recipe→AutomationProgram compiler does not model. They must bypass
-  // compile too — otherwise mapTrigger() throws "unknown trigger type" and
-  // a recipe that lints + runs cannot be installed (the original bug).
+  // `chained` is a runtime-only trigger (ChainedRecipeRunner / yamlRunner) the
+  // recipe→AutomationProgram compiler does not model, so it bypasses compile.
+  // `on_file_save` / `on_test_run` DO compile now — mapTrigger maps them to
+  // onFileSave / onTestRun / onTestPassAfterFailure — so they install with a
+  // real AutomationProgram + suggestedPermissions instead of a bypass stub.
   const bypassCompile =
     recipe.trigger.type === "manual" ||
     recipe.trigger.type === "cron" ||
     recipe.trigger.type === "webhook" ||
-    recipe.trigger.type === "chained" ||
-    recipe.trigger.type === "on_file_save" ||
-    recipe.trigger.type === "on_test_run";
+    recipe.trigger.type === "chained";
   const compiled: CompiledRecipe = bypassCompile
     ? {
         program: {

@@ -15,12 +15,11 @@ import { parseRecipe } from "./parser.js";
  * a native automation hook the bridge already fires.
  *
  * `compileRecipe` (compiler.ts) maps:
- *   - `file_watch` → onFileSave
- *   - `git_hook`   → onGitCommit / onGitPush / onGitPull
+ *   - `file_watch` / `on_file_save` → onFileSave
+ *   - `git_hook`                    → onGitCommit / onGitPush / onGitPull
+ *   - `on_test_run`                 → onTestRun / onTestPassAfterFailure (by filter)
  * and THROWS for cron/webhook/manual/chained (those route through the cron
- * scheduler / POST /hooks / CLI / chained runner respectively). The newer
- * `on_file_save` / `on_test_run` trigger types have no compiler case yet, so
- * they are intentionally excluded here and tracked as a follow-up.
+ * scheduler / POST /hooks / CLI / chained runner respectively).
  *
  * Before this collector existed, these compiled programs were never registered
  * into AutomationHooks — a recipe with `trigger: { type: file_watch }` parsed,
@@ -34,6 +33,8 @@ import { parseRecipe } from "./parser.js";
 const COMPILABLE_EVENT_TRIGGERS: ReadonlySet<string> = new Set([
   "file_watch",
   "git_hook",
+  "on_file_save",
+  "on_test_run",
 ]);
 
 export interface CollectedTriggerPrograms {

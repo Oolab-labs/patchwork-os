@@ -1,5 +1,6 @@
 import type {
   AutomationProgram,
+  HookExtras,
   HookNode,
   HookType,
 } from "../fp/automationProgram.js";
@@ -117,7 +118,10 @@ function bucketForRisk(
 }
 
 export function compileRecipe(recipe: Recipe): AutomationProgram {
-  const { hookType, patterns } = mapTrigger(recipe.trigger, recipe.name);
+  const { hookType, patterns, extras } = mapTrigger(
+    recipe.trigger,
+    recipe.name,
+  );
   const prompt = buildPrompt(recipe);
 
   let program: AutomationProgram = hook({
@@ -125,7 +129,7 @@ export function compileRecipe(recipe: Recipe): AutomationProgram {
     enabled: true,
     patterns,
     promptSource: { kind: "inline", prompt },
-    extras: { kind: "none" },
+    extras: extras ?? { kind: "none" },
   } satisfies Omit<HookNode, "_tag">);
 
   // retry wrapper
@@ -155,10 +159,18 @@ export function compileRecipe(recipe: Recipe): AutomationProgram {
 function mapTrigger(
   trigger: Trigger,
   recipeName: string,
-): { hookType: HookType; patterns?: string[] } {
+): { hookType: HookType; patterns?: string[]; extras?: HookExtras } {
   switch (trigger.type) {
     case "file_watch":
       return { hookType: "onFileSave", patterns: trigger.patterns };
+    case "on_file_save":
+      // Runtime-facing alias of file_watch. `glob` is optional — when absent
+      // the interpreter's patterns check is skipped, so the hook fires on every
+      // save (parity with how the bridge dispatches onFileSave from IDE events).
+      return {
+        hookType: "onFileSave",
+        patterns: trigger.glob ? [trigger.glob] : undefined,
+      };
     case "git_hook":
       switch (trigger.event) {
         case "post-commit":
@@ -169,6 +181,23 @@ function mapTrigger(
           return { hookType: "onGitPull" };
       }
       break;
+    case "on_test_run":
+      // Mirror loadPolicy's onTestRun.filter normalization so a recipe trigger
+      // fires the SAME hook a policy-file entry would:
+      //   - "failure"         → onTestRun gated on a non-zero failure count
+      //   - "pass-after-fail" → the dedicated fail→pass transition hook
+      //   - "any" / absent    → onTestRun on every run
+      switch (trigger.filter) {
+        case "failure":
+          return {
+            hookType: "onTestRun",
+            extras: { kind: "testRun", onFailureOnly: true },
+          };
+        case "pass-after-fail":
+          return { hookType: "onTestPassAfterFailure" };
+        default:
+          return { hookType: "onTestRun" };
+      }
     case "webhook":
       throw new RecipeCompileError(
         `recipe '${recipeName}': webhook triggers fire via POST /hooks/* (server.webhookFn) and bypass the automation interpreter — installer.ts skips compileRecipeFull for them. Reaching this branch means a non-bypass caller invoked compileTrigger directly; check the call site.`,
