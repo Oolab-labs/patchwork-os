@@ -19,7 +19,13 @@ import type { RiskTier } from "./riskTier.js";
  */
 
 export interface RiskSignal {
-  kind: "destructive_flag" | "domain_reputation" | "path_escape" | "chaining";
+  kind:
+    | "destructive_flag"
+    | "domain_reputation"
+    | "path_escape"
+    | "chaining"
+    | "destructive_command"
+    | "data_exfiltration";
   label: string;
   severity: "low" | "medium" | "high";
 }
