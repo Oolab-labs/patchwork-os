@@ -20,6 +20,7 @@ function unwrapToHook(program: ReturnType<typeof compileRecipe>): {
   hookType: string;
   prompt: string;
   patterns?: string[];
+  extras?: { kind: string; onFailureOnly?: boolean };
 } {
   // Walk: WithRateLimit → WithCooldown → (WithRetry?) → Hook
   let p = program;
@@ -31,6 +32,7 @@ function unwrapToHook(program: ReturnType<typeof compileRecipe>): {
     hookType: p.hookType,
     prompt: p.promptSource.kind === "inline" ? p.promptSource.prompt : "",
     patterns: p.patterns,
+    extras: p.extras as { kind: string; onFailureOnly?: boolean } | undefined,
   };
 }
 
@@ -100,6 +102,51 @@ describe("compileRecipe", () => {
       );
       expect(inner.hookType).toBe(c.expect);
     }
+  });
+
+  it("maps on_file_save → onFileSave (glob → patterns; absent → fire-all)", () => {
+    const withGlob = unwrapToHook(
+      compileRecipe({
+        ...BASE,
+        trigger: { type: "on_file_save", glob: "**/*.md" },
+      }),
+    );
+    expect(withGlob.hookType).toBe("onFileSave");
+    expect(withGlob.patterns).toEqual(["**/*.md"]);
+
+    const noGlob = unwrapToHook(
+      compileRecipe({ ...BASE, trigger: { type: "on_file_save" } }),
+    );
+    expect(noGlob.hookType).toBe("onFileSave");
+    expect(noGlob.patterns).toBeUndefined();
+  });
+
+  it("maps on_test_run filter → onTestRun / onTestPassAfterFailure", () => {
+    const any = unwrapToHook(
+      compileRecipe({ ...BASE, trigger: { type: "on_test_run" } }),
+    );
+    expect(any.hookType).toBe("onTestRun");
+    expect(any.extras?.kind).toBe("none");
+
+    const failure = unwrapToHook(
+      compileRecipe({
+        ...BASE,
+        trigger: { type: "on_test_run", filter: "failure" },
+      }),
+    );
+    expect(failure.hookType).toBe("onTestRun");
+    expect(failure.extras).toMatchObject({
+      kind: "testRun",
+      onFailureOnly: true,
+    });
+
+    const passAfterFail = unwrapToHook(
+      compileRecipe({
+        ...BASE,
+        trigger: { type: "on_test_run", filter: "pass-after-fail" },
+      }),
+    );
+    expect(passAfterFail.hookType).toBe("onTestPassAfterFailure");
   });
 
   it("rejects webhook trigger with clear message", () => {
