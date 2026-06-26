@@ -1,0 +1,18 @@
+# Test-guardian worker — top-right beachhead. Fires on a test-run failure
+# (on_test_run trigger), investigates the failure, and files an issue. Reversible
+# investigation + compensable issue creation → may earn full autonomy on triage.
+id: test-guardian-worker
+name: Test Guardian Worker
+sector: engineering
+recipe: triage-failing-tests
+responsibilities:
+  - On a failing test run, investigate the stack trace and identify the cause
+  - File / update an issue with the failure summary and the suspect commit
+owns:
+  - ci # runTests (re-runnable) — reversible
+  - vcs-read # getGitDiff / gitBlame to find the suspect commit
+  - issue # githubCreateIssue / addLinearComment — compensable + brand-exposed
+autonomyCeiling: 4
+competence:
+  mean: 0.8
+  strength: 4

@@ -1,0 +1,17 @@
+# Release worker — top-right beachhead (high task-impact × high autonomy-tolerance).
+# Body: a chained recipe triggered on merge-to-main that drafts release notes.
+# Reversible, verifiable, internal → fast ramp evidence.
+id: release-notes-worker
+name: Release Worker
+sector: engineering
+recipe: release-notes # the recipe that forms this worker's body
+responsibilities:
+  - Watch merges to main and draft release notes / changelog entries
+  - Summarize the diff and link the PRs in the range
+owns:
+  - vcs-read # getGitStatus / getGitDiff / getGitLog — reversible, low blast
+  - fs-write # editText / createFile (the changelog) — reversible
+autonomyCeiling: 4 # internal + reversible: may earn full autonomy
+competence: # shipped competence (a prior), NOT trust — trust earns locally
+  mean: 0.85
+  strength: 4

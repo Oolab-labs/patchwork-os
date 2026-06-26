@@ -1,0 +1,18 @@
+# Dependency-upkeep worker — top-right beachhead. The classic low-blast,
+# continuous, verifiable job to land first (the wedge): watch for outdated /
+# vulnerable deps and open a bump PR. A human still merges → ceiling held at L3.
+id: dependency-upkeep-worker
+name: Dependency Upkeep Worker
+sector: engineering
+recipe: dependency-bump
+responsibilities:
+  - Audit dependencies for outdated / vulnerable packages
+  - Open a bump PR with the changelog and advisory links
+owns:
+  - deps-read # auditDependencies / getSecurityAdvisories — read-only
+  - vcs-local # gitCommit / gitCheckout on a branch — reversible
+  - vcs-remote # githubCreatePR — compensable + brand-exposed
+autonomyCeiling: 3 # opening PRs autonomously is fine; merging stays human (policy)
+competence:
+  mean: 0.8
+  strength: 4
