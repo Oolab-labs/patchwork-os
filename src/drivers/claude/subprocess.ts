@@ -246,6 +246,35 @@ export class SubprocessDriver implements ProviderDriver {
     let doneFromResult = false;
     let resultText = "";
     let resultIsError = false;
+    // P0-4: capture the result event's usage/cost telemetry (previously
+    // discarded). Surfaced via providerMeta so the existing
+    // providerMetaToUsage → RunBudget.reconcile path (and the runlog) sees real
+    // token usage for claude -p steps instead of zero. `subprocess` is not a
+    // BILLABLE_DRIVER, so usdMax stays fail-open — this only surfaces telemetry.
+    let resultUsage:
+      | { input_tokens?: number; output_tokens?: number }
+      | undefined;
+    let resultCostUsd: number | undefined;
+    let resultNumTurns: number | undefined;
+    let resultDurationMs: number | undefined;
+    const providerMetaOf = (): Record<string, unknown> | undefined => {
+      const meta: Record<string, unknown> = {};
+      const inT = resultUsage?.input_tokens;
+      const outT = resultUsage?.output_tokens;
+      if (typeof inT === "number" && typeof outT === "number") {
+        meta.inputTokens = inT;
+        meta.outputTokens = outT;
+      }
+      if (typeof resultCostUsd === "number") meta.costUsd = resultCostUsd;
+      if (typeof resultNumTurns === "number") meta.numTurns = resultNumTurns;
+      if (typeof resultDurationMs === "number") {
+        meta.durationMs = resultDurationMs;
+      }
+      if (typeof input.model === "string" && input.model.length > 0) {
+        meta.model = input.model;
+      }
+      return Object.keys(meta).length > 0 ? meta : undefined;
+    };
 
     child.stdout.setEncoding("utf-8");
     child.stdout.on("data", (chunk: string) => {
@@ -291,6 +320,10 @@ export class SubprocessDriver implements ProviderDriver {
           doneFromResult = true;
           resultIsError = event.is_error === true;
           resultText = text || accumulated;
+          resultUsage = event.usage;
+          resultCostUsd = event.total_cost_usd;
+          resultNumTurns = event.num_turns;
+          resultDurationMs = event.duration_ms;
         }
       }
     });
@@ -341,6 +374,7 @@ export class SubprocessDriver implements ProviderDriver {
           durationMs: Date.now() - start,
           stderrTail: stderrTailOf(stderr),
           startupMs: startupMsOf(),
+          providerMeta: providerMetaOf(),
         };
       }
       const isAbort =
@@ -399,6 +433,10 @@ export class SubprocessDriver implements ProviderDriver {
           doneFromResult = true;
           resultIsError = event.is_error === true;
           resultText = text || accumulated;
+          resultUsage = event.usage;
+          resultCostUsd = event.total_cost_usd;
+          resultNumTurns = event.num_turns;
+          resultDurationMs = event.duration_ms;
         }
       }
       lineBuf = "";
@@ -432,6 +470,7 @@ export class SubprocessDriver implements ProviderDriver {
       durationMs: Date.now() - start,
       stderrTail: stderrTailOf(stderr),
       startupMs: startupMsOf(),
+      providerMeta: providerMetaOf(),
     };
   }
 
