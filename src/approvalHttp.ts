@@ -1,5 +1,4 @@
 import * as dns from "node:dns/promises";
-import * as path from "node:path";
 import {
   recordApprovalCompleted,
   recordApprovalPrompted,
@@ -12,6 +11,7 @@ import {
   loadCcPermissionsAttributed,
 } from "./ccPermissions.js";
 import { captureForRunlog } from "./recipes/stepObservation.js";
+import { computeRiskSignals } from "./riskSignals.js";
 import { classifyTool } from "./riskTier.js";
 import { isPrivateHost } from "./ssrfGuard.js";
 
@@ -745,104 +745,6 @@ async function dispatchNtfyConfirmation(
   }
 }
 
-function computeRiskSignals(
-  toolName: string,
-  params: Record<string, unknown>,
-  workspace: string,
-): RiskSignal[] {
-  const signals: RiskSignal[] = [];
-
-  // Destructive flags — Bash / runCommand
-  if (toolName === "Bash" || toolName === "runCommand") {
-    const cmd = typeof params.command === "string" ? params.command : "";
-    if (/\brm\b.*-[a-z]*r[a-z]*f|\brm\b.*-[a-z]*f[a-z]*r/i.test(cmd)) {
-      signals.push({
-        kind: "destructive_flag",
-        label: "rm with -rf flags",
-        severity: "high",
-      });
-    }
-    if (/--force\b/i.test(cmd)) {
-      signals.push({
-        kind: "destructive_flag",
-        label: "contains --force flag",
-        severity: "medium",
-      });
-    }
-    if (/\bsudo\b/i.test(cmd)) {
-      signals.push({
-        kind: "destructive_flag",
-        label: "runs as sudo",
-        severity: "high",
-      });
-    }
-    if (/\bDROP\s+(TABLE|DATABASE|SCHEMA)\b/i.test(cmd)) {
-      signals.push({
-        kind: "destructive_flag",
-        label: "SQL DROP statement",
-        severity: "high",
-      });
-    }
-    if (/\bTRUNCATE\b/i.test(cmd)) {
-      signals.push({
-        kind: "destructive_flag",
-        label: "SQL TRUNCATE statement",
-        severity: "medium",
-      });
-    }
-    if (/[`$()]\s*|&&|\|\|/.test(cmd)) {
-      signals.push({
-        kind: "chaining",
-        label: "command chaining or substitution",
-        severity: "low",
-      });
-    }
-  }
-
-  // Domain reputation — WebFetch / sendHttpRequest
-  if (toolName === "WebFetch" || toolName === "sendHttpRequest") {
-    const url = typeof params.url === "string" ? params.url : "";
-    if (url && !url.startsWith("https://")) {
-      signals.push({
-        kind: "domain_reputation",
-        label: "non-HTTPS URL",
-        severity: "medium",
-      });
-    }
-    try {
-      const hostname = new URL(url).hostname;
-      if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
-        signals.push({
-          kind: "domain_reputation",
-          label: "direct IP address",
-          severity: "medium",
-        });
-      }
-    } catch {
-      // unparseable URL — skip hostname check
-    }
-  }
-
-  // Path escape — Write / Edit / Read
-  if (toolName === "Write" || toolName === "Edit" || toolName === "Read") {
-    const filePath =
-      typeof params.file_path === "string" ? params.file_path : "";
-    if (filePath) {
-      const resolved = path.resolve(filePath);
-      const wsRoot = path.resolve(workspace) + path.sep;
-      if (!resolved.startsWith(wsRoot)) {
-        signals.push({
-          kind: "path_escape",
-          label: "file path outside workspace",
-          severity: "high",
-        });
-      }
-    }
-  }
-
-  return signals;
-}
-
 async function handleApprovalRequest(
   req: HttpRequest,
   deps: ApprovalHttpDeps,
@@ -965,7 +867,13 @@ async function handleApprovalRequest(
     emit("allow", "gate_off");
     return { status: 200, body: { decision: "allow", reason: "gate_off" } };
   }
-  if (gate === "high" && tier !== "high") {
+  // A high-severity content signal (rm -rf, sudo, terraform destroy, path
+  // escape, …) forces the queue even for a sub-high tier, mirroring the
+  // in-process gate so CC-native calls aren't gated content-blind. Additive:
+  // only ever removes a bypass, never adds one, and runs AFTER the CC
+  // deny/ask/dontAsk/plan precedence so a signal can't downgrade a deny. (P0-2)
+  const hasHighSeverity = riskSignals.some((s) => s.severity === "high");
+  if (gate === "high" && tier !== "high" && !hasHighSeverity) {
     emit("allow", "gate_below_threshold");
     return {
       status: 200,

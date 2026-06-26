@@ -46,7 +46,7 @@ import {
 } from "./recipes/judgeSummary.js";
 import { warnAboutLegacyPermissionsSidecars } from "./recipes/migrationWarnings.js";
 import { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
-import { classifyTool } from "./riskTier.js";
+import { evaluateInProcessGate } from "./riskSignals.js";
 import { RecipeRunLog } from "./runLog.js";
 import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
@@ -377,17 +377,20 @@ export class Bridge {
         }
         transport.setApprovalGate(
           async ({ toolName, params, sessionId, onPending }) => {
-            const tier = classifyTool(toolName);
-            if (this.server.approvalGate === "off") return "bypass";
-            if (this.server.approvalGate !== "all" && tier !== "high")
-              return "bypass";
+            const gate = evaluateInProcessGate({
+              toolName,
+              params,
+              gate: this.server.approvalGate,
+              workspace: this.config.workspace,
+            });
+            if (gate.decision === "bypass") return "bypass";
             const queue = getApprovalQueue();
             const { promise, callId } = queue.request({
               toolName,
               params,
-              tier,
+              tier: gate.tier,
               sessionId: sessionId ?? undefined,
-              riskSignals: [],
+              riskSignals: gate.riskSignals,
             });
             onPending?.(callId);
             return promise;

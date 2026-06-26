@@ -26,7 +26,7 @@ import type { Logger } from "./logger.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
 import type { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
-import { classifyTool } from "./riskTier.js";
+import { evaluateInProcessGate } from "./riskSignals.js";
 import { corsOrigin } from "./server.js";
 import { registerAllTools } from "./tools/index.js";
 import { McpTransport } from "./transport.js";
@@ -858,18 +858,22 @@ export class StreamableHttpHandler {
     if (scope) transport.setSessionScope(scope);
     if (denyTools.size > 0) transport.setDenyTools(denyTools);
     if (this.config.approvalGate !== "off") {
-      const gateAll = this.config.approvalGate === "all";
       transport.setApprovalGate(
         async ({ toolName, params, sessionId, onPending }) => {
-          const tier = classifyTool(toolName);
-          if (!gateAll && tier !== "high") return "bypass";
+          const gate = evaluateInProcessGate({
+            toolName,
+            params,
+            gate: this.config.approvalGate,
+            workspace: this.config.workspace,
+          });
+          if (gate.decision === "bypass") return "bypass";
           const queue = getApprovalQueue();
           const { promise, callId } = queue.request({
             toolName,
             params,
-            tier,
+            tier: gate.tier,
             sessionId: sessionId ?? undefined,
-            riskSignals: [],
+            riskSignals: gate.riskSignals,
           });
           onPending?.(callId);
           return promise;
