@@ -37,6 +37,13 @@ describe("classifyActionClass", () => {
     expect(c.domain).toBe("other");
     expect(c.reversibility).toBe("irreversible");
   });
+
+  it("classifies recipe-tool ids (what RecipeRunLog records) into the right domains", () => {
+    expect(classifyActionClass("git.log_since").domain).toBe("vcs-read");
+    expect(classifyActionClass("file.write").domain).toBe("fs-write");
+    expect(classifyActionClass("github.list_prs").domain).toBe("vcs-read");
+    expect(classifyActionClass("slack.post_message").brandExposed).toBe(true);
+  });
 });
 
 describe("reachableLevels", () => {

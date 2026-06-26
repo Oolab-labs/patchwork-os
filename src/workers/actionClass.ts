@@ -75,6 +75,22 @@ const DOMAIN_BY_TOOL: Record<string, string> = {
   // dependency intel (read-only)
   auditDependencies: "deps-read",
   getSecurityAdvisories: "deps-read",
+  // recipe-tool ids — RecipeRunLog records THESE (not the MCP names), so the
+  // shadow dial attributes recipe-run steps by them. git.*/github.list_* are
+  // reads; file.* writes; slack/http are outbound. (worker-ramp-v0 dogfood)
+  "git.log_since": "vcs-read",
+  "git.stale_branches": "vcs-read",
+  "github.list_commits": "vcs-read",
+  "github.list_prs": "vcs-read",
+  "github.list_issues": "vcs-read",
+  "file.read": "fs-read",
+  "file.write": "fs-write",
+  "file.append": "fs-write",
+  "slack.post_message": "messaging",
+  "http.post": "http",
+  "linear.list_issues": "issue",
+  "sentry.get_issue": "issue",
+  "diagnostics.get": "fs-read",
 };
 
 /** Domain → reversibility. The middle ramp rungs (L2/L3) only exist for a class
