@@ -1,7 +1,7 @@
 import { WebSocket } from "ws";
 import type { ActivityLog } from "./activityLog.js";
 import { createAjv2020, type ValidateFunction } from "./ajv2020.js";
-import { ErrorCodes } from "./errors.js";
+import { ErrorCodes, ToolErrorCodes } from "./errors.js";
 import type { Logger } from "./logger.js";
 import { withSpan } from "./telemetry.js";
 import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
@@ -171,6 +171,15 @@ export class McpTransport {
   private wireSchemaCacheSizeBytes: number | null = null;
   /** When true, tools/list omits inputSchema. Clients must call tools/schema before tools/call. */
   private lazyTools = false;
+
+  /**
+   * Optional upper bound (ms) on a tool's effective execution timeout. Set by
+   * the Streamable-HTTP transport (~280s) so a long-declared tool rejects with
+   * a clean TOOL_TIMEOUT isError BEFORE Claude Code's 5-minute remote-MCP
+   * hard-abort (CC 2.1.183/2.1.187) silently discards the result. null = no cap
+   * (the WebSocket transport, where the local CLI has no such ceiling). (P0-1)
+   */
+  public httpTimeoutCeilingMs: number | null = null;
   /** Per-session tool-call rate limit (calls/minute). 0 = disabled. */
   private toolRateLimit = 60;
   /**
@@ -463,7 +472,18 @@ export class McpTransport {
    * timeout fires (audit 2026-06-08 transport-1). Unknown tools get the default.
    */
   getToolTimeout(name: string): number {
-    return this.tools.get(name)?.timeoutMs ?? TOOL_TIMEOUT_MS;
+    return this.capTimeout(this.tools.get(name)?.timeoutMs ?? TOOL_TIMEOUT_MS);
+  }
+
+  /**
+   * Clamp a tool timeout to `httpTimeoutCeilingMs` when set (Streamable-HTTP
+   * transport). No-op on the WebSocket transport, where the ceiling is null.
+   * (audit P0-1)
+   */
+  private capTimeout(ms: number): number {
+    return this.httpTimeoutCeilingMs !== null
+      ? Math.min(ms, this.httpTimeoutCeilingMs)
+      : ms;
   }
 
   /** Upsert a tool by name — replaces if already registered, inserts if new. */
@@ -1520,16 +1540,20 @@ export class McpTransport {
                 // the time the human spent thinking about the approval.
                 startTime = Date.now();
                 try {
-                  const effectiveTimeout = tool.timeoutMs ?? TOOL_TIMEOUT_MS;
+                  const effectiveTimeout = this.capTimeout(
+                    tool.timeoutMs ?? TOOL_TIMEOUT_MS,
+                  );
                   const timeoutPromise = new Promise<never>((_, reject) => {
                     timeoutHandle = setTimeout(() => {
                       timedOut = true;
                       controller.abort();
-                      reject(
-                        new Error(
-                          `Tool "${params.name}" timed out after ${effectiveTimeout}ms`,
-                        ),
-                      );
+                      // Typed code so Claude Code's retry path can tell a
+                      // transient timeout from a deterministic failure. (P1-10)
+                      const timeoutErr = new Error(
+                        `Tool "${params.name}" timed out after ${effectiveTimeout}ms`,
+                      ) as Error & { code: string };
+                      timeoutErr.code = ToolErrorCodes.TIMEOUT;
+                      reject(timeoutErr);
                     }, effectiveTimeout);
                   });
 

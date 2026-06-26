@@ -40,6 +40,13 @@ const MAX_PENDING_SENDS = 100; // per-session response queue cap
 // Buffer added over a tool's own timeout when sizing the HTTP response wait, so
 // the wait always outlives the tool (audit 2026-06-08 transport-1).
 const HTTP_SEND_TIMEOUT_BUFFER_MS = 10_000;
+// Upper bound on a tool's effective execution timeout over Streamable HTTP.
+// Claude Code hard-aborts remote MCP tool calls at 5 min (CC 2.1.183/2.1.187),
+// so we reject ~20s earlier with a clean TOOL_TIMEOUT isError the model can act
+// on, rather than letting a 610s tool run to a silently-discarded result. The
+// HTTP response wait is sized at this + HTTP_SEND_TIMEOUT_BUFFER_MS = 290s,
+// still under CC's 300s abort. (audit P0-1)
+const HTTP_TOOL_TIMEOUT_CEILING_MS = 280_000;
 const SSE_HEARTBEAT_MS = 20_000; // keep SSE streams alive through proxies/firewalls
 const SSE_BUFFER_MAX = 100; // max events retained per session for Last-Event-ID replay
 const SSE_BUFFER_TTL_MS = 30_000; // events older than 30s are not replayed
@@ -825,6 +832,7 @@ export class StreamableHttpHandler {
       }, // refresh on SSE writes
     );
     const transport = new McpTransport(this.logger);
+    transport.httpTimeoutCeilingMs = HTTP_TOOL_TIMEOUT_CEILING_MS;
     transport.workspace = this.config.workspace;
     transport.sessionId = id;
     transport.onActivity = () => {
