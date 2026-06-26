@@ -5,7 +5,7 @@ Steps to complete before tagging a new version.
 ## Code
 
 - [ ] `npm run build` passes (bridge)
-- [ ] `npm test` passes — all tests green on Node 22
+- [ ] `npm test` passes — all tests green on Node 20 and 22 (CI matrix)
 - [ ] `npm run typecheck` passes — zero type errors
 - [ ] `npx biome check .` passes — zero lint errors
 - [ ] `cd vscode-extension && npm run build && npm test` passes
@@ -29,8 +29,8 @@ grep -rn "\b[0-9]\+ tools\b\|\b[0-9]\+ hook\|\b[0-9]\+ skill\|\b[0-9]\+ test\|\b
 
 Verify each number found against actual code:
 
-- [ ] Slim tool count (`SLIM_TOOL_NAMES.size`) — currently **50**
-- [ ] Full mode tool count — currently **136+**
+- [ ] Slim tool count (`SLIM_TOOL_NAMES.size`) — currently **61**
+- [ ] Full mode tool count (`node scripts/audit-lsp-tools.mjs` Stats line) — currently **177**
 - [ ] Hook event count (keys in `claude-ide-bridge-plugin/hooks/hooks.json`) — currently **16**
 - [ ] Plugin skill count (entries in `claude-ide-bridge-plugin/skills/`) — currently **9**
 - [ ] Plugin subagent count (entries in `claude-ide-bridge-plugin/agents/`) — currently **3**

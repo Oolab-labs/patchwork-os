@@ -75,7 +75,7 @@ No extension available. Run bridge in headless mode. LSP fallback tools work if 
 
 ## Port Management
 
-Default port: 18765. To run multiple bridge instances (e.g. one per project):
+Default port: a random free port (pin one with `--port N`). To run multiple bridge instances (e.g. one per project):
 
 ```bash
 claude-ide-bridge --port 18766 --workspace /path/to/project2

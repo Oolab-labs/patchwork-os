@@ -46,8 +46,8 @@ The bridge operates in two modes controlled at startup:
 
 | Mode | Flag | Tool count | Description |
 |------|------|-----------|-------------|
-| Full | _(default since v2.43.0)_ | ~140 | All tools including git, GitHub, terminal, file ops, HTTP, orchestration |
-| Slim | `--slim` | ~60 | IDE-exclusive tools only — LSP, debugger, editor state, bridge introspection |
+| Full | _(default since v2.43.0)_ | 177 | All tools including git, GitHub, terminal, file ops, HTTP, orchestration |
+| Slim | `--slim` | 61 | IDE-exclusive tools only — LSP, debugger, editor state, bridge introspection |
 
 **Full mode** (the default) exposes every workspace operation. Use this when Claude needs to perform git operations, run terminal commands, edit files, or interact with GitHub without falling back to shell commands.
 
@@ -719,6 +719,9 @@ Cross-session memory for agents. Every decision (approval verdict, enrichment li
 | `ctxSaveTrace(ref, problem, solution, tags?)` | Agent writes a durable trace after resolving a task. Persists to `DecisionTraceLog`. Required: `ref` (issue/PR/commit/free-text, ≤256 chars), `problem` (≤500 chars), `solution` (≤500 chars). Optional: up to 10 tags × 32 chars each. |
 | `ctxGetTaskContext(ref)` | Unified context for an issue, PR, commit, or error ref. Auto-detects ref type. Composes `gh issue view` / `gh pr view` / `git show` + `CommitIssueLinkLog` reverse lookup. Fail-soft: partial context on missing `gh` / git / log rather than throw. |
 | `ctxQueryTraces({traceType?, key?, since?, limit?})` | Unified query over all four trace stores. `traceType: "approval" \| "enrichment" \| "recipe_run" \| "decision"` (omit for all). Key substring match. Returns `{traces:[{traceType, ts, key, summary, body}], count, sources}`. |
+| `enrichCommit(sha)` | Enrich a commit with the issues it references. Parses the commit message for issue refs, resolves their state via `gh`, and persists the links to `CommitIssueLinkLog`. |
+| `getCommitsForIssue(ref)` | Reverse lookup: commits that touched a given issue, read back from `CommitIssueLinkLog`. The inverse of `enrichCommit`. |
+| `enrichStackTrace(stackTrace)` | Map each stack frame to the commit that likely introduced it (per-frame `git blame`), surfacing the top suspect commit for a failing trace. |
 
 ### Persistence
 

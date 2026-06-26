@@ -108,7 +108,7 @@ All four "phantom tools" previously advertised in the MCP handshake (`ctxGetTask
 | OpenAI | Shipped (`src/drivers/openai`) | Responses API + function calling |
 | Grok (xAI) | Shipped (`src/drivers/grok`) | OpenAI-compatible endpoint |
 
-**Full design:** [`docs/plans/multi-provider-drivers.md`](../docs/plans/multi-provider-drivers.md)
+**Full design:** `docs/plans/multi-provider-drivers.md` _(planned — not yet written)_
 
 ---
 

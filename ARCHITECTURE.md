@@ -1,6 +1,6 @@
 # Claude IDE Bridge — Architecture
 
-Version 0.2.0-beta.9 · Node.js ≥ 22 · TypeScript
+Version 0.2.0-beta.13 · Node.js ≥ 20 · TypeScript
 
 ---
 
@@ -132,19 +132,18 @@ A dedicated WebSocket connection (separate from the Claude Code connection) runs
 
 ## Automation Engine
 
-`AutomationHooks` (`src/automation.ts`) implements 18 hooks defined in the `AutomationPolicy` interface:
+`AutomationHooks` (`src/automation.ts`) implements the hooks defined in the `AutomationPolicy` interface. The author-facing surface uses unified, discriminated hooks (v2.43.0+); the parser expands them into internal slots:
 
 | Hook | Trigger |
 |---|---|
-| `onDiagnosticsError` | New error/warning diagnostics appear for a file |
-| `onDiagnosticsCleared` | Errors/warnings drop to zero for a file |
+| `onDiagnosticsStateChange` | New error/warning diagnostics (`state: "error"`) or errors clear (`state: "cleared"`) for a file |
 | `onFileSave` | Matching file saved (minimatch glob) |
 | `onFileChanged` | Matching file buffer changed (CC 2.1.83+) |
+| `onRecipeSave` | Any `.yaml`/`.yml` file saved |
 | `onCwdChanged` | Claude Code working directory changes (CC 2.1.83+) |
-| `onPostCompact` | Claude Code compacts context (CC 2.1.76+) |
+| `onCompaction` | Claude Code compacts context — `phase: "pre"` / `"post"` (CC 2.1.76+) |
 | `onInstructionsLoaded` | Claude Code session starts (CC 2.1.76+) |
-| `onTestRun` | `runTests` tool completes |
-| `onTestPassAfterFailure` | Test runner transitions fail → pass |
+| `onTestRun` | `runTests` tool completes — `filter: "any"｜"failure"｜"pass-after-fail"` |
 | `onGitCommit` | `gitCommit` tool succeeds |
 | `onGitPush` | `gitPush` tool succeeds |
 | `onGitPull` | `gitPull` tool succeeds |
@@ -153,7 +152,9 @@ A dedicated WebSocket connection (separate from the Claude Code connection) runs
 | `onTaskCreated` | Claude Code TaskCreated hook (CC 2.1.84+) |
 | `onTaskSuccess` | Orchestrator task completes with status `done` |
 | `onPermissionDenied` | Claude Code PermissionDenied hook (CC 2.1.89+) |
-| `onDebugSessionEnd` | VS Code debug session terminates |
+| `onDebugSession` | VS Code debug session — `phase: "start"` / `"end"` |
+
+The pre-v2.43.0 split names (`onDiagnosticsError`/`onDiagnosticsCleared`, `onPreCompact`/`onPostCompact`, `onTestPassAfterFailure`, `onDebugSessionStart`/`onDebugSessionEnd`) are still accepted but emit a deprecation warning.
 
 **Event flow**: lifecycle event fires (tool call completes or `/notify` POST received) → `handle*()` method checks policy enabled + per-file/event cooldown (min 5s) + loop guard (prevents re-entrant triggers) → `_evaluateWhen()` checks `AutomationCondition` (minDiagnosticCount, diagnosticsMinSeverity, testRunnerLastStatus) → `_enqueueAutomationTask()` → `SubprocessDriver` spawns `claude --verbose` subprocess with the resolved prompt. Rolling 60-minute rate limit window caps tasks per hour (default 20). Requires `--driver subprocess`.
 

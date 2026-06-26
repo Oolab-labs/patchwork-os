@@ -46,8 +46,7 @@ npm test
 | Area | Files | Good first issue? |
 |---|---|---|
 | Model adapters | `src/adapters/*.ts` | Yes — OpenAI, local/Ollama |
-| Starter recipes | `recipes/*.yaml` | Yes |
-| MCP servers (non-code) | `packages/mcp-*/` | Yes — obsidian, csv, email |
+| Starter recipes | `templates/recipes/*.yaml`, `examples/recipes/` | Yes |
 | Dashboard components | `dashboard/src/components/` | Phase-1+ |
 | Security hardening | `src/transport.ts`, risk tiers | Advanced |
 

@@ -25,8 +25,8 @@ Rules:
 2. If it has been idle for more than 60 seconds, evict it (close its transport, remove from pool) and create the new session in its place.
 3. If ALL sessions have been active within the last 60 seconds (genuinely concurrent use), return 503. This preserves the fairness guarantee — truly active sessions are never evicted.
 
-Additionally, reduce TTL and prune frequency:
-- `SESSION_TTL_MS`: 30 min → **10 min** (faster reclamation of legitimately abandoned sessions)
+Additionally, tighten TTL and prune frequency:
+- `SESSION_TTL_MS`: 24 h → **2 h** (faster reclamation of legitimately abandoned sessions; also limits the captured-session-ID reuse window)
 - Prune interval: 5 min → **2 min** (check more often)
 
 ## Consequences
@@ -34,7 +34,7 @@ Additionally, reduce TTL and prune frequency:
 **Positive:**
 - New connections succeed immediately when ghost sessions are present (the common case).
 - No user intervention needed after client crashes or network drops.
-- 10-min TTL reclaims abandoned sessions 3x faster than before.
+- 2-hour TTL reclaims abandoned sessions far faster than the previous 24-hour window.
 
 **Negative:**
 - A session that has been idle for 61 seconds can be evicted even if the client intends to resume. Mitigated by: (a) Claude Desktop and claude.ai both send periodic requests that keep `lastActivity` fresh, and (b) clients must handle 404 "session not found" gracefully and re-initialize anyway.

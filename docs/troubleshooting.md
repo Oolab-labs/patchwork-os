@@ -1,4 +1,4 @@
-# Troubleshooting — patchwork-os 0.2.0-beta.9
+# Troubleshooting — patchwork-os
 
 ---
 
@@ -27,12 +27,12 @@ Run these five checks before reading further. They catch 90% of issues.
    ```
    No lock file means the bridge hasn't started successfully or is writing to the wrong directory.
 
-5. **Is Node.js version 22 or higher?**
+5. **Is Node.js version 20 or higher?**
    ```bash
    node --version
-   # Must be v22.x or higher
+   # Must be v20.x or higher
    ```
-   Upgrade if needed: `nvm install 22 && nvm use 22`
+   Upgrade if needed: `nvm install 20 && nvm use 20`
 
 ---
 
@@ -79,7 +79,7 @@ Ask Claude to call `bridgeDoctor` for a full health check — it reports lock fi
 
 ### Fewer tools than expected
 
-**Cause:** The bridge was started with `--slim`, or `"fullMode": false` is set in the config file. Slim mode exposes only ~60 IDE-exclusive tools (LSP, debugger, editor state). Git, terminal, file ops, GitHub, and HTTP tools are hidden.
+**Cause:** The bridge was started with `--slim`, or `"fullMode": false` is set in the config file. Slim mode exposes only 61 IDE-exclusive tools (LSP, debugger, editor state). Git, terminal, file ops, GitHub, and HTTP tools are hidden.
 
 **Fix:** Drop `--slim` from your start command, or remove `"fullMode": false` from `claude-ide-bridge.config.json`:
 ```bash
@@ -343,7 +343,7 @@ If you see the delay stuck at 30s and cycling, the bridge has a persistent crash
 | Port already bound | `EADDRINUSE` in logs | Use a different port or stop the conflicting process |
 | Workspace path not found | `ENOENT: workspace` | Pass `--workspace /absolute/path` |
 | `package.json` parse error | `SyntaxError` at startup | Fix malformed `package.json` in workspace |
-| Node.js below v22 | Various failures | `nvm install 22 && nvm use 22` |
+| Node.js below v20 | Various failures | `nvm install 20 && nvm use 20` |
 
 ### Getting crash logs
 

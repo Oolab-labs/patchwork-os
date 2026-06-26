@@ -1,9 +1,9 @@
 # Claude IDE Bridge
 
-[![npm version](https://img.shields.io/npm/v/claude-ide-bridge)](https://www.npmjs.com/package/claude-ide-bridge)
-[![CI](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io%2FOolab--labs%2Fclaude--ide--bridge-blue)](https://github.com/Oolab-labs/claude-ide-bridge/pkgs/container/claude-ide-bridge)
-[![License: MIT](https://img.shields.io/npm/l/claude-ide-bridge)](https://opensource.org/licenses/MIT)
+[![npm version](https://img.shields.io/npm/v/patchwork-os)](https://www.npmjs.com/package/patchwork-os)
+[![CI](https://github.com/Oolab-labs/patchwork-os/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/patchwork-os/actions/workflows/ci.yml)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io%2FOolab--labs%2Fpatchwork--os-blue)](https://github.com/Oolab-labs/patchwork-os/pkgs/container/patchwork-os)
+[![License: MIT](https://img.shields.io/npm/l/patchwork-os)](https://opensource.org/licenses/MIT)
 
 **MCP bridge giving Claude Code IDE superpowers — 170+ tools for LSP, debugging, git, GitHub, terminals, and more (see [platform-docs](documents/platform-docs.md) for the full list).**
 
@@ -21,7 +21,7 @@ https://github.com/user-attachments/assets/a81a8d11-2cc3-46f3-88ad-6a905a221a2c
 
 ## Quick Start
 
-**Prerequisites:** [Claude Code CLI](https://claude.ai/code), Node.js ≥ 22
+**Prerequisites:** [Claude Code CLI](https://claude.ai/code), Node.js ≥ 20
 
 ```bash
 # 1. Install the bridge
@@ -182,8 +182,8 @@ The sidebar's quick-task buttons also work from the CLI — same context-gatheri
 
 ```bash
 # 7 presets: fixErrors · refactorFile · addTests · explainCode · optimizePerf · runTests · resumeLastCancelled
-claude-ide-bridge quick-task fix-errors
-claude-ide-bridge quick-task add-tests --json
+claude-ide-bridge quick-task fixErrors
+claude-ide-bridge quick-task addTests --json
 
 # free-form description (Claude gathers its own context)
 claude-ide-bridge start-task "Refactor the auth module for clarity, keep behaviour identical"
@@ -204,7 +204,8 @@ Event-driven hooks that trigger Claude tasks automatically — no polling, no ma
 {
   "hooks": [
     {
-      "event": "onDiagnosticsError",
+      "event": "onDiagnosticsStateChange",
+      "state": "error",
       "prompt": "Fix the type error in {{file}}: {{diagnostics}}",
       "cooldownMs": 30000
     },
@@ -226,7 +227,7 @@ Start with:
 claude-ide-bridge --watch --automation --automation-policy ./policy.json --driver subprocess
 ```
 
-**18 hook events:** `onFileSave`, `onFileChanged`, `onDiagnosticsError`, `onDiagnosticsCleared`, `onGitCommit`, `onGitPush`, `onGitPull`, `onBranchCheckout`, `onPullRequest`, `onTestRun`, `onTestPassAfterFailure`, `onPostCompact`, `onInstructionsLoaded`, `onTaskCreated`, `onTaskSuccess`, `onPermissionDenied`, `onCwdChanged`, `onDebugSessionEnd`
+**Hook events:** `onFileSave`, `onFileChanged`, `onRecipeSave`, `onDiagnosticsStateChange` (`state: "error"|"cleared"`), `onGitCommit`, `onGitPush`, `onGitPull`, `onBranchCheckout`, `onPullRequest`, `onTestRun` (`filter: "any"|"failure"|"pass-after-fail"`), `onCompaction` (`phase: "pre"|"post"`), `onInstructionsLoaded`, `onTaskCreated`, `onTaskSuccess`, `onPermissionDenied`, `onCwdChanged`, `onDebugSession` (`phase: "start"|"end"`). The pre-v2.43.0 split names (`onDiagnosticsError`/`onDiagnosticsCleared`, `onPreCompact`/`onPostCompact`, `onTestPassAfterFailure`, `onDebugSessionStart`/`onDebugSessionEnd`) are still accepted but deprecated.
 
 All hooks support `cooldownMs` (min 5s), `promptName`/`promptArgs` for named prompts, and `when` conditions (`minDiagnosticCount`, `testRunnerLastStatus`). See [docs/automation.md](docs/automation.md).
 
@@ -259,12 +260,11 @@ See [documents/plugin-authoring.md](documents/plugin-authoring.md) for the full 
 Install curated companion MCP servers directly into your Claude Desktop config:
 
 ```bash
-claude-ide-bridge marketplace list
-claude-ide-bridge marketplace search memory
-claude-ide-bridge install claude-mem
+claude-ide-bridge install memory
+claude-ide-bridge install superpowers --target desktop
 ```
 
-`install` merges the companion into `mcpServers` in your Claude Desktop config atomically and idempotently — no manual JSON editing.
+Bundled companions: `memory`, `superpowers`, `devtools`, `database`, `slack`, `playwright`, `codebase-memory`. `install` merges the companion into `mcpServers` in your Claude Desktop (or Claude Code CLI) config atomically and idempotently — no manual JSON editing.
 
 ---
 
@@ -279,8 +279,7 @@ claude-ide-bridge install claude-mem
 | `claude-ide-bridge gen-claude-md --write` | Add bridge section to existing CLAUDE.md |
 | `claude-ide-bridge print-token` | Print auth token from active lock file |
 | `claude-ide-bridge gen-plugin-stub <dir>` | Scaffold a new plugin |
-| `claude-ide-bridge marketplace list` | List available companion servers |
-| `claude-ide-bridge install <companion>` | Install companion into Claude Desktop config |
+| `claude-ide-bridge install <companion>` | Install a bundled companion server into Claude Desktop / Claude Code config |
 | `claude-ide-bridge notify <Event>` | Post a hook event to a running bridge (for CC hook wiring) |
 | `claude-ide-bridge quick-task <preset>` | Launch a context-aware Claude task from a preset (headless parity with the sidebar) |
 | `claude-ide-bridge start-task "<description>"` | Enqueue a free-form Claude task with workspace context |
@@ -333,7 +332,7 @@ claude-ide-bridge install claude-mem
 
 ## Requirements
 
-- **Node.js ≥ 22** (bridge)
+- **Node.js ≥ 20** (bridge)
 - **VS Code, Cursor, or Windsurf** — optional. Headless mode covers git, terminals, GitHub, and LSP via `typescript-language-server`. Extension required for debugger, editor decorations, and live editor state.
 - **Claude Code CLI** — for local use. Remote MCP clients (claude.ai, Codex CLI) work via Streamable HTTP transport with OAuth 2.0.
 

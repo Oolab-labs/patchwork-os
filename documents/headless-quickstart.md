@@ -17,7 +17,7 @@ At startup the bridge probes for available CLIs. Tool availability depends on wh
 | `rg` | `rg` (ripgrep) | `searchWorkspace`, `findRelatedTests` (rg path) | Alpine: `apk add ripgrep` |
 | `ctags` | `ctags --version \| grep "Universal Ctags"` | `searchWorkspaceSymbols` ctags fallback, `navigateToSymbolByName` | Alpine: `apk add ctags` |
 | `typescript-language-server` | `typescript-language-server --version` | `goToDefinition`, `findReferences`, `getTypeSignature` LSP fallback | `npm i -g typescript-language-server typescript` |
-| `gh` | `gh auth status` | `githubCreatePR`, `listPRs`, GitHub tools | Install GitHub CLI |
+| `gh` | `gh auth status` | `githubCreatePR`, `githubListPRs`, GitHub tools | Install GitHub CLI |
 | `git` | `git --version` | All git tools | Usually pre-installed |
 
 Call `getBridgeStatus` after connecting to see which probes passed and which tools are available.
@@ -65,8 +65,8 @@ Call `getBridgeStatus` after connecting to see which probes passed and which too
 | Tool | Notes |
 |------|-------|
 | `githubCreatePR` | Open pull request |
-| `listPRs` | List open PRs |
-| `getIssues` | List issues |
+| `githubListPRs` | List open PRs |
+| `githubListIssues` | List issues |
 
 ### Shell
 
@@ -253,14 +253,14 @@ Probes not found at startup emit a single `WARN probe not found: <name>` log lin
 The bridge writes a lock file at `$CLAUDE_CONFIG_DIR/ide/<port>.lock` containing the auth token:
 
 ```bash
-# Print token for the default port (18765)
+# Print token — auto-discovers the active bridge lock file (port is random by default)
 claude-ide-bridge print-token
 
-# Specify port explicitly
+# Specify port explicitly (e.g. if you pinned one with --port)
 claude-ide-bridge print-token --port 18766
 
-# Read raw JSON from lock file
-cat ~/.claude/ide/18765.lock
+# Read raw JSON from lock file (substitute the actual port)
+cat ~/.claude/ide/<port>.lock
 ```
 
 The lock file JSON structure:
@@ -344,7 +344,7 @@ bash deploy/bootstrap-new-vps.sh
 |----------|---------|---------|
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Lock file and token location |
 | `BRIDGE_BIND_ADDRESS` | `127.0.0.1` | Bind address (`0.0.0.0` for containers) |
-| `PORT` | `18765` | Listen port |
+| `CLAUDE_IDE_BRIDGE_PORT` / `PATCHWORK_BRIDGE_PORT` | _(random free port)_ | Port hint for CLI subcommands locating the bridge. To pin the bridge's own listen port, pass `--port N` (no env var; default is a random free port). |
 | `CLAUDE_IDE_BRIDGE_CORS_ORIGINS` | _(none)_ | Comma-separated CORS origins for OAuth mode |
 
 ---

@@ -31,7 +31,7 @@ WARNING: Not running inside tmux or screen. SSH disconnection will kill this pro
 
 ## Grace Period
 
-When Claude Code disconnects from the bridge (e.g., process restart, brief network blip), the bridge preserves the session state for a configurable grace period (default: 30 seconds). If Claude Code reconnects within that window, it reattaches seamlessly — no state is lost.
+When Claude Code disconnects from the bridge (e.g., process restart, brief network blip), the bridge preserves the session state for a configurable grace period (default: 120 seconds, via `--grace-period <ms>`). If Claude Code reconnects within that window, it reattaches seamlessly — no state is lost.
 
 For environments with longer disconnections, increase the grace period:
 
