@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://patchwork.dev/schemas/recipe.v1.json
+# Body for the Test Guardian Worker
+# (templates/workers/test-guardian.worker.yaml). Self-waking on a FAILING test
+# run (on_test_run.filter: failure). Correlates the failure with recent commits
+# and writes a triage note — richer than the plain watch-failing-tests recipe.
+apiVersion: patchwork.sh/v1
+name: triage-failing-tests
+description: On a failing test run, correlate the failure with recent commits and write a triage note.
+trigger:
+  type: on_test_run
+  filter: failure
+steps:
+  - tool: git.log_since
+    since: 12h
+    into: recent
+  - agent:
+      prompt: |
+        Tests just failed. Runner: {{runner}}. Failed {{failed}} / {{total}}.
+
+        Failures:
+        {{failures}}
+
+        Recent commits (last 12h) that may be responsible:
+        {{recent}}
+
+        Write a triage note (≤5 sentences): (1) which test(s) failed, (2) the
+        single most likely cause, (3) the suspect commit if any, (4) the first
+        command to run to confirm.
+      driver: claude-code
+      into: triage
+  - tool: file.write
+    path: ~/.patchwork/inbox/test-triage-{{date}}-{{time}}.md
+    content: |
+      # Test triage — {{date}} {{time}}
+
+      Runner {{runner}} · failed {{failed}}/{{total}}
+
+      {{triage}}
