@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://patchwork.dev/schemas/recipe.v1.json
+# Body for the Dependency Upkeep Worker
+# (templates/workers/dependency-upkeep.worker.yaml). Weekly cron — reviews the
+# open dependency-update PRs rather than opening them (autonomyCeiling L3: a
+# human still merges).
+apiVersion: patchwork.sh/v1
+name: dependency-bump
+description: Weekly — list open dependency-update PRs and summarize which look safe to merge.
+trigger:
+  type: cron
+  at: "0 9 * * MON"
+steps:
+  - tool: github.list_prs
+    max: 30
+    into: prs
+  - agent:
+      prompt: |
+        Open pull requests:
+        {{prs}}
+
+        Identify the dependency-update PRs (dependabot / renovate / "bump …"
+        titles). For each, note the package, the version jump (patch / minor /
+        major), and a recommendation: SAFE to merge (patch/minor with green CI)
+        or NEEDS REVIEW (major, or a security-sensitive dependency). Output a
+        short markdown table; if there are none, say "No dependency PRs open."
+      driver: claude-code
+      into: review
+  - tool: file.write
+    path: ~/.patchwork/inbox/dependency-review-{{date}}.md
+    content: |
+      # Dependency PR review — {{date}}
+
+      {{review}}

@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://patchwork.dev/schemas/recipe.v1.json
+# Body for the Release Worker (templates/workers/release-notes.worker.yaml).
+# Self-waking on every commit (git_hook → onGitCommit, wired in #1016/#1018).
+apiVersion: patchwork.sh/v1
+name: release-notes
+description: After a commit lands, draft a changelog entry from the new commits into the inbox.
+trigger:
+  type: git_hook
+  event: post-commit
+steps:
+  - tool: git.log_since
+    since: 24h
+    into: commits
+  - agent:
+      prompt: |
+        New commits landed in the last 24h:
+        {{commits}}
+
+        Write a concise changelog entry as a markdown bullet list — one line per
+        user-facing change, grouped under feat / fix / chore. Omit pure noise
+        (merge commits, formatting-only). If nothing is user-facing, say so.
+      # subprocess `claude -p` under your existing subscription (no API key)
+      driver: claude-code
+      into: notes
+  - tool: file.write
+    path: ~/.patchwork/inbox/release-notes-{{date}}.md
+    content: |
+      # Release notes draft — {{date}}
+
+      {{notes}}
