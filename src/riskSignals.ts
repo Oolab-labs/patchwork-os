@@ -33,10 +33,23 @@ export function computeRiskSignals(
 
   // Destructive flags — shell commands
   if (COMMAND_TOOLS.has(toolName)) {
-    const cmd =
+    const cmdBase =
       (typeof params.command === "string" && params.command) ||
       (typeof params.text === "string" && params.text) ||
       "";
+    // runCommand delivers the subcommand + flags in params.args (its `command`
+    // is the bare basename, e.g. "git"); runInTerminal / sendTerminalCommand
+    // carry the whole shell string and have no `args`. Join them so every
+    // pattern below sees the FULL command for all four tools — otherwise a
+    // `git reset --hard` issued as runCommand{command:"git",args:[…]} reduces
+    // to "git" and silently matches nothing. (P1-3 / P1-7)
+    const argsArr = Array.isArray(params.args)
+      ? (params.args as unknown[]).filter(
+          (a): a is string => typeof a === "string",
+        )
+      : [];
+    const cmd =
+      argsArr.length > 0 ? `${cmdBase} ${argsArr.join(" ")}` : cmdBase;
     if (/\brm\b.*-[a-z]*r[a-z]*f|\brm\b.*-[a-z]*f[a-z]*r/i.test(cmd)) {
       signals.push({
         kind: "destructive_flag",
@@ -91,6 +104,41 @@ export function computeRiskSignals(
         kind: "chaining",
         label: "command chaining or substitution",
         severity: "low",
+      });
+    }
+    // Destructive git / system commands — mirrors the SubprocessDriver deny-list
+    // (claudeDriver.ts / subprocessSettings.ts). The driver HARD-denies these on
+    // its ungated subprocess path; the bridge's gated path escalates them to
+    // human approval instead. `--force-with-lease` is intentionally NOT flagged
+    // (it is the safe force-push the bridge itself uses). `rm -rf` / `sudo` are
+    // already covered above. (audit P1-3)
+    if (
+      /\bgit\b.*\breset\b.*--hard\b/i.test(cmd) ||
+      /\bgit\b.*\bclean\b.*(-[a-z]*f|--force|-d)/i.test(cmd) ||
+      /\bgit\b.*\bpush\b.*(--force(?!-with-lease)|(?:^|\s)-f)\b/i.test(cmd) ||
+      /\beval\b/i.test(cmd) ||
+      /\bchmod\b.*\b777\b/i.test(cmd) ||
+      /\bkill\b.*\s-9\b/i.test(cmd) ||
+      /\bpkill\b/i.test(cmd)
+    ) {
+      signals.push({
+        kind: "destructive_command",
+        label: "destructive git/system command",
+        severity: "high",
+      });
+    }
+    // Data exfiltration — a network-egress upload flag co-occurring with a
+    // credential-path reference. Near-zero legitimate use at an agent approval
+    // gate, so escalate to approval. (audit P1-7)
+    const exfilEgress =
+      /\bcurl\b.*(-T\b|--upload-file\b|--data(?:-binary)?\s+@|(?:^|\s)-d\s+@)|\bwget\b.*--post-file=/i;
+    const credPath =
+      /\.ssh\b|\.aws\b|\bid_rsa\b|\bid_ed25519\b|\.env\b|\bcredentials\b|\.npmrc\b|\.netrc\b/i;
+    if (exfilEgress.test(cmd) && credPath.test(cmd)) {
+      signals.push({
+        kind: "data_exfiltration",
+        label: "network upload of credential file",
+        severity: "high",
       });
     }
   }

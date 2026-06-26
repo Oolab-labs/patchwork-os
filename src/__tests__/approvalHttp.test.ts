@@ -911,6 +911,41 @@ describe("routeApprovalRequest", () => {
       queue.approve(item.callId);
       await pending;
     });
+
+    it("runCommand git reset --hard (command+args) → destructive_command high signal queued", async () => {
+      const queue = new ApprovalQueue();
+      const pending = routeApprovalRequest(
+        {
+          method: "POST",
+          path: "/approvals",
+          body: {
+            toolName: "runCommand",
+            // command is the bare basename; the destructive subcommand+flag are
+            // in args — exercises the args-gap fix through the HTTP gate path.
+            params: {
+              command: "git",
+              args: ["reset", "--hard", "origin/main"],
+            },
+          },
+        },
+        {
+          queue,
+          workspace: "/tmp/ws",
+          ccLoader: emptyRules(),
+          approvalGate: "high",
+        },
+      );
+      await new Promise((r) => setTimeout(r, 10));
+      const item = queue.list()[0];
+      if (!item) throw new Error("missing queued item");
+      expect(
+        (item.riskSignals ?? []).some(
+          (s) => s.kind === "destructive_command" && s.severity === "high",
+        ),
+      ).toBe(true);
+      queue.approve(item.callId);
+      await pending;
+    });
   });
 
   describe("webhook dispatch", () => {
