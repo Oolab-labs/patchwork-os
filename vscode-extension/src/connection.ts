@@ -539,6 +539,12 @@ export class BridgeConnection {
         }
         this.rttPongHandler = (data) => {
           this.rttPongHandler = null;
+          // A pong is direct proof the bridge is alive — refresh the liveness
+          // baseline so the 120s staleness check above cannot false-positive
+          // when the bridge isn't sending its own 'ping' frames (which the
+          // extension socket never receives when it's absent from the server
+          // ping set). Mirrors the sleep/wake probe handler. (P0-3)
+          this.lastBridgePong = Date.now();
           const sentAt = Number.parseInt(data?.toString() ?? "", 10);
           const rtt = !Number.isNaN(sentAt)
             ? Date.now() - sentAt
