@@ -92,7 +92,7 @@ Two recipes in one file:
 
 ---
 
-### [`small-business-brain.yaml`](small-business-brain.yaml)
+### Small-business brain — [`business-intake-router.yaml`](business-intake-router.yaml) · [`business-decision-brief.yaml`](business-decision-brief.yaml) · [`business-quarterly-review.yaml`](business-quarterly-review.yaml)
 
 **Three interlocking recipes for solo operators.**
 
@@ -174,7 +174,7 @@ trigger:
 | `mixed-provider-pipeline` | `file-mcp`, multi-provider model support |
 | `writer-feedback-loop` | `driver`, `file-mcp`, `dashboard-mcp`, `notify-mcp` |
 | `relationship-memory` | `gmail-mcp`, `file-mcp`, `notify-mcp` |
-| `small-business-brain` | `gmail-mcp`, `file-mcp`, `notify-mcp`, `scheduler-mcp` |
+| `business-intake-router` / `business-decision-brief` / `business-quarterly-review` | `gmail-mcp`, `file-mcp`, `notify-mcp`, `scheduler-mcp` |
 
 All recipes degrade gracefully — steps that need a missing MCP skip with a
 warning rather than crashing the run.

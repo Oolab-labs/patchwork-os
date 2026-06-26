@@ -347,7 +347,7 @@ Start the bridge with `--issuer-url https://your-domain.com` to expose a full OA
 
 ### 🪟 Native Windows support
 
-Bridge, VS Code extension, smoke harness, and CI are all green on native Windows — no WSL required. See [Windows Quick Start](#-windows-quick-start) above.
+Bridge, VS Code extension, smoke harness, and CI are all green on native Windows — no WSL required. See [Windows](#windows) above.
 
 ### ☀️ Morning summary
 

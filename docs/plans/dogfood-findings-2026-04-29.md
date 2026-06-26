@@ -1,6 +1,6 @@
 # Dogfood Findings — 2026-04-29
 
-> **Amendment (post-review):** CRIT-A and HIGH-A below are **false alarms** caused by my testing methodology. I navigated to `/inbox` etc. by typing URLs directly into the address bar; that bypasses Next.js's `basePath` rewriting (configured at `dashboard/next.config.js:2`). When the same routes are reached via the sidebar `<Link>` component, Next.js auto-prepends `/dashboard/` and they resolve correctly. Verified: clicking the Inbox sidebar link goes to `/dashboard/inbox` and renders 12 messages. **The sidebar nav works.** The fix plan at [plans/dashboard-fix-plan.md](plans/dashboard-fix-plan.md) v2 has the corrections. Other findings below stand.
+> **Amendment (post-review):** CRIT-A and HIGH-A below are **false alarms** caused by my testing methodology. I navigated to `/inbox` etc. by typing URLs directly into the address bar; that bypasses Next.js's `basePath` rewriting (configured at `dashboard/next.config.js:2`). When the same routes are reached via the sidebar `<Link>` component, Next.js auto-prepends `/dashboard/` and they resolve correctly. Verified: clicking the Inbox sidebar link goes to `/dashboard/inbox` and renders 12 messages. **The sidebar nav works.** The fix plan at [plans/dashboard-fix-plan.md](./dashboard-fix-plan.md) v2 has the corrections. Other findings below stand.
 
 **Method:** Parallel agents — Playwright walked every dashboard page; a CLI dogfood agent ran the recipe install/enable/disable/run/uninstall lifecycle against the running bridge (port 3101).
 
@@ -147,4 +147,4 @@ PRs 1–3 are 5-minute fixes that would substantially de-broken the user's first
 
 ## Notes for the visual-debugger plan
 
-The [docs/plans/visual-recipe-debugger.md](plans/visual-recipe-debugger.md) plan assumed `/dashboard/runs/<seq>` was a working baseline. **It's not** — the page 404s for every seq right now. Phase 0 of that plan should be "fix run-detail data path" before any debugger feature work begins. Likely the same `findInstallDirByRecipeName`/`iterateInstallDirs` work from PR #49 needs to apply to the run-detail lookup, or the run-log query is mis-keyed.
+The [docs/plans/visual-recipe-debugger.md](./visual-recipe-debugger.md) plan assumed `/dashboard/runs/<seq>` was a working baseline. **It's not** — the page 404s for every seq right now. Phase 0 of that plan should be "fix run-detail data path" before any debugger feature work begins. Likely the same `findInstallDirByRecipeName`/`iterateInstallDirs` work from PR #49 needs to apply to the run-detail lookup, or the run-log query is mis-keyed.

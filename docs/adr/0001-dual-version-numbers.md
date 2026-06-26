@@ -32,7 +32,7 @@ The MCP `initialize` response uses `BRIDGE_PROTOCOL_VERSION` for the handshake. 
 
 **Negative:**
 - Contributors must remember that bumping `package.json` does NOT bump the protocol version.
-- When a wire-format change IS needed, both `BRIDGE_PROTOCOL_VERSION` and the extension's `BRIDGE_VERSION` constant must be updated in lockstep.
+- When a wire-format change IS needed, both `BRIDGE_PROTOCOL_VERSION` and the extension's `EXTENSION_PROTOCOL_VERSION` constant must be updated in lockstep. (The extension's `BRIDGE_VERSION` is the npm package version injected at build time, not the wire-protocol constant.)
 
 **How to decide which to bump:**
 - Changed tool schema, added/removed JSON-RPC method, changed message envelope → bump `BRIDGE_PROTOCOL_VERSION`.

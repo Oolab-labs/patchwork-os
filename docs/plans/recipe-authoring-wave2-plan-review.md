@@ -1,6 +1,6 @@
 # Wave 2 + Ecosystem Plan — Multi-Agent Review
 
-Review of [`recipe-authoring-wave2-plan.md`](./recipe-authoring-wave2-plan.md) from five angles. Findings ranked by severity: **C** critical (blocks ship), **H** high (must address pre-commit), **M** medium (revisit before GA), **L** low (worth noting).
+Review of [`recipe-authoring-wave2-plan.md`](../recipe-authoring-wave2-plan.md) from five angles. Findings ranked by severity: **C** critical (blocks ship), **H** high (must address pre-commit), **M** medium (revisit before GA), **L** low (worth noting).
 
 ---
 

@@ -1,6 +1,6 @@
 # ADR-0007: Multi-Bridge JSONL Concurrency
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-04-18
 
 ## Context
@@ -73,9 +73,9 @@ Advisory lock (`proper-lockfile` or `flock`) around every append; reload the who
 **Adopt Option A (tail-on-read).** Keep `seq` as a per-process integer — no composite-id schema change. Add an advisory lock around each append so tearing isn't a correctness concern.
 
 1. **Tail-on-read:** each log tracks `lastReadOffset: number` (file byte offset). `query()` first calls `statSync(file)`; if `size > lastReadOffset`, reads `[lastReadOffset, size)`, parses new rows, merges into the in-memory ring (respecting `memoryCap`), advances `lastReadOffset` and `this.seq`. Reuses the existing parse/validate block from `loadExisting` — factor into `parseLine()`.
-2. **`seq` stays per-process, non-unique across writers.** A codebase audit ([docs/adr-0007-research.md] — see PR thread) confirms no consumer requires uniqueness: seq is used only as a pagination cursor and sort key. Pagination cursor becomes a `(createdAt, seq)` tuple so ties are broken deterministically. React keys in the dashboard already use `taskId` / `(ts, key)` tuples, not seq. No schema change on the wire; the `after` query param gains a companion `afterTs`.
+2. **`seq` stays per-process, non-unique across writers.** A codebase audit (see the PR thread for #584) confirms no consumer requires uniqueness: seq is used only as a pagination cursor and sort key. Pagination cursor becomes a `(createdAt, seq)` tuple so ties are broken deterministically. React keys in the dashboard already use `taskId` / `(ts, key)` tuples, not seq. No schema change on the wire; the `after` query param gains a companion `afterTs`.
 3. **Sort order:** `ORDER BY createdAt DESC, seq DESC`. Both in-memory (`sort`) and in the dashboard.
-4. **Append atomicity:** POSIX does **not** guarantee non-interleaved concurrent appends to regular files. Linux ext4/xfs holds the inode mutex for sub-page writes in practice (not a contract). macOS APFS has been empirically shown to tear at ~256 bytes — well below our typical row size. Therefore: wrap each append in `proper-lockfile` (or `fs.flockSync` via a native binding) around a short critical section: `open(O_APPEND) → flock(LOCK_EX) → write → flock(LOCK_UN) → close`. Lock contention at our write volume (≤ tens/min) is negligible. Readers remain lock-free — torn rows would fail `JSON.parse` and be skipped, but locking eliminates that failure mode entirely.
+4. **Append atomicity:** POSIX does **not** guarantee non-interleaved concurrent appends to regular files. Linux ext4/xfs holds the inode mutex for sub-page writes in practice (not a contract). macOS APFS has been empirically shown to tear at ~256 bytes — well below our typical row size. Therefore: wrap each append in an advisory cross-process lock around a short critical section: `open(O_APPEND) → lock → write → unlock → close`. (As shipped this is the custom `withFileLockSync` helper in `src/fileLockSync.ts`, #584 — not the `proper-lockfile` package.) Lock contention at our write volume (≤ tens/min) is negligible. Readers remain lock-free — torn rows would fail `JSON.parse` and be skipped, but locking eliminates that failure mode entirely.
 5. **Memory ring unchanged:** still bounded by `memoryCap`. Tail reads evict oldest entries as needed.
 
 The tail-on-read cost is one `statSync` per query plus occasional small reads. For the query volume we see (dashboard polls, session-start digest), this is well under 1ms amortized.
@@ -105,4 +105,5 @@ Migrating later is strictly cheaper than migrating now: rows to convert grow lin
 
 - Unit test harness for the two-writer case (`src/__tests__/multiWriter.test.ts` — spawn two `DecisionTraceLog` instances on the same dir, interleave writes and queries).
 - Dashboard: audit any code path that compares traces by numeric `seq` (sort, pagination cursors). The composite id must round-trip through the HTTP API.
-- Delete this ADR's "Proposed" tag once the PR lands.
+
+*Shipped in #584 (`src/decisionTraceLog.ts`, `src/commitIssueLinkLog.ts` — tail-on-read + `withFileLockSync`).*

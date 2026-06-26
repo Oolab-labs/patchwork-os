@@ -158,25 +158,12 @@ Resolution:
   └─ Returns JSON-RPC error -32601 if prompt name not found
 ```
 
-**Registered prompts (15):**
+**Registered prompts: 36** (9 core · 5 Dispatch · 2 agent/scheduled · 1 setup · 16 LSP-composition · 3 edit-workflow).
 
-| Name | Required Args | Optional Args | Category |
-|------|--------------|---------------|----------|
-| `review-file` | `file` | — | Core |
-| `explain-diagnostics` | `file` | — | Core |
-| `generate-tests` | `file` | — | Core |
-| `debug-context` | — | — | Core |
-| `git-review` | — | `base` (default: `main`) | Core |
-| `cowork` | — | `task` | Core |
-| `set-effort` | — | `level` (default: `medium`) | Core |
-| `gen-claude-md` | — | — | Core |
-| `project-status` | — | — | Dispatch |
-| `quick-tests` | — | `filter` | Dispatch |
-| `quick-review` | — | — | Dispatch |
-| `build-check` | — | — | Dispatch |
-| `recent-activity` | — | `count` (default: `10`) | Dispatch |
-| `team-status` | — | — | Teams |
-| `health-check` | — | — | Scheduled |
+The full per-prompt table — names, required/optional args, and categories — lives in
+**[prompts-reference.md](prompts-reference.md)**, which is the single source of truth (kept in
+sync with `src/prompts.ts`). It is not duplicated here to avoid drift. At runtime, trust the
+live `prompts/list` response over any static list.
 
 **Transport state additions:**
 - `prompts` registry (`Map<string, RegisteredPrompt>`) stored on the transport alongside `tools`
