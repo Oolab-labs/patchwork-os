@@ -36,7 +36,10 @@ import { isPreToolUseHookRegistered } from "./preToolUseHook.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
 import { RecipeOrchestration } from "./recipeOrchestration.js";
-import { collectEventTriggerPrograms } from "./recipes/eventTriggerPrograms.js";
+import {
+  collectEventTriggerPrograms,
+  shouldAutoEnableAutomation,
+} from "./recipes/eventTriggerPrograms.js";
 import {
   haltSummaryToPrometheus,
   summariseHalts,
@@ -1197,6 +1200,38 @@ export class Bridge {
       // interpreter — they compile to hooks the bridge already fires, but were
       // never registered until now (decorative). See C-triggers.md.
       this.registerRecipeTriggerPrograms();
+    } else if (this.orchestrator) {
+      // Auto-enable (no --automation policy): when installed recipes declare
+      // event triggers AND a subprocess driver is active, stand up a policy-less
+      // AutomationHooks so those triggers actually fire. The `this.orchestrator`
+      // guard is the safety floor — we never spawn tasks unless the operator
+      // already enabled a driver. Pass --automation --automation-policy to add
+      // policy-file hooks on top of the recipe triggers.
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const collected = collectEventTriggerPrograms(recipesDir, {
+        logger: this.logger,
+      });
+      if (
+        shouldAutoEnableAutomation({
+          automationEnabled: this.config.automationEnabled,
+          hasDriver: true,
+          eventProgramCount: collected.programs.length,
+        })
+      ) {
+        this.automationHooks = new AutomationHooks(
+          {},
+          this.orchestrator,
+          (msg) => this.logger.info(msg),
+          this.extensionClient,
+          this.config.workspace,
+          this.config.automationAllowPrivateWebhooks,
+        );
+        this.automationHooks.registerRecipePrograms(collected.programs);
+        const n = collected.programs.length;
+        this.logger.info(
+          `[bridge] Automation auto-enabled for ${n} event-driven recipe${n === 1 ? "" : "s"} (${collected.recipeNames.join(", ")}) — no --automation policy; pass --automation --automation-policy to add policy hooks`,
+        );
+      }
     }
 
     // 3. Wire up /health endpoint data and /metrics

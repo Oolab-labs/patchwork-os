@@ -2,7 +2,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { collectEventTriggerPrograms } from "../eventTriggerPrograms.js";
+import {
+  collectEventTriggerPrograms,
+  shouldAutoEnableAutomation,
+} from "../eventTriggerPrograms.js";
 
 // Minimal valid recipe YAML by trigger type. parseRecipe requires a kebab
 // `name`, a `trigger`, and a non-empty `steps` array.
@@ -127,5 +130,47 @@ describe("collectEventTriggerPrograms", () => {
     );
     expect(result.programs).toHaveLength(0);
     expect(result.recipeNames).toHaveLength(0);
+  });
+});
+
+describe("shouldAutoEnableAutomation", () => {
+  it("auto-enables when a driver is active and event recipes exist", () => {
+    expect(
+      shouldAutoEnableAutomation({
+        automationEnabled: false,
+        hasDriver: true,
+        eventProgramCount: 2,
+      }),
+    ).toBe(true);
+  });
+
+  it("never auto-enables when automation is already explicitly enabled", () => {
+    expect(
+      shouldAutoEnableAutomation({
+        automationEnabled: true,
+        hasDriver: true,
+        eventProgramCount: 2,
+      }),
+    ).toBe(false);
+  });
+
+  it("safety floor: never auto-enables without a driver", () => {
+    expect(
+      shouldAutoEnableAutomation({
+        automationEnabled: false,
+        hasDriver: false,
+        eventProgramCount: 2,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not auto-enable when no event-trigger recipe is installed", () => {
+    expect(
+      shouldAutoEnableAutomation({
+        automationEnabled: false,
+        hasDriver: true,
+        eventProgramCount: 0,
+      }),
+    ).toBe(false);
   });
 });
