@@ -1390,6 +1390,15 @@ export function checkCcHookWiring(): Record<string, boolean> {
 export class AutomationHooks {
   /** Compiled AST for the functional interpreter. Null if parse failed. */
   private _programAST: AutomationProgram[] | null = null;
+  /**
+   * Policy-file-derived programs (from `parsePolicy`). Kept separate from the
+   * effective `_programAST` so `registerRecipePrograms()` can rebuild the AST as
+   * (policy ⊕ recipe) idempotently on every recipe hot-reload without
+   * duplicating the policy hooks.
+   */
+  private _policyPrograms: AutomationProgram[] | null = null;
+  /** Programs compiled from installed recipe triggers (file_watch / git_hook). */
+  private _recipePrograms: AutomationProgram[] = [];
   /** Backend instance for the functional interpreter. */
   private _interpreterBackend: VsCodeBackend | null = null;
   /**
@@ -1434,6 +1443,7 @@ export class AutomationHooks {
       const parseResult = parsePolicy(policy);
       if (parseResult.ok) {
         this._programAST = parseResult.value;
+        this._policyPrograms = parseResult.value;
         this._interpreterBackend = new VsCodeBackend(
           orchestrator,
           { info: this.log.bind(this) },
@@ -1445,6 +1455,33 @@ export class AutomationHooks {
         );
       }
     }
+  }
+
+  /**
+   * Register AutomationPrograms compiled from installed recipe triggers
+   * (file_watch / git_hook). They run alongside the policy-file programs on the
+   * SAME hook events the bridge already fires (handleFileSaved / handleGitCommit
+   * / handleGitPush / handleGitPull), so a recipe with `trigger: { type:
+   * file_watch }` actually fires instead of being parsed-but-decorative.
+   *
+   * Idempotent: each call REPLACES the prior recipe set, so the bridge can call
+   * it again on every recipe install / save / delete (hot-reload) without
+   * duplicating hooks. No-op when the interpreter backend never initialised
+   * (policy parse failed) or after destroy().
+   */
+  registerRecipePrograms(programs: AutomationProgram[]): void {
+    if (this._isDestroyed) return;
+    if (!this._interpreterBackend) {
+      this.log(
+        "[automation] recipe triggers not registered — interpreter backend unavailable (policy parse failed)",
+      );
+      return;
+    }
+    this._recipePrograms = programs;
+    this._programAST = [
+      ...(this._policyPrograms ?? []),
+      ...this._recipePrograms,
+    ];
   }
 
   /**

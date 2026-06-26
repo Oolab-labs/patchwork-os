@@ -36,6 +36,7 @@ import { isPreToolUseHookRegistered } from "./preToolUseHook.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
 import { RecipeOrchestration } from "./recipeOrchestration.js";
+import { collectEventTriggerPrograms } from "./recipes/eventTriggerPrograms.js";
 import {
   haltSummaryToPrometheus,
   summariseHalts,
@@ -931,6 +932,33 @@ export class Bridge {
     return this.authToken;
   }
 
+  /**
+   * Compile installed recipe triggers (file_watch / git_hook) and register them
+   * into the live AutomationHooks so they actually fire on the corresponding
+   * events. Without this, such recipes are parsed + installed but decorative
+   * (see docs/dogfood/recipe-dogfood-2026-05-01/C-triggers.md). Idempotent and
+   * fail-soft: safe to call at startup and on every recipe hot-reload; a no-op
+   * when automation is disabled.
+   */
+  private registerRecipeTriggerPrograms(): void {
+    if (!this.automationHooks) return;
+    try {
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const collected = collectEventTriggerPrograms(recipesDir, {
+        logger: this.logger,
+      });
+      this.automationHooks.registerRecipePrograms(collected.programs);
+      const n = collected.programs.length;
+      this.logger.info(
+        `[bridge] Recipe triggers registered · ${n} event-driven recipe${n === 1 ? "" : "s"}${collected.recipeNames.length ? ` (${collected.recipeNames.join(", ")})` : ""}`,
+      );
+    } catch (err) {
+      this.logger.warn?.(
+        `[bridge] recipe trigger registration failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   async start(): Promise<void> {
     // 0. Initialize OpenTelemetry (no-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset)
     initTelemetry();
@@ -1138,6 +1166,10 @@ export class Bridge {
               `[patchwork] scheduler restart failed: ${err instanceof Error ? err.message : String(err)}`,
             );
           }
+          // Re-sync recipe-derived event triggers (file_watch / git_hook) on
+          // every install / save / delete. registerRecipePrograms() replaces the
+          // prior recipe set, so this is idempotent.
+          this.registerRecipeTriggerPrograms();
         };
       }
     }
@@ -1161,6 +1193,10 @@ export class Bridge {
       this.logger.info(
         `[bridge] Automation enabled (policy: ${this.config.automationPolicyPath})`,
       );
+      // Wire installed recipe triggers (file_watch / git_hook) into the live
+      // interpreter — they compile to hooks the bridge already fires, but were
+      // never registered until now (decorative). See C-triggers.md.
+      this.registerRecipeTriggerPrograms();
     }
 
     // 3. Wire up /health endpoint data and /metrics
