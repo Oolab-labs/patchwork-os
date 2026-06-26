@@ -67,6 +67,12 @@ export interface ClaudeTask {
    * bridge that spawned them.
    */
   mcpAccess?: boolean;
+  /** P0-5 opt-in tool sandbox — repackaged into providerOptions at the driver.run hop. */
+  sandbox?: boolean;
+  /** Tool allowlist enforced via --allowed-tools when sandbox is true. */
+  allowedTools?: string[];
+  /** Deny rules via --disallowed-tools (any mode). */
+  disallowedTools?: string[];
   /** Set when status === "cancelled": what triggered the cancel. */
   cancelReason?: CancelReason;
   /** Last ~2KB of subprocess stderr — populated on timeout and other aborts. */
@@ -113,6 +119,15 @@ export type EnqueueOpts = {
    * call bridge tools. Opt-in per task — see ClaudeTask.mcpAccess for details.
    */
   mcpAccess?: boolean;
+  /**
+   * P0-5 opt-in tool sandbox. When `sandbox` is true and `allowedTools` is
+   * non-empty, the spawned `claude -p` runs with --permission-mode dontAsk +
+   * --allowed-tools and DROPS --dangerously-skip-permissions. `disallowedTools`
+   * applies in any mode. Repackaged into providerOptions at the driver.run hop.
+   */
+  sandbox?: boolean;
+  allowedTools?: string[];
+  disallowedTools?: string[];
 };
 
 /** Shape of a task entry in the v1 tasks file. */
@@ -146,6 +161,11 @@ interface PersistedTask {
   // automation infinite-chain guard (isAutomationTask).
   useAnt?: boolean;
   mcpAccess?: boolean;
+  // P0-5: a sandboxed task must STAY sandboxed after a bridge restart →
+  // persist + reload these alongside mcpAccess (audit HIGH #11 durability).
+  sandbox?: boolean;
+  allowedTools?: string[];
+  disallowedTools?: string[];
   isAutomationTask?: boolean;
 }
 
@@ -237,6 +257,13 @@ export class ClaudeOrchestrator {
       }),
       ...(opts.useAnt !== undefined && { useAnt: opts.useAnt }),
       ...(opts.mcpAccess !== undefined && { mcpAccess: opts.mcpAccess }),
+      ...(opts.sandbox !== undefined && { sandbox: opts.sandbox }),
+      ...(opts.allowedTools !== undefined && {
+        allowedTools: opts.allowedTools,
+      }),
+      ...(opts.disallowedTools !== undefined && {
+        disallowedTools: opts.disallowedTools,
+      }),
     };
 
     this.tasks.set(id, task);
@@ -446,6 +473,11 @@ export class ClaudeOrchestrator {
           maxBudgetUsd: task.maxBudgetUsd,
           useAnt: task.useAnt,
           mcpAccess: task.mcpAccess,
+          // P0-5 — the single hop where typed top-level sandbox fields are
+          // repackaged into the untyped providerOptions bag the driver reads.
+          sandbox: task.sandbox,
+          allowedTools: task.allowedTools,
+          disallowedTools: task.disallowedTools,
         },
         onChunk: (chunk: string) => {
           // Per-task streaming callback (e.g. for MCP notifications/progress)
@@ -577,6 +609,11 @@ export class ClaudeOrchestrator {
         ...(t.systemPrompt !== undefined && { systemPrompt: t.systemPrompt }),
         ...(t.useAnt !== undefined && { useAnt: t.useAnt }),
         ...(t.mcpAccess !== undefined && { mcpAccess: t.mcpAccess }),
+        ...(t.sandbox !== undefined && { sandbox: t.sandbox }),
+        ...(t.allowedTools !== undefined && { allowedTools: t.allowedTools }),
+        ...(t.disallowedTools !== undefined && {
+          disallowedTools: t.disallowedTools,
+        }),
         ...(t.isAutomationTask !== undefined && {
           isAutomationTask: t.isAutomationTask,
         }),
@@ -741,6 +778,13 @@ export class ClaudeOrchestrator {
               }),
               ...(t.useAnt !== undefined && { useAnt: t.useAnt }),
               ...(t.mcpAccess !== undefined && { mcpAccess: t.mcpAccess }),
+              ...(t.sandbox !== undefined && { sandbox: t.sandbox }),
+              ...(t.allowedTools !== undefined && {
+                allowedTools: t.allowedTools,
+              }),
+              ...(t.disallowedTools !== undefined && {
+                disallowedTools: t.disallowedTools,
+              }),
               ...(t.isAutomationTask !== undefined && {
                 isAutomationTask: t.isAutomationTask,
               }),
@@ -823,6 +867,11 @@ export class ClaudeOrchestrator {
       ...(t.systemPrompt !== undefined && { systemPrompt: t.systemPrompt }),
       ...(t.useAnt !== undefined && { useAnt: t.useAnt }),
       ...(t.mcpAccess !== undefined && { mcpAccess: t.mcpAccess }),
+      ...(t.sandbox !== undefined && { sandbox: t.sandbox }),
+      ...(t.allowedTools !== undefined && { allowedTools: t.allowedTools }),
+      ...(t.disallowedTools !== undefined && {
+        disallowedTools: t.disallowedTools,
+      }),
       ...(t.isAutomationTask !== undefined && {
         isAutomationTask: t.isAutomationTask,
       }),

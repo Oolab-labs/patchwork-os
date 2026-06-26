@@ -54,7 +54,12 @@ export interface AgentExecutorDeps {
   ) => Promise<AgentResult>;
   claudeCliFn: (
     prompt: string,
-    opts?: { mcpAccess?: boolean },
+    opts?: {
+      mcpAccess?: boolean;
+      sandbox?: boolean;
+      allowedTools?: string[];
+      disallowedTools?: string[];
+    },
   ) => Promise<AgentResult>;
   localFn: (prompt: string, model: string) => Promise<AgentResult>;
   /** Returns true when the `claude` CLI is available on PATH. */
@@ -74,6 +79,12 @@ export interface AgentExecutorInput {
    * Ignored by API drivers — they reach the bridge through other means.
    */
   mcpAccess?: boolean;
+  /** Opt-in tool sandbox — enforced argv on the subprocess path only. */
+  sandbox?: boolean;
+  /** Tool allowlist enforced via --allowed-tools when sandbox is true. */
+  allowedTools?: string[];
+  /** Deny rules via --disallowed-tools (any mode). */
+  disallowedTools?: string[];
   /**
    * Opaque per-call driver options forwarded to the provider driver (e.g.
    * `{ responseFormat: { type: "json_object" } }` for constrained decoding).
@@ -94,8 +105,28 @@ export async function executeAgent(
   input: AgentExecutorInput,
   deps: AgentExecutorDeps,
 ): Promise<AgentResult> {
-  const { prompt, driver, model, mcpAccess, providerOptions } = input;
-  const cliOpts = mcpAccess !== undefined ? { mcpAccess } : undefined;
+  const {
+    prompt,
+    driver,
+    model,
+    mcpAccess,
+    sandbox,
+    allowedTools,
+    disallowedTools,
+    providerOptions,
+  } = input;
+  const cliOpts =
+    mcpAccess !== undefined ||
+    sandbox !== undefined ||
+    allowedTools !== undefined ||
+    disallowedTools !== undefined
+      ? {
+          ...(mcpAccess !== undefined && { mcpAccess }),
+          ...(sandbox !== undefined && { sandbox }),
+          ...(allowedTools !== undefined && { allowedTools }),
+          ...(disallowedTools !== undefined && { disallowedTools }),
+        }
+      : undefined;
 
   // Stamp the driver that ACTUALLY ran onto the result. This is the single
   // place driver auto-detection is resolved, so it is the only place that

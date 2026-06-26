@@ -358,7 +358,12 @@ export class RecipeOrchestration {
         const orch = this.deps.getOrchestrator();
         const claudeCodeFn = async (
           prompt: string,
-          callOpts?: { mcpAccess?: boolean },
+          callOpts?: {
+            mcpAccess?: boolean;
+            sandbox?: boolean;
+            allowedTools?: string[];
+            disallowedTools?: string[];
+          },
         ): Promise<string> => {
           if (!orch) return "";
           const task = await orch.runAndWait({
@@ -367,6 +372,15 @@ export class RecipeOrchestration {
             timeoutMs: 1_800_000,
             ...(callOpts?.mcpAccess !== undefined && {
               mcpAccess: callOpts.mcpAccess,
+            }),
+            ...(callOpts?.sandbox !== undefined && {
+              sandbox: callOpts.sandbox,
+            }),
+            ...(callOpts?.allowedTools !== undefined && {
+              allowedTools: callOpts.allowedTools,
+            }),
+            ...(callOpts?.disallowedTools !== undefined && {
+              disallowedTools: callOpts.disallowedTools,
             }),
           });
           return task.output ?? task.errorMessage ?? "";
@@ -956,7 +970,12 @@ export class RecipeOrchestration {
     );
     const claudeCodeFn = async (
       prompt: string,
-      callOpts?: { mcpAccess?: boolean },
+      callOpts?: {
+        mcpAccess?: boolean;
+        sandbox?: boolean;
+        allowedTools?: string[];
+        disallowedTools?: string[];
+      },
     ): Promise<string> => {
       const task = await orch.runAndWait({
         prompt,
@@ -964,6 +983,13 @@ export class RecipeOrchestration {
         timeoutMs: 1_800_000,
         ...(callOpts?.mcpAccess !== undefined && {
           mcpAccess: callOpts.mcpAccess,
+        }),
+        ...(callOpts?.sandbox !== undefined && { sandbox: callOpts.sandbox }),
+        ...(callOpts?.allowedTools !== undefined && {
+          allowedTools: callOpts.allowedTools,
+        }),
+        ...(callOpts?.disallowedTools !== undefined && {
+          disallowedTools: callOpts.disallowedTools,
         }),
       });
       return task.output ?? task.errorMessage ?? "";
