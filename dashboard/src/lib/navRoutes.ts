@@ -73,6 +73,7 @@ export const NAV_SECTIONS: NavSection[] = [
     routes: [
       { href: "/recipes",     label: "Recipes",     icon: "book" },
       { href: "/marketplace", label: "Marketplace", icon: "store" },
+      { href: "/workers",     label: "Workers",     paletteLabel: "Build — Workers", icon: "person" },
     ],
   },
   {

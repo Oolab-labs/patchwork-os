@@ -72,6 +72,7 @@ function makeDeps(overrides: Partial<RecipeRouteDeps>): RecipeRouteDeps {
     judgeSummaryFn: null,
     runPlanFn: null,
     simulateFn: null,
+    workerShadowFn: null,
     runReplayFn: null,
     runRecipeFn: null,
     onRecipesChangedFn: null,

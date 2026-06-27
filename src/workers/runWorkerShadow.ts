@@ -2,7 +2,11 @@ import { readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { RecipeRunLog } from "../runLog.js";
-import type { DecisionRecord, RunRecord } from "./shadowObserver.js";
+import type {
+  DecisionRecord,
+  RunRecord,
+  WorkerShadowReport,
+} from "./shadowObserver.js";
 import { buildShadowReport, formatShadowReport } from "./shadowReport.js";
 import { loadWorkersFromDir } from "./workerLoader.js";
 
@@ -86,19 +90,42 @@ function readDecisions(ideDir: string): DecisionRecord[] {
   return out;
 }
 
-export function runWorkerShadowReport(opts: RunWorkerShadowOpts = {}): string {
+export interface WorkerShadowData {
+  workers: WorkerShadowReport[];
+  runsScanned: number;
+  decisionsScanned: number;
+  /** The directory worker manifests were loaded from (for empty-state copy). */
+  workersDir: string;
+}
+
+/**
+ * Structured shadow report — a read-only replay of the run + decision logs
+ * through the (worker × action-class) ramp. Backs both the CLI and the bridge
+ * `GET /workers/shadow` JSON endpoint. Pure aside from the log reads.
+ */
+export function getWorkerShadowData(
+  opts: RunWorkerShadowOpts = {},
+): WorkerShadowData {
   const home = os.homedir();
   const patchworkDir = opts.patchworkDir ?? path.join(home, ".patchwork");
   const ideDir = opts.ideDir ?? path.join(home, ".claude", "ide");
   const workersDir = opts.workersDir ?? path.join(patchworkDir, "workers");
 
   const workers = loadWorkersFromDir(workersDir);
-  if (workers.length === 0) {
-    return `No worker manifests found in ${workersDir}.\nAdd *.worker.yaml there (e.g. copy templates/workers/) and re-run.\n`;
-  }
+  const runs = workers.length ? readRuns(patchworkDir) : [];
+  const decisions = workers.length ? readDecisions(ideDir) : [];
+  return {
+    workers: buildShadowReport(workers, runs, decisions),
+    runsScanned: runs.length,
+    decisionsScanned: decisions.length,
+    workersDir,
+  };
+}
 
-  const runs = readRuns(patchworkDir);
-  const decisions = readDecisions(ideDir);
-  const reports = buildShadowReport(workers, runs, decisions);
-  return `${formatShadowReport(reports)}\n(scanned ${runs.length} recipe runs, ${decisions.length} gate decisions · read-only)\n`;
+export function runWorkerShadowReport(opts: RunWorkerShadowOpts = {}): string {
+  const data = getWorkerShadowData(opts);
+  if (data.workers.length === 0) {
+    return `No worker manifests found in ${data.workersDir}.\nAdd *.worker.yaml there (e.g. copy templates/workers/) and re-run.\n`;
+  }
+  return `${formatShadowReport(data.workers)}\n(scanned ${data.runsScanned} recipe runs, ${data.decisionsScanned} gate decisions · read-only)\n`;
 }

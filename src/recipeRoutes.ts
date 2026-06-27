@@ -639,6 +639,8 @@ export interface RecipeRouteDeps {
   runPlanFn: ((recipeName: string) => Promise<Record<string, unknown>>) | null;
   /** What-If Preview: static counterfactual simulation for a recipe by name. */
   simulateFn: ((recipeName: string) => Promise<Record<string, unknown>>) | null;
+  /** Read-only worker trust dial (shadow) — replays run + decision logs. */
+  workerShadowFn: (() => Promise<Record<string, unknown>>) | null;
   runReplayFn:
     | ((seq: number) => Promise<{
         ok: boolean;
@@ -903,6 +905,28 @@ export function tryHandleRecipeRoute(
     } catch (err) {
       respond500(res, err);
     }
+    return true;
+  }
+
+  // GET /workers/shadow — read-only worker trust dial + ramp-vs-gate report.
+  // Replays the run log + gate decision log through the (worker × action-class)
+  // ramp; changes nothing. Backs the dashboard /workers page.
+  if (parsedUrl.pathname === "/workers/shadow" && req.method === "GET") {
+    void (async () => {
+      try {
+        const data = (await deps.workerShadowFn?.()) ?? {
+          workers: [],
+          runsScanned: 0,
+          decisionsScanned: 0,
+        };
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({ ...data, generatedAt: new Date().toISOString() }),
+        );
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
     return true;
   }
 
