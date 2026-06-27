@@ -211,6 +211,7 @@ const KNOWN_SUBCOMMANDS = [
   "analytics",
   "doctor",
   "shadow-scan",
+  "workers",
 ] as const;
 
 const __invokedSubcommand = (() => {
@@ -4643,6 +4644,41 @@ if (process.argv[2] === "shadow-scan") {
         json: jsonFlag,
       });
       // runShadowScanCli sets process.exitCode = 1 on reclassified > 0; no explicit exit needed.
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
+// Handle workers subcommand — read-only worker trust-dial (shadow). Replays the
+// recipe run log + gate decision log through the (worker × action-class) ramp
+// and prints the dial + a "ramp would vs gate did" comparison. Changes nothing.
+if (process.argv[2] === "workers") {
+  const args = process.argv.slice(3);
+  if (args[0] !== "shadow" || args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(
+      "Usage: patchwork workers shadow [--workers-dir <path>]\n\n" +
+        "Read-only worker trust dial: replays ~/.patchwork/runs.jsonl and the\n" +
+        "gate decision log through the (worker × action-class) trust ramp. It\n" +
+        "computes what the ramp WOULD decide vs what the gate DID — and never\n" +
+        "changes a live decision.\n\n" +
+        "  --workers-dir <path>  Where *.worker.yaml live (default ~/.patchwork/workers)\n",
+    );
+    process.exit(0);
+  }
+  (async () => {
+    try {
+      const dirIdx = args.indexOf("--workers-dir");
+      const workersDir = dirIdx !== -1 ? args[dirIdx + 1] : undefined;
+      const { runWorkerShadowReport } = await import(
+        "./workers/runWorkerShadow.js"
+      );
+      process.stdout.write(
+        runWorkerShadowReport(workersDir ? { workersDir } : {}),
+      );
     } catch (err) {
       process.stderr.write(
         `Error: ${err instanceof Error ? err.message : String(err)}\n`,
