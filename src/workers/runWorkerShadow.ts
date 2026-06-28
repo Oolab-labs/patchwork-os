@@ -153,7 +153,14 @@ export function loadWorkerTrustForRecipe(
   const observer = new WorkerShadowObserver(workers);
   const worker = observer.workerForRecipe(recipeName);
   if (!worker) return null;
-  for (const run of readRuns(patchworkDir)) observer.ingestRun(run);
+  // Replay in ASCENDING timestamp order (review #1027 M2). The graduation
+  // dwell/hysteresis logic is order-sensitive: ingesting newest-first leaves
+  // `lastChangeAt` pinned to the most recent run so `dwellOk` never holds and
+  // risky classes never promote — the earned-L4 path would be unreachable and
+  // the gate would floor every compensable/irreversible class to L0 forever.
+  // This mirrors buildShadowReport (the dial), so the gate and dial agree.
+  const runs = readRuns(patchworkDir).sort((a, b) => a.at - b.at);
+  for (const run of runs) observer.ingestRun(run);
   return { worker, store: observer.levelStore };
 }
 

@@ -84,17 +84,24 @@ phase 2 (new execution machinery).
   This is the answer to "what should an unearned AUTOMATED worker action do":
   fail-closed *only for the dangerous, non-undoable actions* — pure "gate
   everything unearned" would halt a new worker on everything for weeks (the
-  evidence-latency reality), which is unusable.
+  evidence-latency reality), which is unusable. **Agent (reasoning) steps are
+  never gated by the ramp** (they classify as `other:irreversible`, owned by no
+  one — gating them would stall every worker; the downstream tool steps still
+  gate on their own class).
 - `runWorkerShadow.loadWorkerTrustForRecipe(name)` — resolves the owning worker +
-  its earned-level store (replayed from the same run log as the dial).
-- `recipeOrchestration.buildWorkerAutonomyGate(name)` — when the
-  **`worker.autonomy`** flag is on AND a worker owns the recipe, supersedes the
-  tier approval fn with the worker-aware one and sets `gateAutomatedRuns` so the
-  flat runner's gate engages on AUTOMATED triggers too (that's how workers run).
-  Flag off OR no owning worker → byte-identical to pre-flip behaviour.
+  its earned-level store, **replayed in ascending timestamp order** (same as the
+  dial; the graduation dwell logic is order-sensitive — newest-first would mean
+  no risky class ever graduates and earned-L4 would be unreachable).
+- `recipeOrchestration.buildWorkerAutonomyGate(name, tierFn)` — when the
+  **`worker.autonomy`** flag is on AND a worker owns the recipe, composes the
+  worker-aware fn as a **FLOOR over the tier fn** (a worker `allow` decision
+  DEFERS to the tier fn, so it can only ADD gating — never drop the operator's
+  `approvalGate` protection, even on manual runs) and sets `gateAutomatedRuns` so
+  the flat runner's gate engages on AUTOMATED triggers too (that's how workers
+  run). Flag off OR no owning worker → byte-identical to pre-flip behaviour.
 - Fail-soft: any error resolving worker trust falls back to the tier gate; the
   decision never *widens* access — a "gate" result only routes to the existing
-  human-approval queue (fail-closed on reject/expire).
+  human-approval queue (fail-closed on reject/expire/cancel).
 
 **Still deferred (phase 3+), deliberately:**
 - L0/L2/L3 execution modes (suggest / reversible-window via `beginTransaction`/

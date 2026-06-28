@@ -86,6 +86,21 @@ export function decideWorkerAction(
     effectiveLevel,
   } as const;
 
+  // Agent (reasoning) steps are not a durable side-effecting action-class: the
+  // claude subprocess produces an output var, and any tool calls it makes are
+  // gated on their OWN class. The step id classifies as `other:irreversible`
+  // (owned by no worker), so without this it would gate forever and stall every
+  // worker on its agent step while the real file.write flowed. Let it through;
+  // the downstream tool steps still gate. The tier gate (composed as a floor by
+  // the caller) still applies its own policy to the agent step.
+  if (toolName === "agent") {
+    return {
+      ...base,
+      action: "allow",
+      reason: "agent reasoning step — not a gated action-class",
+    };
+  }
+
   // Reversible: flows freely. The routine work a new worker should just do.
   if (flowsUngated(ac)) {
     return {

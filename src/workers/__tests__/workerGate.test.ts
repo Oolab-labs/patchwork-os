@@ -80,6 +80,16 @@ describe("decideWorkerAction", () => {
     expect(d.reason).toContain("autonomy ceiling");
   });
 
+  it("ALLOWS an agent (reasoning) step — never gates it forever (M3)", () => {
+    // "agent" classifies as other:irreversible, owned by no worker → without
+    // the special-case it would gate on every run and stall the worker. The
+    // downstream tool steps still gate on their own class.
+    const w = parseWorker({ id: "w", name: "W", owns: ["fs-write"] });
+    const d = decideWorkerAction(w, "agent", undefined, new WorkerLevelStore());
+    expect(d.action).toBe("allow");
+    expect(d.reason).toContain("agent");
+  });
+
   it("GATES a risky action outside the worker's owned domain", () => {
     const w = parseWorker({ id: "w", name: "W", owns: ["fs-write"] });
     // worker has L4 on gitPush in the store, but does not OWN vcs-remote

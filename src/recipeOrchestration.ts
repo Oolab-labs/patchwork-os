@@ -85,6 +85,13 @@ async function makeRecipeApprovalFn(
   };
 }
 
+type ApprovalFn = (input: {
+  toolId: string;
+  tier: import("./riskTier.js").RiskTier;
+  summary?: string;
+  params?: Record<string, unknown>;
+}) => Promise<boolean>;
+
 /**
  * Worker-autonomy gate (worker-ramp-v0 phase 2, `worker.autonomy` flag, default
  * off). When the flag is on AND a worker owns `recipeName` (recipe === body),
@@ -95,18 +102,19 @@ async function makeRecipeApprovalFn(
  * caller falls back to the tier-based fn, so non-worker recipes are byte-
  * identical. Unlike the tier gate this engages on AUTOMATED runs too (workers
  * run automatically); the caller sets `gateAutomatedRuns` whenever this is set.
+ *
+ * NEVER-WIDEN (review #1027 M1): the worker fn is composed as a FLOOR over the
+ * tier fn, never a replacement. A worker `gate` decision queues; a worker
+ * `allow` decision DEFERS to `tierApprovalFn` (when present) so a step the tier
+ * policy would have queued is still queued. The worker gate can therefore only
+ * ADD gating, never remove gating the operator's `approvalGate` required — even
+ * on manual runs of a worker-owned recipe. Exported for orchestration tests.
  */
-async function buildWorkerAutonomyGate(
+export async function buildWorkerAutonomyGate(
   recipeName: string,
-): Promise<
-  | ((input: {
-      toolId: string;
-      tier: import("./riskTier.js").RiskTier;
-      summary?: string;
-      params?: Record<string, unknown>;
-    }) => Promise<boolean>)
-  | null
-> {
+  tierApprovalFn?: ApprovalFn,
+  trustOpts?: import("./workers/runWorkerShadow.js").RunWorkerShadowOpts,
+): Promise<ApprovalFn | null> {
   try {
     const { isEnabled, FLAG_WORKER_AUTONOMY } = await import(
       "./featureFlags.js"
@@ -116,7 +124,7 @@ async function buildWorkerAutonomyGate(
     const { loadWorkerTrustForRecipe } = await import(
       "./workers/runWorkerShadow.js"
     );
-    const trust = loadWorkerTrustForRecipe(recipeName);
+    const trust = loadWorkerTrustForRecipe(recipeName, trustOpts);
     if (!trust) return null;
 
     const { decideWorkerAction } = await import("./workers/workerGate.js");
@@ -131,7 +139,12 @@ async function buildWorkerAutonomyGate(
         input.params,
         store,
       );
-      if (decision.action === "allow") return true;
+      // allow → defer to the tier gate so we never DROP tier-policy protection
+      // (floor composition). When no tier fn is injected (approvalGate off),
+      // a worker `allow` means flow.
+      if (decision.action === "allow") {
+        return tierApprovalFn ? tierApprovalFn(input) : true;
+      }
       // gate → queue for human approval; fail-closed on reject / expire / cancel
       const { promise } = queue.request({
         toolName: input.toolId,
@@ -1078,10 +1091,14 @@ export class RecipeOrchestration {
         ? undefined
         : await makeRecipeApprovalFn(approvalGate);
     // worker.autonomy flip (flag-gated, default off). When a worker owns this
-    // recipe and the flag is on, the worker-aware fn supersedes the tier fn and
-    // the gate engages on automated runs too. Otherwise everything below is
+    // recipe and the flag is on, the worker-aware fn wraps the tier fn (FLOOR
+    // composition — it can only ADD gating, never drop tier-policy protection)
+    // and the gate engages on automated runs too. Otherwise everything below is
     // byte-identical to pre-flip behaviour.
-    const workerApprovalFn = await buildWorkerAutonomyGate(opts.name);
+    const workerApprovalFn = await buildWorkerAutonomyGate(
+      opts.name,
+      tierApprovalFn,
+    );
     const requireApprovalFn = workerApprovalFn ?? tierApprovalFn;
     const gateAutomatedRuns = workerApprovalFn != null;
     const runnerDeps = {

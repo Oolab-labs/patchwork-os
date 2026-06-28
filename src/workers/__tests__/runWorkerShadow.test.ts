@@ -99,4 +99,45 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
     expect(board.length).toBeGreaterThan(0);
     expect(board.some((b) => b.classKey.startsWith("fs-write"))).toBe(true);
   });
+
+  it("a risky class can graduate to earned L4 via ascending replay (M2)", () => {
+    // test-guardian owns `issue` (compensable, ceiling 4); githubCreateIssue is
+    // an issue-domain step. Seed many dwell-separated clean runs. With the
+    // ascending-order fix the dwell/hysteresis logic promotes the class to L4,
+    // so the live gate ALLOWS it. (Pre-fix the replay was newest-first → dwell
+    // never held → the class would gate forever.)
+    const log = new RecipeRunLog({ dir });
+    const SEVEN_HOURS = 7 * 3600 * 1000; // > the 6h default dwell window
+    for (let i = 0; i < 18; i++) {
+      log.appendDirect({
+        taskId: `t${i}`,
+        recipeName: "triage-failing-tests",
+        trigger: "recipe",
+        status: "done",
+        createdAt: i * SEVEN_HOURS,
+        doneAt: i * SEVEN_HOURS,
+        durationMs: 1,
+        stepResults: Array.from({ length: 5 }, (_, k) => ({
+          id: `s${i}-${k}`,
+          tool: "githubCreateIssue",
+          status: "ok" as const,
+          durationMs: 1,
+        })),
+      });
+    }
+    const trust = loadWorkerTrustForRecipe("triage-failing-tests", {
+      workersDir: WORKERS_DIR,
+      patchworkDir: dir,
+    });
+    expect(trust).not.toBeNull();
+    const d = decideWorkerAction(
+      trust!.worker,
+      "githubCreateIssue",
+      {},
+      trust!.store,
+    );
+    expect(d.owned).toBe(true);
+    expect(d.earnedLevel).toBe(4);
+    expect(d.action).toBe("allow");
+  });
 });
