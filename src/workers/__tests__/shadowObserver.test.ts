@@ -79,4 +79,57 @@ describe("WorkerShadowObserver", () => {
     });
     expect(obs.report()[0]!.compared).toBe(0);
   });
+
+  it("counts a genuine tool error as evidence but NOT a human rejection (L2)", () => {
+    // a real failure is evidence (shows up on the dial)
+    const real = new WorkerShadowObserver([release], { cfg: CFG });
+    real.ingestRun({
+      recipeName: "release-notes",
+      at: 0,
+      steps: [
+        {
+          tool: "editText",
+          status: "error",
+          haltReason: 'Tool "editText" threw: boom',
+        },
+      ],
+    });
+    expect(
+      real.report()[0]!.board.some((b) => b.classKey.startsWith("fs-write")),
+    ).toBe(true);
+
+    // a human reject/expire/cancel is a control decision, not a worker failure
+    const rejected = new WorkerShadowObserver([release], { cfg: CFG });
+    rejected.ingestRun({
+      recipeName: "release-notes",
+      at: 0,
+      steps: [
+        {
+          tool: "editText",
+          status: "error",
+          haltReason: "Step rejected by approval gate — approval_rejected.",
+        },
+      ],
+    });
+    expect(
+      rejected
+        .report()[0]!
+        .board.some((b) => b.classKey.startsWith("fs-write")),
+    ).toBe(false); // skipped → no evidence → no demotion
+  });
+
+  it("flags board rows for classes the worker performs but does NOT own (L3)", () => {
+    const obs = new WorkerShadowObserver([release], { cfg: CFG });
+    // gitPush is vcs-remote — release owns fs-write + vcs-read, NOT vcs-remote
+    obs.ingestRun({
+      recipeName: "release-notes",
+      at: 0,
+      steps: [{ tool: "gitPush", status: "ok" }],
+    });
+    const row = obs
+      .report()[0]!
+      .board.find((b) => b.classKey.startsWith("vcs-remote"));
+    expect(row).toBeDefined();
+    expect(row!.owned).toBe(false);
+  });
 });

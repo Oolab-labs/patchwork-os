@@ -93,4 +93,24 @@ describe("formatShadowReport", () => {
     const text = formatShadowReport(buildShadowReport([release], [], [], CFG));
     expect(text).toContain("no attributed activity yet");
   });
+
+  it("annotates a NOT-OWNED class the worker performed (L3)", () => {
+    // release owns fs-write only; a gitPush (vcs-remote) it performs is shown
+    // but flagged because the live gate floors it to L0.
+    const reports = buildShadowReport(
+      [release],
+      [
+        {
+          recipeName: "release-notes",
+          at: 0,
+          steps: [{ tool: "gitPush", status: "ok" }],
+        },
+      ],
+      [],
+      CFG,
+    );
+    const text = formatShadowReport(reports);
+    expect(text).toContain("vcs-remote");
+    expect(text).toContain("NOT OWNED");
+  });
 });

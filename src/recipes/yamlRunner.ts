@@ -625,6 +625,9 @@ export interface RunnerDeps {
     tier: import("../riskTier.js").RiskTier;
     summary?: string;
     params?: Record<string, unknown>;
+    /** The run's AbortSignal — lets the approval wait be cancelled promptly
+     * when the run is aborted, instead of blocking for the full TTL (L1). */
+    signal?: AbortSignal;
   }) => Promise<boolean>;
   /**
    * Worker-autonomy gate (worker.autonomy flag). When set, the approval gate
@@ -1777,6 +1780,7 @@ export async function runYamlRecipe(
             ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
             : `tool ${approvalToolId}`,
           params: step.agent ? undefined : (step as Record<string, unknown>),
+          ...(deps.signal && { signal: deps.signal }), // L1
         });
         if (!approved) {
           const reason = `Step rejected by approval gate — approval_rejected.`;

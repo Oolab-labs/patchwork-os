@@ -105,6 +105,23 @@ describe("executeChainedStep — approval gate (Tier-1 #4)", () => {
     expect(result.success).toBe(true);
   });
 
+  it("forwards the run's AbortSignal into requireApprovalFn (L1/L5 chained path)", async () => {
+    // A worker recipe can be chained; the approval wait must be cancellable so a
+    // cancelled run doesn't block for the full TTL.
+    const ac = new AbortController();
+    const requireApprovalFn = vi.fn().mockResolvedValue(true);
+    const deps = makeDeps({ requireApprovalFn });
+    await executeChainedStep(
+      ctxFor({ id: "s", tool: "some.tool" }, recipeNoTrigger, {
+        options: { ...baseOptions, signal: ac.signal },
+      }),
+      deps,
+    );
+    expect(requireApprovalFn).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: ac.signal }),
+    );
+  });
+
   it("does not gate NESTED chained recipes (depth > 0) — only the top-level run", async () => {
     // A chained recipe always has trigger.type:"chained" (cron/webhook route to
     // the flat runner), so depth is the safe-by-default signal: a nested chained
