@@ -315,6 +315,15 @@ export class RecipeOrchestration {
       })) as unknown as Record<string, unknown>;
     };
 
+    // Read-only worker trust dial (shadow): replays the run + decision logs
+    // through the (worker × action-class) ramp. Touches nothing.
+    server.workerShadowFn = async () => {
+      const { getWorkerShadowData } = await import(
+        "./workers/runWorkerShadow.js"
+      );
+      return getWorkerShadowData() as unknown as Record<string, unknown>;
+    };
+
     // VD-4 mocked replay: load the original run, re-parse its recipe
     // from disk (so a later edit replays against the new logic), and
     // re-fire through chainedRunner with `mockedOutputs` populated from

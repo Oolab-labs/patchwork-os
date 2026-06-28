@@ -331,6 +331,9 @@ export class Server extends EventEmitter<ServerEvents> {
   public simulateFn:
     | ((recipeName: string) => Promise<Record<string, unknown>>)
     | null = null;
+  /** Patchwork: read-only worker trust dial (shadow) — replays run + decision
+   *  logs through the (worker × action-class) ramp. Backs GET /workers/shadow. */
+  public workerShadowFn: (() => Promise<Record<string, unknown>>) | null = null;
   /** Patchwork (VD-4): mocked replay of an existing run. Returns the new
    *  run's seq plus any unmocked steps the caller may want to surface. */
   public runReplayFn:
@@ -1635,6 +1638,7 @@ export class Server extends EventEmitter<ServerEvents> {
           judgeSummaryFn: this.judgeSummaryFn,
           runPlanFn: this.runPlanFn,
           simulateFn: this.simulateFn,
+          workerShadowFn: this.workerShadowFn,
           runReplayFn: this.runReplayFn,
           runRecipeFn: this.runRecipeFn,
           onRecipesChangedFn: this.onRecipesChangedFn,
