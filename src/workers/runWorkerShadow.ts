@@ -2,12 +2,15 @@ import { readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { RecipeRunLog } from "../runLog.js";
-import type {
-  DecisionRecord,
-  RunRecord,
-  WorkerShadowReport,
+import {
+  type DecisionRecord,
+  type RunRecord,
+  WorkerShadowObserver,
+  type WorkerShadowReport,
 } from "./shadowObserver.js";
 import { buildShadowReport, formatShadowReport } from "./shadowReport.js";
+import type { WorkerManifest } from "./worker.js";
+import type { WorkerLevelStore } from "./workerLevelStore.js";
 import { loadWorkersFromDir } from "./workerLoader.js";
 
 /**
@@ -120,6 +123,45 @@ export function getWorkerShadowData(
     decisionsScanned: decisions.length,
     workersDir,
   };
+}
+
+export interface RecipeWorkerTrust {
+  worker: WorkerManifest;
+  /** Earned-level store, replayed from the run log — same source as the dial. */
+  store: WorkerLevelStore;
+}
+
+/**
+ * Load the worker that owns `recipeName` (recipe === body) plus its earned-level
+ * store, replayed from the same run log the dial uses. Returns null when no
+ * worker owns the recipe (the common case — non-worker recipes are unaffected).
+ *
+ * This is the LIVE-gate entry: `workerGate.decideWorkerAction(worker, tool,
+ * params, store)` reads the returned store. It replays the run log on each call
+ * (recipe executions are infrequent); a future optimisation could cache it.
+ */
+export function loadWorkerTrustForRecipe(
+  recipeName: string,
+  opts: RunWorkerShadowOpts = {},
+): RecipeWorkerTrust | null {
+  const home = os.homedir();
+  const patchworkDir = opts.patchworkDir ?? path.join(home, ".patchwork");
+  const workersDir = opts.workersDir ?? path.join(patchworkDir, "workers");
+
+  const workers = loadWorkersFromDir(workersDir);
+  if (!workers.length) return null;
+  const observer = new WorkerShadowObserver(workers);
+  const worker = observer.workerForRecipe(recipeName);
+  if (!worker) return null;
+  // Replay in ASCENDING timestamp order (review #1027 M2). The graduation
+  // dwell/hysteresis logic is order-sensitive: ingesting newest-first leaves
+  // `lastChangeAt` pinned to the most recent run so `dwellOk` never holds and
+  // risky classes never promote — the earned-L4 path would be unreachable and
+  // the gate would floor every compensable/irreversible class to L0 forever.
+  // This mirrors buildShadowReport (the dial), so the gate and dial agree.
+  const runs = readRuns(patchworkDir).sort((a, b) => a.at - b.at);
+  for (const run of runs) observer.ingestRun(run);
+  return { worker, store: observer.levelStore };
 }
 
 export function runWorkerShadowReport(opts: RunWorkerShadowOpts = {}): string {

@@ -626,6 +626,15 @@ export interface RunnerDeps {
     summary?: string;
     params?: Record<string, unknown>;
   }) => Promise<boolean>;
+  /**
+   * Worker-autonomy gate (worker.autonomy flag). When set, the approval gate
+   * ALSO engages on automated (cron/webhook/recipe) triggers — not just manual
+   * — because workers run automatically. Set by the orchestrator only when the
+   * flag is on AND a worker owns the recipe; then `requireApprovalFn` is the
+   * worker-aware fn (reversible actions pass, risky-unearned actions queue).
+   * Unset/false → manual-only gating, byte-identical to pre-flip behaviour.
+   */
+  gateAutomatedRuns?: boolean;
 }
 
 export interface RunResult {
@@ -732,6 +741,7 @@ export type StepDeps = Required<
     // M3 — approval gate runs in the run loop against `deps`, not per-step
     // StepDeps; keep it off StepDeps so it isn't forced Required here.
     | "requireApprovalFn"
+    | "gateAutomatedRuns"
     // Cancellation is checked in the run loop against `deps`, not per-step;
     // keep it off StepDeps so it isn't forced Required here.
     | "signal"
@@ -1742,16 +1752,21 @@ export async function runYamlRecipe(
         continue;
       }
 
-      // M3 — flat-runner approval gate. Safe-by-default: only engages for
+      // M3 — flat-runner approval gate. Safe-by-default: engages for
       // `manual`-triggered runs (cron/webhook/recipe runs never block
       // mid-flight) and only when the bridge injected `requireApprovalFn`
       // (i.e. approvalGate != "off"). Per-recipe opt-out via
       // `requireApproval: false`. The injected fn applies the tier threshold
       // itself and returns `true` for steps that don't need sign-off; a
       // `false` result is an explicit human rejection → halt the run.
+      //
+      // worker.autonomy: when `gateAutomatedRuns` is set the gate ALSO engages
+      // on automated triggers (that's how workers run), and `requireApprovalFn`
+      // is the worker-aware fn — reversible actions pass, risky-unearned ones
+      // queue. Off → manual-only, byte-identical to pre-flip behaviour.
       if (
         deps.requireApprovalFn &&
-        recipeTriggerKind === "manual" &&
+        (recipeTriggerKind === "manual" || deps.gateAutomatedRuns) &&
         recipe.requireApproval !== false
       ) {
         const approvalToolId = step.agent ? "agent" : (step.tool ?? "unknown");
