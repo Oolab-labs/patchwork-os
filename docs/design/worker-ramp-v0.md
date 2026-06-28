@@ -75,12 +75,35 @@ phase 2 (new execution machinery).
 - `shadowRun.ts` — replay an outcome sequence → dial trajectory (the evidence-latency
   test).
 
-**Deferred (phase 2+), deliberately:**
-- Flipping the live gate to obey the ramp (behind a flag, after shadow validation).
-- L0/L2/L3 execution modes (suggest / reversible-window / async-sample).
-- The trust-dial UI (the dashboard board).
+**Phase 2 — live gate flip (built, flag-gated, default OFF):**
+- `workerGate.ts` — the **live** decision `decideWorkerAction(worker, tool, params, store)`.
+  Reversibility-scoped: REVERSIBLE actions flow un-gated regardless of earned
+  level (undoable — the routine work a new worker should just do; blast still
+  drives the failure weight); COMPENSABLE / IRREVERSIBLE actions are gated for
+  approval until the worker has EARNED (ceiling-capped) L4 on that exact class.
+  This is the answer to "what should an unearned AUTOMATED worker action do":
+  fail-closed *only for the dangerous, non-undoable actions* — pure "gate
+  everything unearned" would halt a new worker on everything for weeks (the
+  evidence-latency reality), which is unusable.
+- `runWorkerShadow.loadWorkerTrustForRecipe(name)` — resolves the owning worker +
+  its earned-level store (replayed from the same run log as the dial).
+- `recipeOrchestration.buildWorkerAutonomyGate(name)` — when the
+  **`worker.autonomy`** flag is on AND a worker owns the recipe, supersedes the
+  tier approval fn with the worker-aware one and sets `gateAutomatedRuns` so the
+  flat runner's gate engages on AUTOMATED triggers too (that's how workers run).
+  Flag off OR no owning worker → byte-identical to pre-flip behaviour.
+- Fail-soft: any error resolving worker trust falls back to the tier gate; the
+  decision never *widens* access — a "gate" result only routes to the existing
+  human-approval queue (fail-closed on reject/expire).
+
+**Still deferred (phase 3+), deliberately:**
+- L0/L2/L3 execution modes (suggest / reversible-window via `beginTransaction`/
+  `rollback` / async-sample) — phase 2 only distinguishes gate vs flow.
+- Per-step caching of the replayed trust store (replays the run log per run).
 - Multi-worker coordination / delegation protocols (YAGNI until ≥2 mature workers).
 - License-tier autonomy caps; marketplace prior shipping.
+
+**Done in earlier phases:** shadow logger + the trust-dial UI (dashboard board).
 
 ## How it composes from what exists
 
@@ -90,7 +113,7 @@ phase 2 (new execution machinery).
 | blast tier | `classifyTool` (low/med/high) | reversibility tag |
 | content risk | `RiskSignal` kinds (`destructive_command`, `data_exfiltration`, …) | — |
 | evidence | decision/run/approval/judge trace stores | regroup by `(worker × class)` |
-| control floor | approval gate (`evaluateInProcessGate`) + kill switch | worker-aware decision (shadow) |
+| control floor | approval gate (`requireApprovalFn` / `evaluateInProcessGate`) + kill switch | worker-aware decision (live, `worker.autonomy` flag) |
 | experience compounds | what compounds is the **earned autonomy state**, not model memory — delivered before a distillation loop exists | — |
 
 ## Anti-gaming (honest)

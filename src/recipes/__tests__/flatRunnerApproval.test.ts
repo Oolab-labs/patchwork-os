@@ -142,3 +142,82 @@ describe("flat-runner approval gate", () => {
     expect(writes).toBe(2);
   });
 });
+
+/**
+ * worker.autonomy flip — `gateAutomatedRuns` makes the SAME gate engage on
+ * automated triggers too (that's how workers run). Off → byte-identical to the
+ * manual-only behaviour above.
+ */
+describe("flat-runner approval gate — gateAutomatedRuns (worker.autonomy)", () => {
+  it("engages on a CRON trigger when gateAutomatedRuns is set", async () => {
+    let writes = 0;
+    const requireApprovalFn = vi.fn(
+      async (i: { params?: Record<string, unknown> }) =>
+        i.params?.path !== `${TMP}/b`, // reject the 2nd step
+    );
+    const result = await runYamlRecipe(
+      recipe({ type: "cron" }),
+      deps({
+        requireApprovalFn,
+        gateAutomatedRuns: true,
+        writeFile: () => {
+          writes++;
+        },
+      }),
+    );
+    expect(requireApprovalFn).toHaveBeenCalledTimes(2); // consulted on cron
+    expect(writes).toBe(1); // rejected step did not write
+    expect(result.errorMessage).toMatch(/approval_rejected/);
+  });
+
+  it("runs an automated worker recipe unblocked when every step is approved", async () => {
+    let writes = 0;
+    const requireApprovalFn = vi.fn(async () => true);
+    await runYamlRecipe(
+      recipe({ type: "cron" }),
+      deps({
+        requireApprovalFn,
+        gateAutomatedRuns: true,
+        writeFile: () => {
+          writes++;
+        },
+      }),
+    );
+    expect(requireApprovalFn).toHaveBeenCalledTimes(2);
+    expect(writes).toBe(2);
+  });
+
+  it("withOUT gateAutomatedRuns a cron NEVER consults the gate (flag-off parity)", async () => {
+    let writes = 0;
+    const requireApprovalFn = vi.fn(async () => false); // would reject everything
+    await runYamlRecipe(
+      recipe({ type: "cron" }),
+      deps({
+        requireApprovalFn,
+        // gateAutomatedRuns omitted → manual-only, identical to pre-flip
+        writeFile: () => {
+          writes++;
+        },
+      }),
+    );
+    expect(requireApprovalFn).not.toHaveBeenCalled();
+    expect(writes).toBe(2);
+  });
+
+  it("respects requireApproval:false opt-out even with gateAutomatedRuns", async () => {
+    let writes = 0;
+    const requireApprovalFn = vi.fn(async () => false);
+    await runYamlRecipe(
+      recipe({ type: "cron" }, { requireApproval: false }),
+      deps({
+        requireApprovalFn,
+        gateAutomatedRuns: true,
+        writeFile: () => {
+          writes++;
+        },
+      }),
+    );
+    expect(requireApprovalFn).not.toHaveBeenCalled();
+    expect(writes).toBe(2);
+  });
+});

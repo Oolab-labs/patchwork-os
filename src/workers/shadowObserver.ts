@@ -79,8 +79,18 @@ export class WorkerShadowObserver {
     this.cfg = opts.cfg ?? DEFAULT_GRADUATION_CONFIG;
   }
 
-  /** Attribute a run to the worker whose recipe is its body. */
-  private workerForRecipe(recipeName: string): WorkerManifest | undefined {
+  /**
+   * The populated level store. Exposed so the LIVE worker-autonomy gate
+   * (`workerGate.decideWorkerAction`) can read the same earned levels this
+   * observer derives from the run log — one source of truth for the dial and
+   * the gate. Read-only intent; callers must not mutate.
+   */
+  get levelStore(): WorkerLevelStore {
+    return this.store;
+  }
+
+  /** The worker whose recipe body is `recipeName`, if any. */
+  workerForRecipe(recipeName: string): WorkerManifest | undefined {
     return this.workers.find((w) => w.recipe === recipeName);
   }
 

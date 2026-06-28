@@ -314,6 +314,16 @@ export const FLAG_REPAIR_AI = "recipe.repair-ai";
  */
 export const FLAG_BLOCK_RECIPE_ALLOW_PRIVATE = "block-recipe-allow-private";
 
+/**
+ * Worker autonomy ramp (worker-ramp-v0). When ON, an automated worker recipe's
+ * RISKY steps (high-blast or irreversible action-classes) are gated for human
+ * approval UNTIL the owning worker has earned L4 trust on that class; low-blast
+ * reversible steps flow freely. Default OFF — behavior is byte-identical to
+ * today (automated runs never gate) until an operator opts in after the shadow
+ * dial shows real earned levels.
+ */
+export const FLAG_WORKER_AUTONOMY = "worker.autonomy";
+
 // Register built-in flags
 registerFlag({
   id: KILL_SWITCH_WRITES,
@@ -346,6 +356,15 @@ registerFlag({
   id: FLAG_BLOCK_RECIPE_ALLOW_PRIVATE,
   description:
     "Globally disable the per-step allowPrivate:true SSRF bypass in the recipe http.post tool. When on, private/loopback hosts are blocked even if a recipe sets allowPrivate:true.",
+  defaultValue: false,
+  category: "safety",
+  requiresOptIn: true,
+});
+
+registerFlag({
+  id: FLAG_WORKER_AUTONOMY,
+  description:
+    "Worker autonomy ramp: gate a worker recipe's risky (high-blast / irreversible) automated steps for approval until the owning worker earns L4 trust on that action-class; low-blast reversible steps flow freely. Default off.",
   defaultValue: false,
   category: "safety",
   requiresOptIn: true,
