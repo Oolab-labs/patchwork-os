@@ -43,6 +43,7 @@ describe("github.create_issue", () => {
     );
     const parsed = JSON.parse(out ?? "{}");
     expect(parsed).toEqual({
+      ok: true,
       number: 42,
       url: "https://github.com/o/r/issues/42",
       title: "Flaky test in auth",
@@ -75,11 +76,12 @@ describe("github.create_issue", () => {
     );
   });
 
-  it("normalises a connector failure into {error} (no throw)", async () => {
+  it("reports a connector failure as {ok:false, error} so the runner halts (no throw, not silent success)", async () => {
     createIssue.mockRejectedValue(new Error("github connector not connected"));
     const tool = getTool("github.create_issue");
     const out = await tool?.execute(ctx({ repo: "o/r", title: "t" }));
     const parsed = JSON.parse(out ?? "{}");
+    expect(parsed.ok).toBe(false); // hard ok:false → runner flags a step error
     expect(parsed.error).toMatch(/not connected/);
     expect(parsed.number).toBeUndefined();
   });

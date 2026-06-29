@@ -9,14 +9,20 @@
 # trust dial actually move.
 #
 # DEFAULT-OFF: the Test Guardian Worker ships pointing at the base
-# `triage-failing-tests` (draft-to-file only). To delegate issue-filing:
-#   1. point `recipe:` in templates/workers/test-guardian.worker.yaml at
+# `triage-failing-tests` (draft-to-file only), so nothing here runs until you
+# switch the worker to this recipe. To enable, IN THIS ORDER:
+#   1. enable the `worker.autonomy` feature flag FIRST — this is what GATES the
+#      github.create_issue step for human approval until the worker EARNS L4
+#      trust on the `issue` class (then it flows autonomously);
+#   2. point `recipe:` in templates/workers/test-guardian.worker.yaml at
 #      `triage-failing-tests-autofile`;
-#   2. set `trigger.vars.repo` below to your "owner/repo";
-#   3. enable the `worker.autonomy` feature flag.
-# With the flag on, the github.create_issue step is GATED for human approval on
-# every run until the worker EARNS L4 trust on the `issue` class — then it flows
-# autonomously. (Expect more approvals up front; the payoff comes after L4.)
+#   3. set `trigger.vars.repo` below to your "owner/repo".
+#
+# ⚠ ORDER MATTERS. With `worker.autonomy` OFF, steps 2+3 ALONE file a real issue
+# on EVERY failing test run with NO approval — an automated (on_test_run) flat
+# run is not gated unless the flag is on. The flag ADDS the gate; it is not what
+# enables filing. Enable the flag first so the very first filing is gated.
+# (Expect more approvals up front; the payoff — autonomous filing — comes after L4.)
 apiVersion: patchwork.sh/v1
 name: triage-failing-tests-autofile
 description: On a failing test run, write a triage note and FILE a GitHub issue (opt-in; gated by the worker trust ramp).

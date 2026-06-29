@@ -53,6 +53,16 @@ describe("classifyActionClass", () => {
     // compensable ⇒ the full ramp is reachable (can earn L4), unlike irreversible
     expect(reachableLevels(c)).toEqual([0, 1, 2, 3, 4]);
   });
+
+  it("resolves github.create_issue blastTier to 'high' WITHOUT the recipe-tool registry (review #1029 MEDIUM)", () => {
+    // This test process never imports recipes/tools, so the tier resolver is
+    // absent — exactly the `workers shadow` process. The static override must
+    // still yield `high`, matching the live gate, so a worker's trust ledger is
+    // keyed identically in both processes (no medium/high split).
+    const c = classifyActionClass("github.create_issue");
+    expect(c.blastTier).toBe("high");
+    expect(c.key).toBe("issue:compensable:high");
+  });
 });
 
 describe("reachableLevels", () => {

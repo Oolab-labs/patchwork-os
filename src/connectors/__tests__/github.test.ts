@@ -19,6 +19,7 @@ vi.stubGlobal("fetch", mockFetch);
 
 import * as fs from "node:fs";
 import {
+  createIssue,
   fetchGitHubIssue,
   fetchGitHubPR,
   getStatus,
@@ -520,5 +521,77 @@ describe("listCommits", () => {
     await expect(listCommits({ repo: "acme/widget" })).rejects.toThrow(
       /list_commits failed.*401 token expired/,
     );
+  });
+});
+
+describe("createIssue (WRITE)", () => {
+  it("throws when not connected (no MCP call)", async () => {
+    const callTool = vi.spyOn(McpClient.prototype, "callTool");
+    await expect(
+      createIssue({ repo: "acme/widget", title: "t" }),
+    ).rejects.toThrow(/not connected/);
+    expect(callTool).not.toHaveBeenCalled();
+    callTool.mockRestore();
+  });
+
+  it("rejects a non 'owner/repo' repo before any MCP call (review #1029)", async () => {
+    mockConnected();
+    const callTool = vi.spyOn(McpClient.prototype, "callTool");
+    // 3-segment must NOT silently truncate to owner/repo
+    await expect(
+      createIssue({ repo: "acme/widget/extra", title: "t" }),
+    ).rejects.toThrow(/exact 'owner\/repo'/);
+    await expect(createIssue({ repo: "widget", title: "t" })).rejects.toThrow(
+      /exact 'owner\/repo'/,
+    );
+    expect(callTool).not.toHaveBeenCalled();
+    callTool.mockRestore();
+  });
+
+  it("calls create_issue with owner/repo/title/body/labels/assignees and returns the issue", async () => {
+    mockConnected();
+    const callTool = vi
+      .spyOn(McpClient.prototype, "callTool")
+      .mockResolvedValue(
+        mcpJsonResult({
+          number: 42,
+          html_url: "https://github.com/acme/widget/issues/42",
+          title: "Flaky test",
+        }),
+      );
+    const issue = await createIssue({
+      repo: "acme/widget",
+      title: "Flaky test",
+      body: "details",
+      labels: ["bug"],
+      assignees: ["octocat"],
+    });
+    expect(callTool).toHaveBeenCalledWith(
+      "create_issue",
+      expect.objectContaining({
+        owner: "acme",
+        repo: "widget",
+        title: "Flaky test",
+        body: "details",
+        labels: ["bug"],
+        assignees: ["octocat"],
+      }),
+      expect.any(Object),
+    );
+    expect(issue).toEqual({
+      number: 42,
+      url: "https://github.com/acme/widget/issues/42",
+      title: "Flaky test",
+    });
+  });
+
+  it("throws when the MCP response has no issue number (no fabricated success)", async () => {
+    mockConnected();
+    vi.spyOn(McpClient.prototype, "callTool").mockResolvedValue(
+      mcpJsonResult({ message: "ok but not an issue" }),
+    );
+    await expect(
+      createIssue({ repo: "acme/widget", title: "t" }),
+    ).rejects.toThrow(/no issue number/);
   });
 });

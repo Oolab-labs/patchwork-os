@@ -217,11 +217,15 @@ export async function createIssue(
     throw new Error(
       "github connector not connected — visit /connections to authenticate",
     );
-  const { owner, repo } = parseRepo(opts);
-  if (!owner || !repo)
+  // A WRITE must not misdirect: require EXACTLY "owner/repo" (parseRepo is
+  // lenient by design for the read tools — a 3-segment "a/b/c" would silently
+  // truncate to a/b). Review #1029 LOW.
+  const parts = opts.repo.split("/");
+  if (parts.length !== 2 || !parts[0]?.trim() || !parts[1]?.trim())
     throw new Error(
-      "github create_issue requires `repo` in 'owner/repo' format",
+      "github create_issue requires `repo` in exact 'owner/repo' format",
     );
+  const [owner, repo] = parts.map((s) => s.trim());
   if (!opts.title?.trim())
     throw new Error("github create_issue requires a non-empty title");
   const args: Record<string, unknown> = { owner, repo, title: opts.title };
@@ -230,6 +234,10 @@ export async function createIssue(
   if (opts.assignees?.length) args.assignees = opts.assignees;
   const res = await client().callTool("create_issue", args, { signal });
   const raw = McpClient.extractJson<RawIssue>(res);
+  // Defensive (brand-exposed write): a non-issue 200 payload must not fabricate
+  // a success. Review #1029 LOW.
+  if (typeof raw?.number !== "number")
+    throw new Error("github create_issue: MCP returned no issue number");
   return {
     number: raw.number,
     url: raw.html_url ?? raw.url ?? "",

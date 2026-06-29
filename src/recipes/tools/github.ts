@@ -234,6 +234,7 @@ registerTool({
   outputSchema: {
     type: "object",
     properties: {
+      ok: { type: "boolean" },
       number: { type: "number" },
       url: { type: "string" },
       title: { type: "string" },
@@ -260,14 +261,19 @@ registerTool({
         }),
       });
       return JSON.stringify({
+        ok: true,
         number: issue.number,
         url: issue.url,
         title: issue.title,
       });
     } catch (err) {
-      // Translate connector throw into a {error} shape the runner's silent-fail
-      // detector flags as a step error (matches the list_* tools above).
+      // A WRITE that failed MUST surface as a step error — return the
+      // `{ok:false,error}` envelope so the runner's hard ok:false check
+      // (yamlRunner) halts the run and the worker ramp records a FAILURE.
+      // (The list_* read tools use a `{count:0,...,error}` shape instead;
+      // a bare `{error}` would read as success here — review #1029 HIGH.)
       return JSON.stringify({
+        ok: false,
         error: err instanceof Error ? err.message : String(err),
       });
     }

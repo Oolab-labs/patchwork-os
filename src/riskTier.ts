@@ -162,7 +162,22 @@ const NAMESPACED_READ_VERB =
 const NAMESPACED_WRITE_VERB =
   /^(create|post|send|update|add|delete|remove|comment|write|set|merge|close|archive|move|upload|publish|reply|assign|transition|edit|put|patch|cancel|run|trigger|invite|react|upsert)/;
 
+/**
+ * Static tier for namespaced ids whose declared `riskDefault` is HIGHER than the
+ * verb heuristic would infer — so the tier is deterministic even when the recipe
+ * tool registry resolver is not loaded (e.g. the `workers shadow` process, which
+ * never imports recipes/tools). Without this, github.create_issue resolved to
+ * `high` in the live gate (registry loaded) but `medium` in the shadow dial,
+ * splitting a worker's trust ledger by process. Extend whenever a write tool's
+ * riskDefault exceeds its verb tier (`create*` → medium heuristic). Review #1029.
+ */
+const NAMESPACED_TIER_OVERRIDES: Record<string, RiskTier> = {
+  "github.create_issue": "high", // brand-exposed external write
+};
+
 function inferTierFromNamespacedId(id: string): RiskTier {
+  const override = NAMESPACED_TIER_OVERRIDES[id];
+  if (override !== undefined) return override;
   const verb = id.slice(id.indexOf(".") + 1).toLowerCase();
   if (NAMESPACED_READ_VERB.test(verb)) return "low";
   if (NAMESPACED_WRITE_VERB.test(verb)) return "medium";
