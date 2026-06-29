@@ -290,6 +290,7 @@ export async function routeApprovalRequest(
     const approveEntry = deps.queue.list?.().find((e) => e.callId === callId);
     const approveToolName = approveEntry?.toolName;
     const approveRequestedAt = approveEntry?.requestedAt;
+    const approveRecipeName = approveEntry?.recipeName;
     const ok = deps.queue.approve(callId);
     if (ok) {
       // Audit 2026-06-03 (MEDIUM #27): fire the audit hook on APPROVE too —
@@ -307,6 +308,12 @@ export async function routeApprovalRequest(
         ...(approveToolName !== undefined && { toolName: approveToolName }),
         ...(approveRequestedAt !== undefined && {
           requestedAt: approveRequestedAt,
+        }),
+        // Worker-shadow attribution: recipeName lets the shadow observer
+        // filter out Claude-session tool calls (which also emit
+        // approval_decision but are NOT worker-gate decisions).
+        ...(approveRecipeName !== undefined && {
+          recipeName: approveRecipeName,
         }),
       });
       return { status: 200, body: { decision: "allow", callId } };
@@ -387,6 +394,7 @@ export async function routeApprovalRequest(
     const rejectEntry = deps.queue.list?.().find((e) => e.callId === callId);
     const rejectToolName = rejectEntry?.toolName;
     const rejectRequestedAt = rejectEntry?.requestedAt;
+    const rejectRecipeName = rejectEntry?.recipeName;
     const ok = deps.queue.reject(callId);
     if (ok) {
       deps.onDecision?.("approval_decision", {
@@ -398,6 +406,9 @@ export async function routeApprovalRequest(
         ...(rejectToolName !== undefined && { toolName: rejectToolName }),
         ...(rejectRequestedAt !== undefined && {
           requestedAt: rejectRequestedAt,
+        }),
+        ...(rejectRecipeName !== undefined && {
+          recipeName: rejectRecipeName,
         }),
       });
       return { status: 200, body: { decision: "deny", callId } };

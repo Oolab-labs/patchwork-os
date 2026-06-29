@@ -153,6 +153,10 @@ export async function buildWorkerAutonomyGate(
           tier: input.tier,
           sessionId: `worker:${worker.id}`,
           summary: `${worker.name} (${decision.classKey}): ${decision.reason}`,
+          // recipeName propagates to the ActivityLog decision row so the shadow
+          // observer can distinguish worker-gate approvals from plain Claude-
+          // session MCP tool approvals (same event type, different source).
+          recipeName,
         },
         { signal: input.signal }, // L1: cancel the wait when the run aborts
       );

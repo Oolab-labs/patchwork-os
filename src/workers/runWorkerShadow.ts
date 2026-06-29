@@ -88,6 +88,12 @@ function readDecisions(ideDir: string): DecisionRecord[] {
           typeof obj.timestamp === "string"
             ? Date.parse(obj.timestamp) || 0
             : 0,
+        // Only present on worker-gate decisions (recipe runner path). Plain
+        // Claude-session MCP approvals have no recipeName; ingestDecision
+        // skips them so they don't inflate the ramp-vs-gate divergence count.
+        ...(typeof md.recipeName === "string" && {
+          recipeName: md.recipeName,
+        }),
       });
     }
   }
