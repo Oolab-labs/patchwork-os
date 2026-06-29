@@ -42,6 +42,23 @@ export function recommend(
 ): ShadowDecision {
   const ac = classifyActionClass(toolName, params);
   const owned = ownsAction(worker, ac);
+
+  // Reversible actions always bypass — no trust threshold applies. Short-
+  // circuiting here prevents false divergence-log noise (the dial would
+  // otherwise compare against L4 and always report a "miss" for reads).
+  if (ac.reversibility === "reversible") {
+    const earnedLevel = (store.getState(worker.id, ac.key)?.level ??
+      0) as TrustLevel;
+    return {
+      decision: "bypass",
+      classKey: ac.key,
+      owned,
+      earnedLevel,
+      autonomyCeiling: worker.autonomyCeiling,
+      effectiveLevel: owned ? earnedLevel : (0 as TrustLevel),
+      reason: "reversible — flows un-gated regardless of earned level",
+    };
+  }
   const earnedLevel = (store.getState(worker.id, ac.key)?.level ??
     0) as TrustLevel;
 

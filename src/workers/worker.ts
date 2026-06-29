@@ -37,8 +37,10 @@ export interface WorkerManifest {
   /**
    * Policy/regulatory cap on the max ramp level this worker may EVER reach,
    * independent of earned track record — the schema encoding of the
-   * autonomy-tolerance axis (e.g. a Legal-sector worker is pinned at L2). The
-   * dial still shows *earned* level; the gate operates at min(earned, ceiling).
+   * autonomy-tolerance axis. The dial still shows *earned* level; the gate
+   * operates at min(earned, ceiling). Note: ceiling=2 is PERMISSIVE for
+   * compensable classes (they auto-allow at L2), not conservative — use
+   * ceiling=1 to keep compensable actions gated on a new or restricted worker.
    */
   autonomyCeiling: TrustLevel;
   /** Optional shipped competence → the per-class prior. */
@@ -99,10 +101,12 @@ export function parseWorker(raw: unknown): WorkerManifest {
       typeof c !== "object" ||
       c === null ||
       typeof c.mean !== "number" ||
-      typeof c.strength !== "number"
+      !Number.isFinite(c.mean) ||
+      typeof c.strength !== "number" ||
+      !Number.isFinite(c.strength)
     )
       throw new WorkerParseError(
-        "worker.competence must be { mean: number, strength: number }",
+        "worker.competence must be { mean: number, strength: number } (finite values)",
       );
     if (c.mean < 0 || c.mean > 1)
       throw new WorkerParseError("worker.competence.mean must be in [0,1]");

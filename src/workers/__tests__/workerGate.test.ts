@@ -63,7 +63,7 @@ describe("decideWorkerAction", () => {
   });
 
   it("GATES a compensable/irreversible action the worker has not earned", () => {
-    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-remote"] });
+    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-push"] });
     const d = decideWorkerAction(w, "gitPush", {}, new WorkerLevelStore());
     expect(d.action).toBe("gate");
     expect(d.owned).toBe(true);
@@ -72,7 +72,7 @@ describe("decideWorkerAction", () => {
   });
 
   it("ALLOWS a risky action once the worker has earned L4 on it", () => {
-    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-remote"] });
+    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-push"] });
     const d = decideWorkerAction(w, "gitPush", {}, storeWithL4("w", "gitPush"));
     expect(d.earnedLevel).toBe(4);
     expect(d.effectiveLevel).toBe(4);
@@ -84,7 +84,7 @@ describe("decideWorkerAction", () => {
     const w = parseWorker({
       id: "w",
       name: "W",
-      owns: ["vcs-remote"],
+      owns: ["vcs-push"],
       autonomyCeiling: 1,
     });
     const d = decideWorkerAction(w, "gitPush", {}, storeWithL4("w", "gitPush"));
@@ -98,7 +98,7 @@ describe("decideWorkerAction", () => {
     const w = parseWorker({
       id: "w",
       name: "W",
-      owns: ["vcs-remote"],
+      owns: ["vcs-push"],
       autonomyCeiling: 2,
     });
     const d = decideWorkerAction(w, "gitPush", {}, storeWithL4("w", "gitPush"));
@@ -109,7 +109,7 @@ describe("decideWorkerAction", () => {
   });
 
   it("ALLOWS compensable once worker naturally earns L2 (no ceiling override)", () => {
-    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-remote"] });
+    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-push"] });
     const store = storeWithL2("w", "gitPush");
     const d = decideWorkerAction(w, "gitPush", {}, store);
     expect(d.earnedLevel).toBeGreaterThanOrEqual(2);
@@ -119,7 +119,7 @@ describe("decideWorkerAction", () => {
 
   it("GATES compensable at effective L1 (earnedLevel < 2)", () => {
     // Worker owns vcs-remote but has almost no evidence → L0/L1 → still gated.
-    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-remote"] });
+    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-push"] });
     const store = new WorkerLevelStore();
     store.apply("w", { toolName: "gitPush", good: true, at: 0 }, { cfg: CFG });
     const d = decideWorkerAction(w, "gitPush", {}, store);

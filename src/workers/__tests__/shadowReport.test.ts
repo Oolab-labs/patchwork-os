@@ -107,7 +107,7 @@ describe("formatShadowReport", () => {
   });
 
   it("annotates a NOT-OWNED class the worker performed (L3)", () => {
-    // release owns fs-write only; a gitPush (vcs-remote) it performs is shown
+    // release owns fs-write only; a gitPush (vcs-push) it performs is shown
     // but flagged because the live gate floors it to L0.
     const reports = buildShadowReport(
       [release],
@@ -122,7 +122,7 @@ describe("formatShadowReport", () => {
       CFG,
     );
     const text = formatShadowReport(reports);
-    expect(text).toContain("vcs-remote");
+    expect(text).toContain("vcs-push");
     expect(text).toContain("NOT OWNED");
   });
 });

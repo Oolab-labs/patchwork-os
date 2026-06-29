@@ -179,7 +179,7 @@ export class WorkerShadowObserver {
         gate: d.decision,
         at: d.at,
         note: rampBypass
-          ? "ramp would auto-run (earned L4); gate still gated"
+          ? `ramp would auto-run (${rec.reason}); gate still gated`
           : "ramp would gate; gate allowed",
       });
     }

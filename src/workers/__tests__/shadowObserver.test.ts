@@ -143,7 +143,7 @@ describe("WorkerShadowObserver", () => {
 
   it("flags board rows for classes the worker performs but does NOT own (L3)", () => {
     const obs = new WorkerShadowObserver([release], { cfg: CFG });
-    // gitPush is vcs-remote — release owns fs-write + vcs-read, NOT vcs-remote
+    // gitPush is vcs-push — release owns fs-write + vcs-read, NOT vcs-remote
     obs.ingestRun({
       recipeName: "release-notes",
       at: 0,
@@ -151,7 +151,7 @@ describe("WorkerShadowObserver", () => {
     });
     const row = obs
       .report()[0]!
-      .board.find((b) => b.classKey.startsWith("vcs-remote"));
+      .board.find((b) => b.classKey.startsWith("vcs-push"));
     expect(row).toBeDefined();
     expect(row!.owned).toBe(false);
   });

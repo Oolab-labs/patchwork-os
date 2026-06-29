@@ -44,10 +44,13 @@ const DOMAIN_BY_TOOL: Record<string, string> = {
   gitCommit: "vcs-local",
   gitCheckout: "vcs-local",
   gitStash: "vcs-local",
-  // version control — remote / shared history
-  gitPush: "vcs-remote",
-  githubCreatePR: "vcs-remote",
-  githubMergePR: "vcs-remote",
+  // version control — remote / shared history.
+  // Each operation has its OWN domain so trust earned on one never unlocks
+  // another (trust-transfer prevention: a worker grinding PR creation must
+  // separately earn evidence on push, and separately on merge).
+  gitPush: "vcs-push", // can be force-reverted; compensable
+  githubCreatePR: "vcs-remote", // PR is a proposal; closeable
+  githubMergePR: "vcs-merge", // lands commits in main; hard to undo cleanly
   // filesystem
   editText: "fs-write",
   searchAndReplace: "fs-write",
@@ -89,8 +92,8 @@ const DOMAIN_BY_TOOL: Record<string, string> = {
   "file.append": "fs-write",
   "slack.post_message": "messaging",
   "http.post": "http",
-  "linear.list_issues": "issue",
-  "sentry.get_issue": "issue",
+  "linear.list_issues": "issue-read", // read-only; reversible
+  "sentry.get_issue": "issue-read", // read-only; reversible
   "diagnostics.get": "fs-read",
 };
 
@@ -99,13 +102,16 @@ const DOMAIN_BY_TOOL: Record<string, string> = {
 const REVERSIBILITY_BY_DOMAIN: Record<string, Reversibility> = {
   "vcs-read": "reversible",
   "vcs-local": "reversible", // reset / reflog / restore
-  "vcs-remote": "compensable", // force-push back / close PR — lossy, possible
+  "vcs-remote": "compensable", // close PR — lossy but possible
+  "vcs-push": "compensable", // force-revert / reflog — lossy but possible
+  "vcs-merge": "compensable", // git revert on main — painful but recoverable
   "fs-write": "reversible", // transactions + WriteEffectLedger
   "fs-read": "reversible",
   shell: "irreversible", // arbitrary side effects — assume unrecoverable
   messaging: "irreversible", // a sent message can't be unsent reliably
   http: "irreversible", // a POST may not be undoable
   issue: "compensable", // close / delete the created issue
+  "issue-read": "reversible", // read-only issue queries
   ci: "reversible", // re-runnable, no durable side effect
   "deps-read": "reversible",
   other: "irreversible",
@@ -115,6 +121,8 @@ const REVERSIBILITY_BY_DOMAIN: Record<string, Reversibility> = {
 const BRAND_EXPOSED_DOMAINS = new Set([
   "messaging",
   "vcs-remote",
+  "vcs-push",
+  "vcs-merge",
   "issue",
   "http",
 ]);

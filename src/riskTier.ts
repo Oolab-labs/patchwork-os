@@ -92,6 +92,8 @@ const TIER_MAP: Record<string, RiskTier> = {
   gitPull: "high",
   gitFetch: "high",
   githubCreatePR: "high",
+  githubMergePR: "high",
+  githubApprovePR: "high",
   githubCommentIssue: "high",
   githubCreateIssue: "high",
   githubPostPRReview: "high",

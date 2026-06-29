@@ -131,7 +131,7 @@ export function decideWorkerAction(
     return {
       ...base,
       action: "allow",
-      reason: `earned autonomy (L${effectiveLevel}) on compensable class — auto-allowed at L2+`,
+      reason: `earned autonomy (L${effectiveLevel}) on compensable class — auto-allowed at L${COMPENSABLE_AUTONOMY_LEVEL}+`,
     };
   }
 
