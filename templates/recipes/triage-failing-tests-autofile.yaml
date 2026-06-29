@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://patchwork.dev/schemas/recipe.v1.json
+#
+# OPT-IN variant of `triage-failing-tests` for the Test Guardian Worker.
+#
+# This is the "make it real" recipe: it does everything the base recipe does
+# (correlate the failure, write a triage note) AND files a GitHub issue — an
+# explicit, RISKY, owned action (`github.create_issue` → the `issue` action
+# class: compensable + brand-exposed). It is the action that lets the worker's
+# trust dial actually move.
+#
+# DEFAULT-OFF: the Test Guardian Worker ships pointing at the base
+# `triage-failing-tests` (draft-to-file only), so nothing here runs until you
+# switch the worker to this recipe. To enable, IN THIS ORDER:
+#   1. enable the `worker.autonomy` feature flag FIRST — this is what GATES the
+#      github.create_issue step for human approval until the worker EARNS L4
+#      trust on the `issue` class (then it flows autonomously);
+#   2. point `recipe:` in templates/workers/test-guardian.worker.yaml at
+#      `triage-failing-tests-autofile`;
+#   3. set `trigger.vars.repo` below to your "owner/repo".
+#
+# ⚠ ORDER MATTERS. With `worker.autonomy` OFF, steps 2+3 ALONE file a real issue
+# on EVERY failing test run with NO approval — an automated (on_test_run) flat
+# run is not gated unless the flag is on. The flag ADDS the gate; it is not what
+# enables filing. Enable the flag first so the very first filing is gated.
+# (Expect more approvals up front; the payoff — autonomous filing — comes after L4.)
+apiVersion: patchwork.sh/v1
+name: triage-failing-tests-autofile
+description: On a failing test run, write a triage note and FILE a GitHub issue (opt-in; gated by the worker trust ramp).
+trigger:
+  type: on_test_run
+  filter: failure
+  vars:
+    # REQUIRED to enable — the repository the issue is filed against.
+    - name: repo
+      default: ""
+      description: "owner/repo the issue is filed against (set this to enable)"
+steps:
+  - tool: git.log_since
+    since: 12h
+    into: recent
+  - agent:
+      prompt: |
+        Tests just failed. Runner: {{runner}}. Failed {{failed}} / {{total}}.
+
+        Failures:
+        {{failures}}
+
+        Recent commits (last 12h) that may be responsible:
+        {{recent}}
+
+        Write a triage note (≤5 sentences): (1) which test(s) failed, (2) the
+        single most likely cause, (3) the suspect commit if any, (4) the first
+        command to run to confirm.
+      driver: claude-code
+      into: triage
+  - tool: file.write
+    path: ~/.patchwork/inbox/test-triage-{{date}}-{{time}}.md
+    content: |
+      # Test triage — {{date}} {{time}}
+
+      Runner {{runner}} · failed {{failed}}/{{total}}
+
+      {{triage}}
+  # The risky owned action. Runs AFTER the draft is written, so a gate
+  # rejection (or a missing `repo`) never loses the triage note.
+  - tool: github.create_issue
+    repo: "{{repo}}"
+    title: "Test triage {{date}}: {{runner}} failing {{failed}}/{{total}}"
+    body: |
+      {{triage}}
+
+      ---
+      _Filed by the Test Guardian Worker from a failing {{runner}} run._
+    labels:
+      - test-failure
+    into: filed_issue
