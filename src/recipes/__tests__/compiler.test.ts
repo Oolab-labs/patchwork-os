@@ -79,12 +79,16 @@ describe("compileRecipe", () => {
     }
   });
 
-  it("serializes steps into prompt with agent + tool distinction", () => {
-    const inner = unwrapToHook(compileRecipe(BASE));
-    expect(inner.prompt).toContain("Step 1/2 — s1 (agent)");
-    expect(inner.prompt).toContain("do the thing");
-    expect(inner.prompt).toContain("Step 2/2 — s2 (tool: send_message)");
-    expect(inner.prompt).toContain('"text": "done"');
+  it("emits recipe promptSource (runner path, not inline prompt)", () => {
+    // Recipes now route through fireYamlRecipe (worker-gate path) rather than
+    // inlining step text into a raw claude -p prompt. The compiled hook carries
+    // { kind: "recipe", recipeName } so the interpreter calls backend.fireRecipe.
+    let p = compileRecipe(BASE);
+    while (p._tag !== "Hook") {
+      if ("program" in p) p = p.program;
+      else throw new Error("no Hook node found");
+    }
+    expect(p.promptSource).toEqual({ kind: "recipe", recipeName: "demo" });
   });
 
   it("maps git_hook events correctly", () => {

@@ -204,8 +204,7 @@ export interface CreatedGitHubIssue {
 }
 
 /**
- * Create a GitHub issue via the hosted MCP server's `issue_write` tool
- * (method: "create"). A WRITE —
+ * Create a GitHub issue via the connector's MCP `create_issue` tool. A WRITE —
  * never cached. Mirrors listIssues' auth/client/parse path so it works headless
  * (no `gh` CLI dependency). Throws on a missing connector / bad input / MCP
  * error so the recipe-tool wrapper can surface a `{error}` step result.
@@ -224,11 +223,11 @@ export async function createIssue(
   const parts = opts.repo.split("/");
   if (parts.length !== 2 || !parts[0]?.trim() || !parts[1]?.trim())
     throw new Error(
-      "github issue creation requires `repo` in exact 'owner/repo' format",
+      "github create_issue requires `repo` in exact 'owner/repo' format",
     );
   const [owner, repo] = parts.map((s) => s.trim());
   if (!opts.title?.trim())
-    throw new Error("github issue creation requires a non-empty title");
+    throw new Error("github create_issue requires a non-empty title");
   // GitHub's hosted MCP server (api.githubcopilot.com/mcp) consolidated the old
   // `create_issue` tool into a unified `issue_write` tool keyed by a `method`
   // enum ("create" | "update"); the legacy `create_issue` name now returns
@@ -248,25 +247,13 @@ export async function createIssue(
   // old `{ number, html_url, title }` shape. Derive the issue number from the
   // URL; the title isn't echoed back, so fall back to the requested one.
   // (Verified live 2026-06-29 against api.githubcopilot.com/mcp.)
-  // extractJson throws on a missing / non-JSON text block; swallow that so the
-  // deliberate guard below always produces the friendly message (the read tools
-  // wrap callTool the same way) rather than leaking a raw parse error.
-  let url = "";
-  try {
-    const raw = McpClient.extractJson<{ id?: string; url?: string }>(res);
-    if (typeof raw?.url === "string") url = raw.url;
-  } catch {
-    /* fall through to the no-parseable-url guard */
-  }
-  // Take the LAST `/issues/<n>` segment (the canonical issue URL ends in it) so
-  // an unrelated earlier one in a malformed payload can't yield a wrong number.
-  const matches = [...url.matchAll(/\/issues\/(\d+)(?:[/?#]|$)/g)];
-  const number = matches.length
-    ? Number(matches[matches.length - 1]?.[1])
-    : Number.NaN;
-  // Defensive (brand-exposed write): a 200 without a parseable, positive,
-  // safe-integer issue URL must not fabricate a success. Review #1029 LOW.
-  if (!Number.isSafeInteger(number) || number <= 0)
+  const raw = McpClient.extractJson<{ id?: string; url?: string }>(res);
+  const url = typeof raw?.url === "string" ? raw.url : "";
+  const numMatch = url.match(/\/issues\/(\d+)(?:[/?#]|$)/);
+  const number = numMatch ? Number(numMatch[1]) : Number.NaN;
+  // Defensive (brand-exposed write): a 200 without a parseable issue URL must
+  // not fabricate a success. Review #1029 LOW.
+  if (!Number.isFinite(number))
     throw new Error("github issue_write: MCP returned no parseable issue URL");
   return { number, url, title: opts.title };
 }

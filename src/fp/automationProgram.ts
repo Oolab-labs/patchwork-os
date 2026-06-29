@@ -40,6 +40,13 @@ export type PromptSourceNode =
       readonly promptArgs?: Record<string, string>;
     }
   /**
+   * Recipe invocation — runs the named recipe through the recipe runner
+   * (with the worker gate) instead of spawning a raw `claude -p` subprocess.
+   * The recipe's declared steps execute as observable tool calls, so the
+   * worker trust ramp can gate and attribute them correctly.
+   */
+  | { readonly kind: "recipe"; readonly recipeName: string }
+  /**
    * Webhook-only hook entry — no inline prompt, no task enqueue. The hook
    * still flows through cooldown/dedup/rateLimit gates and fires its
    * `webhook` (if configured) on the success path.

@@ -445,44 +445,19 @@ async function interpret(
         }
       }
 
-      const promptTemplate = resolvePromptSource(
-        program.promptSource,
-        ctx.eventData,
-      );
-      if (promptTemplate === null) {
-        // Named prompt could not be resolved — skip silently (unknown prompt / missing args)
-        return {
-          ...acc,
-          skipped: [
-            ...acc.skipped,
-            { reason: "prompt_unresolved", hook: program.hookType },
-          ],
-        };
-      }
-
-      // When promptTemplate is a string, enqueue a Claude task. When it is
-      // NO_PROMPT, the hook is webhook-only — skip the enqueue but still
-      // proceed to webhook fan-out below. A webhook-only hook still records
-      // a trigger in state so cooldown gating can observe its firing.
+      // Recipe invocation path — run through the recipe runner (with worker
+      // gate) instead of spawning a raw claude -p subprocess. This is what
+      // makes the worker trust ramp's gate actually fire on automation
+      // triggers: the recipe runner dispatches explicit tool steps that the
+      // ramp can observe and gate, whereas enqueueTask dispatches an opaque
+      // subprocess that bypasses the runner entirely.
       let working = acc;
-      if (promptTemplate !== NO_PROMPT) {
-        const nonce = crypto.randomBytes(8).toString("hex");
-        const finalPrompt = buildFinalPrompt(
-          promptTemplate,
-          program.hookType,
-          ctx.eventData,
-          nonce,
-        );
-
+      if (program.promptSource.kind === "recipe") {
         try {
-          const taskId = await ctx.backend.enqueueTask({
-            prompt: finalPrompt,
+          const taskId = await ctx.backend.fireRecipe({
+            recipeName: program.promptSource.recipeName,
+            eventData: ctx.eventData,
             triggerSource: program.hookType,
-            sessionId: "",
-            isAutomationTask: true,
-            model: program.model,
-            effort: program.effort,
-            systemPrompt: program.systemPrompt,
           });
           const newState = recordTrigger(
             working.state,
@@ -498,14 +473,76 @@ async function interpret(
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
           ctx.log(
-            `[interpreter] hook ${program.hookType} enqueue failed: ${message}`,
+            `[interpreter] hook ${program.hookType} recipe fire failed: ${message}`,
           );
           return {
             ...working,
             errors: [...working.errors, { message, hook: program.hookType }],
           };
         }
-      }
+        // Proceed to webhook fan-out below (if any), then return.
+      } else {
+        const promptTemplate = resolvePromptSource(
+          program.promptSource,
+          ctx.eventData,
+        );
+        if (promptTemplate === null) {
+          // Named prompt could not be resolved — skip silently (unknown prompt / missing args)
+          return {
+            ...acc,
+            skipped: [
+              ...acc.skipped,
+              { reason: "prompt_unresolved", hook: program.hookType },
+            ],
+          };
+        }
+
+        // When promptTemplate is a string, enqueue a Claude task. When it is
+        // NO_PROMPT, the hook is webhook-only — skip the enqueue but still
+        // proceed to webhook fan-out below. A webhook-only hook still records
+        // a trigger in state so cooldown gating can observe its firing.
+        if (promptTemplate !== NO_PROMPT) {
+          const nonce = crypto.randomBytes(8).toString("hex");
+          const finalPrompt = buildFinalPrompt(
+            promptTemplate,
+            program.hookType,
+            ctx.eventData,
+            nonce,
+          );
+
+          try {
+            const taskId = await ctx.backend.enqueueTask({
+              prompt: finalPrompt,
+              triggerSource: program.hookType,
+              sessionId: "",
+              isAutomationTask: true,
+              model: program.model,
+              effort: program.effort,
+              systemPrompt: program.systemPrompt,
+            });
+            const newState = recordTrigger(
+              working.state,
+              program.hookType,
+              taskId,
+              ctx.now,
+            );
+            working = {
+              ...working,
+              taskIds: [...working.taskIds, taskId],
+              state: newState,
+            };
+          } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            ctx.log(
+              `[interpreter] hook ${program.hookType} enqueue failed: ${message}`,
+            );
+            return {
+              ...working,
+              errors: [...working.errors, { message, hook: program.hookType }],
+            };
+          }
+        }
+      } // end else (non-recipe path)
 
       // Webhook fan-out — runs AFTER the inline prompt enqueue (if any).
       // Failures are recorded as interpreter errors and do not throw, so

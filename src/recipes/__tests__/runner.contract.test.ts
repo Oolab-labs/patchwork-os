@@ -63,7 +63,9 @@ describe("runner contract: agent [agent step failed:] sentinel", () => {
     const recipe: YamlRecipe = {
       name: "r",
       trigger: { type: "manual" },
-      steps: [{ agent: { prompt: "do it", into: "step_a" } }],
+      steps: [
+        { agent: { prompt: "do it", into: "step_a", driver: "anthropic" } },
+      ],
     };
     const result = await runYamlRecipe(
       recipe,
@@ -140,7 +142,7 @@ describe("runner contract: expect: assertion on agent output", () => {
       trigger: { type: "manual" },
       steps: [
         {
-          agent: { prompt: "return 42", into: "step_a" },
+          agent: { prompt: "return 42", into: "step_a", driver: "anthropic" },
           expect: { equals: "expected_value" },
         },
       ],
@@ -225,8 +227,8 @@ describe("runner contract: optional step does not abort run", () => {
       steps: [
         // optional step — git tool returns an error but run continues
         { tool: "git.stale_branches", days: 30, into: "stale", optional: true },
-        // subsequent agent step — must still execute
-        { agent: { prompt: "continue", into: "result" } },
+        // subsequent agent step — must still execute (driver pinned to avoid real subprocess)
+        { agent: { prompt: "continue", into: "result", driver: "anthropic" } },
       ],
     };
     const result = await runYamlRecipe(recipe, {

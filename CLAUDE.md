@@ -402,9 +402,10 @@ Event-driven hooks that trigger Claude tasks automatically.
 - **Error codes**: `ToolErrorCodes` (string codes in `isError: true` content blocks) for tool failures; `ErrorCodes` (JSON-RPC -32xxx) for protocol issues. Never mix. See [ADR-0004](docs/adr/0004-tool-errors-as-content.md).
 - **Webhook HMAC auth** (`POST /hooks/*`): when started with `--webhook-secret <hex>` (or `BRIDGE_WEBHOOK_SECRET` env), requests carrying `X-Hub-Signature-256: sha256=<hex>` are authenticated via HMAC-SHA256 over the raw body (constant-time compare via `timingSafeEqual`). Bearer-token access still works — HMAC is additive. Without `--webhook-secret`, a request that presents `X-Hub-Signature-256` gets 401 `webhook_secret_not_configured` (must still pass Bearer gate to reach the handler); a missing/invalid signature with no Bearer returns 401 at the outer gate.
 
+<!-- claude-ide-bridge:start:0.2.0-beta.13 -->
 ## Claude IDE Bridge
-
 @import .claude/rules/bridge-tools.md
+<!-- claude-ide-bridge:end -->
 
 Bridge connected via MCP. Session-start hook reports connection status, tool count, and extension state automatically — check that summary before proceeding. If tools appear missing, call `getBridgeStatus` to diagnose.
 

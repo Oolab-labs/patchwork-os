@@ -122,13 +122,17 @@ export function compileRecipe(recipe: Recipe): AutomationProgram {
     recipe.trigger,
     recipe.name,
   );
-  const prompt = buildPrompt(recipe);
 
   let program: AutomationProgram = hook({
     hookType,
     enabled: true,
     patterns,
-    promptSource: { kind: "inline", prompt },
+    // Use the recipe invocation path so the automation interpreter runs the
+    // recipe through the recipe runner (with the worker gate) rather than
+    // spawning a raw claude -p subprocess. This is what makes explicit recipe
+    // tool steps (e.g. github.create_issue) observable and gateable by the
+    // worker trust ramp.
+    promptSource: { kind: "recipe", recipeName: recipe.name },
     extras: extras ?? { kind: "none" },
   } satisfies Omit<HookNode, "_tag">);
 
@@ -212,28 +216,4 @@ function mapTrigger(
       );
   }
   throw new RecipeCompileError(`recipe '${recipeName}': unknown trigger type`);
-}
-
-function buildPrompt(recipe: Recipe): string {
-  const header =
-    `# Recipe: ${recipe.name} (v${recipe.version})\n${recipe.description ?? ""}`.trim();
-  const stepBlocks = recipe.steps.map((s, i) => {
-    const idx = `Step ${i + 1}/${recipe.steps.length} — ${s.id}`;
-    if (s.agent === true) {
-      const tools = s.tools?.length
-        ? `\nAllowed tools: ${s.tools.join(", ")}`
-        : "";
-      const risk = s.risk ? `\nRisk: ${s.risk}` : "";
-      return `## ${idx} (agent)${tools}${risk}\n${s.prompt}`;
-    }
-    const paramsJson = JSON.stringify(s.params, null, 2);
-    const risk = s.risk ? `\nRisk: ${s.risk}` : "";
-    return `## ${idx} (tool: ${s.tool})${risk}\nInvoke the tool with:\n\`\`\`json\n${paramsJson}\n\`\`\``;
-  });
-
-  const footer = recipe.on_error
-    ? `\n\n---\nOn error: ${JSON.stringify(recipe.on_error)}`
-    : "";
-
-  return `${header}\n\n${stepBlocks.join("\n\n")}${footer}`;
 }

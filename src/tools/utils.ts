@@ -492,6 +492,9 @@ const SAFE_BIN_BASENAMES = new Set([
   "pyright",
   // Headless symbol-search fallback (searchWorkspaceSymbols) — Universal Ctags.
   "ctags",
+  // Test runners — fixed argv shape, not general interpreters
+  "vitest",
+  "jest",
   // Linters / formatters / fixers
   "eslint",
   "biome",
@@ -918,5 +921,5 @@ export function makeRelative(absPath: string, workspace: string): string {
   // vice-versa). Accept either "/" or "\" as the trailing separator.
   const norm = absPath.replace(/\\/g, "/");
   const ws = workspace.replace(/\\/g, "/");
-  return norm.startsWith(ws + "/") ? norm.slice(ws.length + 1) : norm;
+  return norm.startsWith(`${ws}/`) ? norm.slice(ws.length + 1) : norm;
 }

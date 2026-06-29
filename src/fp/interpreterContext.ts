@@ -47,9 +47,21 @@ export interface BackendWebhookResult {
   error?: string;
 }
 
+export interface BackendFireRecipeOpts {
+  recipeName: string;
+  /** Sanitised event data forwarded as seedContext into the recipe runner. */
+  eventData: Readonly<Record<string, string>>;
+  triggerSource: string;
+}
+
 export interface Backend {
   /** Enqueue a task and return the task ID. */
   enqueueTask(opts: BackendEnqueueOpts): Promise<string>;
+  /**
+   * Run a named recipe through the recipe runner (not a raw claude -p subprocess).
+   * Returns the task ID. Throws on failure so callers can record an error.
+   */
+  fireRecipe(opts: BackendFireRecipeOpts): Promise<string>;
   /** Schedule a retry after delayMs; returns a cancel function. */
   scheduleRetry(key: string, delayMs: number, fn: () => void): () => void;
   /** Emit an informational notification (fire-and-forget). */
@@ -138,6 +150,9 @@ export class VsCodeBackend implements Backend {
     private readonly orchestrator: ClaudeOrchestrator,
     private readonly logger?: { info: (msg: string) => void },
     private readonly allowPrivateWebhooks: boolean = false,
+    private readonly recipeFireFn?: (
+      opts: BackendFireRecipeOpts,
+    ) => Promise<string>,
   ) {}
 
   async enqueueTask(opts: BackendEnqueueOpts): Promise<string> {
@@ -151,6 +166,15 @@ export class VsCodeBackend implements Backend {
       systemPrompt: opts.systemPrompt,
     });
     return taskId;
+  }
+
+  async fireRecipe(opts: BackendFireRecipeOpts): Promise<string> {
+    if (!this.recipeFireFn) {
+      throw new Error(
+        `recipe invocation unavailable: no recipeFireFn provided (recipeName="${opts.recipeName}")`,
+      );
+    }
+    return this.recipeFireFn(opts);
   }
 
   scheduleRetry(key: string, delayMs: number, fn: () => void): () => void {
@@ -236,7 +260,7 @@ export class VsCodeBackend implements Backend {
     // If we pinned an IP, set the Host header so the server receives the
     // original hostname (required for virtual-host routing and TLS SNI).
     if (fetchUrl !== opts.url) {
-      headers["Host"] = parsed.hostname;
+      headers.Host = parsed.hostname;
     }
 
     const controller = new AbortController();
@@ -280,6 +304,7 @@ export class VsCodeBackend implements Backend {
 
 export interface TestBackendCollector {
   enqueuedTasks: BackendEnqueueOpts[];
+  firedRecipes: BackendFireRecipeOpts[];
   scheduledRetries: Array<{ key: string; delayMs: number }>;
   notifications: string[];
   webhookCalls: BackendWebhookOpts[];
@@ -288,6 +313,7 @@ export interface TestBackendCollector {
 export class TestBackend implements Backend {
   readonly collector: TestBackendCollector = {
     enqueuedTasks: [],
+    firedRecipes: [],
     scheduledRetries: [],
     notifications: [],
     webhookCalls: [],
@@ -302,6 +328,11 @@ export class TestBackend implements Backend {
   async enqueueTask(opts: BackendEnqueueOpts): Promise<string> {
     this.collector.enqueuedTasks.push(opts);
     return `task-${this.collector.enqueuedTasks.length}`;
+  }
+
+  async fireRecipe(opts: BackendFireRecipeOpts): Promise<string> {
+    this.collector.firedRecipes.push(opts);
+    return `recipe-task-${this.collector.firedRecipes.length}`;
   }
 
   scheduleRetry(key: string, delayMs: number, _fn: () => void): () => void {
@@ -321,6 +352,7 @@ export class TestBackend implements Backend {
 
   reset(): void {
     this.collector.enqueuedTasks = [];
+    this.collector.firedRecipes = [];
     this.collector.scheduledRetries = [];
     this.collector.notifications = [];
     this.collector.webhookCalls = [];

@@ -13,7 +13,11 @@ import {
   setTestRunnerStatus,
   tasksInLastHour,
 } from "./fp/automationState.js";
-import type { Backend, InterpreterContext } from "./fp/interpreterContext.js";
+import type {
+  Backend,
+  BackendFireRecipeOpts,
+  InterpreterContext,
+} from "./fp/interpreterContext.js";
 import { VsCodeBackend } from "./fp/interpreterContext.js";
 import { parsePolicy } from "./fp/policyParser.js";
 import { parseJsonSanitized } from "./sanitizeParsedJson.js";
@@ -1437,6 +1441,7 @@ export class AutomationHooks {
     _extensionClient?: ExtensionClient,
     _workspace?: string,
     allowPrivateWebhooks: boolean = false,
+    recipeFireFn?: (opts: BackendFireRecipeOpts) => Promise<string>,
   ) {
     // Phase 4: always initialise interpreter (primary path)
     {
@@ -1448,6 +1453,7 @@ export class AutomationHooks {
           orchestrator,
           { info: this.log.bind(this) },
           allowPrivateWebhooks,
+          recipeFireFn,
         );
       } else {
         this.log(
@@ -1564,6 +1570,7 @@ export class AutomationHooks {
     // straight through to the real VsCodeBackend.
     const backend: Backend = {
       enqueueTask: (opts) => baseBackend.enqueueTask(opts),
+      fireRecipe: (opts) => baseBackend.fireRecipe(opts),
       notify: (msg) => baseBackend.notify(msg),
       postWebhook: (opts) => baseBackend.postWebhook(opts),
       scheduleRetry: (key, delayMs, fn) => {

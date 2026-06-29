@@ -1192,6 +1192,29 @@ export class Bridge {
         this.extensionClient,
         this.config.workspace,
         this.config.automationAllowPrivateWebhooks,
+        this.recipeOrchestration
+          ? (opts) =>
+              this.recipeOrchestration
+                ?.fireYamlRecipe({
+                  filePath: path.join(
+                    os.homedir(),
+                    ".patchwork",
+                    "recipes",
+                    `${opts.recipeName}.yaml`,
+                  ),
+                  name: opts.recipeName,
+                  taskIdPrefix: `automation-recipe-${opts.recipeName}`,
+                  triggerSourceSuffix: `automation:${opts.triggerSource}`,
+                  logLabel: `automation "${opts.recipeName}"`,
+                  seedContext: Object.fromEntries(
+                    Object.entries(opts.eventData),
+                  ),
+                })
+                .then((r) => {
+                  if (!r.ok) throw new Error(r.error ?? "recipe fire failed");
+                  return r.taskId ?? "";
+                })
+          : undefined,
       );
       this.logger.info(
         `[bridge] Automation enabled (policy: ${this.config.automationPolicyPath})`,
@@ -1225,6 +1248,29 @@ export class Bridge {
           this.extensionClient,
           this.config.workspace,
           this.config.automationAllowPrivateWebhooks,
+          this.recipeOrchestration
+            ? (opts) =>
+                this.recipeOrchestration
+                  ?.fireYamlRecipe({
+                    filePath: path.join(
+                      os.homedir(),
+                      ".patchwork",
+                      "recipes",
+                      `${opts.recipeName}.yaml`,
+                    ),
+                    name: opts.recipeName,
+                    taskIdPrefix: `automation-recipe-${opts.recipeName}`,
+                    triggerSourceSuffix: `automation:${opts.triggerSource}`,
+                    logLabel: `automation "${opts.recipeName}"`,
+                    seedContext: Object.fromEntries(
+                      Object.entries(opts.eventData),
+                    ),
+                  })
+                  .then((r) => {
+                    if (!r.ok) throw new Error(r.error ?? "recipe fire failed");
+                    return r.taskId ?? "";
+                  })
+            : undefined,
         );
         this.automationHooks.registerRecipePrograms(collected.programs);
         const n = collected.programs.length;

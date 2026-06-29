@@ -15,6 +15,7 @@ import type { AutomationPolicy } from "../automation.js";
 import { AutomationHooks } from "../automation.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import type { IClaudeDriver } from "../drivers/types.js";
+import type { BackendFireRecipeOpts } from "../fp/interpreterContext.js";
 import { compileRecipe } from "../recipes/compiler.js";
 import { parseRecipe } from "../recipes/parser.js";
 
@@ -26,16 +27,23 @@ function makeHooks() {
     },
   };
   const orch = new ClaudeOrchestrator(driver, os.tmpdir(), () => {});
-  // Empty policy → parsePolicy returns ok([]) → interpreter backend initialises,
-  // so registered recipe programs have a live backend to run on.
+  const firedRecipes: BackendFireRecipeOpts[] = [];
+  // recipeFireFn (7th arg) collects fired recipe invocations for assertions.
+  // Recipe triggers now go through fireRecipe, not enqueueTask, so orch.list()
+  // stays empty — assertions must check firedRecipes instead.
   const hooks = new AutomationHooks(
     {} as AutomationPolicy,
     orch,
     () => {},
     undefined,
     os.tmpdir(),
+    false,
+    async (opts) => {
+      firedRecipes.push(opts);
+      return `recipe-task-${firedRecipes.length}`;
+    },
   );
-  return { hooks, orch };
+  return { hooks, orch, firedRecipes };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 30));
@@ -60,32 +68,30 @@ const ghProgram = compileRecipe(
 
 describe("recipe trigger registration", () => {
   it("file_watch recipe is decorative until registered, then fires on save", async () => {
-    const { hooks, orch } = makeHooks();
+    const { hooks, firedRecipes } = makeHooks();
 
     // Unregistered: the gap this PR closes — nothing fires.
     hooks.handleFileSaved("id", "save", tsFile());
     await settle();
-    expect(orch.list()).toHaveLength(0);
+    expect(firedRecipes).toHaveLength(0);
 
     hooks.registerRecipePrograms([fwProgram]);
     hooks.handleFileSaved("id", "save", tsFile());
     await settle();
 
-    const tasks = orch.list();
-    expect(tasks).toHaveLength(1);
-    expect(tasks[0]!.prompt).toContain("fw-recipe");
+    expect(firedRecipes).toHaveLength(1);
+    expect(firedRecipes[0]!.recipeName).toBe("fw-recipe");
   });
 
   it("gates by hook type: git_hook recipe fires on commit, not on file save", async () => {
-    const { hooks, orch } = makeHooks();
+    const { hooks, firedRecipes } = makeHooks();
     hooks.registerRecipePrograms([fwProgram, ghProgram]);
 
     hooks.handleFileSaved("id", "save", tsFile());
     await settle();
-    let tasks = orch.list();
-    expect(tasks).toHaveLength(1);
-    expect(tasks[0]!.prompt).toContain("fw-recipe");
-    expect(tasks[0]!.prompt).not.toContain("gh-recipe");
+    expect(firedRecipes).toHaveLength(1);
+    expect(firedRecipes[0]!.recipeName).toBe("fw-recipe");
+    expect(firedRecipes.some((r) => r.recipeName === "gh-recipe")).toBe(false);
 
     await hooks.handleGitCommit({
       hash: "abc1234",
@@ -95,18 +101,17 @@ describe("recipe trigger registration", () => {
       files: ["src/a.ts"],
     });
     await settle();
-    tasks = orch.list();
-    expect(tasks).toHaveLength(2);
-    expect(tasks.some((t) => t.prompt.includes("gh-recipe"))).toBe(true);
+    expect(firedRecipes).toHaveLength(2);
+    expect(firedRecipes.some((r) => r.recipeName === "gh-recipe")).toBe(true);
   });
 
   it("is idempotent: re-registering the same set does not duplicate hooks", async () => {
-    const { hooks, orch } = makeHooks();
+    const { hooks, firedRecipes } = makeHooks();
     hooks.registerRecipePrograms([fwProgram]);
     hooks.registerRecipePrograms([fwProgram]); // simulate hot-reload
 
     hooks.handleFileSaved("id", "save", tsFile());
     await settle();
-    expect(orch.list()).toHaveLength(1);
+    expect(firedRecipes).toHaveLength(1);
   });
 });
