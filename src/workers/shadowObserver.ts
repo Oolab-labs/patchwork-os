@@ -47,6 +47,10 @@ export interface DecisionRecord {
   decision: "allow" | "deny";
   at: number;
   params?: Record<string, unknown>;
+  /** Present only on worker-gate decisions (recipe runner path). Absent on
+   * Claude-session MCP tool approvals — the shadow only counts worker-gate
+   * decisions so mixing in session approvals won't inflate divergences. */
+  recipeName?: string;
 }
 
 export interface Divergence {
@@ -144,8 +148,14 @@ export class WorkerShadowObserver {
   }
 
   /** Compare what the ramp WOULD recommend (given the dial as of now) against
-   * the gate's actual decision. Read-only — records agreement + divergences. */
+   * the gate's actual decision. Read-only — records agreement + divergences.
+   *
+   * Only worker-gate decisions (those with a recipeName) are counted. Plain
+   * Claude-session MCP tool approvals share the same ActivityLog event type
+   * but have no recipeName — including them would inflate divergences with
+   * calls the worker gate never saw. */
   ingestDecision(d: DecisionRecord): void {
+    if (!d.recipeName) return;
     const worker = this.workerForAction(d.toolName, d.params);
     if (!worker) return;
     const rec = recommend(worker, d.toolName, d.params, this.store);

@@ -58,9 +58,19 @@ describe("WorkerShadowObserver", () => {
     const obs = new WorkerShadowObserver([release], { cfg: CFG });
     climb(obs); // fs-write earned L4 → ramp would bypass editText
     // gate DENIED an editText the ramp would now auto-run → divergence
-    obs.ingestDecision({ toolName: "editText", decision: "deny", at: 5000 });
+    obs.ingestDecision({
+      toolName: "editText",
+      decision: "deny",
+      at: 5000,
+      recipeName: "test-recipe",
+    });
     // gate ALLOWED an editText the ramp would also auto-run → agreement
-    obs.ingestDecision({ toolName: "editText", decision: "allow", at: 6000 });
+    obs.ingestDecision({
+      toolName: "editText",
+      decision: "allow",
+      at: 6000,
+      recipeName: "test-recipe",
+    });
     const r = obs.report()[0]!;
     expect(r.compared).toBe(2);
     expect(r.agreed).toBe(1);
@@ -76,7 +86,20 @@ describe("WorkerShadowObserver", () => {
       toolName: "slackPostMessage",
       decision: "deny",
       at: 0,
+      recipeName: "test-recipe",
     });
+    expect(obs.report()[0]!.compared).toBe(0);
+  });
+
+  it("skips decisions without recipeName (plain Claude-session MCP approvals)", () => {
+    // Decisions without recipeName are Claude-session tool calls, not worker-gate
+    // decisions. Including them inflates divergences with calls the worker gate
+    // never saw (e.g. this Claude Code session approving github.create_issue
+    // directly via its own general approvalGate).
+    const obs = new WorkerShadowObserver([release], { cfg: CFG });
+    climb(obs); // fs-write earned L4
+    // No recipeName → should be skipped entirely
+    obs.ingestDecision({ toolName: "editText", decision: "deny", at: 5000 });
     expect(obs.report()[0]!.compared).toBe(0);
   });
 

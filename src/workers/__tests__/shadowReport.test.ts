@@ -55,7 +55,12 @@ describe("buildShadowReport", () => {
       editRun(4000, 1),
     ];
     const decisions: DecisionRecord[] = [
-      { toolName: "editText", decision: "deny", at: 5000 },
+      {
+        toolName: "editText",
+        decision: "deny",
+        at: 5000,
+        recipeName: "test-recipe",
+      },
     ];
     const [r] = buildShadowReport([release], runs, decisions, CFG);
     expect(
@@ -78,7 +83,14 @@ describe("formatShadowReport", () => {
         editRun(3000, 1),
         editRun(4000, 1),
       ],
-      [{ toolName: "editText", decision: "deny", at: 5000 }],
+      [
+        {
+          toolName: "editText",
+          decision: "deny",
+          at: 5000,
+          recipeName: "test-recipe",
+        },
+      ],
       CFG,
     );
     const text = formatShadowReport(reports);
