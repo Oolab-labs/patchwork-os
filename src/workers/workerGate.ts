@@ -49,12 +49,23 @@ export interface WorkerGateDecision {
   reason: string;
 }
 
+/**
+ * Compensable actions (git-remote, issue) unlock autonomous execution at L2.
+ * A compensating path exists (close the PR, delete the issue) so the cost of
+ * an error is bounded — a worker at L2 has demonstrated enough reliability
+ * that occasional human cleanup is acceptable. Irreversible actions (shell,
+ * messaging, http) still require L4; they skip L2/L3 in the reachable-levels
+ * set entirely, so this threshold never fires for them.
+ */
+const COMPENSABLE_AUTONOMY_LEVEL = 2 as const;
+
+/** Irreversible actions (and unowned/unearned anything) require full L4. */
 const AUTONOMOUS_LEVEL = 4 as const;
 
 /**
  * Undoable → flows un-gated even when unearned. Only reversible actions are
- * exempt from the trust requirement; compensable / irreversible ones (lossy or
- * no undo) wait for earned L4. Reversibility is the ramp's primary axis.
+ * exempt from the trust requirement; compensable ones graduate to autonomous
+ * at L2+; irreversible ones wait for earned L4.
  */
 export function flowsUngated(ac: ActionClass): boolean {
   return ac.reversibility === "reversible";
@@ -110,22 +121,40 @@ export function decideWorkerAction(
     };
   }
 
-  // Compensable / irreversible: autonomous only once EARNED (ceiling-capped) L4.
+  // Compensable: autonomous at L2+. A compensating action exists, so the cost
+  // of being wrong is bounded. Workers earning L2 on vcs-remote or issue can
+  // push and open issues without per-action approval.
+  if (
+    ac.reversibility === "compensable" &&
+    effectiveLevel >= COMPENSABLE_AUTONOMY_LEVEL
+  ) {
+    return {
+      ...base,
+      action: "allow",
+      reason: `earned autonomy (L${effectiveLevel}) on compensable class — auto-allowed at L2+`,
+    };
+  }
+
+  // Irreversible (and compensable still below L2): autonomous only at L4.
   if (effectiveLevel >= AUTONOMOUS_LEVEL) {
     return {
       ...base,
       action: "allow",
-      reason: `earned autonomy (L4) on a ${ac.reversibility} class`,
+      reason: `earned autonomy (L4) on ${ac.reversibility} class`,
     };
   }
 
+  const threshold =
+    ac.reversibility === "compensable"
+      ? COMPENSABLE_AUTONOMY_LEVEL
+      : AUTONOMOUS_LEVEL;
   let reason: string;
   if (!owned) {
     reason = `${ac.reversibility} action outside the worker's owned domain — gated`;
-  } else if (worker.autonomyCeiling < AUTONOMOUS_LEVEL) {
-    reason = `${ac.reversibility} class capped by autonomy ceiling (L${worker.autonomyCeiling}) — always gated`;
+  } else if (worker.autonomyCeiling < threshold) {
+    reason = `${ac.reversibility} class capped by autonomy ceiling (L${worker.autonomyCeiling} < L${threshold}) — always gated`;
   } else {
-    reason = `${ac.reversibility} + unearned (effective L${effectiveLevel} < L4) — gated for approval`;
+    reason = `${ac.reversibility} + unearned (effective L${effectiveLevel} < L${threshold}) — gated for approval`;
   }
   return { ...base, action: "gate", reason };
 }
