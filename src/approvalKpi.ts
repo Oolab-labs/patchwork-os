@@ -259,3 +259,75 @@ export function computeConsideredApprovalKpi(
     perDay,
   };
 }
+
+// ── Terminal report ──────────────────────────────────────────────────────────
+
+function fmtMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${(ms / 60_000).toFixed(1)}m`;
+}
+
+function fmtLatency(l: LatencyStats | null): string {
+  return l
+    ? `median ${fmtMs(l.medianMs)} · p90 ${fmtMs(l.p90Ms)} (n=${l.count})`
+    : "—";
+}
+
+/**
+ * Human-readable considered-approval report (CLI `patchwork approvals`). The
+ * rubber-stamp warning is the point: a 0% reject rate over a non-trivial sample
+ * is the single clearest tell that the trust climbing the dial isn't real.
+ */
+export function formatConsideredApprovalKpi(
+  kpi: ConsideredApprovalKpi,
+  opts: { windowLabel?: string } = {},
+): string {
+  const out: string[] = [];
+  out.push(
+    `Considered-approval KPI${opts.windowLabel ? ` — ${opts.windowLabel}` : ""}`,
+  );
+  out.push("");
+  if (kpi.total === 0) {
+    out.push(
+      "  (no human approval decisions in window — fills as the gate queues risky actions you approve/reject)",
+    );
+    return out.join("\n");
+  }
+  out.push(
+    `  decided ${kpi.decided} · approved ${kpi.approved} · rejected ${kpi.rejected} · abandoned ${kpi.abandoned}`,
+  );
+  const stamp =
+    kpi.decided >= 5 && kpi.rejectRate === 0
+      ? "   ⚠ 0% over ≥5 decisions — every prompt approved; possible rubber-stamp"
+      : "";
+  out.push(`  reject rate ${(kpi.rejectRate * 100).toFixed(0)}%${stamp}`);
+  out.push(`  latency ${fmtLatency(kpi.latency)}`);
+  out.push(
+    `  channels: ${Object.entries(kpi.channels)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k} ${v}`)
+      .join(" · ")}`,
+  );
+  if (kpi.byTool.length > 0) {
+    out.push("");
+    out.push("  by action:");
+    for (const t of kpi.byTool) {
+      const ch = Object.entries(t.channels)
+        .map(([k, v]) => `${k} ${v}`)
+        .join(", ");
+      out.push(
+        `    ${t.toolName.padEnd(22)} decided ${t.decided} · reject ${(
+          t.rejectRate * 100
+        ).toFixed(0)}% · latency ${fmtLatency(t.latency)}  [${ch}]`,
+      );
+    }
+  }
+  if (kpi.perDay.length > 0) {
+    out.push("");
+    out.push("  per day:");
+    for (const d of kpi.perDay)
+      out.push(`    ${d.day}  decided ${d.decided} (${d.rejected} rejected)`);
+  }
+  return out.join("\n");
+}

@@ -212,6 +212,7 @@ const KNOWN_SUBCOMMANDS = [
   "doctor",
   "shadow-scan",
   "workers",
+  "approvals",
 ] as const;
 
 const __invokedSubcommand = (() => {
@@ -4679,6 +4680,72 @@ if (process.argv[2] === "workers") {
       process.stdout.write(
         runWorkerShadowReport(workersDir ? { workersDir } : {}),
       );
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
+// Handle approvals subcommand — considered-approval KPI. Reads the local
+// approval-decision log directly (like `workers shadow`); no bridge round-trip.
+// The lens that tells you whether the trust climbing the worker dial was EARNED
+// or rubber-stamped: reject rate, latency-to-decision, abandoned, channel split.
+if (process.argv[2] === "approvals") {
+  const args = process.argv.slice(3);
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(
+      "Usage: patchwork approvals [--window 1h|24h|overnight|7d|any] [--json]\n\n" +
+        "Considered-approval KPI from the local approval-decision log:\n" +
+        "  reject rate · latency-to-decision · abandoned · dashboard-vs-phone.\n\n" +
+        "  --window <name>  lookback (default: any). overnight = since 6pm yesterday.\n" +
+        "  --json           emit raw JSON (for scripting)\n",
+    );
+    process.exit(0);
+  }
+  (async () => {
+    try {
+      const wIdx = args.findIndex((a) => a === "--window" || a === "-w");
+      const win =
+        wIdx >= 0 && wIdx + 1 < args.length
+          ? (args[wIdx + 1] as string)
+          : "any";
+      const fixed: Record<string, number | null> = {
+        "1h": 3_600_000,
+        "24h": 86_400_000,
+        "7d": 604_800_000,
+        any: null,
+      };
+      let sinceMs: number | undefined;
+      if (win === "overnight") {
+        const d = new Date();
+        d.setHours(18, 0, 0, 0);
+        if (d.getTime() > Date.now()) d.setDate(d.getDate() - 1);
+        sinceMs = d.getTime();
+      } else if (win in fixed) {
+        const dur = fixed[win];
+        sinceMs = dur == null ? undefined : Date.now() - dur;
+      } else {
+        process.stderr.write(`Unknown --window value: "${win}"\n`);
+        process.exit(1);
+      }
+      const {
+        readConsideredDecisions,
+        computeConsideredApprovalKpi,
+        formatConsideredApprovalKpi,
+      } = await import("./approvalKpi.js");
+      const decisions = readConsideredDecisions(
+        sinceMs !== undefined ? { sinceMs } : {},
+      );
+      const kpi = computeConsideredApprovalKpi(decisions);
+      process.stdout.write(
+        args.includes("--json")
+          ? `${JSON.stringify(kpi, null, 2)}\n`
+          : `${formatConsideredApprovalKpi(kpi, { windowLabel: win })}\n`,
+      );
+      process.exit(0);
     } catch (err) {
       process.stderr.write(
         `Error: ${err instanceof Error ? err.message : String(err)}\n`,
