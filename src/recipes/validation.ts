@@ -438,6 +438,7 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
       }
 
       validateAwaitsTargets(r, recipe, issues);
+      validateJudgeReviewsTargets(r, issues);
 
       validateTemplateReferences(r, issues, collectParallelEachKeys(recipe));
     }
@@ -620,6 +621,53 @@ function validateRecipeErrorPolicy(
  * container ids in `knownIds` so a legitimate group-await isn't flagged,
  * while a genuine typo (`gather2`) — present in neither list — still errors.
  */
+/**
+ * Cross-check each judge step's `reviews:` target against the set of resolvable
+ * step keys. The runtime resolves `reviews` against ctx (keyed by `into`) first,
+ * then falls back to step `id` — a reference matching neither silently reviews
+ * nothing. Flag as error when a refine loop is configured (max_revisions set),
+ * warning otherwise (the judge still runs; it just has no prior output to review).
+ */
+function validateJudgeReviewsTargets(
+  r: Record<string, unknown>,
+  issues: LintIssue[],
+): void {
+  const steps = Array.isArray(r.steps)
+    ? (r.steps as Array<Record<string, unknown>>)
+    : [];
+
+  // Collect all resolvable keys: every step's `into` value + every step `id`.
+  const resolvable = new Set<string>();
+  for (const step of steps) {
+    const agent =
+      step.agent && typeof step.agent === "object"
+        ? (step.agent as Record<string, unknown>)
+        : undefined;
+    if (typeof agent?.into === "string") resolvable.add(agent.into);
+    if (typeof step.id === "string") resolvable.add(step.id);
+  }
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i]!;
+    const agent =
+      step.agent && typeof step.agent === "object"
+        ? (step.agent as Record<string, unknown>)
+        : undefined;
+    if (!agent || agent.kind !== "judge") continue;
+    const reviews = agent.reviews;
+    if (typeof reviews !== "string" || reviews.length === 0) continue;
+    if (resolvable.has(reviews)) continue;
+    const hasRefineLoop =
+      agent.max_revisions !== undefined || agent.on_exhausted !== undefined;
+    issues.push({
+      level: hasRefineLoop ? "error" : "warning",
+      message: `Step ${i + 1}: 'reviews: ${reviews}' does not match any step into key or step id — the judge would review nothing at run time`,
+      code: "judge-reviews-unresolved",
+      path: `steps.${i}.agent.reviews`,
+    });
+  }
+}
+
 function validateAwaitsTargets(
   normalizedRecipe: Record<string, unknown>,
   rawRecipe: unknown,
