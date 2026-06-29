@@ -24,8 +24,25 @@ moves the dial from L0 toward L4 over time.
   driver — recipes that fire `agent` steps need it). Confirm with
   `patchwork status`.
 - The GitHub connector connected (`patchwork connect github`, or the dashboard
-  `/connections` page). `github.create_issue` needs write scope on the target
+  `/connections` page). `github.create_issue` needs `repo` scope on the target
   repo.
+
+> ⚠️ **Local bridges need their OWN GitHub OAuth app.** `patchwork connect
+> github` builds the authorize URL from `PATCHWORK_GITHUB_CLIENT_ID` (resolved
+> via `~/.patchwork/.secrets.json`, then env). If that points at the shared
+> Patchwork app, GitHub rejects the callback with *"The redirect_uri is not
+> associated with this application"* — that app only allows its production
+> domain, not your `http://localhost:<port>/connections/github/callback`. Fix:
+> register a personal OAuth app (GitHub → Settings → Developers → OAuth Apps),
+> set its **Authorization callback URL** to exactly
+> `http://localhost:<bridge-port>/connections/github/callback`, then put its
+> id/secret in `~/.patchwork/.secrets.json`:
+> ```json
+> { "PATCHWORK_GITHUB_CLIENT_ID": "…", "PATCHWORK_GITHUB_CLIENT_SECRET": "…" }
+> ```
+> `chmod 600` it and restart the bridge (the secrets file is cached for the
+> process lifetime). Then re-run `patchwork connect github` — the URL should now
+> carry *your* client id.
 
 ### Install the artifacts the bridge actually reads
 
