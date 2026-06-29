@@ -281,12 +281,15 @@ export async function routeApprovalRequest(
         };
       }
     }
-    // Capture the tool name BEFORE resolving (approve() removes the entry).
-    // L4: the worker shadow logger keys ramp-vs-gate attribution off `toolName`
-    // in the decision metadata — without it the comparison silently drops the row.
-    const approveToolName = deps.queue
-      .list?.()
-      .find((e) => e.callId === callId)?.toolName;
+    // Capture the entry BEFORE resolving (approve() removes it). `toolName`
+    // keys the worker shadow logger's ramp-vs-gate attribution; `requestedAt`
+    // is the prompt time the considered-approval KPI needs to derive
+    // latency-to-decision (this dashboard/phone path is where worker-gate
+    // approvals actually land — handleApprovalRequest is the separate CC-hook
+    // path).
+    const approveEntry = deps.queue.list?.().find((e) => e.callId === callId);
+    const approveToolName = approveEntry?.toolName;
+    const approveRequestedAt = approveEntry?.requestedAt;
     const ok = deps.queue.approve(callId);
     if (ok) {
       // Audit 2026-06-03 (MEDIUM #27): fire the audit hook on APPROVE too —
@@ -302,6 +305,9 @@ export async function routeApprovalRequest(
         // where", not just "who/what/when".
         channel: req.approvalToken !== undefined ? "phone" : "dashboard",
         ...(approveToolName !== undefined && { toolName: approveToolName }),
+        ...(approveRequestedAt !== undefined && {
+          requestedAt: approveRequestedAt,
+        }),
       });
       return { status: 200, body: { decision: "allow", callId } };
     }
@@ -376,10 +382,11 @@ export async function routeApprovalRequest(
       if (trimmed.length > 0) reason = trimmed;
     }
     // L4: capture toolName before reject() removes the entry (worker shadow
-    // attribution keys off it).
-    const rejectToolName = deps.queue
-      .list?.()
-      .find((e) => e.callId === callId)?.toolName;
+    // attribution keys off it); requestedAt feeds the considered-approval KPI's
+    // latency-to-decision.
+    const rejectEntry = deps.queue.list?.().find((e) => e.callId === callId);
+    const rejectToolName = rejectEntry?.toolName;
+    const rejectRequestedAt = rejectEntry?.requestedAt;
     const ok = deps.queue.reject(callId);
     if (ok) {
       deps.onDecision?.("approval_decision", {
@@ -389,6 +396,9 @@ export async function routeApprovalRequest(
         // Provenance: phone (single-use token) vs dashboard/Bearer caller.
         channel: req.approvalToken !== undefined ? "phone" : "dashboard",
         ...(rejectToolName !== undefined && { toolName: rejectToolName }),
+        ...(rejectRequestedAt !== undefined && {
+          requestedAt: rejectRequestedAt,
+        }),
       });
       return { status: 200, body: { decision: "deny", callId } };
     }
@@ -802,6 +812,13 @@ async function handleApprovalRequest(
     reason: string,
     extras?: {
       callId?: string;
+      // Epoch-ms the approval was PROMPTED (queued). Present only on the
+      // human-decision path (after a queue wait); absent on instant-policy
+      // emits (gate_off / cc_allow_rule / …) which have no deliberation
+      // latency. The considered-approval KPI derives latency-to-decision as
+      // `event.timestamp − requestedAt`; without it, latency is unrecoverable
+      // retroactively (the queue entry is gone by decision time).
+      requestedAt?: number;
     },
   ) =>
     deps.onDecision?.("approval_decision", {
@@ -821,6 +838,9 @@ async function handleApprovalRequest(
       ...(riskSignals.length > 0 && { riskSignals }),
       ...(summary !== undefined && { summary }),
       ...(extras?.callId && { callId: extras.callId }),
+      ...(extras?.requestedAt !== undefined && {
+        requestedAt: extras.requestedAt,
+      }),
     });
 
   // CC settings.json precedence
@@ -989,7 +1009,10 @@ async function handleApprovalRequest(
   if (outcome !== "expired") {
     recordApprovalCompleted();
   }
-  emit(outcome === "approved" ? "allow" : "deny", outcome, { callId });
+  emit(outcome === "approved" ? "allow" : "deny", outcome, {
+    callId,
+    requestedAt: now,
+  });
 
   // Publish a confirmation back to the same ntfy topic so the lock-screen
   // tap has visible feedback. The iOS ntfy app gives no UI signal when an
