@@ -44,6 +44,15 @@ describe("classifyActionClass", () => {
     expect(classifyActionClass("github.list_prs").domain).toBe("vcs-read");
     expect(classifyActionClass("slack.post_message").brandExposed).toBe(true);
   });
+
+  it("classifies github.create_issue as issue / compensable / brand-exposed (a graduating risky class)", () => {
+    const c = classifyActionClass("github.create_issue");
+    expect(c.domain).toBe("issue");
+    expect(c.reversibility).toBe("compensable"); // an issue is closeable
+    expect(c.brandExposed).toBe(true); // externally visible
+    // compensable ⇒ the full ramp is reachable (can earn L4), unlike irreversible
+    expect(reachableLevels(c)).toEqual([0, 1, 2, 3, 4]);
+  });
 });
 
 describe("reachableLevels", () => {

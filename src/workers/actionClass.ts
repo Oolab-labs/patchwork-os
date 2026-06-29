@@ -83,6 +83,7 @@ const DOMAIN_BY_TOOL: Record<string, string> = {
   "github.list_commits": "vcs-read",
   "github.list_prs": "vcs-read",
   "github.list_issues": "vcs-read",
+  "github.create_issue": "issue", // write — compensable (closeable) + brand-exposed
   "file.read": "fs-read",
   "file.write": "fs-write",
   "file.append": "fs-write",

@@ -198,3 +198,78 @@ registerTool({
     }
   },
 });
+
+// ============================================================================
+// github.create_issue  (WRITE — the first GitHub-write recipe tool)
+// ============================================================================
+
+registerTool({
+  id: "github.create_issue",
+  namespace: "github",
+  description:
+    "Create a GitHub issue in a repository (title + optional body, labels, assignees).",
+  paramsSchema: {
+    type: "object",
+    properties: {
+      repo: {
+        type: "string",
+        description: "Repository in 'owner/repo' format (required)",
+      },
+      title: { type: "string", description: "Issue title (required)" },
+      body: { type: "string", description: "Issue body (Markdown)" },
+      labels: {
+        type: "array",
+        items: { type: "string" },
+        description: "Labels to apply",
+      },
+      assignees: {
+        type: "array",
+        items: { type: "string" },
+        description: "GitHub usernames to assign",
+      },
+      into: CommonSchemas.into,
+    },
+    required: ["repo", "title"],
+  },
+  outputSchema: {
+    type: "object",
+    properties: {
+      number: { type: "number" },
+      url: { type: "string" },
+      title: { type: "string" },
+      error: { type: "string" },
+    },
+  },
+  riskDefault: "high",
+  isWrite: true,
+  isConnector: true,
+  execute: async ({ params }) => {
+    const { createIssue } = await import("../../connectors/github.js");
+    const repo = params.repo ? String(params.repo) : "";
+    const title = params.title ? String(params.title) : "";
+    try {
+      const issue = await createIssue({
+        repo,
+        title,
+        ...(params.body !== undefined && { body: String(params.body) }),
+        ...(Array.isArray(params.labels) && {
+          labels: params.labels.map(String),
+        }),
+        ...(Array.isArray(params.assignees) && {
+          assignees: params.assignees.map(String),
+        }),
+      });
+      return JSON.stringify({
+        number: issue.number,
+        url: issue.url,
+        title: issue.title,
+      });
+    } catch (err) {
+      // Translate connector throw into a {error} shape the runner's silent-fail
+      // detector flags as a step error (matches the list_* tools above).
+      return JSON.stringify({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+});

@@ -188,6 +188,55 @@ export async function listIssues(
   }
 }
 
+export interface CreateIssueOpts {
+  /** "owner/repo" — required. */
+  repo: string;
+  title: string;
+  body?: string;
+  labels?: string[];
+  assignees?: string[];
+}
+
+export interface CreatedGitHubIssue {
+  number: number;
+  url: string;
+  title: string;
+}
+
+/**
+ * Create a GitHub issue via the connector's MCP `create_issue` tool. A WRITE —
+ * never cached. Mirrors listIssues' auth/client/parse path so it works headless
+ * (no `gh` CLI dependency). Throws on a missing connector / bad input / MCP
+ * error so the recipe-tool wrapper can surface a `{error}` step result.
+ */
+export async function createIssue(
+  opts: CreateIssueOpts,
+  signal?: AbortSignal,
+): Promise<CreatedGitHubIssue> {
+  if (!isConnected("github"))
+    throw new Error(
+      "github connector not connected — visit /connections to authenticate",
+    );
+  const { owner, repo } = parseRepo(opts);
+  if (!owner || !repo)
+    throw new Error(
+      "github create_issue requires `repo` in 'owner/repo' format",
+    );
+  if (!opts.title?.trim())
+    throw new Error("github create_issue requires a non-empty title");
+  const args: Record<string, unknown> = { owner, repo, title: opts.title };
+  if (opts.body) args.body = opts.body;
+  if (opts.labels?.length) args.labels = opts.labels;
+  if (opts.assignees?.length) args.assignees = opts.assignees;
+  const res = await client().callTool("create_issue", args, { signal });
+  const raw = McpClient.extractJson<RawIssue>(res);
+  return {
+    number: raw.number,
+    url: raw.html_url ?? raw.url ?? "",
+    title: raw.title ?? opts.title,
+  };
+}
+
 interface RawPR extends RawIssue {
   draft?: boolean;
   isDraft?: boolean;
