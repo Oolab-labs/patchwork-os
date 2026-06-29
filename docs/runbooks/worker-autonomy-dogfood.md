@@ -33,30 +33,43 @@ moves the dial from L0 toward L4 over time.
 > `~/.patchwork/recipes/` and worker manifests from `~/.patchwork/workers/`
 > (`patchworkConfig.ts`, `runWorkerShadow.ts` `workersDir` default). `templates/`
 > in the repo is source only — editing a file there has **zero** effect on a
-> running bridge. Two gaps to close on a fresh setup:
+> running bridge — and **neither artifact is installed for you by default**:
 >
-> 1. **`patchwork init` never seeds workers.** It copies recipe templates into
->    `~/.patchwork/recipes/` but never touches `~/.patchwork/workers/`, so the
->    Test Guardian manifest is **not** installed by default. Without it there is
->    *no worker* — `loadWorkerTrustForRecipe` returns null and the gate never
->    engages, so the whole ramp is silently inert.
-> 2. **A default `patchwork init` SKIPS the autofile recipe.** It is
->    connector-gated (needs GitHub), so a bare `patchwork init` leaves it out —
->    you need `--with-connectors` (or a manual copy).
+> 1. **No init step copies worker manifests.** Nothing seeds
+>    `~/.patchwork/workers/`, so the Test Guardian manifest is absent on a fresh
+>    setup. Without it there is *no worker* — `loadWorkerTrustForRecipe` returns
+>    null and the gate never engages, so the whole ramp is silently inert.
+> 2. **`patchwork init` is NOT the recipe scaffolder.** The binary branches on
+>    the name you invoke it as (`src/index.ts` — `invokedBinaryName()`):
+>    `patchwork init` runs the *IDE-bridge* setup (extension + CLAUDE.md + MCP)
+>    and does **not** touch `~/.patchwork/recipes/`. The recipe-scaffolding init
+>    is `patchwork-os init` (or the `patchwork-init` subcommand). Even then the
+>    autofile recipe is connector-gated, so it only lands with `--with-connectors`.
+
+The reliable, surgical path is to copy both files directly — each is a single
+self-contained file, so this sidesteps the init-name footgun entirely. Run from
+a checkout of this repo (so `templates/` is your cwd). The commands below carry
+no inline `#` comments on purpose — interactive `zsh` does not treat `#` as a
+comment, so a trailing `# note` is passed as arguments and breaks the `cp`:
 
 ```bash
-# Recipes → ~/.patchwork/recipes/ (the connector flag is what pulls in the
-# github-dependent autofile recipe; a bare `init` skips it).
-patchwork init --with-connectors
-
-# Worker manifest → ~/.patchwork/workers/ (init never does this for you).
-mkdir -p ~/.patchwork/workers
+mkdir -p ~/.patchwork/workers ~/.patchwork/recipes
 cp templates/workers/test-guardian.worker.yaml ~/.patchwork/workers/
-
-# Sanity-check both landed where the bridge looks:
-ls ~/.patchwork/workers/test-guardian.worker.yaml \
-   ~/.patchwork/recipes/triage-failing-tests-autofile.yaml
+cp templates/recipes/triage-failing-tests-autofile.yaml ~/.patchwork/recipes/
+ls ~/.patchwork/workers/test-guardian.worker.yaml ~/.patchwork/recipes/triage-failing-tests-autofile.yaml
 ```
+
+Both `ls` paths should print with no error. The base draft-only recipe is
+**not** required (you only need it to toggle back later); to install it too:
+
+```bash
+cp templates/recipes/triage-failing-tests.yaml ~/.patchwork/recipes/
+```
+
+> Bulk alternative: `patchwork-os init --with-connectors` scaffolds
+> `~/.patchwork/` and copies all connector recipes (including the autofile one)
+> — but note it still does **not** install the worker manifest, so you copy that
+> by hand regardless. And it must be `patchwork-os`, not `patchwork`.
 
 All edits in switches 2 + 3 below are made to these **installed** copies under
 `~/.patchwork/`, never to `templates/`.
