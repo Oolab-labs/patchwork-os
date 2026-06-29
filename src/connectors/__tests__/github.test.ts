@@ -548,15 +548,15 @@ describe("createIssue (WRITE)", () => {
     callTool.mockRestore();
   });
 
-  it("calls create_issue with owner/repo/title/body/labels/assignees and returns the issue", async () => {
+  it("calls issue_write (method:create) with owner/repo/title/body/labels/assignees and returns the issue", async () => {
     mockConnected();
     const callTool = vi
       .spyOn(McpClient.prototype, "callTool")
+      // issue_write returns `{ id, url }` — NOT the old `{ number, html_url, title }`.
       .mockResolvedValue(
         mcpJsonResult({
-          number: 42,
-          html_url: "https://github.com/acme/widget/issues/42",
-          title: "Flaky test",
+          id: "4767853687",
+          url: "https://github.com/acme/widget/issues/42",
         }),
       );
     const issue = await createIssue({
@@ -566,9 +566,13 @@ describe("createIssue (WRITE)", () => {
       labels: ["bug"],
       assignees: ["octocat"],
     });
+    // Regression: GitHub's hosted MCP server renamed create_issue → issue_write
+    // (keyed by a `method` enum). Calling the old name returns -32602
+    // "unknown tool". Surfaced live by the Test Guardian worker dogfood.
     expect(callTool).toHaveBeenCalledWith(
-      "create_issue",
+      "issue_write",
       expect.objectContaining({
+        method: "create",
         owner: "acme",
         repo: "widget",
         title: "Flaky test",
@@ -578,6 +582,7 @@ describe("createIssue (WRITE)", () => {
       }),
       expect.any(Object),
     );
+    // The issue number is derived from the URL (issue_write doesn't echo it).
     expect(issue).toEqual({
       number: 42,
       url: "https://github.com/acme/widget/issues/42",
@@ -585,13 +590,63 @@ describe("createIssue (WRITE)", () => {
     });
   });
 
-  it("throws when the MCP response has no issue number (no fabricated success)", async () => {
+  it("never calls the legacy create_issue tool name (regression guard)", async () => {
+    mockConnected();
+    const callTool = vi
+      .spyOn(McpClient.prototype, "callTool")
+      .mockResolvedValue(
+        mcpJsonResult({ id: "1", url: "https://github.com/a/b/issues/9" }),
+      );
+    await createIssue({ repo: "a/b", title: "t" });
+    expect(callTool.mock.calls[0]?.[0]).toBe("issue_write");
+    expect(callTool.mock.calls[0]?.[0]).not.toBe("create_issue");
+  });
+
+  it("throws when issue_write returns no parseable issue URL (no fabricated success)", async () => {
+    mockConnected();
+    // A non-issue URL (e.g. a pulls URL) must not be mistaken for a created issue.
+    vi.spyOn(McpClient.prototype, "callTool").mockResolvedValue(
+      mcpJsonResult({
+        id: "123",
+        url: "https://github.com/acme/widget/pulls/5",
+      }),
+    );
+    await expect(
+      createIssue({ repo: "acme/widget", title: "t" }),
+    ).rejects.toThrow(/no parseable issue URL/);
+  });
+
+  it("throws when issue_write returns no url at all (no fabricated success)", async () => {
     mockConnected();
     vi.spyOn(McpClient.prototype, "callTool").mockResolvedValue(
       mcpJsonResult({ message: "ok but not an issue" }),
     );
     await expect(
       createIssue({ repo: "acme/widget", title: "t" }),
-    ).rejects.toThrow(/no issue number/);
+    ).rejects.toThrow(/no parseable issue URL/);
+  });
+
+  it("propagates an MCP -32602 unknown-tool error (the regression this fix exists for)", async () => {
+    mockConnected();
+    // Before the fix, the connector called the renamed `create_issue` and got
+    // this back; the recipe-tool wrapper must see a thrown error, not a success.
+    vi.spyOn(McpClient.prototype, "callTool").mockRejectedValue(
+      new Error('tools/call create_issue: unknown tool "create_issue"'),
+    );
+    await expect(
+      createIssue({ repo: "acme/widget", title: "t" }),
+    ).rejects.toThrow(/unknown tool/);
+  });
+
+  it("takes the last /issues/<n> segment from a multi-segment URL", async () => {
+    mockConnected();
+    vi.spyOn(McpClient.prototype, "callTool").mockResolvedValue(
+      mcpJsonResult({
+        id: "9",
+        url: "https://github.com/acme/issues/111/x/acme/widget/issues/42",
+      }),
+    );
+    const issue = await createIssue({ repo: "acme/widget", title: "t" });
+    expect(issue.number).toBe(42);
   });
 });
