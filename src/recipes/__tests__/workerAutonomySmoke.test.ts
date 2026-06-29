@@ -132,7 +132,13 @@ afterEach(() => {
   else process.env.HOME = realHome;
   if (realUserProfile === undefined) delete process.env.USERPROFILE;
   else process.env.USERPROFILE = realUserProfile;
-  rmSync(tmpHome, { recursive: true, force: true });
+  // Best-effort: a lingering file handle can make rmSync throw EBUSY on Windows;
+  // a leaked temp dir must not fail the test.
+  try {
+    rmSync(tmpHome, { recursive: true, force: true });
+  } catch {
+    /* ignore — OS will reap the temp dir */
+  }
 });
 
 function makeDeps(
@@ -219,6 +225,11 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
         failed: "1",
         total: "42",
         failures: "foo.test.ts > does the thing",
+        // Override the runner's auto-seeded `{{time}}` (HH:MM) — the recipe's
+        // file.write target `…/test-triage-{{date}}-{{time}}.md` would otherwise
+        // contain a `:`, which is a legal filename on POSIX but ILLEGAL on
+        // Windows (writeFileSync → EINVAL), halting the run on windows-latest CI.
+        time: "0900",
       },
     );
     unsub();
