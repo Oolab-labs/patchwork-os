@@ -3,7 +3,7 @@
  *
  *   ~/.patchwork/qumo-ledger.jsonl   (NEVER the shared ta-ledger.jsonl —
  *   ta.score parses ALL rows asset-filtered-only, so QUMO types there would
- *   pollute the local crypto-daily-brief scorer.)
+ *   pollute the local scorer.)
  *
  * Daily reads the matured summary (cheap). Nightly --backtest reruns cells +
  * dartboard + kill-gate and rewrites the summary. Emits ONLY the genuine
