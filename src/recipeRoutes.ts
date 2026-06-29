@@ -930,6 +930,33 @@ export function tryHandleRecipeRoute(
     return true;
   }
 
+  // GET /approvals/kpi — considered-approval KPI (reject rate, latency-to-
+  // decision, abandoned, dashboard-vs-phone). Read-only over the persisted
+  // approval-decision log; the sibling of /workers/shadow that answers "was the
+  // trust climbing the dial EARNED or rubber-stamped". Backs the dashboard
+  // approval panel. Optional ?sinceMs=<epoch-ms> windows it. Fail-soft.
+  if (parsedUrl.pathname === "/approvals/kpi" && req.method === "GET") {
+    void (async () => {
+      try {
+        const sinceRaw = parsedUrl.searchParams.get("sinceMs");
+        const sinceMs = sinceRaw ? Number.parseInt(sinceRaw, 10) : Number.NaN;
+        const { readConsideredDecisions, computeConsideredApprovalKpi } =
+          await import("./approvalKpi.js");
+        const decisions = readConsideredDecisions(
+          Number.isFinite(sinceMs) ? { sinceMs } : {},
+        );
+        const kpi = computeConsideredApprovalKpi(decisions);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({ ...kpi, generatedAt: new Date().toISOString() }),
+        );
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
+    return true;
+  }
+
   // GET /recipes/doctor?recipe=<name> — one-call recipe health diagnosis.
   // Server-side home for the `recipe doctor` CLI: composes the static
   // preflight check (lint + write-policy + plan) with the recipe-scoped
