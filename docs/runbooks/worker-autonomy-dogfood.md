@@ -23,15 +23,43 @@ moves the dial from L0 toward L4 over time.
   `patchwork start --driver subprocess` (workers only run under a subprocess/api
   driver — recipes that fire `agent` steps need it). Confirm with
   `patchwork status`.
-- The Test Guardian worker manifest installed at
-  `~/.patchwork/workers/test-guardian.worker.yaml` (ships in
-  `templates/workers/`).
-- The opt-in recipe installed at
-  `~/.patchwork/recipes/triage-failing-tests-autofile.yaml` (ships in
-  `templates/recipes/`).
-- The GitHub connector connected (dashboard `/connections`, or
-  `PATCHWORK_GITHUB_*` env). `github.create_issue` needs write scope on the
-  target repo.
+- The GitHub connector connected (`patchwork connect github`, or the dashboard
+  `/connections` page). `github.create_issue` needs write scope on the target
+  repo.
+
+### Install the artifacts the bridge actually reads
+
+> ⚠️ **The running bridge does NOT read `templates/`.** It loads recipes from
+> `~/.patchwork/recipes/` and worker manifests from `~/.patchwork/workers/`
+> (`patchworkConfig.ts`, `runWorkerShadow.ts` `workersDir` default). `templates/`
+> in the repo is source only — editing a file there has **zero** effect on a
+> running bridge. Two gaps to close on a fresh setup:
+>
+> 1. **`patchwork init` never seeds workers.** It copies recipe templates into
+>    `~/.patchwork/recipes/` but never touches `~/.patchwork/workers/`, so the
+>    Test Guardian manifest is **not** installed by default. Without it there is
+>    *no worker* — `loadWorkerTrustForRecipe` returns null and the gate never
+>    engages, so the whole ramp is silently inert.
+> 2. **A default `patchwork init` SKIPS the autofile recipe.** It is
+>    connector-gated (needs GitHub), so a bare `patchwork init` leaves it out —
+>    you need `--with-connectors` (or a manual copy).
+
+```bash
+# Recipes → ~/.patchwork/recipes/ (the connector flag is what pulls in the
+# github-dependent autofile recipe; a bare `init` skips it).
+patchwork init --with-connectors
+
+# Worker manifest → ~/.patchwork/workers/ (init never does this for you).
+mkdir -p ~/.patchwork/workers
+cp templates/workers/test-guardian.worker.yaml ~/.patchwork/workers/
+
+# Sanity-check both landed where the bridge looks:
+ls ~/.patchwork/workers/test-guardian.worker.yaml \
+   ~/.patchwork/recipes/triage-failing-tests-autofile.yaml
+```
+
+All edits in switches 2 + 3 below are made to these **installed** copies under
+`~/.patchwork/`, never to `templates/`.
 
 ---
 
@@ -100,6 +128,14 @@ Restart the bridge (or re-fire) so the recipe/worker changes are picked up.
 ---
 
 ## What now happens on a failing test run
+
+> ⚠️ **The trigger only sees tests run *through the bridge*.** `on_test_run`
+> fires from the bridge's `runTests` tool (`src/tools/runTests.ts`) — i.e. when
+> an agent (or you) invokes `runTests`, or a VS Code task wired through it. A
+> bare `npm test` / `vitest` in a plain terminal is **invisible** to the worker;
+> it produces no `on_test_run` event and nothing fires. To exercise the loop,
+> run your suite via `runTests` (e.g. ask Claude to run the tests through the
+> bridge), not directly in a shell.
 
 1. `runTests` fails → the `on_test_run` (filter: failure) trigger fires the
    recipe automatically.
