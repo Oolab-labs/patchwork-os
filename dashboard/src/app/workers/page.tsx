@@ -73,8 +73,8 @@ function fmtMs(ms: number): string {
 }
 const fmtLat = (l: LatencyStats | null): string =>
   l ? `${fmtMs(l.medianMs)} med · ${fmtMs(l.p90Ms)} p90` : "—";
-const channelStr = (c: Record<string, number>): string =>
-  Object.entries(c)
+const channelStr = (c: Record<string, number> | undefined): string =>
+  Object.entries(c ?? {})
     .sort((a, b) => b[1] - a[1])
     .map(([k, v]) => `${k} ${v}`)
     .join(" · ");
@@ -88,7 +88,10 @@ function ConsideredApprovalPanel() {
   const { data } = useBridgeFetch<KpiResponse>("/api/bridge/approvals/kpi", {
     intervalMs: 30000,
   });
-  if (!data || data.total === 0) return null;
+  // Render only with real KPI data: `!data.total` catches both the empty case
+  // (total 0) and a non-KPI/error payload (total undefined), so the panel never
+  // crashes on an unexpected shape.
+  if (!data || !data.total) return null;
   const rubberStamp = data.decided >= 5 && data.rejectRate === 0;
   return (
     <div className="card" style={{ marginTop: "var(--s-4)" }}>
