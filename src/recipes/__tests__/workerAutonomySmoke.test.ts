@@ -101,6 +101,7 @@ let tmpHome: string;
 let patchworkDir: string;
 let workersDir: string;
 let realHome: string | undefined;
+let realUserProfile: string | undefined;
 
 beforeEach(() => {
   tmpHome = mkdtempSync(path.join(os.tmpdir(), "worker-smoke-home-"));
@@ -112,10 +113,13 @@ beforeEach(() => {
     path.join(workersDir, "test-guardian.worker.yaml"),
     WORKER_MANIFEST,
   );
-  // resolveRecipePath expands `~/` via os.homedir() (respects $HOME on POSIX),
-  // so the recipe's `~/.patchwork/inbox/…` write lands in the temp home.
+  // resolveRecipePath expands `~/` via os.homedir() — which reads $HOME on
+  // POSIX and %USERPROFILE% on Windows — so override BOTH to land the recipe's
+  // `~/.patchwork/inbox/…` write in the temp home on every platform.
   realHome = process.env.HOME;
+  realUserProfile = process.env.USERPROFILE;
   process.env.HOME = tmpHome;
+  process.env.USERPROFILE = tmpHome;
   setFlag(FLAG_WORKER_AUTONOMY, true, false);
   resetApprovalQueueForTests();
   createIssueMock.mockClear();
@@ -126,6 +130,8 @@ afterEach(() => {
   resetApprovalQueueForTests();
   if (realHome === undefined) delete process.env.HOME;
   else process.env.HOME = realHome;
+  if (realUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = realUserProfile;
   rmSync(tmpHome, { recursive: true, force: true });
 });
 
