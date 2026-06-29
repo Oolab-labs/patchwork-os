@@ -22,6 +22,20 @@ function storeWithL4(workerId: string, toolName: string): WorkerLevelStore {
   return store;
 }
 
+/**
+ * Build a store where `workerId` has earned exactly L2 on `toolName`.
+ * ~10 bulk successes puts LCB ~0.80 (above L2 threshold 0.70, below L3 0.85).
+ * Two dwell-separated outcomes climb the ramp L0→L1→L2.
+ */
+function storeWithL2(workerId: string, toolName: string): WorkerLevelStore {
+  const store = new WorkerLevelStore();
+  for (let i = 0; i < 10; i++)
+    store.apply(workerId, { toolName, good: true, at: 0 }, { cfg: CFG });
+  store.apply(workerId, { toolName, good: true, at: 1000 }, { cfg: CFG });
+  store.apply(workerId, { toolName, good: true, at: 2000 }, { cfg: CFG });
+  return store;
+}
+
 describe("flowsUngated", () => {
   it("is true for reversible classes (any blast) and false otherwise", () => {
     expect(flowsUngated(classifyActionClass("getGitStatus"))).toBe(true); // low
@@ -66,7 +80,21 @@ describe("decideWorkerAction", () => {
     expect(d.reason).toContain("earned autonomy");
   });
 
-  it("autonomyCeiling caps a risky class below L4 → still gated despite earning L4", () => {
+  it("autonomyCeiling=1 blocks compensable even at earned L4 (ceiling below L2 threshold)", () => {
+    const w = parseWorker({
+      id: "w",
+      name: "W",
+      owns: ["vcs-remote"],
+      autonomyCeiling: 1,
+    });
+    const d = decideWorkerAction(w, "gitPush", {}, storeWithL4("w", "gitPush"));
+    expect(d.earnedLevel).toBe(4);
+    expect(d.effectiveLevel).toBe(1);
+    expect(d.action).toBe("gate");
+    expect(d.reason).toContain("autonomy ceiling");
+  });
+
+  it("autonomyCeiling=2 allows compensable at L2 (ceiling meets threshold)", () => {
     const w = parseWorker({
       id: "w",
       name: "W",
@@ -76,8 +104,28 @@ describe("decideWorkerAction", () => {
     const d = decideWorkerAction(w, "gitPush", {}, storeWithL4("w", "gitPush"));
     expect(d.earnedLevel).toBe(4);
     expect(d.effectiveLevel).toBe(2);
+    expect(d.action).toBe("allow");
+    expect(d.reason).toContain("L2+");
+  });
+
+  it("ALLOWS compensable once worker naturally earns L2 (no ceiling override)", () => {
+    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-remote"] });
+    const store = storeWithL2("w", "gitPush");
+    const d = decideWorkerAction(w, "gitPush", {}, store);
+    expect(d.earnedLevel).toBeGreaterThanOrEqual(2);
+    expect(d.action).toBe("allow");
+    expect(d.reason).toContain("L2+");
+  });
+
+  it("GATES compensable at effective L1 (earnedLevel < 2)", () => {
+    // Worker owns vcs-remote but has almost no evidence → L0/L1 → still gated.
+    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-remote"] });
+    const store = new WorkerLevelStore();
+    store.apply("w", { toolName: "gitPush", good: true, at: 0 }, { cfg: CFG });
+    const d = decideWorkerAction(w, "gitPush", {}, store);
+    expect(d.earnedLevel).toBeLessThan(2);
     expect(d.action).toBe("gate");
-    expect(d.reason).toContain("autonomy ceiling");
+    expect(d.reason).toContain("unearned");
   });
 
   it("ALLOWS an agent (reasoning) step — never gates it forever (M3)", () => {
