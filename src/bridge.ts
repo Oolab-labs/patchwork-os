@@ -1194,26 +1194,23 @@ export class Bridge {
         this.config.automationAllowPrivateWebhooks,
         this.recipeOrchestration
           ? (opts) =>
-              this.recipeOrchestration
-                ?.fireYamlRecipe({
-                  filePath: path.join(
-                    os.homedir(),
-                    ".patchwork",
-                    "recipes",
-                    `${opts.recipeName}.yaml`,
-                  ),
-                  name: opts.recipeName,
-                  taskIdPrefix: `automation-recipe-${opts.recipeName}`,
-                  triggerSourceSuffix: `automation:${opts.triggerSource}`,
-                  logLabel: `automation "${opts.recipeName}"`,
-                  seedContext: Object.fromEntries(
-                    Object.entries(opts.eventData),
-                  ),
-                })
-                .then((r) => {
-                  if (!r.ok) throw new Error(r.error ?? "recipe fire failed");
-                  return r.taskId ?? "";
-                })
+              // biome-ignore lint/style/noNonNullAssertion: guarded by outer ternary
+              this.recipeOrchestration!.fireYamlRecipe({
+                filePath: path.join(
+                  os.homedir(),
+                  ".patchwork",
+                  "recipes",
+                  `${opts.recipeName}.yaml`,
+                ),
+                name: opts.recipeName,
+                taskIdPrefix: `automation-recipe-${opts.recipeName}`,
+                triggerSourceSuffix: `automation:${opts.triggerSource}`,
+                logLabel: `automation "${opts.recipeName}"`,
+                seedContext: Object.fromEntries(Object.entries(opts.eventData)),
+              }).then((r) => {
+                if (!r.ok) throw new Error(r.error ?? "recipe fire failed");
+                return r.taskId ?? "";
+              })
           : undefined,
       );
       this.logger.info(
@@ -1250,26 +1247,25 @@ export class Bridge {
           this.config.automationAllowPrivateWebhooks,
           this.recipeOrchestration
             ? (opts) =>
-                this.recipeOrchestration
-                  ?.fireYamlRecipe({
-                    filePath: path.join(
-                      os.homedir(),
-                      ".patchwork",
-                      "recipes",
-                      `${opts.recipeName}.yaml`,
-                    ),
-                    name: opts.recipeName,
-                    taskIdPrefix: `automation-recipe-${opts.recipeName}`,
-                    triggerSourceSuffix: `automation:${opts.triggerSource}`,
-                    logLabel: `automation "${opts.recipeName}"`,
-                    seedContext: Object.fromEntries(
-                      Object.entries(opts.eventData),
-                    ),
-                  })
-                  .then((r) => {
-                    if (!r.ok) throw new Error(r.error ?? "recipe fire failed");
-                    return r.taskId ?? "";
-                  })
+                // biome-ignore lint/style/noNonNullAssertion: guarded by outer ternary
+                this.recipeOrchestration!.fireYamlRecipe({
+                  filePath: path.join(
+                    os.homedir(),
+                    ".patchwork",
+                    "recipes",
+                    `${opts.recipeName}.yaml`,
+                  ),
+                  name: opts.recipeName,
+                  taskIdPrefix: `automation-recipe-${opts.recipeName}`,
+                  triggerSourceSuffix: `automation:${opts.triggerSource}`,
+                  logLabel: `automation "${opts.recipeName}"`,
+                  seedContext: Object.fromEntries(
+                    Object.entries(opts.eventData),
+                  ),
+                }).then((r) => {
+                  if (!r.ok) throw new Error(r.error ?? "recipe fire failed");
+                  return r.taskId ?? "";
+                })
             : undefined,
         );
         this.automationHooks.registerRecipePrograms(collected.programs);
