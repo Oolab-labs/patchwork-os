@@ -128,7 +128,8 @@ function ConsideredApprovalPanel() {
       )}
       {data.latency === null && (
         <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
-          Latency captures from the next decision forward (it can't be backfilled).
+          Latency captures from the next decision forward (it cannot be
+          backfilled).
         </div>
       )}
       {data.byTool.map((t) => (
