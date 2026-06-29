@@ -625,6 +625,9 @@ export interface RunnerDeps {
     tier: import("../riskTier.js").RiskTier;
     summary?: string;
     params?: Record<string, unknown>;
+    /** The run's AbortSignal — lets the approval wait be cancelled promptly
+     * when the run is aborted, instead of blocking for the full TTL (L1). */
+    signal?: AbortSignal;
   }) => Promise<boolean>;
   /**
    * Worker-autonomy gate (worker.autonomy flag). When set, the approval gate
@@ -1239,6 +1242,17 @@ export async function runYamlRecipe(
   // Mirrors chainedRunner.ts:1277 — only the top-level run registers.
   const runController = runSeq !== undefined ? registerRun(runSeq) : undefined;
 
+  // L1 (review #1028): the LIVE cancel handle is runController.signal (aborted
+  // by POST /runs/:seq/cancel); deps.signal is the external caller signal
+  // (absent on the production flat path). Combine both so a cancelled run aborts
+  // a pending approval wait instead of hanging the full TTL — forwarding only
+  // deps.signal left the flat path's L1 goal unmet. Mirrors the dual-signal
+  // next-step check below.
+  const effectiveRunSignal =
+    runController?.signal && deps.signal
+      ? AbortSignal.any([runController.signal, deps.signal])
+      : (runController?.signal ?? deps.signal);
+
   const outputs: string[] = [];
   const stepResults: StepResult[] = [];
   // P1 cost/token corpus. The price table is loaded once per run (fail-open).
@@ -1777,6 +1791,7 @@ export async function runYamlRecipe(
             ? `agent step${step.agent.into ? ` → ${step.agent.into}` : ""}`
             : `tool ${approvalToolId}`,
           params: step.agent ? undefined : (step as Record<string, unknown>),
+          ...(effectiveRunSignal && { signal: effectiveRunSignal }), // L1
         });
         if (!approved) {
           const reason = `Step rejected by approval gate — approval_rejected.`;

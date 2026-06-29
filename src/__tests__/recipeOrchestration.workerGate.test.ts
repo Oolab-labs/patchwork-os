@@ -132,4 +132,19 @@ describe("buildWorkerAutonomyGate", () => {
     getApprovalQueue().approve(firstCallId());
     expect(await p).toBe(true);
   });
+
+  it("aborting the run signal resolves a gated step false, not a TTL hang (L1)", async () => {
+    const g = await buildWorkerAutonomyGate("test-recipe", undefined, opts);
+    const ac = new AbortController();
+    const p = g!({
+      toolId: "gitPush",
+      tier: "high",
+      params: {},
+      signal: ac.signal,
+    });
+    await tick();
+    expect(getApprovalQueue().list()).toHaveLength(1);
+    ac.abort(); // run cancelled → pending approval resolves "cancelled"
+    expect(await p).toBe(false);
+  });
 });

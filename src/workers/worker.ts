@@ -135,3 +135,18 @@ export function ownsAction(worker: WorkerManifest, ac: ActionClass): boolean {
     (p) => p === ac.domain || p === ac.key || ac.key.startsWith(`${p}:`),
   );
 }
+
+/**
+ * Ownership check against a raw class key (`domain:reversibility:blastTier`),
+ * for callers that have a board row's `classKey` but not a full ActionClass
+ * (e.g. the dial). Mirrors `ownsAction`: the domain is the key's first segment.
+ */
+export function ownsClassKey(
+  worker: WorkerManifest,
+  classKey: string,
+): boolean {
+  const domain = classKey.split(":")[0];
+  return worker.owns.some(
+    (p) => p === domain || p === classKey || classKey.startsWith(`${p}:`),
+  );
+}

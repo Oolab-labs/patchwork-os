@@ -39,6 +39,7 @@ function readRuns(patchworkDir: string): RunRecord[] {
       steps: (r.stepResults ?? []).map((s) => ({
         tool: s.tool,
         status: s.status,
+        haltReason: s.haltReason,
       })),
     }));
   } catch {

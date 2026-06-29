@@ -14,12 +14,14 @@ function makeQueue(opts?: {
   approve?: (callId: string) => boolean;
   reject?: (callId: string) => boolean;
   getRecentDecision?: (callId: string) => "allow" | "deny" | undefined;
+  list?: () => Array<{ callId: string; toolName: string }>;
 }): ApprovalQueue {
   return {
     validateToken: opts?.validateToken ?? (() => true),
     approve: opts?.approve ?? (() => true),
     reject: opts?.reject ?? (() => true),
     getRecentDecision: opts?.getRecentDecision ?? (() => undefined),
+    list: opts?.list ?? (() => []),
     enqueue: () => Promise.resolve({ callId: "test", timedOut: false }),
     cancelPending: () => {},
     getPendingList: () => [],
@@ -128,6 +130,47 @@ describe("routeApprovalRequest — approval_decision channel provenance", () => 
         callId: "call-4",
         decision: "deny",
         channel: "dashboard",
+      }),
+    );
+  });
+
+  it("includes the pending entry's toolName on an approve decision (L4)", async () => {
+    const onDecision = vi.fn();
+    await routeApprovalRequest(
+      { method: "POST", path: "/approve/call-5", body: {} },
+      {
+        queue: makeQueue({
+          approve: () => true,
+          list: () => [{ callId: "call-5", toolName: "gitPush" }],
+        }),
+        workspace: "/tmp",
+        onDecision,
+      },
+    );
+    expect(onDecision).toHaveBeenCalledWith(
+      "approval_decision",
+      expect.objectContaining({ callId: "call-5", toolName: "gitPush" }),
+    );
+  });
+
+  it("includes the pending entry's toolName on a reject decision (L4)", async () => {
+    const onDecision = vi.fn();
+    await routeApprovalRequest(
+      { method: "POST", path: "/reject/call-6", body: {} },
+      {
+        queue: makeQueue({
+          reject: () => true,
+          list: () => [{ callId: "call-6", toolName: "githubCreateIssue" }],
+        }),
+        workspace: "/tmp",
+        onDecision,
+      },
+    );
+    expect(onDecision).toHaveBeenCalledWith(
+      "approval_decision",
+      expect.objectContaining({
+        callId: "call-6",
+        toolName: "githubCreateIssue",
       }),
     );
   });

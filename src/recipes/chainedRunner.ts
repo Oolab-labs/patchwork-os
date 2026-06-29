@@ -257,6 +257,8 @@ export interface ExecutionDeps {
     tier: RiskTier;
     summary?: string;
     params?: Record<string, unknown>;
+    /** Run AbortSignal — cancels the approval wait promptly on run abort (L1). */
+    signal?: AbortSignal;
   }) => Promise<boolean>;
 }
 
@@ -657,6 +659,7 @@ export async function executeChainedStep(
         tier: classifyTool(approvalToolId),
         summary: step.agent ? "agent step" : `tool ${approvalToolId}`,
         params: step.agent ? undefined : (resolved as Record<string, unknown>),
+        ...(options.signal && { signal: options.signal }), // L1
       });
       if (!approved) {
         return {

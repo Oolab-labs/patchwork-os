@@ -50,8 +50,12 @@ export function formatShadowReport(reports: WorkerShadowReport[]): string {
           b.level > r.autonomyCeiling
             ? `  → operating L${r.autonomyCeiling} (ceiling)`
             : "";
+        // L3: a class the worker performs but doesn't own is floored to L0 by
+        // the gate regardless of the evidence shown here — flag it so the dial
+        // isn't read as earned autonomy the gate will honour.
+        const notOwned = b.owned ? "" : "  ⚠ NOT OWNED — gate floors to L0";
         lines.push(
-          `    ${b.classKey.padEnd(36)} earned L${b.level}${capped}  ·  ${b.observations} obs  ·  ${(b.mean * 100).toFixed(0)}% mean`,
+          `    ${b.classKey.padEnd(36)} earned L${b.level}${capped}  ·  ${b.observations} obs  ·  ${(b.mean * 100).toFixed(0)}% mean${notOwned}`,
         );
       }
     }

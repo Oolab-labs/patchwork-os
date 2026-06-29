@@ -281,6 +281,12 @@ export async function routeApprovalRequest(
         };
       }
     }
+    // Capture the tool name BEFORE resolving (approve() removes the entry).
+    // L4: the worker shadow logger keys ramp-vs-gate attribution off `toolName`
+    // in the decision metadata — without it the comparison silently drops the row.
+    const approveToolName = deps.queue
+      .list?.()
+      .find((e) => e.callId === callId)?.toolName;
     const ok = deps.queue.approve(callId);
     if (ok) {
       // Audit 2026-06-03 (MEDIUM #27): fire the audit hook on APPROVE too —
@@ -295,6 +301,7 @@ export async function routeApprovalRequest(
         // approval UI in practice. Lets the audit log answer "approved from
         // where", not just "who/what/when".
         channel: req.approvalToken !== undefined ? "phone" : "dashboard",
+        ...(approveToolName !== undefined && { toolName: approveToolName }),
       });
       return { status: 200, body: { decision: "allow", callId } };
     }
@@ -368,6 +375,11 @@ export async function routeApprovalRequest(
       const trimmed = raw.trim().slice(0, 500);
       if (trimmed.length > 0) reason = trimmed;
     }
+    // L4: capture toolName before reject() removes the entry (worker shadow
+    // attribution keys off it).
+    const rejectToolName = deps.queue
+      .list?.()
+      .find((e) => e.callId === callId)?.toolName;
     const ok = deps.queue.reject(callId);
     if (ok) {
       deps.onDecision?.("approval_decision", {
@@ -376,6 +388,7 @@ export async function routeApprovalRequest(
         ...(reason !== undefined && { reason }),
         // Provenance: phone (single-use token) vs dashboard/Bearer caller.
         channel: req.approvalToken !== undefined ? "phone" : "dashboard",
+        ...(rejectToolName !== undefined && { toolName: rejectToolName }),
       });
       return { status: 200, body: { decision: "deny", callId } };
     }

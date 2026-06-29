@@ -13,6 +13,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { cancelRun } from "../runRegistry.js";
 import {
   type RunnerDeps,
   runYamlRecipe,
@@ -219,5 +220,48 @@ describe("flat-runner approval gate — gateAutomatedRuns (worker.autonomy)", ()
     );
     expect(requireApprovalFn).not.toHaveBeenCalled();
     expect(writes).toBe(2);
+  });
+});
+
+/**
+ * L1 (review #1028) — the flat runner must forward the LIVE run signal
+ * (runController.signal, aborted by POST /runs/:seq/cancel) into the approval
+ * wait, not just deps.signal (undefined in production). Cancelling a registered
+ * run must abort a pending approval instead of hanging the full TTL.
+ */
+describe("flat-runner approval gate — cancel aborts a pending approval (L1)", () => {
+  it("forwards the run-registry signal so cancelRun(seq) resolves the wait", async () => {
+    const SEQ = 919191;
+    // minimal runLog stub so the runner registers a runController for SEQ
+    const runLog = {
+      startRun: () => SEQ,
+      updateRunSteps: () => {},
+      completeRun: () => {},
+    } as unknown as RunnerDeps["runLog"];
+
+    let captured: AbortSignal | undefined;
+    // mimic the real ApprovalQueue: resolve false ("cancelled") on abort, else hang
+    const requireApprovalFn = vi.fn(async (i: { signal?: AbortSignal }) => {
+      captured = i.signal;
+      if (i.signal?.aborted) return false;
+      return new Promise<boolean>((resolve) => {
+        i.signal?.addEventListener("abort", () => resolve(false));
+      });
+    });
+
+    const p = runYamlRecipe(
+      recipe({ type: "manual" }),
+      deps({ runLog, requireApprovalFn }),
+    );
+    await new Promise((r) => setImmediate(r));
+    // the approval wait received the LIVE run signal (not undefined)
+    expect(captured).toBeDefined();
+    expect(captured?.aborted).toBe(false);
+
+    cancelRun(SEQ); // POST /runs/:seq/cancel equivalent
+    expect(captured?.aborted).toBe(true); // pending approval is aborted, not hung
+
+    const result = await p;
+    expect(result.errorMessage).toMatch(/approval_rejected/);
   });
 });

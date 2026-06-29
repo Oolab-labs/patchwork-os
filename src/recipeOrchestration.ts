@@ -58,28 +58,24 @@ export const RECIPE_TASK_TIMEOUT_MS = 1_800_000;
  * human approval and resolves true only on an explicit "approved" decision
  * (a reject / expire / cancel halts the run — fail-closed, ADR-0016 spirit).
  */
-async function makeRecipeApprovalFn(
-  gate: "high" | "all",
-): Promise<
-  (input: {
-    toolId: string;
-    tier: import("./riskTier.js").RiskTier;
-    summary?: string;
-    params?: Record<string, unknown>;
-  }) => Promise<boolean>
-> {
+async function makeRecipeApprovalFn(gate: "high" | "all"): Promise<ApprovalFn> {
   const { getApprovalQueue } = await import("./approvalQueue.js");
   const queue = getApprovalQueue();
   return async (input) => {
     // Below-threshold steps don't need sign-off.
     if (gate === "high" && input.tier !== "high") return true;
-    const { promise } = queue.request({
-      toolName: input.toolId,
-      params: input.params ?? {},
-      tier: input.tier,
-      sessionId: "recipe",
-      ...(input.summary !== undefined && { summary: input.summary }),
-    });
+    const { promise } = queue.request(
+      {
+        toolName: input.toolId,
+        params: input.params ?? {},
+        tier: input.tier,
+        sessionId: "recipe",
+        ...(input.summary !== undefined && { summary: input.summary }),
+      },
+      // L1: abort the wait if the run is cancelled (→ "cancelled" → halt)
+      // instead of blocking for the full approval TTL.
+      { signal: input.signal },
+    );
     const decision = await promise;
     return decision === "approved";
   };
@@ -90,6 +86,10 @@ type ApprovalFn = (input: {
   tier: import("./riskTier.js").RiskTier;
   summary?: string;
   params?: Record<string, unknown>;
+  /** The run's AbortSignal — when it fires, the pending approval resolves
+   * "cancelled" so a cancelled run halts promptly instead of waiting the full
+   * approval TTL (L1). */
+  signal?: AbortSignal;
 }) => Promise<boolean>;
 
 /**
@@ -146,13 +146,16 @@ export async function buildWorkerAutonomyGate(
         return tierApprovalFn ? tierApprovalFn(input) : true;
       }
       // gate → queue for human approval; fail-closed on reject / expire / cancel
-      const { promise } = queue.request({
-        toolName: input.toolId,
-        params: input.params ?? {},
-        tier: input.tier,
-        sessionId: `worker:${worker.id}`,
-        summary: `${worker.name} (${decision.classKey}): ${decision.reason}`,
-      });
+      const { promise } = queue.request(
+        {
+          toolName: input.toolId,
+          params: input.params ?? {},
+          tier: input.tier,
+          sessionId: `worker:${worker.id}`,
+          summary: `${worker.name} (${decision.classKey}): ${decision.reason}`,
+        },
+        { signal: input.signal }, // L1: cancel the wait when the run aborts
+      );
       return (await promise) === "approved";
     };
   } catch {

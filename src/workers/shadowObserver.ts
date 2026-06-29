@@ -1,10 +1,16 @@
+import { categoriseHaltReason } from "../recipes/haltCategory.js";
 import { classifyActionClass } from "./actionClass.js";
 import {
   DEFAULT_GRADUATION_CONFIG,
   type GraduationConfig,
 } from "./graduation.js";
 import { recommend } from "./shadowGate.js";
-import { ownsAction, priorFor, type WorkerManifest } from "./worker.js";
+import {
+  ownsAction,
+  ownsClassKey,
+  priorFor,
+  type WorkerManifest,
+} from "./worker.js";
 import {
   type AuditEvent,
   type BoardRow,
@@ -25,7 +31,13 @@ export interface RunRecord {
   recipeName: string;
   /** epoch ms */
   at: number;
-  steps: Array<{ tool?: string; status: "ok" | "skipped" | "error" }>;
+  steps: Array<{
+    tool?: string;
+    status: "ok" | "skipped" | "error";
+    /** Persisted halt reason — used to tell a worker failure apart from a
+     * human approval decision (the latter is not trust evidence; see L2). */
+    haltReason?: string;
+  }>;
 }
 
 /** A live gate decision (maps from an ActivityLog approval_decision row). */
@@ -50,7 +62,9 @@ export interface WorkerShadowReport {
   workerId: string;
   name: string;
   autonomyCeiling: number;
-  board: BoardRow[];
+  /** Dial rows. `owned: false` = the worker performed this class but does not
+   * own it, so the live gate floors it to L0 regardless of accrued evidence. */
+  board: Array<BoardRow & { owned: boolean }>;
   events: AuditEvent[];
   /** ramp-vs-gate comparison over attributable decisions */
   compared: number;
@@ -111,6 +125,16 @@ export class WorkerShadowObserver {
     const prior = priorFor(worker);
     for (const step of run.steps) {
       if (!step.tool || step.status === "skipped") continue; // skipped ≠ evidence
+      // L2: a step halted because a HUMAN rejected / let expire / cancelled the
+      // approval is a control decision, not a worker failure — counting it as
+      // `good: false` would demote the worker for every correct "not yet", so
+      // the gate could never self-clear. Skip it (non-evidence). Genuine tool
+      // errors still count.
+      if (
+        step.status === "error" &&
+        categoriseHaltReason(step.haltReason) === "approval_rejected"
+      )
+        continue;
       this.store.apply(
         worker.id,
         { toolName: step.tool, good: step.status === "ok", at: run.at },
@@ -163,7 +187,13 @@ export class WorkerShadowObserver {
         workerId: w.id,
         name: w.name,
         autonomyCeiling: w.autonomyCeiling,
-        board: this.store.board(w.id),
+        // L3: flag rows for classes the worker performs but does NOT own — the
+        // dial shows accrued evidence there, but the live gate floors them to 0
+        // (a worker has no standing trust outside its `owns`). Without the flag
+        // the dial looks like earned autonomy that the gate silently ignores.
+        board: this.store
+          .board(w.id)
+          .map((r) => ({ ...r, owned: ownsClassKey(w, r.classKey) })),
         events: this.store.events(w.id),
         compared: c.compared,
         agreed: c.agreed,
