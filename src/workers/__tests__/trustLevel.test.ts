@@ -32,10 +32,29 @@ describe("trustLevel — cold start", () => {
   });
 
   it("a high-mean competence prior with no local evidence is still capped at L1", () => {
-    // ships competence (mean 0.95) but trust must be earned locally
+    // strength=8 contributes 6 pseudo-obs toward the floor (10 required).
+    // With 0 real observations, effectiveEvidence=6 < 10 → still L1.
     const prior = priorFromCompetence(0.95, 8);
     const r = levelFromPosterior(prior, prior, { reachable: ALL_REACHABLE });
     expect(evidenceCount(prior, prior)).toBe(0);
+    expect(r.level).toBeLessThanOrEqual(1);
+  });
+
+  it("strong prior (strength=8) reduces cold-start: 4 real obs graduate past L1", () => {
+    // strength=8 → priorContribution=6; 4 real obs → effectiveEvidence=10 → floor lifted.
+    const prior = priorFromCompetence(0.95, 8);
+    const p = applyN(prior, 4, true, 1);
+    const r = levelFromPosterior(p, prior, { reachable: ALL_REACHABLE });
+    expect(evidenceCount(p, prior)).toBe(4);
+    expect(r.level).toBeGreaterThan(1); // floor no longer blocks
+  });
+
+  it("default prior offers no cold-start reduction: 4 real obs still capped at L1", () => {
+    // DEFAULT_PRIOR (alpha=1, beta=1) contributes 0 extra → effectiveEvidence=4 < 10.
+    const p = applyN(DEFAULT_PRIOR, 4, true, 1);
+    const r = levelFromPosterior(p, DEFAULT_PRIOR, {
+      reachable: ALL_REACHABLE,
+    });
     expect(r.level).toBeLessThanOrEqual(1);
   });
 });

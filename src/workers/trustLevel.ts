@@ -105,8 +105,13 @@ export interface LevelResult {
 /**
  * Map a posterior to a discrete rung, applying:
  *  1. LCB → raw level via thresholds.
- *  2. Novel-class floor: below the evidence minimum, cap at L1 regardless of how
- *     good the (necessarily wide) posterior looks — no class graduates on faith.
+ *  2. Novel-class floor: below the effective evidence minimum, cap at L1.
+ *     "Effective evidence" = real observations + prior pseudo-count beyond the
+ *     uniform baseline (prior.alpha + prior.beta − 2). A strong operator prior
+ *     (strength 8 → contributes 6) reduces the real observations needed before
+ *     graduation is permitted; the default uniform prior contributes 0 so
+ *     existing behaviour is unchanged. No class can skip the floor entirely via
+ *     prior alone — the prior's LCB is still too wide without real data.
  *  3. Reachability clamp: drop to the highest reachable rung ≤ the computed one,
  *     so an irreversible class climbing through "would-be L2/L3" stays at L1
  *     until it actually clears the L4 bar.
@@ -129,8 +134,12 @@ export function levelFromPosterior(
     thresholds.find((t) => lcb >= t.min)?.level ?? (0 as TrustLevel);
 
   let level: TrustLevel = rawLevel;
-  // Novel-class floor.
-  if (evidence < minEvidence && level > 1) level = 1;
+  // Novel-class floor: prior pseudo-count beyond the uniform baseline counts
+  // toward the evidence minimum, reducing cold-start latency for operator-
+  // configured workers without letting the prior alone bypass the floor.
+  const priorContribution = Math.max(0, prior.alpha + prior.beta - 2);
+  const effectiveEvidence = evidence + priorContribution;
+  if (effectiveEvidence < minEvidence && level > 1) level = 1;
   // Reachability clamp (highest reachable rung ≤ level).
   const allowed = reachable.filter((r) => r <= level);
   level = (allowed.length ? Math.max(...allowed) : 0) as TrustLevel;
