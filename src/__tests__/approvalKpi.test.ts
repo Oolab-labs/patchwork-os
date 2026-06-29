@@ -25,6 +25,7 @@ function decisionLine(o: {
   requestedAt?: number;
   channel?: string;
   tier?: string;
+  callId?: string;
 }): string {
   return JSON.stringify({
     event: "approval_decision",
@@ -36,6 +37,7 @@ function decisionLine(o: {
       ...(o.requestedAt !== undefined && { requestedAt: o.requestedAt }),
       ...(o.channel !== undefined && { channel: o.channel }),
       ...(o.tier !== undefined && { tier: o.tier }),
+      ...(o.callId !== undefined && { callId: o.callId }),
     },
   });
 }
@@ -192,6 +194,42 @@ describe("readConsideredDecisions", () => {
     expect(kpi.channels).toEqual({ dashboard: 2, phone: 1 });
   });
 
+  it("dedups the two rows a single human decision emits (callId), keeping the channel'd one", () => {
+    // Production reality (the HIGH the review caught): a CC-hook approval
+    // resolved via the dashboard emits BOTH a POST row (channel'd, no reason)
+    // and the awaiting CC-hook row (no channel, reason'd) — same callId, same
+    // outcome. Counting both ~2x-inflates and injects a phantom "unknown".
+    const t0 = Date.parse("2026-06-29T12:00:00.000Z");
+    writeFileSync(
+      path.join(ideDir, "activity-3.jsonl"),
+      [
+        decisionLine({
+          ts: "2026-06-29T12:00:09.000Z",
+          toolName: "Bash",
+          decision: "allow",
+          reason: "",
+          requestedAt: t0,
+          channel: "dashboard",
+          callId: "abc-123",
+        }),
+        decisionLine({
+          ts: "2026-06-29T12:00:09.000Z",
+          toolName: "Bash",
+          decision: "allow",
+          reason: "approved",
+          requestedAt: t0,
+          callId: "abc-123", // same decision, CC-hook dup (no channel)
+        }),
+      ].join("\n"),
+    );
+    const ds = readConsideredDecisions({ ideDir });
+    expect(ds).toHaveLength(1); // collapsed, not 2
+    expect(ds[0]?.channel).toBe("dashboard"); // kept the channel'd row
+    const kpi = computeConsideredApprovalKpi(ds);
+    expect(kpi.decided).toBe(1);
+    expect(kpi.channels).toEqual({ dashboard: 1 }); // no phantom "unknown"
+  });
+
   it("returns [] for a missing ide dir (fail-soft)", () => {
     expect(readConsideredDecisions({ ideDir: "/no/such/dir" })).toEqual([]);
   });
@@ -243,7 +281,7 @@ describe("computeConsideredApprovalKpi", () => {
     ] as never;
     const kpi = computeConsideredApprovalKpi(decisions);
     expect(kpi.latency?.count).toBe(2); // legacy row excluded
-    expect(kpi.latency?.medianMs).toBe(30_000);
+    expect(kpi.latency?.medianMs).toBe(20_000); // interpolated median of [10s,30s]
     expect(kpi.channels).toEqual({ phone: 1, dashboard: 2 });
     expect(kpi.byTool[0]?.toolName).toBe("github.create_issue");
   });

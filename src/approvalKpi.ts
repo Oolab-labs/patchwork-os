@@ -44,6 +44,10 @@ export interface ConsideredDecision {
   requestedAt?: number;
   /** Where the human decided: "dashboard" | "phone" | "unknown". */
   channel: string;
+  /** Queue callId — the dedup key. A single human decision double-emits: once
+   * on the dashboard/phone POST handler (channel'd) and once on the CC-hook path
+   * that was awaiting the same queue entry (no channel). Same callId. */
+  callId?: string;
   tier?: string;
   sessionId?: string;
 }
@@ -123,13 +127,33 @@ export function readConsideredDecisions(
         decidedAt,
         ...(requestedAt !== undefined && { requestedAt }),
         channel: channel || "unknown",
+        ...(typeof md.callId === "string" && { callId: md.callId }),
         ...(typeof md.tier === "string" && { tier: md.tier }),
         ...(typeof md.sessionId === "string" && { sessionId: md.sessionId }),
       });
     }
   }
-  out.sort((a, b) => a.decidedAt - b.decidedAt);
-  return out;
+  // Dedup: a single human decision lands TWICE in the log — the dashboard/phone
+  // POST handler row (channel'd) and the CC-hook row that was awaiting the same
+  // queue entry (no channel, reason'd). Same callId, same outcome. Collapse to
+  // one, preferring the richer row (real channel, then a prompt time) so counts
+  // aren't ~2x inflated and the channel split isn't polluted with a phantom
+  // "unknown" per decision. Rows without a callId (legacy) are never deduped.
+  const rank = (d: ConsideredDecision): number =>
+    (d.channel !== "unknown" ? 2 : 0) + (d.requestedAt !== undefined ? 1 : 0);
+  const byCallId = new Map<string, ConsideredDecision>();
+  const deduped: ConsideredDecision[] = [];
+  for (const d of out) {
+    if (!d.callId) {
+      deduped.push(d);
+      continue;
+    }
+    const prev = byCallId.get(d.callId);
+    if (!prev || rank(d) > rank(prev)) byCallId.set(d.callId, d);
+  }
+  deduped.push(...byCallId.values());
+  deduped.sort((a, b) => a.decidedAt - b.decidedAt);
+  return deduped;
 }
 
 export interface LatencyStats {
@@ -169,11 +193,18 @@ export interface ConsideredApprovalKpi {
 
 function percentile(sortedAsc: number[], p: number): number {
   if (sortedAsc.length === 0) return 0;
-  const idx = Math.min(
-    sortedAsc.length - 1,
-    Math.floor((p / 100) * sortedAsc.length),
-  );
-  return sortedAsc[idx] as number;
+  if (sortedAsc.length === 1) return sortedAsc[0] as number;
+  // Linear interpolation between closest ranks. The floor/nearest-rank variant
+  // rounds toward the SLOWER middle sample (median of [10s,30s] → 30s), which
+  // makes reflexive approvals look more deliberated than they were — a false
+  // negative on the one signal this module exists to catch.
+  const rank = (p / 100) * (sortedAsc.length - 1);
+  const lo = Math.floor(rank);
+  const hi = Math.ceil(rank);
+  const a = sortedAsc[lo] as number;
+  if (lo === hi) return a;
+  const b = sortedAsc[hi] as number;
+  return a + (b - a) * (rank - lo);
 }
 
 function latencyOf(decisions: ConsideredDecision[]): LatencyStats | null {

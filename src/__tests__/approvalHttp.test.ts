@@ -151,6 +151,9 @@ describe("routeApprovalRequest", () => {
       event: "approval_decision",
       meta: { callId, decision: "allow" },
     });
+    // The considered-approval KPI derives latency from this; it must ride the
+    // emit (read from the queue entry before approve() removes it).
+    expect(typeof events[0]?.meta.requestedAt).toBe("number");
   });
 
   it("POST /approve on truly-unknown callId → 404 (not 409)", async () => {

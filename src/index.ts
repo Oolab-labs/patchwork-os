@@ -4724,7 +4724,7 @@ if (process.argv[2] === "approvals") {
         d.setHours(18, 0, 0, 0);
         if (d.getTime() > Date.now()) d.setDate(d.getDate() - 1);
         sinceMs = d.getTime();
-      } else if (win in fixed) {
+      } else if (Object.hasOwn(fixed, win)) {
         const dur = fixed[win];
         sinceMs = dur == null ? undefined : Date.now() - dur;
       } else {
