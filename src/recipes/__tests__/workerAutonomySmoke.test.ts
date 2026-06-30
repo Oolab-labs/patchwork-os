@@ -282,16 +282,36 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
       ),
     ).toBe(true);
 
-    // --- D. trust replay ATTRIBUTES the run + records issue-class evidence -
-    const postTrust = loadWorkerTrustForRecipe(RECIPE_NAME, {
+    // --- D. trust replay + DURABLE-OUTCOME LABELLING ----------------------
+    // A just-approved issue write is a non-reversible SUCCESS — it must NOT
+    // count as earned trust until it has survived the durability window (it
+    // could be reverted / closed-as-junk minutes later). So with real `now`
+    // the issue class has NO evidence yet…
+    const HOUR = 60 * 60 * 1000;
+    const freshTrust = loadWorkerTrustForRecipe(RECIPE_NAME, {
       workersDir,
       patchworkDir,
     });
-    const board = postTrust?.store.board(WORKER_ID) ?? [];
-    const issueRow = board.find((r) => r.classKey.includes("issue"));
+    expect(
+      (freshTrust?.store.board(WORKER_ID) ?? []).find((r) =>
+        r.classKey.includes("issue"),
+      ),
+      "a recent issue success is withheld (durable-outcome label)",
+    ).toBeUndefined();
+
+    // …but once the run has survived the durability window it accrues evidence.
+    // (Inject a future `now` to simulate the window elapsing.)
+    const durableTrust = loadWorkerTrustForRecipe(RECIPE_NAME, {
+      workersDir,
+      patchworkDir,
+      now: Date.now() + 25 * HOUR,
+    });
+    const issueRow = (durableTrust?.store.board(WORKER_ID) ?? []).find((r) =>
+      r.classKey.includes("issue"),
+    );
     expect(
       issueRow,
-      "issue action-class has evidence on the dial",
+      "issue evidence accrues once the success is durable",
     ).toBeDefined();
     expect(issueRow?.observations ?? 0).toBeGreaterThanOrEqual(1);
 
@@ -299,6 +319,7 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
       workersDir,
       patchworkDir,
       ideDir: tmpHome,
+      now: Date.now() + 25 * HOUR,
     });
     expect(shadow.runsScanned).toBeGreaterThanOrEqual(1);
     expect(shadow.workers.some((w) => w.workerId === WORKER_ID)).toBe(true);

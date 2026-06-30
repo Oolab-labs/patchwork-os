@@ -18,8 +18,15 @@ export function buildShadowReport(
   runs: RunRecord[],
   decisions: DecisionRecord[],
   cfg?: GraduationConfig,
+  opts: { now?: number; durabilityWindowMs?: number } = {},
 ): WorkerShadowReport[] {
-  const obs = new WorkerShadowObserver(workers, { cfg });
+  const obs = new WorkerShadowObserver(workers, {
+    cfg,
+    ...(opts.now !== undefined && { now: opts.now }),
+    ...(opts.durabilityWindowMs !== undefined && {
+      durabilityWindowMs: opts.durabilityWindowMs,
+    }),
+  });
   const merged: Array<{ at: number; run?: RunRecord; dec?: DecisionRecord }> = [
     ...runs.map((r) => ({ at: r.at, run: r })),
     ...decisions.map((d) => ({ at: d.at, dec: d })),

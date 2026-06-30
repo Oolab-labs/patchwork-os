@@ -28,6 +28,9 @@ export interface RunWorkerShadowOpts {
   patchworkDir?: string;
   /** ~/.claude/ide (activity-*.jsonl) override (tests). */
   ideDir?: string;
+  /** Wall-clock override (tests) for durable-outcome labelling. Defaults to
+   *  Date.now() — supplied here (the I/O entry) so the observer stays pure. */
+  now?: number;
 }
 
 function readRuns(patchworkDir: string, recipeNames?: string[]): RunRecord[] {
@@ -157,7 +160,12 @@ export function getWorkerShadowData(
     : [];
   const decisions = workers.length ? readDecisions(ideDir) : [];
   return {
-    workers: buildShadowReport(workers, runs, decisions),
+    // `now` drives durable-outcome labelling (recent non-reversible successes
+    // are withheld until they survive the durability window). Real Date.now() in
+    // production; tests inject opts.now.
+    workers: buildShadowReport(workers, runs, decisions, undefined, {
+      now: opts.now ?? Date.now(),
+    }),
     runsScanned: runs.length,
     decisionsScanned: decisions.length,
     workersDir,
@@ -189,7 +197,12 @@ export function loadWorkerTrustForRecipe(
 
   const workers = loadWorkersFromDir(workersDir);
   if (!workers.length) return null;
-  const observer = new WorkerShadowObserver(workers);
+  // Same durable-outcome labelling as the dial (one source of truth): the live
+  // gate must not count a recent non-reversible success that could still be
+  // reverted. Real Date.now() in production; tests inject opts.now.
+  const observer = new WorkerShadowObserver(workers, {
+    now: opts.now ?? Date.now(),
+  });
   const worker = observer.workerForRecipe(recipeName);
   if (!worker) return null;
   // Replay in ASCENDING timestamp order (review #1027 M2). The graduation

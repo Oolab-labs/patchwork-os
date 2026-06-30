@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { GraduationConfig } from "../graduation.js";
-import { type RunRecord, WorkerShadowObserver } from "../shadowObserver.js";
+import {
+  isDurableSuccess,
+  type RunRecord,
+  WorkerShadowObserver,
+} from "../shadowObserver.js";
 import { parseWorker } from "../worker.js";
 
 const CFG: GraduationConfig = {
@@ -154,5 +158,61 @@ describe("WorkerShadowObserver", () => {
       .board.find((b) => b.classKey.startsWith("vcs-push"));
     expect(row).toBeDefined();
     expect(row!.owned).toBe(false);
+  });
+});
+
+const W = 24 * 60 * 60 * 1000;
+
+describe("isDurableSuccess (durable-outcome label)", () => {
+  it("reversible successes are always durable (even brand-new)", () => {
+    expect(isDurableSuccess("reversible", 1000, 1000, W)).toBe(true);
+  });
+  it("a non-reversible success is durable only after surviving the window", () => {
+    const now = 100 * W;
+    expect(isDurableSuccess("compensable", now - 1000, now, W)).toBe(false); // 1s ago → pending
+    expect(isDurableSuccess("compensable", now - 2 * W, now, W)).toBe(true); // survived
+    expect(isDurableSuccess("irreversible", now - 1000, now, W)).toBe(false);
+    expect(isDurableSuccess("irreversible", now - 2 * W, now, W)).toBe(true);
+  });
+});
+
+describe("WorkerShadowObserver — durable-outcome labelling", () => {
+  const now = 100 * W;
+  const issuer = parseWorker({
+    id: "issuer",
+    name: "Issuer",
+    recipe: "file-issues",
+    owns: ["issue"],
+  });
+  const issueRun = (at: number, status: "ok" | "error" = "ok"): RunRecord => ({
+    recipeName: "file-issues",
+    at,
+    steps: [{ tool: "githubCreateIssue", status }],
+  });
+  const issueRow = (obs: WorkerShadowObserver) =>
+    obs.report()[0]!.board.find((b) => b.classKey.startsWith("issue"));
+
+  it("WITHHOLDS a recent non-reversible success (the #1041 junk-issue case)", () => {
+    const obs = new WorkerShadowObserver([issuer], { cfg: CFG, now });
+    obs.ingestRun(issueRun(now - 1000)); // filed 1s ago → not yet durable
+    expect(issueRow(obs)).toBeUndefined(); // no evidence on the issue class
+  });
+
+  it("COUNTS a non-reversible success once it has survived the window", () => {
+    const obs = new WorkerShadowObserver([issuer], { cfg: CFG, now });
+    obs.ingestRun(issueRun(now - 2 * W)); // 2 days ago → durable
+    expect(issueRow(obs)?.observations).toBe(1);
+  });
+
+  it("counts a recent FAILURE immediately (failure is durable evidence)", () => {
+    const obs = new WorkerShadowObserver([issuer], { cfg: CFG, now });
+    obs.ingestRun(issueRun(now - 1000, "error"));
+    expect(issueRow(obs)?.observations).toBe(1);
+  });
+
+  it("without `now`, falls back to status-only (recent success counts) — back-compat", () => {
+    const obs = new WorkerShadowObserver([issuer], { cfg: CFG }); // no now
+    obs.ingestRun(issueRun(now - 1000));
+    expect(issueRow(obs)?.observations).toBe(1);
   });
 });
