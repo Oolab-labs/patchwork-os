@@ -55,45 +55,90 @@ steps:
         command to run to confirm.
       driver: claude-code
       into: triage
-  # Reproducibility gate (issue-hygiene). A worker triage is a LEAD, not a
+  # Dedup read (issue-hygiene, part 1). Pull the currently-OPEN `test-failure`
+  # issues so the decision step below can avoid filing a duplicate of a failure
+  # that is already tracked. `assignee: any` is REQUIRED — worker-filed issues
+  # are unassigned, so the default `@me` filter would never see them.
+  # `optional: true` makes this FAIL-OPEN: if the list call fails (token expiry,
+  # rate limit, MCP outage) the run continues and `{{existing}}` is empty — a
+  # missed dedup (one possible duplicate) is strictly better than a blocked real
+  # filing. Dedup must never gate a genuine failure behind GitHub availability.
+  # `when: "{{repo}}"` skips this read when `repo` is unset: with an empty repo
+  # the connector would drop the owner/repo filter and dedup against EVERY
+  # accessible repo's `test-failure` issues (cross-repo poisoning). Skipping
+  # leaves `{{existing}}` empty → "not a duplicate"; the misconfig still surfaces
+  # loudly at file_issue (which hard-errors on an empty repo).
+  - id: list_existing
+    when: "{{repo}}"
+    optional: true
+    tool: github.list_issues
+    repo: "{{repo}}"
+    labels:
+      - test-failure
+    state: open
+    assignee: any
+    max: 30
+    into: existing
+  # Decision gate (issue-hygiene, part 2). A worker triage is a LEAD, not a
   # verified diagnosis — the on_test_run event can fire on a flake, a transient,
   # or an already-fixed failure (e.g. #1046: a triage that confidently blamed a
-  # commit for a test that actually passes on `main`). Before filing a real,
-  # brand-exposed issue, re-run the named test(s) in ISOLATION and only proceed
-  # if the failure still reproduces. A non-reproducing run writes the draft note
-  # (below) but files NO issue — strictly noise-reducing, never blocks a real one.
-  - id: verify_reproduced
+  # commit for a test that actually passes on `main`). This single step answers
+  # the worker's real question — "is this worth filing a NEW issue?" — which is
+  # true ONLY when the failure (1) REPRODUCES on an isolated re-run AND (2) is
+  # NOT already covered by an open issue from `list_existing`. A `false` run
+  # still writes the draft note (below) but files NO issue: strictly noise-
+  # reducing, never blocks a real, novel failure.
+  # `optional: true` is a deliberate FAIL-CLOSED-ON-FILING guard: if THIS agent
+  # step itself fails (the re-run crashes, the model returns silent-fail /
+  # narration-only output), the run does NOT halt — `{{should_file}}` is left
+  # unset, so the file_issue gate below renders falsy and SKIPS. A decision we
+  # couldn't make must never auto-file a brand-exposed issue, and the triage note
+  # (written next) is preserved either way.
+  - id: decide_file
+    optional: true
     agent:
       prompt: |
         A test run reported failures and this triage was written:
 
         {{triage}}
 
-        Re-run ONLY the specific failing test(s) named above, in isolation, on the
-        current checkout, to confirm they still fail — e.g.
-        `npx vitest run <file> -t "<test name>"`. A test that PASSES on isolated
-        re-run is a flake / transient / already-fixed and must NOT be filed.
+        Open issues already labelled `test-failure` (JSON; may be empty or an
+        error object if the lookup failed — treat anything other than a clear
+        matching issue as "not a duplicate"):
+        {{existing}}
+
+        Do BOTH checks, then decide whether to file a NEW issue:
+        1. REPRODUCE: re-run ONLY the specific failing test(s) named above, in
+           isolation, on the current checkout — e.g.
+           `npx vitest run <file> -t "<test name>"`. A test that PASSES on
+           isolated re-run is a flake / transient / already-fixed.
+        2. DEDUP: check whether an OPEN issue above already tracks THIS failure
+           (same test/file and root cause). If so, it is a duplicate.
 
         Output EXACTLY one word and nothing else:
-          true   — the failure REPRODUCED (a real, current failure worth filing)
-          false  — it did NOT reproduce (flake / transient / already green)
+          true   — the failure REPRODUCED *and* is NOT already tracked (file it)
+          false  — it did NOT reproduce, OR an open issue already covers it
       driver: claude-code
-      into: reproduced
+      into: should_file
   - id: write_note
     tool: file.write
     path: ~/.patchwork/inbox/test-triage-{{date}}-{{time}}.md
     content: |
       # Test triage — {{date}} {{time}}
 
-      Runner {{runner}} · failed {{failed}}/{{total}} · reproduced: {{reproduced}}
+      Runner {{runner}} · failed {{failed}}/{{total}} · file new issue: {{should_file}}
 
       {{triage}}
-  # The risky owned action. Runs AFTER the draft is written (so a gate rejection,
-  # a missing `repo`, or a non-reproducing failure never loses the triage note)
-  # and ONLY when the failure reproduced — `when` skips the step (not a failure)
-  # on a falsy guard ("", "false", "0", "null", "undefined").
+  # The risky owned action. Runs AFTER the draft is written — and the two steps
+  # between the note and here (list_existing, decide_file) are BOTH `optional`,
+  # so a gate rejection, a missing `repo`, a non-reproducing failure, a duplicate,
+  # OR a crashed decision agent never halts before write_note: the triage note is
+  # always preserved. Files ONLY when the decision step emitted a truthy verdict —
+  # `when` skips the step (not a failure) on a falsy guard ("", "false", "0",
+  # "null", "undefined"), which also covers the unset-var case when decide_file
+  # failed fail-open.
   - id: file_issue
-    when: "{{reproduced}}"
+    when: "{{should_file}}"
     tool: github.create_issue
     repo: "{{repo}}"
     title: "Test triage {{date}}: {{runner}} failing {{failed}}/{{total}}"
@@ -101,7 +146,7 @@ steps:
       {{triage}}
 
       ---
-      _Filed by the Test Guardian Worker from a failing {{runner}} run (reproduced on isolated re-run)._
+      _Filed by the Test Guardian Worker from a failing {{runner}} run (reproduced on isolated re-run; no open duplicate)._
     labels:
       - test-failure
     into: filed_issue
