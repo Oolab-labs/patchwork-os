@@ -194,3 +194,72 @@ describe("findBridgeLock() — first-of-many (back-compat)", () => {
     expect(first).toBeNull();
   });
 });
+
+describe("findBridgeLock() — workspace-aware selection (multi-bridge)", () => {
+  it("prefers the bridge whose workspace contains the caller's cwd", () => {
+    writeLock(3101, {
+      pid: 1001,
+      authToken: "tok-a",
+      workspace: "/ws/a",
+      isBridge: true,
+    });
+    writeLock(3102, {
+      pid: 1002,
+      authToken: "tok-b",
+      workspace: "/ws/b",
+      isBridge: true,
+    });
+    const pick = findBridgeLock({
+      lockDir: dir,
+      isLive: () => true,
+      cwd: "/ws/b",
+    });
+    expect(pick?.port).toBe(3102);
+    expect(pick?.authToken).toBe("tok-b");
+  });
+
+  it("matches a cwd nested under the workspace root (not just an exact match)", () => {
+    writeLock(3101, { pid: 1001, workspace: "/ws/a", isBridge: true });
+    writeLock(3102, { pid: 1002, workspace: "/ws/b", isBridge: true });
+    const pick = findBridgeLock({
+      lockDir: dir,
+      isLive: () => true,
+      cwd: "/ws/b/packages/api/src",
+    });
+    expect(pick?.port).toBe(3102);
+  });
+
+  it("does NOT match a sibling whose path merely shares a prefix string", () => {
+    // "/ws/b-other" must not be considered a parent of "/ws/b".
+    writeLock(3101, { pid: 1001, workspace: "/ws/b-other", isBridge: true });
+    writeLock(3102, { pid: 1002, workspace: "/ws/b", isBridge: true });
+    const pick = findBridgeLock({
+      lockDir: dir,
+      isLive: () => true,
+      cwd: "/ws/b/src",
+    });
+    expect(pick?.port).toBe(3102);
+  });
+
+  it("falls back to a live bridge when no workspace contains the cwd", () => {
+    writeLock(3101, { pid: 1001, workspace: "/ws/a", isBridge: true });
+    writeLock(3102, { pid: 1002, workspace: "/ws/b", isBridge: true });
+    const pick = findBridgeLock({
+      lockDir: dir,
+      isLive: () => true,
+      cwd: "/somewhere/else",
+    });
+    // No match → first live bridge (order is FS-dependent; just assert one).
+    expect([3101, 3102]).toContain(pick?.port);
+  });
+
+  it("ignores the cwd preference when only one bridge is live (byte-identical)", () => {
+    writeLock(3101, { pid: 1001, workspace: "/ws/a", isBridge: true });
+    const pick = findBridgeLock({
+      lockDir: dir,
+      isLive: () => true,
+      cwd: "/totally/unrelated",
+    });
+    expect(pick?.port).toBe(3101);
+  });
+});
