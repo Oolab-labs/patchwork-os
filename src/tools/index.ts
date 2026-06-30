@@ -336,6 +336,7 @@ export interface ToolContext {
   commitIssueLinkLog?: import("../commitIssueLinkLog.js").CommitIssueLinkLog;
   recipeRunLog?: import("../runLog.js").RecipeRunLog;
   decisionTraceLog?: import("../decisionTraceLog.js").DecisionTraceLog;
+  workerGateDecisionLog?: import("../workerGateDecisionLog.js").WorkerGateDecisionLog;
 }
 
 export function registerAllTools(ctx: ToolContext): void;
@@ -359,6 +360,7 @@ export function registerAllTools(
   commitIssueLinkLog?: import("../commitIssueLinkLog.js").CommitIssueLinkLog,
   recipeRunLog?: import("../runLog.js").RecipeRunLog,
   decisionTraceLog?: import("../decisionTraceLog.js").DecisionTraceLog,
+  workerGateDecisionLog?: import("../workerGateDecisionLog.js").WorkerGateDecisionLog,
 ): void;
 export function registerAllTools(
   transportOrCtx: McpTransport | ToolContext,
@@ -380,6 +382,7 @@ export function registerAllTools(
   commitIssueLinkLogArg?: import("../commitIssueLinkLog.js").CommitIssueLinkLog,
   recipeRunLogArg?: import("../runLog.js").RecipeRunLog,
   decisionTraceLogArg?: import("../decisionTraceLog.js").DecisionTraceLog,
+  workerGateDecisionLogArg?: import("../workerGateDecisionLog.js").WorkerGateDecisionLog,
 ): void {
   // Options-object form: unpack and re-dispatch through the positional path.
   if (
@@ -409,6 +412,7 @@ export function registerAllTools(
       ctx.commitIssueLinkLog,
       ctx.recipeRunLog,
       ctx.decisionTraceLog,
+      ctx.workerGateDecisionLog,
     );
     return;
   }
@@ -784,6 +788,7 @@ export function registerAllTools(
       commitIssueLinkLog: commitIssueLinkLog ?? null,
       recipeRunLog: recipeRunLog ?? null,
       decisionTraceLog: decisionTraceLog ?? null,
+      workerGateDecisionLog: workerGateDecisionLogArg ?? null,
       embedFn: getLocalEmbedFn(),
     }),
     createCtxGetTaskContextTool({

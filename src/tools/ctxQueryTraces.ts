@@ -3,6 +3,7 @@ import type { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
 import type { DecisionTraceLog } from "../decisionTraceLog.js";
 import { cosineSimilarity } from "../embeddings/index.js";
 import type { RecipeRunLog } from "../runLog.js";
+import type { WorkerGateDecisionLog } from "../workerGateDecisionLog.js";
 import { optionalInt, optionalString, successStructured } from "./utils.js";
 
 /**
@@ -37,7 +38,12 @@ const MAX_SEMANTIC_BATCH = 200;
  * need richer per-type shapes can key on `traceType` and unwrap `body`.
  */
 
-export type TraceType = "approval" | "enrichment" | "recipe_run" | "decision";
+export type TraceType =
+  | "approval"
+  | "enrichment"
+  | "recipe_run"
+  | "decision"
+  | "gate_decision";
 
 export interface DecisionTrace {
   traceType: TraceType;
@@ -61,6 +67,7 @@ export interface CtxQueryTracesDeps {
   commitIssueLinkLog?: CommitIssueLinkLog | null;
   activityLog?: ActivityLog | null;
   decisionTraceLog?: DecisionTraceLog | null;
+  workerGateDecisionLog?: WorkerGateDecisionLog | null;
   /**
    * Optional on-device embeddings function — wired from
    * `createEmbeddingsProvider()?.embed` at the registration site. Returns one
@@ -115,6 +122,12 @@ function semanticTextFor(t: DecisionTrace): string {
       return cap(
         `${str(b.toolName)} ${str(b.decision)} ${str(b.reason)} ${str(
           b.summary,
+        )}`.trim(),
+      );
+    case "gate_decision":
+      return cap(
+        `${str(b.toolName)} ${str(b.action)} ${str(b.classKey)} ${str(
+          b.reason,
         )}`.trim(),
       );
     default:
@@ -223,6 +236,17 @@ function decisionTraces(log: DecisionTraceLog): DecisionTrace[] {
   }));
 }
 
+function gateDecisionTraces(log: WorkerGateDecisionLog): DecisionTrace[] {
+  return log.query({ limit: 500 }).map((d) => ({
+    traceType: "gate_decision",
+    ts: d.decidedAt,
+    // worker × action-class — the natural join key for the trust dial.
+    key: `${d.workerId}:${d.classKey}`,
+    summary: `${d.action} ${d.toolName} (effL${d.effectiveLevel}): ${d.reason}`,
+    body: d as unknown as Record<string, unknown>,
+  }));
+}
+
 export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
   return {
     schema: {
@@ -235,9 +259,15 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
         properties: {
           traceType: {
             type: "string",
-            enum: ["approval", "enrichment", "recipe_run", "decision"],
+            enum: [
+              "approval",
+              "enrichment",
+              "recipe_run",
+              "decision",
+              "gate_decision",
+            ],
             description:
-              "Optional filter — restrict to one source. Omit to get all.",
+              "Optional filter — restrict to one source. Omit to get all. `gate_decision` = worker-autonomy gate decisions + their inputs.",
           },
           key: {
             type: "string",
@@ -282,7 +312,13 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
               properties: {
                 traceType: {
                   type: "string",
-                  enum: ["approval", "enrichment", "recipe_run", "decision"],
+                  enum: [
+                    "approval",
+                    "enrichment",
+                    "recipe_run",
+                    "decision",
+                    "gate_decision",
+                  ],
                 },
                 ts: { type: "integer" },
                 key: { type: "string" },
@@ -300,6 +336,7 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
               enrichment: { type: "boolean" },
               recipe_run: { type: "boolean" },
               decision: { type: "boolean" },
+              gate_decision: { type: "boolean" },
             },
           },
         },
@@ -324,6 +361,7 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
         enrichment: Boolean(deps.commitIssueLinkLog),
         recipe_run: Boolean(deps.recipeRunLog),
         decision: Boolean(deps.decisionTraceLog),
+        gate_decision: Boolean(deps.workerGateDecisionLog),
       };
 
       const pools: DecisionTrace[] = [];
@@ -341,6 +379,12 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
       }
       if ((!traceType || traceType === "decision") && deps.decisionTraceLog) {
         pools.push(...decisionTraces(deps.decisionTraceLog));
+      }
+      if (
+        (!traceType || traceType === "gate_decision") &&
+        deps.workerGateDecisionLog
+      ) {
+        pools.push(...gateDecisionTraces(deps.workerGateDecisionLog));
       }
 
       // In semantic mode `q` is the similarity query, NOT a substring

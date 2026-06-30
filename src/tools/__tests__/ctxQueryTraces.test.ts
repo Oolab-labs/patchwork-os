@@ -6,6 +6,7 @@ import { ActivityLog } from "../../activityLog.js";
 import { CommitIssueLinkLog } from "../../commitIssueLinkLog.js";
 import { DecisionTraceLog } from "../../decisionTraceLog.js";
 import { RecipeRunLog } from "../../runLog.js";
+import { WorkerGateDecisionLog } from "../../workerGateDecisionLog.js";
 import { createCtxQueryTracesTool } from "../ctxQueryTraces.js";
 
 let dir: string;
@@ -83,6 +84,41 @@ describe("ctxQueryTraces", () => {
     expect(res.traces[0].body.summary).toBe("push to main");
   });
 
+  it("surfaces worker-gate decisions as traceType gate_decision", async () => {
+    const gateLog = new WorkerGateDecisionLog({ dir });
+    gateLog.record({
+      recipeName: "triage",
+      workerId: "test-guardian-worker",
+      toolName: "githubCreateIssue",
+      action: "gate",
+      classKey: "issue:compensable:high",
+      domain: "issue",
+      owned: true,
+      blastTier: "high",
+      reversibility: "compensable",
+      earnedLevel: 0,
+      autonomyCeiling: 4,
+      effectiveLevel: 0,
+      contextRiskScore: 0.9,
+      contextRiskReasons: ["huge uncommitted diff"],
+      reason: "compensable + unearned (effective L0 < L4) — gated for approval",
+      gatePolicyVersion: "worker-ramp-v0",
+    });
+    const tool = createCtxQueryTracesTool({ workerGateDecisionLog: gateLog });
+    const res = parse(await tool.handler({ traceType: "gate_decision" }));
+    expect(res.count).toBe(1);
+    expect(res.sources.gate_decision).toBe(true);
+    const t = res.traces[0];
+    expect(t.traceType).toBe("gate_decision");
+    expect(t.key).toBe("test-guardian-worker:issue:compensable:high");
+    expect(t.summary).toContain("gate githubCreateIssue");
+    expect(t.summary).toContain("effL0");
+    // the inputs that produced the decision are preserved in the body
+    expect(t.body.gatePolicyVersion).toBe("worker-ramp-v0");
+    expect(t.body.contextRiskScore).toBe(0.9);
+    expect(t.body.earnedLevel).toBe(0);
+  });
+
   it("filters by key substring", async () => {
     linkLog.record({
       sha: "aaa",
@@ -147,6 +183,7 @@ describe("ctxQueryTraces", () => {
       enrichment: true,
       recipe_run: false,
       decision: false,
+      gate_decision: false,
     });
   });
 

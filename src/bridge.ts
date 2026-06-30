@@ -67,6 +67,7 @@ import { resolveFilePath } from "./tools/utils.js";
 import { McpTransport } from "./transport.js";
 import { PACKAGE_VERSION } from "./version.js";
 import { wireHaltPushDispatch } from "./wireHaltPushDispatch.js";
+import { WorkerGateDecisionLog } from "./workerGateDecisionLog.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 
@@ -186,6 +187,7 @@ export class Bridge {
   private recipeOrchestrator: RecipeOrchestrator | null = null;
   private commitIssueLinkLog: CommitIssueLinkLog | null = null;
   private decisionTraceLog: DecisionTraceLog | null = null;
+  private workerGateDecisionLog: WorkerGateDecisionLog | null = null;
   /** Pre-computed digest of recent decisions, refreshed on each session connect. */
   private recentTracesDigest: string[] = [];
   private httpMcpHandler: StreamableHttpHandler | null = null;
@@ -504,6 +506,7 @@ export class Bridge {
         this.commitIssueLinkLog ?? undefined,
         this.recipeRunLog ?? undefined,
         this.decisionTraceLog ?? undefined,
+        this.workerGateDecisionLog ?? undefined,
       );
 
       transport.attach(ws);
@@ -1044,6 +1047,12 @@ export class Bridge {
       dir: patchworkDir,
       logger: this.logger,
     });
+    // Decision Record store — every worker-gate decision + inputs (replayable
+    // audit trail). Always available so the gate's decisions are never discarded.
+    this.workerGateDecisionLog = new WorkerGateDecisionLog({
+      dir: patchworkDir,
+      logger: this.logger,
+    });
 
     // 2. Initialize Claude driver and orchestrator (if configured)
     if (this.config.driver !== "none") {
@@ -1138,6 +1147,7 @@ export class Bridge {
           recipeOrchestrator: this.recipeOrchestrator,
           recipeRunLog: this.recipeRunLog,
           activityLog: this.activityLog,
+          workerGateDecisionLog: this.workerGateDecisionLog,
           workdir: this.config.workspace,
           logger: this.logger,
         });
@@ -1416,6 +1426,7 @@ export class Bridge {
       commitIssueLinkLog: this.commitIssueLinkLog,
       recipeRunLog: this.recipeRunLog,
       decisionTraceLog: this.decisionTraceLog,
+      workerGateDecisionLog: this.workerGateDecisionLog,
       embedFn: getLocalEmbedFn(),
     });
     this.server.tracesFn = async (query) => {
@@ -1878,6 +1889,9 @@ export class Bridge {
         ...(this.recipeRunLog && { recipeRunLog: this.recipeRunLog }),
         ...(this.decisionTraceLog && {
           decisionTraceLog: this.decisionTraceLog,
+        }),
+        ...(this.workerGateDecisionLog && {
+          workerGateDecisionLog: this.workerGateDecisionLog,
         }),
       },
     );
