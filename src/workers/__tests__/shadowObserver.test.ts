@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GraduationConfig } from "../graduation.js";
+import type { OutcomeDisposition, OutcomeStore } from "../outcomeStore.js";
 import {
   isDurableSuccess,
   type RunRecord,
@@ -214,5 +215,103 @@ describe("WorkerShadowObserver — durable-outcome labelling", () => {
     const obs = new WorkerShadowObserver([issuer], { cfg: CFG }); // no now
     obs.ingestRun(issueRun(now - 1000));
     expect(issueRow(obs)?.observations).toBe(1);
+  });
+});
+
+describe("WorkerShadowObserver — outcome verification (junk → good:false)", () => {
+  const now = 100 * W;
+  const URL = "https://github.com/o/r/issues/1";
+  const issuer = parseWorker({
+    id: "issuer",
+    name: "Issuer",
+    recipe: "file-issues",
+    owns: ["issue"],
+  });
+  // A DURABLE (past-window) issue filing carrying the captured URL.
+  const durableFiling = (url?: string): RunRecord => ({
+    recipeName: "file-issues",
+    at: now - 2 * W,
+    steps: [
+      {
+        tool: "githubCreateIssue",
+        status: "ok",
+        ...(url ? { output: { url } } : {}),
+      },
+    ],
+  });
+  const issueRow = (obs: WorkerShadowObserver) =>
+    obs.report()[0]!.board.find((b) => b.classKey.startsWith("issue"));
+  // Minimal stand-in for OutcomeStore — the observer only calls getDisposition.
+  const fakeStore = (m: Record<string, OutcomeDisposition>) =>
+    ({
+      getDisposition: (u: string) => m[u] ?? null,
+    }) as unknown as OutcomeStore;
+
+  it("folds a durable JUNK filing as good:false (lowers trust, not neutral)", () => {
+    const junk = new WorkerShadowObserver([issuer], {
+      cfg: CFG,
+      now,
+      outcomeStore: fakeStore({ [URL]: "junk" }),
+    });
+    junk.ingestRun(durableFiling(URL));
+    const confirmed = new WorkerShadowObserver([issuer], {
+      cfg: CFG,
+      now,
+      outcomeStore: fakeStore({ [URL]: "confirmed" }),
+    });
+    confirmed.ingestRun(durableFiling(URL));
+
+    // Both record one observation (a junk filing is still EVIDENCE)…
+    expect(issueRow(junk)?.observations).toBe(1);
+    expect(issueRow(confirmed)?.observations).toBe(1);
+    // …but the junk posterior mean is strictly LOWER — proving good:false was
+    // folded for junk and good:true for confirmed (the #1046 noise case).
+    expect(issueRow(junk)!.mean).toBeLessThan(issueRow(confirmed)!.mean);
+  });
+
+  it("confirmed and unknown dispositions both keep the good:true path (identical dial)", () => {
+    const confirmed = new WorkerShadowObserver([issuer], {
+      cfg: CFG,
+      now,
+      outcomeStore: fakeStore({ [URL]: "confirmed" }),
+    });
+    confirmed.ingestRun(durableFiling(URL));
+    // unknown = no record for the URL → getDisposition null → weak not-reverted path
+    const unknown = new WorkerShadowObserver([issuer], {
+      cfg: CFG,
+      now,
+      outcomeStore: fakeStore({}),
+    });
+    unknown.ingestRun(durableFiling(URL));
+    expect(issueRow(unknown)!.mean).toBe(issueRow(confirmed)!.mean);
+  });
+
+  it("ignores the outcome store before the durability window (still pending)", () => {
+    const obs = new WorkerShadowObserver([issuer], {
+      cfg: CFG,
+      now,
+      outcomeStore: fakeStore({ [URL]: "junk" }),
+    });
+    // filed 1s ago — junk or not, a non-durable success earns nothing yet.
+    obs.ingestRun({
+      recipeName: "file-issues",
+      at: now - 1000,
+      steps: [
+        { tool: "githubCreateIssue", status: "ok", output: { url: URL } },
+      ],
+    });
+    expect(issueRow(obs)).toBeUndefined();
+  });
+
+  it("a durable filing with no captured URL falls through to good:true (back-compat)", () => {
+    const obs = new WorkerShadowObserver([issuer], {
+      cfg: CFG,
+      now,
+      outcomeStore: fakeStore({ [URL]: "junk" }),
+    });
+    obs.ingestRun(durableFiling()); // no output.url → no lookup
+    const baseline = new WorkerShadowObserver([issuer], { cfg: CFG, now });
+    baseline.ingestRun(durableFiling());
+    expect(issueRow(obs)!.mean).toBe(issueRow(baseline)!.mean);
   });
 });

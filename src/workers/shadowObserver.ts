@@ -4,6 +4,7 @@ import {
   DEFAULT_GRADUATION_CONFIG,
   type GraduationConfig,
 } from "./graduation.js";
+import type { OutcomeStore } from "./outcomeStore.js";
 import { recommend } from "./shadowGate.js";
 import {
   ownsAction,
@@ -37,6 +38,14 @@ export interface RunRecord {
     /** Persisted halt reason — used to tell a worker failure apart from a
      * human approval decision (the latter is not trust evidence; see L2). */
     haltReason?: string;
+    /**
+     * Captured tool output for outcome attribution. Only populated for
+     * github.create_issue steps (contains `{url, issueNumber}`). Used by
+     * ingestRun to look up the issue's eventual disposition in the outcome
+     * store so junk filings flip to good:false rather than counting as earned
+     * trust. See outcomeStore.ts.
+     */
+    output?: Record<string, unknown>;
   }>;
 }
 
@@ -122,6 +131,9 @@ export class WorkerShadowObserver {
    *  the prior status-only behaviour is preserved (back-compat for pure tests). */
   private readonly now?: number;
   private readonly durabilityWindowMs: number;
+  /** Optional outcome store — when present, junk issues flip good:false past
+   *  the durability window instead of counting as earned trust. */
+  private readonly outcomeStore?: OutcomeStore;
 
   constructor(
     workers: WorkerManifest[],
@@ -130,6 +142,7 @@ export class WorkerShadowObserver {
       cfg?: GraduationConfig;
       now?: number;
       durabilityWindowMs?: number;
+      outcomeStore?: OutcomeStore;
     } = {},
   ) {
     this.workers = workers;
@@ -138,6 +151,7 @@ export class WorkerShadowObserver {
     this.now = opts.now;
     this.durabilityWindowMs =
       opts.durabilityWindowMs ?? DEFAULT_DURABILITY_WINDOW_MS;
+    this.outcomeStore = opts.outcomeStore;
   }
 
   /**
@@ -198,6 +212,27 @@ export class WorkerShadowObserver {
           )
         )
           continue; // pending — survives the window before it earns trust
+        // Past the window: check outcome store for non-reversible steps.
+        // Junk issues (closed-as-not-planned / labelled invalid/duplicate) mean
+        // the worker filed noise → flip to good:false. confirmed/unknown fall
+        // through to the good:true path below (current weak-durable behaviour).
+        if (ac.reversibility !== "reversible" && this.outcomeStore) {
+          const url =
+            step.output && typeof step.output.url === "string"
+              ? step.output.url
+              : null;
+          if (url) {
+            const disposition = this.outcomeStore.getDisposition(url);
+            if (disposition === "junk") {
+              this.store.apply(
+                worker.id,
+                { toolName: step.tool, good: false, at: run.at },
+                { prior, cfg: this.cfg },
+              );
+              continue;
+            }
+          }
+        }
       }
       this.store.apply(
         worker.id,

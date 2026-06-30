@@ -1,4 +1,5 @@
 import type { GraduationConfig } from "./graduation.js";
+import type { OutcomeStore } from "./outcomeStore.js";
 import {
   type DecisionRecord,
   type RunRecord,
@@ -18,7 +19,11 @@ export function buildShadowReport(
   runs: RunRecord[],
   decisions: DecisionRecord[],
   cfg?: GraduationConfig,
-  opts: { now?: number; durabilityWindowMs?: number } = {},
+  opts: {
+    now?: number;
+    durabilityWindowMs?: number;
+    outcomeStore?: OutcomeStore;
+  } = {},
 ): WorkerShadowReport[] {
   const obs = new WorkerShadowObserver(workers, {
     cfg,
@@ -26,6 +31,7 @@ export function buildShadowReport(
     ...(opts.durabilityWindowMs !== undefined && {
       durabilityWindowMs: opts.durabilityWindowMs,
     }),
+    ...(opts.outcomeStore !== undefined && { outcomeStore: opts.outcomeStore }),
   });
   const merged: Array<{ at: number; run?: RunRecord; dec?: DecisionRecord }> = [
     ...runs.map((r) => ({ at: r.at, run: r })),

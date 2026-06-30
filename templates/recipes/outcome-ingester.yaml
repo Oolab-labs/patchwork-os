@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://patchwork.dev/schemas/recipe.v1.json
+#
+# Outcome Ingester — polls GitHub for issues filed by the Test Guardian Worker
+# and records their dispositions (confirmed / junk / unknown) to
+# ~/.patchwork/outcome-log.jsonl. The worker trust-replay reads this file to
+# flip junk filings to good:false past the 24h durability window, so the ramp
+# demotes workers that file noise rather than rewarding them.
+#
+# Schedule: every 6 hours. Stagger from the triage recipe so the outcome poll
+# runs well after new issues have settled (most "junk" signals appear within
+# hours of filing).
+#
+# Prerequisite: GitHub connector authorised. Label "patchwork:filed" must be
+# applied by the triage recipe (or manually) so this ingester can scope its
+# poll. If you use a different label, update `labels` below.
+apiVersion: patchwork.sh/v1
+name: outcome-ingester
+description: Poll GitHub for Test Guardian issues and record outcome dispositions to the trust-replay store.
+trigger:
+  type: cron
+  at: "0 */6 * * *"
+  vars:
+    - name: repo
+      default: ""
+      description: "owner/repo to poll (leave blank to poll all accessible repos)"
+    - name: label
+      default: "patchwork:filed"
+      description: "Label that marks worker-filed issues"
+    - name: max
+      default: "50"
+      description: "Max issues to poll per run"
+steps:
+  - id: list_issues
+    tool: github.list_issues
+    repo: "{{repo}}"
+    labels:
+      - "{{label}}"
+    assignee: any
+    state: all
+    max: 50
+    into: issues
+
+  - id: classify
+    when: "{{issues}}"
+    agent:
+      prompt: |
+        You are classifying GitHub issues to determine whether they were useful filings or junk.
+
+        Issues JSON:
+        {{issues}}
+
+        For each issue, determine its disposition:
+        - "confirmed" — issue is closed with state_reason "completed", OR has a label containing "confirmed", "verified", or "patchwork:valid". This means the filing was correct and accepted.
+        - "junk" — issue has state_reason "not_planned", OR has a label containing "invalid", "duplicate", "wontfix", "won't fix", "not a bug", "by design", or "spam". This means the filing was noise.
+        - "unknown" — issue is still open, or closed with no clear signal.
+
+        Output ONLY raw JSONL — one JSON object per line, no markdown, no explanation:
+        {"issueUrl":"<url>","disposition":"<confirmed|junk|unknown>","checkedAt":<epoch_ms>}
+
+        Rules:
+        - issueUrl is the issue's html_url field
+        - checkedAt is the current Unix epoch in milliseconds (approximate — use the issue's updated_at epoch if current time unavailable)
+        - Emit one line per issue. No trailing commas, no array brackets, no other text.
+        - If there are no issues to classify, output nothing (empty string).
+      model: claude-haiku-4-5-20251001
+      into: outcome_lines
+
+  - id: persist
+    when: "{{outcome_lines}}"
+    tool: file.append
+    path: ~/.patchwork/outcome-log.jsonl
+    content: "{{outcome_lines}}\n"
