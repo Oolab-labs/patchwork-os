@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyActionClass } from "../actionClass.js";
+import { contextRiskCeiling } from "../contextRisk.js";
 import type { GraduationConfig } from "../graduation.js";
 import { parseWorker } from "../worker.js";
 import {
@@ -153,6 +154,84 @@ describe("decideWorkerAction", () => {
     expect(d.effectiveLevel).toBe(0);
     expect(d.action).toBe("gate");
     expect(d.reason).toContain("outside");
+  });
+});
+
+describe("contextRiskCeiling", () => {
+  it("descends with risk; clean/unknown → no de-rate (L4)", () => {
+    expect(contextRiskCeiling(0)).toBe(4);
+    expect(contextRiskCeiling(0.1)).toBe(4);
+    expect(contextRiskCeiling(0.3)).toBe(2);
+    expect(contextRiskCeiling(0.5)).toBe(1);
+    expect(contextRiskCeiling(0.8)).toBe(0);
+    expect(contextRiskCeiling(1)).toBe(0);
+    expect(contextRiskCeiling(Number.NaN)).toBe(4); // unmeasured → no de-rate
+    expect(contextRiskCeiling(-1)).toBe(4);
+  });
+});
+
+describe("decideWorkerAction — context-risk descending clamp (keystone seam)", () => {
+  it("is a no-op when no contextRisk is supplied (backward-compatible)", () => {
+    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-push"] });
+    const d = decideWorkerAction(w, "gitPush", {}, storeWithL4("w", "gitPush"));
+    expect(d.action).toBe("allow");
+    expect(d.contextCeiling).toBeUndefined();
+  });
+
+  it("throttles an EARNED risky action down to gate under dangerous context", () => {
+    // earned L4 on gitPush, but the live situation is dangerous (score 0.9 →
+    // ceiling L0). The compensable action that would auto-allow at L2 is gated.
+    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-push"] });
+    const d = decideWorkerAction(
+      w,
+      "gitPush",
+      {},
+      storeWithL4("w", "gitPush"),
+      {
+        contextRisk: { score: 0.9, reasons: ["CI red", "diff 1.2k lines"] },
+      },
+    );
+    expect(d.earnedLevel).toBe(4);
+    expect(d.contextCeiling).toBe(0);
+    expect(d.effectiveLevel).toBe(0);
+    expect(d.action).toBe("gate");
+    expect(d.reason).toContain("context-risk");
+    expect(d.reason).toContain("CI red");
+  });
+
+  it("does NOT throttle when the context is clean (earned autonomy preserved)", () => {
+    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-push"] });
+    const d = decideWorkerAction(
+      w,
+      "gitPush",
+      {},
+      storeWithL4("w", "gitPush"),
+      {
+        contextRisk: { score: 0.0 },
+      },
+    );
+    expect(d.contextCeiling).toBe(4);
+    expect(d.effectiveLevel).toBe(4);
+    expect(d.action).toBe("allow");
+  });
+
+  it("never WIDENS: context-risk can't lift an unearned action to allow", () => {
+    // unearned compensable + clean context → still gated (clamp only lowers).
+    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-push"] });
+    const d = decideWorkerAction(w, "gitPush", {}, new WorkerLevelStore(), {
+      contextRisk: { score: 0 },
+    });
+    expect(d.action).toBe("gate");
+  });
+
+  it("reversible actions still flow un-gated regardless of context-risk", () => {
+    // reversible = undoable; context-risk lowers the level but the reversible
+    // path is exempt from the level requirement by design.
+    const w = parseWorker({ id: "w", name: "W", owns: ["fs-write"] });
+    const d = decideWorkerAction(w, "editText", {}, new WorkerLevelStore(), {
+      contextRisk: { score: 0.95 },
+    });
+    expect(d.action).toBe("allow");
   });
 });
 
