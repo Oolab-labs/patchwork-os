@@ -249,12 +249,17 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
       (s) => s.tool === "github.create_issue",
     );
     expect(issueStep?.status).toBe("ok");
-    // All four steps ran and EVERY one succeeded — assert the positive `ok`
+    // All FIVE steps ran and EVERY one succeeded — assert the positive `ok`
     // status, not merely the absence of `error`, so a silently skipped/halted
     // reversible step (e.g. the file.write triage note) can't pass unnoticed
-    // (review #smoke-review F5).
-    expect(result.stepsRun).toBe(4);
+    // (review #smoke-review F5). The 5 steps: get_commits, triage_agent,
+    // verify_reproduced (reproducibility gate), write_note, file_issue. The
+    // canned agent stub returns a non-falsy note, so `when: {{reproduced}}` is
+    // truthy and file_issue runs (the reproduced-path; a real agent emits
+    // true/false).
+    expect(result.stepsRun).toBe(5);
     expect(result.stepResults.map((s) => s.status)).toEqual([
+      "ok",
       "ok",
       "ok",
       "ok",
