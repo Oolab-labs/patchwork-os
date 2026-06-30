@@ -81,6 +81,12 @@ const COMPENSABLE_AUTONOMY_LEVEL = 2 as const;
 /** Irreversible actions (and unowned/unearned anything) require full L4. */
 const AUTONOMOUS_LEVEL = 4 as const;
 
+/** The gate-policy version stamped on every persisted decision (the threshold
+ *  constants + composition rule below). A decision can't be replayed/explained
+ *  without knowing which policy produced it — bump when the thresholds or the
+ *  reversibility→level mapping change. */
+export const GATE_POLICY_VERSION = "worker-ramp-v0";
+
 /** How the Claude subprocess sees bridge MCP tools under `--disallowed-tools`:
  *  `mcp__<server>__<tool>`. The server name is fixed to `patchwork` by the
  *  subprocess driver's writeMcpConfigFile, so the agent-step sandbox must block

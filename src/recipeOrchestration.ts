@@ -121,6 +121,12 @@ export async function buildWorkerAutonomyGate(
     contextRiskProvider?: () => Promise<
       import("./workers/contextRisk.js").ContextRisk | undefined
     >;
+    /** Persist each gate decision + its inputs (the Decision Record). Called on
+     *  BOTH allow and gate paths. Wired to WorkerGateDecisionLog.record by the
+     *  caller (fail-soft there); a throwing impl never blocks the gate. */
+    recordGateDecision?: (
+      input: import("./workerGateDecisionLog.js").RecordGateDecisionInput,
+    ) => void;
   },
 ): Promise<ApprovalFn | null> {
   try {
@@ -135,7 +141,9 @@ export async function buildWorkerAutonomyGate(
     const trust = loadWorkerTrustForRecipe(recipeName, trustOpts);
     if (!trust) return null;
 
-    const { decideWorkerAction } = await import("./workers/workerGate.js");
+    const { decideWorkerAction, GATE_POLICY_VERSION } = await import(
+      "./workers/workerGate.js"
+    );
     const { getApprovalQueue } = await import("./approvalQueue.js");
     const queue = getApprovalQueue();
     const { worker, store } = trust;
@@ -166,6 +174,36 @@ export async function buildWorkerAutonomyGate(
         store,
         contextRisk ? { contextRisk } : undefined,
       );
+      // Decision Record: persist the decision + its inputs on EVERY path (incl.
+      // autonomous allows, which otherwise leave no trail). Fail-soft — a logging
+      // error must never block or change the gate.
+      try {
+        ctxOpts?.recordGateDecision?.({
+          recipeName,
+          workerId: worker.id,
+          toolName: input.toolId,
+          action: decision.action,
+          classKey: decision.classKey,
+          domain: decision.domain,
+          owned: decision.owned,
+          blastTier: decision.blastTier,
+          reversibility: decision.reversibility,
+          earnedLevel: decision.earnedLevel,
+          autonomyCeiling: decision.autonomyCeiling,
+          effectiveLevel: decision.effectiveLevel,
+          ...(decision.contextCeiling !== undefined && {
+            contextCeiling: decision.contextCeiling,
+          }),
+          ...(contextRisk && { contextRiskScore: contextRisk.score }),
+          ...(contextRisk?.reasons && {
+            contextRiskReasons: contextRisk.reasons,
+          }),
+          reason: decision.reason,
+          gatePolicyVersion: GATE_POLICY_VERSION,
+        });
+      } catch {
+        /* never block the gate on a logging failure */
+      }
       // allow → defer to the tier gate so we never DROP tier-policy protection
       // (floor composition). When no tier fn is injected (approvalGate off),
       // a worker `allow` means flow.
@@ -252,6 +290,12 @@ export interface RecipeOrchestrationDeps {
    * without live-tail.
    */
   activityLog?: import("./activityLog.js").ActivityLog;
+  /** The Decision Record store — every worker-gate decision + its inputs is
+   *  appended here (the replayable/explainable audit artifact). Optional: when
+   *  absent, gating still works, just without the persisted decision trail. */
+  workerGateDecisionLog?:
+    | import("./workerGateDecisionLog.js").WorkerGateDecisionLog
+    | null;
   workdir: string;
   logger: { info?: (s: string) => void; warn?: (s: string) => void };
 }
@@ -1168,13 +1212,26 @@ export class RecipeOrchestration {
     // composition — it can only ADD gating, never drop tier-policy protection)
     // and the gate engages on automated runs too. Otherwise everything below is
     // byte-identical to pre-flip behaviour.
+    const gateDecisionLog = this.deps.workerGateDecisionLog;
     const workerApprovalFn = await buildWorkerAutonomyGate(
       opts.name,
       tierApprovalFn,
       undefined,
       // Gather live context-risk signals from the workspace so the gate can
-      // throttle a worker in a dangerous situation (huge diff, on trunk).
-      { workdir: this.deps.workdir },
+      // throttle a worker in a dangerous situation (huge diff, on trunk), and
+      // persist every decision to the Decision Record (fail-soft).
+      {
+        workdir: this.deps.workdir,
+        ...(gateDecisionLog && {
+          recordGateDecision: (rec) => {
+            try {
+              gateDecisionLog.record(rec);
+            } catch {
+              /* never block the gate on a logging failure */
+            }
+          },
+        }),
+      },
     );
     const requireApprovalFn = workerApprovalFn ?? tierApprovalFn;
     const gateAutomatedRuns = workerApprovalFn != null;

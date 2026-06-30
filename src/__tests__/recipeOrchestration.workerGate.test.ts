@@ -23,6 +23,7 @@ import {
   buildWorkerAutonomyGate,
 } from "../recipeOrchestration.js";
 import { RecipeRunLog } from "../runLog.js";
+import type { RecordGateDecisionInput } from "../workerGateDecisionLog.js";
 
 /** Seed durable, dwell-separated successes so the worker earns autonomy on
  *  `tool`'s class (ancient timestamps → durable under durable-outcome labels). */
@@ -223,6 +224,44 @@ describe("buildWorkerAutonomyGate", () => {
     expect(
       await gate!({ toolId: "githubCreatePR", tier: "high", params: {} }),
     ).toBe(true);
+  });
+
+  it("records a Decision Record on BOTH the gate and allow paths", async () => {
+    const records: RecordGateDecisionInput[] = [];
+    const gate = await buildWorkerAutonomyGate("test-recipe", undefined, opts, {
+      recordGateDecision: (r) => records.push(r),
+    });
+    // GATE path: unowned risky gitPush (worker owns vcs-remote, not vcs-push).
+    const p = gate!({ toolId: "gitPush", tier: "high", params: {} });
+    await tick();
+    getApprovalQueue().reject(firstCallId());
+    await p;
+    // ALLOW path: reversible editText flows.
+    expect(await gate!({ toolId: "editText", tier: "low", params: {} })).toBe(
+      true,
+    );
+
+    const gated = records.find((r) => r.toolName === "gitPush");
+    const allowed = records.find((r) => r.toolName === "editText");
+    expect(gated?.action).toBe("gate"); // autonomous gate is recorded
+    expect(allowed?.action).toBe("allow"); // and the allow leaves a trail too
+    // the record carries the decision INPUTS, not just a verdict
+    expect(gated?.classKey).toContain("vcs-push");
+    expect(gated?.owned).toBe(false);
+    expect(gated?.gatePolicyVersion).toBe("worker-ramp-v0");
+    expect(allowed?.reversibility).toBe("reversible");
+  });
+
+  it("a throwing recordGateDecision never blocks the gate (fail-soft)", async () => {
+    const gate = await buildWorkerAutonomyGate("test-recipe", undefined, opts, {
+      recordGateDecision: () => {
+        throw new Error("disk full");
+      },
+    });
+    // logging blew up, but the reversible action still flows.
+    expect(await gate!({ toolId: "editText", tier: "low", params: {} })).toBe(
+      true,
+    );
   });
 });
 
