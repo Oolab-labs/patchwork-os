@@ -13,7 +13,8 @@ import { CommonSchemas, registerTool } from "../toolRegistry.js";
 registerTool({
   id: "github.list_issues",
   namespace: "github",
-  description: "List GitHub issues assigned to a user or matching filters.",
+  description:
+    "List GitHub issues by assignee, label, and/or state. Defaults to issues assigned to the current user; pass assignee:'any' to drop the assignee filter (e.g. label-scoped dedup queries).",
   paramsSchema: {
     type: "object",
     properties: {
@@ -24,8 +25,21 @@ registerTool({
       },
       assignee: {
         type: "string",
-        description: "User to filter by (use '@me' for current user)",
+        description:
+          "User to filter by (use '@me' for current user, or 'any'/'*' to drop the assignee filter entirely)",
         default: "@me",
+      },
+      labels: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Only issues carrying ALL of these labels (GitHub AND semantics). Omit for no label filter.",
+      },
+      state: {
+        type: "string",
+        enum: ["open", "closed", "all"],
+        description: "Issue state filter (default 'open').",
+        default: "open",
       },
       max: CommonSchemas.max,
       into: CommonSchemas.into,
@@ -45,13 +59,33 @@ registerTool({
   execute: async ({ params }) => {
     const { listIssues } = await import("../../connectors/github.js");
     const repo = params.repo ? String(params.repo) : undefined;
-    const assignee = params.assignee ? String(params.assignee) : "@me";
+    // `assignee` defaults to @me, but "any"/"*"/"" drops the filter so a
+    // label-scoped query (e.g. dedup against worker-filed, unassigned issues)
+    // sees ALL matching issues, not just the caller's.
+    const rawAssignee = params.assignee ? String(params.assignee) : "@me";
+    const assignee =
+      rawAssignee === "any" || rawAssignee === "*" || rawAssignee === ""
+        ? undefined
+        : rawAssignee;
+    // Accept both the YAML list form (`labels: [a, b]`) and a lone scalar
+    // (`labels: test-failure`) — the latter is a common hand-authoring shape
+    // that would otherwise be silently dropped (no filter → lists every issue).
+    const labels = Array.isArray(params.labels)
+      ? params.labels.map(String).filter(Boolean)
+      : typeof params.labels === "string" && params.labels
+        ? [params.labels]
+        : undefined;
+    const stateRaw = params.state ? String(params.state) : "open";
+    const state =
+      stateRaw === "open" || stateRaw === "closed" || stateRaw === "all"
+        ? (stateRaw as "open" | "closed" | "all")
+        : "open";
     const limit = typeof params.max === "number" ? params.max : 20;
     try {
-      const issues = await listIssues({ repo, assignee, limit });
+      const issues = await listIssues({ repo, assignee, labels, state, limit });
       return JSON.stringify({ count: issues.length, issues });
     } catch (err) {
-      // Translate connector throw into the {count:0, items:[], error}
+      // Translate connector throw into the {count:0, issues:[], error}
       // shape that the runner's silent-fail detector (PR #72) catches
       // as a step error. Pre-fix this just propagated as a thrown
       // error which the runner caught fine — but the connector

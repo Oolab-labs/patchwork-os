@@ -49,9 +49,17 @@ const createIssueMock = vi.fn(
     title: opts.title,
   }),
 );
+// `github.list_issues` (the dedup read) does the same dynamic import and calls
+// `listIssues`. A RECORDING mock (default → no existing issues) so the test can
+// assert the YAML→runner→recipe-tool→connector arg plumbing end-to-end (the
+// composed `assignee:"any"`→undefined seam no single unit test crosses), and so
+// the dedup-skip test can inject an open duplicate.
+const listIssuesMock = vi.fn(async (_opts?: unknown) => [] as unknown[]);
 vi.mock("../../connectors/github.js", () => ({
   createIssue: (...args: unknown[]) =>
     (createIssueMock as (...a: unknown[]) => unknown)(...args),
+  listIssues: (...args: unknown[]) =>
+    (listIssuesMock as (...a: unknown[]) => unknown)(...args),
 }));
 
 import {
@@ -123,6 +131,8 @@ beforeEach(() => {
   setFlag(FLAG_WORKER_AUTONOMY, true, false);
   resetApprovalQueueForTests();
   createIssueMock.mockClear();
+  listIssuesMock.mockReset();
+  listIssuesMock.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -144,6 +154,7 @@ afterEach(() => {
 function makeDeps(
   runLog: RecipeRunLog,
   requireApprovalFn: RunnerDeps["requireApprovalFn"],
+  claudeCodeFn?: RunnerDeps["claudeCodeFn"],
 ): RunnerDeps {
   return {
     now: () => new Date("2026-06-29T09:00:00Z"),
@@ -152,8 +163,11 @@ function makeDeps(
     runLog,
     requireApprovalFn,
     gateAutomatedRuns: true,
-    claudeCodeFn: async () =>
-      "Triage: foo.test.ts failed; suspect commit abc123.",
+    // Default: a constant non-falsy note (every agent step → file-it path). The
+    // dedup-skip test injects a prompt-aware fn that returns a bare `false`.
+    claudeCodeFn:
+      claudeCodeFn ??
+      (async () => "Triage: foo.test.ts failed; suspect commit abc123."),
     readFile: () => {
       throw new Error("nf");
     },
@@ -249,22 +263,45 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
       (s) => s.tool === "github.create_issue",
     );
     expect(issueStep?.status).toBe("ok");
-    // All FIVE steps ran and EVERY one succeeded — assert the positive `ok`
+    // All SIX steps ran and EVERY one succeeded — assert the positive `ok`
     // status, not merely the absence of `error`, so a silently skipped/halted
     // reversible step (e.g. the file.write triage note) can't pass unnoticed
-    // (review #smoke-review F5). The 5 steps: get_commits, triage_agent,
-    // verify_reproduced (reproducibility gate), write_note, file_issue. The
-    // canned agent stub returns a non-falsy note, so `when: {{reproduced}}` is
-    // truthy and file_issue runs (the reproduced-path; a real agent emits
-    // true/false).
-    expect(result.stepsRun).toBe(5);
+    // (review #smoke-review F5). The 6 steps: get_commits, triage_agent,
+    // list_existing (dedup read, stubbed → []), decide_file (reproduce + dedup
+    // gate), write_note, file_issue. The canned agent stub returns a non-falsy
+    // note, so `when: {{should_file}}` is truthy and file_issue runs (the
+    // file-it path; a real agent emits a bare true/false).
+    expect(result.stepsRun).toBe(6);
     expect(result.stepResults.map((s) => s.status)).toEqual([
       "ok",
       "ok",
       "ok",
       "ok",
       "ok",
+      "ok",
     ]);
+
+    // --- A2. the dedup READ exercised the full YAML→runner→recipe-tool→connector
+    // arg plumbing. This is the only place that crosses the composed
+    // `assignee:"any"` → undefined seam end-to-end (the unit tests prove each
+    // half against a hand-built mock; here the REAL recipe tool runs). A broken
+    // list_existing (dropped labels, missing repo, or a literal "any" reaching
+    // the connector) fails HERE, not silently.
+    expect(listIssuesMock).toHaveBeenCalledTimes(1);
+    expect(listIssuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repo: "patchwork/os",
+        labels: ["test-failure"],
+        state: "open",
+        limit: 30,
+      }),
+    );
+    // assignee:"any" must be dropped (NOT sent as the literal "any") — worker-
+    // filed issues are unassigned, so any non-undefined value would hide them.
+    expect(
+      (listIssuesMock.mock.calls[0]?.[0] as { assignee?: unknown } | undefined)
+        ?.assignee,
+    ).toBeUndefined();
 
     // The reversible file.write actually landed the triage note UNDER the temp
     // home — proves step C's side-effect ran AND that `~/` expanded to tmpHome
@@ -328,5 +365,74 @@ describe("worker-autonomy smoke (triage-failing-tests-autofile, flag ON)", () =>
     });
     expect(shadow.runsScanned).toBeGreaterThanOrEqual(1);
     expect(shadow.workers.some((w) => w.workerId === WORKER_ID)).toBe(true);
+  });
+
+  it("skips the issue write when an open duplicate already tracks the failure (dedup gate)", async () => {
+    // list_existing returns an OPEN test-failure issue that already covers this
+    // exact failure — the dedup half of the decision gate.
+    listIssuesMock.mockResolvedValue([
+      {
+        number: 4242,
+        title: "Test triage 2026-06-29: vitest failing 1/42",
+        repo: "patchwork/os",
+        url: "https://github.com/patchwork/os/issues/4242",
+        labels: ["test-failure"],
+        updatedAt: "2026-06-29T08:00:00Z",
+      },
+    ]);
+    // Prompt-aware agent stub: the decision step (the only prompt containing the
+    // "Output EXACTLY one word" directive) returns a bare `false` (duplicate);
+    // the triage step returns its note as before.
+    const claudeCodeFn = async (prompt: string) =>
+      prompt.includes("Output EXACTLY one word")
+        ? "false"
+        : "Triage: foo.test.ts failed; suspect commit abc123.";
+
+    const gate = await buildWorkerAutonomyGate(RECIPE_NAME, undefined, {
+      workersDir,
+      patchworkDir,
+    });
+    // Auto-approve anything that reaches the queue. Nothing SHOULD (file_issue is
+    // skipped on the falsy verdict) — but if dedup regresses and the write fires,
+    // this approves it so the `not.toHaveBeenCalled` assertion below fails loudly
+    // instead of the run hanging on a never-answered approval.
+    const queue = getApprovalQueue();
+    const unsub = queue.subscribe(() => {
+      for (const pending of queue.list()) queue.approve(pending.callId);
+    });
+
+    const runLog = new RecipeRunLog({ dir: patchworkDir });
+    const recipe = parseYaml(RECIPE_YAML) as unknown as YamlRecipe;
+    const result = await runYamlRecipe(
+      recipe,
+      makeDeps(runLog, gate ?? undefined, claudeCodeFn),
+      {
+        repo: "patchwork/os",
+        runner: "vitest",
+        failed: "1",
+        total: "42",
+        failures: "foo.test.ts > does the thing",
+        time: "0900",
+      },
+    );
+    unsub();
+
+    // The decision was `false` (duplicate) → file_issue is SKIPPED, not run.
+    expect(createIssueMock).not.toHaveBeenCalled();
+    const issueStep = result.stepResults.find(
+      (s) => s.tool === "github.create_issue",
+    );
+    expect(issueStep?.status).toBe("skipped");
+
+    // …but the triage note is STILL written (note durability holds on the
+    // dedup-skip path too — the worker leaves a record even when it files nothing).
+    const inboxDir = path.join(patchworkDir, "inbox");
+    const notes = readdirSync(inboxDir).filter((f) =>
+      f.startsWith("test-triage-"),
+    );
+    expect(
+      notes.length,
+      "triage note written even when filing is skipped",
+    ).toBe(1);
   });
 });

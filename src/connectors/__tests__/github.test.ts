@@ -114,6 +114,39 @@ describe("listIssues", () => {
     callTool.mockRestore();
   });
 
+  it("forwards labels + non-default state, and omits both when unset", async () => {
+    mockConnected();
+    const callTool = vi
+      .spyOn(McpClient.prototype, "callTool")
+      .mockResolvedValue(mcpJsonResult([]));
+    await listIssues({
+      repo: "acme/widget",
+      labels: ["test-failure", "bug"],
+      state: "all",
+    });
+    expect(callTool).toHaveBeenCalledWith(
+      "list_issues",
+      expect.objectContaining({
+        state: "all",
+        labels: ["test-failure", "bug"],
+        owner: "acme",
+        repo: "widget",
+      }),
+      expect.any(Object),
+    );
+    // No assignee filter requested → arg absent (lists across all assignees).
+    expect(callTool.mock.calls[0]?.[1]).not.toHaveProperty("assignee");
+    callTool.mockClear();
+
+    // Unset labels/state → byte-identical to the historical args (state defaults
+    // to "open", no `labels` key) so existing callers are unaffected.
+    await listIssues({ repo: "acme/widget" });
+    const args = callTool.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(args.state).toBe("open");
+    expect(args).not.toHaveProperty("labels");
+    callTool.mockRestore();
+  });
+
   it("coerces array-shape MCP response", async () => {
     mockConnected();
     vi.spyOn(McpClient.prototype, "callTool").mockResolvedValue(

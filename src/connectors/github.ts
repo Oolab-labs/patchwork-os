@@ -54,6 +54,10 @@ export interface ListIssuesOpts {
   mention?: string;
   limit?: number;
   repo?: string;
+  /** Filter to issues carrying ALL of these labels (GitHub AND semantics). */
+  labels?: string[];
+  /** Issue state filter. Defaults to "open" (unchanged historical behaviour). */
+  state?: "open" | "closed" | "all";
 }
 
 export interface ListPRsOpts {
@@ -156,7 +160,8 @@ export async function listIssues(
     );
   const { owner, repo } = parseRepo(opts);
   const args: Record<string, unknown> = {
-    state: "open",
+    // Default "open" preserved; an explicit opts.state ("closed"/"all") wins.
+    state: opts.state ?? "open",
     perPage: Math.min(opts.limit ?? 20, 50),
   };
   if (owner) args.owner = owner;
@@ -164,6 +169,9 @@ export async function listIssues(
   if (opts.assignee)
     args.assignee = opts.assignee === "@me" ? "@me" : opts.assignee;
   if (opts.mention) args.mentioned = opts.mention;
+  // Label filter (GitHub AND-matches a label array). Only send when non-empty
+  // so the existing no-label callers keep their byte-identical MCP args.
+  if (opts.labels?.length) args.labels = opts.labels;
   try {
     const res = await client().callTool("list_issues", args, {
       cacheKey: `gh:issues:${JSON.stringify(args)}`,
