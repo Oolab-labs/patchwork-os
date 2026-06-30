@@ -46,7 +46,9 @@ describe("trustLevel — cold start", () => {
     const p = applyN(prior, 4, true, 1);
     const r = levelFromPosterior(p, prior, { reachable: ALL_REACHABLE });
     expect(evidenceCount(p, prior)).toBe(4);
-    expect(r.level).toBeGreaterThan(1); // floor no longer blocks
+    // LCB ≈ 0.892 → L3 by thresholds; floor lifted (effectiveEvidence=10).
+    // Pin the exact rung so a threshold/prior-math regression is caught.
+    expect(r.level).toBe(3);
   });
 
   it("default prior offers no cold-start reduction: 4 real obs still capped at L1", () => {

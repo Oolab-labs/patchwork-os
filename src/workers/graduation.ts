@@ -41,6 +41,15 @@ export interface ClassTrustState {
   /** epoch ms before which promotions are blocked (post-demote cooldown). */
   demoteUntil: number;
   observations: number;
+  /**
+   * The `minEvidenceForGraduation` threshold in effect when this class last
+   * promoted ABOVE L1. The novel-class floor is a cold-start gate: once a class
+   * has cleared it, RAISING the config later must not retroactively re-apply the
+   * floor and demote an already-earned level. We honour the threshold the class
+   * actually graduated under. `undefined` = never promoted above L1 (cold-start;
+   * the current config applies in full).
+   */
+  minEvidenceAtLastPromotion?: number;
 }
 
 export interface GraduationConfig {
@@ -50,10 +59,14 @@ export interface GraduationConfig {
   minEvidenceForGraduation?: number;
 }
 
+/** Default novel-class floor — MUST match levelFromPosterior's internal `?? 10`
+ *  so a config that omits the field behaves identically through both paths. */
+const DEFAULT_MIN_EVIDENCE = 10;
+
 export const DEFAULT_GRADUATION_CONFIG: GraduationConfig = {
   dwellMs: 6 * 60 * 60 * 1000, // 6h between climbs
   demoteCooldownMs: 24 * 60 * 60 * 1000, // 24h freeze after a fall
-  minEvidenceForGraduation: 10,
+  minEvidenceForGraduation: DEFAULT_MIN_EVIDENCE,
 };
 
 export interface GraduationEvent {
@@ -93,9 +106,24 @@ export function graduate(
   const posterior = applyOutcome(state.posterior, outcome.good, weight);
   const observations = state.observations + 1;
 
+  // Novel-class floor threshold. For a class already ABOVE L1, honour the
+  // (possibly looser) threshold it graduated under so a later config TIGHTENING
+  // can't retroactively floor it back to L1 and trigger a spurious demote. A
+  // class still in cold-start (≤ L1) always faces the current config in full.
+  // `Math.min` also lets a config LOOSENING apply immediately. Genuine
+  // evidence-based demotions (LCB crash from real failures) are unaffected —
+  // they don't go through the floor.
+  // Resolve to a concrete number (matches levelFromPosterior's internal `?? 10`)
+  // so the recorded threshold is always defined.
+  const cfgMinEvidence = cfg.minEvidenceForGraduation ?? DEFAULT_MIN_EVIDENCE;
+  const floorMinEvidence =
+    state.level > 1 && state.minEvidenceAtLastPromotion !== undefined
+      ? Math.min(cfgMinEvidence, state.minEvidenceAtLastPromotion)
+      : cfgMinEvidence;
+
   const result = levelFromPosterior(posterior, state.prior, {
     k: cfg.k,
-    minEvidenceForGraduation: cfg.minEvidenceForGraduation,
+    minEvidenceForGraduation: floorMinEvidence,
     reachable: reachableLevels(ac),
   });
   const candidate = result.level;
@@ -140,7 +168,17 @@ export function graduate(
       if (nextRung !== undefined) {
         const to = nextRung as TrustLevel;
         return {
-          state: { ...base, level: to, lastChangeAt: outcome.at },
+          state: {
+            ...base,
+            level: to,
+            lastChangeAt: outcome.at,
+            // Record the floor it just cleared (only meaningful above L1, where
+            // the floor actually gates). Keeps the running threshold the class
+            // has demonstrably satisfied, for the retroactive-demotion guard.
+            ...(to > 1 && {
+              minEvidenceAtLastPromotion: floorMinEvidence,
+            }),
+          },
           event: {
             type: "promote",
             classKey: state.classKey,

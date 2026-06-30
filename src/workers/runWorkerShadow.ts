@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { RecipeRunLog } from "../runLog.js";
+import { MAX_PERSIST_LINES, RecipeRunLog } from "../runLog.js";
 import {
   type DecisionRecord,
   type RunRecord,
@@ -30,10 +30,37 @@ export interface RunWorkerShadowOpts {
   ideDir?: string;
 }
 
-function readRuns(patchworkDir: string): RunRecord[] {
+function readRuns(patchworkDir: string, recipeNames?: string[]): RunRecord[] {
   try {
-    const log = new RecipeRunLog({ dir: patchworkDir });
-    return log.query({}).map((r) => ({
+    // Size the in-memory ring to the FULL disk retention (MAX_PERSIST_LINES), not
+    // the default 500. `query()` only ever scans the ring, so with the default
+    // cap a low-frequency worker's run is evicted once >500 unrelated runs land
+    // after it — even with a per-recipe filter (the filter is applied AFTER ring
+    // eviction). Matching the ring to the disk cap means worker evidence is
+    // bounded only by what the log actually retains, not by global run volume.
+    const log = new RecipeRunLog({
+      dir: patchworkDir,
+      memoryCap: MAX_PERSIST_LINES,
+    });
+    // Query FILTERED BY the worker recipes — NOT the global last-N window.
+    // `query({})` defaults to the 100 most-recent runs, so a low-frequency
+    // worker's evidence ages out behind unrelated high-frequency recipe traffic
+    // (this is exactly why the test-guardian dial read empty despite a real,
+    // correctly-executed run). Filtering means only same-recipe runs compete for
+    // the window. DEDUP the names first: two manifests can declare the same
+    // recipe, and an un-deduped flatMap would query it twice → ingest every run
+    // twice → double-count the dial's evidence (a dial-vs-gate divergence, since
+    // the live gate passes a single recipe name).
+    const names = recipeNames?.length
+      ? Array.from(new Set(recipeNames))
+      : undefined;
+    // `query` clamps limit to 500, but it now scans the full-history ring, so
+    // this is the 500 most-recent runs OF THIS RECIPE — ample per-worker, and no
+    // longer evictable by unrelated traffic.
+    const rows = names
+      ? names.flatMap((recipe) => log.query({ recipe, limit: 500 }))
+      : log.query({ limit: 500 });
+    return rows.map((r) => ({
       recipeName: r.recipeName,
       at: r.doneAt ?? r.startedAt ?? r.createdAt,
       steps: (r.stepResults ?? []).map((s) => ({
@@ -122,7 +149,12 @@ export function getWorkerShadowData(
   const workersDir = opts.workersDir ?? path.join(patchworkDir, "workers");
 
   const workers = loadWorkersFromDir(workersDir);
-  const runs = workers.length ? readRuns(patchworkDir) : [];
+  const runs = workers.length
+    ? readRuns(
+        patchworkDir,
+        workers.map((w) => w.recipe).filter((r): r is string => !!r),
+      )
+    : [];
   const decisions = workers.length ? readDecisions(ideDir) : [];
   return {
     workers: buildShadowReport(workers, runs, decisions),
@@ -166,7 +198,9 @@ export function loadWorkerTrustForRecipe(
   // risky classes never promote — the earned-L4 path would be unreachable and
   // the gate would floor every compensable/irreversible class to L0 forever.
   // This mirrors buildShadowReport (the dial), so the gate and dial agree.
-  const runs = readRuns(patchworkDir).sort((a, b) => a.at - b.at);
+  // `recipeName` === the owning worker's recipe (workerForRecipe matched on it),
+  // so filter the replay to just this recipe's runs.
+  const runs = readRuns(patchworkDir, [recipeName]).sort((a, b) => a.at - b.at);
   for (const run of runs) observer.ingestRun(run);
   return { worker, store: observer.levelStore };
 }

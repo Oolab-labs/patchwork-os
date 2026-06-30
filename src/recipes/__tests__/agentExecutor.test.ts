@@ -294,6 +294,79 @@ describe("unknown driver", () => {
   });
 });
 
+// ── 9b. enforceSandbox: worker-mandated sandbox needs the subprocess driver ──
+// A worker agent step's --disallowed-tools is enforced ONLY by the subprocess
+// driver. On any other driver the deny list is dropped, re-opening the bypass.
+// enforceSandbox makes executeAgent fail CLOSED instead of running un-sandboxed.
+
+describe("enforceSandbox (worker autonomy never-widen guard)", () => {
+  afterEach(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+  });
+
+  it.each([
+    "anthropic",
+    "claude",
+    "openai",
+    "grok",
+    "gemini",
+    "local",
+  ])("refuses to run on non-subprocess driver %s; no driver fn called", async (driver) => {
+    const deps = makeDeps();
+    const result = await executeAgent(
+      { driver, prompt: "hi", enforceSandbox: true, disallowedTools: ["x"] },
+      deps,
+    );
+    expect(result.text).toMatch(/\[agent step failed:.*subprocess/);
+    expect(deps.anthropicFn).not.toHaveBeenCalled();
+    expect(deps.providerDriverFn).not.toHaveBeenCalled();
+    expect(deps.localFn).not.toHaveBeenCalled();
+    expect(deps.claudeCliFn).not.toHaveBeenCalled();
+  });
+
+  it("refuses to run on auto-detect when ANTHROPIC_API_KEY is set", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+    const deps = makeDeps({ loadPatchworkConfig: vi.fn().mockReturnValue({}) });
+    const result = await executeAgent(
+      { prompt: "hi", enforceSandbox: true },
+      deps,
+    );
+    expect(result.text).toMatch(/\[agent step failed:/);
+    expect(deps.anthropicFn).not.toHaveBeenCalled();
+  });
+
+  it("ALLOWS the subprocess driver and forwards the deny list", async () => {
+    const deps = makeDeps();
+    const result = await executeAgent(
+      {
+        driver: "claude-code",
+        prompt: "hi",
+        enforceSandbox: true,
+        disallowedTools: ["gitPush"],
+      },
+      deps,
+    );
+    expect(result.text).toBe("claude-cli-result");
+    expect(deps.claudeCliFn).toHaveBeenCalledWith("hi", {
+      disallowedTools: ["gitPush"],
+    });
+  });
+
+  it("ALLOWS auto-detect when the claude CLI is present (no API key)", async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    const deps = makeDeps({
+      loadPatchworkConfig: vi.fn().mockReturnValue({}),
+      probeClaudeCli: vi.fn().mockReturnValue(true),
+    });
+    const result = await executeAgent(
+      { prompt: "hi", enforceSandbox: true },
+      deps,
+    );
+    expect(result.servedBy?.driver).toBe("subprocess");
+    expect(deps.claudeCliFn).toHaveBeenCalled();
+  });
+});
+
 // ── 10. servedBy is idempotent — a dep that already set it is preserved ──────
 
 describe("servedBy stamping", () => {

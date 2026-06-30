@@ -1,4 +1,9 @@
-import { type ActionClass, classifyActionClass } from "./actionClass.js";
+import { classifyTool, getRiskTierMap } from "../riskTier.js";
+import {
+  type ActionClass,
+  classifyActionClass,
+  knownActionTools,
+} from "./actionClass.js";
 import type { TrustLevel } from "./trustLevel.js";
 import { ownsAction, type WorkerManifest } from "./worker.js";
 import type { WorkerLevelStore } from "./workerLevelStore.js";
@@ -61,6 +66,12 @@ const COMPENSABLE_AUTONOMY_LEVEL = 2 as const;
 
 /** Irreversible actions (and unowned/unearned anything) require full L4. */
 const AUTONOMOUS_LEVEL = 4 as const;
+
+/** How the Claude subprocess sees bridge MCP tools under `--disallowed-tools`:
+ *  `mcp__<server>__<tool>`. The server name is fixed to `patchwork` by the
+ *  subprocess driver's writeMcpConfigFile, so the agent-step sandbox must block
+ *  this form (not just the bare tool name) to actually deny a bridge MCP call. */
+const BRIDGE_MCP_TOOL_PREFIX = "mcp__patchwork__";
 
 /**
  * Undoable → flows un-gated even when unearned. Only reversible actions are
@@ -157,4 +168,88 @@ export function decideWorkerAction(
     reason = `${ac.reversibility} + unearned (effective L${effectiveLevel} < L${threshold}) — gated for approval`;
   }
   return { ...base, action: "gate", reason };
+}
+
+/**
+ * Tools a worker's AGENT step must be barred from calling.
+ *
+ * An `agent` step spawns a Claude subprocess whose INTERNAL tool calls bypass
+ * the per-step worker gate (only recipe *steps* pass through `decideWorkerAction`
+ * — tools the subprocess invokes itself never do). Without this, a worker could
+ * do via its agent exactly the risky action (`gitPush`, `githubMergePR`,
+ * `slackPostMessage`, `runCommand`, …) the gate would otherwise have queued for
+ * approval. We re-apply the gate as a subprocess sandbox: every tool the worker
+ * cannot currently run autonomously (`decideWorkerAction → "gate"`) is added to
+ * the subprocess's `--disallowed-tools`.
+ *
+ * Honours the live trust state AND the autonomy ceiling (both fold into
+ * `decideWorkerAction`'s `effectiveLevel = min(earned, ceiling)`): reversible
+ * tools and risky tools the worker has EARNED stay callable; everything else is
+ * blocked. The universe is the canonical tool registry (TIER_MAP keys); params
+ * are unknown at sandbox-build time, so each tool is classified conservatively
+ * with empty params.
+ */
+export function disallowedToolsForAgentStep(
+  worker: WorkerManifest,
+  store: WorkerLevelStore,
+): string[] {
+  // Universe = the canonical risk-tier map (broad MCP coverage) ∪ the worker
+  // subsystem's own tool→domain map (adds messaging/http TIER_MAP omits).
+  // Neither alone is complete; the union is the best enumerable approximation of
+  // the risky tool surface.
+  const universe = new Set([
+    ...Object.keys(getRiskTierMap()),
+    ...knownActionTools(),
+  ]);
+  const blocked = new Set<string>();
+  for (const toolName of universe) {
+    // The agent step itself is always allowed (reasoning, not a durable side-
+    // effect — decideWorkerAction special-cases it); never self-block.
+    if (toolName === "agent") continue;
+    // Recipe-DSL ids (`github.create_issue`, `file.write`) are internal to the
+    // recipe runner — the Claude subprocess never calls them by that name, so
+    // they would be dead weight in `--disallowed-tools`. The camelCase MCP twin
+    // (githubCreateIssue) is enumerated separately and IS emitted below.
+    if (toolName.includes(".")) continue;
+    if (
+      decideWorkerAction(worker, toolName, undefined, store).action !== "gate"
+    )
+      continue;
+    // Don't over-block. An UNKNOWN tool (domain "other") defaults to
+    // irreversible in the trust model — conservative for EARNING, but blanket-
+    // denying every unknown here would strip the agent of the harmless reads and
+    // navigation it needs to do its job (getDiagnostics, searchWorkspace,
+    // goToDefinition, getHover, … all classify as other:irreversible:low). Only
+    // block an "other" tool when the registry rates it high-blast (e.g. Bash);
+    // tools with a KNOWN risky domain (shell, messaging, http, vcs-push/merge,
+    // issue) are always blocked. The recipe's explicit tool STEPS still gate on
+    // their own class — this list is defense-in-depth, not the only gate.
+    const ac = classifyActionClass(toolName);
+    if (ac.domain === "other" && classifyTool(toolName) !== "high") continue;
+    // Emit BOTH naming forms the subprocess might use: the bare name (native CC
+    // tools like `Bash`, and any non-namespaced match) AND the bridge MCP form
+    // `mcp__patchwork__<tool>` (how claude -p sees bridge tools under
+    // --disallowed-tools; server name fixed by writeMcpConfigFile). A form that
+    // matches nothing is harmless; missing one would leave the bypass open.
+    blocked.add(toolName);
+    blocked.add(`${BRIDGE_MCP_TOOL_PREFIX}${toolName}`);
+  }
+  return Array.from(blocked).sort();
+}
+
+/**
+ * Union a step's own `disallowedTools` with the worker-ceiling-derived block
+ * list. Returns `undefined` when both are empty so callers preserve the "field
+ * absent" shape. When there is NO worker list (the non-worker case), the step's
+ * list is returned VERBATIM — same value, same order, same duplicates — so a
+ * non-worker agent step is byte-identical to pre-flip behaviour. Only an actual
+ * merge dedups + sorts (argv order/dupes are inert for a deny SET).
+ */
+export function mergeAgentDisallowedTools(
+  stepList?: string[],
+  workerList?: string[],
+): string[] | undefined {
+  if (!workerList?.length) return stepList?.length ? stepList : undefined;
+  if (!stepList?.length) return Array.from(new Set(workerList)).sort();
+  return Array.from(new Set([...stepList, ...workerList])).sort();
 }

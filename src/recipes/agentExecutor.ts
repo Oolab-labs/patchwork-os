@@ -86,6 +86,16 @@ export interface AgentExecutorInput {
   /** Deny rules via --disallowed-tools (any mode). */
   disallowedTools?: string[];
   /**
+   * Worker-autonomy hard requirement. When true, this agent step carries a
+   * worker-mandated tool sandbox (see disallowedToolsForAgentStep) that ONLY the
+   * subprocess / claude-code driver can enforce (`--disallowed-tools`). Every
+   * other driver structurally drops the deny list, which would silently re-open
+   * the exact agent-bypass the sandbox exists to close (a NEVER-WIDEN hole). So
+   * when this is set and the resolved driver is not sandbox-enforcing, executeAgent
+   * REFUSES to run the step (fail-closed) instead of running it un-sandboxed.
+   */
+  enforceSandbox?: boolean;
+  /**
    * Opaque per-call driver options forwarded to the provider driver (e.g.
    * `{ responseFormat: { type: "json_object" } }` for constrained decoding).
    * Only the provider-driver path (openai/grok/gemini-api) consumes it; other
@@ -101,6 +111,27 @@ export interface AgentExecutorInput {
  */
 export const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 
+/**
+ * Will `executeAgent` route this call to the subprocess (`claude -p`) driver —
+ * the ONLY driver that enforces `--disallowed-tools`? Mirrors the dispatch in
+ * `executeAgent` exactly (explicit driver, then pwCfg, then auto-detect) so the
+ * worker-sandbox guard agrees with where the call actually lands. `probeClaudeCli`
+ * / `loadPatchworkConfig` are cheap + idempotent, so calling them here too is fine.
+ */
+function resolvesToSubprocessDriver(
+  driver: string | undefined,
+  deps: AgentExecutorDeps,
+): boolean {
+  if (driver === "subprocess" || driver === "claude-code") return true;
+  if (driver !== undefined) return false; // anthropic/claude/openai/grok/gemini*/local
+  const pwCfg = deps.loadPatchworkConfig();
+  if (pwCfg.model === "local") return false;
+  if (pwCfg.driver === "subprocess" || pwCfg.driver === "claude-code")
+    return true;
+  if (process.env.ANTHROPIC_API_KEY) return false; // auto-detect → anthropic API
+  return deps.probeClaudeCli(); // CLI present → subprocess; else falls back to API
+}
+
 export async function executeAgent(
   input: AgentExecutorInput,
   deps: AgentExecutorDeps,
@@ -114,7 +145,21 @@ export async function executeAgent(
     allowedTools,
     disallowedTools,
     providerOptions,
+    enforceSandbox,
   } = input;
+
+  // NEVER-WIDEN guard. A worker-mandated sandbox is enforceable only on the
+  // subprocess driver; on any other driver the deny list is silently dropped and
+  // the worker's agent step could perform exactly the risky action the gate
+  // believed it sandboxed. Fail closed: refuse to run rather than run un-gated.
+  // The "[agent step failed:" prefix is the marker the runners already treat as a
+  // step failure (halting non-optional steps), so the agent never executes.
+  if (enforceSandbox && !resolvesToSubprocessDriver(driver, deps)) {
+    return {
+      text: "[agent step failed: worker autonomy requires the subprocess driver to enforce its tool sandbox — set the agent step (or recipe) driver to `subprocess`/`claude-code`; refusing to run un-sandboxed]",
+      servedBy: { driver: driver ?? "auto" },
+    };
+  }
   const cliOpts =
     mcpAccess !== undefined ||
     sandbox !== undefined ||

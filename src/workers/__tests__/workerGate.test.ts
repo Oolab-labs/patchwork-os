@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { classifyActionClass } from "../actionClass.js";
 import type { GraduationConfig } from "../graduation.js";
 import { parseWorker } from "../worker.js";
-import { decideWorkerAction, flowsUngated } from "../workerGate.js";
+import {
+  decideWorkerAction,
+  disallowedToolsForAgentStep,
+  flowsUngated,
+  mergeAgentDisallowedTools,
+} from "../workerGate.js";
 import { WorkerLevelStore } from "../workerLevelStore.js";
 
 const CFG: GraduationConfig = {
@@ -112,7 +117,9 @@ describe("decideWorkerAction", () => {
     const w = parseWorker({ id: "w", name: "W", owns: ["vcs-push"] });
     const store = storeWithL2("w", "gitPush");
     const d = decideWorkerAction(w, "gitPush", {}, store);
-    expect(d.earnedLevel).toBeGreaterThanOrEqual(2);
+    // Pin the exact earned rung (the helper is built to land at L2) so a
+    // graduation-curve regression that over- or under-shoots is caught.
+    expect(d.earnedLevel).toBe(2);
     expect(d.action).toBe("allow");
     expect(d.reason).toContain("L2+");
   });
@@ -146,5 +153,91 @@ describe("decideWorkerAction", () => {
     expect(d.effectiveLevel).toBe(0);
     expect(d.action).toBe("gate");
     expect(d.reason).toContain("outside");
+  });
+});
+
+describe("disallowedToolsForAgentStep (agent-bypass sandbox)", () => {
+  it("blocks risky tools the worker can't run autonomously, not reversible ones", () => {
+    const w = parseWorker({ id: "w", name: "W", owns: ["fs-write"] });
+    const blocked = disallowedToolsForAgentStep(w, new WorkerLevelStore());
+    // risky (compensable/irreversible) tools the worker can't do → blocked,
+    // in BOTH the bare form (native CC tools) and the bridge MCP form so a
+    // claude -p `--disallowed-tools` actually denies the MCP call.
+    expect(blocked).toContain("gitPush");
+    expect(blocked).toContain("mcp__patchwork__gitPush");
+    expect(blocked).toContain("githubMergePR");
+    expect(blocked).toContain("slackPostMessage");
+    expect(blocked).toContain("runCommand");
+    // native CC shell tool is blocked too (the primary agent side-effect vector)
+    expect(blocked).toContain("Bash");
+    // reversible tools flow un-gated → NEVER blocked (the agent needs them)
+    expect(blocked).not.toContain("getGitStatus");
+    expect(blocked).not.toContain("editText");
+    expect(blocked).not.toContain("mcp__patchwork__editText");
+    // the reasoning step itself is never self-blocked
+    expect(blocked).not.toContain("agent");
+    // recipe-DSL ids (with a ".") are never emitted — the subprocess can't call
+    // them; only their camelCase MCP twin is.
+    expect(blocked.some((t) => t.includes("."))).toBe(false);
+    // Harmless read/nav tools classify as other:irreversible:low — they must NOT
+    // be over-blocked, or the agent loses the tools it needs to investigate.
+    for (const read of [
+      "getDiagnostics",
+      "searchWorkspace",
+      "goToDefinition",
+      "getHover",
+    ]) {
+      expect(blocked).not.toContain(read);
+    }
+  });
+
+  it("does NOT block a risky tool the worker has EARNED autonomy on", () => {
+    // owns vcs-push + earned L4 on gitPush → the agent may use it.
+    const w = parseWorker({ id: "w", name: "W", owns: ["vcs-push"] });
+    const blocked = disallowedToolsForAgentStep(w, storeWithL4("w", "gitPush"));
+    expect(blocked).not.toContain("gitPush");
+    // a DIFFERENT risky class it has not earned is still blocked.
+    expect(blocked).toContain("githubMergePR");
+  });
+
+  it("a lowered autonomy ceiling blocks even an earned risky tool", () => {
+    // earned L4 on gitPush but ceiling L1 → effective L1 < L2 → gated → blocked.
+    const w = parseWorker({
+      id: "w",
+      name: "W",
+      owns: ["vcs-push"],
+      autonomyCeiling: 1,
+    });
+    const blocked = disallowedToolsForAgentStep(w, storeWithL4("w", "gitPush"));
+    expect(blocked).toContain("gitPush");
+  });
+});
+
+describe("mergeAgentDisallowedTools", () => {
+  it("unions + dedups + sorts when a worker list is present", () => {
+    expect(mergeAgentDisallowedTools(["b", "a"], ["a", "c"])).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    expect(mergeAgentDisallowedTools(undefined, ["c", "a", "a"])).toEqual([
+      "a",
+      "c",
+    ]);
+  });
+
+  it("returns undefined when both empty", () => {
+    expect(mergeAgentDisallowedTools(undefined, undefined)).toBeUndefined();
+    expect(mergeAgentDisallowedTools([], [])).toBeUndefined();
+  });
+
+  it("preserves the step's list VERBATIM when there is no worker list (non-worker byte-identical)", () => {
+    // order + duplicates retained — argv must match pre-flip behaviour exactly.
+    expect(mergeAgentDisallowedTools(["b", "a", "b"], undefined)).toEqual([
+      "b",
+      "a",
+      "b",
+    ]);
+    expect(mergeAgentDisallowedTools(["b", "a"], [])).toEqual(["b", "a"]);
   });
 });

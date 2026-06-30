@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -32,6 +32,82 @@ describe("getWorkerShadowData", () => {
     expect(data.workers[0]).toHaveProperty("autonomyCeiling");
     expect(data.runsScanned).toBe(0);
     expect(data.decisionsScanned).toBe(0);
+  });
+
+  it("retains a buried worker run on the dial behind >100 unrelated runs", () => {
+    // Dial-path twin of the live-gate regression: getWorkerShadowData must
+    // filter runs by the loaded workers' recipes, not read the global last-100.
+    const log = new RecipeRunLog({ dir: emptyDir });
+    log.appendDirect({
+      taskId: "rel",
+      recipeName: "release-notes",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 0,
+      doneAt: 1,
+      durationMs: 1,
+      stepResults: [
+        { id: "s1", tool: "editText", status: "ok", durationMs: 1 },
+      ],
+    });
+    for (let i = 0; i < 150; i++) {
+      log.appendDirect({
+        taskId: `noise-${i}`,
+        recipeName: "some-unrelated-recipe",
+        trigger: "recipe",
+        status: "done",
+        createdAt: 10 + i,
+        doneAt: 11 + i,
+        durationMs: 1,
+        stepResults: [
+          { id: `n${i}`, tool: "editText", status: "ok", durationMs: 1 },
+        ],
+      });
+    }
+    const data = getWorkerShadowData({
+      workersDir: WORKERS_DIR,
+      patchworkDir: emptyDir,
+      ideDir: emptyDir,
+    });
+    const rel = data.workers.find((w) => w.workerId === "release-notes-worker");
+    expect(rel?.board.length).toBeGreaterThan(0);
+  });
+
+  it("does NOT double-count evidence when two workers share a recipe (dedup)", () => {
+    // Two manifests declaring the same recipe → recipeNames has a duplicate. An
+    // un-deduped flatMap would query that recipe twice and ingest every run
+    // twice, doubling the dial's evidence (a dial-vs-gate divergence). readRuns
+    // dedups, so the owning (first-match) worker counts each run exactly once.
+    const wdir = path.join(emptyDir, "dup-workers");
+    mkdirSync(wdir, { recursive: true });
+    const mk = (id: string) =>
+      `id: ${id}\nname: ${id}\nrecipe: dup-recipe\nowns:\n  - fs-write\nautonomyCeiling: 4\n`;
+    writeFileSync(path.join(wdir, "a.worker.yaml"), mk("worker-a"));
+    writeFileSync(path.join(wdir, "b.worker.yaml"), mk("worker-b"));
+
+    const log = new RecipeRunLog({ dir: emptyDir });
+    log.appendDirect({
+      taskId: "r1",
+      recipeName: "dup-recipe",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 0,
+      doneAt: 1,
+      durationMs: 1,
+      stepResults: [
+        { id: "s1", tool: "editText", status: "ok", durationMs: 1 },
+      ],
+    });
+
+    const data = getWorkerShadowData({
+      workersDir: wdir,
+      patchworkDir: emptyDir,
+      ideDir: emptyDir,
+    });
+    // exactly ONE observation on the first-match worker's fs-write class, not 2.
+    const owner = data.workers.find((w) => w.board.length > 0);
+    const fsWrite = owner?.board.find((b) => b.classKey.startsWith("fs-write"));
+    expect(fsWrite?.observations).toBe(1);
   });
 
   it("returns no workers when the workers dir is absent", () => {
@@ -98,6 +174,93 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
     const board = trust?.store.board("release-notes-worker") ?? [];
     expect(board.length).toBeGreaterThan(0);
     expect(board.some((b) => b.classKey.startsWith("fs-write"))).toBe(true);
+  });
+
+  it("retains a worker's evidence behind >500 unrelated runs (ring not just window)", () => {
+    // Stronger than the 150-run case: the in-memory ring defaults to 500, so a
+    // worker run buried behind >500 unrelated runs would be evicted from the ring
+    // entirely (the per-recipe filter runs AFTER ring eviction). readRuns sizes
+    // the ring to the full disk retention, so the worker run survives.
+    const log = new RecipeRunLog({ dir });
+    log.appendDirect({
+      taskId: "worker-run",
+      recipeName: "release-notes",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 0,
+      doneAt: 1,
+      durationMs: 1,
+      stepResults: [
+        { id: "s1", tool: "editText", status: "ok", durationMs: 1 },
+      ],
+    });
+    for (let i = 0; i < 600; i++) {
+      log.appendDirect({
+        taskId: `noise-${i}`,
+        recipeName: "some-unrelated-recipe",
+        trigger: "recipe",
+        status: "done",
+        createdAt: 10 + i,
+        doneAt: 11 + i,
+        durationMs: 1,
+        stepResults: [
+          { id: `n${i}`, tool: "editText", status: "ok", durationMs: 1 },
+        ],
+      });
+    }
+    const trust = loadWorkerTrustForRecipe("release-notes", {
+      workersDir: WORKERS_DIR,
+      patchworkDir: dir,
+    });
+    expect(
+      (trust?.store.board("release-notes-worker") ?? []).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("retains a worker's evidence behind >100 newer unrelated runs (window eviction)", () => {
+    // Regression: readRuns used query({}) (default limit 100). A low-frequency
+    // worker's run buried behind >100 newer UNRELATED recipe runs aged out of
+    // the window → the live gate saw zero evidence and silently floored the
+    // worker to L0. This is exactly why test-guardian showed an empty dial
+    // despite a real, correctly-executed run.
+    const log = new RecipeRunLog({ dir });
+    // One real worker run with a clean owned step (oldest by `at`).
+    log.appendDirect({
+      taskId: "worker-run",
+      recipeName: "release-notes",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 0,
+      doneAt: 1,
+      durationMs: 1,
+      stepResults: [
+        { id: "s1", tool: "editText", status: "ok", durationMs: 1 },
+      ],
+    });
+    // 150 unrelated (non-worker) runs AFTER it — these flood the default
+    // 100-run query window and would evict the single worker run.
+    for (let i = 0; i < 150; i++) {
+      log.appendDirect({
+        taskId: `noise-${i}`,
+        recipeName: "some-unrelated-recipe",
+        trigger: "recipe",
+        status: "done",
+        createdAt: 10 + i,
+        doneAt: 11 + i,
+        durationMs: 1,
+        stepResults: [
+          { id: `n${i}`, tool: "editText", status: "ok", durationMs: 1 },
+        ],
+      });
+    }
+    const trust = loadWorkerTrustForRecipe("release-notes", {
+      workersDir: WORKERS_DIR,
+      patchworkDir: dir,
+    });
+    expect(trust).not.toBeNull();
+    // The worker's run must still be visible despite the newer noise.
+    const board = trust?.store.board("release-notes-worker") ?? [];
+    expect(board.length).toBeGreaterThan(0);
   });
 
   it("a risky class can graduate to earned L4 via ascending replay (M2)", () => {
