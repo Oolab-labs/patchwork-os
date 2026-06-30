@@ -15,7 +15,7 @@ describe("classifyActionClass", () => {
       brandExposed: false,
     });
     expect(classifyActionClass("gitPush").key).toBe(
-      "vcs-remote:compensable:high",
+      "vcs-push:compensable:high",
     );
     expect(classifyActionClass("slackPostMessage").key).toBe(
       "messaging:irreversible:medium",
