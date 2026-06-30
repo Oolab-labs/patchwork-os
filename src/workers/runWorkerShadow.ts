@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { MAX_PERSIST_LINES, RecipeRunLog } from "../runLog.js";
+import { backtestWorker, formatBacktestReport } from "./backtest.js";
 import {
   type DecisionRecord,
   type RunRecord,
@@ -224,4 +225,32 @@ export function runWorkerShadowReport(opts: RunWorkerShadowOpts = {}): string {
     return `No worker manifests found in ${data.workersDir}.\nAdd *.worker.yaml there (e.g. copy templates/workers/) and re-run.\n`;
   }
   return `${formatShadowReport(data.workers)}\n(scanned ${data.runsScanned} recipe runs, ${data.decisionsScanned} gate decisions · read-only)\n`;
+}
+
+/**
+ * Backtest each installed worker over its historical run log and print the
+ * divergence-calibration report (false-allow / false-gate). Read-only — the
+ * cold-start "what would this worker have done across N real actions, and where
+ * would it have diverged" artifact. See backtest.ts.
+ */
+export function runWorkerBacktest(opts: RunWorkerShadowOpts = {}): string {
+  const home = os.homedir();
+  const patchworkDir = opts.patchworkDir ?? path.join(home, ".patchwork");
+  const workersDir = opts.workersDir ?? path.join(patchworkDir, "workers");
+  const workers = loadWorkersFromDir(workersDir);
+  if (!workers.length) {
+    return `No worker manifests found in ${workersDir}.\nAdd *.worker.yaml there (e.g. copy templates/workers/) and re-run.\n`;
+  }
+  const lines: string[] = [
+    "Worker trust BACKTEST — divergence calibration (read-only)",
+    "  false-allow = ramp would auto-run a BAD action (over-trust, the risk)",
+    "  false-gate  = ramp would gate a GOOD action (over-caution, the cost)",
+    "",
+  ];
+  for (const w of workers) {
+    if (!w.recipe) continue;
+    const runs = readRuns(patchworkDir, [w.recipe]);
+    lines.push(formatBacktestReport(backtestWorker(w, runs)));
+  }
+  return lines.join("\n");
 }
