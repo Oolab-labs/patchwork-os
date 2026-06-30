@@ -18,6 +18,7 @@ Comply with all docs in `/documents/`. Consult before changes:
 - **[documents/data-reference.md](documents/data-reference.md)** — Data flows, state mgmt, protocol details. Consult before modifying connection/auth/state logic.
 - **[documents/plugin-authoring.md](documents/plugin-authoring.md)** — Plugin manifest schema, entrypoint API, distribution.
 - **[docs/adr/](docs/adr/)** — Architecture Decision Records. Read before touching version numbers, lock files, error codes, session mgmt, or reconnect logic.
+- **[docs/runbooks/](docs/runbooks/)** — Operator runbooks for live campaigns (worker-autonomy-dogfood.md, etc.).
 
 > **Cowork (computer-use) sessions:** MCP bridge tools NOT available inside Cowork. Run `/mcp__bridge__cowork` in regular Desktop chat first to capture IDE context, then switch to Cowork. Cowork runs in isolated git worktree — output won't appear in `git status` on main until merged. (see [docs/cowork.md](docs/cowork.md))
 
@@ -41,7 +42,7 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `recipe list` — Print installed recipes from the active bridge.
 - `recipe install <source>` — Install from `github:owner/repo[/path][@ref]`. Same shape the dashboard install panel posts.
 - `recipe uninstall <name>` — Remove a locally installed recipe.
-- `recipe enable <name>` / `recipe disable <name>` — Flip the per-recipe disabled marker so cron / file-watch triggers stop firing without uninstalling. Used by the dashboard's pause toggle.
+- `recipe enable <name>` / `recipe disable <name>` — Flip the per-recipe disabled marker so cron / file-watch / git-hook triggers stop firing without uninstalling. Used by the dashboard's pause toggle.
 - `recipe run <name> [--local --dry-run --step <id> --attempt <n> --ledger-dir <path> --var k=v]` — Manual run with overrides; `--local` skips the bridge API.
 - `recipe lint <file.yaml>` — Lint a recipe YAML against the schema + best-practice rules.
 - `recipe preflight <file.yaml>` — Connector preflight: list authorisations the recipe needs.
@@ -62,6 +63,8 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `analytics show|configure|clear|test` — Manage the opt-in telemetry collector config (endpoint + shared secret) at `~/.claude/ide/analytics-config.json` (mode 0600). Replaces the brittle pattern of putting the secret in a launchd plist. `configure --endpoint URL --key KEY` writes both atomically; `test` sends a tiny synthetic payload and reports the HTTP status; `show` prints active values and resolution source (env / config / default). Env vars still win for headless/CI.
 - `panic` — Shortcut for `kill-switch engage --reason "manual panic"`.
 - `judgments [--window 1h|24h|overnight|7d|any] [--recipe <name>] [--json]` — Recent judge-step verdicts (from recipe steps with `agent.kind: judge`) across runs. Discovers the running bridge via lock file, queries `/runs/judge-summary`, prints per-verdict counts + 5 most-recent. Sibling of `halts`; same window/filter shape.
+- `workers shadow [--workers-dir <path>]` — Replay run + gate logs to show per-worker × action-class trust dial and ramp-vs-gate divergences. Primary monitoring tool during the worker autonomy dogfood campaign. See [docs/runbooks/worker-autonomy-dogfood.md](docs/runbooks/worker-autonomy-dogfood.md).
+- `workers backtest [--workers-dir <path>]` — Cold-start calibration: replay historical runs as if the gate were live; measures how many shadow divergences the gate would have produced.
 - `suggest [--since-days N]` — Recipe co-occurrence + unused-tool suggestions from recent activity.
 - `traces export [--passphrase <p>] [--mode keyed|public] > file.jsonl` — Export decision traces; `--mode keyed` encrypts with the passphrase.
 - `traces import [--passphrase <p>] [--dry-run] < file.jsonl` — Restore traces from an export.
@@ -98,6 +101,7 @@ Most users don't need to touch these — CLI flags cover the common cases. Liste
 | `PATCHWORK_TOKEN_DIR` / `PATCHWORK_TOKEN_STORAGE_BACKEND` | Connector-token storage location + backend (`file` vs `keychain`). |
 | `PATCHWORK_FLAG_KILL_SWITCH_WRITES` | Feature flag — gate write tools on kill-switch state. |
 | `PATCHWORK_FLAG_UI_SCHEMA_LINT` | Feature flag — strict UI-schema linting in the recipe editor. |
+| `PATCHWORK_FLAG_WORKER_AUTONOMY` | Feature flag — enable trust-ramp-aware autonomy gate for worker recipes. Gates compensable/irreversible automated recipe actions until the owning worker earns L4 trust on that action-class; reversible actions always flow freely. Default off. Requires `--driver subprocess`. |
 | `LOCAL_MODEL` / `LOCAL_ENDPOINT` / `LOCAL_API_KEY` / `LOCAL_ENDPOINT_ALLOW_REMOTE` | Local-model driver config (Ollama / vLLM / OpenAI-compatible endpoint). |
 | `OTEL_SERVICE_NAME` | Override the OTel service name (default `claude-ide-bridge`). |
 | `PATCHWORK_ANALYTICS_ENDPOINT` | Override the opt-in telemetry collector URL (default `https://analytics.claude-ide-bridge.dev/v1/usage`). Must be `http(s)://`; invalid values fall back to default. Per-call resolution; precedence: env > config file > default. For CI/headless. Prefer `patchwork analytics configure` for persistent setups — keeps the secret out of launchd plists. |
@@ -230,6 +234,19 @@ All LSP tools available in both slim and full mode (full is the default since v2
 | Links / file refs in doc? | `getDocumentLinks` |
 | Code lens counts? | `getCodeLens` |
 
+## Workers / Autonomy Gate
+
+The `src/workers/` subsystem implements a trust-ramp-aware autonomy gate for recipe-bound workers.
+
+- **Worker identity**: a worker = a named recipe identity. Trust is per `(workerName × actionClassKey)` — never global. Competence demonstrated on reversible low-blast actions (reads, CI) cannot transfer to compensable or irreversible high-blast actions (git push, PR merge, file delete).
+- **Trust levels**: L0–L4, Bayesian Beta posterior + LCB threshold. `outcomeWeight` is blast-weighted so one high-blast failure outweighs many trivial successes.
+- **Gate formula**: `effectiveLevel = min(earned, autonomyCeiling, contextCeiling)`. The `contextCeiling` is a descending-only seam — signals can only lower autonomy, never raise it (NaN / out-of-range → no de-rate).
+- **Autonomy thresholds**: reversible actions bypass the gate unconditionally. Compensable actions unlock at effective L2. Irreversible actions require L4.
+- **Feature flag**: `PATCHWORK_FLAG_WORKER_AUTONOMY` (default off). With the flag off, the gate is a no-op — byte-identical to pre-ramp behavior. Requires `--driver subprocess`.
+- **Dogfood templates**: `templates/workers/` — three reference workers (release-notes, dependency-bump, triage-failing-tests).
+- **Monitoring**: `patchwork workers shadow` replays logs and shows per-worker × action-class trust dial + ramp-vs-gate divergences. `patchwork workers backtest` calibrates cold-start without touching live gate behavior.
+- **Full reference**: [docs/worker-autonomy-policy-gate.md](docs/worker-autonomy-policy-gate.md), [docs/runbooks/worker-autonomy-dogfood.md](docs/runbooks/worker-autonomy-dogfood.md).
+
 ## Architecture Rules
 
 - **Tools**: factory pattern `createXxxTool(deps)` returning `{ schema, handler }`. Register in `src/tools/index.ts`.
@@ -304,7 +321,9 @@ Full reference: [documents/platform-docs.md](documents/platform-docs.md) (Claude
 
 Event-driven hooks that trigger Claude tasks automatically.
 
-- **Activation**: `--automation --automation-policy <path.json> --driver subprocess`
+- **Activation**: Two paths:
+  1. `--automation --automation-policy <path.json> --driver subprocess` — explicit policy file; hooks fire immediately and stay active for the bridge lifetime.
+  2. Auto-enable (no `--automation` flag needed) — when `--driver` is non-none and at least one installed recipe declares a `file_watch`, `git_hook`, `on_file_save`, or `on_test_run` trigger, the bridge stands up a policy-less `AutomationHooks` at startup. **Startup-only**: installing a trigger recipe mid-session requires a bridge restart to take effect unless `--automation` is also active. `file_watch` and `git_hook` triggers hot-reload on recipe install/save/delete via `onRecipesChangedFn`; `on_file_save` and `on_test_run` are startup-only under the auto-enable path.
 - **Hooks**:
   - `onDiagnosticsStateChange` (v2.43.0+) — unified diagnostics hook. `state: "error"` fires on new error/warning diagnostics (`{{file}}`, `{{diagnostics}}`, severity filter). `state: "cleared"` fires when errors/warnings drop to zero (`{{file}}`). Replaces deprecated `onDiagnosticsError` + `onDiagnosticsCleared`.
   - `onFileSave` — matching files saved. Minimatch glob patterns. Placeholder: `{{file}}`.
@@ -317,7 +336,7 @@ Event-driven hooks that trigger Claude tasks automatically.
   - `onGitPush` — fires after successful `gitPush`. Placeholders: `{{remote}}`, `{{branch}}`, `{{hash}}`.
   - `onBranchCheckout` — fires after successful `gitCheckout`. Placeholders: `{{branch}}`, `{{previousBranch}}`, `{{created}}`.
   - `onPullRequest` — fires after successful `githubCreatePR`. Placeholders: `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}`.
-  - `onTestRun` — fires after `runTests` completes. Placeholders: `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` (JSON array). Supports `filter: "any"|"failure"|"pass-after-fail"` (v2.43.0+). `"pass-after-fail"` replaces the deprecated separate `onTestPassAfterFailure` hook. Legacy `onFailureOnly` boolean still works but emits a deprecation warning.
+  - `onTestRun` — fires after `runTests` completes. **Caveat**: only fires when tests are invoked via the bridge `runTests` tool — bare `npm test` / `npx vitest` invocations do NOT trigger this hook. Placeholders: `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` (JSON array). Supports `filter: "any"|"failure"|"pass-after-fail"` (v2.43.0+). `"pass-after-fail"` replaces the deprecated separate `onTestPassAfterFailure` hook. Legacy `onFailureOnly` boolean still works but emits a deprecation warning.
   - `onTaskCreated` — fires on Claude Code TaskCreated hook (CC 2.1.84+). Placeholders: `{{taskId}}`, `{{prompt}}`.
   - `onTaskSuccess` — fires when orchestrator task completes successfully. Placeholders: `{{taskId}}`, `{{output}}`.
   - `onPermissionDenied` — fires on Claude Code PermissionDenied hook (CC 2.1.89+). Placeholders: `{{tool}}`, `{{reason}}`.
