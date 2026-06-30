@@ -4659,13 +4659,21 @@ if (process.argv[2] === "shadow-scan") {
 // and prints the dial + a "ramp would vs gate did" comparison. Changes nothing.
 if (process.argv[2] === "workers") {
   const args = process.argv.slice(3);
-  if (args[0] !== "shadow" || args.includes("--help") || args.includes("-h")) {
+  const sub = args[0];
+  if (
+    (sub !== "shadow" && sub !== "backtest") ||
+    args.includes("--help") ||
+    args.includes("-h")
+  ) {
     process.stdout.write(
-      "Usage: patchwork workers shadow [--workers-dir <path>]\n\n" +
-        "Read-only worker trust dial: replays ~/.patchwork/runs.jsonl and the\n" +
-        "gate decision log through the (worker × action-class) trust ramp. It\n" +
-        "computes what the ramp WOULD decide vs what the gate DID — and never\n" +
-        "changes a live decision.\n\n" +
+      "Usage: patchwork workers <shadow|backtest> [--workers-dir <path>]\n\n" +
+        "  shadow    Read-only worker trust dial: replays ~/.patchwork/runs.jsonl\n" +
+        "            + the gate decision log through the (worker × action-class)\n" +
+        "            ramp. Computes what the ramp WOULD decide vs what the gate DID.\n" +
+        "  backtest  Replays each worker's history and reports DIVERGENCE: where the\n" +
+        "            ramp would have auto-run a bad action (false-allow, the risk) or\n" +
+        "            gated a good one (false-gate, the cost). Calibration, not a\n" +
+        "            success rate. Neither command changes a live decision.\n\n" +
         "  --workers-dir <path>  Where *.worker.yaml live (default ~/.patchwork/workers)\n",
     );
     process.exit(0);
@@ -4674,11 +4682,14 @@ if (process.argv[2] === "workers") {
     try {
       const dirIdx = args.indexOf("--workers-dir");
       const workersDir = dirIdx !== -1 ? args[dirIdx + 1] : undefined;
-      const { runWorkerShadowReport } = await import(
+      const { runWorkerShadowReport, runWorkerBacktest } = await import(
         "./workers/runWorkerShadow.js"
       );
+      const opts = workersDir ? { workersDir } : {};
       process.stdout.write(
-        runWorkerShadowReport(workersDir ? { workersDir } : {}),
+        sub === "backtest"
+          ? runWorkerBacktest(opts)
+          : runWorkerShadowReport(opts),
       );
     } catch (err) {
       process.stderr.write(
