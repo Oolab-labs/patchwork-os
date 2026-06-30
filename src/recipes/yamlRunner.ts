@@ -53,6 +53,7 @@ import type { RecipeRunLog } from "../runLog.js";
  */
 import { sanitizeParsedJson as sanitizeParsed } from "../sanitizeParsedJson.js";
 import { ensureCmdShim } from "../winShim.js";
+import { mergeAgentDisallowedTools } from "../workers/workerGate.js";
 import {
   executeAgent as _executeAgent,
   type AgentExecutorDeps,
@@ -638,6 +639,15 @@ export interface RunnerDeps {
    * Unset/false → manual-only gating, byte-identical to pre-flip behaviour.
    */
   gateAutomatedRuns?: boolean;
+  /**
+   * Worker agent-step sandbox (worker.autonomy flag). When a worker owns the
+   * recipe, this is the `--disallowed-tools` list its `agent` steps must inherit
+   * so the spawned Claude subprocess can't call tools the worker hasn't earned
+   * autonomy on (the subprocess's internal tool calls bypass the per-step gate).
+   * Merged with each step's own `agent.disallowedTools`. Unset for non-worker
+   * recipes → agent steps are byte-identical to pre-flip behaviour.
+   */
+  agentDisallowedTools?: string[];
 }
 
 export interface RunResult {
@@ -745,6 +755,9 @@ export type StepDeps = Required<
     // StepDeps; keep it off StepDeps so it isn't forced Required here.
     | "requireApprovalFn"
     | "gateAutomatedRuns"
+    // Agent-step sandbox is read in the agent branch against `deps`, not per-
+    // step StepDeps; keep it off StepDeps so it isn't forced Required here.
+    | "agentDisallowedTools"
     // Cancellation is checked in the run loop against `deps`, not per-step;
     // keep it off StepDeps so it isn't forced Required here.
     | "signal"
@@ -1397,9 +1410,18 @@ export async function runYamlRecipe(
         ...(sandboxOpts?.tools !== undefined && {
           allowedTools: sandboxOpts.tools,
         }),
-        ...(sandboxOpts?.disallowedTools !== undefined && {
-          disallowedTools: sandboxOpts.disallowedTools,
-        }),
+        // Worker.autonomy: a sandboxed step STAYS sandboxed across re-runs AND
+        // inherits the worker's agent-step deny list (same merge as the primary
+        // agent branch), so refine-loop re-runs can't bypass the gate either.
+        ...(() => {
+          const merged = mergeAgentDisallowedTools(
+            sandboxOpts?.disallowedTools,
+            deps.agentDisallowedTools,
+          );
+          return merged !== undefined ? { disallowedTools: merged } : {};
+        })(),
+        // Fail closed if a worker sandbox can't be enforced on the chosen driver.
+        ...(deps.agentDisallowedTools?.length && { enforceSandbox: true }),
         ...(providerOptions && { providerOptions }),
       },
       buildAgentExecutorDeps(stepDeps, deps),
@@ -1863,6 +1885,12 @@ export async function runYamlRecipe(
             renderedPrompt,
             runBudget,
           );
+          // Worker.autonomy: fold the worker's agent-step sandbox into this
+          // step's own deny list so the subprocess can't bypass the gate.
+          const agentDisallowed = mergeAgentDisallowedTools(
+            agentCfg.disallowedTools,
+            deps.agentDisallowedTools,
+          );
           const agentReturn = await _executeAgent(
             {
               prompt: renderedPrompt,
@@ -1880,8 +1908,13 @@ export async function runYamlRecipe(
               ...(agentCfg.tools !== undefined && {
                 allowedTools: agentCfg.tools,
               }),
-              ...(agentCfg.disallowedTools !== undefined && {
-                disallowedTools: agentCfg.disallowedTools,
+              ...(agentDisallowed !== undefined && {
+                disallowedTools: agentDisallowed,
+              }),
+              // Worker sandbox is enforceable only on the subprocess driver;
+              // fail closed on any other driver rather than run un-sandboxed.
+              ...(deps.agentDisallowedTools?.length && {
+                enforceSandbox: true,
               }),
               // Constrained decoding: enforce a pure-JSON verdict on judge steps
               // (OpenAI-compatible drivers honor it; others ignore it). Pairs
@@ -3427,8 +3460,19 @@ export function buildChainedDeps(
         ...(opts?.allowedTools !== undefined && {
           allowedTools: opts.allowedTools,
         }),
-        ...(opts?.disallowedTools !== undefined && {
-          disallowedTools: opts.disallowedTools,
+        // Worker.autonomy: single chokepoint for the CHAINED path — fold the
+        // worker's agent-step deny list into every chained agent call so the
+        // subprocess can't bypass the per-step gate (mirrors the flat branch).
+        ...(() => {
+          const merged = mergeAgentDisallowedTools(
+            opts?.disallowedTools,
+            runnerDeps.agentDisallowedTools,
+          );
+          return merged !== undefined ? { disallowedTools: merged } : {};
+        })(),
+        // Fail closed if a worker sandbox can't be enforced on the chosen driver.
+        ...(runnerDeps.agentDisallowedTools?.length && {
+          enforceSandbox: true,
         }),
       },
       buildAgentExecutorDeps(stepDeps, runnerDeps, claudeCodeFnOverride),

@@ -135,6 +135,65 @@ describe("graduation — demote cooldown", () => {
   });
 });
 
+describe("graduation — config tightening does not retroactively demote", () => {
+  it("a class earned under a loose floor is NOT demoted when the floor is raised", () => {
+    const key = classifyActionClass(EDIT).key;
+    // Climb to L4 under the loose test config (minEvidenceForGraduation=5).
+    let { state } = runSeq(
+      initialState(key, DEFAULT_PRIOR),
+      goods(EDIT, 60, 0),
+    );
+    ({ state } = runSeq(
+      state,
+      [1000, 2000, 3000, 4000].map((at) => ({
+        toolName: EDIT,
+        good: true,
+        at,
+      })),
+    ));
+    expect(state.level).toBe(4);
+    // The threshold it graduated under is recorded on the state.
+    expect(state.minEvidenceAtLastPromotion).toBe(5);
+
+    // Operator RAISES minEvidenceForGraduation far above the accrued evidence.
+    // The novel-class floor is a COLD-START gate — raising it must not claw back
+    // an already-earned level. One more clean outcome must NOT demote.
+    const tightened: GraduationConfig = {
+      ...CFG,
+      minEvidenceForGraduation: 1000,
+    };
+    const after = graduate(
+      state,
+      { toolName: EDIT, good: true, at: 5000 },
+      tightened,
+    );
+    expect(after.event?.type).not.toBe("demote");
+    expect(after.state.level).toBe(4);
+  });
+
+  it("a cold-start class still faces the CURRENT (raised) floor", () => {
+    // A class that has NOT cleared L1 uses the live config, so raising the floor
+    // correctly slows a fresh climb (no retroactive protection for cold-start).
+    const key = classifyActionClass(EDIT).key;
+    const tightened: GraduationConfig = {
+      ...CFG,
+      minEvidenceForGraduation: 1000,
+    };
+    const { state } = runSeq(
+      initialState(key, DEFAULT_PRIOR),
+      goods(EDIT, 60, 0),
+      tightened,
+    );
+    const climb = runSeq(
+      state,
+      [1000, 2000].map((at) => ({ toolName: EDIT, good: true, at })),
+      tightened,
+    );
+    // floor (evidence ~62 < 1000) caps at L1 — no promotion past L1.
+    expect(climb.state.level).toBeLessThanOrEqual(1);
+  });
+});
+
 describe("graduation — irreversible class jumps L1→L4", () => {
   it("never visits L2/L3 for an irreversible class", () => {
     const key = classifyActionClass(SHELL).key;

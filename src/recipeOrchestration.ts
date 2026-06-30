@@ -169,6 +169,45 @@ export async function buildWorkerAutonomyGate(
   }
 }
 
+/**
+ * The `--disallowed-tools` an `agent` step must inherit when a worker owns this
+ * recipe (worker.autonomy flag on). An agent step spawns a Claude subprocess
+ * whose internal tool calls bypass the per-step worker gate — so without this a
+ * worker could perform via its agent exactly the risky action the gate would
+ * have queued. We re-apply the worker's autonomy boundary as a subprocess
+ * sandbox: every tool the worker can't currently run autonomously is denied.
+ *
+ * Returns null when the flag is off, no worker owns the recipe, or the worker
+ * is fully trusted on everything (nothing to block) — callers then leave agent
+ * steps byte-identical. Fail-soft: any resolution error → null (never crash a
+ * run, never widen access).
+ */
+export async function buildWorkerAgentDisallowedTools(
+  recipeName: string,
+  trustOpts?: import("./workers/runWorkerShadow.js").RunWorkerShadowOpts,
+): Promise<string[] | null> {
+  try {
+    const { isEnabled, FLAG_WORKER_AUTONOMY } = await import(
+      "./featureFlags.js"
+    );
+    if (!isEnabled(FLAG_WORKER_AUTONOMY)) return null;
+
+    const { loadWorkerTrustForRecipe } = await import(
+      "./workers/runWorkerShadow.js"
+    );
+    const trust = loadWorkerTrustForRecipe(recipeName, trustOpts);
+    if (!trust) return null;
+
+    const { disallowedToolsForAgentStep } = await import(
+      "./workers/workerGate.js"
+    );
+    const list = disallowedToolsForAgentStep(trust.worker, trust.store);
+    return list.length ? list : null;
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public interfaces
 // ---------------------------------------------------------------------------
@@ -1108,6 +1147,13 @@ export class RecipeOrchestration {
     );
     const requireApprovalFn = workerApprovalFn ?? tierApprovalFn;
     const gateAutomatedRuns = workerApprovalFn != null;
+    // Agent-step bypass guard: when a worker owns this recipe, its agent steps
+    // inherit a `--disallowed-tools` list covering everything the worker can't
+    // run autonomously (the subprocess's internal tool calls don't pass through
+    // the per-step gate). Null for non-worker recipes → agent steps unchanged.
+    const agentDisallowedTools = await buildWorkerAgentDisallowedTools(
+      opts.name,
+    );
     const runnerDeps = {
       workdir: this.deps.workdir,
       claudeCodeFn,
@@ -1120,6 +1166,7 @@ export class RecipeOrchestration {
       ...(this.deps.activityLog && { activityLog: this.deps.activityLog }),
       ...(requireApprovalFn && { requireApprovalFn }),
       ...(gateAutomatedRuns && { gateAutomatedRuns: true }),
+      ...(agentDisallowedTools && { agentDisallowedTools }),
     };
     // Pass the bridge's long-lived RecipeRunLog so chainedRunner can flip the
     // run from `running` → terminal in-place via startRun/completeRun. The

@@ -18,7 +18,10 @@ import {
   resetApprovalQueueForTests,
 } from "../approvalQueue.js";
 import { FLAG_WORKER_AUTONOMY, setFlag } from "../featureFlags.js";
-import { buildWorkerAutonomyGate } from "../recipeOrchestration.js";
+import {
+  buildWorkerAgentDisallowedTools,
+  buildWorkerAutonomyGate,
+} from "../recipeOrchestration.js";
 
 const WORKER_YAML = `id: test-worker
 name: Test Worker
@@ -146,5 +149,48 @@ describe("buildWorkerAutonomyGate", () => {
     expect(getApprovalQueue().list()).toHaveLength(1);
     ac.abort(); // run cancelled → pending approval resolves "cancelled"
     expect(await p).toBe(false);
+  });
+});
+
+describe("buildWorkerAgentDisallowedTools (agent-step bypass)", () => {
+  let dir: string;
+  let opts: { workersDir: string; patchworkDir: string };
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(os.tmpdir(), "pw-wagent-"));
+    const workersDir = path.join(dir, "workers");
+    mkdirSync(workersDir, { recursive: true });
+    writeFileSync(path.join(workersDir, "test.worker.yaml"), WORKER_YAML);
+    opts = { workersDir, patchworkDir: dir }; // empty patchworkDir → unearned
+    setFlag(FLAG_WORKER_AUTONOMY, true, false);
+  });
+
+  afterEach(() => {
+    setFlag(FLAG_WORKER_AUTONOMY, false, false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("returns null when the flag is off", async () => {
+    setFlag(FLAG_WORKER_AUTONOMY, false, false);
+    expect(
+      await buildWorkerAgentDisallowedTools("test-recipe", opts),
+    ).toBeNull();
+  });
+
+  it("returns null when no worker owns the recipe", async () => {
+    expect(
+      await buildWorkerAgentDisallowedTools("unknown-recipe", opts),
+    ).toBeNull();
+  });
+
+  it("blocks risky-unearned tools (both forms) but not reversible ones", async () => {
+    const list = await buildWorkerAgentDisallowedTools("test-recipe", opts);
+    expect(list).not.toBeNull();
+    expect(list).toContain("gitPush");
+    expect(list).toContain("mcp__patchwork__gitPush");
+    expect(list).toContain("Bash");
+    // reversible tools the agent legitimately needs stay callable
+    expect(list).not.toContain("editText");
+    expect(list).not.toContain("getGitStatus");
   });
 });

@@ -127,6 +127,16 @@ const BRAND_EXPOSED_DOMAINS = new Set([
   "http",
 ]);
 
+/**
+ * The tool names this module can classify (MCP names + recipe-tool ids). Exposed
+ * so the worker-agent sandbox can enumerate every risky tool to consider
+ * blocking. NOT exhaustive of the whole MCP surface — any unknown tool classifies
+ * as `other:irreversible` and is gated at the per-step gate regardless.
+ */
+export function knownActionTools(): string[] {
+  return Object.keys(DOMAIN_BY_TOOL);
+}
+
 export function classifyActionClass(
   toolName: string,
   _params?: Record<string, unknown>,

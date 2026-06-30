@@ -188,7 +188,10 @@ const DEFAULT_MEMORY_CAP = 500;
  * the most recent N lines.
  */
 const MAX_PERSIST_BYTES = 1024 * 1024; // 1 MB
-const MAX_PERSIST_LINES = 10_000;
+/** Disk-retention line cap. Exported so a reader that must see the FULL retained
+ *  history (e.g. worker trust replay) can size its in-memory ring to match the
+ *  disk, instead of being silently bounded by DEFAULT_MEMORY_CAP. */
+export const MAX_PERSIST_LINES = 10_000;
 
 export interface RunLogOptions {
   /** Directory holding runs.jsonl. Created if missing. */
