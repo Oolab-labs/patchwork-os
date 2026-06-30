@@ -4,6 +4,7 @@ import {
   classifyActionClass,
   knownActionTools,
 } from "./actionClass.js";
+import { type ContextRisk, contextRiskCeiling } from "./contextRisk.js";
 import type { TrustLevel } from "./trustLevel.js";
 import { ownsAction, type WorkerManifest } from "./worker.js";
 import type { WorkerLevelStore } from "./workerLevelStore.js";
@@ -49,9 +50,22 @@ export interface WorkerGateDecision {
   /** Trust actually earned on this class (for logging / the dial). */
   earnedLevel: TrustLevel;
   autonomyCeiling: TrustLevel;
-  /** What the gate operates at: min(earned, ceiling), 0 if not owned. */
+  /** What the gate operates at: min(earned, ceiling, contextCeiling), 0 if not
+   *  owned. */
   effectiveLevel: TrustLevel;
+  /** The descending ceiling imposed by live context-risk (4 = no de-rate).
+   *  Present only when a contextRisk was supplied. Diagnostic / audit. */
+  contextCeiling?: TrustLevel;
   reason: string;
+}
+
+/** Optional, descending-only signals that fold into the autonomy decision
+ *  alongside earned trust (the keystone seam — see
+ *  docs/worker-autonomy-policy-gate.md). All absent ⇒ byte-identical to the
+ *  earned-trust-only gate. New signals may only LOWER autonomy, never raise it. */
+export interface AutonomyDecisionOpts {
+  /** Live situational risk for THIS action (fast, day-1, no cold-start). */
+  contextRisk?: ContextRisk;
 }
 
 /**
@@ -87,6 +101,7 @@ export function decideWorkerAction(
   toolName: string,
   params: Record<string, unknown> | undefined,
   store: WorkerLevelStore,
+  opts?: AutonomyDecisionOpts,
 ): WorkerGateDecision {
   const ac = classifyActionClass(toolName, params);
   const owned = ownsAction(worker, ac);
@@ -97,6 +112,17 @@ export function decideWorkerAction(
   if (effectiveLevel > worker.autonomyCeiling)
     effectiveLevel = worker.autonomyCeiling;
 
+  // Descending context-risk clamp (keystone seam). A live, situational de-rater:
+  // it can only LOWER the effective level (never-widen). Absent ⇒ no-op, so the
+  // earned-trust-only path is byte-identical. A worker with a clean situation
+  // keeps its earned autonomy; a dangerous live context (red CI, huge diff,
+  // hotspot file) throttles it toward propose-only regardless of earned level.
+  const contextCeiling: TrustLevel | undefined = opts?.contextRisk
+    ? contextRiskCeiling(opts.contextRisk.score)
+    : undefined;
+  if (contextCeiling !== undefined && effectiveLevel > contextCeiling)
+    effectiveLevel = contextCeiling;
+
   const base = {
     classKey: ac.key,
     domain: ac.domain,
@@ -106,6 +132,7 @@ export function decideWorkerAction(
     earnedLevel,
     autonomyCeiling: worker.autonomyCeiling,
     effectiveLevel,
+    ...(contextCeiling !== undefined && { contextCeiling }),
   } as const;
 
   // Agent (reasoning) steps are not a durable side-effecting action-class: the
@@ -160,7 +187,23 @@ export function decideWorkerAction(
       ? COMPENSABLE_AUTONOMY_LEVEL
       : AUTONOMOUS_LEVEL;
   let reason: string;
-  if (!owned) {
+  // Context-risk is the BINDING constraint when it dropped the effective level
+  // below what earned trust + ceiling alone would have allowed. Attribute it so
+  // the audit trail shows the situation throttled the action, not stale trust.
+  const earnedCapped = Math.min(
+    owned ? earnedLevel : 0,
+    worker.autonomyCeiling,
+  );
+  if (
+    contextCeiling !== undefined &&
+    contextCeiling < threshold &&
+    contextCeiling < earnedCapped
+  ) {
+    const why = opts?.contextRisk?.reasons?.length
+      ? ` (${opts.contextRisk.reasons.join(", ")})`
+      : "";
+    reason = `${ac.reversibility} throttled by live context-risk (ceiling L${contextCeiling} < L${threshold})${why} — gated`;
+  } else if (!owned) {
     reason = `${ac.reversibility} action outside the worker's owned domain — gated`;
   } else if (worker.autonomyCeiling < threshold) {
     reason = `${ac.reversibility} class capped by autonomy ceiling (L${worker.autonomyCeiling} < L${threshold}) — always gated`;
