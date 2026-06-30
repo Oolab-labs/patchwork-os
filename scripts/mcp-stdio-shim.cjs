@@ -51,17 +51,30 @@ function isAlive(pid) {
 // rather than on every poll tick.
 let lastSelectedLockPath = null;
 
+// True when `cwd` is the workspace root or a descendant of it. Used (only when
+// no --workspace filter is set) to prefer the bridge for the project the shim is
+// actually running in, rather than whichever lock has the newest mtime. Mirrors
+// cwdInWorkspace() in src/bridgeLockDiscovery.ts (unit-tested there).
+function cwdInWorkspace(cwd, workspace) {
+  if (!workspace) return false;
+  const rel = path.relative(workspace, cwd);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
 function findLockFile() {
   const lockDir = path.join(
     process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"),
     "ide",
   );
-  // Three-tier preference: orchestrator > bridge > any lock (each by newest mtime).
-  // Orchestrator locks win because child bridge restarts produce newer lock files,
-  // which would hijack the shim away from the orchestrator if we only used mtime.
-  const orchestrator = { path: null, mtime: 0, data: null };
-  const bridge = { path: null, mtime: 0, data: null };
-  const fallback = { path: null, mtime: 0, data: null };
+  const cwd = process.cwd();
+  // Three-tier preference: orchestrator > bridge > any lock. Within a tier, a
+  // lock whose workspace contains the cwd wins (so a no---workspace shim attaches
+  // to the project it is running in); ties break on newest mtime. Orchestrator
+  // locks still win across tiers because child bridge restarts produce newer
+  // lock files that would otherwise hijack the shim away from the orchestrator.
+  const orchestrator = { path: null, mtime: 0, data: null, cwdMatch: false };
+  const bridge = { path: null, mtime: 0, data: null, cwdMatch: false };
+  const fallback = { path: null, mtime: 0, data: null, cwdMatch: false };
   try {
     for (const f of fs.readdirSync(lockDir)) {
       if (!f.endsWith(".lock")) continue;
@@ -89,10 +102,23 @@ function findLockFile() {
           : isBridge
             ? bridge
             : fallback;
-        if (stat.mtimeMs > tier.mtime) {
+        // When no --workspace filter is set, prefer a lock whose workspace
+        // contains the cwd over a non-matching one; otherwise fall back to
+        // newest mtime. (With a filter, every survivor already exact-matches,
+        // so cwdMatch is uniformly false and this reduces to newest-mtime.)
+        const cwdMatch =
+          !workspaceFilter &&
+          !!data &&
+          cwdInWorkspace(cwd, data.workspace || "");
+        const better =
+          tier.path === null ||
+          (cwdMatch && !tier.cwdMatch) ||
+          (cwdMatch === tier.cwdMatch && stat.mtimeMs > tier.mtime);
+        if (better) {
           tier.mtime = stat.mtimeMs;
           tier.path = fullPath;
           tier.data = data;
+          tier.cwdMatch = cwdMatch;
         }
       } catch {
         // skip unreadable files

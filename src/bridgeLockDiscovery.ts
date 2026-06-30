@@ -21,6 +21,21 @@ export interface LockDiscoveryDeps {
   lockDir?: string;
   /** Returns true if the PID is live; production default = `process.kill(pid, 0)`. */
   isLive?: (pid: number) => boolean;
+  /**
+   * Caller's working directory, used to disambiguate when MORE THAN ONE live
+   * bridge is present: `findBridgeLock` prefers the bridge whose `workspace`
+   * contains this path. Defaults to `process.cwd()`. (A bare `claude-ide-bridge
+   * shim` with no `--workspace` would otherwise pick whichever isBridge lock
+   * `readdir` happens to return first — non-deterministic across filesystems.)
+   */
+  cwd?: string;
+}
+
+/** True when `cwd` is the workspace root or a descendant of it. */
+function cwdInWorkspace(cwd: string, workspace: string): boolean {
+  if (!workspace) return false;
+  const rel = path.relative(workspace, cwd);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
 function defaultIsLive(pid: number): boolean {
@@ -43,14 +58,24 @@ function defaultLockDir(): string {
 }
 
 /**
- * Scan ~/.claude/ide/*.lock and return the first running patchwork bridge
+ * Scan ~/.claude/ide/*.lock and return one running patchwork bridge
  * (isBridge:true + live PID). Port is parsed from the lockfile name.
+ *
+ * With a single live bridge this is byte-identical to "the only one". With
+ * MULTIPLE live bridges (a multi-workspace deployment, or a stale-but-live
+ * sibling), it prefers the bridge whose `workspace` contains the caller's cwd
+ * — so a no-`--workspace` shim deterministically attaches to the bridge for the
+ * project it is actually running in, instead of whatever `readdir` returned
+ * first. Falls back to the first when no workspace matches.
  */
 export function findBridgeLock(
   deps: LockDiscoveryDeps = {},
 ): BridgeLockInfo | null {
   const all = findAllLiveBridges(deps);
-  return all[0] ?? null;
+  if (all.length <= 1) return all[0] ?? null;
+  const cwd = deps.cwd ?? process.cwd();
+  const match = all.find((b) => cwdInWorkspace(cwd, b.workspace));
+  return match ?? all[0] ?? null;
 }
 
 /**
