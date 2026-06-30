@@ -100,6 +100,58 @@ registerTool({
 });
 
 // ============================================================================
+// github.search_issues
+// ============================================================================
+
+registerTool({
+  id: "github.search_issues",
+  namespace: "github",
+  description:
+    "Search GitHub issues using the REST Search API. Accepts a full GitHub search query string (e.g. 'repo:owner/repo label:bug state:open'). More reliable than github.list_issues for cross-repo or label-scoped queries.",
+  paramsSchema: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description:
+          "GitHub issue search query (qualifiers: repo:, label:, state:, author:, assignee:, etc.)",
+      },
+      max: {
+        type: "number",
+        description: "Max issues to return (default 30, cap 100)",
+      },
+    },
+    required: ["query"],
+  },
+  outputSchema: {
+    type: "object",
+    properties: {
+      count: { type: "number" },
+      issues: { type: "array" },
+      error: { type: "string" },
+    },
+  },
+  riskDefault: "low",
+  isWrite: false,
+  isConnector: true,
+  execute: async ({ params }) => {
+    const { searchIssues } = await import("../../connectors/github.js");
+    const query = String(params.query ?? "");
+    const limit = typeof params.max === "number" ? params.max : 30;
+    try {
+      const issues = await searchIssues({ query, limit });
+      return JSON.stringify({ count: issues.length, issues });
+    } catch (err) {
+      return JSON.stringify({
+        count: 0,
+        issues: [],
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+});
+
+// ============================================================================
 // github.list_prs
 // ============================================================================
 

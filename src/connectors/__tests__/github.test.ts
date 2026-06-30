@@ -134,16 +134,18 @@ describe("listIssues", () => {
       }),
       expect.any(Object),
     );
-    // No assignee filter requested → arg absent (lists across all assignees).
-    expect(callTool.mock.calls[0]?.[1]).not.toHaveProperty("assignee");
+    // No assignee filter requested → pass "*" so GitHub MCP sees all assignees.
+    // (Omitting assignee causes the server to default to @me, hiding unassigned
+    // issues — "*" is the explicit all-assignees sentinel per GitHub REST API.)
+    expect(callTool.mock.calls[0]?.[1]).toHaveProperty("assignee", "*");
     callTool.mockClear();
 
-    // Unset labels/state → byte-identical to the historical args (state defaults
-    // to "open", no `labels` key) so existing callers are unaffected.
+    // Unset labels/state → state defaults to "open", no labels key, assignee="*".
     await listIssues({ repo: "acme/widget" });
     const args = callTool.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(args.state).toBe("open");
     expect(args).not.toHaveProperty("labels");
+    expect(args.assignee).toBe("*");
     callTool.mockRestore();
   });
 

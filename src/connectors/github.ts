@@ -37,6 +37,8 @@ export interface GitHubIssue {
   url: string;
   labels: string[];
   updatedAt: string;
+  state?: string;
+  stateReason?: string | null;
 }
 
 export interface GitHubPR {
@@ -125,6 +127,8 @@ interface RawIssue {
   updated_at?: string;
   updatedAt?: string;
   repository?: { full_name?: string; nameWithOwner?: string };
+  state?: string;
+  state_reason?: string | null;
 }
 
 function parseRepo(opts: { repo?: string }): { owner?: string; repo?: string } {
@@ -146,6 +150,8 @@ function coerceIssue(raw: RawIssue, fallbackRepo: string): GitHubIssue {
       .map((l) => (typeof l === "string" ? l : (l.name ?? "")))
       .filter(Boolean),
     updatedAt: raw.updated_at ?? raw.updatedAt ?? "",
+    state: raw.state,
+    stateReason: raw.state_reason,
   };
 }
 
@@ -166,8 +172,10 @@ export async function listIssues(
   };
   if (owner) args.owner = owner;
   if (repo) args.repo = repo;
-  if (opts.assignee)
-    args.assignee = opts.assignee === "@me" ? "@me" : opts.assignee;
+  // Pass assignee explicitly: GitHub MCP defaults to @me when omitted, which
+  // hides unassigned / other-user issues. Pass "*" when the caller wants all
+  // (undefined = no filter), "@me" for self, or the literal username otherwise.
+  args.assignee = opts.assignee ?? "*";
   if (opts.mention) args.mentioned = opts.mention;
   // Label filter (GitHub AND-matches a label array). Only send when non-empty
   // so the existing no-label callers keep their byte-identical MCP args.
@@ -194,6 +202,47 @@ export async function listIssues(
       `github list_issues failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+}
+
+export interface SearchIssuesOpts {
+  /** GitHub search query (e.g. "repo:owner/repo label:bug state:open"). */
+  query: string;
+  /** Max results (capped at 100). */
+  limit?: number;
+}
+
+/**
+ * Search GitHub issues via the REST Search API (`GET /search/issues`).
+ * Falls back gracefully when no results match.
+ * Uses the stored OAuth token directly (bypasses the Copilot MCP).
+ */
+export async function searchIssues(
+  opts: SearchIssuesOpts,
+): Promise<GitHubIssue[]> {
+  if (!isConnected("github"))
+    throw new Error(
+      "github connector not connected — visit /connections to authenticate",
+    );
+  const token = await getAccessToken("github");
+  const limit = Math.min(opts.limit ?? 30, 100);
+  const url = new URL("https://api.github.com/search/issues");
+  url.searchParams.set("q", opts.query);
+  url.searchParams.set("per_page", String(limit));
+  const res = await fetch(url.toString(), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `github search_issues failed: HTTP ${res.status} ${res.statusText}`,
+    );
+  }
+  const body = (await res.json()) as { items?: RawIssue[] };
+  const items = Array.isArray(body.items) ? body.items : [];
+  return items.map((i) => coerceIssue(i, ""));
 }
 
 export interface CreateIssueOpts {

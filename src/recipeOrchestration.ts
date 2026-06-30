@@ -1724,7 +1724,7 @@ export function collectUnknownToolIds(yaml: string): string[] {
  * missing files / malformed YAML / non-array inputs by returning the original
  * vars untouched.
  */
-function applyTriggerInputDefaults(
+export function applyTriggerInputDefaults(
   ymlPath: string,
   vars?: Record<string, string>,
 ): Record<string, string> | undefined {
