@@ -35,10 +35,12 @@ trigger:
       default: ""
       description: "owner/repo the issue is filed against (set this to enable)"
 steps:
-  - tool: git.log_since
+  - id: get_commits
+    tool: git.log_since
     since: 12h
     into: recent
-  - agent:
+  - id: triage_agent
+    agent:
       prompt: |
         Tests just failed. Runner: {{runner}}. Failed {{failed}} / {{total}}.
 
@@ -53,24 +55,53 @@ steps:
         command to run to confirm.
       driver: claude-code
       into: triage
-  - tool: file.write
+  # Reproducibility gate (issue-hygiene). A worker triage is a LEAD, not a
+  # verified diagnosis — the on_test_run event can fire on a flake, a transient,
+  # or an already-fixed failure (e.g. #1046: a triage that confidently blamed a
+  # commit for a test that actually passes on `main`). Before filing a real,
+  # brand-exposed issue, re-run the named test(s) in ISOLATION and only proceed
+  # if the failure still reproduces. A non-reproducing run writes the draft note
+  # (below) but files NO issue — strictly noise-reducing, never blocks a real one.
+  - id: verify_reproduced
+    agent:
+      prompt: |
+        A test run reported failures and this triage was written:
+
+        {{triage}}
+
+        Re-run ONLY the specific failing test(s) named above, in isolation, on the
+        current checkout, to confirm they still fail — e.g.
+        `npx vitest run <file> -t "<test name>"`. A test that PASSES on isolated
+        re-run is a flake / transient / already-fixed and must NOT be filed.
+
+        Output EXACTLY one word and nothing else:
+          true   — the failure REPRODUCED (a real, current failure worth filing)
+          false  — it did NOT reproduce (flake / transient / already green)
+      driver: claude-code
+      into: reproduced
+  - id: write_note
+    tool: file.write
     path: ~/.patchwork/inbox/test-triage-{{date}}-{{time}}.md
     content: |
       # Test triage — {{date}} {{time}}
 
-      Runner {{runner}} · failed {{failed}}/{{total}}
+      Runner {{runner}} · failed {{failed}}/{{total}} · reproduced: {{reproduced}}
 
       {{triage}}
-  # The risky owned action. Runs AFTER the draft is written, so a gate
-  # rejection (or a missing `repo`) never loses the triage note.
-  - tool: github.create_issue
+  # The risky owned action. Runs AFTER the draft is written (so a gate rejection,
+  # a missing `repo`, or a non-reproducing failure never loses the triage note)
+  # and ONLY when the failure reproduced — `when` skips the step (not a failure)
+  # on a falsy guard ("", "false", "0", "null", "undefined").
+  - id: file_issue
+    when: "{{reproduced}}"
+    tool: github.create_issue
     repo: "{{repo}}"
     title: "Test triage {{date}}: {{runner}} failing {{failed}}/{{total}}"
     body: |
       {{triage}}
 
       ---
-      _Filed by the Test Guardian Worker from a failing {{runner}} run._
+      _Filed by the Test Guardian Worker from a failing {{runner}} run (reproduced on isolated re-run)._
     labels:
       - test-failure
     into: filed_issue
