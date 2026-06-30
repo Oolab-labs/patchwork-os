@@ -2265,6 +2265,25 @@ export async function runYamlRecipe(
           result === null ? "skipped" : stepError ? "error" : "ok";
         const retryNote =
           retryCount > 0 ? ` after ${retryCount + 1} attempts` : "";
+        // Outcome attribution: capture the filed-issue URL on github.create_issue
+        // steps so trust-replay can look up the issue's eventual disposition in
+        // the outcome store (confirmed/junk/unknown). Targeted to this one tool
+        // only — storing all tool outputs would bloat the run log unnecessarily.
+        let stepOutput: Record<string, unknown> | undefined;
+        if (
+          finalStatus === "ok" &&
+          result !== null &&
+          step.tool === "github.create_issue"
+        ) {
+          try {
+            const parsed = JSON.parse(result) as Record<string, unknown>;
+            if (typeof parsed.url === "string") {
+              stepOutput = { url: parsed.url, issueNumber: parsed.issueNumber };
+            }
+          } catch {
+            /* non-JSON or missing url — skip output capture */
+          }
+        }
         stepResults.push({
           id: stepId,
           tool: step.tool,
@@ -2276,6 +2295,7 @@ export async function runYamlRecipe(
                 haltCategory: "tool_error" as HaltCategory,
               }
             : {}),
+          ...(stepOutput !== undefined ? { output: stepOutput } : {}),
           durationMs: Date.now() - stepStart,
         });
         if (stepError) {

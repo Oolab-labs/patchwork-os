@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { MAX_PERSIST_LINES, RecipeRunLog } from "../runLog.js";
 import { backtestWorker, formatBacktestReport } from "./backtest.js";
+import { OutcomeStore } from "./outcomeStore.js";
 import {
   type DecisionRecord,
   type RunRecord,
@@ -71,6 +72,12 @@ function readRuns(patchworkDir: string, recipeNames?: string[]): RunRecord[] {
         tool: s.tool,
         status: s.status,
         haltReason: s.haltReason,
+        // Outcome attribution: carry the captured issue URL so ingestRun can
+        // look up the issue's disposition in the outcome store. Only present on
+        // github.create_issue steps (see yamlRunner.ts step output capture).
+        ...(s.output !== undefined && typeof s.output === "object"
+          ? { output: s.output as Record<string, unknown> }
+          : {}),
       })),
     }));
   } catch {
@@ -166,6 +173,7 @@ export function getWorkerShadowData(
     // production; tests inject opts.now.
     workers: buildShadowReport(workers, runs, decisions, undefined, {
       now: opts.now ?? Date.now(),
+      outcomeStore: new OutcomeStore(patchworkDir),
     }),
     runsScanned: runs.length,
     decisionsScanned: decisions.length,
@@ -203,6 +211,7 @@ export function loadWorkerTrustForRecipe(
   // reverted. Real Date.now() in production; tests inject opts.now.
   const observer = new WorkerShadowObserver(workers, {
     now: opts.now ?? Date.now(),
+    outcomeStore: new OutcomeStore(patchworkDir),
   });
   const worker = observer.workerForRecipe(recipeName);
   if (!worker) return null;
