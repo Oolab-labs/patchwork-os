@@ -1,5 +1,5 @@
 import { categoriseHaltReason } from "../recipes/haltCategory.js";
-import { classifyActionClass } from "./actionClass.js";
+import { classifyActionClass, type Reversibility } from "./actionClass.js";
 import {
   DEFAULT_GRADUATION_CONFIG,
   type GraduationConfig,
@@ -82,19 +82,62 @@ interface CompareSlot {
   divergences: Divergence[];
 }
 
+/** Default durability window — a non-reversible success must survive this long
+ *  before it counts as earned trust. 24h is long enough to catch a revert /
+ *  close-as-junk / rollback, short enough that a genuinely-good action graduates
+ *  within a day. */
+export const DEFAULT_DURABILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Durable-outcome label. `good = step.status:ok` is an OPTIMISTIC proxy: a PR
+ * that merged, an issue that filed — but a junk issue closed seconds later, or a
+ * commit reverted within the hour, "succeeded" at the moment yet is not earned
+ * trust. So a SUCCESS on a non-reversible (compensable/irreversible) action is
+ * "durable" — i.e. counts as evidence — only once it has survived the durability
+ * window. Reversible successes (undoable / re-runnable: reads, ledgered writes,
+ * local commits, CI) are always durable. Failures are unaffected (a failure is
+ * durable evidence of failure regardless of age).
+ *
+ * This only ever WITHHOLDS recent risky successes (reduces evidence → lower
+ * trust → more gating), so it never widens autonomy. See
+ * docs/worker-autonomy-policy-gate.md §3d.
+ */
+export function isDurableSuccess(
+  reversibility: Reversibility,
+  runAt: number,
+  now: number,
+  windowMs: number,
+): boolean {
+  if (reversibility === "reversible") return true;
+  return runAt <= now - windowMs;
+}
+
 export class WorkerShadowObserver {
   private readonly store: WorkerLevelStore;
   private readonly cfg: GraduationConfig;
   private readonly workers: WorkerManifest[];
   private readonly compare = new Map<string, CompareSlot>();
+  /** Wall-clock supplied by the I/O entry (the observer stays pure — no
+   *  Date.now). When set, durable-outcome labelling is active; when undefined,
+   *  the prior status-only behaviour is preserved (back-compat for pure tests). */
+  private readonly now?: number;
+  private readonly durabilityWindowMs: number;
 
   constructor(
     workers: WorkerManifest[],
-    opts: { store?: WorkerLevelStore; cfg?: GraduationConfig } = {},
+    opts: {
+      store?: WorkerLevelStore;
+      cfg?: GraduationConfig;
+      now?: number;
+      durabilityWindowMs?: number;
+    } = {},
   ) {
     this.workers = workers;
     this.store = opts.store ?? new WorkerLevelStore();
     this.cfg = opts.cfg ?? DEFAULT_GRADUATION_CONFIG;
+    this.now = opts.now;
+    this.durabilityWindowMs =
+      opts.durabilityWindowMs ?? DEFAULT_DURABILITY_WINDOW_MS;
   }
 
   /**
@@ -139,6 +182,23 @@ export class WorkerShadowObserver {
         categoriseHaltReason(step.haltReason) === "approval_rejected"
       )
         continue;
+      // Durable-outcome label: a recent SUCCESS on a non-reversible action is
+      // provisional (a filed issue / pushed commit / merged PR can be reverted
+      // or closed-as-junk minutes later), so it is NOT yet counted as evidence.
+      // Only active when `now` was supplied by the I/O entry; otherwise the prior
+      // status-only fold is used. Withholds evidence only → never widens.
+      if (this.now !== undefined && step.status === "ok") {
+        const ac = classifyActionClass(step.tool);
+        if (
+          !isDurableSuccess(
+            ac.reversibility,
+            run.at,
+            this.now,
+            this.durabilityWindowMs,
+          )
+        )
+          continue; // pending — survives the window before it earns trust
+      }
       this.store.apply(
         worker.id,
         { toolName: step.tool, good: step.status === "ok", at: run.at },
