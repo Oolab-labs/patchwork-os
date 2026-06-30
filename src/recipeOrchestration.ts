@@ -114,6 +114,14 @@ export async function buildWorkerAutonomyGate(
   recipeName: string,
   tierApprovalFn?: ApprovalFn,
   trustOpts?: import("./workers/runWorkerShadow.js").RunWorkerShadowOpts,
+  ctxOpts?: {
+    /** Workspace root — git context-risk signals are gathered from here. */
+    workdir?: string;
+    /** Test injection: bypass the git collector with a fixed risk. */
+    contextRiskProvider?: () => Promise<
+      import("./workers/contextRisk.js").ContextRisk | undefined
+    >;
+  },
 ): Promise<ApprovalFn | null> {
   try {
     const { isEnabled, FLAG_WORKER_AUTONOMY } = await import(
@@ -132,12 +140,31 @@ export async function buildWorkerAutonomyGate(
     const queue = getApprovalQueue();
     const { worker, store } = trust;
 
+    // Context-risk: a live, situational DESCENDING de-rater resolved ONCE for the
+    // run (the working tree is ~constant during a run). Fail-soft — any error →
+    // no contextRisk → no de-rate (never widens). The decision then operates at
+    // min(earned, ceiling, contextCeiling).
+    let contextRisk: import("./workers/contextRisk.js").ContextRisk | undefined;
+    try {
+      if (ctxOpts?.contextRiskProvider) {
+        contextRisk = await ctxOpts.contextRiskProvider();
+      } else if (ctxOpts?.workdir) {
+        const { resolveGitContextRisk } = await import(
+          "./workers/contextRiskScorer.js"
+        );
+        contextRisk = await resolveGitContextRisk({ cwd: ctxOpts.workdir });
+      }
+    } catch {
+      contextRisk = undefined;
+    }
+
     return async (input) => {
       const decision = decideWorkerAction(
         worker,
         input.toolId,
         input.params,
         store,
+        contextRisk ? { contextRisk } : undefined,
       );
       // allow → defer to the tier gate so we never DROP tier-policy protection
       // (floor composition). When no tier fn is injected (approvalGate off),
@@ -1144,6 +1171,10 @@ export class RecipeOrchestration {
     const workerApprovalFn = await buildWorkerAutonomyGate(
       opts.name,
       tierApprovalFn,
+      undefined,
+      // Gather live context-risk signals from the workspace so the gate can
+      // throttle a worker in a dangerous situation (huge diff, on trunk).
+      { workdir: this.deps.workdir },
     );
     const requireApprovalFn = workerApprovalFn ?? tierApprovalFn;
     const gateAutomatedRuns = workerApprovalFn != null;

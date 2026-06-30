@@ -22,6 +22,31 @@ import {
   buildWorkerAgentDisallowedTools,
   buildWorkerAutonomyGate,
 } from "../recipeOrchestration.js";
+import { RecipeRunLog } from "../runLog.js";
+
+/** Seed durable, dwell-separated successes so the worker earns autonomy on
+ *  `tool`'s class (ancient timestamps → durable under durable-outcome labels). */
+function seedEarned(dir: string, recipeName: string, tool: string, n = 18) {
+  const log = new RecipeRunLog({ dir });
+  const SEVEN_HOURS = 7 * 3600 * 1000;
+  for (let i = 0; i < n; i++) {
+    log.appendDirect({
+      taskId: `seed-${i}`,
+      recipeName,
+      trigger: "recipe",
+      status: "done",
+      createdAt: i * SEVEN_HOURS,
+      doneAt: i * SEVEN_HOURS,
+      durationMs: 1,
+      stepResults: Array.from({ length: 5 }, (_, k) => ({
+        id: `s${i}-${k}`,
+        tool,
+        status: "ok" as const,
+        durationMs: 1,
+      })),
+    });
+  }
+}
 
 const WORKER_YAML = `id: test-worker
 name: Test Worker
@@ -149,6 +174,55 @@ describe("buildWorkerAutonomyGate", () => {
     expect(getApprovalQueue().list()).toHaveLength(1);
     ac.abort(); // run cancelled → pending approval resolves "cancelled"
     expect(await p).toBe(false);
+  });
+
+  it("context-risk DE-RATES an EARNED action (live wiring, descending only)", async () => {
+    seedEarned(dir, "test-recipe", "githubCreatePR"); // worker earns vcs-remote
+
+    // Baseline: earned + clean context → the action flows.
+    const clean = await buildWorkerAutonomyGate(
+      "test-recipe",
+      undefined,
+      opts,
+      {
+        contextRiskProvider: async () => undefined,
+      },
+    );
+    expect(
+      await clean!({ toolId: "githubCreatePR", tier: "high", params: {} }),
+    ).toBe(true);
+
+    // Dangerous live context → the SAME earned action is throttled to a gate
+    // (queues for approval). Proves the resolved contextRisk reaches the decision.
+    const risky = await buildWorkerAutonomyGate(
+      "test-recipe",
+      undefined,
+      opts,
+      {
+        contextRiskProvider: async () => ({
+          score: 0.9,
+          reasons: ["huge uncommitted diff"],
+        }),
+      },
+    );
+    const p = risky!({ toolId: "githubCreatePR", tier: "high", params: {} });
+    await tick();
+    expect(getApprovalQueue().list()).toHaveLength(1);
+    getApprovalQueue().reject(firstCallId());
+    expect(await p).toBe(false);
+  });
+
+  it("a failing context-risk provider is fail-soft (no de-rate, no crash)", async () => {
+    seedEarned(dir, "test-recipe", "githubCreatePR");
+    const gate = await buildWorkerAutonomyGate("test-recipe", undefined, opts, {
+      contextRiskProvider: async () => {
+        throw new Error("git blew up");
+      },
+    });
+    // provider threw → contextRisk undefined → earned action still flows.
+    expect(
+      await gate!({ toolId: "githubCreatePR", tier: "high", params: {} }),
+    ).toBe(true);
   });
 });
 
