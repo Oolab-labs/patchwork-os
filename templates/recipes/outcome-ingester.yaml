@@ -36,33 +36,16 @@ steps:
     max: 50
     into: issues
 
-  - id: classify
-    when: "{{issues}}"
-    agent:
-      prompt: |
-        You are classifying GitHub issues to determine whether they were useful filings or junk.
-
-        Issues JSON:
-        {{issues}}
-
-        For each issue, determine its disposition:
-        - "confirmed" — issue is closed with stateReason "completed", OR has a label containing "confirmed", "verified", or "patchwork:valid". This means the filing was correct and accepted.
-        - "junk" — issue has stateReason "not_planned", OR has a label containing "invalid", "duplicate", "wontfix", "won't fix", "not a bug", "by design", or "spam". This means the filing was noise.
-        - "unknown" — issue is still open, or closed with no clear signal.
-
-        Output ONLY raw JSONL — one JSON object per line, no markdown, no explanation:
-        {"issueUrl":"<url>","disposition":"<confirmed|junk|unknown>","checkedAt":<epoch_ms>}
-
-        Rules:
-        - issueUrl is the issue's html_url field
-        - checkedAt is the current Unix epoch in milliseconds (approximate — use the issue's updated_at epoch if current time unavailable)
-        - Emit one line per issue. No trailing commas, no array brackets, no other text.
-        - If there are no issues to classify, output nothing (empty string).
-      model: claude-haiku-4-5-20251001
-      into: outcome_lines
-
-  - id: persist
-    when: "{{outcome_lines}}"
-    tool: file.append
-    path: ~/.patchwork/outcome-log.jsonl
-    content: "{{outcome_lines}}\n"
+  # Deterministic — no LLM in the classification path. An earlier LLM-judge
+  # agent step here was non-deterministic in production: the SAME closed/
+  # COMPLETED issues flipped between "confirmed" and "unknown" on alternating
+  # cron fires, and checkedAt was a hallucinated epoch spanning 2023-2027.
+  # Trust-replay reads this log to decide good:true/false, so the
+  # classification step MUST be pure data (state/stateReason/labels) plus
+  # the real clock, not a model's freehand judgment.
+  - id: classify_and_persist
+    when: "{{issues.json}}"
+    tool: outcomes.classify_issues
+    issues: "{{issues.json}}"
+    recipeName: outcome-ingester
+    into: outcome_result
