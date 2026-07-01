@@ -4790,12 +4790,13 @@ if (process.argv[2] === "gate") {
     args.length < 3
   ) {
     process.stdout.write(
-      "Usage: patchwork gate explain <workerId> <classKey> [--limit N] [--json]\n\n" +
+      "Usage: patchwork gate explain <workerId> <classKey> [--limit N] [--diff] [--json]\n\n" +
         "Explain the worker-autonomy gate's most recent decision(s) for a given\n" +
         "worker × action-class, from the local Decision Record\n" +
         "(~/.patchwork/worker_gate_decisions.jsonl) — no bridge required.\n\n" +
         '  <classKey>       e.g. "issue:compensable:high" (domain:reversibility:blastTier)\n' +
-        "  --limit N        show the N most recent decisions (default 1)\n" +
+        "  --limit N        show the N most recent decisions (default 1, or 2 with --diff)\n" +
+        "  --diff           compare the 2 most recent decisions and show what changed\n" +
         "  --json            emit raw JSON (for scripting)\n",
     );
     process.exit(sub === "explain" ? 1 : 0);
@@ -4807,18 +4808,22 @@ if (process.argv[2] === "gate") {
       // across the `if` block above.
       const workerId = args[1] as string;
       const classKey = args[2] as string;
+      const wantDiff = args.includes("--diff");
       const limitIdx = args.indexOf("--limit");
-      const limit =
+      const explicitLimit =
         limitIdx >= 0 && limitIdx + 1 < args.length
           ? Number.parseInt(args[limitIdx + 1] as string, 10)
-          : 1;
+          : undefined;
+      const limit = explicitLimit ?? (wantDiff ? 2 : 1);
       if (!Number.isFinite(limit) || limit < 1) {
         process.stderr.write("Error: --limit must be a positive integer\n");
         process.exit(1);
       }
-      const { WorkerGateDecisionLog, formatGateDecisionHistory } = await import(
-        "./workerGateDecisionLog.js"
-      );
+      const {
+        WorkerGateDecisionLog,
+        formatGateDecisionHistory,
+        formatGateDecisionDiff,
+      } = await import("./workerGateDecisionLog.js");
       const patchworkDir =
         process.env.PATCHWORK_HOME ?? path.join(os.homedir(), ".patchwork");
       const log = new WorkerGateDecisionLog({ dir: patchworkDir });
@@ -4833,6 +4838,18 @@ if (process.argv[2] === "gate") {
           `No gate decisions found for worker "${workerId}" on class "${classKey}".\n` +
             "Either the worker hasn't acted on this class yet, or worker.autonomy is off.\n",
         );
+        process.exit(0);
+      }
+      if (wantDiff) {
+        // query() sorts most-recent-first: newer is [0], older is [1].
+        const [newer, older] = decisions;
+        if (!newer || !older) {
+          process.stdout.write(
+            `Only one decision found for worker "${workerId}" on class "${classKey}" — nothing to diff against yet.\n`,
+          );
+          process.exit(0);
+        }
+        process.stdout.write(`${formatGateDecisionDiff(newer, older)}\n`);
         process.exit(0);
       }
       process.stdout.write(`${formatGateDecisionHistory(decisions)}\n`);

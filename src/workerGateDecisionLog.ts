@@ -413,3 +413,74 @@ export function formatGateDecision(rec: GateDecisionRecord): string {
 export function formatGateDecisionHistory(recs: GateDecisionRecord[]): string {
   return recs.map(formatGateDecision).join("\n\n");
 }
+
+/** One field that changed between two decisions on the same worker × class. */
+export interface GateDecisionFieldDiff {
+  field: string;
+  from: string;
+  to: string;
+}
+
+/** Fields compared by `diffGateDecisions`/`formatGateDecisionDiff`, in the
+ *  order they're reported. `contextCeiling` renders "—" when absent so an
+ *  appear/disappear transition still shows a readable from/to pair rather
+ *  than "undefined". */
+const DIFF_FIELDS: Array<{
+  field: string;
+  read: (r: GateDecisionRecord) => string;
+}> = [
+  { field: "action", read: (r) => r.action },
+  { field: "owned", read: (r) => String(r.owned) },
+  { field: "earnedLevel", read: (r) => `L${r.earnedLevel}` },
+  { field: "autonomyCeiling", read: (r) => `L${r.autonomyCeiling}` },
+  {
+    field: "contextCeiling",
+    read: (r) =>
+      r.contextCeiling !== undefined ? `L${r.contextCeiling}` : "—",
+  },
+  { field: "effectiveLevel", read: (r) => `L${r.effectiveLevel}` },
+  { field: "reason", read: (r) => r.reason },
+];
+
+/**
+ * Compare two decisions on the same worker × action-class and report what
+ * changed — Tier 2 of the "explain trust movement" legibility layer. Pure
+ * over two already-persisted records; no new gate logic, no I/O.
+ *
+ * Field order is oldest→newest-agnostic: callers pass whichever record they
+ * consider "newer"/"older" (typically `query()`'s [0] and [1], since it
+ * sorts most-recent-first); the diff reports `from` (older) → `to` (newer).
+ */
+export function diffGateDecisions(
+  newer: GateDecisionRecord,
+  older: GateDecisionRecord,
+): GateDecisionFieldDiff[] {
+  const diffs: GateDecisionFieldDiff[] = [];
+  for (const { field, read } of DIFF_FIELDS) {
+    const from = read(older);
+    const to = read(newer);
+    if (from !== to) diffs.push({ field, from, to });
+  }
+  return diffs;
+}
+
+/** Render `diffGateDecisions`' output as prose: a header identifying both
+ *  decisions being compared, then one line per changed field, or an explicit
+ *  "no change" line when nothing differs (e.g. two identical gates in a row —
+ *  itself a meaningful, if unexciting, answer). */
+export function formatGateDecisionDiff(
+  newer: GateDecisionRecord,
+  older: GateDecisionRecord,
+): string {
+  const fmtWhen = (r: GateDecisionRecord) =>
+    new Date(r.decidedAt).toISOString();
+  const header =
+    `Comparing decision seq ${older.seq} (${fmtWhen(older)}) → ` +
+    `seq ${newer.seq} (${fmtWhen(newer)}) for ${newer.workerId} on ${newer.classKey}`;
+  const diffs = diffGateDecisions(newer, older);
+  if (diffs.length === 0) {
+    return `${header}\n  No change — identical decision.`;
+  }
+  const lines = diffs.map((d) => `  ${d.field}: ${d.from} → ${d.to}`);
+  return [header, ...lines].join("\n");
+}
