@@ -24,19 +24,15 @@ trigger:
       default: ""
       description: "owner/repo to poll (leave blank to poll all accessible repos)"
     - name: label
-      default: "patchwork:filed"
-      description: "Label that marks worker-filed issues"
+      default: "test-failure"
+      description: "Label that marks worker-filed issues (default matches the Test Guardian Worker)"
     - name: max
       default: "50"
       description: "Max issues to poll per run"
 steps:
   - id: list_issues
-    tool: github.list_issues
-    repo: "{{repo}}"
-    labels:
-      - "{{label}}"
-    assignee: any
-    state: all
+    tool: github.search_issues
+    query: "repo:{{repo}} label:{{label}}"
     max: 50
     into: issues
 
@@ -50,8 +46,8 @@ steps:
         {{issues}}
 
         For each issue, determine its disposition:
-        - "confirmed" — issue is closed with state_reason "completed", OR has a label containing "confirmed", "verified", or "patchwork:valid". This means the filing was correct and accepted.
-        - "junk" — issue has state_reason "not_planned", OR has a label containing "invalid", "duplicate", "wontfix", "won't fix", "not a bug", "by design", or "spam". This means the filing was noise.
+        - "confirmed" — issue is closed with stateReason "completed", OR has a label containing "confirmed", "verified", or "patchwork:valid". This means the filing was correct and accepted.
+        - "junk" — issue has stateReason "not_planned", OR has a label containing "invalid", "duplicate", "wontfix", "won't fix", "not a bug", "by design", or "spam". This means the filing was noise.
         - "unknown" — issue is still open, or closed with no clear signal.
 
         Output ONLY raw JSONL — one JSON object per line, no markdown, no explanation:

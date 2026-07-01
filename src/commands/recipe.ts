@@ -19,6 +19,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import "../recipes/tools/index.js";
 import { loadFixtureLibrary } from "../connectors/fixtureLibrary.js";
 import { MockConnector } from "../connectors/mockConnector.js";
+import { applyTriggerInputDefaults } from "../recipeOrchestration.js";
 import {
   detectRequiredConnectors,
   findMissingConnectors,
@@ -1146,6 +1147,11 @@ export async function runRecipe(
   if (options.dryRun) {
     throw new Error("runRecipeDryPlan must be used for dry-run execution");
   }
+  // Merge trigger.vars/inputs defaults underneath caller-provided vars, same as
+  // the HTTP orchestration path. Without this, cron recipes with var defaults
+  // (e.g. `label: "test-failure"`) get empty strings from {{label}} when run
+  // via CLI because the defaults are never seeded into the context.
+  const vars = applyTriggerInputDefaults(recipePath, options.vars) ?? {};
   const result = await dispatchRecipe(
     recipeToRun,
     {
@@ -1153,7 +1159,7 @@ export async function runRecipe(
       chainedDeps: buildChainedDeps(runnerDeps),
       chainedOptions: { sourcePath: recipePath },
     },
-    options.vars ?? {},
+    vars,
   );
 
   return {

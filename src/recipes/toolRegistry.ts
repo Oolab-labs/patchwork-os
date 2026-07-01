@@ -343,14 +343,11 @@ export function listToolOutputContextKeys(
 
   const keys: string[] = [];
 
-  for (const [propertyName, propertySchema] of Object.entries(properties)) {
-    if (
-      schemaHasType(propertySchema, "string") ||
-      schemaHasType(propertySchema, "number") ||
-      schemaHasType(propertySchema, "boolean")
-    ) {
-      keys.push(`${intoKey}.${propertyName}`);
-    }
+  for (const [propertyName] of Object.entries(properties)) {
+    // Expose all properties: runtime dot-nav renderer supports any type (arrays,
+    // objects, scalars). Validation must match runtime behavior, not restrict to
+    // scalar keys (causes false warnings on {{x.candles}}, {{x.data}}, etc.).
+    keys.push(`${intoKey}.${propertyName}`);
   }
 
   if (getJsonAliasPropertyName(properties)) {
