@@ -241,7 +241,7 @@ uniquely earns. Ship the Bayes quietly; sell the governance.
 
 > **Considered-approval KPI** — **LIVE as of #1032**: `GET /approvals/kpi` tracks reject rate, latency percentiles, channel split, and rubber-stamp warnings per worker × action-class. Dashboard: Workers page `ConsideredApprovalPanel`.
 
-> **Explain-this-decision — LIVE**: `patchwork gate explain <workerId> <classKey>` renders the most recent Decision Record row(s) as plain-English prose (no bridge required; also `GET /gate/decisions`). This is the cheap first slice of "legibility" — it explains one recorded decision, not yet *why trust moved* over time. That needs a genuinely new join between this log and the (currently in-memory-only) trust-level graduation events in `WorkerLevelStore`, deliberately deferred until there's enough Decision Record volume to justify it.
+> **Explain-this-decision — LIVE**: `patchwork gate explain <workerId> <classKey>` renders the most recent Decision Record row(s) as plain-English prose (no bridge required; also `GET /gate/decisions`). `--diff` (Tier 2, also LIVE) compares the 2 most recent decisions and reports only the fields that changed. Both explain *decisions*, not yet *why trust moved* over time. That needs a genuinely new join between this log and the (currently in-memory-only) trust-level graduation events in `WorkerLevelStore` (Tier 3), deliberately deferred until there's enough Decision Record volume to justify it.
 
 ---
 

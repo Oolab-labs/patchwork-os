@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  diffGateDecisions,
   formatGateDecision,
+  formatGateDecisionDiff,
   formatGateDecisionHistory,
   type GateDecisionRecord,
 } from "../workerGateDecisionLog.js";
@@ -88,5 +90,78 @@ describe("formatGateDecisionHistory", () => {
 
   it("renders an empty string for no records", () => {
     expect(formatGateDecisionHistory([])).toBe("");
+  });
+});
+
+describe("diffGateDecisions", () => {
+  it("reports only the fields that changed, from (older) → to (newer)", () => {
+    const older = rec({
+      seq: 1,
+      action: "gate",
+      earnedLevel: 0,
+      effectiveLevel: 0,
+    });
+    const newer = rec({
+      seq: 2,
+      action: "allow",
+      earnedLevel: 2,
+      effectiveLevel: 2,
+      reason: "earned autonomy (L2) on compensable class — auto-allowed at L2+",
+    });
+    const diffs = diffGateDecisions(newer, older);
+    const byField = Object.fromEntries(diffs.map((d) => [d.field, d]));
+    expect(byField.action).toEqual({
+      field: "action",
+      from: "gate",
+      to: "allow",
+    });
+    expect(byField.earnedLevel).toEqual({
+      field: "earnedLevel",
+      from: "L0",
+      to: "L2",
+    });
+    expect(byField.effectiveLevel).toEqual({
+      field: "effectiveLevel",
+      from: "L0",
+      to: "L2",
+    });
+    expect(byField.reason?.to).toContain("auto-allowed");
+    // unchanged fields (owned, autonomyCeiling) must not appear
+    expect(byField.owned).toBeUndefined();
+    expect(byField.autonomyCeiling).toBeUndefined();
+  });
+
+  it("returns an empty array for two identical decisions", () => {
+    const a = rec({ seq: 1 });
+    const b = rec({ seq: 2 });
+    expect(diffGateDecisions(b, a)).toEqual([]);
+  });
+
+  it("renders contextCeiling appearing/disappearing as a readable transition", () => {
+    const older = rec({ seq: 1 });
+    const newer = rec({ seq: 2, contextCeiling: 1, contextRiskScore: 0.8 });
+    const diffs = diffGateDecisions(newer, older);
+    const ctx = diffs.find((d) => d.field === "contextCeiling");
+    expect(ctx).toEqual({ field: "contextCeiling", from: "—", to: "L1" });
+  });
+});
+
+describe("formatGateDecisionDiff", () => {
+  it("renders a header identifying both decisions plus one line per change", () => {
+    const older = rec({ seq: 1, action: "gate" });
+    const newer = rec({ seq: 2, action: "allow" });
+    const out = formatGateDecisionDiff(newer, older);
+    expect(out).toContain("seq 1");
+    expect(out).toContain("seq 2");
+    expect(out).toContain("w1");
+    expect(out).toContain("issue:compensable:high");
+    expect(out).toContain("action: gate → allow");
+  });
+
+  it("renders an explicit 'no change' line for identical decisions", () => {
+    const a = rec({ seq: 1 });
+    const b = rec({ seq: 2 });
+    const out = formatGateDecisionDiff(b, a);
+    expect(out).toContain("No change — identical decision.");
   });
 });
