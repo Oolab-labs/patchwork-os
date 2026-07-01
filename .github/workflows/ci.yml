@@ -54,9 +54,10 @@ jobs:
         run: npm test -- --reporter=dot --reporter=github-actions
         # Bumped 5→10: the suite has grown past the old 5-minute ceiling (local
         # run: 335s of test time alone, no coverage overhead) and windows-latest
-        # runners are consistently slower — CI was killing the step at ~5m2s
-        # with no failing assertion, just a hard SIGTERM mid-run. Not a hang;
-        # confirmed via a full local `vitest run` completing clean (8759 passed).
+        # runners are consistently slower — CI was killing the step at ~5m0s-5m2s
+        # with no failing assertion anywhere in the log, just a hard SIGTERM
+        # mid-run. Not a hang; confirmed via a full local `vitest run`
+        # completing clean (8759 passed).
         timeout-minutes: 10
       - name: Coverage (enforce 75% lines / 70% branches / 75% functions)
         run: npm run test:coverage -- --reporter=dot --reporter=github-actions

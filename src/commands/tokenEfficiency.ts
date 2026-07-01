@@ -7,10 +7,11 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { findBridgeLock } from "../bridgeLockDiscovery.js";
 import { loadConfigFile } from "../config.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,30 +42,29 @@ interface LockFileData {
   workspace?: string;
 }
 
-function findActiveLockFile(
+// Workspace-aware, isBridge-filtered, live-PID-filtered discovery — the same
+// helper the MCP shim, `status`, and task runner use. This was a fourth,
+// unfixed copy of the same bug (fixed 3x already elsewhere): it picked the
+// newest-mtime `.lock` file in the directory with no `isBridge` check and no
+// `PATCHWORK_BRIDGE_PORT` support, so an IDE-owned lock (or a stale bridge
+// from a different workspace) with a fresher mtime could shadow the real
+// bridge, and the env var override was silently ignored.
+export function findActiveLockFile(
   lockDir: string,
 ): { lockFile: string; port: number } | null {
-  let bestMtime = 0;
-  let lockFile: string | undefined;
-  let port: number | undefined;
-  try {
-    for (const f of readdirSync(lockDir)) {
-      if (!f.endsWith(".lock")) continue;
-      const p = Number(path.basename(f, ".lock"));
-      if (!Number.isFinite(p) || p <= 0) continue;
-      const full = path.join(lockDir, f);
-      const mtime = statSync(full).mtimeMs;
-      if (mtime > bestMtime) {
-        bestMtime = mtime;
-        lockFile = full;
-        port = p;
-      }
-    }
-  } catch {
-    // lock dir doesn't exist
+  const portEnv = process.env.PATCHWORK_BRIDGE_PORT;
+  if (portEnv && /^\d{1,5}$/.test(portEnv)) {
+    const lockFile = path.join(lockDir, `${portEnv}.lock`);
+    if (existsSync(lockFile)) return { lockFile, port: Number(portEnv) };
+    return null;
   }
-  if (!lockFile || !port) return null;
-  return { lockFile, port };
+
+  const found = findBridgeLock({ lockDir });
+  if (!found) return null;
+  return {
+    lockFile: path.join(lockDir, `${found.port}.lock`),
+    port: found.port,
+  };
 }
 
 // ── bridge health + schema stats via HTTP ─────────────────────────────────────

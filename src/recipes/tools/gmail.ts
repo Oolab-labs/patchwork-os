@@ -145,24 +145,28 @@ async function gmailFetchThread(
   }
 
   const fetch = deps.fetchFn || globalThis.fetch;
-  const res = await fetch(
-    `https://www.googleapis.com/gmail/v1/users/me/threads/${id}?format=metadata`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/gmail/v1/users/me/threads/${id}?format=metadata`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
 
-  if (!res.ok) {
-    return errorResult(`Gmail API error`);
+    if (!res.ok) {
+      return errorResult(`Gmail API error`);
+    }
+
+    const data = await res.json();
+    const headers = data.messages?.[0]?.payload?.headers ?? [];
+    const subject =
+      headers.find((h: { name: string }) => h.name === "Subject")?.value ?? "";
+
+    return JSON.stringify({
+      subject,
+      messages: data.messages ?? [],
+    });
+  } catch {
+    return errorResult("Gmail fetch failed");
   }
-
-  const data = await res.json();
-  const headers = data.messages?.[0]?.payload?.headers ?? [];
-  const subject =
-    headers.find((h: { name: string }) => h.name === "Subject")?.value ?? "";
-
-  return JSON.stringify({
-    subject,
-    messages: data.messages ?? [],
-  });
 }
 
 async function gmailGetMessage(
@@ -186,54 +190,60 @@ async function gmailGetMessage(
   }
 
   const fetch = deps.fetchFn || globalThis.fetch;
-  const res = await fetch(
-    `https://www.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
 
-  if (!res.ok) return errorResult("Gmail API error");
+    if (!res.ok) return errorResult("Gmail API error");
 
-  const data = (await res.json()) as {
-    id: string;
-    snippet?: string;
-    payload?: {
-      headers?: Array<{ name: string; value: string }>;
-      body?: { data?: string };
-      parts?: Array<{
-        mimeType: string;
+    const data = (await res.json()) as {
+      id: string;
+      snippet?: string;
+      payload?: {
+        headers?: Array<{ name: string; value: string }>;
         body?: { data?: string };
-        parts?: Array<{ mimeType: string; body?: { data?: string } }>;
-      }>;
+        parts?: Array<{
+          mimeType: string;
+          body?: { data?: string };
+          parts?: Array<{ mimeType: string; body?: { data?: string } }>;
+        }>;
+      };
     };
-  };
 
-  const hdrs = data.payload?.headers ?? [];
-  const subject = getHeader(hdrs, "Subject");
+    const hdrs = data.payload?.headers ?? [];
+    const subject = getHeader(hdrs, "Subject");
 
-  function extractText(payload: NonNullable<typeof data.payload>): string {
-    if (payload.body?.data) {
-      return Buffer.from(payload.body.data, "base64url").toString("utf-8");
-    }
-    for (const part of payload.parts ?? []) {
-      if (part.mimeType === "text/plain" && part.body?.data) {
-        return Buffer.from(part.body.data, "base64url").toString("utf-8");
+    function extractText(payload: NonNullable<typeof data.payload>): string {
+      if (payload.body?.data) {
+        return Buffer.from(payload.body.data, "base64url").toString("utf-8");
       }
-      if (part.mimeType === "text/html" && part.body?.data) {
-        return Buffer.from(part.body.data, "base64url").toString("utf-8");
-      }
-      for (const sub of part.parts ?? []) {
-        if (sub.mimeType === "text/plain" && sub.body?.data) {
-          return Buffer.from(sub.body.data, "base64url").toString("utf-8");
+      for (const part of payload.parts ?? []) {
+        if (part.mimeType === "text/plain" && part.body?.data) {
+          return Buffer.from(part.body.data, "base64url").toString("utf-8");
+        }
+        if (part.mimeType === "text/html" && part.body?.data) {
+          return Buffer.from(part.body.data, "base64url").toString("utf-8");
+        }
+        for (const sub of part.parts ?? []) {
+          if (sub.mimeType === "text/plain" && sub.body?.data) {
+            return Buffer.from(sub.body.data, "base64url").toString("utf-8");
+          }
         }
       }
+      return data.snippet ?? "";
     }
-    return data.snippet ?? "";
+
+    const body = data.payload
+      ? extractText(data.payload)
+      : (data.snippet ?? "");
+    const links = [...body.matchAll(/https?:\/\/[^\s"'<>]+/g)].map((m) => m[0]);
+
+    return JSON.stringify({ id, subject, body: body.slice(0, 16_000), links });
+  } catch {
+    return errorResult("Gmail fetch failed");
   }
-
-  const body = data.payload ? extractText(data.payload) : (data.snippet ?? "");
-  const links = [...body.matchAll(/https?:\/\/[^\s"'<>]+/g)].map((m) => m[0]);
-
-  return JSON.stringify({ id, subject, body: body.slice(0, 16_000), links });
 }
 
 // Exported for test coverage of the regression fix.
