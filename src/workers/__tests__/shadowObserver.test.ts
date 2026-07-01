@@ -269,21 +269,27 @@ describe("WorkerShadowObserver — outcome verification (junk → good:false)", 
     expect(issueRow(junk)!.mean).toBeLessThan(issueRow(confirmed)!.mean);
   });
 
-  it("confirmed and unknown dispositions both keep the good:true path (identical dial)", () => {
-    const confirmed = new WorkerShadowObserver([issuer], {
-      cfg: CFG,
-      now,
-      outcomeStore: fakeStore({ [URL]: "confirmed" }),
-    });
-    confirmed.ingestRun(durableFiling(URL));
-    // unknown = no record for the URL → getDisposition null → weak not-reverted path
+  it("WITHHOLDS a durable filing with unknown disposition (not evidence — trust-by-neglect fix)", () => {
+    // unknown = no record for the URL → getDisposition null → nobody has acted
+    // on it within the durability window. This must NOT count as good:true —
+    // that would let an unactioned filing earn trust just by sitting unopened.
     const unknown = new WorkerShadowObserver([issuer], {
       cfg: CFG,
       now,
       outcomeStore: fakeStore({}),
     });
     unknown.ingestRun(durableFiling(URL));
-    expect(issueRow(unknown)!.mean).toBe(issueRow(confirmed)!.mean);
+    expect(issueRow(unknown)).toBeUndefined();
+  });
+
+  it("still counts a durable CONFIRMED filing as good:true", () => {
+    const confirmed = new WorkerShadowObserver([issuer], {
+      cfg: CFG,
+      now,
+      outcomeStore: fakeStore({ [URL]: "confirmed" }),
+    });
+    confirmed.ingestRun(durableFiling(URL));
+    expect(issueRow(confirmed)?.observations).toBe(1);
   });
 
   it("ignores the outcome store before the durability window (still pending)", () => {
