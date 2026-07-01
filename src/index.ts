@@ -4393,7 +4393,9 @@ Options:
   }
 
   const portIdx = argv.indexOf("--port");
-  const portArg = portIdx !== -1 ? argv[portIdx + 1] : undefined;
+  // --port wins over PATCHWORK_BRIDGE_PORT wins over workspace-aware discovery.
+  const portArg =
+    portIdx !== -1 ? argv[portIdx + 1] : process.env.PATCHWORK_BRIDGE_PORT;
   const jsonFlag = argv.includes("--json");
 
   const lockDir = path.join(
@@ -4428,20 +4430,17 @@ Options:
       process.exit(1);
     }
   } else {
-    let bestMtime = 0;
-    try {
-      for (const f of readdirSync(lockDir)) {
-        if (!f.endsWith(".lock")) continue;
-        const full = path.join(lockDir, f);
-        const mtime = statSync(full).mtimeMs;
-        if (mtime > bestMtime) {
-          bestMtime = mtime;
-          lockFile = full;
-          lockPort = f.replace(".lock", "");
-        }
-      }
-    } catch {
-      // lock dir doesn't exist
+    // Workspace-aware, isBridge-filtered, live-PID-filtered discovery — the
+    // same helper the MCP shim and task runner use (#1052/#1054 fixed the
+    // shim's copy of this bug; this was a separate, unfixed copy that instead
+    // picked the newest-mtime `.lock` file in the directory with no isBridge
+    // check, so an unrelated editor's IDE-owned lock — or a stale bridge from
+    // a different workspace — could shadow the real bridge's status).
+    const { findBridgeLock } = await import("./bridgeLockDiscovery.js");
+    const found = findBridgeLock({ lockDir });
+    if (found) {
+      lockFile = path.join(lockDir, `${found.port}.lock`);
+      lockPort = String(found.port);
     }
   }
 
