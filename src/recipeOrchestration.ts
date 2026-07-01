@@ -518,6 +518,18 @@ export class RecipeOrchestration {
       return getWorkerShadowData() as unknown as Record<string, unknown>;
     };
 
+    // Read-only query over the persisted Decision Record. Backs
+    // GET /gate/decisions and `patchwork gate explain`.
+    server.gateDecisionsFn = (opts) => {
+      const log = this.deps.workerGateDecisionLog;
+      if (!log) return [];
+      return log.query({
+        ...(opts?.workerId && { workerId: opts.workerId }),
+        ...(opts?.classKey && { classKey: opts.classKey }),
+        ...(opts?.limit !== undefined && { limit: opts.limit }),
+      });
+    };
+
     // VD-4 mocked replay: load the original run, re-parse its recipe
     // from disk (so a later edit replays against the new logic), and
     // re-fire through chainedRunner with `mockedOutputs` populated from

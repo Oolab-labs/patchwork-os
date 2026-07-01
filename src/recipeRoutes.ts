@@ -641,6 +641,15 @@ export interface RecipeRouteDeps {
   simulateFn: ((recipeName: string) => Promise<Record<string, unknown>>) | null;
   /** Read-only worker trust dial (shadow) — replays run + decision logs. */
   workerShadowFn: (() => Promise<Record<string, unknown>>) | null;
+  /** Read-only query over the persisted Decision Record. Backs
+   *  GET /gate/decisions and `patchwork gate explain`. */
+  gateDecisionsFn:
+    | ((opts?: {
+        workerId?: string;
+        classKey?: string;
+        limit?: number;
+      }) => import("./workerGateDecisionLog.js").GateDecisionRecord[])
+    | null;
   runReplayFn:
     | ((seq: number) => Promise<{
         ok: boolean;
@@ -927,6 +936,32 @@ export function tryHandleRecipeRoute(
         respond500(res, err);
       }
     })();
+    return true;
+  }
+
+  // GET /gate/decisions — read-only query over the persisted Decision Record
+  // (worker_gate_decisions.jsonl). Backs `patchwork gate explain`. Requires
+  // BOTH workerId and classKey (there is no useful "explain everything"
+  // default; this is the one-decision/one-history lookup, not a dashboard
+  // feed like /workers/shadow).
+  if (parsedUrl.pathname === "/gate/decisions" && req.method === "GET") {
+    try {
+      const sp = parsedUrl.searchParams;
+      const workerId = sp.get("workerId") ?? undefined;
+      const classKey = sp.get("classKey") ?? undefined;
+      const limitRaw = sp.get("limit");
+      const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+      const decisions =
+        deps.gateDecisionsFn?.({
+          ...(workerId && { workerId }),
+          ...(classKey && { classKey }),
+          ...(Number.isFinite(limit) && { limit }),
+        }) ?? [];
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ decisions }));
+    } catch (err) {
+      respond500(res, err);
+    }
     return true;
   }
 

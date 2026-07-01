@@ -168,3 +168,56 @@ describe("http-routes-2 — POST /recipes/:name/duplicate sanitizes storage erro
     expect(JSON.parse(body).error).toBe("Recipe not found");
   });
 });
+
+describe("GET /gate/decisions — Decision Record query route", () => {
+  it("forwards workerId/classKey/limit query params to gateDecisionsFn", async () => {
+    let received: unknown;
+    const deps = makeDeps({
+      gateDecisionsFn: (opts) => {
+        received = opts;
+        return [];
+      },
+    });
+    const req = makeReq(
+      "GET",
+      "/gate/decisions?workerId=w1&classKey=issue:compensable:high&limit=3",
+    );
+    const { res, done } = makeRes();
+
+    const handled = tryHandleRecipeRoute(
+      req,
+      res,
+      new URL(
+        "http://x/gate/decisions?workerId=w1&classKey=issue:compensable:high&limit=3",
+      ),
+      deps,
+    );
+
+    expect(handled).toBe(true);
+    const { status, body } = await done;
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toEqual({ decisions: [] });
+    expect(received).toEqual({
+      workerId: "w1",
+      classKey: "issue:compensable:high",
+      limit: 3,
+    });
+  });
+
+  it("falls back to an empty list when gateDecisionsFn is null", async () => {
+    const deps = makeDeps({ gateDecisionsFn: null });
+    const req = makeReq("GET", "/gate/decisions?workerId=w1&classKey=x");
+    const { res, done } = makeRes();
+
+    tryHandleRecipeRoute(
+      req,
+      res,
+      new URL("http://x/gate/decisions?workerId=w1&classKey=x"),
+      deps,
+    );
+
+    const { status, body } = await done;
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toEqual({ decisions: [] });
+  });
+});

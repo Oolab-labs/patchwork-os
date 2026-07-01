@@ -213,6 +213,7 @@ const KNOWN_SUBCOMMANDS = [
   "shadow-scan",
   "workers",
   "approvals",
+  "gate",
 ] as const;
 
 const __invokedSubcommand = (() => {
@@ -4765,6 +4766,76 @@ if (process.argv[2] === "approvals") {
           ? `${JSON.stringify(kpi, null, 2)}\n`
           : `${formatConsideredApprovalKpi(kpi, { windowLabel: win })}\n`,
       );
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
+// Handle gate subcommand — "why did the worker allow/gate THIS action" over
+// the local Decision Record (worker_gate_decisions.jsonl). Reads the log
+// directly (like `workers shadow` / `approvals`); no bridge round-trip needed
+// since the record is a local file, not live state.
+if (process.argv[2] === "gate") {
+  const args = process.argv.slice(3);
+  const sub = args[0];
+  if (
+    sub !== "explain" ||
+    args.includes("--help") ||
+    args.includes("-h") ||
+    args.length < 3
+  ) {
+    process.stdout.write(
+      "Usage: patchwork gate explain <workerId> <classKey> [--limit N] [--json]\n\n" +
+        "Explain the worker-autonomy gate's most recent decision(s) for a given\n" +
+        "worker × action-class, from the local Decision Record\n" +
+        "(~/.patchwork/worker_gate_decisions.jsonl) — no bridge required.\n\n" +
+        '  <classKey>       e.g. "issue:compensable:high" (domain:reversibility:blastTier)\n' +
+        "  --limit N        show the N most recent decisions (default 1)\n" +
+        "  --json            emit raw JSON (for scripting)\n",
+    );
+    process.exit(sub === "explain" ? 1 : 0);
+  }
+  (async () => {
+    try {
+      // Length checked above (args.length < 3 short-circuits to usage), so
+      // args[1]/[2] are present here — noUncheckedIndexedAccess just can't see
+      // across the `if` block above.
+      const workerId = args[1] as string;
+      const classKey = args[2] as string;
+      const limitIdx = args.indexOf("--limit");
+      const limit =
+        limitIdx >= 0 && limitIdx + 1 < args.length
+          ? Number.parseInt(args[limitIdx + 1] as string, 10)
+          : 1;
+      if (!Number.isFinite(limit) || limit < 1) {
+        process.stderr.write("Error: --limit must be a positive integer\n");
+        process.exit(1);
+      }
+      const { WorkerGateDecisionLog, formatGateDecisionHistory } = await import(
+        "./workerGateDecisionLog.js"
+      );
+      const patchworkDir =
+        process.env.PATCHWORK_HOME ?? path.join(os.homedir(), ".patchwork");
+      const log = new WorkerGateDecisionLog({ dir: patchworkDir });
+      const decisions = log.query({ workerId, classKey, limit });
+
+      if (args.includes("--json")) {
+        process.stdout.write(`${JSON.stringify(decisions, null, 2)}\n`);
+        process.exit(0);
+      }
+      if (decisions.length === 0) {
+        process.stdout.write(
+          `No gate decisions found for worker "${workerId}" on class "${classKey}".\n` +
+            "Either the worker hasn't acted on this class yet, or worker.autonomy is off.\n",
+        );
+        process.exit(0);
+      }
+      process.stdout.write(`${formatGateDecisionHistory(decisions)}\n`);
       process.exit(0);
     } catch (err) {
       process.stderr.write(

@@ -334,6 +334,17 @@ export class Server extends EventEmitter<ServerEvents> {
   /** Patchwork: read-only worker trust dial (shadow) — replays run + decision
    *  logs through the (worker × action-class) ramp. Backs GET /workers/shadow. */
   public workerShadowFn: (() => Promise<Record<string, unknown>>) | null = null;
+  /** Patchwork: read-only query over the persisted Decision Record
+   *  (worker_gate_decisions.jsonl). Backs GET /gate/decisions and the
+   *  `patchwork gate explain` CLI command — "why did the worker
+   *  allow/gate THIS action" without grepping the JSONL by hand. */
+  public gateDecisionsFn:
+    | ((opts?: {
+        workerId?: string;
+        classKey?: string;
+        limit?: number;
+      }) => import("./workerGateDecisionLog.js").GateDecisionRecord[])
+    | null = null;
   /** Patchwork (VD-4): mocked replay of an existing run. Returns the new
    *  run's seq plus any unmocked steps the caller may want to surface. */
   public runReplayFn:
@@ -1639,6 +1650,7 @@ export class Server extends EventEmitter<ServerEvents> {
           runPlanFn: this.runPlanFn,
           simulateFn: this.simulateFn,
           workerShadowFn: this.workerShadowFn,
+          gateDecisionsFn: this.gateDecisionsFn,
           runReplayFn: this.runReplayFn,
           runRecipeFn: this.runRecipeFn,
           onRecipesChangedFn: this.onRecipesChangedFn,
