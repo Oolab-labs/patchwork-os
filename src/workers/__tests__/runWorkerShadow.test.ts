@@ -264,11 +264,15 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
   });
 
   it("a risky class can graduate to earned L4 via ascending replay (M2)", () => {
-    // test-guardian owns `issue` (compensable, ceiling 4); githubCreateIssue is
-    // an issue-domain step. Seed many dwell-separated clean runs. With the
-    // ascending-order fix the dwell/hysteresis logic promotes the class to L4,
-    // so the live gate ALLOWS it. (Pre-fix the replay was newest-first → dwell
-    // never held → the class would gate forever.)
+    // test-guardian owns `issue` (compensable); githubCreateIssue is an
+    // issue-domain step. Seed many dwell-separated clean runs. With the
+    // ascending-order fix the dwell/hysteresis logic promotes the EARNED level
+    // to L4 regardless of the gate's verdict. (Pre-fix the replay was
+    // newest-first → dwell never held → the class would never earn L4.)
+    // The worker's autonomyCeiling is capped at 1 (below the compensable
+    // auto-allow threshold of L2) until the outcome-verification signal has a
+    // real-world track record — so despite earning L4, the live gate still
+    // gates the action rather than auto-allowing it.
     const log = new RecipeRunLog({ dir });
     const SEVEN_HOURS = 7 * 3600 * 1000; // > the 6h default dwell window
     for (let i = 0; i < 18; i++) {
@@ -301,6 +305,8 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
     );
     expect(d.owned).toBe(true);
     expect(d.earnedLevel).toBe(4);
-    expect(d.action).toBe("allow");
+    // Ceiling (1) < compensable threshold (2) → capped despite earned L4.
+    expect(d.effectiveLevel).toBe(1);
+    expect(d.action).toBe("gate");
   });
 });

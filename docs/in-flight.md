@@ -25,7 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-*(empty — add entries here as work starts)*
+- 2026-07-01 `fix/test-guardian-ceiling-cap` — cap test-guardian-worker's autonomyCeiling below the compensable auto-allow threshold pending real-world trust-signal validation
 
 ## Recently closed (informal log, prune periodically)
 

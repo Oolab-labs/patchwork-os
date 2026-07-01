@@ -113,8 +113,13 @@ echo '{ "worker.autonomy": true }' > ~/.patchwork/config/flags.json
 ```
 
 This is the switch that **adds the gate**. With it ON, the
-`github.create_issue` step is routed to the human-approval queue every time
-*until* the worker has earned (ceiling-capped) L4 on the `issue` class.
+`github.create_issue` step is routed to the human-approval queue every time.
+The shipped `test-guardian.worker.yaml` caps `autonomyCeiling` at `1` — below
+the compensable auto-allow threshold (L2) — so filing stays gated for human
+approval even after the worker earns L4 on the `issue` class, until the
+outcome-verification signal (confirmed/junk labelling) has a real-world
+recall/false-negative track record. Raise the ceiling manually once that
+signal exists.
 
 > ⚠️ **Why first.** The flag does NOT enable filing — switches 2+3 do. With the
 > flag OFF, an automated `on_test_run` run is **not gated**, so pointing the
