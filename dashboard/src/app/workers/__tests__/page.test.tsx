@@ -78,6 +78,40 @@ describe("WorkersPage", () => {
     expect(container.textContent).toContain("ramp would gate; gate allowed");
   });
 
+  it("floors a not-owned class to L0 and flags it, instead of rendering it as earned trust", async () => {
+    const NOT_OWNED_SHADOW = {
+      runsScanned: 5,
+      decisionsScanned: 5,
+      workers: [
+        {
+          workerId: "release-notes-worker",
+          name: "Release Worker",
+          autonomyCeiling: 4,
+          board: [
+            {
+              classKey: "other:irreversible:high",
+              level: 3,
+              observations: 12,
+              mean: 0.9,
+              owned: false,
+            },
+          ],
+          compared: 0,
+          agreed: 0,
+          divergences: [],
+        },
+      ],
+    };
+    fetchMock.mockImplementation(routeMock(NOT_OWNED_SHADOW));
+    const { container } = render(<WorkersPage />);
+    expect(await screen.findByText("Release Worker")).toBeTruthy();
+    // Not-owned classes must render as NOT OWNED / floored to L0, not as the
+    // raw earned level (L3) — a worker has no standing trust on classes it
+    // doesn't own, regardless of accrued evidence.
+    expect(container.textContent).toMatch(/NOT OWNED/i);
+    expect(container.textContent).not.toContain("L3 act+sample");
+  });
+
   it("shows the empty state when no workers are configured", async () => {
     fetchMock.mockImplementation(
       routeMock({ workers: [], runsScanned: 0, decisionsScanned: 0 }),
