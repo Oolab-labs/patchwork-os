@@ -445,6 +445,8 @@ Path globs on rule files mean Claude only loads them when working on matching fi
 
 Bridge tool substitution rules in `.claude/rules/bridge-tools.md` (loaded above). Quick reference table below is summary.
 
+Before starting non-trivial work (a new branch, anything touching shared subsystems), check [docs/in-flight.md](docs/in-flight.md) for work another session may already have in progress, and add an entry before you start.
+
 ### Quick reference
 
 > Tools marked **[full]** are NOT available when the bridge was started with `--slim`. Full mode is the default (since v2.43.0); slim mode opts out to expose only IDE-exclusive tools (LSP, debugger, editor state). Call `getToolCapabilities` to confirm available tools.
