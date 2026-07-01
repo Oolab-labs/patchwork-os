@@ -3874,9 +3874,19 @@ Steps performed:
       // claude -p spawns the stdio command via Node's child_process, which
       // can't resolve a bare `.cmd` shim on Windows. Record the `.cmd` form
       // on win32 so the bridge binary is findable by the spawned process.
+      //
+      // This global entry stays even though the project also gets a
+      // `patchwork` MCP server (project .mcp.json / project config) covering
+      // this same workspace — VS Code/Windsurf/Cursor launches inject
+      // --mcp-config, which overrides any project .mcp.json entirely, so
+      // this ~/.claude.json entry is the ONLY way bridge tools are wired
+      // under an IDE launch. Pin --workspace so that when multiple bridges
+      // are running (this one plus others elsewhere), the workspace-aware
+      // lock discovery in mcp-stdio-shim.cjs picks THIS project's lock
+      // instead of falling back to cwd-based guessing or the wrong bridge.
       mcpServers["claude-ide-bridge"] = {
         command: ensureCmdShim("claude-ide-bridge"),
-        args: ["shim"],
+        args: ["shim", "--workspace", workspace],
         type: "stdio",
       };
       claudeJson.mcpServers = mcpServers;
@@ -3892,7 +3902,7 @@ Steps performed:
     }
   } catch {
     process.stderr.write(
-      `  [warn] Could not update ${claudeJsonAbs} — add manually:\n         { "mcpServers": { "claude-ide-bridge": { "command": "claude-ide-bridge", "args": ["shim"] } } }\n\n`,
+      `  [warn] Could not update ${claudeJsonAbs} — add manually:\n         { "mcpServers": { "claude-ide-bridge": { "command": "claude-ide-bridge", "args": ["shim", "--workspace", "${workspace}"] } } }\n\n`,
     );
   }
 
