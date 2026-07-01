@@ -8,6 +8,10 @@ interface BoardRow {
   level: number;
   observations: number;
   mean: number;
+  /** False = the worker performed this class but does not own it — the live
+   *  gate floors it to L0 regardless of accrued evidence (mirrors the CLI's
+   *  `workers shadow` "⚠ NOT OWNED" flag). */
+  owned: boolean;
 }
 interface Divergence {
   classKey: string;
@@ -197,14 +201,21 @@ export default function WorkersPage() {
 
       {workers.map((w) => {
         const effectiveItems = w.board.map((b) => {
-          const effective = Math.min(b.level, w.autonomyCeiling);
+          const effective = b.owned
+            ? Math.min(b.level, w.autonomyCeiling)
+            : 0;
           const capped =
-            b.level > w.autonomyCeiling ? ` (earned L${b.level}, capped)` : "";
+            b.owned && b.level > w.autonomyCeiling
+              ? ` (earned L${b.level}, capped)`
+              : "";
+          const notOwned = b.owned
+            ? ""
+            : `  ⚠ NOT OWNED — gate floors to L0 (earned L${b.level})`;
           return {
             label: b.classKey,
             value: effective,
-            color: levelColor(effective),
-            sub: `${LEVEL_LABELS[effective] ?? `L${effective}`} · ${b.observations} obs · ${Math.round(b.mean * 100)}% mean${capped}`,
+            color: b.owned ? levelColor(effective) : "var(--warn)",
+            sub: `${LEVEL_LABELS[effective] ?? `L${effective}`} · ${b.observations} obs · ${Math.round(b.mean * 100)}% mean${capped}${notOwned}`,
           };
         });
         return (
