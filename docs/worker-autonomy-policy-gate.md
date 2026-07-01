@@ -1,6 +1,7 @@
 # Worker Autonomy — the Policy Gate (keystone)
 
-**Status:** design / sequencing doc · 2026-06-30
+**Status:** implementation complete · last updated 2026-06-30
+**Shipped:** compensable-at-L2 gate (#1036), contextRisk seam + AutonomyDecisionOpts keystone (#1040), cold-start priors (#1037), shadow machinery (#1025), trust-dial dashboard (#1026), live gate (FLAG_WORKER_AUTONOMY, #1027), durable-outcome labels (#1042), agent-step sandbox (#1039).
 **Scope:** `src/workers/` — generalize the autonomy decision from a threshold on
 one slow signal into a policy over several signals, most of them fast.
 
@@ -104,10 +105,22 @@ sandbox shipped in #1039) while making the decision richer.
 
 | Weakness | Input | Speed | Already shipped? |
 |---|---|---|---|
-| Cold-start latency | **backtest-as-divergence** (prime the posterior from history) | compute, not wall-clock | partial — shadow machinery exists |
+| Cold-start latency | **prior pseudo-count** (reduces novel-floor latency) | instant | **SHIPPED — #1037**; **backtest-as-divergence** (calibrate from history) is the follow-on |
 | Sparse high-blast samples | **compositional trust** (policy over earned sub-claims) | — | no |
 | Non-stationarity | **regime_freshness** (time-decay + discontinuity markers) | medium | partial — `minEvidenceAtLastPromotion` (#1039) is a special case |
-| Wrong unit of trust | **context_risk** (live situational de-rater) | fast, day-1 | no |
+| Wrong unit of trust | **context_risk** (live situational de-rater) | fast, day-1 | **SHIPPED — #1040** |
+
+> **Shadow machinery**: **SHIPPED — #1025**. `shadowObserver` + `shadowReport` + `runWorkerShadow` all live. `patchwork workers shadow` is the primary observability tool.
+
+> **Action-class domain taxonomy**: the `vcs-remote` domain **no longer exists** (split into `vcs-push` for `gitPush` and `vcs-merge` for `githubMergePR` in #1038). Trust earned on PR creation cannot unlock push/merge — domains must not span operations with materially different blast radius or reversibility. `linear.list_issues` and `sentry.get_issue` moved from compensable to `issue-read` (reversible) in #1038. Read operations belong in reversible domains regardless of which tool they use.
+
+> **autonomyCeiling=1 safety callout**: ceiling=1 blocks compensable actions even at earned L4 (ceiling caps `effectiveLevel` before the L2 check). One worker in ceiling-1 mode will never autonomously push, merge, or file issues regardless of earned trust.
+
+> **Shadow observer correctness**: (1) `ingestDecision` silently drops `DecisionRecord` without `recipeName` — general `approvalGate` MCP approvals from Claude Code sessions are excluded from ramp comparison (#1034); (2) `ingestRun` skips steps whose `haltReason` categorizes as `approval_rejected` — human-rejected/expired/cancelled approvals do not poison the Beta posterior (#1028); (3) `owned` field on `WorkerShadowReport` board rows — not-owned rows flagged `⚠ NOT OWNED — gate floors to L0` (#1028).
+
+> **Worker evidence filtering**: `readRuns()` queries filtered by worker recipe names (not global last-100 window) so sparse-worker evidence is not aged out by unrelated recipe traffic (#1039). Recipe names are deduped before evidence aggregation to prevent double-counting.
+
+> **Known limitation**: recipe-run step tool IDs (e.g. `git.log_since`, `file.write`) do not yet map to `DOMAIN_BY_TOOL`, which keys on MCP tool names. Steps using recipe-native tool IDs are classified as `domain:other`; autonomy dial attribution is approximate until the taxonomy is extended.
 
 ### 3a. `context_risk` — the fast second dial (highest leverage, build first)
 
@@ -191,13 +204,13 @@ primitives are the substrate. (Caveat to NOT pretend: for genuinely
 rare+irreversible+high-blast actions the correct product answer is "10 approvals →
 1 *considered* approval," never zero — which is already the repo's KPI.)
 
-A precondition for all of the above: **durable-outcome labels.** Today
-`good = step.status === "ok"` (absence-of-error) — an optimistic proxy. A PR that
-merged isn't a PR that was *good*. Trust must update on **durable** outcomes (not
-reverted, survived N days, issue not reopened, deploy not rolled back), which the
-bridge can already detect (`enrichCommit`, `getCommitsForIssue`, revert/reopen).
-Until the label is durable, every posterior is confidently measuring the wrong
-event — this is the honest foundation under all four inputs.
+**Durable-outcome labels** — **SHIPPED #1042.** `isDurableSuccess(reversibility, runAt, now, windowMs)` pure predicate; `DEFAULT_DURABILITY_WINDOW_MS = 24h`. Reversible successes and all failures count immediately. Compensable/irreversible successes are withheld until they survive the durability window. `now` is injected via opts on `buildShadowReport` / `getWorkerShadowData` / `loadWorkerTrustForRecipe` (production defaults to `Date.now()`). Revert/close detection within the window remains future work.
+
+---
+
+## 2b. Agent-step autonomy sandbox (shipped #1039)
+
+`disallowedToolsForAgentStep()` emits both bare and `mcp__patchwork__`-prefixed forms for known-risky domains. These are merged into the flat + chained agent paths via `mergeAgentDisallowedTools`. Enforcement requires `--driver subprocess` — `agentExecutor` **fails closed** (`enforceSandbox` flag) on any other driver rather than silently skipping the deny list. Unknown tools are NOT blanket-denied (preserves harmless reads).
 
 ---
 
@@ -225,3 +238,13 @@ engine, and reframe its claim from "earned autonomy" to **institutional reliabil
 memory**: a track record that survives across actions and adapts to drift — which a
 stateless context-risk score cannot tell, and which is the one thing the posterior
 uniquely earns. Ship the Bayes quietly; sell the governance.
+
+> **Considered-approval KPI** — **LIVE as of #1032**: `GET /approvals/kpi` tracks reject rate, latency percentiles, channel split, and rubber-stamp warnings per worker × action-class. Dashboard: Workers page `ConsideredApprovalPanel`.
+
+---
+
+## See also
+
+- [docs/runbooks/worker-autonomy-dogfood.md](runbooks/worker-autonomy-dogfood.md) — operator runbook for the live dogfood campaign
+- `src/workers/` — implementation
+- `templates/workers/` — three reference worker manifests

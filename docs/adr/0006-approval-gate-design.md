@@ -80,13 +80,15 @@ Changeable at runtime — no reconnect, no hook reinstall — because the gate i
 
 ### Risk signals
 
-High-tier tools are tagged with `riskSignals` ([src/approvalHttp.ts](../../src/approvalHttp.ts) `computeRiskSignals`) that the dashboard surfaces as badges:
+Risk signals are computed by `computeRiskSignals` in [`src/riskSignals.ts`](../../src/riskSignals.ts) (shared module, replaces former inline logic in `src/approvalHttp.ts`) and surfaced as dashboard badges:
 
 - Destructive flags: `rm -rf`, `--force`, `sudo`, `DROP TABLE`, `TRUNCATE`, shell chaining.
 - Domain reputation: non-HTTPS, raw IP hostname.
 - Path escape: `file_path` outside workspace.
+- **Destructive command (HIGH)**: `git reset --hard`, `git clean -f/-d/--force`, `git push --force` without `--force-with-lease`, `eval`, `chmod 777`, `kill -9`, `pkill`. Also applied to structured `runCommand{command, args}` calls (args joined before pattern matching).
+- **Data exfiltration (HIGH)**: network-egress upload flag co-occurring with a credential-path token (`~/.ssh`, `~/.aws`, `.env`, `id_rsa`, `.npmrc`, `.netrc`, etc.).
 
-Signals are advisory — they don't change the decision, they help the human decide.
+**Amendment (PR #1015):** Signals are now **escalatory**, not advisory. A sub-high-tier tool that carries any HIGH-severity signal (`hasHighSeverity = true`) is promoted from bypass → queue. Both WebSocket and Streamable-HTTP transports are content-aware via `evaluateInProcessGate()` (previously both hardcoded `riskSignals:[]`).
 
 ## Consequences
 
