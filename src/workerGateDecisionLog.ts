@@ -370,3 +370,46 @@ export class WorkerGateDecisionLog {
     }
   }
 }
+
+/**
+ * Render one `GateDecisionRecord` as plain-English prose — the "explain this
+ * decision" formatter behind `patchwork gate explain`. Every field it prints
+ * is already on the record (no new data, no gate-logic change); this exists
+ * because today the only way to read a decision is to know the JSONL schema
+ * and grep the file by hand.
+ */
+export function formatGateDecision(rec: GateDecisionRecord): string {
+  const when = new Date(rec.decidedAt).toISOString();
+  const verb =
+    rec.action === "allow" ? "ALLOWED" : "GATED (asked for approval)";
+  const lines: string[] = [
+    `${when} — ${rec.workerId} → ${rec.toolName} (${rec.classKey})`,
+    `  Result: ${verb}`,
+    `  Owned by this worker: ${rec.owned ? "yes" : "no"}`,
+    `  Earned trust level: L${rec.earnedLevel} (autonomy ceiling L${rec.autonomyCeiling})`,
+  ];
+  if (rec.contextCeiling !== undefined) {
+    const score =
+      rec.contextRiskScore !== undefined
+        ? ` (risk score ${rec.contextRiskScore.toFixed(2)})`
+        : "";
+    lines.push(`  Situational risk ceiling: L${rec.contextCeiling}${score}`);
+    if (rec.contextRiskReasons?.length) {
+      lines.push(`    Reasons: ${rec.contextRiskReasons.join(", ")}`);
+    }
+  }
+  lines.push(
+    `  Effective level used for this decision: L${rec.effectiveLevel}`,
+    `  Why: ${rec.reason}`,
+    `  Recipe: ${rec.recipeName} · Policy: ${rec.gatePolicyVersion}`,
+  );
+  return lines.join("\n");
+}
+
+/** Render a most-recent-first list of decisions (e.g. `query()`'s output) as
+ *  a simple chronological history — the same formatter, one entry per record,
+ *  separated for readability. Empty input renders an empty string; callers
+ *  print their own "no decisions found" message. */
+export function formatGateDecisionHistory(recs: GateDecisionRecord[]): string {
+  return recs.map(formatGateDecision).join("\n\n");
+}
