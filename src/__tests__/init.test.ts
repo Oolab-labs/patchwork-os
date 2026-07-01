@@ -222,10 +222,20 @@ describe("init --workspace", () => {
     expect(fs.existsSync(wrongClaudeJson)).toBe(false);
 
     const parsed = JSON.parse(fs.readFileSync(expectedClaudeJson, "utf-8")) as {
-      mcpServers?: Record<string, unknown>;
+      mcpServers?: Record<string, { args?: string[] }>;
     };
     expect(parsed.mcpServers).toBeDefined();
     expect(parsed.mcpServers?.["claude-ide-bridge"]).toBeDefined();
+    // Regression: this entry must pin --workspace so the stdio shim's
+    // workspace-aware lock discovery picks THIS project's bridge lock when
+    // multiple bridges are running, instead of falling back to cwd-based
+    // guessing (the root cause of the recurring /mcp stall — see
+    // docs/audit-bridge-changelog-2026-06-25.md).
+    expect(parsed.mcpServers?.["claude-ide-bridge"]?.args).toEqual([
+      "shim",
+      "--workspace",
+      ws,
+    ]);
   });
 
   it("persists CLAUDE_CODE_IDE_SKIP_VALID_CHECK in settings.json env so `claude --ide` needs no prefix", () => {
