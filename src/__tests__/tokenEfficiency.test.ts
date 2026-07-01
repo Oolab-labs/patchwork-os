@@ -8,13 +8,18 @@ import {
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
-  return {
+  const mocked = {
     ...actual,
     existsSync: vi.fn(),
     readdirSync: vi.fn(),
     readFileSync: vi.fn(),
     statSync: vi.fn(),
   };
+  // findActiveLockFile now delegates to bridgeLockDiscovery's findBridgeLock,
+  // which does `import fs from "node:fs"` (default import) rather than named
+  // imports — without overriding `default` too, that call reads the REAL
+  // filesystem and the mocks above are silently bypassed.
+  return { ...mocked, default: mocked };
 });
 
 vi.mock("node:child_process", async (importOriginal) => {
@@ -84,14 +89,28 @@ describe("tokenEfficiencyStatus", () => {
   });
 
   it("prints 'could not read' when lock file parse fails", async () => {
+    // findActiveLockFile now discovers via findBridgeLock, which itself reads
+    // the lock file to check isBridge/pid before findActiveLockFile's caller
+    // re-reads it for the authToken — so the first read (discovery) must
+    // succeed with a valid live-bridge lock, and only the SECOND read (in
+    // tokenEfficiencyStatus, e.g. a file deleted between discovery and use)
+    // throws.
     const mockDirent = "12345.lock" as unknown as import("node:fs").Dirent;
     vi.mocked(fs.readdirSync).mockReturnValue([mockDirent]);
     vi.mocked(fs.statSync).mockReturnValue({
       mtimeMs: Date.now(),
     } as ReturnType<typeof fs.statSync>);
-    vi.mocked(fs.readFileSync).mockImplementation(() => {
-      throw new Error("EPERM");
-    });
+    vi.mocked(fs.readFileSync)
+      .mockReturnValueOnce(
+        JSON.stringify({
+          isBridge: true,
+          pid: process.pid,
+          authToken: "tok123",
+        }),
+      )
+      .mockImplementationOnce(() => {
+        throw new Error("EPERM");
+      });
 
     await tokenEfficiencyStatus();
 
@@ -106,7 +125,7 @@ describe("tokenEfficiencyStatus", () => {
       mtimeMs: Date.now(),
     } as ReturnType<typeof fs.statSync>);
     vi.mocked(fs.readFileSync).mockReturnValue(
-      JSON.stringify({ authToken: "tok123" }),
+      JSON.stringify({ isBridge: true, pid: process.pid, authToken: "tok123" }),
     );
 
     // Mock fetch: /health → stats, /mcp initialize → no session-id → schema skipped
@@ -143,7 +162,9 @@ describe("tokenEfficiencyStatus", () => {
     vi.mocked(fs.statSync).mockReturnValue({
       mtimeMs: Date.now(),
     } as ReturnType<typeof fs.statSync>);
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ pid: 123 }));
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify({ isBridge: true, pid: process.pid }),
+    );
 
     await tokenEfficiencyStatus();
 
