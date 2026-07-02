@@ -398,14 +398,18 @@ export function resolveStepTemplates(
         errors.push(result.error);
         conditionResult = false;
       } else {
-        // Simple truthiness check (empty string, "0", "false" are falsy)
+        // Falsy if the WHOLE value is a falsy token OR its LAST token is — so a
+        // `when` fed an agent's free-text decision (prose ending in "true"/"false")
+        // gates on the verdict, not on "non-empty ⇒ truthy". Single-token guards
+        // are unchanged (last token === whole value). Kept in lockstep with
+        // yamlRunner.ts's guard (runner behavioral parity).
         const val = result.value.trim().toLowerCase();
-        conditionResult =
-          !!val &&
-          val !== "0" &&
-          val !== "false" &&
-          val !== "null" &&
-          val !== "undefined";
+        const FALSY = new Set(["", "0", "false", "null", "undefined"]);
+        const lastToken = (val.split(/\s+/).pop() ?? "").replace(
+          /[^a-z0-9]/g,
+          "",
+        );
+        conditionResult = !!val && !FALSY.has(val) && !FALSY.has(lastToken);
       }
     }
   }

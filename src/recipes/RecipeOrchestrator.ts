@@ -6,6 +6,7 @@
 
 import type { Logger } from "../logger.js";
 import type { ChainedRunResult } from "./chainedRunner.js";
+import { applyTriggerInputDefaults } from "./triggerVars.js";
 import {
   loadYamlRecipe as defaultLoadYamlRecipe,
   dispatchRecipe,
@@ -113,6 +114,16 @@ export class RecipeOrchestrator {
       };
     }
 
+    // Merge the recipe's declared `trigger.vars` / `trigger.inputs` defaults
+    // underneath the caller-supplied seedContext (caller/event values always
+    // win). This is the ONE chokepoint every fire path shares (HTTP webhook,
+    // CLI, scheduler, automation hooks), so a declared default like
+    // `repo: owner/repo` now reaches an on_test_run-triggered run instead of
+    // being dropped — the seedContext previously carried only event placeholders
+    // ({{runner}}, {{failed}}, …), so github.create_issue hard-errored on empty
+    // repo. Fail-soft: a missing/malformed file returns seedContext unchanged.
+    const mergedContext = applyTriggerInputDefaults(filePath, seedContext);
+
     const taskId = `${name}-${Date.now()}`;
     this.inFlight.add(name);
 
@@ -132,7 +143,7 @@ export class RecipeOrchestrator {
       this.inFlightTimers.set(name, timer);
     }
 
-    dispatch(recipe, this.deps, seedContext)
+    dispatch(recipe, this.deps, mergedContext)
       .finally(() => {
         this.clearInFlight(name);
       })

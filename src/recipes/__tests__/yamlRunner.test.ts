@@ -931,6 +931,103 @@ describe("runYamlRecipe — step.when guard", () => {
     expect(result.stepResults[1]!.status).toBe("ok");
   });
 
+  // Bug 2: a `when` fed an agent's free-text decision (e.g. decide_file emitting
+  // paragraphs of reasoning that END in "false") must gate on the DECISION, not
+  // on "non-empty string ⇒ truthy". The guard now evaluates the last token.
+  const VERBOSE_FALSE =
+    "1. REPRODUCE: the failing test does not exist on the current checkout.\n" +
+    "2. DEDUP: moot — non-reproduction settles it.\n\nfalse";
+  const VERBOSE_TRUE =
+    "Reproduced on an isolated re-run and no open duplicate tracks it.\n\ntrue";
+
+  it("skips the guarded step when a decision's prose ends in `false`", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "note.md"),
+          content: "always",
+        },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "filed.md"),
+          content: "filed",
+          when: "{{should_file}}",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(
+      recipe,
+      {
+        ...noop(),
+        writeFile: (p, c) => {
+          written[p] = c;
+        },
+      },
+      { should_file: VERBOSE_FALSE },
+    );
+    expect(written[path.join(TMP, "filed.md")]).toBeUndefined();
+    expect(result.stepResults[1]!.status).toBe("skipped");
+  });
+
+  it("runs the guarded step when a decision's prose ends in `true`", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "note.md"),
+          content: "always",
+        },
+        {
+          tool: "file.write",
+          path: path.join(TMP, "filed.md"),
+          content: "filed",
+          when: "{{should_file}}",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(
+      recipe,
+      {
+        ...noop(),
+        writeFile: (p, c) => {
+          written[p] = c;
+        },
+      },
+      { should_file: VERBOSE_TRUE },
+    );
+    expect(written[path.join(TMP, "filed.md")]).toBe("filed");
+    expect(result.stepResults[1]!.status).toBe("ok");
+  });
+
+  it("tolerates punctuation/backticks around a trailing `false` token", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: path.join(TMP, "filed.md"),
+          content: "filed",
+          when: "{{should_file}}",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(
+      recipe,
+      {
+        ...noop(),
+        writeFile: (p, c) => {
+          written[p] = c;
+        },
+      },
+      { should_file: "decision: `false`." },
+    );
+    expect(written[path.join(TMP, "filed.md")]).toBeUndefined();
+    expect(result.stepResults[0]!.status).toBe("skipped");
+  });
+
   it("skips an agent step when `when` is empty (no agent invocation)", async () => {
     let agentCalls = 0;
     const recipe = makeRecipe({
