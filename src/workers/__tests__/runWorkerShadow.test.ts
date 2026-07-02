@@ -309,4 +309,47 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
     expect(d.effectiveLevel).toBe(1);
     expect(d.action).toBe("gate");
   });
+
+  it("dependency-upkeep's PR-opening stays gated at earned L4 (ceiling cap neutralises the PR trust-by-neglect leak)", () => {
+    // dependency-upkeep owns `vcs-remote` (githubCreatePR, compensable). Its
+    // ceiling is capped at 1 because there is no PR-outcome grader yet, so a bump
+    // PR nobody reviews would otherwise fold good:true and graduate the class to
+    // auto-open PRs (the trust-by-neglect leak, on the PR path). Seed enough
+    // dwell-separated clean PR opens to earn L4, then prove the gate STILL gates.
+    const log = new RecipeRunLog({ dir });
+    const SEVEN_HOURS = 7 * 3600 * 1000; // > the 6h default dwell window
+    for (let i = 0; i < 18; i++) {
+      log.appendDirect({
+        taskId: `dep${i}`,
+        recipeName: "dependency-bump",
+        trigger: "recipe",
+        status: "done",
+        createdAt: i * SEVEN_HOURS,
+        doneAt: i * SEVEN_HOURS,
+        durationMs: 1,
+        stepResults: Array.from({ length: 5 }, (_, k) => ({
+          id: `d${i}-${k}`,
+          tool: "githubCreatePR",
+          status: "ok" as const,
+          durationMs: 1,
+        })),
+      });
+    }
+    const trust = loadWorkerTrustForRecipe("dependency-bump", {
+      workersDir: WORKERS_DIR,
+      patchworkDir: dir,
+    });
+    expect(trust).not.toBeNull();
+    const d = decideWorkerAction(
+      trust!.worker,
+      "githubCreatePR",
+      {},
+      trust!.store,
+    );
+    expect(d.owned).toBe(true);
+    expect(d.earnedLevel).toBe(4);
+    // Ceiling (1) < compensable threshold (2) → capped despite earned L4.
+    expect(d.effectiveLevel).toBe(1);
+    expect(d.action).toBe("gate");
+  });
 });

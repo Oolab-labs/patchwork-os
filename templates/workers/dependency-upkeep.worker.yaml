@@ -1,6 +1,6 @@
 # Dependency-upkeep worker — top-right beachhead. The classic low-blast,
 # continuous, verifiable job to land first (the wedge): watch for outdated /
-# vulnerable deps and open a bump PR. A human still merges → ceiling held at L3.
+# vulnerable deps and open a bump PR.
 id: dependency-upkeep-worker
 name: Dependency Upkeep Worker
 sector: engineering
@@ -12,7 +12,15 @@ owns:
   - deps-read # auditDependencies / getSecurityAdvisories — read-only
   - vcs-local # gitCommit / gitCheckout on a branch — reversible
   - vcs-remote # githubCreatePR — compensable + brand-exposed
-autonomyCeiling: 3 # opening PRs autonomously is fine; merging stays human (policy)
+# Opening a PR (vcs-remote) is compensable — but there is NO outcome grader for
+# PRs yet (OutcomeStore is issue-URL-keyed only), so a bump PR nobody reviews
+# would fold good:true past the 24h durability window: the same trust-by-neglect
+# the issue-class fix (#1064) closed, surviving on the PR path. Cap below the
+# compensable auto-allow rung (L2) so PR-opening stays human-approved regardless
+# of earned level — mirroring test-guardian's `issue` cap. Raise to 3 (open PRs
+# autonomously, merging still human) once a PR-outcome grader exists (merged/
+# closed-state detection feeding the OutcomeStore).
+autonomyCeiling: 1
 competence:
   mean: 0.8
   strength: 4
