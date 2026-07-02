@@ -25,9 +25,11 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-02 `feat/pending-outcomes-visibility` — roadmap plan slice #4 (make the confirm queue visible): `computePendingConfirmations` join (runs × dispositions) in runWorkerShadow → `patchwork outcomes pending [--json]` + `GET /outcomes/pending` (new `pendingConfirmationsFn` dep) + an "Awaiting confirmation" one-click Confirm/Reject panel on dashboard `/workers`. The age of this queue IS the evidence-latency moat KPI. Delivered via the on-demand join (single source) rather than a FoldDecision-reason observer counter; the shadow-board inline "N awaiting" count is deferred (the CLI/panel cover the same info). — build session
+- 2026-07-02 `feat/workers-page-confirm-ux` — dashboard `/workers` "speak-human" pass (operator-facing, no bridge change): plain-language copy across every panel; a per-worker "Ready for more independence?" promotion-readiness headline computed from the earned-vs-ceiling gap on OWNED, non-reversible tasks (reversible bypasses the gate, so it never justifies a raise); plain per-task record (task name + stakes + success rate) replacing the L0–L4 dial in the default view; a "Show details" toggle that restores the full engine view (reject-rate/p90, action-class keys, L-levels, ramp-vs-gate). Also the confirm-loop polish (empty-state all-caught-up, disposition summary). — build session
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-07-02 `feat/pending-outcomes-visibility` (#1074) — roadmap plan slice #4 (make the confirm queue visible): `computePendingConfirmations` join (runs × dispositions) in runWorkerShadow → `patchwork outcomes pending [--json]` + `GET /outcomes/pending` (new `pendingConfirmationsFn` dep) + an "Awaiting confirmation" one-click confirm/reject panel on dashboard `/workers` — merged
 
 - 2026-07-02 `feat/outcomes-http-confirm-panel` (#1073) — roadmap plan slice #3 (outcomes over HTTP + confirm panel): bridge `GET/POST /outcomes` (Bearer-gated, `outcomeStoreFn` dep) + a one-click Confirm/Reject "Filed outcomes" card on dashboard `/workers`. NEVER a recipe step / MCP tool (self-confirm prohibition). Load-bearing fix: a single shared `resolveOutcomeLogDir()` so the outcome-log WRITE (CLI/ingester/POST) and the trust-replay READ (runWorkerShadow) agree on one file even under PATCHWORK_HOME — merged
 

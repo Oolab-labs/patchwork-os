@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WorkersPage from "../page";
 
@@ -68,17 +68,21 @@ function routeMock(
 }
 
 describe("WorkersPage", () => {
-  it("renders the trust dial + a ramp-vs-gate divergence from the shadow endpoint", async () => {
+  it("renders the plain per-task record; ramp-vs-gate divergence lives under details", async () => {
     fetchMock.mockImplementation(routeMock(SHADOW));
     const { container } = render(<WorkersPage />);
     expect(await screen.findByText("Release Worker")).toBeTruthy();
-    // the divergence text is split across nodes (⚠ {tool} — {note}); assert on
-    // the rendered textContent rather than an exact single-node match
+    // Plain per-task record: fs-write:reversible:medium (not owned) → "changing files".
+    expect(container.textContent).toContain("changing files");
+    expect(container.textContent).toContain("not one of its jobs");
+    // The ramp-vs-gate divergence is engine-detail — hidden until "Show details".
+    expect(container.textContent).not.toContain("gitPush");
+    fireEvent.click(screen.getByRole("button", { name: "Show details" }));
     expect(container.textContent).toContain("gitPush");
     expect(container.textContent).toContain("ramp would gate; gate allowed");
   });
 
-  it("floors a not-owned class to L0 and flags it, instead of rendering it as earned trust", async () => {
+  it("floors a not-owned class and flags it in plain words, not raw levels", async () => {
     const NOT_OWNED_SHADOW = {
       runsScanned: 5,
       decisionsScanned: 5,
@@ -105,11 +109,44 @@ describe("WorkersPage", () => {
     fetchMock.mockImplementation(routeMock(NOT_OWNED_SHADOW));
     const { container } = render(<WorkersPage />);
     expect(await screen.findByText("Release Worker")).toBeTruthy();
-    // Not-owned classes must render as NOT OWNED / floored to L0, not as the
-    // raw earned level (L3) — a worker has no standing trust on classes it
-    // doesn't own, regardless of accrued evidence.
-    expect(container.textContent).toMatch(/NOT OWNED/i);
+    // Not-owned classes must read as "not one of its jobs" (floored), never as
+    // the raw earned level (L3) — a worker has no standing trust there.
+    expect(container.textContent).toMatch(/not one of its jobs/i);
     expect(container.textContent).not.toContain("L3 act+sample");
+  });
+
+  it("surfaces a 'ready for more independence?' headline when earned > ceiling", async () => {
+    const READY_SHADOW = {
+      runsScanned: 20,
+      decisionsScanned: 20,
+      workers: [
+        {
+          workerId: "test-guardian-worker",
+          name: "Test Guardian Worker",
+          autonomyCeiling: 1,
+          board: [
+            {
+              classKey: "issue:compensable:high",
+              level: 4,
+              observations: 18,
+              mean: 0.96,
+              owned: true,
+            },
+          ],
+          compared: 0,
+          agreed: 0,
+          divergences: [],
+        },
+      ],
+    };
+    fetchMock.mockImplementation(routeMock(READY_SHADOW));
+    const { container } = render(<WorkersPage />);
+    expect(
+      await screen.findByText(/Ready for more independence/),
+    ).toBeTruthy();
+    // Names the earned capability + the exact config change to make.
+    expect(container.textContent).toContain("filing issues");
+    expect(container.textContent).toContain("autonomyCeiling: 4");
   });
 
   it("shows the empty state when no workers are configured", async () => {
@@ -117,10 +154,10 @@ describe("WorkersPage", () => {
       routeMock({ workers: [], runsScanned: 0, decisionsScanned: 0 }),
     );
     render(<WorkersPage />);
-    expect(await screen.findByText(/No workers yet/)).toBeTruthy();
+    expect(await screen.findByText(/No workers set up yet/)).toBeTruthy();
   });
 
-  it("renders the considered-approval panel with the rubber-stamp warning", async () => {
+  it("shows the rubber-stamp warning in plain view; telemetry under details", async () => {
     fetchMock.mockImplementation(
       routeMock(SHADOW, {
         total: 8,
@@ -144,9 +181,75 @@ describe("WorkersPage", () => {
       }),
     );
     const { container } = render(<WorkersPage />);
-    expect(await screen.findByText(/Considered approvals/)).toBeTruthy();
+    expect(await screen.findByText(/rubber-stamping/)).toBeTruthy();
+    // Plain warning is shown by default; raw telemetry is not.
+    expect(container.textContent).toMatch(
+      /approved all 8 requests with no rejections/,
+    );
+    expect(container.textContent).not.toContain("reject rate 0%");
+    fireEvent.click(screen.getByRole("button", { name: "Show details" }));
     expect(container.textContent).toContain("reject rate 0%");
-    // 8 decided, 0 rejected → the rubber-stamp warning must fire
-    expect(container.textContent).toMatch(/rubber-stamps/);
+  });
+
+  it("shows the trust journey — stepper stops + a plain 'how it got here' timeline (climbs AND slips)", async () => {
+    const JOURNEY_SHADOW = {
+      runsScanned: 20,
+      decisionsScanned: 20,
+      workers: [
+        {
+          workerId: "test-guardian-worker",
+          name: "Test Guardian Worker",
+          autonomyCeiling: 1,
+          board: [
+            {
+              classKey: "issue:compensable:high",
+              level: 0,
+              observations: 5,
+              mean: 0.21,
+              owned: true,
+            },
+          ],
+          events: [
+            {
+              type: "promote",
+              classKey: "issue:compensable:high",
+              from: 0,
+              to: 1,
+              at: 1000,
+              evidence: 4,
+              reason: "sustained evidence",
+              workerId: "test-guardian-worker",
+            },
+            {
+              type: "demote",
+              classKey: "issue:compensable:high",
+              from: 1,
+              to: 0,
+              at: 2000,
+              evidence: 31,
+              reason: "a rejected filing",
+              workerId: "test-guardian-worker",
+            },
+          ],
+          compared: 0,
+          agreed: 0,
+          divergences: [],
+        },
+      ],
+    };
+    fetchMock.mockImplementation(routeMock(JOURNEY_SHADOW));
+    const { container } = render(<WorkersPage />);
+    expect(await screen.findByText("Test Guardian Worker")).toBeTruthy();
+    // The journey stepper renders the plain stops.
+    expect(container.textContent).toContain("Just watching");
+    expect(container.textContent).toContain("Fully trusted");
+    // The history: newest first — the slip (demote) then the climb (promote).
+    expect(container.textContent).toContain("How it got here");
+    expect(container.textContent).toMatch(
+      /Slipped back to .Just watching. on filing issues/,
+    );
+    expect(container.textContent).toMatch(
+      /Earned .Asks first. on filing issues/,
+    );
   });
 });
