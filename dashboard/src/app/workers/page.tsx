@@ -23,11 +23,23 @@ interface Divergence {
   at: number;
   note: string;
 }
+/** A promote/demote milestone in a worker's trust journey. */
+interface AuditEvent {
+  type: "promote" | "demote";
+  classKey: string;
+  from: number;
+  to: number;
+  at: number;
+  evidence: number;
+  reason: string;
+  workerId: string;
+}
 interface WorkerReport {
   workerId: string;
   name: string;
   autonomyCeiling: number;
   board: BoardRow[];
+  events: AuditEvent[];
   compared: number;
   agreed: number;
   divergences: Divergence[];
@@ -534,12 +546,179 @@ function levelColor(effective: number): string {
   return "var(--line-3)";
 }
 
+// ── The trust journey ───────────────────────────────────────────────────────
+// Every worker travels the same 5-stop path from "just watching" to "fully
+// trusted". Where it stands (and how it got there) is the story an owner wants.
+const JOURNEY_STOPS = [
+  "Just watching",
+  "Asks first",
+  "Acts, you undo",
+  "Acts, checked",
+  "Fully trusted",
+];
+
+const BLAST_RANK: Record<string, number> = { high: 3, medium: 2, low: 1 };
+
+/** The worker's "main job": the highest-stakes OWNED, non-reversible task — the
+ *  one the leash is really about. Falls back to any owned task. */
+function primaryJob(w: WorkerReport): BoardRow | undefined {
+  const owned = w.board.filter((b) => b.owned);
+  const risky = owned.filter((b) => !isReversible(b.classKey));
+  const pool = risky.length ? risky : owned;
+  if (pool.length === 0) return undefined;
+  return [...pool].sort(
+    (a, b) =>
+      (BLAST_RANK[b.classKey.split(":")[2] ?? ""] ?? 0) -
+        (BLAST_RANK[a.classKey.split(":")[2] ?? ""] ?? 0) || b.level - a.level,
+  )[0];
+}
+
+function relTime(at: number, now: number): string {
+  const ms = Math.max(0, now - at);
+  const h = Math.floor(ms / 3_600_000);
+  if (h < 1) return "just now";
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+/**
+ * The journey track — 5 stops, filled up to what the worker has EARNED on its
+ * main job, with a flag at the leash (the max you allow) and a ring on where it
+ * stands right now. One glance says how far along a worker is; stack them and a
+ * whole team is scannable.
+ */
+function JourneyStepper({
+  earned,
+  ceiling,
+}: {
+  earned: number;
+  ceiling: number;
+}) {
+  const effective = Math.min(earned, ceiling);
+  return (
+    <div style={{ display: "flex", marginTop: "var(--s-4)" }}>
+      {JOURNEY_STOPS.map((stop, i) => {
+        const reached = i <= earned;
+        return (
+          <div
+            key={stop}
+            style={{ flex: 1, position: "relative", paddingTop: 14 }}
+          >
+            {i > 0 && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 14 + 6,
+                  left: "-50%",
+                  width: "100%",
+                  height: 2,
+                  background: reached ? "var(--ok)" : "var(--line-3)",
+                }}
+              />
+            )}
+            {i === ceiling && (
+              <div
+                className="muted"
+                style={{
+                  position: "absolute",
+                  top: -2,
+                  left: 0,
+                  right: 0,
+                  textAlign: "center",
+                  fontSize: 11,
+                }}
+              >
+                ⚑ leash
+              </div>
+            )}
+            <div
+              style={{
+                position: "relative",
+                width: 13,
+                height: 13,
+                borderRadius: 999,
+                margin: "0 auto",
+                background: reached ? "var(--ok)" : "var(--surface-2)",
+                border: reached ? "none" : "1px solid var(--line-3)",
+                boxShadow:
+                  i === effective ? "0 0 0 3px var(--accent)" : "none",
+              }}
+            />
+            <div
+              style={{
+                textAlign: "center",
+                marginTop: 6,
+                fontSize: 11,
+                color: reached ? "inherit" : "var(--line-3)",
+              }}
+            >
+              {stop}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * "How it got here" — the worker's promote/demote milestones in plain words,
+ * newest first. This is the trust journey's *history*: each step it climbed (or
+ * slipped), what it was doing, and how much evidence it took.
+ */
+function JourneyTimeline({
+  events,
+  now,
+}: {
+  events: AuditEvent[];
+  now: number;
+}) {
+  if (events.length === 0) return null;
+  const recent = [...events].sort((a, b) => b.at - a.at).slice(0, 6);
+  return (
+    <div style={{ marginTop: "var(--s-3)" }}>
+      <div
+        className="editorial-sub"
+        style={{ fontFamily: "inherit", marginBottom: "var(--s-2)" }}
+      >
+        <strong>How it got here</strong>
+      </div>
+      {recent.map((e, i) => (
+        <div
+          className="suggestion-row"
+          key={`${e.classKey}-${e.to}-${e.at}-${i}`}
+        >
+          <span style={{ color: e.type === "promote" ? "var(--ok)" : "var(--warn)" }}>
+            {e.type === "promote" ? "▲" : "▼"}
+          </span>{" "}
+          {e.type === "promote" ? "Earned" : "Slipped back to"} “
+          {JOURNEY_STOPS[e.to] ?? `level ${e.to}`}” on {taskName(e.classKey)}
+          <span className="muted">
+            {" "}
+            · after {e.evidence} {e.evidence === 1 ? "try" : "tries"} ·{" "}
+            {relTime(e.at, now)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
  * One worker — led by the DECISION an owner cares about ("can I give it more
  * independence yet?"), then a plain per-task record. The engine view (the L0–L4
  * dial bars, action-class keys, ramp-vs-gate) lives under "Show details".
  */
-function WorkerCard({ w, expert }: { w: WorkerReport; expert: boolean }) {
+function WorkerCard({
+  w,
+  expert,
+  now,
+}: {
+  w: WorkerReport;
+  expert: boolean;
+  now: number;
+}) {
   const owned = w.board.filter((b) => b.owned);
   // Ready to promote: an OWNED, non-reversible task where the worker earned a
   // higher level than the ceiling you set — it has proven more than you allow on
@@ -549,6 +728,18 @@ function WorkerCard({ w, expert }: { w: WorkerReport; expert: boolean }) {
     .filter((b) => !isReversible(b.classKey) && b.level > w.autonomyCeiling)
     .sort((a, b) => b.level - a.level);
   const top = promotable[0];
+  const primary = primaryJob(w);
+  // The journey/leash only matters for gated (non-reversible) work. A worker
+  // whose only owned tasks are reversible runs freely — no stepper, no leash.
+  const gatedPrimary =
+    primary && !isReversible(primary.classKey) ? primary : undefined;
+
+  const status =
+    w.board.length === 0
+      ? { label: "New", bg: "var(--surface-2)", fg: "inherit" }
+      : top
+        ? { label: "Ready to advance", bg: "var(--ok)", fg: "var(--bg)" }
+        : { label: "Proving itself", bg: "var(--surface-2)", fg: "inherit" };
 
   const effectiveItems = w.board.map((b) => {
     const effective = b.owned ? Math.min(b.level, w.autonomyCeiling) : 0;
@@ -571,21 +762,42 @@ function WorkerCard({ w, expert }: { w: WorkerReport; expert: boolean }) {
     <div className="card" style={{ marginTop: "var(--s-4)" }}>
       <div className="card-head">
         <strong>{w.name}</strong>
-        <span className="pill muted">
-          {expert
-            ? `ceiling L${w.autonomyCeiling}`
-            : `max: ${PLAIN_LEVEL_SHORT[w.autonomyCeiling] ?? `L${w.autonomyCeiling}`}`}
+        <span style={{ display: "flex", gap: "var(--s-2)" }}>
+          <span
+            className="pill"
+            style={{ background: status.bg, color: status.fg }}
+          >
+            {status.label}
+          </span>
+          <span className="pill muted">
+            {expert
+              ? `ceiling L${w.autonomyCeiling}`
+              : `max: ${PLAIN_LEVEL_SHORT[w.autonomyCeiling] ?? `L${w.autonomyCeiling}`}`}
+          </span>
         </span>
       </div>
 
-      {/* Readiness headline — the promote-or-not decision. */}
+      {/* Where it is on the journey — the hero. */}
+      {gatedPrimary ? (
+        <JourneyStepper
+          earned={gatedPrimary.level}
+          ceiling={w.autonomyCeiling}
+        />
+      ) : owned.length > 0 ? (
+        <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+          Low-risk helper — {w.name} only does easily-undone work, so it runs
+          freely without needing a leash.
+        </div>
+      ) : null}
+
+      {/* Ready-to-advance decision, else a plain standing line. */}
       {top ? (
         <div
           style={{
             border: "1px solid var(--ok)",
             borderRadius: "var(--radius-2, 8px)",
             padding: "var(--s-3)",
-            marginBottom: "var(--s-3)",
+            marginTop: "var(--s-3)",
           }}
         >
           <strong>✅ Ready for more independence?</strong>
@@ -601,14 +813,31 @@ function WorkerCard({ w, expert }: { w: WorkerReport; expert: boolean }) {
             worker’s <code>.worker.yaml</code> file.
           </div>
         </div>
-      ) : owned.length > 0 ? (
-        <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
-          Still proving itself — {w.name} is performing within the independence
-          you’ve already allowed.
+      ) : gatedPrimary ? (
+        <div
+          className="editorial-sub"
+          style={{ fontFamily: "inherit", marginTop: "var(--s-3)" }}
+        >
+          {gatedPrimary.level === 0
+            ? `Just starting out on its main job, ${taskName(gatedPrimary.classKey)}`
+            : gatedPrimary.level < w.autonomyCeiling
+              ? `Climbing — earned "${levelPhrase(gatedPrimary.level)}" on ${taskName(gatedPrimary.classKey)}, working toward your leash`
+              : `At its leash on ${taskName(gatedPrimary.classKey)}, performing well`}{" "}
+          · {pct(gatedPrimary.mean)}% success over {gatedPrimary.observations}{" "}
+          tries.
         </div>
       ) : null}
 
+      {/* How it got here — the journey's history. */}
+      <JourneyTimeline events={w.events ?? []} now={now} />
+
       {/* Per-task record. */}
+      <div
+        className="editorial-sub"
+        style={{ fontFamily: "inherit", marginTop: "var(--s-3)" }}
+      >
+        <strong>What it does</strong>
+      </div>
       {w.board.length === 0 ? (
         <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
           Hasn’t done anything yet — this fills in as the worker runs.
@@ -674,7 +903,25 @@ export default function WorkersPage() {
     { intervalMs: 30000 },
   );
   const [expert, setExpert] = useState(false);
-  const workers = data?.workers ?? [];
+  const now = data?.generatedAt ? Date.parse(data.generatedAt) : Date.now();
+
+  // Fleet view: a worker "needs attention" when it's earned past its leash
+  // (ready to advance). Sort those first so a team of many workers stays
+  // scannable — the ones awaiting a decision rise to the top.
+  function readyToAdvance(w: WorkerReport): boolean {
+    return w.board.some(
+      (b) => b.owned && !isReversible(b.classKey) && b.level > w.autonomyCeiling,
+    );
+  }
+  function rank(w: WorkerReport): number {
+    if (readyToAdvance(w)) return 0;
+    if (w.board.length === 0) return 2;
+    return 1;
+  }
+  const workers = [...(data?.workers ?? [])].sort(
+    (a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name),
+  );
+  const readyCount = workers.filter(readyToAdvance).length;
 
   return (
     <section>
@@ -733,8 +980,24 @@ export default function WorkersPage() {
         />
       )}
 
+      {workers.length > 0 && (
+        <div
+          className="editorial-sub"
+          style={{ fontFamily: "inherit", marginTop: "var(--s-4)" }}
+        >
+          <strong>
+            Your team — {workers.length} worker
+            {workers.length === 1 ? "" : "s"}
+          </strong>
+          {readyCount > 0 &&
+            ` · ${readyCount} ready to advance (shown first)`}
+          . As you add workers that hand off to each other, this is where you’ll
+          watch the whole team’s trust grow together.
+        </div>
+      )}
+
       {workers.map((w) => (
-        <WorkerCard key={w.workerId} w={w} expert={expert} />
+        <WorkerCard key={w.workerId} w={w} expert={expert} now={now} />
       ))}
     </section>
   );

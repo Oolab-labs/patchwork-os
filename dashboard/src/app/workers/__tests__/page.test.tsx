@@ -190,4 +190,66 @@ describe("WorkersPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show details" }));
     expect(container.textContent).toContain("reject rate 0%");
   });
+
+  it("shows the trust journey — stepper stops + a plain 'how it got here' timeline (climbs AND slips)", async () => {
+    const JOURNEY_SHADOW = {
+      runsScanned: 20,
+      decisionsScanned: 20,
+      workers: [
+        {
+          workerId: "test-guardian-worker",
+          name: "Test Guardian Worker",
+          autonomyCeiling: 1,
+          board: [
+            {
+              classKey: "issue:compensable:high",
+              level: 0,
+              observations: 5,
+              mean: 0.21,
+              owned: true,
+            },
+          ],
+          events: [
+            {
+              type: "promote",
+              classKey: "issue:compensable:high",
+              from: 0,
+              to: 1,
+              at: 1000,
+              evidence: 4,
+              reason: "sustained evidence",
+              workerId: "test-guardian-worker",
+            },
+            {
+              type: "demote",
+              classKey: "issue:compensable:high",
+              from: 1,
+              to: 0,
+              at: 2000,
+              evidence: 31,
+              reason: "a rejected filing",
+              workerId: "test-guardian-worker",
+            },
+          ],
+          compared: 0,
+          agreed: 0,
+          divergences: [],
+        },
+      ],
+    };
+    fetchMock.mockImplementation(routeMock(JOURNEY_SHADOW));
+    const { container } = render(<WorkersPage />);
+    expect(await screen.findByText("Test Guardian Worker")).toBeTruthy();
+    // The journey stepper renders the plain stops.
+    expect(container.textContent).toContain("Just watching");
+    expect(container.textContent).toContain("Fully trusted");
+    // The history: newest first — the slip (demote) then the climb (promote).
+    expect(container.textContent).toContain("How it got here");
+    expect(container.textContent).toMatch(
+      /Slipped back to .Just watching. on filing issues/,
+    );
+    expect(container.textContent).toMatch(
+      /Earned .Asks first. on filing issues/,
+    );
+  });
 });
