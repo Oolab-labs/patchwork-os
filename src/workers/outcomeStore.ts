@@ -1,4 +1,5 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 
 /**
@@ -18,6 +19,23 @@ import path from "node:path";
  *               #1064). A null return from getDisposition is treated identically.
  */
 export type OutcomeDisposition = "confirmed" | "junk" | "unknown";
+
+/**
+ * The directory that holds `outcome-log.jsonl`. Honors `PATCHWORK_HOME` (when
+ * set) so the WRITE path — `patchwork outcomes confirm|reject`, the
+ * outcome-ingester, and `POST /outcomes` — and the READ path — the trust-replay
+ * dial + the live gate in `runWorkerShadow` — always resolve to the SAME file.
+ * An explicit `override` (a test tmp dir, or the shadow's `opts.patchworkDir`)
+ * wins. This is the single source of truth for the log location: resolving it
+ * inconsistently on the read vs write side silently breaks the confirm loop on
+ * any box that sets `PATCHWORK_HOME` (a dashboard/CLI confirm writes one file
+ * while the dial reads another).
+ */
+export function resolveOutcomeLogDir(override?: string): string {
+  return (
+    override ?? process.env.PATCHWORK_HOME ?? path.join(homedir(), ".patchwork")
+  );
+}
 
 export interface OutcomeRecord {
   /** GitHub issue URL — the lookup key. */

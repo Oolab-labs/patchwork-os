@@ -4873,10 +4873,10 @@ if (process.argv[2] === "outcomes") {
   (async () => {
     try {
       const { runOutcomesCli } = await import("./workers/outcomesCli.js");
-      const { OutcomeStore } = await import("./workers/outcomeStore.js");
-      const patchworkDir =
-        process.env.PATCHWORK_HOME ?? path.join(os.homedir(), ".patchwork");
-      const store = new OutcomeStore(patchworkDir);
+      const { OutcomeStore, resolveOutcomeLogDir } = await import(
+        "./workers/outcomeStore.js"
+      );
+      const store = new OutcomeStore(resolveOutcomeLogDir());
       const res = runOutcomesCli(args, { store, now: Date.now() });
       if (res.stdout) process.stdout.write(res.stdout);
       if (res.stderr) process.stderr.write(res.stderr);

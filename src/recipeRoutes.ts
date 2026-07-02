@@ -47,6 +47,7 @@ import type { LintIssue } from "./recipes/validation.js";
 import type { RecipeDraft } from "./recipesHttp.js";
 import { invalidateRecipesCache } from "./recipesHttp.js";
 import { validateSafeUrl } from "./ssrfGuard.js";
+import type { OutcomeStore } from "./workers/outcomeStore.js";
 
 /**
  * Sanitize error messages from storage operations before including them in
@@ -306,6 +307,11 @@ export const RECIPE_ROUTE_BODY_CAPS = {
    * 1 KB is 66× that maximum; 256 KB was a trivial DoS vector.
    */
   toggle: 1 * 1024,
+  /**
+   * POST /outcomes — `{ issueUrl, disposition, recipeName?, workerClass? }`.
+   * A URL + short enum + two audit strings; 2 KB is generous.
+   */
+  outcomes: 2 * 1024,
 } as const;
 
 /**
@@ -650,6 +656,12 @@ export interface RecipeRouteDeps {
         limit?: number;
       }) => import("./workerGateDecisionLog.js").GateDecisionRecord[])
     | null;
+  /** Operator outcome dispositions (~/.patchwork/outcome-log.jsonl). Backs
+   *  GET/POST /outcomes and mirrors `patchwork outcomes confirm|reject|list`.
+   *  A fresh store per call (cheap, disk-backed, last-writer-wins). The factory
+   *  ensures the log's parent dir exists so `upsert` can append. NEVER exposed
+   *  as a recipe step / MCP tool — a worker must not confirm its own filings. */
+  outcomeStoreFn: (() => OutcomeStore) | null;
   runReplayFn:
     | ((seq: number) => Promise<{
         ok: boolean;
@@ -962,6 +974,109 @@ export function tryHandleRecipeRoute(
     } catch (err) {
       respond500(res, err);
     }
+    return true;
+  }
+
+  // GET /outcomes — read-only list of operator outcome dispositions
+  // (~/.patchwork/outcome-log.jsonl, deduped last-writer-wins). Backs the
+  // dashboard "Filed outcomes" card + mirrors `patchwork outcomes list`.
+  // Bearer-gated (all recipe routes run after the auth gate in server.ts).
+  if (parsedUrl.pathname === "/outcomes" && req.method === "GET") {
+    try {
+      const outcomes = deps.outcomeStoreFn?.().readAll() ?? [];
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ outcomes }));
+    } catch (err) {
+      respond500(res, err);
+    }
+    return true;
+  }
+
+  // POST /outcomes — operator positive-act: record a `confirmed`|`junk`
+  // disposition for a worker-filed issue/PR URL. The HTTP twin of `patchwork
+  // outcomes confirm|reject` (src/workers/outcomesCli.ts) and the only write
+  // path the dashboard uses. `unknown` is ingester-only and rejected here.
+  // Same URL validation as the CLI. SELF-CONFIRM PROHIBITION: exposed over
+  // Bearer-gated HTTP + CLI only — never as a recipe step or MCP tool — so a
+  // worker cannot confirm its own filing. Append-only supersede makes a
+  // mis-click recoverable by a corrected write.
+  if (parsedUrl.pathname === "/outcomes" && req.method === "POST") {
+    void (async () => {
+      const parsedBody = await readJsonBody<{
+        issueUrl?: string;
+        disposition?: string;
+        recipeName?: string;
+        workerClass?: string;
+      }>(req, RECIPE_ROUTE_BODY_CAPS.outcomes);
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.outcomes);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
+      try {
+        const parsed = parsedBody.value ?? {};
+        if (
+          respondIfUnknownBodyKeys(res, parsed, [
+            "issueUrl",
+            "disposition",
+            "recipeName",
+            "workerClass",
+          ])
+        )
+          return;
+        const respond400 = (error: string): void => {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error }));
+        };
+        const { issueUrl, disposition, recipeName, workerClass } = parsed;
+        if (typeof issueUrl !== "string" || !/^https?:\/\//.test(issueUrl)) {
+          respond400(
+            "`issueUrl` must be an http(s) URL (the filed issue/PR URL).",
+          );
+          return;
+        }
+        // `unknown` is ingester-only — an operator either confirms or rejects.
+        if (disposition !== "confirmed" && disposition !== "junk") {
+          respond400(
+            '`disposition` must be "confirmed" or "junk" ("unknown" is ingester-only).',
+          );
+          return;
+        }
+        if (recipeName !== undefined && typeof recipeName !== "string") {
+          respond400("`recipeName` must be a string when present.");
+          return;
+        }
+        if (workerClass !== undefined && typeof workerClass !== "string") {
+          respond400("`workerClass` must be a string when present.");
+          return;
+        }
+        const store = deps.outcomeStoreFn?.();
+        if (!store) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "Outcome store unavailable on this bridge.",
+            }),
+          );
+          return;
+        }
+        store.upsert({
+          issueUrl,
+          disposition,
+          checkedAt: Date.now(),
+          ...(recipeName ? { recipeName } : {}),
+          ...(workerClass ? { workerClass } : {}),
+        });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, issueUrl, disposition }));
+      } catch (err) {
+        respond500(res, err);
+      }
+    })();
     return true;
   }
 

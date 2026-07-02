@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { MAX_PERSIST_LINES, RecipeRunLog } from "../runLog.js";
 import { backtestWorker, formatBacktestReport } from "./backtest.js";
-import { OutcomeStore } from "./outcomeStore.js";
+import { OutcomeStore, resolveOutcomeLogDir } from "./outcomeStore.js";
 import {
   type DecisionRecord,
   type RunRecord,
@@ -173,7 +173,11 @@ export function getWorkerShadowData(
     // production; tests inject opts.now.
     workers: buildShadowReport(workers, runs, decisions, undefined, {
       now: opts.now ?? Date.now(),
-      outcomeStore: new OutcomeStore(patchworkDir),
+      // The outcome log honors PATCHWORK_HOME (matching every write path) even
+      // though runs.jsonl above is read from `patchworkDir` — the two files can
+      // live in different roots. Resolving them the same way here would break
+      // the confirm loop on a PATCHWORK_HOME box (write one file, read another).
+      outcomeStore: new OutcomeStore(resolveOutcomeLogDir(opts.patchworkDir)),
     }),
     runsScanned: runs.length,
     decisionsScanned: decisions.length,
@@ -211,7 +215,7 @@ export function loadWorkerTrustForRecipe(
   // reverted. Real Date.now() in production; tests inject opts.now.
   const observer = new WorkerShadowObserver(workers, {
     now: opts.now ?? Date.now(),
-    outcomeStore: new OutcomeStore(patchworkDir),
+    outcomeStore: new OutcomeStore(resolveOutcomeLogDir(opts.patchworkDir)),
   });
   const worker = observer.workerForRecipe(recipeName);
   if (!worker) return null;
@@ -256,7 +260,9 @@ export function runWorkerBacktest(opts: RunWorkerShadowOpts = {}): string {
     "  false-gate  = ramp would gate a GOOD action (over-caution, the cost)",
     "",
   ];
-  const outcomeStore = new OutcomeStore(patchworkDir);
+  const outcomeStore = new OutcomeStore(
+    resolveOutcomeLogDir(opts.patchworkDir),
+  );
   for (const w of workers) {
     if (!w.recipe) continue;
     const runs = readRuns(patchworkDir, [w.recipe]);

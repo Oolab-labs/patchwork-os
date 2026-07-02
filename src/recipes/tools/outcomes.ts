@@ -13,12 +13,11 @@
  * function of state/labels, and checkedAt is the real clock.
  */
 
-import os from "node:os";
-import path from "node:path";
 import { assertWriteAllowed } from "../../featureFlags.js";
 import {
   classifyIssueDisposition,
   OutcomeStore,
+  resolveOutcomeLogDir,
 } from "../../workers/outcomeStore.js";
 import { registerTool } from "../toolRegistry.js";
 
@@ -83,9 +82,7 @@ registerTool({
       });
     }
 
-    const patchworkDir =
-      process.env.PATCHWORK_HOME ?? path.join(os.homedir(), ".patchwork");
-    const store = new OutcomeStore(patchworkDir);
+    const store = new OutcomeStore(resolveOutcomeLogDir());
     const recipeName = params.recipeName
       ? String(params.recipeName)
       : undefined;
