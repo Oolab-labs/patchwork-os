@@ -29,6 +29,9 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-07-02 `fix/test-guardian-ceiling-cap` (#1065) — cap test-guardian-worker's autonomyCeiling below the compensable auto-allow threshold pending real-world trust-signal validation — merged
+- 2026-07-02 `fix/shadow-observer-unknown-not-durable` (#1064) — trust-by-neglect fix: unknown disposition withheld (not good:true) in WorkerShadowObserver.ingestRun — merged
+
 - 2026-07-01 `feat/gate-decision-diff` (#1062) — Tier 2 legibility layer: `patchwork gate explain --diff` — merged
 - 2026-07-01 `feat/gate-explain-cli` (#1061) — `patchwork gate explain <workerId> <classKey>` — read-only formatter over WorkerGateDecisionLog + `GET /gate/decisions` — merged
 - 2026-07-01 `fix/outcome-ingester-search-issues` (#1053) — github.search_issues + state plumbing — merged

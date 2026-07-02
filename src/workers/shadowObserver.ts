@@ -214,8 +214,10 @@ export class WorkerShadowObserver {
           continue; // pending — survives the window before it earns trust
         // Past the window: check outcome store for non-reversible steps.
         // Junk issues (closed-as-not-planned / labelled invalid/duplicate) mean
-        // the worker filed noise → flip to good:false. confirmed/unknown fall
-        // through to the good:true path below (current weak-durable behaviour).
+        // the worker filed noise → flip to good:false. confirmed is a positive
+        // human/external act → good:true. unknown (nobody has acted on it within
+        // the window) is WITHHELD — not evidence — so an unactioned filing can't
+        // earn trust just by sitting unopened (trust-by-neglect fix).
         if (ac.reversibility !== "reversible" && this.outcomeStore) {
           const url =
             step.output && typeof step.output.url === "string"
@@ -231,6 +233,7 @@ export class WorkerShadowObserver {
               );
               continue;
             }
+            if (disposition === "unknown" || disposition === null) continue; // withheld — not evidence
           }
         }
       }
