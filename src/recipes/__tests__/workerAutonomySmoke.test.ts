@@ -161,6 +161,11 @@ function makeDeps(
     workdir: tmpHome,
     logDir: patchworkDir,
     runLog,
+    // Persist to the injected runLog (temp patchworkDir, never homedir) — the
+    // smoke asserts `runLog.query(...)`, which needs `!testMode`. Under the
+    // VITEST-aware default, testMode would otherwise default ON. See
+    // runLogIsolation.test.ts.
+    testMode: false,
     requireApprovalFn,
     gateAutomatedRuns: true,
     // Default: a constant non-falsy note (every agent step → file-it path). The

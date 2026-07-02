@@ -25,10 +25,11 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-02 `fix/dogfood-filing-var-defaults-and-decision-gate` — unblock worker filing: (1) RecipeOrchestrator.fire merges trigger.vars/inputs defaults on every fire path (on_test_run runs no longer drop `repo`); (2) `when` guard evaluates the last token so an agent decision's prose ending in true/false gates correctly (yamlRunner + chainedRunner parity). Extracts applyTriggerInputDefaults → src/recipes/triggerVars.ts.
+- 2026-07-02 `fix/runlog-vitest-testmode-guard` — roadmap plan slice #1 (run-log hygiene): VITEST-aware `testMode` default in `runYamlRecipe` so a bare test run never appends synthetic rows to the operator's live `~/.patchwork/runs.jsonl` (which is also the de-facto trust store, rotates at 1MB). Guard test `runLogIsolation.test.ts` (temp HOME) + explicit `testMode:false` on the 4 persistence-asserting test files. Flat runner only — chained runner already gates its appendDirect on an explicit `runLogDir`. — build session
 
 ## Recently closed (informal log, prune periodically)
 
+- 2026-07-02 `fix/dogfood-filing-var-defaults-and-decision-gate` (#1070) — unblock worker filing: (1) RecipeOrchestrator.fire merges trigger.vars/inputs defaults on every fire path (on_test_run runs no longer drop `repo`); (2) `when` guard evaluates the last token so an agent decision's prose ending in true/false gates correctly (yamlRunner + chainedRunner parity); extracts applyTriggerInputDefaults → src/recipes/triggerVars.ts — merged
 - 2026-07-02 `feat/backtest-outcome-parity` (#1068) — thread OutcomeStore into backtestWorker via a shared foldOutcome helper so `patchwork workers backtest` labels outcomes exactly like `workers shadow` (junk→bad, unknown→withheld); refactors ingestRun onto the same helper — merged
 - 2026-07-02 `fix/dependency-upkeep-ceiling-cap` (#1067) — cap dependency-upkeep-worker's autonomyCeiling 3→1 (neutralise the PR-path trust-by-neglect leak: vcs-remote had no outcome grader) pending a PR-outcome grader — merged
 - 2026-07-02 `feat/outcomes-confirm-cli` (#1066) — `patchwork outcomes confirm|reject|list` verb (operator confirm-label loop) + outcome-ingester label-comment fix — merged

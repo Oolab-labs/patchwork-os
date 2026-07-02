@@ -27,6 +27,11 @@ function deps(extra: Partial<RunnerDeps> = {}): RunnerDeps {
   return {
     now: () => new Date("2026-06-22T12:00:00Z"),
     logDir: TMP,
+    // Persist to the temp logDir (never homedir) — the run-registry / cancel
+    // tests need the runController registered, which is gated on `!testMode`.
+    // Under the VITEST-aware default, testMode would otherwise default ON. See
+    // runLogIsolation.test.ts.
+    testMode: false,
     readFile: () => {
       throw new Error("nf");
     },
