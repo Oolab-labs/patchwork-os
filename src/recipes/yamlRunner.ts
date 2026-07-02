@@ -1727,12 +1727,22 @@ export async function runYamlRecipe(
           step.when === false
             ? "false"
             : render(step.when, ctx).trim().toLowerCase();
+        // Falsy if the WHOLE value is a falsy token OR its LAST token is. The
+        // last-token check is what makes a `when` fed an agent's free-text
+        // decision gate correctly: a step like `decide_file` emits paragraphs of
+        // reasoning that END in "true"/"false" (into: should_file), and a bare
+        // "non-empty ⇒ truthy" check treated that prose as truthy and ran the
+        // guarded step even on a "false" verdict. Single-token guards (the common
+        // case — {{phone}}, {{repo}}, "0") are unchanged: last token === whole
+        // value. Trailing punctuation/backticks/quotes are stripped so `` `false`. ``
+        // still reads false.
+        const FALSY = new Set(["", "0", "false", "null", "undefined"]);
+        const lastToken = (rendered.split(/\s+/).pop() ?? "").replace(
+          /[^a-z0-9]/g,
+          "",
+        );
         const truthy =
-          !!rendered &&
-          rendered !== "0" &&
-          rendered !== "false" &&
-          rendered !== "null" &&
-          rendered !== "undefined";
+          !!rendered && !FALSY.has(rendered) && !FALSY.has(lastToken);
         if (!truthy) {
           const skipId = step.into ?? step.agent?.into ?? `step_${stepsRun}`;
           stepResults.push({

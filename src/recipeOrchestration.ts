@@ -22,6 +22,7 @@ import type {
 } from "./recipes/scheduler.js";
 import { RecipeScheduler } from "./recipes/scheduler.js";
 import { hasTool } from "./recipes/toolRegistry.js";
+import { applyTriggerInputDefaults } from "./recipes/triggerVars.js";
 import {
   archiveRecipe,
   deleteRecipeContent,
@@ -1730,55 +1731,11 @@ export function collectUnknownToolIds(yaml: string): string[] {
   return out;
 }
 
-/**
- * Read a YAML recipe's trigger.inputs[] declarations and merge any declared
- * defaults underneath caller-provided vars. Caller vars always win. Tolerates
- * missing files / malformed YAML / non-array inputs by returning the original
- * vars untouched.
- */
-export function applyTriggerInputDefaults(
-  ymlPath: string,
-  vars?: Record<string, string>,
-): Record<string, string> | undefined {
-  let parsed: unknown;
-  try {
-    parsed = parseYaml(readFileSync(ymlPath, "utf-8"));
-  } catch {
-    return vars;
-  }
-  const trigger = (parsed as { trigger?: unknown } | null)?.trigger as
-    | Record<string, unknown>
-    | null
-    | undefined;
-
-  // Collect defaults from both trigger.inputs and trigger.vars (array forms).
-  // trigger.vars holds recipe-declared defaults; trigger.inputs holds
-  // user-overrideable parameters. Both use {name, default} entries.
-  const defaults: Record<string, string> = {};
-  for (const key of ["inputs", "vars"] as const) {
-    const arr = trigger?.[key];
-    if (arr !== undefined && !Array.isArray(arr) && typeof arr === "object") {
-      // Map format (vars: {NAME: value}) is not supported — values silently
-      // never reach the recipe context. Warn so authors catch the mistake early.
-      console.warn(
-        `[recipe] trigger.${key} must be an array of {name, default} objects, ` +
-          `got a plain object in ${ymlPath}. Vars will not be substituted.`,
-      );
-    }
-    if (!Array.isArray(arr)) continue;
-    for (const item of arr) {
-      if (!item || typeof item !== "object") continue;
-      const name = (item as { name?: unknown }).name;
-      const dflt = (item as { default?: unknown }).default;
-      if (typeof name !== "string" || name.length === 0) continue;
-      if (dflt === undefined || dflt === null) continue;
-      if (!(name in defaults)) defaults[name] = String(dflt);
-    }
-  }
-
-  if (Object.keys(defaults).length === 0) return vars;
-  return { ...defaults, ...(vars ?? {}) };
-}
+// `applyTriggerInputDefaults` moved to ./recipes/triggerVars.ts (leaf module) so
+// RecipeOrchestrator.fire can apply declared defaults on EVERY fire path without a
+// circular import. Imported at the top for internal use here; re-exported below for
+// back-compat with existing import sites (e.g. commands/recipe.ts).
+export { applyTriggerInputDefaults };
 
 function checkRequiredVars(
   ymlPath: string,

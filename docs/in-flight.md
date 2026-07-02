@@ -25,7 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-*(empty — add entries here as work starts)*
+- 2026-07-02 `fix/dogfood-filing-var-defaults-and-decision-gate` — unblock worker filing: (1) RecipeOrchestrator.fire merges trigger.vars/inputs defaults on every fire path (on_test_run runs no longer drop `repo`); (2) `when` guard evaluates the last token so an agent decision's prose ending in true/false gates correctly (yamlRunner + chainedRunner parity). Extracts applyTriggerInputDefaults → src/recipes/triggerVars.ts.
 
 ## Recently closed (informal log, prune periodically)
 

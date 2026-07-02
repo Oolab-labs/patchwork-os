@@ -3,7 +3,10 @@
  * All tests expected to fail (TypeError or similar) until fire() is implemented.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RecipeOrchestrator } from "../RecipeOrchestrator.js";
 import type { RunResult, YamlRecipe } from "../yamlRunner.js";
 
@@ -371,6 +374,105 @@ describe("RecipeOrchestrator.fire()", () => {
     expect(orchestrator.listInFlight()).toEqual(["beta"]);
 
     d2.resolve(makeRunResult());
+  });
+
+  describe("merges declared trigger.vars/inputs defaults into seedContext (Bug 1)", () => {
+    let dir: string;
+    beforeEach(() => {
+      dir = mkdtempSync(path.join(os.tmpdir(), "fire-vardefaults-"));
+    });
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("fills a declared repo default the caller didn't supply, event vars still win", async () => {
+      // Mirrors the on_test_run path: the trigger seeds only event placeholders
+      // ({{runner}}, {{failed}}), never the recipe's declared `repo` default.
+      // Pre-fix, dispatch got that raw seedContext and github.create_issue
+      // hard-errored on empty repo.
+      const ymlPath = path.join(dir, "triage.yaml");
+      writeFileSync(
+        ymlPath,
+        [
+          "name: triage",
+          "trigger:",
+          "  type: on_test_run",
+          "  vars:",
+          "    - name: repo",
+          '      default: "owner/repo"',
+          "steps:",
+          "  - tool: file.write",
+          "    path: /tmp/x",
+          "    content: hi",
+        ].join("\n"),
+      );
+      const recipe = makeYamlRecipe("triage");
+      const loadYamlRecipe = vi.fn().mockReturnValue(recipe);
+      const { promise, resolve } = deferred<RunResult>();
+      const dispatchFn = vi.fn().mockReturnValue(promise);
+
+      const orchestrator = new RecipeOrchestrator(baseDeps(), {
+        loadYamlRecipe,
+        dispatchFn,
+      });
+      await orchestrator.fire({
+        filePath: ymlPath,
+        name: "triage",
+        triggerSource: "automation:on_test_run",
+        seedContext: { runner: "vitest", failed: "1" },
+      });
+      resolve(makeRunResult());
+
+      const passedContext = dispatchFn.mock.calls[0]?.[2] as Record<
+        string,
+        string
+      >;
+      // declared default filled…
+      expect(passedContext.repo).toBe("owner/repo");
+      // …and event vars preserved (caller wins on overlap).
+      expect(passedContext.runner).toBe("vitest");
+      expect(passedContext.failed).toBe("1");
+    });
+
+    it("caller value overrides a declared default (no clobber)", async () => {
+      const ymlPath = path.join(dir, "triage.yaml");
+      writeFileSync(
+        ymlPath,
+        [
+          "name: triage",
+          "trigger:",
+          "  type: on_test_run",
+          "  vars:",
+          "    - name: repo",
+          '      default: "owner/default-repo"',
+          "steps:",
+          "  - tool: file.write",
+          "    path: /tmp/x",
+          "    content: hi",
+        ].join("\n"),
+      );
+      const loadYamlRecipe = vi.fn().mockReturnValue(makeYamlRecipe("triage"));
+      const { promise, resolve } = deferred<RunResult>();
+      const dispatchFn = vi.fn().mockReturnValue(promise);
+
+      const orchestrator = new RecipeOrchestrator(baseDeps(), {
+        loadYamlRecipe,
+        dispatchFn,
+      });
+      await orchestrator.fire({
+        filePath: ymlPath,
+        name: "triage",
+        triggerSource: "test",
+        seedContext: { repo: "owner/explicit" },
+      });
+      resolve(makeRunResult());
+
+      const passedContext = dispatchFn.mock.calls[0]?.[2] as Record<
+        string,
+        string
+      >;
+      expect(passedContext.repo).toBe("owner/explicit");
+    });
   });
 
   it("frees the in-flight slot after dispatchTimeoutMs when dispatch never settles (audit 2026-06-09 orch-hang-1)", async () => {
