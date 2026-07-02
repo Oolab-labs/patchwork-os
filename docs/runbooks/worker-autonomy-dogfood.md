@@ -244,3 +244,51 @@ Flip any switch back:
   with reverting switch 2);
 - `patchwork recipe disable triage-failing-tests-autofile` → stops the trigger
   firing at all (cleanest full stop).
+
+---
+
+## Closing the trust loop — confirming filings
+
+**A filed issue does NOT move the dial on its own.** Past the 24h durability
+window the trust ramp reads the issue's *outcome disposition*: `confirmed` earns
+trust (`good:true`), `junk` lowers it, and `unknown` (nobody acted on it) is
+**withheld — not counted at all** (an unactioned filing must not earn trust by
+sitting unopened). So after you approve a filing, you still have to tell the
+system whether it was real. There are two ways, and **neither can be done by the
+worker itself** — the reward path is as independent of the worker as the penalty
+path:
+
+1. **On GitHub (feeds the ingester).** Close the issue as *completed* (GitHub's
+   default close) → `confirmed`; close as *not planned* or label it
+   `invalid`/`duplicate`/`wontfix` → `junk`; or apply a `patchwork:valid` /
+   `confirmed` / `verified` label → `confirmed`. The **outcome-ingester** recipe
+   (`templates/recipes/outcome-ingester.yaml`, cron every 6h) polls issues by
+   its `label` var and writes the disposition to `~/.patchwork/outcome-log.jsonl`.
+   > ⚠️ Install `outcome-ingester.yaml` into `~/.patchwork/recipes/` too, and set
+   > its `repo` var to the **same** `owner/repo` the autofile recipe files
+   > against. A blank `repo` makes its search qualifier malformed and it records
+   > nothing.
+
+2. **Locally, no GitHub round-trip (the direct path):**
+   ```bash
+   patchwork outcomes confirm <issue-url>    # the filing was real  → confirmed
+   patchwork outcomes reject  <issue-url>    # the filing was noise → junk
+   patchwork outcomes list                   # what's been recorded so far
+   ```
+   This writes straight to `~/.patchwork/outcome-log.jsonl` — the same store the
+   ramp reads. Pass the issue URL exactly as the worker filed it.
+
+Either way, the `issue` dial only climbs on **confirmed** dispositions. Watch it
+with `patchwork workers shadow`.
+
+### Raising the ceiling
+
+The shipped Test Guardian manifest caps `autonomyCeiling` at `1`, below the
+compensable auto-allow rung (L2) — so even at earned L4, filing stays gated for
+human approval. Once you have a real-world track record (a run of confirmed
+clean filings with a low false-negative rate — say ~10–20 confirmed and no
+confirmed-but-actually-junk cases), raise it by editing the **installed** copy
+`~/.patchwork/workers/test-guardian.worker.yaml` (never `templates/` — the
+running bridge reads `~/.patchwork/`): set `autonomyCeiling: 2` (the minimum
+that unlocks compensable auto-allow at effective L2), then reload/restart the
+bridge. Drop it back to `1` to re-gate immediately.

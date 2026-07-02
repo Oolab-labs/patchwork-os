@@ -10,9 +10,11 @@
 # runs well after new issues have settled (most "junk" signals appear within
 # hours of filing).
 #
-# Prerequisite: GitHub connector authorised. Label "patchwork:filed" must be
-# applied by the triage recipe (or manually) so this ingester can scope its
-# poll. If you use a different label, update `labels` below.
+# Prerequisite: GitHub connector authorised. This ingester scopes its poll by
+# the `label` var below (default "test-failure" — the exact label the
+# triage-failing-tests-autofile recipe's `file_issue` step applies). If you
+# change the label the worker files under, change `label` here to match, or the
+# poll returns nothing and no dispositions are ever recorded.
 apiVersion: patchwork.sh/v1
 name: outcome-ingester
 description: Poll GitHub for Test Guardian issues and record outcome dispositions to the trust-replay store.
@@ -22,7 +24,7 @@ trigger:
   vars:
     - name: repo
       default: ""
-      description: "owner/repo to poll (leave blank to poll all accessible repos)"
+      description: "owner/repo to poll — SET THIS to the SAME repo the autofile recipe files against; a blank repo makes the search qualifier malformed (`repo: label:...`) so no worker issues are found and no dispositions are recorded"
     - name: label
       default: "test-failure"
       description: "Label that marks worker-filed issues (default matches the Test Guardian Worker)"
