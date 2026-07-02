@@ -64,6 +64,11 @@ interface KpiResponse {
   byTool: ToolKpi[];
 }
 
+// ── Plain-language vocabulary ───────────────────────────────────────────────
+// The whole page speaks in the gate's engine terms (levels, ceilings,
+// action-classes, Bayesian means). These maps translate them for the owner who
+// is deciding how far to trust a worker — the engine terms stay available under
+// "Show details". Index = trust level 0–4 → what the worker may do at it.
 const LEVEL_LABELS = [
   "L0 suggest",
   "L1 approve-each",
@@ -71,6 +76,58 @@ const LEVEL_LABELS = [
   "L3 act+sample",
   "L4 autonomous",
 ];
+/** What the worker may DO at each level, in plain words (verb phrase). */
+const PLAIN_LEVELS = [
+  "only suggest what to do",
+  "ask you before each action",
+  "act on its own, and you can undo it",
+  "act on its own, with spot-checks",
+  "act fully on its own",
+];
+/** Short chip form of each level. */
+const PLAIN_LEVEL_SHORT = [
+  "suggests only",
+  "asks first",
+  "acts + undo",
+  "acts + spot-check",
+  "on its own",
+];
+/** The classKey is `domain:reversibility:blastTier` — plain names per part. */
+const DOMAIN_LABELS: Record<string, string> = {
+  issue: "filing issues",
+  "fs-write": "changing files",
+  "fs-read": "reading files",
+  "vcs-read": "reading code history",
+  "vcs-remote": "pushing to GitHub",
+  "vcs-merge": "merging code",
+  "vcs-local": "local commits",
+  messaging: "sending messages",
+  ci: "running tests / CI",
+  net: "network requests",
+  other: "other actions",
+};
+const STAKES_LABELS: Record<string, string> = {
+  low: "low stakes",
+  medium: "medium stakes",
+  high: "high stakes",
+};
+function taskName(classKey: string): string {
+  const domain = classKey.split(":")[0] ?? classKey;
+  return DOMAIN_LABELS[domain] ?? domain;
+}
+function taskStakes(classKey: string): string {
+  const tier = classKey.split(":")[2] ?? "";
+  return STAKES_LABELS[tier] ?? "";
+}
+/** The reversibility segment of the classKey. Reversible actions bypass the
+ *  gate unconditionally (they're easily undone), so the autonomy ceiling never
+ *  restricts them — "capped" and "ready to promote" are meaningless there. */
+function isReversible(classKey: string): boolean {
+  return classKey.split(":")[1] === "reversible";
+}
+function levelPhrase(n: number): string {
+  return PLAIN_LEVELS[n] ?? `level ${n}`;
+}
 
 function fmtMs(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -84,13 +141,15 @@ const channelStr = (c: Record<string, number> | undefined): string =>
     .sort((a, b) => b[1] - a[1])
     .map(([k, v]) => `${k} ${v}`)
     .join(" · ");
+const pct = (x: number): number => Math.round(x * 100);
 
 /**
- * Considered-approval KPI — the honesty lens beside the dial. The dial says how
- * high trust climbed; this says whether the approvals behind it were considered.
- * A 0% reject rate over a real sample is the clearest tell of a rubber-stamp.
+ * "Are you really reviewing?" — the honesty lens beside the dial. Trust only
+ * means something if the approvals behind it were considered; a 0% reject rate
+ * over a real sample is the clearest tell of rubber-stamping. Plain by default;
+ * the reject-rate / latency / per-tool telemetry lives under "Show details".
  */
-function ConsideredApprovalPanel() {
+function ConsideredApprovalPanel({ expert }: { expert: boolean }) {
   const { data } = useBridgeFetch<KpiResponse>("/api/bridge/approvals/kpi", {
     intervalMs: 30000,
   });
@@ -99,52 +158,72 @@ function ConsideredApprovalPanel() {
   // crashes on an unexpected shape.
   if (!data || !data.total) return null;
   const rubberStamp = data.decided >= 5 && data.rejectRate === 0;
+  const rejectPct = pct(data.rejectRate);
   return (
     <div className="card" style={{ marginTop: "var(--s-4)" }}>
       <div className="card-head">
         <strong>
-          Considered approvals — <span className="accent">is it earned?</span>
+          Are you really reviewing —{" "}
+          <span className="accent">or rubber-stamping?</span>
         </strong>
-        <span className="pill muted">{data.decided} decided</span>
+        <span className="pill muted">{data.decided} you decided</span>
       </div>
-      <div style={{ display: "flex", gap: "var(--s-4)", flexWrap: "wrap" }}>
-        <span
-          className="pill"
-          style={{
-            background: rubberStamp ? "var(--warn)" : "var(--surface-2)",
-            color: rubberStamp ? "var(--bg)" : "inherit",
-          }}
-        >
-          reject rate {Math.round(data.rejectRate * 100)}%
-        </span>
-        <span className="pill muted">latency {fmtLat(data.latency)}</span>
-        {data.abandoned > 0 && (
-          <span className="pill muted">{data.abandoned} abandoned</span>
-        )}
-        <span className="pill muted">{channelStr(data.channels)}</span>
-      </div>
-      {rubberStamp && (
+      {rubberStamp ? (
         <div
           className="editorial-sub"
           style={{ fontFamily: "inherit", color: "var(--warn)" }}
         >
-          ⚠ Every one of {data.decided} prompts approved with no rejections — the
-          dial may be climbing on rubber-stamps, not earned trust.
+          ⚠ You approved all {data.decided} requests with no rejections. A perfect
+          record like that usually means clicking “yes” without really checking —
+          so the trust below may be inflated, not earned.
         </div>
-      )}
-      {data.latency === null && (
+      ) : (
         <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
-          Latency captures from the next decision forward (it cannot be
-          backfilled).
+          You’ve reviewed {data.decided} requests and said no {rejectPct}% of the
+          time
+          {data.abandoned > 0 ? `, and left ${data.abandoned} undecided` : ""}. A
+          healthy amount of “no” is a sign you’re really looking.
         </div>
       )}
-      {data.byTool.map((t) => (
-        <div className="suggestion-row" key={t.toolName}>
-          {t.toolName} — decided {t.decided} · reject{" "}
-          {Math.round(t.rejectRate * 100)}% · {fmtLat(t.latency)} ·{" "}
-          {channelStr(t.channels)}
-        </div>
-      ))}
+      {expert && (
+        <>
+          <div
+            style={{
+              display: "flex",
+              gap: "var(--s-4)",
+              flexWrap: "wrap",
+              marginTop: "var(--s-3)",
+            }}
+          >
+            <span
+              className="pill"
+              style={{
+                background: rubberStamp ? "var(--warn)" : "var(--surface-2)",
+                color: rubberStamp ? "var(--bg)" : "inherit",
+              }}
+            >
+              reject rate {rejectPct}%
+            </span>
+            <span className="pill muted">latency {fmtLat(data.latency)}</span>
+            {data.abandoned > 0 && (
+              <span className="pill muted">{data.abandoned} abandoned</span>
+            )}
+            <span className="pill muted">{channelStr(data.channels)}</span>
+          </div>
+          {data.latency === null && (
+            <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+              Latency captures from the next decision forward (it cannot be
+              backfilled).
+            </div>
+          )}
+          {data.byTool.map((t) => (
+            <div className="suggestion-row" key={t.toolName}>
+              {t.toolName} — decided {t.decided} · reject {pct(t.rejectRate)}% ·{" "}
+              {fmtLat(t.latency)} · {channelStr(t.channels)}
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -161,6 +240,12 @@ interface OutcomesResponse {
   outcomes: OutcomeRecord[];
 }
 
+/** Plain label for a disposition (the raw value shows under "Show details"). */
+const DISPOSITION_LABEL: Record<Disposition, string> = {
+  confirmed: "looks real",
+  junk: "not real",
+  unknown: "not reviewed",
+};
 function dispositionStyle(d: Disposition): CSSProperties {
   if (d === "confirmed") return { background: "var(--ok)", color: "var(--bg)" };
   if (d === "junk") return { background: "var(--warn)", color: "var(--bg)" };
@@ -179,16 +264,35 @@ interface PendingResponse {
   pending: PendingConfirmation[];
 }
 
+/** Render a URL as a link only for http(s) — never emit a raw href for a
+ *  non-web-scheme URL (defence-in-depth against a javascript: URL, which React
+ *  does not sanitise, even though every write path validates http(s)). */
+function UrlCell({ url }: { url: string }) {
+  const style: CSSProperties = {
+    flex: 1,
+    minWidth: "12rem",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  };
+  return /^https?:\/\//i.test(url) ? (
+    <a href={url} target="_blank" rel="noreferrer" style={style}>
+      {url}
+    </a>
+  ) : (
+    <span style={style}>{url}</span>
+  );
+}
+
 /**
- * Awaiting confirmation — the CONFIRM QUEUE. Worker issue filings with NO
- * operator disposition yet: their trust is WITHHELD until a human acts. This
- * is the queue the confirm loop exists to drain, and the age of this queue IS
- * the evidence-latency moat metric. One-click Confirm/Reject POSTs to the same
- * Bearer-gated /outcomes route (never a recipe step — no self-confirm) and the
- * queue refreshes. Sourced from GET /outcomes/pending (a read-only join over the
- * run log + dispositions). Suppressed when the queue is empty.
+ * "Needs your review" — the CONFIRM QUEUE. Things a worker created (issue
+ * filings) that have no verdict yet: they don't count toward the worker's
+ * record until you say whether they're real. Read-only join over the run log +
+ * dispositions (GET /outcomes/pending); one-click confirm/reject POSTs to the
+ * Bearer-gated /outcomes route (never a recipe step — a worker can't grade its
+ * own homework) and the queue refreshes.
  */
-function AwaitingConfirmationPanel() {
+function AwaitingConfirmationPanel({ expert }: { expert: boolean }) {
   const { data, status, refetch } = useBridgeFetch<PendingResponse>(
     "/api/bridge/outcomes/pending",
     { intervalMs: 30000 },
@@ -207,18 +311,17 @@ function AwaitingConfirmationPanel() {
       <div className="card" style={{ marginTop: "var(--s-4)" }}>
         <div className="card-head">
           <strong>
-            Awaiting confirmation — <span className="accent">all clear.</span>
+            Needs your review — <span className="accent">all caught up.</span>
           </strong>
           <span
             className="pill"
             style={{ background: "var(--ok)", color: "var(--bg)" }}
           >
-            0 pending
+            0 waiting
           </span>
         </div>
         <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
-          Every worker filing has an operator disposition — the confirm queue is
-          drained (evidence latency at zero).
+          Nothing’s waiting on you — you’ve reviewed everything the workers filed.
         </div>
       </div>
     );
@@ -254,18 +357,19 @@ function AwaitingConfirmationPanel() {
     <div className="card" style={{ marginTop: "var(--s-4)" }}>
       <div className="card-head">
         <strong>
-          Awaiting confirmation — <span className="accent">needs your call.</span>
+          Needs your review — <span className="accent">is it real?</span>
         </strong>
         <span
           className="pill"
           style={{ background: "var(--warn)", color: "var(--bg)" }}
         >
-          {pending.length} pending
+          {pending.length} waiting
         </span>
       </div>
       <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
-        Filings whose trust is withheld until you confirm or reject them — the
-        age of this queue is the evidence latency the trust ramp exists to shrink.
+        Things the workers created that need your yes/no. Until you decide, they
+        don’t count toward a worker’s record — so this queue is the one thing
+        holding trust back.
       </div>
       {err && (
         <div
@@ -286,26 +390,9 @@ function AwaitingConfirmationPanel() {
             flexWrap: "wrap",
           }}
         >
-          {/^https?:\/\//i.test(p.issueUrl) ? (
-            <a
-              href={p.issueUrl}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                flex: 1,
-                minWidth: "12rem",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {p.issueUrl}
-            </a>
-          ) : (
-            <span style={{ flex: 1, minWidth: "12rem" }}>{p.issueUrl}</span>
-          )}
+          <UrlCell url={p.issueUrl} />
           <span className="pill muted">
-            {p.workerName} · {p.classKey}
+            {p.workerName} · {expert ? p.classKey : taskName(p.classKey)}
           </span>
           <button
             type="button"
@@ -313,7 +400,7 @@ function AwaitingConfirmationPanel() {
             disabled={busy !== null}
             onClick={() => act(p, "confirmed")}
           >
-            Confirm
+            Looks real
           </button>
           <button
             type="button"
@@ -321,7 +408,7 @@ function AwaitingConfirmationPanel() {
             disabled={busy !== null}
             onClick={() => act(p, "junk")}
           >
-            Reject
+            Not real
           </button>
         </div>
       ))}
@@ -330,14 +417,12 @@ function AwaitingConfirmationPanel() {
 }
 
 /**
- * Filed outcomes — the operator's one-click confirm/reject queue. A worker's
- * `issue` dial only moves once a HUMAN confirms the filing was real (or rejects
- * it as junk) — a worker cannot self-confirm. This is the dashboard twin of
- * `patchwork outcomes confirm|reject`, POSTing to the Bearer-gated /outcomes
- * route through the generic bridge proxy. Converts approvals into *considered*
- * approvals and slashes evidence latency (the declared moat KPI).
+ * "Did the workers get it right?" — the record of things a worker created and
+ * your verdict on each. A worker only earns trust once YOU confirm its work was
+ * real; it can't grade its own homework. POSTs to the Bearer-gated /outcomes
+ * route through the generic bridge proxy.
  */
-function FiledOutcomesPanel() {
+function FiledOutcomesPanel({ expert }: { expert: boolean }) {
   const { data, refetch } = useBridgeFetch<OutcomesResponse>(
     "/api/bridge/outcomes",
     { intervalMs: 30000 },
@@ -377,17 +462,18 @@ function FiledOutcomesPanel() {
     <div className="card" style={{ marginTop: "var(--s-4)" }}>
       <div className="card-head">
         <strong>
-          Filed outcomes — <span className="accent">confirm or reject.</span>
+          Did the workers get it right? —{" "}
+          <span className="accent">your verdicts.</span>
         </strong>
         <span className="pill muted">
-          {outcomes.length} recorded
-          {confirmedCount > 0 && ` · ${confirmedCount} confirmed`}
-          {junkCount > 0 && ` · ${junkCount} junk`}
+          {outcomes.length} reviewed
+          {confirmedCount > 0 && ` · ${confirmedCount} real`}
+          {junkCount > 0 && ` · ${junkCount} not real`}
         </span>
       </div>
       <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
-        A worker&apos;s <code>issue</code> dial only moves once a human confirms
-        the filing was real — a worker can&apos;t self-confirm its own filings.
+        A worker only earns trust once you confirm its work was real — it can’t
+        grade its own homework. Change your mind anytime; the latest verdict wins.
       </div>
       {err && (
         <div
@@ -398,7 +484,11 @@ function FiledOutcomesPanel() {
         </div>
       )}
       {outcomes.map((o) => {
-        const ctx = [o.recipeName, o.workerClass].filter(Boolean).join(" · ");
+        const ctx = expert
+          ? [o.recipeName, o.workerClass].filter(Boolean).join(" · ")
+          : o.workerClass
+            ? taskName(o.workerClass)
+            : "";
         return (
           <div
             className="suggestion-row"
@@ -411,30 +501,9 @@ function FiledOutcomesPanel() {
             }}
           >
             <span className="pill" style={dispositionStyle(o.disposition)}>
-              {o.disposition}
+              {expert ? o.disposition : DISPOSITION_LABEL[o.disposition]}
             </span>
-            {/* Render as a link only for http(s) — never emit a raw href for a
-                non-web-scheme URL (defence-in-depth against a javascript: URL,
-                which React does not sanitise, even though every write path
-                already validates http(s)). */}
-            {/^https?:\/\//i.test(o.issueUrl) ? (
-              <a
-                href={o.issueUrl}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  flex: 1,
-                  minWidth: "12rem",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {o.issueUrl}
-              </a>
-            ) : (
-              <span style={{ flex: 1, minWidth: "12rem" }}>{o.issueUrl}</span>
-            )}
+            <UrlCell url={o.issueUrl} />
             {ctx && <span className="pill muted">{ctx}</span>}
             <button
               type="button"
@@ -442,7 +511,7 @@ function FiledOutcomesPanel() {
               disabled={busy !== null || o.disposition === "confirmed"}
               onClick={() => setDisposition(o.issueUrl, "confirmed")}
             >
-              Confirm
+              Looks real
             </button>
             <button
               type="button"
@@ -450,7 +519,7 @@ function FiledOutcomesPanel() {
               disabled={busy !== null || o.disposition === "junk"}
               onClick={() => setDisposition(o.issueUrl, "junk")}
             >
-              Reject
+              Not real
             </button>
           </div>
         );
@@ -465,11 +534,146 @@ function levelColor(effective: number): string {
   return "var(--line-3)";
 }
 
+/**
+ * One worker — led by the DECISION an owner cares about ("can I give it more
+ * independence yet?"), then a plain per-task record. The engine view (the L0–L4
+ * dial bars, action-class keys, ramp-vs-gate) lives under "Show details".
+ */
+function WorkerCard({ w, expert }: { w: WorkerReport; expert: boolean }) {
+  const owned = w.board.filter((b) => b.owned);
+  // Ready to promote: an OWNED, non-reversible task where the worker earned a
+  // higher level than the ceiling you set — it has proven more than you allow on
+  // work that actually needs a leash. Reversible tasks bypass the gate, so their
+  // earned level never justifies raising the ceiling (it wouldn't change a thing).
+  const promotable = owned
+    .filter((b) => !isReversible(b.classKey) && b.level > w.autonomyCeiling)
+    .sort((a, b) => b.level - a.level);
+  const top = promotable[0];
+
+  const effectiveItems = w.board.map((b) => {
+    const effective = b.owned ? Math.min(b.level, w.autonomyCeiling) : 0;
+    const capped =
+      b.owned && b.level > w.autonomyCeiling
+        ? ` (earned L${b.level}, capped)`
+        : "";
+    const notOwned = b.owned
+      ? ""
+      : `  ⚠ NOT OWNED — gate floors to L0 (earned L${b.level})`;
+    return {
+      label: b.classKey,
+      value: effective,
+      color: b.owned ? levelColor(effective) : "var(--warn)",
+      sub: `${LEVEL_LABELS[effective] ?? `L${effective}`} · ${b.observations} obs · ${pct(b.mean)}% mean${capped}${notOwned}`,
+    };
+  });
+
+  return (
+    <div className="card" style={{ marginTop: "var(--s-4)" }}>
+      <div className="card-head">
+        <strong>{w.name}</strong>
+        <span className="pill muted">
+          {expert
+            ? `ceiling L${w.autonomyCeiling}`
+            : `max: ${PLAIN_LEVEL_SHORT[w.autonomyCeiling] ?? `L${w.autonomyCeiling}`}`}
+        </span>
+      </div>
+
+      {/* Readiness headline — the promote-or-not decision. */}
+      {top ? (
+        <div
+          style={{
+            border: "1px solid var(--ok)",
+            borderRadius: "var(--radius-2, 8px)",
+            padding: "var(--s-3)",
+            marginBottom: "var(--s-3)",
+          }}
+        >
+          <strong>✅ Ready for more independence?</strong>
+          <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+            {w.name} has proven it can <strong>{levelPhrase(top.level)}</strong>{" "}
+            on <strong>{taskName(top.classKey)}</strong> ({pct(top.mean)}% success
+            over {top.observations} tries), but you’ve limited it to{" "}
+            <strong>{levelPhrase(w.autonomyCeiling)}</strong>. Raise its limit
+            when you’re comfortable.
+          </div>
+          <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+            To do it: set <code>autonomyCeiling: {top.level}</code> in this
+            worker’s <code>.worker.yaml</code> file.
+          </div>
+        </div>
+      ) : owned.length > 0 ? (
+        <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+          Still proving itself — {w.name} is performing within the independence
+          you’ve already allowed.
+        </div>
+      ) : null}
+
+      {/* Per-task record. */}
+      {w.board.length === 0 ? (
+        <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+          Hasn’t done anything yet — this fills in as the worker runs.
+        </div>
+      ) : expert ? (
+        <HBarList items={effectiveItems} max={4} />
+      ) : (
+        <div>
+          {w.board.map((b) => {
+            const reversible = isReversible(b.classKey);
+            const effective = b.owned ? Math.min(b.level, w.autonomyCeiling) : 0;
+            const capped = b.owned && !reversible && b.level > w.autonomyCeiling;
+            const status = !b.owned
+              ? "not one of its jobs, so it can’t act on its own here"
+              : reversible
+                ? "can do this on its own (it’s easily undone)"
+                : `can ${levelPhrase(effective)}`;
+            return (
+              <div className="suggestion-row" key={b.classKey}>
+                <strong>{taskName(b.classKey)}</strong>{" "}
+                <span className="muted">({taskStakes(b.classKey)})</span> —{" "}
+                {status}
+                {" · "}
+                {pct(b.mean)}% success over {b.observations} tries
+                {capped && (
+                  <div
+                    className="editorial-sub"
+                    style={{ fontFamily: "inherit" }}
+                  >
+                    It’s earned enough to {levelPhrase(b.level)} — you’ve capped
+                    it at {levelPhrase(w.autonomyCeiling)}.
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Engine detail: where the trust score and the live safety-check disagree. */}
+      {expert && w.compared > 0 && (
+        <div style={{ marginTop: "var(--s-3)" }}>
+          <span className="pill muted">
+            ramp vs gate: {w.agreed}/{w.compared} agree
+          </span>
+          {w.divergences.slice(0, 5).map((d, i) => (
+            <div
+              className="suggestion-row"
+              key={`${w.workerId}-${d.toolName}-${i}`}
+            >
+              ⚠ {d.toolName} — {d.note}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function WorkersPage() {
   const { data, error, loading, refetch } = useBridgeFetch<ShadowResponse>(
     "/api/bridge/workers/shadow",
     { intervalMs: 30000 },
   );
+  const [expert, setExpert] = useState(false);
   const workers = data?.workers ?? [];
 
   return (
@@ -477,25 +681,39 @@ export default function WorkersPage() {
       <div className="page-head">
         <div>
           <h1 className="editorial-h1" style={{ margin: 0 }}>
-            Workers — <span className="accent">trust dial (shadow).</span>
+            Workers —{" "}
+            <span className="accent">how far you can trust each one.</span>
           </h1>
           <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
-            Earned autonomy per worker × action-class, replayed read-only from
-            the run + gate logs. No live decision is changed.
+            How much independence each AI worker has earned from its track record.
+            Looking here never changes what a worker is allowed to do.
           </div>
         </div>
-        {data && (
-          <span className="pill muted">
-            {data.runsScanned} runs · {data.decisionsScanned} gate decisions
-          </span>
-        )}
+        <div
+          style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}
+        >
+          {data && (
+            <span className="pill muted">
+              {expert
+                ? `${data.runsScanned} runs · ${data.decisionsScanned} gate decisions`
+                : `based on ${data.runsScanned} runs`}
+            </span>
+          )}
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => setExpert((e) => !e)}
+          >
+            {expert ? "Plain view" : "Show details"}
+          </button>
+        </div>
       </div>
 
-      <ConsideredApprovalPanel />
+      <ConsideredApprovalPanel expert={expert} />
 
-      <AwaitingConfirmationPanel />
+      <AwaitingConfirmationPanel expert={expert} />
 
-      <FiledOutcomesPanel />
+      <FiledOutcomesPanel expert={expert} />
 
       {loading && workers.length === 0 && <SkeletonList rows={3} columns={2} />}
 
@@ -510,61 +728,14 @@ export default function WorkersPage() {
 
       {!loading && !error && workers.length === 0 && (
         <EmptyState
-          title="No workers yet"
-          description="Add *.worker.yaml to ~/.patchwork/workers (e.g. copy templates/workers/)."
+          title="No workers set up yet"
+          description="Add a worker to ~/.patchwork/workers (copy one from templates/workers/ to start)."
         />
       )}
 
-      {workers.map((w) => {
-        const effectiveItems = w.board.map((b) => {
-          const effective = b.owned
-            ? Math.min(b.level, w.autonomyCeiling)
-            : 0;
-          const capped =
-            b.owned && b.level > w.autonomyCeiling
-              ? ` (earned L${b.level}, capped)`
-              : "";
-          const notOwned = b.owned
-            ? ""
-            : `  ⚠ NOT OWNED — gate floors to L0 (earned L${b.level})`;
-          return {
-            label: b.classKey,
-            value: effective,
-            color: b.owned ? levelColor(effective) : "var(--warn)",
-            sub: `${LEVEL_LABELS[effective] ?? `L${effective}`} · ${b.observations} obs · ${Math.round(b.mean * 100)}% mean${capped}${notOwned}`,
-          };
-        });
-        return (
-          <div className="card" key={w.workerId} style={{ marginTop: "var(--s-4)" }}>
-            <div className="card-head">
-              <strong>{w.name}</strong>
-              <span className="pill muted">ceiling L{w.autonomyCeiling}</span>
-            </div>
-            {w.board.length === 0 ? (
-              <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
-                No attributed activity yet — the dial fills as this worker runs.
-              </div>
-            ) : (
-              <HBarList items={effectiveItems} max={4} />
-            )}
-            {w.compared > 0 && (
-              <div style={{ marginTop: "var(--s-3)" }}>
-                <span className="pill muted">
-                  ramp vs gate: {w.agreed}/{w.compared} agree
-                </span>
-                {w.divergences.slice(0, 5).map((d, i) => (
-                  <div
-                    className="suggestion-row"
-                    key={`${w.workerId}-${d.toolName}-${i}`}
-                  >
-                    ⚠ {d.toolName} — {d.note}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {workers.map((w) => (
+        <WorkerCard key={w.workerId} w={w} expert={expert} />
+      ))}
     </section>
   );
 }
