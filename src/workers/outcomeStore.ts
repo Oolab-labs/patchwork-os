@@ -12,9 +12,10 @@ import path from "node:path";
  *               or otherwise dismissed. Strong negative: the worker filed noise.
  *               Flipped to good:false in trust-replay — junk must lower trust,
  *               not be neutral (surviving 24h unopened ≠ correctness).
- *   unknown   — issue still open past the window, or no signal yet. The
- *               current weak "not-reverted" rung (good:true, status quo). A
- *               null return from getDisposition is treated identically.
+ *   unknown   — issue still open past the window, or no signal yet. WITHHELD —
+ *               not folded as evidence at all (an unactioned filing must not
+ *               earn trust just by sitting unopened; trust-by-neglect fix,
+ *               #1064). A null return from getDisposition is treated identically.
  */
 export type OutcomeDisposition = "confirmed" | "junk" | "unknown";
 
@@ -76,7 +77,9 @@ export class OutcomeStore {
 
   /**
    * Disposition for `issueUrl`, or null when no record exists.
-   * Null is treated by trust-replay as "unknown" (current weak-durable path).
+   * Null is treated by trust-replay as "unknown" — WITHHELD (not folded as
+   * evidence). A filing with no recorded disposition can neither raise nor
+   * lower trust. (#1064)
    */
   getDisposition(issueUrl: string): OutcomeDisposition | null {
     return this.cache.get(issueUrl) ?? null;
