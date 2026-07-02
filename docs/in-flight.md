@@ -25,7 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-*(empty — add entries here as work starts)*
+- 2026-07-01 `fix/shadow-observer-unknown-not-durable` — trust-by-neglect fix: unknown disposition withheld (not good:true) in WorkerShadowObserver.ingestRun
 
 ## Recently closed (informal log, prune periodically)
 
