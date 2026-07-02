@@ -82,6 +82,12 @@ function noop(): RunnerDeps {
   return {
     now: () => new Date("2026-04-18T08:00:00Z"),
     logDir: tmpLogDir,
+    // Persist to the temp logDir / injected runLog (never homedir) — several
+    // tests below assert on the run log. Explicit `testMode: true` on individual
+    // calls still wins (it spreads after `...noop()`). Under the VITEST-aware
+    // default in yamlRunner.ts, testMode would otherwise default ON. See
+    // runLogIsolation.test.ts.
+    testMode: false,
     readFile: () => {
       throw new Error("not found");
     },

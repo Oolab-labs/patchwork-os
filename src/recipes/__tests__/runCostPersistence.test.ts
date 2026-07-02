@@ -70,6 +70,9 @@ describe("yamlRunner — per-step token capture + persistence", () => {
     // claudeFn may return a full AgentResult; usage + servedBy flow through.
     const deps: RunnerDeps = {
       logDir: tmpDir,
+      // Persistence test: force the run-log write to the temp dir (never
+      // homedir) under the VITEST-aware testMode default. See runLogIsolation.test.ts.
+      testMode: false,
       claudeFn: async (): Promise<AgentResult> => ({
         text: "the answer",
         usage: { inputTokens: 1000, outputTokens: 200 },
@@ -144,6 +147,9 @@ describe("yamlRunner — per-step token capture + persistence", () => {
     // → per-step sum for the judge step = 300 in / 30 out.
     const deps: RunnerDeps = {
       logDir: tmpDir,
+      // Persistence test: force the run-log write to the temp dir (never
+      // homedir) under the VITEST-aware testMode default. See runLogIsolation.test.ts.
+      testMode: false,
       claudeFn: async (prompt: string): Promise<AgentResult> => {
         let text: string;
         if (prompt.includes("<revision-request>")) text = "REVISED v2";
@@ -189,6 +195,9 @@ describe("yamlRunner — per-step token capture + persistence", () => {
 
     const deps: RunnerDeps = {
       logDir: tmpDir,
+      // Persistence test: force the run-log write to the temp dir (never
+      // homedir) under the VITEST-aware testMode default. See runLogIsolation.test.ts.
+      testMode: false,
       // plain string → toAgentResult → { text } with no usage.
       claudeFn: async () => "just text, no usage",
     };
@@ -227,6 +236,9 @@ describe("yamlRunner — per-step token capture + persistence", () => {
 
     const deps: RunnerDeps = {
       logDir: tmpDir,
+      // Persistence test: force the run-log write to the temp dir (never
+      // homedir) under the VITEST-aware testMode default. See runLogIsolation.test.ts.
+      testMode: false,
       claudeFn: async (): Promise<AgentResult> => ({
         text: "text",
         usage: { inputTokens: 500, outputTokens: 50 },

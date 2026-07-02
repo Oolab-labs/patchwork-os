@@ -2788,6 +2788,19 @@ export function defaultGitStaleBranches(
   }
 }
 
+/**
+ * True when running under the vitest harness (same VITEST / NODE_ENV signal
+ * `src/recipes/migrations/index.ts` guards on). Used only to DEFAULT `testMode` on so a
+ * bare `runYamlRecipe(...)` in a unit test never appends a synthetic row to the
+ * operator's real `~/.patchwork/runs.jsonl` — which is also the de-facto
+ * worker-trust store and rotates at 1 MB / 10k lines, so test rows would evict
+ * real trust evidence and pollute every operator halt surface. An explicit
+ * `deps.testMode` (true or false) always wins over this default.
+ */
+function isVitestEnv(): boolean {
+  return process.env.VITEST != null || process.env.NODE_ENV === "test";
+}
+
 /** Resolve all RunnerDeps to concrete StepDeps with production defaults filled in. */
 function resolveStepDeps(
   deps: RunnerDeps,
@@ -2863,7 +2876,7 @@ function resolveStepDeps(
       }),
     logDir: deps.logDir,
     activityLog: deps.activityLog,
-    testMode: deps.testMode ?? false,
+    testMode: deps.testMode ?? isVitestEnv(),
     // PR5a/b: per-attempt idempotency ledger. Disk-backed when
     // `ledgerDir` + `manualRunId` + recipe name are all available so a
     // retry of the same logical attempt re-uses prior records (resume
