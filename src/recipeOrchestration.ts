@@ -43,6 +43,7 @@ import {
 import type { RecipeRunLog } from "./runLog.js";
 import type { Server } from "./server.js";
 import { OutcomeStore, resolveOutcomeLogDir } from "./workers/outcomeStore.js";
+import { computePendingConfirmations } from "./workers/runWorkerShadow.js";
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -544,6 +545,11 @@ export class RecipeOrchestration {
       mkdirSync(dir, { recursive: true });
       return new OutcomeStore(dir);
     };
+
+    // The confirm queue — worker filings awaiting an operator disposition.
+    // Backs GET /outcomes/pending + the dashboard "awaiting confirmation"
+    // badge; a read-only join over the run log + outcome dispositions.
+    server.pendingConfirmationsFn = () => computePendingConfirmations();
 
     // VD-4 mocked replay: load the original run, re-parse its recipe
     // from disk (so a later edit replays against the new logic), and

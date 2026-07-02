@@ -34,15 +34,20 @@ const OUTCOMES = {
   ],
 };
 
-// The page fetches /workers/shadow, /approvals/kpi, and /outcomes. Route each,
-// and distinguish the GET poll from the Confirm/Reject POST by method.
+// The page fetches /workers/shadow, /approvals/kpi, /outcomes, and
+// /outcomes/pending. Route each; distinguish the GET poll from the
+// Confirm/Reject POST by method. `/outcomes/pending` is matched BEFORE the bare
+// `/outcomes` (the latter substring-matches the former).
 function routeMock(
   outcomes: unknown = OUTCOMES,
+  pending: unknown = { pending: [] },
 ): (url: string | URL, opts?: RequestInit) => Promise<Response> {
   return (url, opts) => {
     const u = String(url);
     if (u.includes("/approvals/kpi"))
       return Promise.resolve(jsonResponse({ total: 0 }));
+    if (u.includes("/outcomes/pending"))
+      return Promise.resolve(jsonResponse(pending));
     if (u.includes("/outcomes")) {
       if (opts?.method === "POST")
         return Promise.resolve(jsonResponse({ ok: true }));
@@ -107,5 +112,59 @@ describe("FiledOutcomesPanel (on /workers)", () => {
     expect(await screen.findByText(/No workers yet/)).toBeTruthy();
     // …but the outcomes panel suppresses itself when the queue is empty.
     expect(screen.queryByText(/Filed outcomes/)).toBeNull();
+  });
+});
+
+const PENDING = {
+  pending: [
+    {
+      issueUrl: "https://github.com/o/r/issues/42",
+      recipeName: "file-issues",
+      workerId: "filer",
+      workerName: "Filer",
+      filedAt: 1,
+      classKey: "issue:compensable:high",
+    },
+  ],
+};
+
+describe("AwaitingConfirmationPanel (the confirm queue on /workers)", () => {
+  it("renders pending filings + a count, suppressed when the queue is empty", async () => {
+    // Empty pending → panel absent.
+    fetchMock.mockImplementation(routeMock({ outcomes: [] }, { pending: [] }));
+    const { unmount } = render(<WorkersPage />);
+    await screen.findByText(/No workers yet/);
+    expect(screen.queryByText(/Awaiting confirmation/)).toBeNull();
+    unmount();
+
+    // Non-empty pending → panel renders the URL + count.
+    fetchMock.mockImplementation(routeMock({ outcomes: [] }, PENDING));
+    const { container } = render(<WorkersPage />);
+    expect(await screen.findByText(/Awaiting confirmation/)).toBeTruthy();
+    expect(container.textContent).toContain(
+      "https://github.com/o/r/issues/42",
+    );
+    expect(container.textContent).toContain("1 pending");
+  });
+
+  it("Confirm POSTs disposition + audit context (recipe + class) for a pending filing", async () => {
+    fetchMock.mockImplementation(routeMock({ outcomes: [] }, PENDING));
+    render(<WorkersPage />);
+    const confirmBtn = await screen.findByRole("button", { name: "Confirm" });
+    fireEvent.click(confirmBtn);
+    await waitFor(() => {
+      const postCall = fetchMock.mock.calls.find(
+        (c) => String(c[0]).includes("/outcomes") && c[1]?.method === "POST",
+      );
+      expect(postCall).toBeTruthy();
+      expect(
+        JSON.parse((postCall as [string, RequestInit])[1].body as string),
+      ).toEqual({
+        issueUrl: "https://github.com/o/r/issues/42",
+        disposition: "confirmed",
+        recipeName: "file-issues",
+        workerClass: "issue:compensable:high",
+      });
+    });
   });
 });

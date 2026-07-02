@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { MAX_PERSIST_LINES, RecipeRunLog } from "../runLog.js";
+import { classifyActionClass } from "./actionClass.js";
 import { backtestWorker, formatBacktestReport } from "./backtest.js";
 import { OutcomeStore, resolveOutcomeLogDir } from "./outcomeStore.js";
 import {
@@ -267,6 +268,120 @@ export function runWorkerBacktest(opts: RunWorkerShadowOpts = {}): string {
     if (!w.recipe) continue;
     const runs = readRuns(patchworkDir, [w.recipe]);
     lines.push(formatBacktestReport(backtestWorker(w, runs, { outcomeStore })));
+  }
+  return lines.join("\n");
+}
+
+/** One filing awaiting an operator disposition — the confirm queue's unit. */
+export interface PendingConfirmation {
+  /** The captured filing URL — the confirm key. Today only `github.create_issue`
+   *  captures a URL to the run log, so these are issue URLs; a future PR-filing
+   *  recipe tool would flow through unchanged. */
+  issueUrl: string;
+  recipeName: string;
+  workerId: string;
+  workerName: string;
+  /** Epoch ms the filing ran. */
+  filedAt: number;
+  /** `domain:reversibility:blastTier` — the action class it counts toward. */
+  classKey: string;
+}
+
+/**
+ * The CONFIRM QUEUE — every non-reversible filing (a URL a worker captured) that
+ * has NO operator disposition yet (`unknown` / no record). These are exactly the
+ * filings whose trust is WITHHELD until a human confirms or rejects them — the
+ * queue `patchwork outcomes confirm|reject` exists to drain, and the moat KPI
+ * (evidence latency) is the age of this queue. Read-only. Deduped by URL
+ * (most-recent filing wins), newest first. Confirmed/junk filings are excluded
+ * (already actioned); reversible actions are excluded (they never need
+ * confirmation — they earn trust on their own). In practice today only issue
+ * filings (`github.create_issue`) carry a captured URL.
+ */
+export function computePendingConfirmations(
+  opts: RunWorkerShadowOpts = {},
+): PendingConfirmation[] {
+  const home = os.homedir();
+  const patchworkDir = opts.patchworkDir ?? path.join(home, ".patchwork");
+  const workersDir = opts.workersDir ?? path.join(patchworkDir, "workers");
+  // Same PATCHWORK_HOME-aware resolver the write path uses (see slice #3), so
+  // the queue reflects exactly what a confirm would write.
+  const store = new OutcomeStore(resolveOutcomeLogDir(opts.patchworkDir));
+  const workers = loadWorkersFromDir(workersDir);
+  // Attribute each run to the FIRST worker declaring its recipe (mirrors the
+  // dial's first-match attribution), and read the run log ONCE over the union
+  // of recipe names — readRuns already dedups the names — rather than
+  // re-parsing the whole log per worker.
+  const workerForRecipe = new Map<string, WorkerManifest>();
+  for (const w of workers) {
+    if (w.recipe && !workerForRecipe.has(w.recipe)) {
+      workerForRecipe.set(w.recipe, w);
+    }
+  }
+  const recipeNames = Array.from(workerForRecipe.keys());
+  if (recipeNames.length === 0) return []; // no workers → nothing to attribute
+  const byUrl = new Map<string, PendingConfirmation>();
+  for (const run of readRuns(patchworkDir, recipeNames)) {
+    const w = workerForRecipe.get(run.recipeName);
+    if (!w) continue;
+    for (const step of run.steps) {
+      if (!step.tool || step.status !== "ok") continue;
+      const ac = classifyActionClass(step.tool);
+      if (ac.reversibility === "reversible") continue; // never needs confirming
+      const out = step.output as Record<string, unknown> | undefined;
+      const url =
+        out && typeof out.url === "string" ? (out.url as string) : null;
+      if (!url) continue;
+      const disp = store.getDisposition(url);
+      if (disp === "confirmed" || disp === "junk") continue; // already actioned
+      // unknown / no record → pending. Dedup by URL, keep the newest filing.
+      const prev = byUrl.get(url);
+      if (!prev || run.at > prev.filedAt) {
+        byUrl.set(url, {
+          issueUrl: url,
+          recipeName: run.recipeName,
+          workerId: w.id,
+          workerName: w.name,
+          filedAt: run.at,
+          classKey: ac.key,
+        });
+      }
+    }
+  }
+  return Array.from(byUrl.values()).sort((a, b) => b.filedAt - a.filedAt);
+}
+
+/** Human-readable confirm queue for `patchwork outcomes pending`. */
+export function formatPendingConfirmations(
+  pending: PendingConfirmation[],
+  now = Date.now(),
+): string {
+  if (pending.length === 0) {
+    return "No filings awaiting confirmation — every worker filing has an operator disposition.\n";
+  }
+  const rel = (at: number): string => {
+    const ms = Math.max(0, now - at);
+    const h = Math.floor(ms / 3_600_000);
+    if (h < 1) return "just now";
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  };
+  const lines = [
+    `${pending.length} filing(s) awaiting your confirmation (the confirm queue):`,
+    "",
+  ];
+  for (const p of pending) {
+    lines.push(`  ${p.issueUrl}`);
+    lines.push(
+      `    filed by ${p.workerName} (${p.recipeName}) · ${p.classKey} · ${rel(p.filedAt)}`,
+    );
+    lines.push(
+      `    confirm: patchwork outcomes confirm ${p.issueUrl} --recipe ${p.recipeName} --class ${p.classKey}`,
+    );
+    lines.push(
+      `    reject:  patchwork outcomes reject ${p.issueUrl} --recipe ${p.recipeName} --class ${p.classKey}`,
+    );
+    lines.push("");
   }
   return lines.join("\n");
 }

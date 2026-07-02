@@ -215,3 +215,43 @@ describe("POST /outcomes", () => {
     expect(status).toBe(503);
   });
 });
+
+describe("GET /outcomes/pending", () => {
+  const pending = [
+    {
+      issueUrl: URL_A,
+      recipeName: "file-issues",
+      workerId: "filer",
+      workerName: "Filer",
+      filedAt: 1,
+      classKey: "issue:compensable:high",
+    },
+  ];
+
+  function getPending(d: RecipeRouteDeps): { status: number; body: string } {
+    const { res, read } = makeRes();
+    const handled = tryHandleRecipeRoute(
+      makeReq("GET"),
+      res,
+      new URL("http://x/outcomes/pending"),
+      d,
+    );
+    expect(handled).toBe(true);
+    return read();
+  }
+
+  it("returns the confirm queue from the dep", () => {
+    const d = {
+      pendingConfirmationsFn: () => pending,
+    } as unknown as RecipeRouteDeps;
+    const { status, body } = getPending(d);
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toEqual({ pending });
+  });
+
+  it("returns an empty queue (not an error) when the dep is absent", () => {
+    const { status, body } = getPending({} as unknown as RecipeRouteDeps);
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toEqual({ pending: [] });
+  });
+});

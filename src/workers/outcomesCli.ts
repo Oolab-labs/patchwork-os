@@ -32,6 +32,7 @@ const OUTCOMES_USAGE = `Usage:
   patchwork outcomes confirm <issue-url> [--recipe <name>] [--class <actionClass>]
   patchwork outcomes reject  <issue-url> [--recipe <name>] [--class <actionClass>]
   patchwork outcomes list [--json]
+  patchwork outcomes pending [--json]
 
 Manually record an outcome disposition for a worker-filed issue so the trust
 ramp can fold it as evidence. Writes to ~/.patchwork/outcome-log.jsonl. This is
@@ -41,6 +42,7 @@ cannot self-confirm its own filings.
   confirm   the filing was real / accepted  -> "confirmed" (earns trust)
   reject    the filing was noise            -> "junk"      (lowers trust)
   list      print all recorded outcomes     (--json for raw output)
+  pending   list filings still awaiting confirmation + the exact confirm command
 
   --recipe <name>       stamp the filing recipe onto the record (audit context)
   --class <actionClass> stamp the action class onto the record (audit context)
