@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { backtestWorker, formatBacktestReport } from "../backtest.js";
+import type { OutcomeDisposition, OutcomeStore } from "../outcomeStore.js";
 import type { RunRecord } from "../shadowObserver.js";
 import { parseWorker } from "../worker.js";
 
@@ -22,6 +23,18 @@ function issueRun(at: number, status: "ok" | "error", nSteps = 5): RunRecord {
     })),
   };
 }
+
+// A single filing carrying a captured issue URL (as github.create_issue does).
+function issueRunUrl(at: number, url: string): RunRecord {
+  return {
+    recipeName: "file-issues",
+    at,
+    steps: [{ tool: "githubCreateIssue", status: "ok", output: { url } }],
+  };
+}
+// Minimal OutcomeStore stand-in — backtest only calls getDisposition.
+const fakeStore = (m: Record<string, OutcomeDisposition>) =>
+  ({ getDisposition: (u: string) => m[u] ?? null }) as unknown as OutcomeStore;
 
 describe("backtestWorker", () => {
   it("counts early successes the ramp would have GATED as false-gate", () => {
@@ -107,5 +120,52 @@ describe("backtestWorker", () => {
     expect(r.considered).toBe(0);
     expect(r.agreementRate).toBe(0);
     expect(formatBacktestReport(r)).toContain("nothing to calibrate");
+  });
+
+  describe("outcome-store parity (matches the live dial labelling)", () => {
+    const URL = "https://github.com/o/r/issues/99";
+    // 18 dwell-separated url-less clean filings → the worker earns L4 on `issue`,
+    // so by the 19th filing the ramp would BYPASS.
+    const earned = Array.from({ length: 18 }, (_, i) =>
+      issueRun(i * SEVEN_HOURS, "ok"),
+    );
+
+    it("a durable JUNK filing scores as a BAD outcome (false-allow), not a spurious good", () => {
+      const history = [...earned, issueRunUrl(18 * SEVEN_HOURS, URL)];
+      const withStore = backtestWorker(issuer, history, {
+        outcomeStore: fakeStore({ [URL]: "junk" }),
+      });
+      const statusOnly = backtestWorker(issuer, history); // no store → old behaviour
+      // The junk filing is the differentiator: with the store it is a BAD outcome
+      // the earned ramp would auto-run → an extra false-allow the status-only
+      // backtest misses entirely.
+      expect(withStore.falseAllow).toBe(statusOnly.falseAllow + 1);
+      expect(
+        withStore.divergences.some(
+          (d) => d.kind === "false-allow" && d.outcome === "bad",
+        ),
+      ).toBe(true);
+    });
+
+    it("a durable UNKNOWN filing is WITHHELD — excluded from the divergence sample", () => {
+      const history = [...earned, issueRunUrl(18 * SEVEN_HOURS, URL)];
+      const withUnknown = backtestWorker(issuer, history, {
+        outcomeStore: fakeStore({ [URL]: "unknown" }),
+      });
+      const statusOnly = backtestWorker(issuer, history); // scores the filing as good
+      // The unknown filing has no ground truth → not scored (one fewer considered)
+      // rather than counted as a spurious "good".
+      expect(withUnknown.considered).toBe(statusOnly.considered - 1);
+    });
+
+    it("a durable CONFIRMED filing scores as good — same as the status-only path", () => {
+      const history = [...earned, issueRunUrl(18 * SEVEN_HOURS, URL)];
+      const withConfirmed = backtestWorker(issuer, history, {
+        outcomeStore: fakeStore({ [URL]: "confirmed" }),
+      });
+      const statusOnly = backtestWorker(issuer, history);
+      expect(withConfirmed.considered).toBe(statusOnly.considered);
+      expect(withConfirmed.falseAllow).toBe(statusOnly.falseAllow);
+    });
   });
 });
