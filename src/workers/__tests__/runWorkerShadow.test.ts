@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RecipeRunLog } from "../../runLog.js";
+import { OutcomeStore } from "../outcomeStore.js";
 import {
+  computePendingConfirmations,
+  formatPendingConfirmations,
   getWorkerShadowData,
   loadWorkerTrustForRecipe,
 } from "../runWorkerShadow.js";
@@ -351,5 +354,123 @@ describe("loadWorkerTrustForRecipe (live-gate entry)", () => {
     // Ceiling (1) < compensable threshold (2) → capped despite earned L4.
     expect(d.effectiveLevel).toBe(1);
     expect(d.action).toBe("gate");
+  });
+});
+
+describe("computePendingConfirmations (the confirm queue)", () => {
+  let dir: string;
+  let workersDir: string;
+  const URL = "https://github.com/o/r/issues/42";
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(os.tmpdir(), "pw-pending-"));
+    workersDir = path.join(dir, "workers");
+    mkdirSync(workersDir, { recursive: true });
+    writeFileSync(
+      path.join(workersDir, "filer.worker.yaml"),
+      "id: filer\nname: Filer\nrecipe: file-issues\nowns:\n  - issue\nautonomyCeiling: 4\n",
+    );
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  function seedFiling(url: string, at = 0): void {
+    new RecipeRunLog({ dir }).appendDirect({
+      taskId: `run-${at}`,
+      recipeName: "file-issues",
+      trigger: "recipe",
+      status: "done",
+      createdAt: at,
+      doneAt: at,
+      durationMs: 1,
+      stepResults: [
+        {
+          id: "s1",
+          tool: "githubCreateIssue",
+          status: "ok",
+          durationMs: 1,
+          output: { url },
+        },
+      ],
+    });
+  }
+
+  it("lists a filing with no disposition as pending", () => {
+    seedFiling(URL);
+    const pending = computePendingConfirmations({
+      workersDir,
+      patchworkDir: dir,
+    });
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({
+      issueUrl: URL,
+      recipeName: "file-issues",
+      workerId: "filer",
+    });
+    expect(pending[0]?.classKey.startsWith("issue")).toBe(true);
+  });
+
+  it("excludes a filing once it has a disposition (confirmed or junk)", () => {
+    seedFiling(URL);
+    new OutcomeStore(dir).upsert({
+      issueUrl: URL,
+      disposition: "confirmed",
+      checkedAt: 1,
+    });
+    const pending = computePendingConfirmations({
+      workersDir,
+      patchworkDir: dir,
+    });
+    expect(pending).toHaveLength(0);
+  });
+
+  it("dedupes by URL — a re-filed URL appears once, newest filing wins", () => {
+    seedFiling(URL, 0);
+    seedFiling(URL, 5000);
+    const pending = computePendingConfirmations({
+      workersDir,
+      patchworkDir: dir,
+    });
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.filedAt).toBe(5000);
+  });
+
+  it("ignores reversible steps + filing steps with no captured url", () => {
+    new RecipeRunLog({ dir }).appendDirect({
+      taskId: "mixed",
+      recipeName: "file-issues",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 0,
+      doneAt: 0,
+      durationMs: 1,
+      stepResults: [
+        // reversible tool (fs-write) — never needs confirmation
+        {
+          id: "r1",
+          tool: "editText",
+          status: "ok",
+          durationMs: 1,
+          output: { url: "https://x/reversible" },
+        },
+        // non-reversible filing but no captured url
+        { id: "r2", tool: "githubCreateIssue", status: "ok", durationMs: 1 },
+      ],
+    });
+    const pending = computePendingConfirmations({
+      workersDir,
+      patchworkDir: dir,
+    });
+    expect(pending).toHaveLength(0);
+  });
+
+  it("formats the queue with the exact confirm command (and an empty-state)", () => {
+    expect(formatPendingConfirmations([])).toMatch(/No filings awaiting/);
+    seedFiling(URL);
+    const out = formatPendingConfirmations(
+      computePendingConfirmations({ workersDir, patchworkDir: dir }),
+    );
+    expect(out).toContain(URL);
+    expect(out).toContain(`patchwork outcomes confirm ${URL}`);
+    expect(out).toContain("--recipe file-issues");
   });
 });

@@ -4872,6 +4872,20 @@ if (process.argv[2] === "outcomes") {
   const args = process.argv.slice(3);
   (async () => {
     try {
+      // `outcomes pending` — the confirm queue (join over runs + dispositions).
+      // Handled here (not in the pure runOutcomesCli) because it needs the run
+      // log + worker manifests, which live behind the shadow readers.
+      if (args[0] === "pending") {
+        const { computePendingConfirmations, formatPendingConfirmations } =
+          await import("./workers/runWorkerShadow.js");
+        const pending = computePendingConfirmations();
+        if (args.includes("--json")) {
+          process.stdout.write(`${JSON.stringify(pending, null, 2)}\n`);
+        } else {
+          process.stdout.write(formatPendingConfirmations(pending));
+        }
+        process.exit(0);
+      }
       const { runOutcomesCli } = await import("./workers/outcomesCli.js");
       const { OutcomeStore, resolveOutcomeLogDir } = await import(
         "./workers/outcomeStore.js"

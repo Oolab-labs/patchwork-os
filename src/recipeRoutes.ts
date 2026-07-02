@@ -662,6 +662,12 @@ export interface RecipeRouteDeps {
    *  ensures the log's parent dir exists so `upsert` can append. NEVER exposed
    *  as a recipe step / MCP tool — a worker must not confirm its own filings. */
   outcomeStoreFn: (() => OutcomeStore) | null;
+  /** The confirm queue — worker filings awaiting an operator disposition
+   *  (unknown / no record). Backs GET /outcomes/pending + `patchwork outcomes
+   *  pending`; a read-only join over the run log + outcome dispositions. */
+  pendingConfirmationsFn:
+    | (() => import("./workers/runWorkerShadow.js").PendingConfirmation[])
+    | null;
   runReplayFn:
     | ((seq: number) => Promise<{
         ok: boolean;
@@ -986,6 +992,22 @@ export function tryHandleRecipeRoute(
       const outcomes = deps.outcomeStoreFn?.().readAll() ?? [];
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ outcomes }));
+    } catch (err) {
+      respond500(res, err);
+    }
+    return true;
+  }
+
+  // GET /outcomes/pending — the confirm queue: worker filings awaiting an
+  // operator disposition. Read-only join over the run log + dispositions;
+  // backs the dashboard "awaiting confirmation" badge + mirrors
+  // `patchwork outcomes pending`. (Exact-path match, so it never shadows the
+  // bare /outcomes routes above.)
+  if (parsedUrl.pathname === "/outcomes/pending" && req.method === "GET") {
+    try {
+      const pending = deps.pendingConfirmationsFn?.() ?? [];
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ pending }));
     } catch (err) {
       respond500(res, err);
     }

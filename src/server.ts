@@ -351,6 +351,11 @@ export class Server extends EventEmitter<ServerEvents> {
   public outcomeStoreFn:
     | (() => import("./workers/outcomeStore.js").OutcomeStore)
     | null = null;
+  /** Patchwork: the confirm queue — worker filings awaiting an operator
+   *  disposition. Backs GET /outcomes/pending + `patchwork outcomes pending`. */
+  public pendingConfirmationsFn:
+    | (() => import("./workers/runWorkerShadow.js").PendingConfirmation[])
+    | null = null;
   /** Patchwork (VD-4): mocked replay of an existing run. Returns the new
    *  run's seq plus any unmocked steps the caller may want to surface. */
   public runReplayFn:
@@ -1658,6 +1663,7 @@ export class Server extends EventEmitter<ServerEvents> {
           workerShadowFn: this.workerShadowFn,
           gateDecisionsFn: this.gateDecisionsFn,
           outcomeStoreFn: this.outcomeStoreFn,
+          pendingConfirmationsFn: this.pendingConfirmationsFn,
           runReplayFn: this.runReplayFn,
           runRecipeFn: this.runRecipeFn,
           onRecipesChangedFn: this.onRecipesChangedFn,

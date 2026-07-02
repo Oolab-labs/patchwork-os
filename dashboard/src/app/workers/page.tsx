@@ -167,6 +167,142 @@ function dispositionStyle(d: Disposition): CSSProperties {
   return { background: "var(--surface-2)" };
 }
 
+interface PendingConfirmation {
+  issueUrl: string;
+  recipeName: string;
+  workerId: string;
+  workerName: string;
+  filedAt: number;
+  classKey: string;
+}
+interface PendingResponse {
+  pending: PendingConfirmation[];
+}
+
+/**
+ * Awaiting confirmation — the CONFIRM QUEUE. Worker issue filings with NO
+ * operator disposition yet: their trust is WITHHELD until a human acts. This
+ * is the queue the confirm loop exists to drain, and the age of this queue IS
+ * the evidence-latency moat metric. One-click Confirm/Reject POSTs to the same
+ * Bearer-gated /outcomes route (never a recipe step — no self-confirm) and the
+ * queue refreshes. Sourced from GET /outcomes/pending (a read-only join over the
+ * run log + dispositions). Suppressed when the queue is empty.
+ */
+function AwaitingConfirmationPanel() {
+  const { data, refetch } = useBridgeFetch<PendingResponse>(
+    "/api/bridge/outcomes/pending",
+    { intervalMs: 30000 },
+  );
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const pending = data?.pending ?? [];
+  if (pending.length === 0) return null;
+
+  async function act(p: PendingConfirmation, disposition: "confirmed" | "junk") {
+    setBusy(`${p.issueUrl}:${disposition}`);
+    setErr(null);
+    try {
+      const res = await fetch(apiPath("/api/bridge/outcomes"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          issueUrl: p.issueUrl,
+          disposition,
+          recipeName: p.recipeName,
+          workerClass: p.classKey,
+        }),
+      });
+      if (!res.ok) {
+        setErr(`Update failed (${res.status})`);
+        return;
+      }
+      refetch();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginTop: "var(--s-4)" }}>
+      <div className="card-head">
+        <strong>
+          Awaiting confirmation — <span className="accent">needs your call.</span>
+        </strong>
+        <span
+          className="pill"
+          style={{ background: "var(--warn)", color: "var(--bg)" }}
+        >
+          {pending.length} pending
+        </span>
+      </div>
+      <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+        Filings whose trust is withheld until you confirm or reject them — the
+        age of this queue is the evidence latency the trust ramp exists to shrink.
+      </div>
+      {err && (
+        <div
+          className="editorial-sub"
+          style={{ fontFamily: "inherit", color: "var(--warn)" }}
+        >
+          {err}
+        </div>
+      )}
+      {pending.map((p) => (
+        <div
+          className="suggestion-row"
+          key={p.issueUrl}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--s-3)",
+            flexWrap: "wrap",
+          }}
+        >
+          {/^https?:\/\//i.test(p.issueUrl) ? (
+            <a
+              href={p.issueUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                flex: 1,
+                minWidth: "12rem",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {p.issueUrl}
+            </a>
+          ) : (
+            <span style={{ flex: 1, minWidth: "12rem" }}>{p.issueUrl}</span>
+          )}
+          <span className="pill muted">
+            {p.workerName} · {p.classKey}
+          </span>
+          <button
+            type="button"
+            className="btn sm primary"
+            disabled={busy !== null}
+            onClick={() => act(p, "confirmed")}
+          >
+            Confirm
+          </button>
+          <button
+            type="button"
+            className="btn sm ghost"
+            disabled={busy !== null}
+            onClick={() => act(p, "junk")}
+          >
+            Reject
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Filed outcomes — the operator's one-click confirm/reject queue. A worker's
  * `issue` dial only moves once a HUMAN confirms the filing was real (or rejects
@@ -322,6 +458,8 @@ export default function WorkersPage() {
       </div>
 
       <ConsideredApprovalPanel />
+
+      <AwaitingConfirmationPanel />
 
       <FiledOutcomesPanel />
 
