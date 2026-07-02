@@ -25,9 +25,11 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-02 `feat/workers-page-confirm-ux` — dashboard `/workers` "speak-human" pass (operator-facing, no bridge change): plain-language copy across every panel; a per-worker "Ready for more independence?" promotion-readiness headline computed from the earned-vs-ceiling gap on OWNED, non-reversible tasks (reversible bypasses the gate, so it never justifies a raise); plain per-task record (task name + stakes + success rate) replacing the L0–L4 dial in the default view; a "Show details" toggle that restores the full engine view (reject-rate/p90, action-class keys, L-levels, ramp-vs-gate). Also the confirm-loop polish (empty-state all-caught-up, disposition summary). — build session
+- 2026-07-02 `feat/dashboard-humane-s1-primitives` — dashboard humane-redesign slice S1 (shared primitives, additive, no page rewrites yet): `StatusMedallion` (dominant traffic-light status object), `DotStrip` + `workedSentence` ("Worked 9 of last 10" not "90%"), `DetailsFold`/`ExpertToggle`/`useExpertMode` (page-level expert mode persisted in localStorage, same-tab-synced — replaces the workers-page local `expert` useState in a later slice), `lib/humanSchedule.ts` (cron/`@every` → "Every day at 7:00" + next-run), `lib/haltPhrasing.ts` (owner-level halt sentences beside the engineer-level `HALT_CATEGORY_HINT`). Spec: docs/plans/dashboard-humane-redesign-2026-07-02.md §7. Next: R1 (recipe Band 1+2) ‖ W1 (workers Bands 1+2). — build session
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-07-02 `feat/workers-page-confirm-ux` (#1075) — dashboard `/workers` "speak-human" pass + trust-journey (stepper + "How it got here" history timeline + attention-first fleet sort); plain per-task record replacing the L0–L4 dial; page-level "Show details" toggle; confirm-loop polish — merged
 
 - 2026-07-02 `feat/pending-outcomes-visibility` (#1074) — roadmap plan slice #4 (make the confirm queue visible): `computePendingConfirmations` join (runs × dispositions) in runWorkerShadow → `patchwork outcomes pending [--json]` + `GET /outcomes/pending` (new `pendingConfirmationsFn` dep) + an "Awaiting confirmation" one-click confirm/reject panel on dashboard `/workers` — merged
 
