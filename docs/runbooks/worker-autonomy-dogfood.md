@@ -2,8 +2,10 @@
 
 **Audience:** the operator (you) running the first *real* delegation.
 **Goal:** earn the first genuine trust evidence on the dial by letting the
-Test Guardian worker file real triage issues — gated by the ramp until it
-earns L4 on the `issue` action-class.
+Test Guardian worker file real triage issues — gated by the ramp on every
+filing (the shipped manifest caps `autonomyCeiling` at 1, below the compensable
+auto-allow rung, so filing stays gated even after the `issue` class earns L4;
+see switch 1).
 
 This is the **weeks-long "does trust accrue?" run**, not the smoke. The smoke
 (`src/recipes/__tests__/workerAutonomySmoke.test.ts`) already proves the machine
@@ -126,7 +128,9 @@ signal exists.
 > worker at the autofile recipe (switch 2) while the flag is off would file a
 > real issue on **every** failing test run with **no approval**. Enable the flag
 > first so the very first filing is gated. (Expect more approval prompts up
-> front; autonomous filing is the payoff *after* L4 is earned.)
+> front; the shipped ceiling=1 keeps filing gated even at earned L4 —
+> autonomous filing is unlocked only by manually raising the ceiling once the
+> outcome-verification signal is validated.)
 
 ### 2. Point the worker at the autofile recipe
 
@@ -223,8 +227,11 @@ each gated filing; `/runs` shows each fired run and its step verdicts.
   from real evidence, not an input you grant. The competence prior
   (`mean: 0.8, strength: 4` in the manifest) accelerates the honest path to
   ~days, not weeks, without faking evidence.
-- When `issue` reaches L4, the gate stops prompting and filings flow
-  autonomously — the first responsibility genuinely delegated.
+- When `issue` reaches L4, the *earned* level is maxed — but the shipped
+  manifest caps `autonomyCeiling` at 1, so the gate keeps prompting on every
+  filing. Autonomous filing (the first responsibility genuinely delegated)
+  requires manually raising the ceiling to ≥2 once the outcome-verification
+  signal has a real-world track record.
 
 ### Rollback
 
