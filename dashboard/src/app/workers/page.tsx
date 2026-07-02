@@ -189,14 +189,40 @@ interface PendingResponse {
  * run log + dispositions). Suppressed when the queue is empty.
  */
 function AwaitingConfirmationPanel() {
-  const { data, refetch } = useBridgeFetch<PendingResponse>(
+  const { data, status, refetch } = useBridgeFetch<PendingResponse>(
     "/api/bridge/outcomes/pending",
     { intervalMs: 30000 },
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const pending = data?.pending ?? [];
-  if (pending.length === 0) return null;
+
+  // Empty AND the endpoint answered (200) → the loop exists and is drained; say
+  // so, rather than vanishing (which reads as "feature missing"). On a bridge
+  // too old to serve /outcomes/pending (404 → status stays null / non-200) the
+  // panel suppresses entirely, so this never false-signals "clear".
+  if (pending.length === 0) {
+    if (status !== 200) return null;
+    return (
+      <div className="card" style={{ marginTop: "var(--s-4)" }}>
+        <div className="card-head">
+          <strong>
+            Awaiting confirmation — <span className="accent">all clear.</span>
+          </strong>
+          <span
+            className="pill"
+            style={{ background: "var(--ok)", color: "var(--bg)" }}
+          >
+            0 pending
+          </span>
+        </div>
+        <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+          Every worker filing has an operator disposition — the confirm queue is
+          drained (evidence latency at zero).
+        </div>
+      </div>
+    );
+  }
 
   async function act(p: PendingConfirmation, disposition: "confirmed" | "junk") {
     setBusy(`${p.issueUrl}:${disposition}`);
@@ -321,6 +347,10 @@ function FiledOutcomesPanel() {
   const outcomes = data?.outcomes ?? [];
   // Nothing filed yet → don't clutter the page (the confirm loop has no queue).
   if (outcomes.length === 0) return null;
+  const confirmedCount = outcomes.filter(
+    (o) => o.disposition === "confirmed",
+  ).length;
+  const junkCount = outcomes.filter((o) => o.disposition === "junk").length;
 
   async function setDisposition(issueUrl: string, disposition: Disposition) {
     setBusy(`${issueUrl}:${disposition}`);
@@ -349,7 +379,11 @@ function FiledOutcomesPanel() {
         <strong>
           Filed outcomes — <span className="accent">confirm or reject.</span>
         </strong>
-        <span className="pill muted">{outcomes.length} recorded</span>
+        <span className="pill muted">
+          {outcomes.length} recorded
+          {confirmedCount > 0 && ` · ${confirmedCount} confirmed`}
+          {junkCount > 0 && ` · ${junkCount} junk`}
+        </span>
       </div>
       <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
         A worker&apos;s <code>issue</code> dial only moves once a human confirms

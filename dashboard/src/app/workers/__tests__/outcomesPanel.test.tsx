@@ -130,11 +130,11 @@ const PENDING = {
 
 describe("AwaitingConfirmationPanel (the confirm queue on /workers)", () => {
   it("renders pending filings + a count, suppressed when the queue is empty", async () => {
-    // Empty pending → panel absent.
+    // Empty pending, endpoint answered 200 → all-clear affirmation (not absent).
     fetchMock.mockImplementation(routeMock({ outcomes: [] }, { pending: [] }));
-    const { unmount } = render(<WorkersPage />);
-    await screen.findByText(/No workers yet/);
-    expect(screen.queryByText(/Awaiting confirmation/)).toBeNull();
+    const { container: emptyC, unmount } = render(<WorkersPage />);
+    expect(await screen.findByText(/all clear/)).toBeTruthy();
+    expect(emptyC.textContent).toContain("0 pending");
     unmount();
 
     // Non-empty pending → panel renders the URL + count.
@@ -145,6 +145,25 @@ describe("AwaitingConfirmationPanel (the confirm queue on /workers)", () => {
       "https://github.com/o/r/issues/42",
     );
     expect(container.textContent).toContain("1 pending");
+  });
+
+  it("suppresses the panel entirely on a bridge too old to serve /outcomes/pending (404)", async () => {
+    // 404 → useBridgeFetch treats it as terminal (status 404, data null); the
+    // panel must NOT render the all-clear affirmation (which would false-signal
+    // "drained" on a bridge that simply lacks the endpoint).
+    fetchMock.mockImplementation((url: string | URL) => {
+      const u = String(url);
+      if (u.includes("/approvals/kpi"))
+        return Promise.resolve(jsonResponse({ total: 0 }));
+      if (u.includes("/outcomes/pending"))
+        return Promise.resolve(jsonResponse({ error: "not found" }, 404));
+      if (u.includes("/outcomes"))
+        return Promise.resolve(jsonResponse({ outcomes: [] }));
+      return Promise.resolve(jsonResponse(EMPTY_SHADOW));
+    });
+    render(<WorkersPage />);
+    await screen.findByText(/No workers yet/);
+    expect(screen.queryByText(/Awaiting confirmation/)).toBeNull();
   });
 
   it("Confirm POSTs disposition + audit context (recipe + class) for a pending filing", async () => {
