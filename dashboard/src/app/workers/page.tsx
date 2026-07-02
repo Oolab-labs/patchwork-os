@@ -626,7 +626,7 @@ function JourneyStepper({
                   left: 0,
                   right: 0,
                   textAlign: "center",
-                  fontSize: 11,
+                  fontSize: "var(--fs-xs)",
                 }}
               >
                 ⚑ leash
@@ -649,7 +649,7 @@ function JourneyStepper({
               style={{
                 textAlign: "center",
                 marginTop: 6,
-                fontSize: 11,
+                fontSize: "var(--fs-xs)",
                 color: reached ? "inherit" : "var(--line-3)",
               }}
             >
