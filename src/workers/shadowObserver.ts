@@ -121,6 +121,54 @@ export function isDurableSuccess(
   return runAt <= now - windowMs;
 }
 
+/** A single step reduced to what the outcome fold needs. */
+type FoldStep = Pick<RunRecord["steps"][number], "tool" | "status" | "output">;
+
+/**
+ * The durable-outcome fold decision for one step — the SINGLE source of truth
+ * shared by the live/shadow dial (`WorkerShadowObserver.ingestRun`) and the
+ * cold-start backtest (`backtestWorker`), so the two can never drift on how an
+ * outcome is labelled. Returns either "withhold" (not evidence — a pending or
+ * unknown-disposition risky success) or "count as good/bad".
+ *
+ * Assumes the caller has already skipped no-tool / skipped / approval-rejected
+ * steps (those are non-evidence for reasons the caller owns). Semantics:
+ *   - failure (status ≠ ok)                → count, good:false (durable evidence of failure)
+ *   - success, no `now`                    → count, good:true (back-compat status-only)
+ *   - success, non-reversible, pre-window  → WITHHOLD (provisional; not yet durable)
+ *   - success, non-reversible, junk         → count, good:false (filed noise)
+ *   - success, non-reversible, unknown/null → WITHHOLD (unactioned ≠ correct; trust-by-neglect fix)
+ *   - success, otherwise (reversible / confirmed / no url / no store) → count, good:true
+ */
+export type FoldDecision = { fold: false } | { fold: true; good: boolean };
+
+export function foldOutcome(
+  step: FoldStep,
+  runAt: number,
+  opts: { now?: number; windowMs: number; outcomeStore?: OutcomeStore },
+): FoldDecision {
+  if (!step.tool) return { fold: false };
+  if (step.status !== "ok") return { fold: true, good: false };
+  // Success. Without a wall-clock, keep the prior status-only fold (back-compat).
+  if (opts.now === undefined) return { fold: true, good: true };
+  const ac = classifyActionClass(step.tool);
+  if (!isDurableSuccess(ac.reversibility, runAt, opts.now, opts.windowMs))
+    return { fold: false }; // pending — survives the window before it earns trust
+  if (ac.reversibility !== "reversible" && opts.outcomeStore) {
+    const url =
+      step.output && typeof step.output.url === "string"
+        ? step.output.url
+        : null;
+    if (url) {
+      const disposition = opts.outcomeStore.getDisposition(url);
+      if (disposition === "junk") return { fold: true, good: false };
+      if (disposition === "unknown" || disposition === null)
+        return { fold: false }; // withheld — not evidence
+    }
+  }
+  return { fold: true, good: true };
+}
+
 export class WorkerShadowObserver {
   private readonly store: WorkerLevelStore;
   private readonly cfg: GraduationConfig;
@@ -196,50 +244,20 @@ export class WorkerShadowObserver {
         categoriseHaltReason(step.haltReason) === "approval_rejected"
       )
         continue;
-      // Durable-outcome label: a recent SUCCESS on a non-reversible action is
-      // provisional (a filed issue / pushed commit / merged PR can be reverted
-      // or closed-as-junk minutes later), so it is NOT yet counted as evidence.
-      // Only active when `now` was supplied by the I/O entry; otherwise the prior
-      // status-only fold is used. Withholds evidence only → never widens.
-      if (this.now !== undefined && step.status === "ok") {
-        const ac = classifyActionClass(step.tool);
-        if (
-          !isDurableSuccess(
-            ac.reversibility,
-            run.at,
-            this.now,
-            this.durabilityWindowMs,
-          )
-        )
-          continue; // pending — survives the window before it earns trust
-        // Past the window: check outcome store for non-reversible steps.
-        // Junk issues (closed-as-not-planned / labelled invalid/duplicate) mean
-        // the worker filed noise → flip to good:false. confirmed is a positive
-        // human/external act → good:true. unknown (nobody has acted on it within
-        // the window) is WITHHELD — not evidence — so an unactioned filing can't
-        // earn trust just by sitting unopened (trust-by-neglect fix).
-        if (ac.reversibility !== "reversible" && this.outcomeStore) {
-          const url =
-            step.output && typeof step.output.url === "string"
-              ? step.output.url
-              : null;
-          if (url) {
-            const disposition = this.outcomeStore.getDisposition(url);
-            if (disposition === "junk") {
-              this.store.apply(
-                worker.id,
-                { toolName: step.tool, good: false, at: run.at },
-                { prior, cfg: this.cfg },
-              );
-              continue;
-            }
-            if (disposition === "unknown" || disposition === null) continue; // withheld — not evidence
-          }
-        }
-      }
+      // Durable-outcome fold (shared with the backtest via foldOutcome): a recent
+      // SUCCESS on a non-reversible action is provisional, and past the window a
+      // junk filing flips good:false while an unknown/unactioned one is WITHHELD
+      // (trust-by-neglect fix). Only active when `now` was supplied; otherwise the
+      // prior status-only fold is used. Withholds evidence only → never widens.
+      const decision = foldOutcome(step, run.at, {
+        now: this.now,
+        windowMs: this.durabilityWindowMs,
+        outcomeStore: this.outcomeStore,
+      });
+      if (!decision.fold) continue;
       this.store.apply(
         worker.id,
-        { toolName: step.tool, good: step.status === "ok", at: run.at },
+        { toolName: step.tool, good: decision.good, at: run.at },
         { prior, cfg: this.cfg },
       );
     }

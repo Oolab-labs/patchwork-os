@@ -256,10 +256,11 @@ export function runWorkerBacktest(opts: RunWorkerShadowOpts = {}): string {
     "  false-gate  = ramp would gate a GOOD action (over-caution, the cost)",
     "",
   ];
+  const outcomeStore = new OutcomeStore(patchworkDir);
   for (const w of workers) {
     if (!w.recipe) continue;
     const runs = readRuns(patchworkDir, [w.recipe]);
-    lines.push(formatBacktestReport(backtestWorker(w, runs)));
+    lines.push(formatBacktestReport(backtestWorker(w, runs, { outcomeStore })));
   }
   return lines.join("\n");
 }

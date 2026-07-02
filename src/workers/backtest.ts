@@ -4,10 +4,11 @@ import {
   DEFAULT_GRADUATION_CONFIG,
   type GraduationConfig,
 } from "./graduation.js";
+import type { OutcomeStore } from "./outcomeStore.js";
 import { recommend } from "./shadowGate.js";
 import {
   DEFAULT_DURABILITY_WINDOW_MS,
-  isDurableSuccess,
+  foldOutcome,
   type RunRecord,
 } from "./shadowObserver.js";
 import { ownsAction, priorFor, type WorkerManifest } from "./worker.js";
@@ -67,6 +68,12 @@ export interface BacktestOpts {
    *  whole history is treated as durable (a backtest looks at settled outcomes). */
   now?: number;
   durabilityWindowMs?: number;
+  /** When present, non-reversible durable successes are outcome-verified exactly
+   *  as the live dial does (junk → bad, unknown/null → withheld) via the shared
+   *  foldOutcome. Without it the backtest falls back to status-only labelling —
+   *  which diverges from `workers shadow` whenever dispositions exist, so the
+   *  live entry (runWorkerBacktest) always passes one. */
+  outcomeStore?: OutcomeStore;
 }
 
 /**
@@ -107,10 +114,25 @@ export function backtestWorker(
         continue;
 
       const ac = classifyActionClass(step.tool);
-      // Score only risky OWNED actions — the calibration-relevant ones.
-      if (ac.reversibility !== "reversible" && ownsAction(worker, ac)) {
+      // Durable-outcome fold — the SAME labelling the live dial/gate uses (shared
+      // foldOutcome): junk → bad, unknown/null → withheld, pending → withheld.
+      const decision = foldOutcome(step, run.at, {
+        now,
+        windowMs,
+        outcomeStore: opts.outcomeStore,
+      });
+
+      // Score only risky OWNED actions with a KNOWN durable outcome. A withheld
+      // step (pending, or unknown disposition) has no ground truth to calibrate
+      // against, so it is excluded from the divergence sample rather than counted
+      // as a spurious "good" (which is exactly the status-only bug this fixes).
+      if (
+        ac.reversibility !== "reversible" &&
+        ownsAction(worker, ac) &&
+        decision.fold
+      ) {
         const rec = recommend(worker, step.tool, undefined, store); // as-of decision
-        const outcomeGood = step.status === "ok";
+        const outcomeGood = decision.good;
         const rampBypass = rec.decision === "bypass";
         considered++;
         if (rampBypass === outcomeGood) {
@@ -133,18 +155,14 @@ export function backtestWorker(
         }
       }
 
-      // Fold the outcome (durable-outcome aware) so the ramp evolves over the
-      // replay — same labelling as the live dial/gate.
-      if (
-        step.status === "ok" &&
-        !isDurableSuccess(ac.reversibility, run.at, now, windowMs)
-      )
-        continue; // recent non-reversible success — not yet durable
-      store.apply(
-        worker.id,
-        { toolName: step.tool, good: step.status === "ok", at: run.at },
-        { prior, cfg },
-      );
+      // Fold so the ramp evolves over the replay (skips withheld steps).
+      if (decision.fold) {
+        store.apply(
+          worker.id,
+          { toolName: step.tool, good: decision.good, at: run.at },
+          { prior, cfg },
+        );
+      }
     }
   }
 
