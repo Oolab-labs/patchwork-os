@@ -12,7 +12,13 @@ owns:
   - ci # runTests (re-runnable) — reversible
   - vcs-read # getGitDiff / gitBlame to find the suspect commit
   - issue # githubCreateIssue / addLinearComment — compensable + brand-exposed
-autonomyCeiling: 4
+# Capped below the compensable auto-allow threshold (L2): the ramp has only
+# been validated on synthetic data (one planted break, 16 gate decisions) and
+# the outcome-verification signal (confirmed/junk labelling, see outcomeStore.ts)
+# has no real-world recall/false-negative track record yet. Earned trust on
+# `issue` can climb, but auto-filing stays gated for human approval until that
+# signal exists. Raise once a real-world graduation is observed and confirmed.
+autonomyCeiling: 1
 competence:
   mean: 0.8
   strength: 4

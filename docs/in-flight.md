@@ -25,9 +25,11 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-01 `fix/shadow-observer-unknown-not-durable` — trust-by-neglect fix: unknown disposition withheld (not good:true) in WorkerShadowObserver.ingestRun
+- 2026-07-01 `fix/test-guardian-ceiling-cap` — cap test-guardian-worker's autonomyCeiling below the compensable auto-allow threshold pending real-world trust-signal validation
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-07-02 `fix/shadow-observer-unknown-not-durable` (#1064) — trust-by-neglect fix: unknown disposition withheld (not good:true) in WorkerShadowObserver.ingestRun — merged
 
 - 2026-07-01 `feat/gate-decision-diff` (#1062) — Tier 2 legibility layer: `patchwork gate explain --diff` — merged
 - 2026-07-01 `feat/gate-explain-cli` (#1061) — `patchwork gate explain <workerId> <classKey>` — read-only formatter over WorkerGateDecisionLog + `GET /gate/decisions` — merged
