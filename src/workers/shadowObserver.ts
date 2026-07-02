@@ -132,12 +132,15 @@ type FoldStep = Pick<RunRecord["steps"][number], "tool" | "status" | "output">;
  * unknown-disposition risky success) or "count as good/bad".
  *
  * Assumes the caller has already skipped no-tool / skipped / approval-rejected
- * steps (those are non-evidence for reasons the caller owns). Semantics:
- *   - failure (status ≠ ok)                → count, good:false (durable evidence of failure)
- *   - success, no `now`                    → count, good:true (back-compat status-only)
- *   - success, non-reversible, pre-window  → WITHHOLD (provisional; not yet durable)
- *   - success, non-reversible, junk         → count, good:false (filed noise)
- *   - success, non-reversible, unknown/null → WITHHOLD (unactioned ≠ correct; trust-by-neglect fix)
+ * steps (those are non-evidence for reasons the caller owns). Semantics (the
+ * junk check runs BEFORE the durability window — a human rejection is durable
+ * evidence of failure the moment it lands, so it demotes instantly, like any
+ * outright failure; only confirmed/unknown successes wait out the window):
+ *   - failure (status ≠ ok)                    → count, good:false (durable evidence of failure)
+ *   - success, no `now`                        → count, good:true (back-compat status-only)
+ *   - success, non-reversible, junk (any age)  → count, good:false (human-rejected → demotes now)
+ *   - success, non-reversible, pre-window      → WITHHOLD (provisional; not yet durable)
+ *   - success, non-reversible, unknown/null    → WITHHOLD (unactioned ≠ correct; trust-by-neglect fix)
  *   - success, otherwise (reversible / confirmed / no url / no store) → count, good:true
  */
 export type FoldDecision = { fold: false } | { fold: true; good: boolean };
@@ -152,20 +155,28 @@ export function foldOutcome(
   // Success. Without a wall-clock, keep the prior status-only fold (back-compat).
   if (opts.now === undefined) return { fold: true, good: true };
   const ac = classifyActionClass(step.tool);
+  // For a non-reversible filing, read the operator disposition up front (issue /
+  // PR URL). Reversible successes never consult the store — they are always durable.
+  const outcomeStore =
+    ac.reversibility !== "reversible" ? opts.outcomeStore : undefined;
+  const url =
+    outcomeStore && step.output && typeof step.output.url === "string"
+      ? step.output.url
+      : null;
+  const disposition = url ? (outcomeStore?.getDisposition(url) ?? null) : null;
+  // A human REJECTION demotes IMMEDIATELY. Junk is durable evidence of failure
+  // the moment it lands, so — like any outright failure (status ≠ ok above) — it
+  // must NOT sit withheld for the durability window ("demotion is instant", see
+  // trustLevel.ts). Checked BEFORE the window. Confirmed/unknown must NOT
+  // short-circuit the window: folding a still-provisional success early would
+  // WIDEN evidence, so this is junk-early only.
+  if (disposition === "junk") return { fold: true, good: false };
   if (!isDurableSuccess(ac.reversibility, runAt, opts.now, opts.windowMs))
     return { fold: false }; // pending — survives the window before it earns trust
-  if (ac.reversibility !== "reversible" && opts.outcomeStore) {
-    const url =
-      step.output && typeof step.output.url === "string"
-        ? step.output.url
-        : null;
-    if (url) {
-      const disposition = opts.outcomeStore.getDisposition(url);
-      if (disposition === "junk") return { fold: true, good: false };
-      if (disposition === "unknown" || disposition === null)
-        return { fold: false }; // withheld — not evidence
-    }
-  }
+  // Past the window: an unactioned filing (unknown / no record) is WITHHELD —
+  // unactioned ≠ correct (trust-by-neglect fix). Confirmed / no-url → good:true.
+  if (url && (disposition === "unknown" || disposition === null))
+    return { fold: false }; // withheld — not evidence
   return { fold: true, good: true };
 }
 
