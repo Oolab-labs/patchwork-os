@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { GraduationConfig } from "../graduation.js";
 import type { OutcomeDisposition, OutcomeStore } from "../outcomeStore.js";
 import {
+  DEFAULT_DURABILITY_WINDOW_MS,
+  foldOutcome,
   isDurableSuccess,
   type RunRecord,
   WorkerShadowObserver,
@@ -292,21 +294,48 @@ describe("WorkerShadowObserver — outcome verification (junk → good:false)", 
     expect(issueRow(confirmed)?.observations).toBe(1);
   });
 
-  it("ignores the outcome store before the durability window (still pending)", () => {
+  it("withholds a CONFIRMED filing before the durability window (still pending — confirming early would widen evidence)", () => {
+    // A confirmed disposition must NOT short-circuit the window: a success is
+    // provisional until it survives, so it earns nothing yet even though a human
+    // already confirmed it. (Junk is the opposite — it demotes instantly; see
+    // the dedicated foldOutcome block below.)
     const obs = new WorkerShadowObserver([issuer], {
       cfg: CFG,
       now,
-      outcomeStore: fakeStore({ [URL]: "junk" }),
+      outcomeStore: fakeStore({ [URL]: "confirmed" }),
     });
-    // filed 1s ago — junk or not, a non-durable success earns nothing yet.
     obs.ingestRun({
       recipeName: "file-issues",
-      at: now - 1000,
+      at: now - 1000, // filed 1s ago — inside the window
       steps: [
         { tool: "githubCreateIssue", status: "ok", output: { url: URL } },
       ],
     });
     expect(issueRow(obs)).toBeUndefined();
+  });
+
+  it("DEMOTES a JUNK filing before the durability window (human rejection is instant)", () => {
+    // The reordered fold: a human-rejected filing lowers trust the moment it
+    // lands, without waiting out the 24h window — consistent with how outright
+    // failures count instantly. (This is the #2 bug: previously withheld.)
+    const junk = new WorkerShadowObserver([issuer], {
+      cfg: CFG,
+      now,
+      outcomeStore: fakeStore({ [URL]: "junk" }),
+    });
+    junk.ingestRun({
+      recipeName: "file-issues",
+      at: now - 1000, // filed 1s ago — inside the window
+      steps: [
+        { tool: "githubCreateIssue", status: "ok", output: { url: URL } },
+      ],
+    });
+    const baseline = new WorkerShadowObserver([issuer], { cfg: CFG, now });
+    baseline.ingestRun(durableFiling()); // a durable good filing, no store
+    // The junk filing is EVIDENCE (an observation) and its mean is strictly
+    // lower than a good filing — proving good:false folded, not withheld.
+    expect(issueRow(junk)?.observations).toBe(1);
+    expect(issueRow(junk)!.mean).toBeLessThan(issueRow(baseline)!.mean);
   });
 
   it("a durable filing with no captured URL falls through to good:true (back-compat)", () => {
@@ -319,5 +348,68 @@ describe("WorkerShadowObserver — outcome verification (junk → good:false)", 
     const baseline = new WorkerShadowObserver([issuer], { cfg: CFG, now });
     baseline.ingestRun(durableFiling());
     expect(issueRow(obs)!.mean).toBe(issueRow(baseline)!.mean);
+  });
+});
+
+// foldOutcome is the single fold-decision source shared by the live dial and the
+// backtest, so its window-vs-junk ordering is asserted directly here. A human
+// REJECTION (junk) is durable evidence of failure the moment it lands — like any
+// outright failure, it must demote instantly rather than sit withheld for the
+// 24h durability window (trustLevel.ts: "demotion is instant"). Confirmation and
+// non-action must NOT short-circuit the window — folding a still-provisional
+// success early would WIDEN evidence.
+describe("foldOutcome — junk demotes immediately, before the durability window", () => {
+  const W = DEFAULT_DURABILITY_WINDOW_MS;
+  const now = 100 * W;
+  const URL = "https://github.com/o/r/issues/7";
+  const store = (m: Record<string, OutcomeDisposition>) =>
+    ({
+      getDisposition: (u: string) => m[u] ?? null,
+    }) as unknown as OutcomeStore;
+  // A compensable (non-reversible) filing carrying its captured URL.
+  const filing = (url?: string): RunRecord["steps"][number] => ({
+    tool: "githubCreateIssue",
+    status: "ok",
+    ...(url ? { output: { url } } : {}),
+  });
+
+  it("folds a JUNK filing good:false even INSIDE the window (demotion is instant)", () => {
+    expect(
+      foldOutcome(filing(URL), now - 1000, {
+        now,
+        windowMs: W,
+        outcomeStore: store({ [URL]: "junk" }),
+      }),
+    ).toEqual({ fold: true, good: false });
+  });
+
+  it("still WITHHOLDS a CONFIRMED filing inside the window (folding early would widen evidence)", () => {
+    expect(
+      foldOutcome(filing(URL), now - 1000, {
+        now,
+        windowMs: W,
+        outcomeStore: store({ [URL]: "confirmed" }),
+      }),
+    ).toEqual({ fold: false });
+  });
+
+  it("still WITHHOLDS an unactioned (unknown) filing inside the window (pending)", () => {
+    expect(
+      foldOutcome(filing(URL), now - 1000, {
+        now,
+        windowMs: W,
+        outcomeStore: store({}),
+      }),
+    ).toEqual({ fold: false });
+  });
+
+  it("still folds a JUNK filing good:false PAST the window (unchanged)", () => {
+    expect(
+      foldOutcome(filing(URL), now - 2 * W, {
+        now,
+        windowMs: W,
+        outcomeStore: store({ [URL]: "junk" }),
+      }),
+    ).toEqual({ fold: true, good: false });
   });
 });

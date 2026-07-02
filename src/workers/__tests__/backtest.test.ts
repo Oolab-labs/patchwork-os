@@ -167,5 +167,32 @@ describe("backtestWorker", () => {
       expect(withConfirmed.considered).toBe(statusOnly.considered);
       expect(withConfirmed.falseAllow).toBe(statusOnly.falseAllow);
     });
+
+    it("a JUNK filing INSIDE the durability window still scores BAD — parity with the live dial's instant demotion (#2)", () => {
+      // The junk filing is only 1s old (well inside the 24h window); the earned
+      // history is far older than the window, so the worker is L4 and the ramp
+      // would BYPASS. Pre-#2 a recent junk filing was WITHHELD (waited out the
+      // window); the reorder demotes it instantly, and the backtest inherits
+      // that via the shared foldOutcome (#1068). Contrast: an UNKNOWN filing
+      // inside the window is still withheld — the reorder is junk-only.
+      const RECENT = 30 * SEVEN_HOURS;
+      const nowInsideWindow = RECENT + 1000;
+      const history = [...earned, issueRunUrl(RECENT, URL)];
+      const junk = backtestWorker(issuer, history, {
+        now: nowInsideWindow,
+        outcomeStore: fakeStore({ [URL]: "junk" }),
+      });
+      const unknown = backtestWorker(issuer, history, {
+        now: nowInsideWindow,
+        outcomeStore: fakeStore({ [URL]: "unknown" }),
+      });
+      expect(
+        junk.divergences.some(
+          (d) => d.kind === "false-allow" && d.outcome === "bad",
+        ),
+      ).toBe(true);
+      // Junk is scored (bad); unknown is withheld → exactly one fewer considered.
+      expect(junk.considered).toBe(unknown.considered + 1);
+    });
   });
 });
