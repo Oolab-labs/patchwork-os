@@ -1,7 +1,9 @@
 "use client";
+import { type CSSProperties, useState } from "react";
 import { EmptyState, ErrorState, HBarList } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { apiPath } from "@/lib/api";
 
 interface BoardRow {
   classKey: string;
@@ -147,6 +149,146 @@ function ConsideredApprovalPanel() {
   );
 }
 
+type Disposition = "confirmed" | "junk" | "unknown";
+interface OutcomeRecord {
+  issueUrl: string;
+  disposition: Disposition;
+  checkedAt: number;
+  recipeName?: string;
+  workerClass?: string;
+}
+interface OutcomesResponse {
+  outcomes: OutcomeRecord[];
+}
+
+function dispositionStyle(d: Disposition): CSSProperties {
+  if (d === "confirmed") return { background: "var(--ok)", color: "var(--bg)" };
+  if (d === "junk") return { background: "var(--warn)", color: "var(--bg)" };
+  return { background: "var(--surface-2)" };
+}
+
+/**
+ * Filed outcomes — the operator's one-click confirm/reject queue. A worker's
+ * `issue` dial only moves once a HUMAN confirms the filing was real (or rejects
+ * it as junk) — a worker cannot self-confirm. This is the dashboard twin of
+ * `patchwork outcomes confirm|reject`, POSTing to the Bearer-gated /outcomes
+ * route through the generic bridge proxy. Converts approvals into *considered*
+ * approvals and slashes evidence latency (the declared moat KPI).
+ */
+function FiledOutcomesPanel() {
+  const { data, refetch } = useBridgeFetch<OutcomesResponse>(
+    "/api/bridge/outcomes",
+    { intervalMs: 30000 },
+  );
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const outcomes = data?.outcomes ?? [];
+  // Nothing filed yet → don't clutter the page (the confirm loop has no queue).
+  if (outcomes.length === 0) return null;
+
+  async function setDisposition(issueUrl: string, disposition: Disposition) {
+    setBusy(`${issueUrl}:${disposition}`);
+    setErr(null);
+    try {
+      const res = await fetch(apiPath("/api/bridge/outcomes"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ issueUrl, disposition }),
+      });
+      if (!res.ok) {
+        setErr(`Update failed (${res.status})`);
+        return;
+      }
+      refetch();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginTop: "var(--s-4)" }}>
+      <div className="card-head">
+        <strong>
+          Filed outcomes — <span className="accent">confirm or reject.</span>
+        </strong>
+        <span className="pill muted">{outcomes.length} recorded</span>
+      </div>
+      <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+        A worker&apos;s <code>issue</code> dial only moves once a human confirms
+        the filing was real — a worker can&apos;t self-confirm its own filings.
+      </div>
+      {err && (
+        <div
+          className="editorial-sub"
+          style={{ fontFamily: "inherit", color: "var(--warn)" }}
+        >
+          {err}
+        </div>
+      )}
+      {outcomes.map((o) => {
+        const ctx = [o.recipeName, o.workerClass].filter(Boolean).join(" · ");
+        return (
+          <div
+            className="suggestion-row"
+            key={o.issueUrl}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--s-3)",
+              flexWrap: "wrap",
+            }}
+          >
+            <span className="pill" style={dispositionStyle(o.disposition)}>
+              {o.disposition}
+            </span>
+            {/* Render as a link only for http(s) — never emit a raw href for a
+                non-web-scheme URL (defence-in-depth against a javascript: URL,
+                which React does not sanitise, even though every write path
+                already validates http(s)). */}
+            {/^https?:\/\//i.test(o.issueUrl) ? (
+              <a
+                href={o.issueUrl}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  flex: 1,
+                  minWidth: "12rem",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {o.issueUrl}
+              </a>
+            ) : (
+              <span style={{ flex: 1, minWidth: "12rem" }}>{o.issueUrl}</span>
+            )}
+            {ctx && <span className="pill muted">{ctx}</span>}
+            <button
+              type="button"
+              className="btn sm primary"
+              disabled={busy !== null || o.disposition === "confirmed"}
+              onClick={() => setDisposition(o.issueUrl, "confirmed")}
+            >
+              Confirm
+            </button>
+            <button
+              type="button"
+              className="btn sm ghost"
+              disabled={busy !== null || o.disposition === "junk"}
+              onClick={() => setDisposition(o.issueUrl, "junk")}
+            >
+              Reject
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function levelColor(effective: number): string {
   if (effective >= 4) return "var(--ok)";
   if (effective >= 2) return "var(--warn)";
@@ -180,6 +322,8 @@ export default function WorkersPage() {
       </div>
 
       <ConsideredApprovalPanel />
+
+      <FiledOutcomesPanel />
 
       {loading && workers.length === 0 && <SkeletonList rows={3} columns={2} />}
 

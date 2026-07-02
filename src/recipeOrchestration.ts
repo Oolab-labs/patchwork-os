@@ -3,7 +3,7 @@
  * dispatch. Extracted from bridge.ts to reduce god-object surface area.
  */
 
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
 
@@ -42,6 +42,7 @@ import {
 } from "./recipesHttp.js";
 import type { RecipeRunLog } from "./runLog.js";
 import type { Server } from "./server.js";
+import { OutcomeStore, resolveOutcomeLogDir } from "./workers/outcomeStore.js";
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -529,6 +530,19 @@ export class RecipeOrchestration {
         ...(opts?.classKey && { classKey: opts.classKey }),
         ...(opts?.limit !== undefined && { limit: opts.limit }),
       });
+    };
+
+    // Operator outcome dispositions (~/.patchwork/outcome-log.jsonl). Backs
+    // GET/POST /outcomes + the dashboard confirm/reject panel — the HTTP twin
+    // of `patchwork outcomes`. A fresh store per call (disk-backed,
+    // last-writer-wins); mkdir ensures the log's parent dir exists so a POST
+    // upsert can append. `resolveOutcomeLogDir` is the SAME resolver the
+    // trust-replay READ path uses, so a confirm here always moves the dial —
+    // even when PATCHWORK_HOME points the log outside ~/.patchwork.
+    server.outcomeStoreFn = () => {
+      const dir = resolveOutcomeLogDir();
+      mkdirSync(dir, { recursive: true });
+      return new OutcomeStore(dir);
     };
 
     // VD-4 mocked replay: load the original run, re-parse its recipe

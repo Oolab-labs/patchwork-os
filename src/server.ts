@@ -345,6 +345,12 @@ export class Server extends EventEmitter<ServerEvents> {
         limit?: number;
       }) => import("./workerGateDecisionLog.js").GateDecisionRecord[])
     | null = null;
+  /** Patchwork: operator outcome dispositions (~/.patchwork/outcome-log.jsonl).
+   *  Backs GET/POST /outcomes and the dashboard confirm/reject panel; mirrors
+   *  the `patchwork outcomes` CLI. Never exposed as a recipe step / MCP tool. */
+  public outcomeStoreFn:
+    | (() => import("./workers/outcomeStore.js").OutcomeStore)
+    | null = null;
   /** Patchwork (VD-4): mocked replay of an existing run. Returns the new
    *  run's seq plus any unmocked steps the caller may want to surface. */
   public runReplayFn:
@@ -1651,6 +1657,7 @@ export class Server extends EventEmitter<ServerEvents> {
           simulateFn: this.simulateFn,
           workerShadowFn: this.workerShadowFn,
           gateDecisionsFn: this.gateDecisionsFn,
+          outcomeStoreFn: this.outcomeStoreFn,
           runReplayFn: this.runReplayFn,
           runRecipeFn: this.runRecipeFn,
           onRecipesChangedFn: this.onRecipesChangedFn,

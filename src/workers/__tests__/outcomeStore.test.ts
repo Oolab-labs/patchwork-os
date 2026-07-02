@@ -6,7 +6,34 @@ import {
   classifyIssueDisposition,
   type OutcomeRecord,
   OutcomeStore,
+  resolveOutcomeLogDir,
 } from "../outcomeStore.js";
+
+describe("resolveOutcomeLogDir — one file for every read + write path", () => {
+  let prev: string | undefined;
+  beforeEach(() => {
+    prev = process.env.PATCHWORK_HOME;
+  });
+  afterEach(() => {
+    if (prev === undefined) delete process.env.PATCHWORK_HOME;
+    else process.env.PATCHWORK_HOME = prev;
+  });
+
+  it("an explicit override always wins (test tmp dir / shadow opts.patchworkDir)", () => {
+    process.env.PATCHWORK_HOME = "/env/pw";
+    expect(resolveOutcomeLogDir("/override")).toBe("/override");
+  });
+
+  it("honors PATCHWORK_HOME when set (so write + trust-replay read agree)", () => {
+    process.env.PATCHWORK_HOME = "/data/pw";
+    expect(resolveOutcomeLogDir()).toBe("/data/pw");
+  });
+
+  it("falls back to ~/.patchwork when PATCHWORK_HOME is unset", () => {
+    delete process.env.PATCHWORK_HOME;
+    expect(resolveOutcomeLogDir()).toBe(path.join(os.homedir(), ".patchwork"));
+  });
+});
 
 describe("classifyIssueDisposition", () => {
   it("labels signalling noise → junk (case-insensitive, substring)", () => {
