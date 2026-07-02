@@ -214,6 +214,7 @@ const KNOWN_SUBCOMMANDS = [
   "workers",
   "approvals",
   "gate",
+  "outcomes",
 ] as const;
 
 const __invokedSubcommand = (() => {
@@ -4854,6 +4855,32 @@ if (process.argv[2] === "gate") {
       }
       process.stdout.write(`${formatGateDecisionHistory(decisions)}\n`);
       process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
+// Handle outcomes subcommand — operator positive-act confirmation of worker
+// filings (confirm/reject/list). Writes to ~/.patchwork/outcome-log.jsonl, the
+// same store the trust ramp reads; it is NOT a recipe step, so a worker cannot
+// self-confirm its own filings. No bridge required.
+if (process.argv[2] === "outcomes") {
+  const args = process.argv.slice(3);
+  (async () => {
+    try {
+      const { runOutcomesCli } = await import("./workers/outcomesCli.js");
+      const { OutcomeStore } = await import("./workers/outcomeStore.js");
+      const patchworkDir =
+        process.env.PATCHWORK_HOME ?? path.join(os.homedir(), ".patchwork");
+      const store = new OutcomeStore(patchworkDir);
+      const res = runOutcomesCli(args, { store, now: Date.now() });
+      if (res.stdout) process.stdout.write(res.stdout);
+      if (res.stderr) process.stderr.write(res.stderr);
+      process.exit(res.exitCode);
     } catch (err) {
       process.stderr.write(
         `Error: ${err instanceof Error ? err.message : String(err)}\n`,

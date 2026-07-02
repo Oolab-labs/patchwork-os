@@ -25,7 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-*(empty — add entries here as work starts)*
+- 2026-07-02 `feat/outcomes-confirm-cli` — `patchwork outcomes confirm|reject|list` verb (operator confirm-label loop) + outcome-ingester label-comment fix; touches src/index.ts, src/workers/outcomesCli.ts, templates/recipes/outcome-ingester.yaml, docs/runbooks/worker-autonomy-dogfood.md (append-only), CLAUDE.md
 
 ## Recently closed (informal log, prune periodically)
 
