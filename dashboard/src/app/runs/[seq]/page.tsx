@@ -9,7 +9,9 @@ import { RecipeChip, RunChip, ToolChip, InboxChip } from "@/components/patchwork
 import { StepDiffHover } from "@/components/StepDiffHover";
 import { Skeleton, SkeletonList } from "@/components/Skeleton";
 import { Dialog } from "@/components/Dialog";
+import { CancelRunDialog } from "@/components/CancelRunDialog";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
+import { useCancelRun } from "@/hooks/useCancelRun";
 import {
   HALT_CATEGORY_HINT,
   type HaltCategory,
@@ -931,6 +933,15 @@ export default function RunDetailPage() {
   const [replayMessage, setReplayMessage] = useState<string>();
   const replayTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  // Stop control for a live run. On success, optimistically flip local
+  // status to "cancelled" — the SSE/poll cycle will confirm shortly after,
+  // but this avoids a beat of stale "running" after the user just stopped it.
+  const cancelRun = useCancelRun((cancelledSeq) => {
+    setRun((prev) =>
+      prev && prev.seq === cancelledSeq ? { ...prev, status: "cancelled" } : prev,
+    );
+  });
+
   // Phase 1A item 8 — surface prior fix decisions for this recipe.
   // `ctxQueryTraces({traceType:"decision", key:recipeName})` is what powers
   // the /decisions and /traces pages; we read the same /api/bridge/traces
@@ -1357,6 +1368,26 @@ export default function RunDetailPage() {
             <span style={{ fontSize: "var(--fs-xs)", color: "var(--ink-3)", marginLeft: 4 }}>
               {fmtTs(run.createdAt)}
             </span>
+            {/* Stop control — only meaningful while the run is live. */}
+            {run.status === "running" && (
+              <button
+                type="button"
+                onClick={() => cancelRun.requestConfirm(run.seq)}
+                disabled={cancelRun.phase === "cancelling"}
+                title="Abort this run's in-progress step immediately."
+                style={{
+                  fontSize: "var(--fs-xs)",
+                  padding: "4px 10px",
+                  borderRadius: "var(--r-1, 4px)",
+                  border: "1px solid var(--err, var(--red))",
+                  background: "transparent",
+                  color: "var(--err, var(--red))",
+                  cursor: cancelRun.phase === "cancelling" ? "wait" : "pointer",
+                }}
+              >
+                {cancelRun.phase === "cancelling" ? "Stopping…" : "Stop"}
+              </button>
+            )}
             {/* VD-4: replay button (mocked-only). Real replay TBD. */}
             {run.status !== "running" && (
               <button
@@ -1442,6 +1473,14 @@ export default function RunDetailPage() {
           </button>
         </div>
       </Dialog>
+
+      <CancelRunDialog
+        open={cancelRun.phase === "confirming"}
+        onClose={cancelRun.dismiss}
+        onConfirm={() => void cancelRun.confirm()}
+        recipeName={run?.recipeName}
+        seq={cancelRun.cancelSeq}
+      />
 
       {runErr && <div className="alert-err" role="alert">Failed to load run: {runErr}</div>}
       {!seqIsValid ? (

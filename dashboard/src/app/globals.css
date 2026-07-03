@@ -882,6 +882,34 @@ button.topbar-search {
 .global-live-runs-strip-overflow:hover {
   color: var(--ink-1);
 }
+.global-live-runs-strip-row-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.global-live-runs-strip-stop-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0 4px;
+  border-radius: 999px;
+  border: 1px solid var(--err, var(--red));
+  background: transparent;
+  color: var(--err, var(--red));
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+}
+.global-live-runs-strip-stop-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--err, var(--red)) 12%, transparent);
+}
+.global-live-runs-strip-stop-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
 
 .app-content {
   position: relative;
@@ -2013,6 +2041,13 @@ a.btn { text-decoration: none; }
 
 /* Status pill in table rows — slightly larger than xs */
 .runs-status-pill { font-size: var(--fs-xs); }
+
+/* Stop button next to a running-run's status pill (list rows + mobile cards) */
+.runs-stop-btn {
+  margin-left: 6px;
+  color: var(--err, var(--red));
+  border-color: var(--err, var(--red));
+}
 
 /* Duration cell: bar + text */
 .runs-dur-cell { display: flex; align-items: center; gap: 8px; }
@@ -9387,7 +9422,6 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   outline-offset: 2px;
 }
 
-<<<<<<< HEAD
 /* ── Workers "Roster" (redesign W-A) ─────────────────────────────────────── */
 .wa-head {
   display: flex;

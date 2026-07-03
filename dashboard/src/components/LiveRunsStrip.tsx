@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { LivePill, StatusPill } from "@/components/patchwork";
 import { relTime } from "@/components/time";
 import { useRunRecipe } from "@/hooks/useRunRecipe";
+import { useCancelRun } from "@/hooks/useCancelRun";
+import { CancelRunDialog } from "@/components/CancelRunDialog";
 
 /**
  * Horizontal "what's running now" strip for the Overview page. Renders
@@ -63,6 +66,14 @@ export function LiveRunsStrip({
   limit = 5,
 }: LiveRunsStripProps) {
   const { run, pending } = useRunRecipe();
+  // Optimistic local override — the `runs` prop is fetched by the parent
+  // (Overview page) on its own poll cadence, so a just-cancelled run would
+  // otherwise still render "running" until that poll catches up. Tracked
+  // by seq since that's the stable identity `POST /runs/:seq/cancel` uses.
+  const [cancelledSeqs, setCancelledSeqs] = useState<Set<number>>(new Set());
+  const cancelRun = useCancelRun((seq) => {
+    setCancelledSeqs((prev) => new Set(prev).add(seq));
+  });
   const now = Date.now();
   const visible = runs
     .filter((r) => {
@@ -83,8 +94,13 @@ export function LiveRunsStrip({
     <section aria-label="Live and recent recipe runs" className="live-runs-strip">
       {visible.map((r, i) => {
         const name = recipeNameOf(r);
-        const tone = statusTone(r.status);
-        const isLive = r.status === "running";
+        // Local optimistic override wins over the prop's (possibly stale)
+        // status until the next parent poll confirms the cancellation.
+        const isCancelled = r.seq != null && cancelledSeqs.has(r.seq);
+        const status = isCancelled ? "cancelled" : r.status;
+        const tone = statusTone(status);
+        const isLive = !isCancelled && r.status === "running";
+        const isStopping = r.seq != null && cancelRun.cancelSeq === r.seq && cancelRun.phase === "cancelling";
         const elapsed = isLive
           ? fmtElapsed(now - r.startedAt)
           : r.durationMs
@@ -104,7 +120,7 @@ export function LiveRunsStrip({
             title={
               r.haltReason
                 ? `Halt: ${r.haltReason}`
-                : `${name} · ${r.status} · ${isLive ? "started" : "finished"} ${relTime(isLive ? r.startedAt : r.doneAt ?? r.startedAt)}`
+                : `${name} · ${status} · ${isLive ? "started" : "finished"} ${relTime(isLive ? r.startedAt : r.doneAt ?? r.startedAt)}`
             }
           >
             <Link href={href} className="lrc-link">
@@ -112,7 +128,7 @@ export function LiveRunsStrip({
                 {isLive ? (
                   <LivePill label={elapsed} tone="accent" />
                 ) : (
-                  <StatusPill tone={tone}>{r.status}</StatusPill>
+                  <StatusPill tone={tone}>{status}</StatusPill>
                 )}
                 <span className="lrc-name">{name}</span>
               </div>
@@ -127,6 +143,22 @@ export function LiveRunsStrip({
                 )}
               </div>
             </Link>
+            {isLive && r.seq != null && (
+              <button
+                type="button"
+                onClick={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                  cancelRun.requestConfirm(r.seq as number);
+                }}
+                disabled={isStopping}
+                className="live-run-rerun-btn"
+                data-tone="err"
+                title={`Stop ${name}`}
+              >
+                {isStopping ? "stopping…" : "■ Stop"}
+              </button>
+            )}
             {showRerun && (
               <button
                 type="button"
@@ -146,6 +178,16 @@ export function LiveRunsStrip({
           </div>
         );
       })}
+      <CancelRunDialog
+        open={cancelRun.phase === "confirming"}
+        onClose={cancelRun.dismiss}
+        onConfirm={() => void cancelRun.confirm()}
+        recipeName={
+          runs.find((r) => r.seq === cancelRun.cancelSeq)?.recipeName ??
+          runs.find((r) => r.seq === cancelRun.cancelSeq)?.recipe
+        }
+        seq={cancelRun.cancelSeq}
+      />
     </section>
   );
 }
