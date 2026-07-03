@@ -14,6 +14,8 @@ import { ActivityTabs } from "@/components/ActivityTabs";
 import { useDebounced } from "@/hooks/useDebounced";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
 import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
+import { useCancelRun } from "@/hooks/useCancelRun";
+import { CancelRunDialog } from "@/components/CancelRunDialog";
 import { dedupeRunsByKey } from "@/lib/dedupeRuns";
 import { useManualPollStaleness } from "@/lib/staleFetchRegistry";
 
@@ -272,6 +274,18 @@ export default function RunsPage() {
   // effect (and its AbortController + interval) to re-run on every render.
   const markRunsPollSuccessRef = useRef(markRunsPollSuccess);
   markRunsPollSuccessRef.current = markRunsPollSuccess;
+
+  // Stop control for a live run. On success, optimistically patch the
+  // matching row(s) to "cancelled" in local state — a run can appear more
+  // than once if seq collides across a poll/SSE race, so patch by seq
+  // rather than assuming uniqueness.
+  const cancelRun = useCancelRun((seq) => {
+    setRuns((prev) =>
+      prev
+        ? prev.map((r) => (r.seq === seq ? { ...r, status: "cancelled" } : r))
+        : prev,
+    );
+  });
 
   useEffect(() => {
     // Audit 2026-05-17 (#600): one AbortController per effect run,
@@ -923,6 +937,26 @@ export default function RunsPage() {
                           {sClass !== "running" && <span className="pill-dot" />}
                           {sLabel}
                         </span>
+                        {r.status === "running" && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              cancelRun.requestConfirm(r.seq);
+                            }}
+                            disabled={
+                              cancelRun.cancelSeq === r.seq &&
+                              cancelRun.phase === "cancelling"
+                            }
+                            className="btn sm ghost runs-stop-btn"
+                            title={`Stop this run of ${r.recipeName}`}
+                          >
+                            {cancelRun.cancelSeq === r.seq &&
+                            cancelRun.phase === "cancelling"
+                              ? "Stopping…"
+                              : "Stop"}
+                          </button>
+                        )}
                       </td>
                       <td
                         aria-label={`Duration ${
@@ -1104,6 +1138,26 @@ export default function RunsPage() {
                     {sClass !== "running" && <span className="pill-dot" />}
                     {sLabel}
                   </span>
+                  {r.status === "running" && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        cancelRun.requestConfirm(r.seq);
+                      }}
+                      disabled={
+                        cancelRun.cancelSeq === r.seq &&
+                        cancelRun.phase === "cancelling"
+                      }
+                      className="btn sm ghost runs-stop-btn"
+                      title={`Stop this run of ${r.recipeName}`}
+                    >
+                      {cancelRun.cancelSeq === r.seq &&
+                      cancelRun.phase === "cancelling"
+                        ? "Stopping…"
+                        : "Stop"}
+                    </button>
+                  )}
                 </div>
                 <div className="run-card-meta">
                   <span className={`pill ${triggerPillClass(r.trigger)} xs`}>
@@ -1164,6 +1218,13 @@ export default function RunsPage() {
         </div>
         </>
       )}
+      <CancelRunDialog
+        open={cancelRun.phase === "confirming"}
+        onClose={cancelRun.dismiss}
+        onConfirm={() => void cancelRun.confirm()}
+        recipeName={runs?.find((r) => r.seq === cancelRun.cancelSeq)?.recipeName}
+        seq={cancelRun.cancelSeq}
+      />
     </section>
   );
 }

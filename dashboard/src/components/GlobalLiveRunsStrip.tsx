@@ -3,6 +3,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useActiveRuns } from "@/hooks/LiveRunsContext";
 import { StatusPill } from "@/components/patchwork";
+import { useCancelRun } from "@/hooks/useCancelRun";
+import { CancelRunDialog } from "@/components/CancelRunDialog";
 
 /**
  * Always-on global "what's running now" strip. Mounted in Shell so it
@@ -48,6 +50,14 @@ function transitionKey(
 
 export function GlobalLiveRunsStrip() {
   const runs = useActiveRuns();
+  // Optimistic local override — this store is entirely SSE-driven with no
+  // client-side setter, so a just-cancelled run would otherwise still show
+  // "running" until the bridge's recipe_done event arrives. Tracked by
+  // runSeq since that's the stable identity `POST /runs/:seq/cancel` uses.
+  const [cancelledSeqs, setCancelledSeqs] = useState<Set<number>>(new Set());
+  const cancelRun = useCancelRun((seq) => {
+    setCancelledSeqs((prev) => new Set(prev).add(seq));
+  });
   // Order: running first, then most recent terminal first.
   const all = Array.from(runs.values()).sort((a, b) => {
     if (a.status === "running" && b.status !== "running") return -1;
@@ -100,8 +110,14 @@ export function GlobalLiveRunsStrip() {
         // unique per-run seq with an index fallback — mirrors LiveRunsStrip.
         const rowKey =
           r.runSeq && r.runSeq > 0 ? `run-${r.runSeq}` : `${r.recipeName}-${i}`;
-        const label =
-          r.status === "running"
+        const isCancelled = r.runSeq > 0 && cancelledSeqs.has(r.runSeq);
+        const status = isCancelled ? "error" : r.status;
+        const isLive = !isCancelled && r.status === "running";
+        const isStopping =
+          r.runSeq > 0 && cancelRun.cancelSeq === r.runSeq && cancelRun.phase === "cancelling";
+        const label = isCancelled
+          ? "Cancelled"
+          : r.status === "running"
             ? r.totalSteps > 0
               ? `Step ${r.doneSteps}/${r.totalSteps}`
               : "Running"
@@ -114,26 +130,42 @@ export function GlobalLiveRunsStrip() {
         const inner = (
           <>
             <span className="global-live-runs-strip-name">{r.recipeName}</span>
-            <StatusPill tone={tone(r.status)}>{label}</StatusPill>
-            {r.status === "running" && r.totalSteps > 0 && (
+            <StatusPill tone={tone(status)}>{label}</StatusPill>
+            {isLive && r.totalSteps > 0 && (
               <span className="global-live-runs-strip-bar" aria-label={`Progress ${p}%`}>
                 <span style={{ width: `${p}%` }} />
               </span>
             )}
           </>
         );
-        return href ? (
-          <Link
-            key={rowKey}
-            href={href}
-            className="global-live-runs-strip-row"
-            title={`Open run #${r.runSeq}`}
-          >
-            {inner}
-          </Link>
-        ) : (
-          <span key={rowKey} className="global-live-runs-strip-row">
-            {inner}
+        return (
+          <span key={rowKey} className="global-live-runs-strip-row-wrap">
+            {href ? (
+              <Link
+                href={href}
+                className="global-live-runs-strip-row"
+                title={`Open run #${r.runSeq}`}
+              >
+                {inner}
+              </Link>
+            ) : (
+              <span className="global-live-runs-strip-row">{inner}</span>
+            )}
+            {isLive && r.runSeq > 0 && (
+              <button
+                type="button"
+                onClick={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                  cancelRun.requestConfirm(r.runSeq);
+                }}
+                disabled={isStopping}
+                className="global-live-runs-strip-stop-btn"
+                title={`Stop ${r.recipeName}`}
+              >
+                {isStopping ? "stopping…" : "■"}
+              </button>
+            )}
           </span>
         );
       })}
@@ -142,6 +174,13 @@ export function GlobalLiveRunsStrip() {
           +{overflow} more
         </Link>
       )}
+      <CancelRunDialog
+        open={cancelRun.phase === "confirming"}
+        onClose={cancelRun.dismiss}
+        onConfirm={() => void cancelRun.confirm()}
+        recipeName={all.find((r) => r.runSeq === cancelRun.cancelSeq)?.recipeName}
+        seq={cancelRun.cancelSeq}
+      />
     </div>
   );
 }
