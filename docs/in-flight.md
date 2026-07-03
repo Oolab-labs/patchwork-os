@@ -25,6 +25,8 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
+- 2026-07-03 `feat/dashboard-approvals-considered` — dashboard redesign Deliverable 1 (Approvals → "Considered"): `app/approvals/page.tsx` — evidence-first queue, sorted blast-radius irreversible→compensable→reversible; blast badge from action-class `domain:reversibility:blastTier`; two-column body (what it'll run / why it fired) for irreversible+compensable with evidence-gated Approve; worker-record right rail from `/gate/decisions`; deny-reason popover; outcome-loop footer. Spec: docs/plans/dashboard-redesign-2026-07-03.md Deliverable 1. All 7 core redesign pages (#1080-#1087) already merged. — build session
+
 ## Recently closed (informal log, prune periodically)
 
 - 2026-07-03 `feat/dashboard-traces-waterfall` — dashboard redesign page 7/7 (Traces → "Waterfall", mockup T-A): investigated `app/traces/page.tsx` — the tree-view waterfall (per-lane `SpanBar` timing bars, `TYPE_THEME` color legend matching the mockup's blue/amber/green/purple/red, flat view behind a toggle, header stats + live-poll pill) was already built in an earlier session and reviewed clean against spec. No code changes — no PR needed. Spec: docs/plans/dashboard-redesign-2026-07-03.md item 7. All 7 core pages now done (1/#1080, 2/#1081, 3/#1083, 4/#1084, 5/#1085, 6/#1086, 7/no-op). — build session
