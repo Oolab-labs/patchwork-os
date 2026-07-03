@@ -25,6 +25,8 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
+- 2026-07-03 `feat/dashboard-approvals-considered` — dashboard redesign Deliverable 1 (Approvals → "Considered"): `app/approvals/page.tsx` — evidence-first queue, sorted blast-radius irreversible→compensable→reversible; blast badge from action-class `domain:reversibility:blastTier`; two-column body (what it'll run / why it fired) for irreversible+compensable with evidence-gated Approve; worker-record right rail from `/gate/decisions`; deny-reason popover; outcome-loop footer. Spec: docs/plans/dashboard-redesign-2026-07-03.md Deliverable 1. All 7 core redesign pages (#1080-#1087) already merged. — build session
+
 ## Recently closed (informal log, prune periodically)
 
 - 2026-07-03 `docs/terminal-copilot-deck-plan` — 6-agent parallel research + synthesis pass (Workflow tool, user-requested "team of agents rigorously plan") producing docs/plans/dashboard-terminal-copilot-plan-2026-07-03.md: refined implementation plan for the "Terminal + Copilot" dashboard landing page redesign. Key findings: 5/7 panes are pure reuse of existing app/page.tsx state; workers+inbox panes need net-new fetch wiring; cron-countdown pane can reuse dashboard/src/lib/humanSchedule.ts (no new parser needed); copilot's "chat proposes, buttons dispose" safety only holds if action cards bind to gated handlers (handleToggleEnabled/handleRunClick/useRecipeInstall().handleInstall) not raw endpoints — kill-switch has NO existing confirm-gate to inherit and needs a prerequisite PR; Decision Record attribution needs a new HTTP route + schema field. 10-PR sequencing + 7 open questions for the user. Planning only — no implementation started. — build session
