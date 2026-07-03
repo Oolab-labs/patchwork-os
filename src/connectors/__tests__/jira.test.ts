@@ -311,6 +311,67 @@ describe("listProjects request bound (connectors-vendors-4)", () => {
   });
 });
 
+describe("jira getStatus() token expiry (dashboard gap #2, PAT-style connector)", () => {
+  const tmpDir = join(os.tmpdir(), `patchwork-jira-status-${Date.now()}`);
+  const homeDir = join(tmpDir, "home");
+  const patchworkHome = join(homeDir, ".patchwork");
+  const tokensDir = join(patchworkHome, "tokens");
+
+  beforeEach(() => {
+    process.env.HOME = homeDir;
+    process.env.PATCHWORK_HOME = patchworkHome;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    mkdirSync(tokensDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    delete process.env.HOME;
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    delete process.env.JIRA_API_TOKEN;
+    delete process.env.JIRA_INSTANCE_URL;
+    delete process.env.JIRA_EMAIL;
+    if (existsSync(tmpDir)) {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("never fabricates tokenExpiresAt for a PAT-style connector, even when connected", async () => {
+    process.env.JIRA_API_TOKEN = "jira-token";
+    process.env.JIRA_INSTANCE_URL = "https://acme.atlassian.net/";
+    process.env.JIRA_EMAIL = "dev@acme.test";
+
+    const { JiraConnector } = await import("../jira.js");
+    const conn = new JiraConnector();
+    const status = conn.getStatus();
+
+    expect(status.status).toBe("connected");
+    expect(status.tokenExpiresAt).toBeUndefined();
+  });
+
+  it("surfaces lastSuccessAt only after a recorded successful call, never guessed", async () => {
+    process.env.JIRA_API_TOKEN = "jira-token";
+    process.env.JIRA_INSTANCE_URL = "https://acme.atlassian.net/";
+    process.env.JIRA_EMAIL = "dev@acme.test";
+
+    const { JiraConnector } = await import("../jira.js");
+    const { recordConnectorSuccess, __resetConnectorActivityForTest } =
+      await import("../connectorActivity.js");
+    __resetConnectorActivityForTest();
+
+    const conn = new JiraConnector();
+    expect(conn.getStatus().lastSuccessAt).toBeUndefined();
+
+    recordConnectorSuccess("jira");
+    const after = conn.getStatus();
+    expect(after.lastSuccessAt).toBeDefined();
+    expect(new Date(after.lastSuccessAt as string).toString()).not.toBe(
+      "Invalid Date",
+    );
+  });
+});
+
 describe("connectorRoutes /connections/jira/connect wiring", () => {
   it("connectorRoutes.ts references handleJiraConnect (regression: was 404)", async () => {
     const { readFileSync } = await import("node:fs");

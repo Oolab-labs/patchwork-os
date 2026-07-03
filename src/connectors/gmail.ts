@@ -50,6 +50,10 @@ export interface ConnectorStatus {
   status: "connected" | "disconnected" | "needs_reauth";
   lastSync?: string;
   email?: string;
+  /** ISO timestamp of OAuth token expiry, when tracked. Never fabricated. */
+  tokenExpiresAt?: string;
+  /** ISO timestamp of the most recent successful API call, when known. */
+  lastSuccessAt?: string;
 }
 
 function clientId(): string {
@@ -378,14 +382,66 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
   const tokenPasteStatuses = await Promise.all(
     tokenPasteProbes.map(async (probe) => {
       try {
-        const m = (await probe.mod()) as { loadTokens?: () => unknown };
+        const m = (await probe.mod()) as {
+          loadTokens?: () => unknown;
+          // Most token-paste connectors extend BaseConnector and export a
+          // `<Vendor>Connector` class whose getStatus() carries
+          // tokenExpiresAt/lastSuccessAt. Probe for any exported class
+          // with a no-arg constructor and a getStatus() method rather than
+          // hardcoding 30+ class names here.
+          [key: string]: unknown;
+        };
         const connected = m.loadTokens ? m.loadTokens() !== null : false;
+        if (!connected) {
+          return {
+            id: probe.id,
+            status: "disconnected" as const,
+            lastSync: undefined,
+          };
+        }
+        // Look for the connector class export to get tokenExpiresAt /
+        // lastSuccessAt via its getStatus(). Fall back to the bare
+        // loadTokens()-derived status if no such export is found or
+        // instantiation fails — never block the connections list on this.
+        for (const exportName of Object.keys(m)) {
+          const candidate = m[exportName];
+          if (
+            typeof candidate === "function" &&
+            /Connector$/.test(exportName) &&
+            candidate.prototype &&
+            typeof candidate.prototype.getStatus === "function"
+          ) {
+            try {
+              const instance = new (
+                candidate as new () => {
+                  getStatus: () => {
+                    status: string;
+                    lastSync?: string;
+                    tokenExpiresAt?: string;
+                    lastSuccessAt?: string;
+                  };
+                }
+              )();
+              const status = instance.getStatus();
+              return {
+                id: probe.id,
+                status:
+                  status.status === "connected"
+                    ? ("connected" as const)
+                    : ("disconnected" as const),
+                lastSync: status.lastSync ?? new Date().toISOString(),
+                tokenExpiresAt: status.tokenExpiresAt,
+                lastSuccessAt: status.lastSuccessAt,
+              };
+            } catch {
+              break;
+            }
+          }
+        }
         return {
           id: probe.id,
-          status: connected
-            ? ("connected" as const)
-            : ("disconnected" as const),
-          lastSync: connected ? new Date().toISOString() : undefined,
+          status: "connected" as const,
+          lastSync: new Date().toISOString(),
         };
       } catch {
         return {

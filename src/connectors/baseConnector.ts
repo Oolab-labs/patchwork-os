@@ -18,6 +18,21 @@ export interface ConnectorStatus {
   status: "connected" | "disconnected";
   lastSync?: string;
   workspace?: string;
+  /**
+   * ISO timestamp of OAuth token expiry, when the connector's auth flow
+   * tracks one. `undefined` for PAT/API-token connectors (Jira, Confluence,
+   * Linear, Notion, HubSpot, Intercom, Datadog, PagerDuty, Zendesk, Sentry
+   * non-MCP fallback, etc.) — never fabricated. See `AuthContext.expiresAt`.
+   */
+  tokenExpiresAt?: string;
+  /**
+   * ISO timestamp of the most recent successful API call this bridge
+   * process has observed for this connector, from
+   * `connectorActivity.ts`. `undefined` if no successful call has been
+   * recorded yet (never called, or bridge restarted since) — never
+   * fabricated.
+   */
+  lastSuccessAt?: string;
 }
 
 export interface AuthContext {
@@ -364,6 +379,10 @@ export abstract class BaseConnector {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const result = await fn(this.auth.token);
+        const { recordConnectorSuccess } = await import(
+          "./connectorActivity.js"
+        );
+        recordConnectorSuccess(this.providerName);
         return { data: result };
       } catch (err) {
         const normalized = this.normalizeError(err);
