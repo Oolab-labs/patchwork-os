@@ -64,6 +64,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: "Today",
     routes: [
+      { href: "/today", label: "Today",    icon: "check" },
       { href: "/",      label: "Overview", icon: "home" },
       { href: "/inbox", label: "Inbox",    icon: "inbox" },
     ],

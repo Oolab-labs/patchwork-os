@@ -25,7 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-03 `feat/dashboard-approvals-considered` — dashboard redesign Deliverable 1 (Approvals → "Considered"): `app/approvals/page.tsx` — evidence-first queue, sorted blast-radius irreversible→compensable→reversible; blast badge from action-class `domain:reversibility:blastTier`; two-column body (what it'll run / why it fired) for irreversible+compensable with evidence-gated Approve; worker-record right rail from `/gate/decisions`; deny-reason popover; outcome-loop footer. Spec: docs/plans/dashboard-redesign-2026-07-03.md Deliverable 1. All 7 core redesign pages (#1080-#1087) already merged. — build session
+- 2026-07-03 `feat/dashboard-today-page` — dashboard redesign Deliverable 2 (new "Today" page, `app/today/page.tsx`, ADDITIVE — does not replace Overview at `/`): single 840px column, hero (overnight run/halt count + 3-segment progress), §1 read-the-brief (newest unread inbox brief item), §2 clear-the-decisions (merged worst-first list reusing Deliverable 1's blast badges + pending worker verdicts + reversible-batch row), §3 glance-at-the-team (workers data). localStorage daily progress ticks. Added to sidebar `NAV_SECTIONS` "Today" section (`dashboard/src/lib/navRoutes.ts`), above Overview. Spec: docs/plans/dashboard-redesign-2026-07-03.md Deliverable 2. Follows PR #1089 (Deliverable 1, merged — reuses its blast-badge components). — build session
 
 ## Recently closed (informal log, prune periodically)
 

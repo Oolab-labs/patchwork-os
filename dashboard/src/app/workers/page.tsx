@@ -10,52 +10,17 @@ import {
   ExpertToggle,
   useExpertMode,
 } from "@/components/DetailsFold";
+import {
+  isReversible,
+  taskName as sharedTaskName,
+  type AuditEvent,
+  type BoardRow,
+  type Divergence,
+  type ShadowResponse,
+  type WorkerReport,
+} from "@/lib/workerTrust";
 
-interface BoardRow {
-  classKey: string;
-  level: number;
-  observations: number;
-  mean: number;
-  /** False = the worker performed this class but does not own it — the live
-   *  gate floors it to L0 regardless of accrued evidence (mirrors the CLI's
-   *  `workers shadow` "⚠ NOT OWNED" flag). */
-  owned: boolean;
-}
-interface Divergence {
-  classKey: string;
-  toolName: string;
-  ramp: string;
-  gate: string;
-  at: number;
-  note: string;
-}
-/** A promote/demote milestone in a worker's trust journey. */
-interface AuditEvent {
-  type: "promote" | "demote";
-  classKey: string;
-  from: number;
-  to: number;
-  at: number;
-  evidence: number;
-  reason: string;
-  workerId: string;
-}
-interface WorkerReport {
-  workerId: string;
-  name: string;
-  autonomyCeiling: number;
-  board: BoardRow[];
-  events: AuditEvent[];
-  compared: number;
-  agreed: number;
-  divergences: Divergence[];
-}
-interface ShadowResponse {
-  workers: WorkerReport[];
-  runsScanned: number;
-  decisionsScanned: number;
-  generatedAt?: string;
-}
+export type { AuditEvent, BoardRow, Divergence, ShadowResponse, WorkerReport };
 
 interface LatencyStats {
   count: number;
@@ -131,18 +96,13 @@ const STAKES_LABELS: Record<string, string> = {
 };
 function taskName(classKey: string): string {
   const domain = classKey.split(":")[0] ?? classKey;
-  return DOMAIN_LABELS[domain] ?? domain;
+  return DOMAIN_LABELS[domain] ?? sharedTaskName(classKey);
 }
 function taskStakes(classKey: string): string {
   const tier = classKey.split(":")[2] ?? "";
   return STAKES_LABELS[tier] ?? "";
 }
-/** The reversibility segment of the classKey. Reversible actions bypass the
- *  gate unconditionally (they're easily undone), so the autonomy ceiling never
- *  restricts them — "capped" and "ready to promote" are meaningless there. */
-function isReversible(classKey: string): boolean {
-  return classKey.split(":")[1] === "reversible";
-}
+// isReversible now imported from @/lib/workerTrust (shared with /today).
 function levelPhrase(n: number): string {
   return PLAIN_LEVELS[n] ?? `level ${n}`;
 }
