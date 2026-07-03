@@ -25,7 +25,8 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-03 `feat/dashboard-killswitch-confirm` — Terminal+Copilot deck plan PR 4/10: shared confirm dialog for engaging/releasing the kill-switch, wired into both `KillSwitchBanner.tsx` (release) and `settings/page.tsx`'s `ToggleRow` (engage+release) — neither currently has a client-side confirm before POSTing `/api/bridge/kill-switch`. Safety prerequisite flagged by the plan: a future copilot action card must never be more reckless than the existing UI, and today there's no gate to inherit at all. PRs 1/2/3/5 already merged (#1091/#1090/#1092/#1094). This is the last PR in the prep sequence. — build session
+- 2026-07-03 `feat/dashboard-terminal-deck-phase1` (PR #1095, awaiting user visual review before merge) — Terminal+Copilot deck plan PR 6/10: full rewrite of `app/page.tsx` replacing the PR #1085 Command Deck bento with the "Home D · Terminal (dark)" statusline + 7-pane mono grid. Prep sequence PRs 1-5 all merged.
+- 2026-07-03 `docs/gap-assessment-verify-orphans` — dashboard gap remediation task item 0 (verify-first): confirmed all 4 "possible orphan" endpoints flagged in docs/dashboard-gap-assessment-2026-07-03.md (`GET /approval-insights` base, `GET /analytics`, `GET /inbox`+`/inbox/{file}`, `GET /stream`) are real consumers, missed by the original scan because they're hit via `/api/bridge/*`/`/api/inbox` proxy routes and shared hooks (`streamLiveness.ts`, `useBridgeStream`) rather than page-level literal-path fetches. Doc corrected with exact consumer citations. No UI work (per task instruction). — build session
 
 ## Recently closed (informal log, prune periodically)
 
