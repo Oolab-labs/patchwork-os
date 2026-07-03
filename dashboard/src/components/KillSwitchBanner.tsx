@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { apiPath } from "@/lib/api";
+import { KillSwitchConfirmDialog } from "@/components/KillSwitchConfirmDialog";
 
 interface KillSwitchBannerProps {
   engaged: boolean;
@@ -15,10 +16,11 @@ interface KillSwitchBannerProps {
 export function KillSwitchBanner({ engaged, locked }: KillSwitchBannerProps) {
   const [releasing, setReleasing] = useState(false);
   const [releaseError, setReleaseError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!engaged) return null;
 
-  const handleRelease = async () => {
+  const doRelease = async () => {
     if (releasing || locked) return;
     setReleasing(true);
     setReleaseError(null);
@@ -86,7 +88,7 @@ export function KillSwitchBanner({ engaged, locked }: KillSwitchBannerProps) {
         type="button"
         className="btn"
         disabled={locked || releasing}
-        onClick={handleRelease}
+        onClick={() => setConfirmOpen(true)}
         title={locked ? "(env-locked) Cannot release — set by environment variable at startup." : undefined}
         style={{ fontSize: "var(--fs-s)", whiteSpace: "nowrap" }}
       >
@@ -103,6 +105,13 @@ export function KillSwitchBanner({ engaged, locked }: KillSwitchBannerProps) {
           </span>
         )}
       </button>
+
+      <KillSwitchConfirmDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={doRelease}
+        direction="release"
+      />
     </div>
   );
 }
