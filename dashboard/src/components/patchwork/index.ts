@@ -26,6 +26,7 @@ export { EventsHistogram } from "./EventsHistogram";
 export { MetricsDonut, type DonutSegment } from "./MetricsDonut";
 export { AreaChart, type AreaChartSeries } from "./AreaChart";
 export { RunSparkBars } from "./RunSparkBars";
+export { BlastBadge, blastBadge } from "./BlastBadge";
 export { SuccessRing, type SuccessRingProps } from "./SuccessRing";
 export * from "./entity";
 export { EntityTimeline, type EntityTimelineProps, type TimelineEvent } from "./EntityTimeline";

@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
 import { apiPath } from "@/lib/api";
-import { CodeBlock, EmptyState, HintCard, KeyChip } from "@/components/patchwork";
+import { BlastBadge, CodeBlock, EmptyState, HintCard, KeyChip } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { DecisionsTabs } from "@/components/DecisionsTabs";
 import { useToast } from "@/components/Toast";
@@ -14,10 +14,8 @@ import { RiskMeter } from "./_components/RiskMeter";
 import { syntaxHighlightJson } from "@/lib/syntaxHighlight";
 import {
   CONSEQUENCE_IF_WRONG,
-  DOMAIN_PLAIN_NAME,
   classifyPendingAction,
   reversibilityRank,
-  type ClientActionClass,
 } from "@/lib/actionClass";
 
 interface RiskSignal {
@@ -121,35 +119,9 @@ function primaryParam(
 const SUGGESTION_MIN_APPROVED = 3;
 
 // --- Blast-radius classification (Considered redesign) ---
-
-/** Badge copy + tone for a resolved action class, or the unclassified
- * fallback. Never fabricates a tier for an unknown tool. */
-function blastBadge(cls: ClientActionClass | null): {
-  label: string;
-  icon: string;
-  tone: "err" | "warn" | "ok" | "muted";
-} {
-  if (!cls) return { label: "unclassified", icon: "?", tone: "muted" };
-  if (cls.reversibility === "irreversible") {
-    return { label: "irreversible", icon: "⛔", tone: "err" };
-  }
-  if (cls.reversibility === "compensable") {
-    return { label: "compensable", icon: "↩", tone: "warn" };
-  }
-  return { label: "reversible", icon: "✓", tone: "ok" };
-}
-
-function BlastBadge({ cls }: { cls: ClientActionClass | null }) {
-  const b = blastBadge(cls);
-  const title = cls
-    ? `${DOMAIN_PLAIN_NAME[cls.domain] ?? cls.domain} · ${b.label}`
-    : "Could not resolve an action class for this tool — sort/gate treat it like a reversible action, but this is a genuine unknown, not a claim of safety.";
-  return (
-    <span className={`pill ${b.tone} apc-blast-badge`} title={title}>
-      <span aria-hidden="true">{b.icon}</span> {b.label}
-    </span>
-  );
-}
+// BlastBadge itself now lives in components/patchwork/BlastBadge.tsx so
+// /today can render the identical badge for the merged decisions list
+// without duplicating the tone/copy logic.
 
 /** Plain sentence: "<toolName> wants to <verb+param>". Reuses the existing
  * invocationHeading/primaryParam helpers so the wording matches the rest
