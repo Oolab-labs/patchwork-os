@@ -1149,9 +1149,13 @@ function WorkerCard({
 }
 
 export default function WorkersPage() {
+  // Primary user-visible feed for /workers: the shadow-report roster
+  // (per-worker trust dial + divergences) — the headline data on this
+  // page. Everything else fetched below (KPI, outcomes, pending) is a
+  // secondary widget; this is the one an operator is actually reading.
   const { data, error, loading, refetch } = useBridgeFetch<ShadowResponse>(
     "/api/bridge/workers/shadow",
-    { intervalMs: 30000 },
+    { intervalMs: 30000, trackStaleness: true },
   );
   // Page-level expert mode (persisted, shared with every DetailsFold). Replaces
   // the old local `expert` useState.

@@ -11,6 +11,7 @@ import { getHaltsLookbackMs, subscribeHaltsSeen } from "@/lib/haltsSeen";
 import { NAV_SECTIONS } from "@/lib/navRoutes";
 import { ActivityTicker } from "./ActivityTicker";
 import { BridgeOfflineBanner } from "./BridgeOfflineBanner";
+import { StalenessStrip } from "./StalenessStrip";
 import { KillSwitchBanner } from "./KillSwitchBanner";
 import { PWAInstallPrompt } from "./PWAInstallPrompt";
 import { CommandPalette } from "./CommandPalette";
@@ -573,6 +574,7 @@ function AppShell({ children }: { children: ReactNode }) {
 
       <main id="main-content" className="app-main" tabIndex={-1}>
         <BridgeOfflineBanner status={status} />
+        <StalenessStrip />
         {status.killSwitch?.engaged && (
           <KillSwitchBanner
             engaged={status.killSwitch.engaged}

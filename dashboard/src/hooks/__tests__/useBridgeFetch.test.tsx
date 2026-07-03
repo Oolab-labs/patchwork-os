@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useBridgeFetch } from "../useBridgeFetch";
@@ -201,6 +201,7 @@ describe("useBridgeFetch — initial state", () => {
       status: null,
       unsupported: false,
       refetch: expect.any(Function),
+      stale: false,
     });
   });
 });
@@ -213,5 +214,72 @@ describe("useBridgeFetch — cache: no-store (M6)", () => {
     expect(fetchMock).toHaveBeenCalled();
     const [, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(opts?.cache).toBe("no-store");
+  });
+});
+
+describe("useBridgeFetch — staleness (dashboard-gap-remediation #1)", () => {
+  // Regression coverage for: the hook kept last-good `data` forever when
+  // polling failed, with no signal to the consumer that the data on
+  // screen might be frozen. `stale` flips true once
+  // Date.now() - lastSuccessAt exceeds 3 * intervalMs, and must
+  // re-evaluate over time even if the poll loop itself has stalled
+  // (i.e. no new fetch happening) — so it can't only be computed
+  // inside tick().
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("flips stale=true after 3x intervalMs of no successful fetch, then clears on recovery", async () => {
+    const intervalMs = 1000;
+
+    // First call succeeds; every call after that hangs forever (never
+    // resolves) — simulates the bridge going unresponsive mid-poll.
+    fetchMock.mockResolvedValueOnce(jsonResponse({ count: 1 }));
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+
+    const { result } = renderHook(() =>
+      useBridgeFetch<{ count: number }>("/api/x", {
+        intervalMs,
+        trackStaleness: true,
+      }),
+    );
+
+    // Let the first successful tick land.
+    await vi.waitFor(() => expect(result.current.data).toEqual({ count: 1 }));
+    expect(result.current.stale).toBe(false);
+
+    // Advance past 3x the interval — the poll loop scheduled a next tick
+    // at `intervalMs` which is now hung, so only a staleness re-check
+    // ticker (not a new fetch) can flip `stale` here.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3 * intervalMs + 1500);
+    });
+
+    expect(result.current.stale).toBe(true);
+    // Last-good data must still be shown — staleness is a signal, not a
+    // data-clearing operation.
+    expect(result.current.data).toEqual({ count: 1 });
+
+    // Recovery: a subsequent successful fetch clears `stale` back to false.
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(jsonResponse({ count: 2 }));
+    result.current.refetch();
+
+    await vi.waitFor(() => expect(result.current.data).toEqual({ count: 2 }));
+    expect(result.current.stale).toBe(false);
+  });
+
+  it("does not expose staleness tracking unless trackStaleness is set (opt-in)", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ count: 1 }));
+    const { result } = renderHook(() =>
+      useBridgeFetch<{ count: number }>("/api/x", { intervalMs: 1000 }),
+    );
+    await vi.waitFor(() => expect(result.current.data).toEqual({ count: 1 }));
+    expect(result.current.stale).toBe(false);
   });
 });
