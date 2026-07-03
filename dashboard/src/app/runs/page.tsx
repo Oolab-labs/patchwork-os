@@ -15,6 +15,7 @@ import { useDebounced } from "@/hooks/useDebounced";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
 import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
 import { dedupeRunsByKey } from "@/lib/dedupeRuns";
+import { useManualPollStaleness } from "@/lib/staleFetchRegistry";
 
 interface AssertionFailure {
   assertion: string;
@@ -255,6 +256,23 @@ export default function RunsPage() {
 
   const reloadRef = useRef<() => void>(() => {});
 
+  // Primary user-visible feed for /runs: the filtered run list. If this
+  // poll stalls, the page silently shows a frozen run list that looks
+  // identical to "nothing is happening" — flag it via the shared
+  // staleness registry (same one useBridgeFetch's trackStaleness writes
+  // to) so Shell's global strip surfaces it.
+  const { markSuccess: markRunsPollSuccess } = useManualPollStaleness({
+    key: "/api/bridge/runs",
+    intervalMs: 5000,
+    refetch: () => reloadRef.current(),
+  });
+  // Ref indirection so the poll effect below doesn't need
+  // markRunsPollSuccess in its dependency array — the returned function
+  // identity changes every render, which would otherwise force the poll
+  // effect (and its AbortController + interval) to re-run on every render.
+  const markRunsPollSuccessRef = useRef(markRunsPollSuccess);
+  markRunsPollSuccessRef.current = markRunsPollSuccess;
+
   useEffect(() => {
     // Audit 2026-05-17 (#600): one AbortController per effect run,
     // aborted in cleanup. Without this, rapid filter changes could
@@ -285,6 +303,7 @@ export default function RunsPage() {
         // row key and triggers React's duplicate-key error + miscounts.
         setRuns(dedupeRunsByKey(data.runs ?? []));
         setErr(undefined);
+        markRunsPollSuccessRef.current();
       } catch (e) {
         // AbortError on unmount / dep change is expected — don't surface.
         if (e instanceof DOMException && e.name === "AbortError") return;

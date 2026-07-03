@@ -1,6 +1,7 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { registerStaleFetch, updateStaleFetch } from "@/lib/staleFetchRegistry";
 
 export interface UseBridgeFetchResult<T> {
   data: T | null;
@@ -9,9 +10,25 @@ export interface UseBridgeFetchResult<T> {
   status: number | null;
   unsupported: boolean;
   refetch: () => void;
+  /**
+   * True when it's been more than 3x intervalMs since the last successful
+   * fetch. `data` is never cleared on failure (see tick()'s error
+   * branches), so without this flag a stalled poll loop is
+   * indistinguishable from "nothing is happening" — the dashboard would
+   * silently show frozen numbers. Only meaningful when
+   * `options.trackStaleness` is set; otherwise always false.
+   */
+  stale: boolean;
 }
 
 const MAX_BACKOFF_MS = 30_000;
+/** How far past a successful fetch before we call the data "stale". */
+const STALE_AFTER_INTERVALS = 3;
+/** Cadence of the staleness re-check ticker — cheap re-render trigger,
+ *  NOT a new fetch. Independent of intervalMs so this stays correct even
+ *  if the poll loop itself has stalled entirely (e.g. every scheduled
+ *  tick is awaiting a hung fetch). */
+const STALE_CHECK_MS = 1000;
 
 function nextDelay(failures: number, baseMs: number): number {
   const exp = Math.min(baseMs * 2 ** failures, MAX_BACKOFF_MS);
@@ -26,10 +43,22 @@ export function useBridgeFetch<T>(
     transform?: (data: unknown) => T;
     unsupportedValue?: T | null;
     enabled?: boolean;
+    /**
+     * Opt-in: registers this hook's staleness with the global
+     * staleFetchRegistry (drives Shell's single aggregate strip) and
+     * computes `stale` on the returned result. Off by default — most
+     * `useBridgeFetch` call sites are secondary/background polls (KPI
+     * widgets, outcomes tables, etc.) where flagging global staleness
+     * for a poll nobody's watching would be a false positive. Set this
+     * on the handful of call sites that represent a page's primary,
+     * user-visible data feed.
+     */
+    trackStaleness?: boolean;
   },
 ): UseBridgeFetchResult<T> {
   const intervalMs = options?.intervalMs ?? 5000;
   const enabled = options?.enabled ?? true;
+  const trackStaleness = options?.trackStaleness ?? false;
   const transformRef = useRef(options?.transform);
   transformRef.current = options?.transform;
   // Hold unsupportedValue in a ref so the effect doesn't restart when callers
@@ -47,6 +76,17 @@ export function useBridgeFetch<T>(
   // Caller-triggered re-fetch token; bumping it triggers an immediate tick.
   const [refetchToken, setRefetchToken] = useState(0);
   const refetch = useCallback(() => setRefetchToken((n) => n + 1), []);
+
+  // Epoch ms of the last successful fetch (res.ok + JSON parsed). Read
+  // from a ref so the staleness ticker below can recompute `stale` on its
+  // own cadence without depending on tick()'s closures.
+  const lastSuccessAtRef = useRef<number | null>(null);
+  const [stale, setStale] = useState(false);
+  const staleAfterMs = STALE_AFTER_INTERVALS * intervalMs;
+
+  // Stable per-hook-instance id for the registry.
+  const reactId = useId();
+  const registryId = `${path}#${reactId}`;
 
   useEffect(() => {
     if (!enabled) return;
@@ -117,6 +157,9 @@ export function useBridgeFetch<T>(
         setError(undefined);
         setLoading(false);
         failures = 0;
+        lastSuccessAtRef.current = Date.now();
+        setStale(false);
+        if (trackStaleness) updateStaleFetch(registryId, lastSuccessAtRef.current);
         schedule(intervalMs);
       } catch (e) {
         if (!alive) return;
@@ -137,7 +180,38 @@ export function useBridgeFetch<T>(
       alive = false;
       if (timerId !== null) clearTimeout(timerId);
     };
-  }, [path, intervalMs, enabled, refetchToken]);
+  }, [path, intervalMs, enabled, refetchToken, trackStaleness, registryId]);
 
-  return { data, error, loading, status, unsupported, refetch };
+  // Staleness re-check ticker: recomputes `stale` on a cheap fixed
+  // cadence (no fetch, just a Date.now() comparison) so staleness still
+  // flips even if the poll loop itself has stalled entirely — e.g. every
+  // scheduled tick is awaiting a hung fetch and never reaches a
+  // success/failure branch to reschedule.
+  useEffect(() => {
+    if (!enabled) return;
+    const recompute = () => {
+      const last = lastSuccessAtRef.current;
+      const isStale = last !== null && Date.now() - last > staleAfterMs;
+      setStale(isStale);
+    };
+    recompute();
+    const id = setInterval(recompute, STALE_CHECK_MS);
+    return () => clearInterval(id);
+  }, [enabled, staleAfterMs]);
+
+  // Registry registration: opt-in only. Registers once per mount and
+  // exposes a refetch() so the global staleness strip can retry this
+  // fetcher specifically.
+  useEffect(() => {
+    if (!trackStaleness || !enabled) return;
+    const unregister = registerStaleFetch({
+      id: registryId,
+      lastSuccessAt: lastSuccessAtRef.current,
+      staleAfterMs,
+      refetch,
+    });
+    return unregister;
+  }, [trackStaleness, enabled, registryId, staleAfterMs, refetch]);
+
+  return { data, error, loading, status, unsupported, refetch, stale: trackStaleness ? stale : false };
 }

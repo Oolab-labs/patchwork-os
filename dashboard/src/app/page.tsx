@@ -25,6 +25,7 @@ import {
 import { LiveRunsStrip, type LiveRun } from "@/components/LiveRunsStrip";
 import { LiveWire } from "@/components/LiveWire";
 import { useRunRecipe } from "@/hooks/useRunRecipe";
+import { useManualPollStaleness } from "@/lib/staleFetchRegistry";
 
 // ---------------------------------------------------------------------------
 // Keyframe injection — scoped to this page, no globals.css edits needed.
@@ -273,6 +274,24 @@ export default function HomePage() {
   const [syncSpinning, setSyncSpinning] = useState(false);
   const tickRef = useRef<() => void>(() => {});
 
+  // Primary user-visible feed for Overview: the recipes/runs/halts/activity
+  // fan-out below. This drives every telemetry tile on the page ("what's
+  // happening right now?") — if it stalls silently, the operator sees
+  // frozen counters that look identical to "nothing is happening", which
+  // is the exact failure mode this whole staleness feature exists to
+  // catch. `/api/bridge/health` (fetched separately via useBridgeFetch
+  // above) is a narrower secondary signal and not chosen here.
+  const { markSuccess: markOverviewPollSuccess } = useManualPollStaleness({
+    key: "/api/bridge/recipes+runs+halts",
+    intervalMs: 5000,
+    refetch: () => tickRef.current(),
+  });
+  // Ref indirection so the tick() effect (deps: []) doesn't need to
+  // depend on markOverviewPollSuccess's identity, which changes every
+  // render.
+  const markOverviewPollSuccessRef = useRef(markOverviewPollSuccess);
+  markOverviewPollSuccessRef.current = markOverviewPollSuccess;
+
   useEffect(() => {
     let alive = true;
     const tick = async () => {
@@ -330,6 +349,7 @@ export default function HomePage() {
         setActivityEvents(
           (activityData.events ?? []).map(withAt),
         );
+        markOverviewPollSuccessRef.current();
       } catch {
         // bridge offline
       }
