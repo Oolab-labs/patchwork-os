@@ -3904,6 +3904,156 @@ a.btn { text-decoration: none; }
   }
 }
 
+/* ---- Recipes gallery (card grid) ----------------------------------- */
+.recipes-gallery-filters {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.recipes-gallery-filters .chip {
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: var(--recess);
+  color: var(--ink-2);
+  border: 1px solid transparent;
+  transition: background 120ms ease, color 120ms ease;
+}
+.recipes-gallery-filters .chip:hover {
+  background: var(--pressed);
+}
+.recipes-gallery-filters .chip.active {
+  background: var(--ink-0);
+  color: var(--surface);
+}
+.recipes-gallery-filters .chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.recipes-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.recipes-gallery-card {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+  cursor: pointer;
+  animation: recipeFadeIn 200ms ease both;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.recipes-gallery-card:hover {
+  border-color: var(--line-3);
+}
+.recipes-gallery-card.is-selected,
+.recipes-gallery-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.recipes-gallery-card.off {
+  opacity: 0.6;
+}
+
+.rgc-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: flex-start;
+  /* leave room for the absolutely-positioned Run cluster top-right */
+  padding-right: 128px;
+}
+.rgc-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.rgc-name {
+  font-weight: 700;
+  font-size: var(--fs-s);
+  color: var(--ink-0);
+  text-decoration: none;
+  word-break: break-word;
+}
+.rgc-name:hover {
+  text-decoration: underline;
+}
+
+.rgc-run {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rgc-desc {
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  min-height: 2.6em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.rgc-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  border-top: 1px solid var(--line-1);
+  padding-top: 10px;
+}
+.rgc-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.rgc-meta-item.mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.recipes-gallery-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 48px 24px;
+  text-align: center;
+  animation: recipeFadeIn 200ms ease both;
+}
+.recipes-gallery-empty-icon {
+  font-size: var(--fs-xxl, 32px);
+  opacity: 0.3;
+}
+.recipes-gallery-empty-title {
+  color: var(--ink-2);
+  font-size: var(--fs-s);
+  font-weight: 500;
+}
+.recipes-gallery-empty-actions {
+  display: flex;
+  gap: 8px;
+}
+
 /* ---- Mobile bottom nav --------------------------------------------- */
 .cmdk-backdrop {
   position: fixed;
