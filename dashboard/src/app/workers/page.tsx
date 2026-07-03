@@ -4,6 +4,11 @@ import { EmptyState, ErrorState, HBarList } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { apiPath } from "@/lib/api";
+import {
+  DetailsFold,
+  ExpertToggle,
+  useExpertMode,
+} from "@/components/DetailsFold";
 
 interface BoardRow {
   classKey: string;
@@ -161,44 +166,53 @@ const pct = (x: number): number => Math.round(x * 100);
  * over a real sample is the clearest tell of rubber-stamping. Plain by default;
  * the reject-rate / latency / per-tool telemetry lives under "Show details".
  */
-function ConsideredApprovalPanel({ expert }: { expert: boolean }) {
+/**
+ * The rubber-stamp honesty check, collapsed for Band 1. Trust means nothing if
+ * the approvals behind it weren't considered; a 0%-reject record over a real
+ * sample is the clearest tell. In the default view this is a SINGLE amber
+ * sentence, shown ONLY when it triggers; the full reject-rate / latency /
+ * per-tool telemetry moves under "Show details".
+ */
+function ConsideredApproval() {
   const { data } = useBridgeFetch<KpiResponse>("/api/bridge/approvals/kpi", {
     intervalMs: 30000,
   });
   // Render only with real KPI data: `!data.total` catches both the empty case
-  // (total 0) and a non-KPI/error payload (total undefined), so the panel never
-  // crashes on an unexpected shape.
+  // (total 0) and a non-KPI/error payload (total undefined).
   if (!data || !data.total) return null;
   const rubberStamp = data.decided >= 5 && data.rejectRate === 0;
   const rejectPct = pct(data.rejectRate);
   return (
-    <div className="card" style={{ marginTop: "var(--s-4)" }}>
-      <div className="card-head">
-        <strong>
-          Are you really reviewing —{" "}
-          <span className="accent">or rubber-stamping?</span>
-        </strong>
-        <span className="pill muted">{data.decided} you decided</span>
-      </div>
-      {rubberStamp ? (
+    <>
+      {rubberStamp && (
         <div
           className="editorial-sub"
-          style={{ fontFamily: "inherit", color: "var(--warn)" }}
+          style={{
+            fontFamily: "inherit",
+            color: "var(--warn)",
+            marginTop: "var(--s-2)",
+          }}
         >
-          ⚠ You approved all {data.decided} requests with no rejections. A perfect
-          record like that usually means clicking “yes” without really checking —
-          so the trust below may be inflated, not earned.
-        </div>
-      ) : (
-        <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
-          You’ve reviewed {data.decided} requests and said no {rejectPct}% of the
-          time
-          {data.abandoned > 0 ? `, and left ${data.abandoned} undecided` : ""}. A
-          healthy amount of “no” is a sign you’re really looking.
+          ⚠ Heads up: you’ve approved all {data.decided} requests without ever
+          saying no. A perfect record usually means clicking “yes” without really
+          checking — so the trust below may be inflated, not earned.
         </div>
       )}
-      {expert && (
-        <>
+      <DetailsFold>
+        <div className="card" style={{ marginTop: "var(--s-4)" }}>
+          <div className="card-head">
+            <strong>
+              Are you really reviewing —{" "}
+              <span className="accent">or rubber-stamping?</span>
+            </strong>
+            <span className="pill muted">{data.decided} you decided</span>
+          </div>
+          <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+            You’ve reviewed {data.decided} requests and said no {rejectPct}% of
+            the time
+            {data.abandoned > 0 ? `, and left ${data.abandoned} undecided` : ""}.
+            A healthy amount of “no” is a sign you’re really looking.
+          </div>
           <div
             style={{
               display: "flex",
@@ -234,9 +248,9 @@ function ConsideredApprovalPanel({ expert }: { expert: boolean }) {
               {fmtLat(t.latency)} · {channelStr(t.channels)}
             </div>
           ))}
-        </>
-      )}
-    </div>
+        </div>
+      </DetailsFold>
+    </>
   );
 }
 
@@ -271,6 +285,8 @@ interface PendingConfirmation {
   workerName: string;
   filedAt: number;
   classKey: string;
+  /** Human title captured at filing time (bridge #1078+); falls back to URL. */
+  title?: string;
 }
 interface PendingResponse {
   pending: PendingConfirmation[];
@@ -304,19 +320,26 @@ function UrlCell({ url }: { url: string }) {
  * Bearer-gated /outcomes route (never a recipe step — a worker can't grade its
  * own homework) and the queue refreshes.
  */
-function AwaitingConfirmationPanel({ expert }: { expert: boolean }) {
-  const { data, status, refetch } = useBridgeFetch<PendingResponse>(
-    "/api/bridge/outcomes/pending",
-    { intervalMs: 30000 },
-  );
+function ReviewQueue({
+  pending,
+  status,
+  refetch,
+  expert,
+  now,
+}: {
+  pending: PendingConfirmation[];
+  status: number | null;
+  refetch: () => void;
+  expert: boolean;
+  now: number;
+}) {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const pending = data?.pending ?? [];
 
   // Empty AND the endpoint answered (200) → the loop exists and is drained; say
   // so, rather than vanishing (which reads as "feature missing"). On a bridge
-  // too old to serve /outcomes/pending (404 → status stays null / non-200) the
-  // panel suppresses entirely, so this never false-signals "clear".
+  // too old to serve /outcomes/pending (404 → status non-200) the panel
+  // suppresses entirely, so this never false-signals "clear".
   if (pending.length === 0) {
     if (status !== 200) return null;
     return (
@@ -402,10 +425,28 @@ function AwaitingConfirmationPanel({ expert }: { expert: boolean }) {
             flexWrap: "wrap",
           }}
         >
-          <UrlCell url={p.issueUrl} />
-          <span className="pill muted">
-            {p.workerName} · {expert ? p.classKey : taskName(p.classKey)}
-          </span>
+          <div style={{ flex: 1, minWidth: "16rem" }}>
+            <div style={{ fontWeight: 600 }}>
+              {p.workerName} filed:{" "}
+              <span style={{ fontWeight: 500 }}>
+                {p.title ?? "a new issue"}
+              </span>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: "var(--s-2)",
+                alignItems: "center",
+                marginTop: 2,
+              }}
+            >
+              <UrlCell url={p.issueUrl} />
+              <span className="muted" style={{ fontSize: "var(--fs-xs)" }}>
+                {relTime(p.filedAt, now)}
+                {expert ? ` · ${p.classKey}` : ""}
+              </span>
+            </div>
+          </div>
           <button
             type="button"
             className="btn sm primary"
@@ -434,11 +475,12 @@ function AwaitingConfirmationPanel({ expert }: { expert: boolean }) {
  * real; it can't grade its own homework. POSTs to the Bearer-gated /outcomes
  * route through the generic bridge proxy.
  */
-function FiledOutcomesPanel({ expert }: { expert: boolean }) {
+function PastVerdicts({ expert }: { expert: boolean }) {
   const { data, refetch } = useBridgeFetch<OutcomesResponse>(
     "/api/bridge/outcomes",
     { intervalMs: 30000 },
   );
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const outcomes = data?.outcomes ?? [];
@@ -470,23 +512,39 @@ function FiledOutcomesPanel({ expert }: { expert: boolean }) {
     }
   }
 
+  // Verdict history is reference material, not daily work — collapse it to one
+  // disclosure line under the review queue. "Past verdicts (12 · 10 real, 2 not) ▾"
   return (
-    <div className="card" style={{ marginTop: "var(--s-4)" }}>
-      <div className="card-head">
-        <strong>
-          Did the workers get it right? —{" "}
-          <span className="accent">your verdicts.</span>
-        </strong>
-        <span className="pill muted">
-          {outcomes.length} reviewed
-          {confirmedCount > 0 && ` · ${confirmedCount} real`}
-          {junkCount > 0 && ` · ${junkCount} not real`}
-        </span>
-      </div>
-      <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
-        A worker only earns trust once you confirm its work was real — it can’t
-        grade its own homework. Change your mind anytime; the latest verdict wins.
-      </div>
+    <div style={{ marginTop: "var(--s-3)" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        style={{
+          background: "none",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
+          fontSize: "var(--fs-s)",
+          fontWeight: 500,
+          color: "var(--ink-2)",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+        Past verdicts ({outcomes.length}
+        {confirmedCount > 0 && ` · ${confirmedCount} real`}
+        {junkCount > 0 && ` · ${junkCount} not real`})
+      </button>
+      {!open ? null : (
+        <div className="card" style={{ marginTop: "var(--s-3)" }}>
+          <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+            A worker only earns trust once you confirm its work was real — it
+            can’t grade its own homework. Change your mind anytime; the latest
+            verdict wins.
+          </div>
       {err && (
         <div
           className="editorial-sub"
@@ -536,6 +594,8 @@ function FiledOutcomesPanel({ expert }: { expert: boolean }) {
           </div>
         );
       })}
+        </div>
+      )}
     </div>
   );
 }
@@ -902,8 +962,21 @@ export default function WorkersPage() {
     "/api/bridge/workers/shadow",
     { intervalMs: 30000 },
   );
-  const [expert, setExpert] = useState(false);
+  // Page-level expert mode (persisted, shared with every DetailsFold). Replaces
+  // the old local `expert` useState.
+  const { expert } = useExpertMode();
   const now = data?.generatedAt ? Date.parse(data.generatedAt) : Date.now();
+
+  // The confirm queue — lifted here so the Band-1 triage sentence and the
+  // Band-2 review queue share one fetch (no double poll).
+  const {
+    data: pendingData,
+    status: pendingStatus,
+    refetch: refetchPending,
+  } = useBridgeFetch<PendingResponse>("/api/bridge/outcomes/pending", {
+    intervalMs: 30000,
+  });
+  const pending = pendingData?.pending ?? [];
 
   // Fleet view: a worker "needs attention" when it's earned past its leash
   // (ready to advance). Sort those first so a team of many workers stays
@@ -923,18 +996,57 @@ export default function WorkersPage() {
   );
   const readyCount = workers.filter(readyToAdvance).length;
 
+  // Band 1 triage: one sentence that answers "who needs my decision?" before
+  // any card is read. Only claim the review count when the endpoint answered
+  // (a bridge too old to serve the queue must not read as "0 to review").
+  const pendingKnown = pendingStatus === 200;
+  const reviewCount = pending.length;
+  const triageParts: string[] = [];
+  if (pendingKnown && reviewCount > 0)
+    triageParts.push(
+      `${reviewCount} thing${reviewCount === 1 ? "" : "s"} need${reviewCount === 1 ? "s" : ""} your review`,
+    );
+  if (readyCount > 0)
+    triageParts.push(
+      `${readyCount} worker${readyCount === 1 ? "" : "s"} ready for a promotion`,
+    );
+  const allClear = pendingKnown && reviewCount === 0 && readyCount === 0;
+  const triageTone = reviewCount > 0 ? "var(--warn)" : "var(--ok)";
+
   return (
     <section>
       <div className="page-head">
         <div>
           <h1 className="editorial-h1" style={{ margin: 0 }}>
-            Workers —{" "}
-            <span className="accent">how far you can trust each one.</span>
+            Your AI team
+            {data && workers.length > 0 && (
+              <span className="accent">
+                {" "}
+                — {workers.length} worker{workers.length === 1 ? "" : "s"}.
+              </span>
+            )}
           </h1>
-          <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
-            How much independence each AI worker has earned from its track record.
-            Looking here never changes what a worker is allowed to do.
-          </div>
+          {(triageParts.length > 0 || allClear) && (
+            <div
+              className="editorial-sub"
+              style={{ fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8 }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 9,
+                  height: 9,
+                  borderRadius: "50%",
+                  background: triageTone,
+                  flexShrink: 0,
+                }}
+              />
+              {allClear
+                ? "All good — nothing needs you today."
+                : triageParts.join(" · ")}
+            </div>
+          )}
+          <ConsideredApproval />
         </div>
         <div
           style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}
@@ -946,21 +1058,19 @@ export default function WorkersPage() {
                 : `based on ${data.runsScanned} runs`}
             </span>
           )}
-          <button
-            type="button"
-            className="btn sm ghost"
-            onClick={() => setExpert((e) => !e)}
-          >
-            {expert ? "Plain view" : "Show details"}
-          </button>
+          <ExpertToggle />
         </div>
       </div>
 
-      <ConsideredApprovalPanel expert={expert} />
+      <ReviewQueue
+        pending={pending}
+        status={pendingStatus}
+        refetch={refetchPending}
+        expert={expert}
+        now={now}
+      />
 
-      <AwaitingConfirmationPanel expert={expert} />
-
-      <FiledOutcomesPanel expert={expert} />
+      <PastVerdicts expert={expert} />
 
       {loading && workers.length === 0 && <SkeletonList rows={3} columns={2} />}
 
@@ -985,14 +1095,12 @@ export default function WorkersPage() {
           className="editorial-sub"
           style={{ fontFamily: "inherit", marginTop: "var(--s-4)" }}
         >
-          <strong>
-            Your team — {workers.length} worker
-            {workers.length === 1 ? "" : "s"}
-          </strong>
-          {readyCount > 0 &&
-            ` · ${readyCount} ready to advance (shown first)`}
-          . As you add workers that hand off to each other, this is where you’ll
-          watch the whole team’s trust grow together.
+          <strong>Your team</strong>
+          {readyCount > 0
+            ? ` — ${readyCount} ready to advance (shown first).`
+            : "."}{" "}
+          How much independence each worker has earned from its track record —
+          looking here never changes what a worker is allowed to do.
         </div>
       )}
 

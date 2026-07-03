@@ -12,12 +12,17 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
+  // Expert mode is persisted in localStorage now (shared page-level toggle);
+  // clear it so a test that clicks "Show details" doesn't leak expert=true
+  // into the next test.
+  window.localStorage.clear();
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  window.localStorage.clear();
 });
 
 const SHADOW = {
@@ -181,14 +186,15 @@ describe("WorkersPage", () => {
       }),
     );
     const { container } = render(<WorkersPage />);
-    expect(await screen.findByText(/rubber-stamping/)).toBeTruthy();
-    // Plain warning is shown by default; raw telemetry is not.
-    expect(container.textContent).toMatch(
-      /approved all 8 requests with no rejections/,
-    );
+    // Plain amber warning is shown by default (collapsed into Band 1); raw
+    // telemetry is not.
+    await screen.findByText(/approved all 8 requests without ever saying no/);
     expect(container.textContent).not.toContain("reject rate 0%");
+    expect(container.textContent).not.toContain("rubber-stamping");
+    // …the full telemetry + the "rubber-stamping" framing live under details.
     fireEvent.click(screen.getByRole("button", { name: "Show details" }));
     expect(container.textContent).toContain("reject rate 0%");
+    expect(container.textContent).toContain("rubber-stamping");
   });
 
   it("shows the trust journey — stepper stops + a plain 'how it got here' timeline (climbs AND slips)", async () => {

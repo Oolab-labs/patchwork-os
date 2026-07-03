@@ -373,7 +373,7 @@ describe("computePendingConfirmations (the confirm queue)", () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  function seedFiling(url: string, at = 0): void {
+  function seedFiling(url: string, at = 0, title?: string): void {
     new RecipeRunLog({ dir }).appendDirect({
       taskId: `run-${at}`,
       recipeName: "file-issues",
@@ -388,7 +388,7 @@ describe("computePendingConfirmations (the confirm queue)", () => {
           tool: "githubCreateIssue",
           status: "ok",
           durationMs: 1,
-          output: { url },
+          output: title ? { url, title } : { url },
         },
       ],
     });
@@ -463,13 +463,33 @@ describe("computePendingConfirmations (the confirm queue)", () => {
     expect(pending).toHaveLength(0);
   });
 
+  it("captures the filing title at filing time (from the step output)", () => {
+    seedFiling(URL, 0, "Login test failing on main");
+    const pending = computePendingConfirmations({
+      workersDir,
+      patchworkDir: dir,
+    });
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.title).toBe("Login test failing on main");
+  });
+
+  it("leaves title undefined when the run-log row has none (older filings)", () => {
+    seedFiling(URL);
+    const pending = computePendingConfirmations({
+      workersDir,
+      patchworkDir: dir,
+    });
+    expect(pending[0]?.title).toBeUndefined();
+  });
+
   it("formats the queue with the exact confirm command (and an empty-state)", () => {
     expect(formatPendingConfirmations([])).toMatch(/No filings awaiting/);
-    seedFiling(URL);
+    seedFiling(URL, 0, "Login test failing on main");
     const out = formatPendingConfirmations(
       computePendingConfirmations({ workersDir, patchworkDir: dir }),
     );
     expect(out).toContain(URL);
+    expect(out).toContain('"Login test failing on main"'); // title headlines the row
     expect(out).toContain(`patchwork outcomes confirm ${URL}`);
     expect(out).toContain("--recipe file-issues");
   });
