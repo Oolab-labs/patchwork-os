@@ -13,19 +13,15 @@ import { useActiveRuns } from "@/hooks/LiveRunsContext";
 import type { ActiveRunState } from "@/hooks/useRecipeRunStream";
 import { RecipeRunInline } from "./_components/RecipeRunInline";
 import {
-  CodeBlock,
   EmptyState,
   ErrorState,
   HintCard,
-  highlightYaml,
   LivePill,
-  PatchCard,
   RelationStrip,
   RunSparkBars,
   StatusPill,
   SuccessRing,
 } from "@/components/patchwork";
-import { RunChip } from "@/components/patchwork/entity";
 import { fmtDuration } from "@/components/time";
 
 /**
@@ -219,16 +215,6 @@ function markRunConfirmedThisSession(): void {
   }
 }
 
-interface RecipeContentResponse {
-  name?: string;
-  content?: string;
-  yaml?: string;
-  raw?: string;
-  text?: string;
-  steps?: unknown[];
-  [k: string]: unknown;
-}
-
 function RunModal({
   state,
   onClose,
@@ -336,250 +322,17 @@ function RunModal({
   );
 }
 
-/** Build a presentable YAML string from recipe metadata when raw isn't available. */
-function fallbackYaml(recipe: Recipe): string {
-  const lines: string[] = [];
-  lines.push(`name: ${recipe.name}`);
-  if (recipe.version) lines.push(`version: ${recipe.version}`);
-  if (recipe.description) lines.push(`description: ${recipe.description}`);
-  lines.push(`trigger: ${recipe.trigger ?? "manual"}`);
-  if (recipe.webhookPath) lines.push(`webhookPath: ${recipe.webhookPath}`);
-  if (recipe.stepCount != null) lines.push(`# ${recipe.stepCount} step(s)`);
-  if (recipe.path) lines.push(`# path: ${recipe.path}`);
-  if (recipe.vars && recipe.vars.length > 0) {
-    lines.push("vars:");
-    for (const v of recipe.vars) {
-      lines.push(`  - name: ${v.name}`);
-      if (v.required) lines.push(`    required: true`);
-      if (v.default !== undefined) lines.push(`    default: ${v.default}`);
-      if (v.description) lines.push(`    description: ${v.description}`);
-    }
-  }
-  return lines.join("\n");
-}
-
-function RecipeYamlPanel({ recipe }: { recipe: Recipe }) {
-  const [yaml, setYaml] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  // Hold the latest recipe in a ref so the fetch effect can build the
-  // fallback YAML without re-firing every time the parent poll (5s) hands us
-  // a new Recipe object reference for the same recipe.name. Keying the
-  // effect on `recipe` directly caused setYaml(null) → "Loading…" → refetch →
-  // re-highlight on every poll, producing a visible flicker in the detail
-  // panel's <pre class="code-block"> (78 childList mutations / 7s observed).
-  const recipeRef = useRef(recipe);
-  recipeRef.current = recipe;
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setYaml(null);
-    (async () => {
-      try {
-        const res = await fetch(
-          apiPath(`/api/bridge/recipes/${encodeURIComponent(recipeRef.current.name)}`),
-        );
-        if (!res.ok) throw new Error(`fetch ${res.status}`);
-        const data = (await res.json()) as RecipeContentResponse;
-        if (cancelled) return;
-        const raw =
-          (typeof data.content === "string" && data.content) ||
-          (typeof data.yaml === "string" && data.yaml) ||
-          (typeof data.raw === "string" && data.raw) ||
-          (typeof data.text === "string" && data.text) ||
-          "";
-        setYaml(raw || fallbackYaml(recipeRef.current));
-      } catch {
-        if (!cancelled) setYaml(fallbackYaml(recipeRef.current));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [recipe.name]);
-
-  return (
-    <CodeBlock className="recipe-yaml-block">
-      {loading && !yaml ? "Loading…" : highlightYaml(yaml ?? fallbackYaml(recipe))}
-    </CodeBlock>
-  );
-}
-
-function RecipeDetailPanel({
-  recipe,
-  recentRuns,
-  onClose,
-  onRun,
-  onArchive,
-  onDelete,
-  running,
-  isLive,
-  activeRun,
-}: {
-  recipe: Recipe;
-  recentRuns: RunRecord[];
-  onClose: () => void;
-  onRun: () => void;
-  onArchive: () => void;
-  onDelete: () => void;
-  running: Record<string, string>;
-  isLive: boolean;
-  activeRun: ActiveRunState | undefined;
-}) {
-  return (
-    <PatchCard className="recipes-detail-panel">
-      <div className="rdp-header">
-        <span className="rdp-title" title={recipe.name}>{recipe.name}</span>
-        {isLive && <LivePill tone="ok" />}
-        <button type="button" onClick={onRun} className="btn sm primary">▶ Run</button>
-        <Link
-          href={`/recipes/${encodeURIComponent(recipe.name)}?diagnose=1#doctor`}
-          className="btn sm ghost"
-          style={{ textDecoration: "none" }}
-          title="Run the Doctor: lint + write-policy + recent halts, with fix hints"
-        >
-          Diagnose
-        </Link>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close detail panel"
-          className="rdp-close-btn"
-        >
-          ×
-        </button>
-      </div>
-
-      {activeRun ? (
-        <div className="rdp-status">
-          <RecipeRunInline state={activeRun} density="strip" />
-        </div>
-      ) : (
-        running[recipe.name] && (
-          <div className="rdp-status">
-            <StatusPill tone="warn">{running[recipe.name]}</StatusPill>
-          </div>
-        )
-      )}
-
-      <div className="rdp-section">
-        <div className="rdp-section-label">Recipe YAML</div>
-        <RecipeYamlPanel recipe={recipe} />
-      </div>
-
-      <div>
-        <div className="rdp-section-label">Recent runs</div>
-        {recentRuns.length === 0 ? (
-          <div className="rdp-no-runs">No runs yet.</div>
-        ) : (
-          <div className="rdp-runs-list">
-            {recentRuns.map((run, i) => {
-              const ok = run.status === "done" || run.status === "success";
-              const fail = run.status === "error" || run.status === "failed";
-              const tone = ok ? "ok" : fail ? "err" : "warn";
-              return (
-                <div key={`${run.startedAt}-${i}`} className="rdp-run-row">
-                  {typeof run.seq === "number" ? (
-                    <RunChip
-                      seq={run.seq}
-                      status={run.status}
-                      recipeName={run.recipeName ?? run.recipe}
-                      variant="row"
-                    />
-                  ) : (
-                    <StatusPill tone={tone}>{ok ? "ok" : run.status}</StatusPill>
-                  )}
-                  <span className="rdp-run-time">{relTime(run.startedAt)}</span>
-                  <span className="rdp-run-dur">{formatDuration(run.durationMs)}</span>
-                  {typeof run.toolCount === "number" && (
-                    <span className="rdp-run-tools">{run.toolCount} tools</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="rdp-footer">
-        <button
-          type="button"
-          className="btn sm ghost warn"
-          onClick={onArchive}
-          title="Move to ~/.patchwork/recipes/.archive — hidden from this list, restorable from disk"
-        >
-          Archive
-        </button>
-        <button
-          type="button"
-          className="btn sm ghost danger"
-          onClick={onDelete}
-          title="Permanently delete the recipe file. Cannot be undone."
-        >
-          Delete permanently
-        </button>
-      </div>
-    </PatchCard>
-  );
-}
-
-/**
- * Sticky run bar shown on mobile (≤ 768px) when a recipe is selected.
- * The inline row Run button is hidden in a horizontally-scrolling 7-column
- * table on phones; this bar gives a guaranteed-visible 44pt-tall primary
- * action without forcing the detail panel into a full-screen sheet.
- *
- * Sits above the MobileBottomNav (z 27 vs nav's 28) so the nav stays on
- * top of taps that miss the bar. CSS class `.recipes-mobile-run-bar` is
- * display:none on desktop via @media.
- */
-function MobileRunBar({
-  recipe,
-  onRun,
-  onClose,
-  disabled,
-}: {
-  recipe: Recipe;
-  onRun: () => void;
-  onClose: () => void;
-  disabled: boolean;
-}) {
-  return (
-    <div className="recipes-mobile-run-bar" role="region" aria-label="Selected recipe quick actions">
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Deselect recipe"
-        className="recipes-mobile-run-bar-close"
-      >
-        ×
-      </button>
-      <div className="recipes-mobile-run-bar-name" title={recipe.name}>
-        {recipe.name}
-      </div>
-      <button
-        type="button"
-        className="btn primary"
-        onClick={onRun}
-        disabled={disabled}
-        aria-label={`Run ${recipe.name}`}
-      >
-        ▶ Run{recipe.vars && recipe.vars.length > 0 ? "…" : ""}
-      </button>
-    </div>
-  );
-}
-
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [runMap, setRunMap] = useState<Map<string, RunRecord>>(new Map());
-  const [recentRunsMap, setRecentRunsMap] = useState<Map<string, RunRecord[]>>(new Map());
   const [allRunsMap, setAllRunsMap] = useState<Map<string, RunRecord[]>>(new Map());
   const [err, setErr] = useState<string>();
   const [unsupported, setUnsupported] = useState(false);
-  const [running, setRunning] = useState<Record<string, string>>({});
+  // `running` per-recipe status is tracked so the poll-sync cleanup in `load`
+  // can clear a name once its latest run settles; the value itself is no
+  // longer rendered inline (the run status now surfaces via SSE chips +
+  // the recipe-detail page), so only the setter is consumed here.
+  const [, setRunning] = useState<Record<string, string>>({});
   // ?selected=<name> deep-link (e.g. from suggestions/page.tsx) — redirect
   // immediately to the hub so keyboard and mouse behave identically.
   // We keep the state initialiser below reading the param so the redirect
@@ -593,6 +346,7 @@ export default function RecipesPage() {
   const [modalRunning, setModalRunning] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "paused">("all");
+  const [triggerFilter, setTriggerFilter] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const toast = useToast();
 
@@ -700,7 +454,6 @@ export default function RecipesPage() {
         const runsData = (await runsRes.json()) as { runs?: RunRecord[] };
         const runs = runsData.runs ?? [];
         const latest = new Map<string, RunRecord>();
-        const recent = new Map<string, RunRecord[]>();
         const all = new Map<string, RunRecord[]>();
         for (const run of runs) {
           const key = (run.recipeName ?? run.recipe ?? "").replace(/:agent$/, "");
@@ -708,21 +461,14 @@ export default function RecipesPage() {
           if (!existing || run.startedAt > existing.startedAt) {
             latest.set(key, run);
           }
-          const r = recent.get(key) ?? [];
-          r.push(run);
-          recent.set(key, r);
           const a = all.get(key) ?? [];
           a.push(run);
           all.set(key, a);
-        }
-        for (const [k, l] of recent) {
-          recent.set(k, l.sort((a, b) => b.startedAt - a.startedAt).slice(0, 5));
         }
         for (const [k, l] of all) {
           all.set(k, l.sort((a, b) => b.startedAt - a.startedAt).slice(0, 14));
         }
         setRunMap(latest);
-        setRecentRunsMap(recent);
         setAllRunsMap(all);
         setRunning((prev) => {
           const next = { ...prev };
@@ -895,54 +641,6 @@ export default function RecipesPage() {
     }
   }
 
-  async function handleArchiveRecipe(recipe: Recipe) {
-    const proceed = window.confirm(
-      `Archive "${recipe.name}"? It will be moved to ~/.patchwork/recipes/.archive and hidden from this list. Trigger "${recipe.trigger ?? "?"}" stops firing once archived.`,
-    );
-    if (!proceed) return;
-    try {
-      const res = await fetch(
-        apiPath(
-          `/api/bridge/recipes/${encodeURIComponent(recipe.name)}/archive`,
-        ),
-        { method: "POST" },
-      );
-      if (!res.ok) {
-        const text = await res.text().catch(() => res.statusText);
-        toast.error(`Archive failed: ${text || res.status}`);
-        return;
-      }
-      toast.success(`Archived “${recipe.name}”`);
-      setSelectedName(null);
-      void load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
-    }
-  }
-
-  async function handleDeleteRecipe(recipe: Recipe) {
-    const proceed = window.confirm(
-      `Permanently delete "${recipe.name}"? This removes the YAML file and any sidecar permissions. Cannot be undone.`,
-    );
-    if (!proceed) return;
-    try {
-      const res = await fetch(
-        apiPath(`/api/bridge/recipes/${encodeURIComponent(recipe.name)}`),
-        { method: "DELETE" },
-      );
-      if (!res.ok) {
-        const text = await res.text().catch(() => res.statusText);
-        toast.error(`Delete failed: ${text || res.status}`);
-        return;
-      }
-      toast.success(`Deleted “${recipe.name}”`);
-      setSelectedName(null);
-      void load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
-    }
-  }
-
   async function handleModalConfirm(vars: Record<string, string>) {
     if (!modal) return;
     const name = modal.recipe.name;
@@ -969,6 +667,7 @@ export default function RecipesPage() {
     return (recipes ?? []).filter((r) => {
       if (statusFilter === "enabled" && r.enabled === false) return false;
       if (statusFilter === "paused" && r.enabled !== false) return false;
+      if (triggerFilter && (r.trigger ?? "manual") !== triggerFilter) return false;
       if (connectorFilter && !recipeMatchesConnector(r, connectorFilter)) {
         return false;
       }
@@ -979,7 +678,17 @@ export default function RecipesPage() {
         (r.description ?? "").toLowerCase().includes(q)
       );
     });
-  }, [recipes, statusFilter, search, connectorFilter]);
+  }, [recipes, statusFilter, triggerFilter, search, connectorFilter]);
+
+  // Trigger-type → count across all installed recipes, for the filter chips.
+  const triggerCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of recipes ?? []) {
+      const t = r.trigger ?? "manual";
+      m.set(t, (m.get(t) ?? 0) + 1);
+    }
+    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+  }, [recipes]);
 
   const { enabledCount, pausedCount, installedCount } = useMemo(() => {
     const list = recipes ?? [];
@@ -991,11 +700,6 @@ export default function RecipesPage() {
     }
     return { enabledCount: on, pausedCount: off, installedCount: list.length };
   }, [recipes]);
-
-  const selectedRecipe = useMemo(
-    () => filteredRecipes.find((r) => r.name === selectedName) ?? null,
-    [filteredRecipes, selectedName],
-  );
 
   function successPct(name: string): number | null {
     const runs = allRunsMap.get(name);
@@ -1152,37 +856,62 @@ export default function RecipesPage() {
           <div className="recipes-toolbar-meta">
             <span>
               <strong>{filteredRecipes.length}</strong>
-              {search.trim() || statusFilter !== "all" ? ` of ${installedCount}` : ""} shown
+              {search.trim() || statusFilter !== "all" || triggerFilter
+                ? ` of ${installedCount}`
+                : ""}{" "}
+              shown
             </span>
-            <span aria-hidden="true">·</span>
-            <button
-              type="button"
-              onClick={() => setStatusFilter(statusFilter === "enabled" ? "all" : "enabled")}
-              aria-pressed={statusFilter === "enabled"}
-              data-filter="enabled"
-              title={statusFilter === "enabled" ? "Showing enabled only — click to clear" : "Show only enabled"}
-              className="recipes-status-btn"
-            >
-              {enabledCount} enabled
-            </button>
-            {pausedCount > 0 && (
-              <>
-                <span aria-hidden="true">·</span>
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter(statusFilter === "paused" ? "all" : "paused")}
-                  aria-pressed={statusFilter === "paused"}
-                  data-filter="paused"
-                  title={statusFilter === "paused" ? "Showing paused only — click to clear" : "Show only paused"}
-                  className="recipes-status-btn"
-                >
-                  {pausedCount} paused
-                </button>
-              </>
-            )}
           </div>
         )}
       </div>
+
+      {recipes && recipes.length > 0 && (
+        <div className="recipes-gallery-filters" role="group" aria-label="Filter recipes">
+          <button
+            type="button"
+            className={`chip${statusFilter === "all" && !triggerFilter ? " active" : ""}`}
+            aria-pressed={statusFilter === "all" && !triggerFilter}
+            onClick={() => {
+              setStatusFilter("all");
+              setTriggerFilter(null);
+            }}
+          >
+            All ({installedCount})
+          </button>
+          <button
+            type="button"
+            className={`chip${statusFilter === "enabled" ? " active" : ""}`}
+            aria-pressed={statusFilter === "enabled"}
+            data-filter="enabled"
+            onClick={() => setStatusFilter(statusFilter === "enabled" ? "all" : "enabled")}
+          >
+            enabled ({enabledCount})
+          </button>
+          {pausedCount > 0 && (
+            <button
+              type="button"
+              className={`chip${statusFilter === "paused" ? " active" : ""}`}
+              aria-pressed={statusFilter === "paused"}
+              data-filter="paused"
+              onClick={() => setStatusFilter(statusFilter === "paused" ? "all" : "paused")}
+            >
+              paused ({pausedCount})
+            </button>
+          )}
+          {triggerCounts.map(([trigger, count]) => (
+            <button
+              key={trigger}
+              type="button"
+              className={`chip${triggerFilter === trigger ? " active" : ""}`}
+              aria-pressed={triggerFilter === trigger}
+              data-trigger-filter={trigger}
+              onClick={() => setTriggerFilter(triggerFilter === trigger ? null : trigger)}
+            >
+              {trigger} ({count})
+            </button>
+          ))}
+        </div>
+      )}
 
       <HintCard id="recipes" />
 
@@ -1233,232 +962,153 @@ export default function RecipesPage() {
             </>
           }
         />
-      ) : (
-        <div className={`recipes-grid${selectedRecipe ? " has-detail" : ""}`}>
-          <PatchCard padded={false} className="recipes-table-card">
-            <div className="table-wrap recipes-table-wrap">
-              <table className="table recipes-table" aria-keyshortcuts="j k">
-                <caption className="sr-only">
-                  Installed recipes with health, trigger, last 14 runs, average duration, last run time, and actions.
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">
-                      <span className="sr-only">Health</span>
-                    </th>
-                    <th scope="col">Recipe</th>
-                    <th scope="col">Trigger</th>
-                    <th scope="col">Runs</th>
-                    <th scope="col">Avg</th>
-                    <th scope="col">Last</th>
-                    <th scope="col">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRecipes.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="recipes-empty-td" style={{ padding: "40px 24px", textAlign: "center" }}>
-                        <div style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          gap: 12,
-                          animation: "recipeFadeIn 200ms ease both",
-                        }}>
-                          <div style={{ fontSize: 32, opacity: 0.3 }}>
-                            {search.trim() ? "⌕" : "◎"}
-                          </div>
-                          <div style={{ color: "var(--ink-2)", fontSize: "var(--fs-s)", fontWeight: 500 }}>
-                            {search.trim()
-                              ? `No recipes match "${search.trim()}"`
-                              : statusFilter === "paused"
-                                ? "No paused recipes"
-                                : "No enabled recipes"}
-                          </div>
-                          <div style={{ display: "flex", gap: 8 }}>
-                            {search.trim() && (
-                              <button
-                                type="button"
-                                className="btn sm ghost"
-                                onClick={() => setSearch("")}
-                              >
-                                Clear search
-                              </button>
-                            )}
-                            {statusFilter !== "all" && (
-                              <button
-                                type="button"
-                                className="btn sm ghost"
-                                onClick={() => setStatusFilter("all")}
-                              >
-                                Show all
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {filteredRecipes.map((r, i) => {
-                    const live = isLive(r.name);
-                    const last = runMap.get(r.name);
-                    const sel = selectedName === r.name;
-                    const pct = successPct(r.name);
-                    const avg = avgDuration(r.name);
-                    const enabled = r.enabled !== false;
-                    return (
-                      <tr
-                        key={r.path ?? r.id ?? `${r.name}:${i}`}
-                        className={`recipe-row${sel ? " is-selected" : ""}${enabled ? "" : " is-off"}`}
-                        style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}
-                        data-recipe-row={r.name}
-                        onClick={() => {
-                          router.push(`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            router.push(`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`);
-                          }
-                        }}
-                        tabIndex={0}
-                        role="link"
-                        aria-label={`Open recipe ${r.name}`}
-                      >
-                        <td>
-                          <SuccessRing pct={pct} />
-                        </td>
-                        <td className="mono">
-                          <div className="recipe-name-row">
-                            <Link
-                              href={`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="recipe-name-link"
-                              title={r.description ?? r.name}
-                            >
-                              {r.name}
-                            </Link>
-                            {live && <LivePill tone="ok" />}
-                            {activeRunsByName.get(r.name) && (
-                              <RecipeRunInline
-                                state={activeRunsByName.get(r.name) as ActiveRunState}
-                                density="chip"
-                              />
-                            )}
-                            {enabled && !live && <span className="enabled-pulse-dot" aria-label="enabled" />}
-                            {!enabled && <StatusPill tone="muted">off</StatusPill>}
-                            {r.lint && r.lint.ok === false && (
-                              <StatusPill
-                                tone="warn"
-                                title={r.lint.firstError ?? `${r.lint.errorCount} lint error(s)`}
-                              >
-                                lint
-                              </StatusPill>
-                            )}
-                          </div>
-                          {r.description && (
-                            <div className="muted recipe-desc">{r.description}</div>
-                          )}
-                        </td>
-                        <td>
-                          <div className="recipe-trigger-col">
-                            <StatusPill tone={triggerTone(r.trigger)}>
-                              {r.trigger ?? "manual"}
-                            </StatusPill>
-                            {r.schedule && (
-                              <span
-                                className="mono muted recipe-schedule-text"
-                                title={`Cron expression: ${r.schedule}`}
-                              >
-                                {r.schedule}
-                              </span>
-                            )}
-                            {r.trigger === "webhook" && r.webhookPath && (
-                              <span
-                                className="mono muted recipe-schedule-text"
-                                title={`Webhook path: ${r.webhookPath}`}
-                              >
-                                {r.webhookPath}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <RunSparkBars
-                            runs={(allRunsMap.get(r.name) ?? []).slice(0, 14)}
-                            slots={14}
-                            width={140}
-                            height={20}
-                          />
-                        </td>
-                        <td className="mono muted">
-                          {formatDuration(avg)}
-                        </td>
-                        <td className="muted">
-                          {last ? relTime(last.startedAt) : "—"}
-                        </td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <div
-                            className="recipe-actions-wrap"
-                            data-enabled={enabled ? "true" : "false"}
-                          >
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={enabled}
-                              aria-label={`${enabled ? "Disable" : "Enable"} ${r.name}`}
-                              title={enabled ? "Enabled — click to disable" : "Disabled — click to enable"}
-                              onClick={() => void handleToggleEnabled(r)}
-                              className="recipe-toggle"
-                            >
-                              <span
-                                aria-hidden="true"
-                                className="recipe-toggle-thumb"
-                              />
-                            </button>
-                            <button
-                              type="button"
-                              className="btn sm recipe-run-btn"
-                              onClick={() => handleRunClick(r)}
-                              disabled={!enabled}
-                            >
-                              <span aria-hidden="true" className="recipe-run-icon">▶</span>
-                              Run{r.vars && r.vars.length > 0 ? "…" : ""}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </PatchCard>
-
-          {selectedRecipe && (
-            <RecipeDetailPanel
-              recipe={selectedRecipe}
-              recentRuns={recentRunsMap.get(selectedRecipe.name) ?? []}
-              onClose={() => setSelectedName(null)}
-              onRun={() => handleRunClick(selectedRecipe)}
-              onArchive={() => void handleArchiveRecipe(selectedRecipe)}
-              onDelete={() => void handleDeleteRecipe(selectedRecipe)}
-              running={running}
-              isLive={isLive(selectedRecipe.name)}
-              activeRun={activeRunsByName.get(selectedRecipe.name)}
-            />
-          )}
+      ) : filteredRecipes.length === 0 ? (
+        <div className="recipes-gallery-empty">
+          <div className="recipes-gallery-empty-icon" aria-hidden="true">
+            {search.trim() ? "⌕" : "◎"}
+          </div>
+          <div className="recipes-gallery-empty-title">
+            {search.trim()
+              ? `No recipes match "${search.trim()}"`
+              : triggerFilter
+                ? `No ${triggerFilter} recipes`
+                : statusFilter === "paused"
+                  ? "No paused recipes"
+                  : "No enabled recipes"}
+          </div>
+          <div className="recipes-gallery-empty-actions">
+            {search.trim() && (
+              <button type="button" className="btn sm ghost" onClick={() => setSearch("")}>
+                Clear search
+              </button>
+            )}
+            {(statusFilter !== "all" || triggerFilter) && (
+              <button
+                type="button"
+                className="btn sm ghost"
+                onClick={() => {
+                  setStatusFilter("all");
+                  setTriggerFilter(null);
+                }}
+              >
+                Show all
+              </button>
+            )}
+          </div>
         </div>
-      )}
-      {selectedRecipe && (
-        <MobileRunBar
-          recipe={selectedRecipe}
-          onRun={() => handleRunClick(selectedRecipe)}
-          onClose={() => setSelectedName(null)}
-          disabled={selectedRecipe.enabled === false}
-        />
+      ) : (
+        <div className="recipes-gallery-grid" aria-keyshortcuts="j k">
+          {filteredRecipes.map((r, i) => {
+            const live = isLive(r.name);
+            const last = runMap.get(r.name);
+            const sel = selectedName === r.name;
+            const pct = successPct(r.name);
+            const enabled = r.enabled !== false;
+            const activeRun = activeRunsByName.get(r.name);
+            const meta = r.schedule || (r.trigger === "webhook" ? r.webhookPath : undefined);
+            return (
+              <div
+                key={r.path ?? r.id ?? `${r.name}:${i}`}
+                className={`card recipes-gallery-card${sel ? " is-selected" : ""}${enabled ? "" : " off"}`}
+                data-recipe-row={r.name}
+                style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}
+                onClick={() => {
+                  router.push(`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    router.push(`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`);
+                  }
+                }}
+                tabIndex={0}
+                role="link"
+                aria-label={`Open recipe ${r.name}`}
+              >
+                <div className="rgc-top">
+                  <div className="rgc-name-row">
+                    <Link
+                      href={`/recipes/${encodeURIComponent(canonicalRecipeKey(r.name))}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="rgc-name mono"
+                      title={r.description ?? r.name}
+                    >
+                      {r.name}
+                    </Link>
+                    <StatusPill tone={triggerTone(r.trigger)}>
+                      {r.trigger ?? "manual"}
+                    </StatusPill>
+                    {live && <LivePill tone="ok" />}
+                    {!enabled && <StatusPill tone="muted">off</StatusPill>}
+                    {r.lint && r.lint.ok === false && (
+                      <StatusPill
+                        tone="warn"
+                        title={r.lint.firstError ?? `${r.lint.errorCount} lint error(s)`}
+                      >
+                        lint
+                      </StatusPill>
+                    )}
+                    {activeRun && (
+                      <RecipeRunInline state={activeRun as ActiveRunState} density="chip" />
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  className="rgc-run"
+                  onClick={(e) => e.stopPropagation()}
+                  data-enabled={enabled ? "true" : "false"}
+                >
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled}
+                    aria-label={`${enabled ? "Disable" : "Enable"} ${r.name}`}
+                    title={enabled ? "Enabled — click to disable" : "Disabled — click to enable"}
+                    onClick={() => void handleToggleEnabled(r)}
+                    className="recipe-toggle"
+                  >
+                    <span aria-hidden="true" className="recipe-toggle-thumb" />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm recipe-run-btn"
+                    onClick={() => handleRunClick(r)}
+                    disabled={!enabled}
+                  >
+                    <span aria-hidden="true" className="recipe-run-icon">▶</span>
+                    Run{r.vars && r.vars.length > 0 ? "…" : ""}
+                  </button>
+                </div>
+
+                {r.description && <div className="rgc-desc">{r.description}</div>}
+
+                <RunSparkBars
+                  runs={(allRunsMap.get(r.name) ?? []).slice(0, 14)}
+                  slots={14}
+                  width={260}
+                  height={26}
+                />
+
+                <div className="rgc-meta">
+                  <span className="rgc-meta-item">
+                    <SuccessRing pct={pct} size={16} stroke={3} />
+                    {pct == null ? "—" : `${Math.round(pct)}%`}
+                  </span>
+                  {meta && (
+                    <span className="rgc-meta-item mono" title={meta}>
+                      {meta}
+                    </span>
+                  )}
+                  <span className="rgc-meta-item">{formatDuration(avgDuration(r.name))}</span>
+                  <span className="rgc-meta-item">
+                    {last ? relTime(last.startedAt) : "—"}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {recipes && recipes.length > 0 && (
