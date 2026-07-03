@@ -9,6 +9,7 @@ import { MobileSection } from "./_components/MobileSection";
 import { PermColumn } from "./_components/PermColumn";
 import { TelemetrySection } from "./_components/TelemetrySection";
 import { ToggleRow } from "./_components/ToggleRow";
+import { KillSwitchConfirmDialog } from "@/components/KillSwitchConfirmDialog";
 
 interface StatusResponse {
   uptimeMs?: number;
@@ -219,6 +220,10 @@ export default function SettingsPage() {
   const [ksMsg, setKsMsg] = useState<{ ok: boolean; text: string } | null>(
     null,
   );
+  // Confirm-dialog gate in front of the POST below (dashboard-killswitch-confirm).
+  // `ksConfirmValue` holds the pending target state (true=engage, false=release)
+  // while the dialog is open; null means no confirm in flight.
+  const [ksConfirmValue, setKsConfirmValue] = useState<boolean | null>(null);
 
   useEffect(() => {
     const tick = async () => {
@@ -1119,57 +1124,7 @@ export default function SettingsPage() {
                         "Locked by PATCHWORK_FLAG_KILL_SWITCH_WRITES at bridge startup — restart with that env unset to toggle from here."
                       : undefined
                   }
-                  onChange={async (value) => {
-                    setKsSaving(true);
-                    setKsMsg(null);
-                    try {
-                      const res = await fetch(
-                        apiPath("/api/bridge/kill-switch"),
-                        {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ engage: value }),
-                        },
-                      );
-                      const j = (await res.json().catch(() => ({}))) as {
-                        ok?: boolean;
-                        engaged?: boolean;
-                        changed?: boolean;
-                        error?: string;
-                        lockedReason?: string;
-                      };
-                      if (res.status === 409) {
-                        setKsLocked(true);
-                        setKsLockedReason(j.lockedReason);
-                        setKsMsg({
-                          ok: false,
-                          text: `Env-locked: ${j.lockedReason ?? "policy override"}`,
-                        });
-                        return;
-                      }
-                      if (!res.ok) {
-                        setKsMsg({
-                          ok: false,
-                          text: `Bridge returned ${res.status}: ${j.error ?? "unknown"}`,
-                        });
-                        return;
-                      }
-                      setKsEngaged(Boolean(j.engaged));
-                      setKsMsg({
-                        ok: true,
-                        text: j.changed
-                          ? `Kill switch ${value ? "engaged" : "released"}.`
-                          : "Already in target state — no change.",
-                      });
-                    } catch (err) {
-                      setKsMsg({
-                        ok: false,
-                        text: `Failed to reach bridge: ${err instanceof Error ? err.message : String(err)}`,
-                      });
-                    } finally {
-                      setKsSaving(false);
-                    }
-                  }}
+                  onChange={(value) => setKsConfirmValue(value)}
                 />
                 {ksMsg && (
                   <p className="stg-msg stg-msg-p stg-msg-ks" data-ok={String(ksMsg.ok)}>
@@ -1178,6 +1133,63 @@ export default function SettingsPage() {
                 )}
               </div>
             </div>
+
+            <KillSwitchConfirmDialog
+              open={ksConfirmValue !== null}
+              onClose={() => setKsConfirmValue(null)}
+              direction={ksConfirmValue ? "engage" : "release"}
+              onConfirm={async () => {
+                const value = ksConfirmValue;
+                setKsConfirmValue(null);
+                if (value === null) return;
+                setKsSaving(true);
+                setKsMsg(null);
+                try {
+                  const res = await fetch(apiPath("/api/bridge/kill-switch"), {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ engage: value }),
+                  });
+                  const j = (await res.json().catch(() => ({}))) as {
+                    ok?: boolean;
+                    engaged?: boolean;
+                    changed?: boolean;
+                    error?: string;
+                    lockedReason?: string;
+                  };
+                  if (res.status === 409) {
+                    setKsLocked(true);
+                    setKsLockedReason(j.lockedReason);
+                    setKsMsg({
+                      ok: false,
+                      text: `Env-locked: ${j.lockedReason ?? "policy override"}`,
+                    });
+                    return;
+                  }
+                  if (!res.ok) {
+                    setKsMsg({
+                      ok: false,
+                      text: `Bridge returned ${res.status}: ${j.error ?? "unknown"}`,
+                    });
+                    return;
+                  }
+                  setKsEngaged(Boolean(j.engaged));
+                  setKsMsg({
+                    ok: true,
+                    text: j.changed
+                      ? `Kill switch ${value ? "engaged" : "released"}.`
+                      : "Already in target state — no change.",
+                  });
+                } catch (err) {
+                  setKsMsg({
+                    ok: false,
+                    text: `Failed to reach bridge: ${err instanceof Error ? err.message : String(err)}`,
+                  });
+                } finally {
+                  setKsSaving(false);
+                }
+              }}
+            />
 
             {/* Mobile — extracted to ./_components/MobileSection */}
             <MobileSection flashSaved={flashSaved} />
