@@ -2,6 +2,7 @@
 import { type CSSProperties, useState } from "react";
 import { EmptyState, ErrorState, HBarList } from "@/components/patchwork";
 import { SkeletonList } from "@/components/Skeleton";
+import { DotStrip } from "@/components/DotStrip";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { apiPath } from "@/lib/api";
 import {
@@ -765,76 +766,83 @@ function JourneyTimeline({
   );
 }
 
-/** Round initial-avatar so a team of many workers is scannable by shape/letter. */
-function WorkerAvatar({ name }: { name: string }) {
-  const initial = (name.trim()[0] ?? "?").toUpperCase();
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        flexShrink: 0,
-        width: 30,
-        height: 30,
-        borderRadius: "50%",
-        background: "var(--surface-2)",
-        color: "var(--ink-2)",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontWeight: 600,
-        fontSize: "var(--fs-s)",
-      }}
-    >
-      {initial}
-    </span>
-  );
-}
+/** Max trust level (index of the last journey stop) — 0-4, i.e. L0..L4. */
+const MAX_LEVEL = JOURNEY_STOPS.length - 1;
+/** Circumference of the dial ring at r=27: 2·π·27 ≈ 169.6, rounded per mockup. */
+const DIAL_CIRCUMFERENCE = 170;
 
 /**
- * The compact roster bar — the collapsed-row version of the JourneyStepper. Five
- * stops (Just watching → Fully trusted), filled to what the worker has earned on
- * its main job, with a 🔒 "your limit" marker at the ceiling. One glance says how
- * far along a worker is; stack them and the whole team is scannable.
+ * The trust dial — an SVG ring replacing the old 5-stop `RosterBar` strip.
+ * Arc length is earned/MAX_LEVEL of the full circumference; a tick mark shows
+ * the ceiling (the operator's leash) when it's below the max level. A worker
+ * with no history yet gets a dashed "new" ring instead of a filled arc.
  */
-function RosterBar({ earned, ceiling }: { earned: number; ceiling: number }) {
-  const effective = Math.min(earned, ceiling);
+function TrustDial({
+  earned,
+  ceiling,
+  hasHistory,
+}: {
+  earned: number;
+  ceiling: number;
+  hasHistory: boolean;
+}) {
+  if (!hasHistory) {
+    return (
+      <div
+        className="wa-dial"
+        role="img"
+        aria-label="No history yet"
+      >
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <circle
+            cx="32"
+            cy="32"
+            r="27"
+            fill="none"
+            stroke="var(--recess)"
+            strokeWidth="7"
+            strokeDasharray="2 5"
+          />
+        </svg>
+        <span className="lvl muted">new</span>
+      </div>
+    );
+  }
+  const arc = (earned / MAX_LEVEL) * DIAL_CIRCUMFERENCE;
+  const color = levelColor(Math.min(earned, ceiling));
+  const leashed = ceiling < MAX_LEVEL;
+  const angle = (ceiling / MAX_LEVEL) * 360;
   return (
     <div
-      style={{ display: "flex", gap: 3, marginTop: 4, maxWidth: 240 }}
+      className="wa-dial"
       role="img"
       aria-label={`Earned ${JOURNEY_STOPS[earned] ?? `level ${earned}`}; your limit is ${JOURNEY_STOPS[ceiling] ?? `level ${ceiling}`}`}
     >
-      {JOURNEY_STOPS.map((stop, i) => {
-        const reached = i <= earned;
-        return (
-          <div key={stop} style={{ flex: 1, position: "relative" }}>
-            {i === ceiling && (
-              <span
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  top: -13,
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  fontSize: "var(--fs-2xs)",
-                }}
-              >
-                🔒
-              </span>
-            )}
-            <div
-              style={{
-                height: 6,
-                borderRadius: 3,
-                background: reached ? "var(--ok)" : "var(--surface-2)",
-                border: reached ? "none" : "1px solid var(--line-3)",
-                boxShadow:
-                  i === effective ? "0 0 0 2px var(--accent)" : "none",
-              }}
-            />
-          </div>
-        );
-      })}
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <circle cx="32" cy="32" r="27" fill="none" stroke="var(--recess)" strokeWidth="7" />
+        <circle
+          cx="32"
+          cy="32"
+          r="27"
+          fill="none"
+          stroke={color}
+          strokeWidth="7"
+          strokeLinecap="round"
+          strokeDasharray={`${arc} ${DIAL_CIRCUMFERENCE}`}
+        />
+        {leashed && (
+          <line
+            x1="32"
+            y1="1"
+            x2="32"
+            y2="12"
+            stroke="var(--ink-0)"
+            strokeWidth="2.5"
+            transform={`rotate(${180 + angle} 32 32)`}
+          />
+        )}
+      </svg>
+      <span className="lvl">L{earned}</span>
     </div>
   );
 }
@@ -913,8 +921,31 @@ function WorkerCard({
     };
   });
 
+  // 4-segment progress strip: filled up to the earned level, the segment AT
+  // the ceiling is hatched (capped) when a leash is active, the rest empty.
+  const hasHistory = w.board.length > 0;
+  const earnedLevel = gatedPrimary?.level ?? 0;
+  const stepClass = (i: number): string => {
+    if (i < earnedLevel) return "f";
+    if (i === w.autonomyCeiling && w.autonomyCeiling < MAX_LEVEL) return "cap";
+    return "";
+  };
+  // Reversible-only worker: owns work, none of it gated — runs freely, no leash.
+  const reversibleOnly = owned.length > 0 && !gatedPrimary;
+  // Last-N dots for the footer — reuses the same board stat the standing line
+  // already shows (mean/observations); no separate per-run history exists.
+  const dotWindow = gatedPrimary
+    ? Math.min(gatedPrimary.observations, 7)
+    : 0;
+  const dotGood = gatedPrimary
+    ? Math.round(gatedPrimary.mean * dotWindow)
+    : 0;
+
   return (
-    <div className="card" style={{ marginTop: "var(--s-4)" }}>
+    <article
+      className="wa-card card"
+      style={top ? { borderColor: "rgba(91,138,79,.45)" } : undefined}
+    >
       {/* Collapsed roster row — the whole team is scannable at this level. */}
       <button
         type="button"
@@ -928,45 +959,101 @@ function WorkerCard({
           cursor: "pointer",
           textAlign: "left",
           display: "flex",
-          alignItems: "center",
+          flexDirection: "column",
           gap: "var(--s-3)",
           color: "inherit",
         }}
       >
-        <WorkerAvatar name={w.name} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--s-2)",
-              flexWrap: "wrap",
-            }}
-          >
-            <strong>{w.name}</strong>
-            <span
-              className="pill"
-              style={{ background: status.bg, color: status.fg }}
+        <div className="top">
+          <TrustDial
+            earned={earnedLevel}
+            ceiling={w.autonomyCeiling}
+            hasHistory={hasHistory}
+          />
+          <div className="who" style={{ flex: 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--s-2)",
+                flexWrap: "wrap",
+              }}
             >
-              {status.label}
-            </span>
+              <span className="name">{w.name}</span>
+              <span
+                className="pill"
+                style={{ background: status.bg, color: status.fg }}
+              >
+                {status.label}
+              </span>
+            </div>
+            <div className="role">{jobLine}</div>
           </div>
-          <div className="muted" style={{ fontSize: "var(--fs-xs)", marginTop: 1 }}>
-            {jobLine}
-          </div>
-          {gatedPrimary && (
-            <RosterBar earned={gatedPrimary.level} ceiling={w.autonomyCeiling} />
-          )}
+          <span aria-hidden="true" className="muted" style={{ flexShrink: 0 }}>
+            {open ? "▾" : "▸"}
+          </span>
+        </div>
+
+        {gatedPrimary && (
           <div
-            className="editorial-sub"
-            style={{ fontFamily: "inherit", marginTop: 4 }}
+            className="wa-steps"
+            role="img"
+            aria-label={`earned ${earnedLevel} of ${MAX_LEVEL} steps, leash at step ${w.autonomyCeiling}`}
           >
+            {Array.from({ length: MAX_LEVEL }, (_, i) => (
+              // Fixed-length ordered strip; index is a stable key here.
+              // biome-ignore lint/suspicious/noArrayIndexKey: positional steps
+              <i key={i} className={stepClass(i)} />
+            ))}
+          </div>
+        )}
+
+        {gatedPrimary ? (
+          <div className="wa-leash">
+            <span
+              className="dot"
+              aria-hidden="true"
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: "var(--ok)",
+                display: "inline-block",
+              }}
+            />
             {standing}
           </div>
+        ) : reversibleOnly ? (
+          <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+            Runs freely without a leash. Nothing to review — its work can
+            always be undone.
+          </div>
+        ) : (
+          <div className="editorial-sub" style={{ fontFamily: "inherit" }}>
+            {standing}
+          </div>
+        )}
+
+        {top && (
+          <div className="wa-promote">
+            <span>
+              ✅ Ready for more independence — {pct(top.mean)}% over{" "}
+              {top.observations} tries.
+            </span>
+          </div>
+        )}
+
+        <div className="wa-foot">
+          {reversibleOnly ? (
+            <span className="pill">reversible only</span>
+          ) : gatedPrimary && dotWindow > 0 ? (
+            <DotStrip good={dotGood} total={gatedPrimary.observations} max={7} />
+          ) : (
+            <span className="muted" style={{ fontSize: "var(--fs-xs)" }}>
+              no history yet
+            </span>
+          )}
         </div>
-        <span aria-hidden="true" className="muted" style={{ flexShrink: 0 }}>
-          {open ? "▾" : "▸"}
-        </span>
       </button>
 
       {!open ? null : (
@@ -1097,7 +1184,7 @@ function WorkerCard({
       )}
       </div>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -1121,6 +1208,19 @@ export default function WorkersPage() {
     intervalMs: 30000,
   });
   const pending = pendingData?.pending ?? [];
+
+  // Past-verdicts count for the triage tile — same endpoint `PastVerdicts`
+  // polls; kept as a separate read here so the tile's count doesn't require
+  // threading state through that component's own disclosure/fetch lifecycle.
+  const { data: outcomesData } = useBridgeFetch<OutcomesResponse>(
+    "/api/bridge/outcomes",
+    { intervalMs: 30000 },
+  );
+  const outcomes = outcomesData?.outcomes ?? [];
+  const verdictConfirmed = outcomes.filter(
+    (o) => o.disposition === "confirmed",
+  ).length;
+  const verdictJunk = outcomes.filter((o) => o.disposition === "junk").length;
 
   // Fleet view: a worker "needs attention" when it's earned past its leash
   // (ready to advance). Sort those first so a team of many workers stays
@@ -1155,22 +1255,21 @@ export default function WorkersPage() {
       `${readyCount} worker${readyCount === 1 ? "" : "s"} ready for a promotion`,
     );
   const allClear = pendingKnown && reviewCount === 0 && readyCount === 0;
-  const triageTone = reviewCount > 0 ? "var(--warn)" : "var(--ok)";
 
   return (
     <section>
-      <div className="page-head">
+      <div className="wa-head">
         <div>
-          <h1 className="editorial-h1" style={{ margin: 0 }}>
+          <h2>
             Your AI team
             {data && workers.length > 0 && (
-              <span className="accent">
+              <em>
                 {" "}
-                — {workers.length} worker{workers.length === 1 ? "" : "s"}.
-              </span>
+                — {workers.length} worker{workers.length === 1 ? "" : "s"}
+              </em>
             )}
-          </h1>
-          {(triageParts.length > 0 || allClear) && (
+          </h2>
+          {allClear && (
             <div
               className="editorial-sub"
               style={{ fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8 }}
@@ -1181,13 +1280,11 @@ export default function WorkersPage() {
                   width: 9,
                   height: 9,
                   borderRadius: "50%",
-                  background: triageTone,
+                  background: "var(--ok)",
                   flexShrink: 0,
                 }}
               />
-              {allClear
-                ? "All good — nothing needs you today."
-                : triageParts.join(" · ")}
+              All good — nothing needs you today.
             </div>
           )}
           <ConsideredApproval />
@@ -1206,15 +1303,61 @@ export default function WorkersPage() {
         </div>
       </div>
 
-      <ReviewQueue
-        pending={pending}
-        status={pendingStatus}
-        refetch={refetchPending}
-        expert={expert}
-        now={now}
-      />
+      {/* Triage tiles — replace the old single-sentence dot line. Each links
+          to the section below that answers it (review queue, ready-to-advance
+          workers, past-verdicts disclosure). Counts are the same ones that
+          already fed the old triage sentence / ReviewQueue / PastVerdicts. */}
+      {!allClear && (
+        <div className="wa-triage">
+          {pendingKnown && reviewCount > 0 && (
+            <a href="#wa-review-queue">
+              <span className="warnbar" aria-hidden="true" />
+              <span className="big num">{reviewCount}</span>
+              <span className="lbl">
+                <strong>need your review</strong>
+                <br />
+                workers filed issues — are they real?
+              </span>
+            </a>
+          )}
+          {readyCount > 0 && (
+            <a href="#wa-grid">
+              <span className="okbar" aria-hidden="true" />
+              <span className="big num">{readyCount}</span>
+              <span className="lbl">
+                <strong>ready for a promotion</strong>
+                <br />
+                earned more than you allow
+              </span>
+            </a>
+          )}
+          {outcomes.length > 0 && (
+            <a href="#wa-past-verdicts">
+              <span className="accbar" aria-hidden="true" />
+              <span className="big num">{outcomes.length}</span>
+              <span className="lbl">
+                <strong>past verdicts</strong>
+                <br />
+                {verdictConfirmed} real · {verdictJunk} not real
+              </span>
+            </a>
+          )}
+        </div>
+      )}
 
-      <PastVerdicts expert={expert} />
+      <div id="wa-review-queue">
+        <ReviewQueue
+          pending={pending}
+          status={pendingStatus}
+          refetch={refetchPending}
+          expert={expert}
+          now={now}
+        />
+      </div>
+
+      <div id="wa-past-verdicts">
+        <PastVerdicts expert={expert} />
+      </div>
 
       {loading && workers.length === 0 && <SkeletonList rows={3} columns={2} />}
 
@@ -1237,7 +1380,7 @@ export default function WorkersPage() {
       {workers.length > 0 && (
         <div
           className="editorial-sub"
-          style={{ fontFamily: "inherit", marginTop: "var(--s-4)" }}
+          style={{ fontFamily: "inherit", marginTop: "var(--s-4)", marginBottom: "var(--s-3)" }}
         >
           <strong>Your team</strong>
           {readyCount > 0
@@ -1248,9 +1391,11 @@ export default function WorkersPage() {
         </div>
       )}
 
-      {workers.map((w) => (
-        <WorkerCard key={w.workerId} w={w} expert={expert} now={now} />
-      ))}
+      <div className="wa-grid" id="wa-grid">
+        {workers.map((w) => (
+          <WorkerCard key={w.workerId} w={w} expert={expert} now={now} />
+        ))}
+      </div>
     </section>
   );
 }
