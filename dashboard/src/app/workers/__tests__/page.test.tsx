@@ -77,6 +77,8 @@ describe("WorkersPage", () => {
     fetchMock.mockImplementation(routeMock(SHADOW));
     const { container } = render(<WorkersPage />);
     expect(await screen.findByText("Release Worker")).toBeTruthy();
+    // The per-task record lives in the worker's drawer — expand the roster row.
+    fireEvent.click(screen.getByRole("button", { name: /Release Worker/ }));
     // Plain per-task record: fs-write:reversible:medium (not owned) → "changing files".
     expect(container.textContent).toContain("changing files");
     expect(container.textContent).toContain("not one of its jobs");
@@ -114,6 +116,7 @@ describe("WorkersPage", () => {
     fetchMock.mockImplementation(routeMock(NOT_OWNED_SHADOW));
     const { container } = render(<WorkersPage />);
     expect(await screen.findByText("Release Worker")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Release Worker/ }));
     // Not-owned classes must read as "not one of its jobs" (floored), never as
     // the raw earned level (L3) — a worker has no standing trust there.
     expect(container.textContent).toMatch(/not one of its jobs/i);
@@ -146,12 +149,29 @@ describe("WorkersPage", () => {
     };
     fetchMock.mockImplementation(routeMock(READY_SHADOW));
     const { container } = render(<WorkersPage />);
+    // Collapsed row already flags the promotion via the status chip…
     expect(
-      await screen.findByText(/Ready for more independence/),
+      await screen.findByText(/Ready for a promotion/),
     ).toBeTruthy();
-    // Names the earned capability + the exact config change to make.
+    // …the full "Ready for more independence?" block + config change is in the drawer.
+    fireEvent.click(
+      screen.getByRole("button", { name: /Test Guardian Worker/ }),
+    );
+    expect(container.textContent).toMatch(/Ready for more independence/);
     expect(container.textContent).toContain("filing issues");
     expect(container.textContent).toContain("autonomyCeiling: 4");
+  });
+
+  it("roster row is compact by default — status + standing show; the drawer detail is hidden until expanded", async () => {
+    fetchMock.mockImplementation(routeMock(SHADOW));
+    const { container } = render(<WorkersPage />);
+    expect(await screen.findByText("Release Worker")).toBeTruthy();
+    // Scannable at a glance: the status chip + a one-line standing are present…
+    expect(container.textContent).toContain("Proving itself");
+    // …but the drawer's per-task record is NOT in the DOM until the row opens.
+    expect(container.textContent).not.toContain("changing files");
+    fireEvent.click(screen.getByRole("button", { name: /Release Worker/ }));
+    expect(container.textContent).toContain("changing files");
   });
 
   it("shows the empty state when no workers are configured", async () => {
@@ -246,6 +266,10 @@ describe("WorkersPage", () => {
     fetchMock.mockImplementation(routeMock(JOURNEY_SHADOW));
     const { container } = render(<WorkersPage />);
     expect(await screen.findByText("Test Guardian Worker")).toBeTruthy();
+    // The full journey (stepper + history) lives in the drawer — expand it.
+    fireEvent.click(
+      screen.getByRole("button", { name: /Test Guardian Worker/ }),
+    );
     // The journey stepper renders the plain stops.
     expect(container.textContent).toContain("Just watching");
     expect(container.textContent).toContain("Fully trusted");

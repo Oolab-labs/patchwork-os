@@ -765,10 +765,85 @@ function JourneyTimeline({
   );
 }
 
+/** Round initial-avatar so a team of many workers is scannable by shape/letter. */
+function WorkerAvatar({ name }: { name: string }) {
+  const initial = (name.trim()[0] ?? "?").toUpperCase();
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        flexShrink: 0,
+        width: 30,
+        height: 30,
+        borderRadius: "50%",
+        background: "var(--surface-2)",
+        color: "var(--ink-2)",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontWeight: 600,
+        fontSize: "var(--fs-s)",
+      }}
+    >
+      {initial}
+    </span>
+  );
+}
+
 /**
- * One worker — led by the DECISION an owner cares about ("can I give it more
- * independence yet?"), then a plain per-task record. The engine view (the L0–L4
- * dial bars, action-class keys, ramp-vs-gate) lives under "Show details".
+ * The compact roster bar — the collapsed-row version of the JourneyStepper. Five
+ * stops (Just watching → Fully trusted), filled to what the worker has earned on
+ * its main job, with a 🔒 "your limit" marker at the ceiling. One glance says how
+ * far along a worker is; stack them and the whole team is scannable.
+ */
+function RosterBar({ earned, ceiling }: { earned: number; ceiling: number }) {
+  const effective = Math.min(earned, ceiling);
+  return (
+    <div
+      style={{ display: "flex", gap: 3, marginTop: 4, maxWidth: 240 }}
+      role="img"
+      aria-label={`Earned ${JOURNEY_STOPS[earned] ?? `level ${earned}`}; your limit is ${JOURNEY_STOPS[ceiling] ?? `level ${ceiling}`}`}
+    >
+      {JOURNEY_STOPS.map((stop, i) => {
+        const reached = i <= earned;
+        return (
+          <div key={stop} style={{ flex: 1, position: "relative" }}>
+            {i === ceiling && (
+              <span
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  top: -13,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  fontSize: "var(--fs-2xs)",
+                }}
+              >
+                🔒
+              </span>
+            )}
+            <div
+              style={{
+                height: 6,
+                borderRadius: 3,
+                background: reached ? "var(--ok)" : "var(--surface-2)",
+                border: reached ? "none" : "1px solid var(--line-3)",
+                boxShadow:
+                  i === effective ? "0 0 0 2px var(--accent)" : "none",
+              }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * One worker in the roster — a compact clickable row (avatar, name, job,
+ * progress bar, status), expandable to a drawer holding the full journey
+ * (stepper, "how it got here", per-task record, ramp-vs-gate). Nothing is
+ * deleted — the mega-card's content just moves into the drawer.
  */
 function WorkerCard({
   w,
@@ -779,6 +854,7 @@ function WorkerCard({
   expert: boolean;
   now: number;
 }) {
+  const [open, setOpen] = useState(false);
   const owned = w.board.filter((b) => b.owned);
   // Ready to promote: an OWNED, non-reversible task where the worker earned a
   // higher level than the ceiling you set — it has proven more than you allow on
@@ -796,10 +872,29 @@ function WorkerCard({
 
   const status =
     w.board.length === 0
-      ? { label: "New", bg: "var(--surface-2)", fg: "inherit" }
+      ? { label: "⚪ New", bg: "var(--surface-2)", fg: "inherit" }
       : top
-        ? { label: "Ready to advance", bg: "var(--ok)", fg: "var(--bg)" }
+        ? { label: "★ Ready for a promotion", bg: "var(--ok)", fg: "var(--bg)" }
         : { label: "Proving itself", bg: "var(--surface-2)", fg: "inherit" };
+
+  // One-line job + one contextual standing line for the collapsed row.
+  const jobLine =
+    gatedPrimary
+      ? taskName(gatedPrimary.classKey)
+      : owned.length > 0
+        ? "Low-risk helper — only does easily-undone work"
+        : "Just getting started";
+  const standing = top
+    ? `Earned more than its current limit on ${taskName(top.classKey)} — you can give it more freedom.`
+    : gatedPrimary
+      ? gatedPrimary.level === 0
+        ? `Just starting out on ${taskName(gatedPrimary.classKey)}.`
+        : gatedPrimary.level < w.autonomyCeiling
+          ? `Climbing on ${taskName(gatedPrimary.classKey)} — ${pct(gatedPrimary.mean)}% success over ${gatedPrimary.observations} tries.`
+          : `At its limit on ${taskName(gatedPrimary.classKey)}, performing well.`
+      : owned.length > 0
+        ? "Runs freely — its work is all easily undone."
+        : "Building a record as it runs.";
 
   const effectiveItems = w.board.map((b) => {
     const effective = b.owned ? Math.min(b.level, w.autonomyCeiling) : 0;
@@ -820,20 +915,67 @@ function WorkerCard({
 
   return (
     <div className="card" style={{ marginTop: "var(--s-4)" }}>
-      <div className="card-head">
-        <strong>{w.name}</strong>
-        <span style={{ display: "flex", gap: "var(--s-2)" }}>
-          <span
-            className="pill"
-            style={{ background: status.bg, color: status.fg }}
+      {/* Collapsed roster row — the whole team is scannable at this level. */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        style={{
+          width: "100%",
+          background: "none",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
+          textAlign: "left",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--s-3)",
+          color: "inherit",
+        }}
+      >
+        <WorkerAvatar name={w.name} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--s-2)",
+              flexWrap: "wrap",
+            }}
           >
-            {status.label}
-          </span>
-          <span className="pill muted">
-            {expert
-              ? `ceiling L${w.autonomyCeiling}`
-              : `max: ${PLAIN_LEVEL_SHORT[w.autonomyCeiling] ?? `L${w.autonomyCeiling}`}`}
-          </span>
+            <strong>{w.name}</strong>
+            <span
+              className="pill"
+              style={{ background: status.bg, color: status.fg }}
+            >
+              {status.label}
+            </span>
+          </div>
+          <div className="muted" style={{ fontSize: "var(--fs-xs)", marginTop: 1 }}>
+            {jobLine}
+          </div>
+          {gatedPrimary && (
+            <RosterBar earned={gatedPrimary.level} ceiling={w.autonomyCeiling} />
+          )}
+          <div
+            className="editorial-sub"
+            style={{ fontFamily: "inherit", marginTop: 4 }}
+          >
+            {standing}
+          </div>
+        </div>
+        <span aria-hidden="true" className="muted" style={{ flexShrink: 0 }}>
+          {open ? "▾" : "▸"}
+        </span>
+      </button>
+
+      {!open ? null : (
+      <div style={{ marginTop: "var(--s-3)", borderTop: "1px solid var(--line-1)", paddingTop: "var(--s-3)" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <span className="pill muted">
+          {expert
+            ? `ceiling L${w.autonomyCeiling}`
+            : `your limit: ${PLAIN_LEVEL_SHORT[w.autonomyCeiling] ?? `L${w.autonomyCeiling}`}`}
         </span>
       </div>
 
@@ -952,6 +1094,8 @@ function WorkerCard({
             </div>
           ))}
         </div>
+      )}
+      </div>
       )}
     </div>
   );
