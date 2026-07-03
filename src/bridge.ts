@@ -1429,6 +1429,21 @@ export class Bridge {
       workerGateDecisionLog: this.workerGateDecisionLog,
       embedFn: getLocalEmbedFn(),
     });
+    // POST /traces/decision — HTTP twin of the ctxSaveTrace MCP tool, same
+    // DecisionTraceLog.record() writer/validation. null when the bridge has
+    // no decisionTraceLog configured (route responds 503 in that case).
+    this.server.saveDecisionTraceFn = this.decisionTraceLog
+      ? (input) =>
+          (this.decisionTraceLog as DecisionTraceLog).record({
+            ref: input.ref,
+            problem: input.problem,
+            solution: input.solution,
+            workspace: input.workspace ?? this.config.workspace,
+            ...(input.tags && { tags: input.tags }),
+            ...(input.sessionId && { sessionId: input.sessionId }),
+            ...(input.source && { source: input.source }),
+          })
+      : null;
     this.server.tracesFn = async (query) => {
       const result = await tracesTool.handler({
         ...(query.traceType && { traceType: query.traceType }),

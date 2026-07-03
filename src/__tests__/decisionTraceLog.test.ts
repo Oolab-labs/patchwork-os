@@ -240,4 +240,71 @@ describe("DecisionTraceLog", () => {
     expect(first.filter((r) => r === "#one")).toHaveLength(1);
     expect(first.filter((r) => r === "#two")).toHaveLength(1);
   });
+
+  // ─── source field (additive, backward-compat) ─────────────────────────
+  describe("source field", () => {
+    it("persists source when provided", () => {
+      const log = new DecisionTraceLog({ dir });
+      const trace = log.record({ ...base(), source: "http" });
+      expect(trace.source).toBe("http");
+      const raw = readFileSync(
+        path.join(dir, "decision_traces.jsonl"),
+        "utf-8",
+      );
+      expect(JSON.parse(raw.trim())).toMatchObject({ source: "http" });
+    });
+
+    it("omits source entirely when not provided (no null/empty placeholder)", () => {
+      const log = new DecisionTraceLog({ dir });
+      const trace = log.record(base());
+      expect(trace.source).toBeUndefined();
+      const raw = readFileSync(
+        path.join(dir, "decision_traces.jsonl"),
+        "utf-8",
+      );
+      expect(JSON.parse(raw.trim())).not.toHaveProperty("source");
+    });
+
+    it("rejects an over-length source", () => {
+      const log = new DecisionTraceLog({ dir });
+      expect(() => log.record({ ...base(), source: "x".repeat(65) })).toThrow(
+        /source exceeds/,
+      );
+    });
+
+    it("BACKWARD COMPAT: an old-format JSONL line with no `source` field still loads and reads correctly", () => {
+      const file = path.join(dir, "decision_traces.jsonl");
+      const fs = require("node:fs") as typeof import("node:fs");
+      // Exact shape of a pre-this-change persisted row — no `source` key at all.
+      const oldRow = JSON.stringify({
+        seq: 1,
+        createdAt: 1000,
+        ref: "#legacy",
+        problem: "legacy problem",
+        solution: "legacy solution",
+        workspace: "/ws",
+      });
+      fs.writeFileSync(file, `${oldRow}\n`);
+
+      const log = new DecisionTraceLog({ dir });
+      expect(log.size()).toBe(1);
+      const [loaded] = log.query({ ref: "#legacy" });
+      expect(loaded).toMatchObject({
+        seq: 1,
+        ref: "#legacy",
+        problem: "legacy problem",
+        solution: "legacy solution",
+      });
+      expect(loaded?.source).toBeUndefined();
+
+      // seq continuity + new records with source coexist with old rows
+      // that have none.
+      const next = log.record({ ...base(), ref: "#new", source: "http" });
+      expect(next.seq).toBe(2);
+      const all = log.query({});
+      expect(all).toHaveLength(2);
+      expect(all.find((t) => t.ref === "#legacy")?.source).toBeUndefined();
+      expect(all.find((t) => t.ref === "#new")?.source).toBe("http");
+    });
+  });
 });
