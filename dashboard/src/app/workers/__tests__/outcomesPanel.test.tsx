@@ -12,12 +12,14 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
+  window.localStorage.clear();
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  window.localStorage.clear();
 });
 
 const EMPTY_SHADOW = { workers: [], runsScanned: 0, decisionsScanned: 0 };
@@ -57,15 +59,18 @@ function routeMock(
   };
 }
 
-describe("FiledOutcomesPanel (on /workers)", () => {
-  it("renders reviewed outcomes with a plain verdict pill + issue link + task", async () => {
+describe("PastVerdicts (verdict history disclosure on /workers)", () => {
+  it("collapses to a disclosure line; expanding shows the plain verdict pill + link + task", async () => {
     fetchMock.mockImplementation(routeMock());
     const { container } = render(<WorkersPage />);
-    expect(await screen.findByText(/Did the workers get it right/)).toBeTruthy();
+    // Default: just the one-line disclosure with the summary count.
+    const toggle = await screen.findByRole("button", { name: /Past verdicts/ });
+    expect(container.textContent).not.toContain("not reviewed");
+    // Expand → the rows appear.
+    fireEvent.click(toggle);
     expect(container.textContent).toContain(ISSUE_URL);
-    // Plain verdict for "unknown" + plain task for issue:compensable:high.
-    expect(container.textContent).toContain("not reviewed");
-    expect(container.textContent).toContain("filing issues");
+    expect(container.textContent).toContain("not reviewed"); // plain "unknown"
+    expect(container.textContent).toContain("filing issues"); // plain task
   });
 
   it("Looks real POSTs the confirm verdict + flips the pill after refetch (closes the loop)", async () => {
@@ -76,6 +81,8 @@ describe("FiledOutcomesPanel (on /workers)", () => {
       const u = String(url);
       if (u.includes("/approvals/kpi"))
         return Promise.resolve(jsonResponse({ total: 0 }));
+      if (u.includes("/outcomes/pending"))
+        return Promise.resolve(jsonResponse({ pending: [] }));
       if (u.includes("/outcomes")) {
         if (opts?.method === "POST") {
           current = JSON.parse(opts.body as string).disposition;
@@ -90,12 +97,17 @@ describe("FiledOutcomesPanel (on /workers)", () => {
       return Promise.resolve(jsonResponse(EMPTY_SHADOW));
     });
     render(<WorkersPage />);
+    // Expand the verdict history first, then act on the row.
+    fireEvent.click(await screen.findByRole("button", { name: /Past verdicts/ }));
     const confirmBtn = await screen.findByRole("button", { name: "Looks real" });
     fireEvent.click(confirmBtn);
     // The POST carried the right disposition…
     await waitFor(() => {
       const postCall = fetchMock.mock.calls.find(
-        (c) => String(c[0]).includes("/outcomes") && c[1]?.method === "POST",
+        (c) =>
+          String(c[0]).includes("/outcomes") &&
+          !String(c[0]).includes("/pending") &&
+          c[1]?.method === "POST",
       );
       expect(postCall).toBeTruthy();
       expect(
@@ -106,13 +118,13 @@ describe("FiledOutcomesPanel (on /workers)", () => {
     expect(await screen.findByText("looks real")).toBeTruthy();
   });
 
-  it("renders no panel when nothing has been filed", async () => {
+  it("renders no disclosure when nothing has been filed", async () => {
     fetchMock.mockImplementation(routeMock({ outcomes: [] }));
     render(<WorkersPage />);
     // The page still renders (empty workers → its own empty state)…
     expect(await screen.findByText(/No workers set up yet/)).toBeTruthy();
-    // …but the outcomes panel suppresses itself when there is nothing to review.
-    expect(screen.queryByText(/Did the workers get it right/)).toBeNull();
+    // …but the verdict history suppresses itself when there is nothing to review.
+    expect(screen.queryByText(/Past verdicts/)).toBeNull();
   });
 });
 
@@ -146,6 +158,20 @@ describe("AwaitingConfirmationPanel (the review queue on /workers)", () => {
       "https://github.com/o/r/issues/42",
     );
     expect(container.textContent).toContain("1 waiting");
+  });
+
+  it("shows the captured filing title (worker filed: <title>) when present", async () => {
+    const TITLED = {
+      pending: [
+        { ...PENDING.pending[0], title: "Login test failing on main" },
+      ],
+    };
+    fetchMock.mockImplementation(routeMock({ outcomes: [] }, TITLED));
+    const { container } = render(<WorkersPage />);
+    await screen.findByText(/Needs your review/);
+    // Humanized: "<Worker> filed: <title>" instead of a bare URL headline.
+    expect(container.textContent).toContain("Filer filed:");
+    expect(container.textContent).toContain("Login test failing on main");
   });
 
   it("suppresses the panel entirely on a bridge too old to serve /outcomes/pending (404)", async () => {

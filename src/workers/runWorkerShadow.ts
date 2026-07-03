@@ -285,6 +285,11 @@ export interface PendingConfirmation {
   filedAt: number;
   /** `domain:reversibility:blastTier` — the action class it counts toward. */
   classKey: string;
+  /** The filing's human title, captured at filing time (the write tool echoes
+   *  it back in the step output — e.g. `github.create_issue` returns `title`).
+   *  Lets the dashboard review queue show "Login test failing on main" instead
+   *  of a bare URL. Absent for older run-log rows written before capture. */
+  title?: string;
 }
 
 /**
@@ -332,6 +337,10 @@ export function computePendingConfirmations(
       const url =
         out && typeof out.url === "string" ? (out.url as string) : null;
       if (!url) continue;
+      const title =
+        out && typeof out.title === "string" && out.title.trim()
+          ? (out.title as string)
+          : undefined;
       const disp = store.getDisposition(url);
       if (disp === "confirmed" || disp === "junk") continue; // already actioned
       // unknown / no record → pending. Dedup by URL, keep the newest filing.
@@ -344,6 +353,7 @@ export function computePendingConfirmations(
           workerName: w.name,
           filedAt: run.at,
           classKey: ac.key,
+          title,
         });
       }
     }
@@ -371,7 +381,8 @@ export function formatPendingConfirmations(
     "",
   ];
   for (const p of pending) {
-    lines.push(`  ${p.issueUrl}`);
+    lines.push(p.title ? `  "${p.title}"` : `  ${p.issueUrl}`);
+    if (p.title) lines.push(`    ${p.issueUrl}`);
     lines.push(
       `    filed by ${p.workerName} (${p.recipeName}) · ${p.classKey} · ${rel(p.filedAt)}`,
     );
