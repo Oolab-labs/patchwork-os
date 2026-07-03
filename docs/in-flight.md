@@ -25,6 +25,8 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
+- 2026-07-03 `feat/dashboard-traces-waterfall` — dashboard redesign page 7/7 (Traces → "Waterfall", mockup T-A): `app/traces/page.tsx` — tree view becomes the default page shape (was a toggle): each `recipe_run` is a lane, children (approvals, enrichments, decisions, errors) draw as colored timing bars on a shared `170px|track|70px` row grid (blue=recipe_run, amber=approval-wait, green=enrichment, purple=decision, red=error). Flat list stays behind a view toggle for ID lookups. Spec: docs/plans/dashboard-redesign-2026-07-03.md item 7. Follows PR #1086 (page 6, open). — build session
+
 ## Recently closed (informal log, prune periodically)
 
 - 2026-07-03 `feat/dashboard-inbox-mailclient` (#1083) — dashboard redesign page 3/7 (Inbox → "Mail client", mockup I-B): investigated `app/inbox/page.tsx` — the two-pane mail-client layout was already built in an earlier session (`.inbox-twopane`/list/reader panes, folder chips, provenance strip, 65ch markdown, Replay/Trace/Archive/Delete toolbar, mobile back app-bar). Only change: removed a dead unused `RecipeIcon` component. Spec: docs/plans/dashboard-redesign-2026-07-03.md item 3. — merged
