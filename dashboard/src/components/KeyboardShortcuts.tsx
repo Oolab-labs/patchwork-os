@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Dialog } from "@/components/Dialog";
+import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
 
 /**
  * Global "?" overlay — keyboard shortcut cheatsheet.
@@ -37,21 +38,14 @@ const SHORTCUTS: Shortcut[] = [
 export function KeyboardShortcuts() {
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  usePaneShortcut(
+    (e) => {
       if (e.key !== "?") return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target as HTMLElement | null;
-      if (t) {
-        const tag = t.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
-      }
       e.preventDefault();
       setOpen((v) => !v);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    },
+    [],
+  );
 
   return (
     <Dialog

@@ -12,6 +12,7 @@ import { CountdownTimer } from "./_components/CountdownTimer";
 import { Spinner } from "./_components/Spinner";
 import { RiskMeter } from "./_components/RiskMeter";
 import { syntaxHighlightJson } from "@/lib/syntaxHighlight";
+import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
 import {
   CONSEQUENCE_IF_WRONG,
   classifyPendingAction,
@@ -969,19 +970,8 @@ function ApprovalsContent() {
   }, [filtered.length]);
 
   // J/K/E/X keyboard shortcuts. Skip when typing in inputs.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (!t) return;
-      const tag = t.tagName;
-      if (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        t.isContentEditable
-      )
-        return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+  usePaneShortcut(
+    (e) => {
       if (filtered.length === 0) return;
 
       const key = e.key.toLowerCase();
@@ -1047,10 +1037,9 @@ function ApprovalsContent() {
             });
           });
       }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [filtered, focusIndex, evidenceOpenedIds]);
+    },
+    [filtered, focusIndex, evidenceOpenedIds],
+  );
 
   const copyRule = useCallback((toolName: string) => {
     const snippet = JSON.stringify({ allow: [toolName] }, null, 2);
