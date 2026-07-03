@@ -25,7 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-03 `feat/dashboard-recipe-dossier` — dashboard redesign page 2/7 (Recipe detail → "Dossier", mockup D-A): `app/recipes/[...name]/` — sticky 280px identity rail (name/status/desc, Run now/Enable/Edit YAML, facts list, relation links, quiet danger zone at bottom) + content stack (doctor-first card, YAML "what it does", run history). Kills the Overview/Edit/Plan tab bar in `layout.tsx`; those become rail links. Spec: docs/plans/dashboard-redesign-2026-07-03.md item 2. Follows PR #1080 (page 1, merged). — build session
+- 2026-07-03 `feat/dashboard-recipe-dossier` (PR #1081, CI pending) — dashboard redesign page 2/7 (Recipe detail → "Dossier", mockup D-A): `app/recipes/[...name]/` — sticky 280px identity rail (name/status/desc, Run now/Enable/Edit YAML, facts list, relation links, quiet danger zone at bottom) + content stack (doctor-first card, YAML "what it does", run history) via new `RailContext`. Killed the Overview/Edit/Plan tab bar in `layout.tsx`. Spec: docs/plans/dashboard-redesign-2026-07-03.md item 2. Follows PR #1080 (page 1, merged). — build session
 
 ## Recently closed (informal log, prune periodically)
 
