@@ -6531,6 +6531,14 @@ a.btn { text-decoration: none; }
 .cgc-test-result { margin-top: 8px; padding: 6px 10px; border-radius: var(--r-2); font-size: var(--fs-xs); }
 .cgc-test-result[data-ok="true"] { background: var(--ok-soft); color: var(--ok); }
 .cgc-test-result[data-ok="false"] { background: var(--err-soft); color: var(--err); }
+
+/* Token expiry + last-call activity row (dashboard gap #2) */
+.cgc-activity-row { margin-top: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cgc-expiry-pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: var(--fs-2xs); font-weight: 600; }
+.cgc-expiry-pill[data-expiry="soon"] { background: var(--warn-soft); color: var(--warn-text); border: 1px solid var(--warn); }
+.cgc-expiry-pill[data-expiry="expired"] { background: var(--err-soft); color: var(--err); border: 1px solid var(--red); }
+.cgc-expiry-reauth-link { background: none; border: none; padding: 0; margin: 0; font: inherit; font-weight: 700; color: inherit; text-decoration: underline; cursor: pointer; }
+.cgc-last-call { font-size: var(--fs-2xs); color: var(--ink-3); }
 .cgc-footer { border-top: 1px solid var(--border-default); padding: 9px 14px; display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.012); gap: 6px; }
 .cgc-footer[data-degraded] { border-top-color: var(--warn); background: var(--warn-soft); }
 .cgc-footer-left { display: flex; align-items: center; gap: 5px; font-size: var(--fs-s); color: var(--ink-2); min-width: 0; overflow: hidden; }

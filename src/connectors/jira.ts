@@ -16,6 +16,7 @@ import {
   type ConnectorError,
   type ConnectorStatus,
 } from "./baseConnector.js";
+import { getLastConnectorSuccess } from "./connectorActivity.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -221,6 +222,10 @@ export class JiraConnector extends BaseConnector {
       status: tokens ? "connected" : "disconnected",
       lastSync: tokens?.connected_at,
       workspace: tokens?.instanceUrl,
+      // PAT-style connector — Jira API tokens don't expire on a known
+      // schedule the bridge can observe. Never fabricate a value here.
+      tokenExpiresAt: undefined,
+      lastSuccessAt: getLastConnectorSuccess(this.providerName)?.toISOString(),
     };
   }
 

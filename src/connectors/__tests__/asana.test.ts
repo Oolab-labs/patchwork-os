@@ -802,3 +802,78 @@ describe("AsanaConnector writes", () => {
     );
   });
 });
+
+// ── getStatus() token expiry (dashboard gap #2, OAuth-style connector) ─────
+
+describe("asana getStatus() token expiry", () => {
+  const tmpDir = join(os.tmpdir(), `patchwork-asana-status-${Date.now()}`);
+  const homeDir = join(tmpDir, "home");
+  const patchworkHome = join(homeDir, ".patchwork");
+  const tokensDir = join(patchworkHome, "tokens");
+
+  beforeEach(() => {
+    process.env.HOME = homeDir;
+    process.env.PATCHWORK_HOME = patchworkHome;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    mkdirSync(tokensDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.HOME;
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    if (existsSync(tmpDir)) {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces tokenExpiresAt derived from the stored expires_at when connected", async () => {
+    const { AsanaConnector, saveTokens } = await import("../asana.js");
+    const expiresAtMs = Date.now() + 3600 * 1000;
+    saveTokens({
+      access_token: "asana-access-123",
+      refresh_token: "asana-refresh-123",
+      expires_at: expiresAtMs,
+      username: "Patchwork Bot",
+      connected_at: "2026-04-29T00:00:00.000Z",
+    });
+
+    const conn = new AsanaConnector();
+    const status = conn.getStatus();
+
+    expect(status.status).toBe("connected");
+    expect(status.tokenExpiresAt).toBe(new Date(expiresAtMs).toISOString());
+  });
+
+  it("omits tokenExpiresAt when disconnected (never fabricated)", async () => {
+    const { AsanaConnector } = await import("../asana.js");
+    const conn = new AsanaConnector();
+    const status = conn.getStatus();
+
+    expect(status.status).toBe("disconnected");
+    expect(status.tokenExpiresAt).toBeUndefined();
+  });
+
+  it("surfaces lastSuccessAt only after a recorded successful call", async () => {
+    const { AsanaConnector, saveTokens } = await import("../asana.js");
+    const { recordConnectorSuccess, __resetConnectorActivityForTest } =
+      await import("../connectorActivity.js");
+    __resetConnectorActivityForTest();
+    saveTokens({
+      access_token: "asana-access-123",
+      connected_at: "2026-04-29T00:00:00.000Z",
+    });
+
+    const conn = new AsanaConnector();
+    expect(conn.getStatus().lastSuccessAt).toBeUndefined();
+
+    recordConnectorSuccess("asana");
+    const after = conn.getStatus();
+    expect(after.lastSuccessAt).toBeDefined();
+    expect(new Date(after.lastSuccessAt as string).toString()).not.toBe(
+      "Invalid Date",
+    );
+  });
+});

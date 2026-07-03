@@ -12,6 +12,12 @@ import type { ConnectorStatus } from "./types";
 
 // ------------------------------------------------------------------ helpers
 
+/** Whole days between now and a future ISO timestamp (negative if past). */
+function daysUntil(iso: string): number {
+  const ms = Date.parse(iso) - Date.now();
+  return Math.floor(ms / (24 * 60 * 60 * 1000));
+}
+
 function relativeTime(iso: string): string {
   const ms = Date.now() - Date.parse(iso);
   const s = Math.floor(ms / 1000);
@@ -1045,6 +1051,60 @@ function LogoTile({ def, size = 56 }: { def: ConnectorDef; size?: number }) {
   );
 }
 
+// ------------------------------------------------------------------ token expiry pill (dashboard gap #2)
+
+/**
+ * "expires in Nd" / "expired" pill for OAuth-style connectors. Renders
+ * nothing when `tokenExpiresAt` is absent (PAT connectors) — absence of
+ * data is never rendered as if it were meaningful.
+ */
+function TokenExpiryPill({
+  tokenExpiresAt,
+  onReauthorize,
+}: {
+  tokenExpiresAt?: string;
+  onReauthorize: () => void;
+}) {
+  if (!tokenExpiresAt) return null;
+  const days = daysUntil(tokenExpiresAt);
+  const expired = days < 0;
+
+  if (expired) {
+    return (
+      <span className="cgc-expiry-pill" data-expiry="expired">
+        expired
+        <button
+          type="button"
+          onClick={onReauthorize}
+          className="cgc-expiry-reauth-link"
+        >
+          reauthorize →
+        </button>
+      </span>
+    );
+  }
+
+  if (days < 7) {
+    return (
+      <span className="cgc-expiry-pill" data-expiry="soon">
+        expires in {days === 0 ? "<1d" : `${days}d`}
+      </span>
+    );
+  }
+
+  return null;
+}
+
+/** "last call ✓ Nh ago" line — omitted entirely when unknown. */
+function LastCallLine({ lastSuccessAt }: { lastSuccessAt?: string }) {
+  if (!lastSuccessAt) return null;
+  return (
+    <span className="cgc-last-call" title={`Last successful call: ${new Date(lastSuccessAt).toLocaleString()}`}>
+      last call ✓ {relativeTime(lastSuccessAt)}
+    </span>
+  );
+}
+
 // ------------------------------------------------------------------ connector grid card
 
 interface GridCardProps {
@@ -1177,6 +1237,20 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
                 : testResult.message ?? "Test failed — check bridge logs."}
             </div>
           )}
+
+          {/* Token expiry + last-call activity (dashboard gap #2) — rendered
+              only when the underlying data exists; nothing shown for
+              PAT-style connectors or connectors with no recorded activity. */}
+          {(isConnected || isDegraded) &&
+            (statusEntry.tokenExpiresAt || statusEntry.lastSuccessAt) && (
+              <div className="cgc-activity-row">
+                <TokenExpiryPill
+                  tokenExpiresAt={statusEntry.tokenExpiresAt}
+                  onReauthorize={() => void handleConnect()}
+                />
+                <LastCallLine lastSuccessAt={statusEntry.lastSuccessAt} />
+              </div>
+            )}
         </div>
 
         {/* Footer — only for live connectors */}

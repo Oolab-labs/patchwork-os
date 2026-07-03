@@ -43,6 +43,7 @@ import {
   type ConnectorStatus,
   type OAuthConfig,
 } from "./baseConnector.js";
+import { getLastConnectorSuccess } from "./connectorActivity.js";
 import { connectorRedirectUri } from "./connectorRedirectUri.js";
 import { escHtml } from "./htmlEscape.js";
 import { safeOAuthErrorCode } from "./oauthError.js";
@@ -352,6 +353,10 @@ export class AsanaConnector extends BaseConnector {
       status: tokens ? "connected" : "disconnected",
       lastSync: tokens?.connected_at,
       workspace: tokens?.username,
+      tokenExpiresAt: tokens?.expires_at
+        ? new Date(tokens.expires_at).toISOString()
+        : undefined,
+      lastSuccessAt: getLastConnectorSuccess(this.providerName)?.toISOString(),
     };
   }
 
