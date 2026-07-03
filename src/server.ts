@@ -345,6 +345,22 @@ export class Server extends EventEmitter<ServerEvents> {
         limit?: number;
       }) => import("./workerGateDecisionLog.js").GateDecisionRecord[])
     | null = null;
+  /** Patchwork: record a Decision Record trace over HTTP. Backs
+   *  POST /traces/decision — the HTTP twin of the `ctxSaveTrace` MCP tool,
+   *  wired directly to `DecisionTraceLog.record()` so both paths persist
+   *  through the same JSONL writer. Throws on invalid input (caller maps
+   *  to 400); null when no bridge-side DecisionTraceLog is configured. */
+  public saveDecisionTraceFn:
+    | ((input: {
+        ref: string;
+        problem: string;
+        solution: string;
+        workspace?: string;
+        tags?: string[];
+        sessionId?: string;
+        source?: string;
+      }) => import("./decisionTraceLog.js").DecisionTrace)
+    | null = null;
   /** Patchwork: operator outcome dispositions (~/.patchwork/outcome-log.jsonl).
    *  Backs GET/POST /outcomes and the dashboard confirm/reject panel; mirrors
    *  the `patchwork outcomes` CLI. Never exposed as a recipe step / MCP tool. */
@@ -1662,6 +1678,7 @@ export class Server extends EventEmitter<ServerEvents> {
           simulateFn: this.simulateFn,
           workerShadowFn: this.workerShadowFn,
           gateDecisionsFn: this.gateDecisionsFn,
+          saveDecisionTraceFn: this.saveDecisionTraceFn,
           outcomeStoreFn: this.outcomeStoreFn,
           pendingConfirmationsFn: this.pendingConfirmationsFn,
           runReplayFn: this.runReplayFn,

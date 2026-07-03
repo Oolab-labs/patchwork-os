@@ -312,6 +312,13 @@ export const RECIPE_ROUTE_BODY_CAPS = {
    * A URL + short enum + two audit strings; 2 KB is generous.
    */
   outcomes: 2 * 1024,
+  /**
+   * POST /traces/decision — `{ ref, problem, solution, workspace?, tags?,
+   * sessionId?, source? }`. problem/solution are each capped at 500 chars
+   * by DecisionTraceLog.record(); 8 KB covers that plus tags/metadata with
+   * headroom, matching the shape of the ctxSaveTrace MCP tool's inputs.
+   */
+  decisionTrace: 8 * 1024,
 } as const;
 
 /**
@@ -656,6 +663,20 @@ export interface RecipeRouteDeps {
         limit?: number;
       }) => import("./workerGateDecisionLog.js").GateDecisionRecord[])
     | null;
+  /** Record a Decision Record trace over HTTP. Backs POST /traces/decision —
+   *  the HTTP twin of the `ctxSaveTrace` MCP tool, same `DecisionTraceLog`
+   *  writer. Throws on invalid input; route maps that to 400. */
+  saveDecisionTraceFn:
+    | ((input: {
+        ref: string;
+        problem: string;
+        solution: string;
+        workspace?: string;
+        tags?: string[];
+        sessionId?: string;
+        source?: string;
+      }) => import("./decisionTraceLog.js").DecisionTrace)
+    | null;
   /** Operator outcome dispositions (~/.patchwork/outcome-log.jsonl). Backs
    *  GET/POST /outcomes and mirrors `patchwork outcomes confirm|reject|list`.
    *  A fresh store per call (cheap, disk-backed, last-writer-wins). The factory
@@ -980,6 +1001,114 @@ export function tryHandleRecipeRoute(
     } catch (err) {
       respond500(res, err);
     }
+    return true;
+  }
+
+  // POST /traces/decision — record a Decision Record trace over HTTP. The
+  // HTTP twin of the `ctxSaveTrace` MCP tool: same `DecisionTraceLog.record()`
+  // writer, same JSONL file, same validation (ref/problem/solution required,
+  // 500-char caps). Exists so future non-MCP callers (dashboard copilot, CI,
+  // scripts) can write decision traces without an MCP client. Bearer-gated —
+  // all recipe routes run after the auth gate in server.ts.
+  if (parsedUrl.pathname === "/traces/decision" && req.method === "POST") {
+    void (async () => {
+      const parsedBody = await readJsonBody<{
+        ref?: string;
+        problem?: string;
+        solution?: string;
+        workspace?: string;
+        tags?: string[];
+        sessionId?: string;
+        source?: string;
+      }>(req, RECIPE_ROUTE_BODY_CAPS.decisionTrace);
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.decisionTrace);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
+      const respond400 = (error: string): void => {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error }));
+      };
+      try {
+        const parsed = parsedBody.value ?? {};
+        if (
+          respondIfUnknownBodyKeys(res, parsed, [
+            "ref",
+            "problem",
+            "solution",
+            "workspace",
+            "tags",
+            "sessionId",
+            "source",
+          ])
+        )
+          return;
+        const { ref, problem, solution, workspace, tags, sessionId, source } =
+          parsed;
+        if (typeof ref !== "string" || !ref.trim()) {
+          respond400(
+            "`ref` is required (issue ref, PR ref, commit SHA, or free text).",
+          );
+          return;
+        }
+        if (typeof problem !== "string" || !problem.trim()) {
+          respond400("`problem` is required.");
+          return;
+        }
+        if (typeof solution !== "string" || !solution.trim()) {
+          respond400("`solution` is required.");
+          return;
+        }
+        if (workspace !== undefined && typeof workspace !== "string") {
+          respond400("`workspace` must be a string when present.");
+          return;
+        }
+        if (
+          tags !== undefined &&
+          (!Array.isArray(tags) || !tags.every((t) => typeof t === "string"))
+        ) {
+          respond400("`tags` must be an array of strings when present.");
+          return;
+        }
+        if (sessionId !== undefined && typeof sessionId !== "string") {
+          respond400("`sessionId` must be a string when present.");
+          return;
+        }
+        if (source !== undefined && typeof source !== "string") {
+          respond400("`source` must be a string when present.");
+          return;
+        }
+        if (!deps.saveDecisionTraceFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "Decision Record unavailable on this bridge.",
+            }),
+          );
+          return;
+        }
+        const trace = deps.saveDecisionTraceFn({
+          ref,
+          problem,
+          solution,
+          ...(workspace && { workspace }),
+          ...(tags && { tags }),
+          ...(sessionId && { sessionId }),
+          ...(source && { source }),
+        });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, trace }));
+      } catch (err) {
+        respond400(
+          err instanceof Error ? err.message : "Invalid decision trace input.",
+        );
+      }
+    })();
     return true;
   }
 

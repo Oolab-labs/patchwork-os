@@ -46,6 +46,14 @@ export interface DecisionTrace {
   tags?: string[];
   /** Optional session id so we can attribute traces back to a run. */
   sessionId?: string;
+  /**
+   * Optional free-form label for who/what recorded the trace (e.g.
+   * "ctxSaveTrace", "http", "copilot"). Additive field — existing JSONL
+   * rows written before this field existed simply omit it; readers must
+   * treat it as optional. Not validated beyond length (see
+   * MAX_SOURCE_LEN) — callers own the taxonomy.
+   */
+  source?: string;
 }
 
 const DEFAULT_MEMORY_CAP = 2_000;
@@ -61,6 +69,7 @@ const MAX_PROBLEM_LEN = 500;
 const MAX_SOLUTION_LEN = 500;
 const MAX_TAGS = 10;
 const MAX_TAG_LEN = 32;
+const MAX_SOURCE_LEN = 64;
 
 export interface DecisionTraceLogOptions {
   dir: string;
@@ -88,6 +97,7 @@ export interface RecordDecisionInput {
   workspace: string;
   tags?: string[];
   sessionId?: string;
+  source?: string;
 }
 
 export class DecisionTraceLog {
@@ -145,6 +155,11 @@ export class DecisionTraceLog {
       .filter((t) => t.length > 0 && t.length <= MAX_TAG_LEN)
       .slice(0, MAX_TAGS);
 
+    const source = input.source?.trim();
+    if (source && source.length > MAX_SOURCE_LEN) {
+      throw new Error(`source exceeds ${MAX_SOURCE_LEN} chars`);
+    }
+
     this.seq += 1;
     const trace: DecisionTrace = {
       seq: this.seq,
@@ -155,6 +170,7 @@ export class DecisionTraceLog {
       workspace: input.workspace,
       ...(tags.length > 0 && { tags }),
       ...(input.sessionId && { sessionId: input.sessionId }),
+      ...(source && { source }),
     };
     this.traces.push(trace);
     if (this.traces.length > this.memoryCap) {
