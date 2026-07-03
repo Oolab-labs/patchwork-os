@@ -8253,7 +8253,7 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   100% { opacity: 1; transform: scale(1); transform-box: fill-box; transform-origin: center; }
 }
 
-/* --- recipes/[...name]/layout.tsx --- */
+/* --- recipes/[...name]/layout.tsx (Dossier, mockup D-A) --- */
 @keyframes layoutHeadIn {
   from { opacity: 0; transform: translateY(-8px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -8264,21 +8264,6 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 }
 .recipe-hub-h1 { animation: layoutHeadIn 200ms ease both; }
 .recipe-hub-status-pill-enabled { animation: statusPillBreath 3s ease-in-out infinite; }
-.recipe-hub-tab-link {
-  transition: color 120ms, border-color 120ms, background 120ms;
-  border-radius: var(--radius, 4px) var(--radius, 4px) 0 0;
-}
-.recipe-hub-tab-link:hover:not([aria-selected="true"]) {
-  color: var(--ink-1) !important;
-  background: color-mix(in srgb, var(--accent) 5%, transparent);
-}
-@media (pointer: coarse) {
-  .recipe-hub-tab-link {
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-  }
-}
 .recipe-relation-strip a { transition: color 120ms, text-decoration-color 120ms; }
 .recipe-relation-strip a:hover { text-decoration-color: currentColor; }
 @media (max-width: 768px) {
@@ -8298,6 +8283,132 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   .recipe-hub-layout aside {
     position: static !important;
   }
+}
+
+/* Dossier two-column grid: sticky identity rail (left) + content stack. */
+.rd-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .rd-layout { grid-template-columns: 1fr; }
+  .rd-rail { position: static !important; }
+}
+.rd-rail {
+  position: sticky;
+  top: 76px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: layoutHeadIn 200ms ease both;
+}
+.rd-crumb { margin-bottom: 6px; }
+.rd-rail .nm {
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rd-rail .desc {
+  margin-top: 8px;
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+.rd-rail-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rd-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-size: var(--fs-s);
+}
+.rd-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line-1);
+}
+.rd-facts > div:first-child { border-top: 0; }
+.rd-facts .k { color: var(--ink-3); }
+.rd-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid var(--line-1);
+  border-bottom: 1px solid var(--line-1);
+  padding: 8px 0;
+}
+.rd-nav-link {
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+  text-decoration: none;
+  padding: 6px 4px;
+  border-radius: 4px;
+  transition: color 120ms, background 120ms;
+}
+.rd-nav-link:hover { color: var(--ink-1); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.rd-nav-link.is-active { color: var(--accent); font-weight: 600; }
+.rd-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--fs-s);
+}
+.rd-links a { color: var(--accent); text-decoration: none; }
+.rd-links a:hover { text-decoration: underline; }
+.rd-danger {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;
+  align-items: center;
+  border-top: 1px solid var(--line-1);
+  padding-top: 12px;
+}
+.btn.danger {
+  color: #93312f;
+  border-color: color-mix(in srgb, var(--err) 40%, transparent);
+}
+[data-theme="dark"] .btn.danger { color: #e39a98; }
+
+.rd-stack > * + * { margin-top: 14px; }
+.rd-sec { padding: 16px 18px; }
+.rd-sec h3 {
+  font-size: var(--fs-s);
+  margin: 0 0 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rd-empty {
+  text-align: center;
+  padding: 26px 10px;
+  color: var(--ink-3);
+  font-size: var(--fs-s);
+}
+.rd-yaml {
+  background: var(--recess);
+  border: 1px solid var(--line-1);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+  font-family: var(--font-mono);
+  color: var(--ink-1);
 }
 
 @media (max-width: 640px) {

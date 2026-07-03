@@ -60,13 +60,17 @@ const RECIPE = {
   stepCount: 3,
 };
 
+const YAML = "name: morning-brief\ntrigger: cron\n";
+
 function routeMock(opts: {
   runs: unknown[];
   halts?: unknown;
+  doctor?: unknown;
 }): (url: string | URL) => Promise<Response> {
   return (url) => {
     const u = String(url);
-    if (u.includes("/recipes/doctor")) return Promise.resolve(jsonResponse({}));
+    if (u.includes("/recipes/doctor"))
+      return Promise.resolve(jsonResponse(opts.doctor ?? { static: { issues: [] }, ok: true }));
     if (u.includes("/runs/halt-summary"))
       return Promise.resolve(
         jsonResponse(opts.halts ?? { total: 0, byCategory: {}, recent: [] }),
@@ -74,6 +78,8 @@ function routeMock(opts: {
     if (u.includes("/runs")) return Promise.resolve(jsonResponse({ runs: opts.runs }));
     if (u.includes("/connectors/status"))
       return Promise.resolve(jsonResponse({ connectors: [] }));
+    // Single-recipe raw-YAML fetch (What it does card).
+    if (u.match(/\/recipes\/morning-brief(\?|$)/)) return Promise.resolve(jsonResponse(YAML));
     if (u.includes("/recipes")) return Promise.resolve(jsonResponse([RECIPE]));
     // Simulation + anything else → empty.
     return Promise.resolve(jsonResponse({}));
@@ -87,8 +93,8 @@ function renderPage() {
   return render(<RecipePage params={params} />);
 }
 
-describe("Recipe page — Band 1 status + Band 2 needs-you (R1)", () => {
-  it("halted last run → red medallion + a 'Needs you' band with a fix button", async () => {
+describe("Recipe page — Overview body (Dossier)", () => {
+  it("'Needs you' band renders a plain sentence + fix button on a halted last run", async () => {
     fetchMock.mockImplementation(
       routeMock({
         runs: [{ seq: 5, recipe: "morning-brief", recipeName: "morning-brief", startedAt: 1000, status: "error" }],
@@ -100,42 +106,85 @@ describe("Recipe page — Band 1 status + Band 2 needs-you (R1)", () => {
       }),
     );
     const { container } = renderPage();
-    expect(await screen.findByText("Stopped — needs attention")).toBeTruthy();
-    // Band 2 present, plain sentence + a reconnect fix.
-    expect(screen.getByText("Needs you")).toBeTruthy();
+    expect(await screen.findByText("Needs you")).toBeTruthy();
     expect(container.textContent).toMatch(/can't sign in/i);
     expect(screen.getByRole("link", { name: "Reconnect" })).toBeTruthy();
   });
 
-  it("healthy last run → green 'Working fine', no needs band, human schedule", async () => {
+  it("healthy last run → no 'Needs you' band; run history shows the run", async () => {
     fetchMock.mockImplementation(
       routeMock({
         runs: [{ seq: 9, recipe: "morning-brief", recipeName: "morning-brief", startedAt: 2000, status: "done", durationMs: 42000 }],
       }),
     );
-    const { container } = renderPage();
-    expect(await screen.findByText("Working fine")).toBeTruthy();
+    renderPage();
+    await screen.findByText("Run history");
     expect(screen.queryByText("Needs you")).toBeNull();
-    // Plain schedule, not a raw cron string, in the default view.
-    expect(container.textContent).toContain("Every day at 7:00");
+    expect(screen.getAllByText("#9").length).toBeGreaterThan(0);
   });
 
-  it("actions read 'Pause' (not 'Disable'); delete is folded in a danger zone", async () => {
+  it("'What it does' renders the raw recipe YAML", async () => {
+    fetchMock.mockImplementation(
+      routeMock({
+        runs: [],
+      }),
+    );
+    const { container } = renderPage();
+    await screen.findByText("What it does");
+    await waitFor(() => expect(container.textContent).toContain("morning-brief"));
+    expect(container.querySelector(".rd-yaml")).toBeTruthy();
+  });
+
+  it("doctor blockers card only renders when the doctor summary reports issues", async () => {
+    fetchMock.mockImplementation(
+      routeMock({
+        runs: [],
+        doctor: {
+          ok: false,
+          static: {
+            issues: [
+              { level: "error", code: "missing_step", message: "Step 'notify' has no agent.", stepId: "notify" },
+            ],
+          },
+        },
+      }),
+    );
+    const { container } = renderPage();
+    await waitFor(() => expect(screen.getByText(/Why hasn't this run\?/)).toBeTruthy());
+    expect(container.textContent).toContain("1 blocker");
+    expect(container.textContent).toContain("Step 'notify' has no agent.");
+  });
+
+  it("no doctor blockers → the 'Why hasn't this run?' card is absent", async () => {
+    fetchMock.mockImplementation(
+      routeMock({
+        runs: [],
+        doctor: { ok: true, static: { issues: [] } },
+      }),
+    );
+    renderPage();
+    await screen.findByText("What it does");
+    expect(screen.queryByText(/Why hasn't this run\?/)).toBeNull();
+  });
+
+  it("no runs yet → run history shows the empty state", async () => {
+    fetchMock.mockImplementation(routeMock({ runs: [] }));
+    renderPage();
+    await screen.findByText("Run history");
+    expect(screen.getByText(/No runs yet/)).toBeTruthy();
+  });
+
+  it("Danger zone (delete) is folded by default and revealed by Show details", async () => {
     fetchMock.mockImplementation(
       routeMock({
         runs: [{ seq: 9, recipe: "morning-brief", recipeName: "morning-brief", startedAt: 2000, status: "done" }],
       }),
     );
-    const { container } = renderPage();
-    await screen.findByText("Working fine");
-    // Renamed control.
-    expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
-    expect(container.textContent).not.toContain("Uninstall");
-    // Danger zone + heavy diagnostics are folded by default (calm short page)…
+    renderPage();
+    await screen.findByText("Run history");
     expect(screen.queryByText("Delete this recipe")).toBeNull();
     expect(screen.queryByText("Preview what it would do")).toBeNull();
     expect(screen.queryByText("Check for problems")).toBeNull();
-    // …and revealed by the page-level Show details toggle.
     fireEvent.click(screen.getByRole("button", { name: "Show details" }));
     await waitFor(() => expect(screen.getByText("Delete this recipe")).toBeTruthy());
     expect(screen.getByText("Preview what it would do")).toBeTruthy();
