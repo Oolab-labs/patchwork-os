@@ -6005,6 +6005,83 @@ a.btn { text-decoration: none; }
 .apc-decisions .btn.danger  { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
 .apc-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; margin-left: 52px; flex-wrap: wrap; }
 
+/* ── Approvals → Considered redesign (blast-radius queue) ── */
+
+.apc-blast-badge { flex-shrink: 0; font-weight: 700; }
+
+.apc-considered-sentence {
+  margin: 4px 0 0 52px;
+  color: var(--ink-1);
+  font-size: var(--fs-m);
+}
+
+/* Two-column body on irreversible/compensable cards: preview left,
+   worker-record rail right. Single column below the tablet breakpoint —
+   the rail stacks under the preview rather than squeezing sideways. */
+.apc-considered-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: var(--s-4);
+  margin-top: var(--s-2);
+}
+@media (max-width: 720px) {
+  .apc-considered-body { grid-template-columns: 1fr; }
+}
+
+.apc-considered-label {
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 6px;
+}
+
+.apc-code[data-evidence-surface="true"] {
+  cursor: pointer;
+  border-radius: var(--r-2);
+  outline-offset: 2px;
+}
+.apc-code[data-evidence-surface="true"]:hover { background: var(--hover-bg, transparent); }
+.apc-code[data-evidence-surface="true"]:focus-visible { outline: 2px solid var(--accent); }
+
+.apc-no-preview {
+  padding: var(--s-3);
+  font-size: var(--fs-m);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-2);
+}
+
+.apc-why-fired {
+  margin-top: var(--s-2);
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+}
+
+.apc-worker-rail {
+  background: var(--bg-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-2);
+  padding: var(--s-3);
+  font-size: var(--fs-s);
+  align-self: start;
+}
+.apc-no-trust {
+  color: var(--ink-2);
+  margin: 0 0 8px 0;
+}
+.apc-class-key { margin: 0 0 8px 0; word-break: break-all; }
+.apc-if-wrong { margin: 0; color: var(--ink-1); }
+
+.apc-evidence-gate-hint {
+  margin: 8px 0 0 52px;
+  font-size: var(--fs-s);
+  color: var(--warn);
+}
+
+.apq-honesty-pill { font-weight: 600; }
+.apq-sort-note { font-size: var(--fs-s); margin-top: 2px; }
+
 /* BatchActionBar */
 .approval-batch-bar {
   position: sticky;

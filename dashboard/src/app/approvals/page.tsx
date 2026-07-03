@@ -12,6 +12,13 @@ import { CountdownTimer } from "./_components/CountdownTimer";
 import { Spinner } from "./_components/Spinner";
 import { RiskMeter } from "./_components/RiskMeter";
 import { syntaxHighlightJson } from "@/lib/syntaxHighlight";
+import {
+  CONSEQUENCE_IF_WRONG,
+  DOMAIN_PLAIN_NAME,
+  classifyPendingAction,
+  reversibilityRank,
+  type ClientActionClass,
+} from "@/lib/actionClass";
 
 interface RiskSignal {
   kind: "destructive_flag" | "domain_reputation" | "path_escape" | "chaining";
@@ -113,6 +120,45 @@ function primaryParam(
 
 const SUGGESTION_MIN_APPROVED = 3;
 
+// --- Blast-radius classification (Considered redesign) ---
+
+/** Badge copy + tone for a resolved action class, or the unclassified
+ * fallback. Never fabricates a tier for an unknown tool. */
+function blastBadge(cls: ClientActionClass | null): {
+  label: string;
+  icon: string;
+  tone: "err" | "warn" | "ok" | "muted";
+} {
+  if (!cls) return { label: "unclassified", icon: "?", tone: "muted" };
+  if (cls.reversibility === "irreversible") {
+    return { label: "irreversible", icon: "⛔", tone: "err" };
+  }
+  if (cls.reversibility === "compensable") {
+    return { label: "compensable", icon: "↩", tone: "warn" };
+  }
+  return { label: "reversible", icon: "✓", tone: "ok" };
+}
+
+function BlastBadge({ cls }: { cls: ClientActionClass | null }) {
+  const b = blastBadge(cls);
+  const title = cls
+    ? `${DOMAIN_PLAIN_NAME[cls.domain] ?? cls.domain} · ${b.label}`
+    : "Could not resolve an action class for this tool — sort/gate treat it like a reversible action, but this is a genuine unknown, not a claim of safety.";
+  return (
+    <span className={`pill ${b.tone} apc-blast-badge`} title={title}>
+      <span aria-hidden="true">{b.icon}</span> {b.label}
+    </span>
+  );
+}
+
+/** Plain sentence: "<toolName> wants to <verb+param>". Reuses the existing
+ * invocationHeading/primaryParam helpers so the wording matches the rest
+ * of the card instead of inventing a second phrasing scheme. */
+function wantsToSentence(toolName: string, params?: Record<string, unknown>): string {
+  const primary = primaryParam(toolName, params);
+  return primary ? `${toolName} wants to run against ${primary}` : `${toolName} wants to run`;
+}
+
 // --- CountdownTimer component ---
 
 // --- ApprovalCard ---
@@ -136,6 +182,12 @@ interface ApprovalCardProps {
   // local approving/rejecting state). Audit gap: mashing E used to give
   // no visual signal that the call was in progress.
   externalInFlight?: "approve" | "reject" | null;
+  // Evidence-gate state lifted to the parent so the J/K/E/X keyboard path
+  // (which calls decide() directly, bypassing the card's Approve button)
+  // can also respect the "open the evidence first" gate on irreversible
+  // cards — a card-local useState alone would only guard the mouse path.
+  evidenceOpened: boolean;
+  onEvidenceOpened: (callId: string) => void;
 }
 
 const ApprovalCard = memo(function ApprovalCard({
@@ -149,6 +201,8 @@ const ApprovalCard = memo(function ApprovalCard({
   fadingOut,
   isKeyboardFocused = false,
   externalInFlight = null,
+  evidenceOpened,
+  onEvidenceOpened,
 }: ApprovalCardProps) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -169,6 +223,21 @@ const ApprovalCard = memo(function ApprovalCard({
   const primary = primaryParam(p.toolName, p.params);
   const hasParams = p.params && Object.keys(p.params).length > 0;
   const match = matchRule(p.toolName, rules);
+
+  const actionClass = classifyPendingAction(p.toolName);
+  const isHighStakes = actionClass?.reversibility === "irreversible" ||
+    actionClass?.reversibility === "compensable";
+  const isIrreversible = actionClass?.reversibility === "irreversible";
+
+  // Evidence gate (irreversible only): Approve stays locked until the
+  // reviewer has opened at least one evidence surface (the diff/command
+  // preview). Lifted to the parent (see ApprovalCardProps) so the keyboard
+  // shortcut path is gated too, not just the mouse click on Approve.
+  const markEvidenceOpened = useCallback(
+    () => onEvidenceOpened(p.callId),
+    [onEvidenceOpened, p.callId],
+  );
+  const evidenceLocked = isIrreversible && !evidenceOpened;
 
   // Flip to "expired" UI exactly once when `expires` passes. Previously
   // ticked Date.now() at 1Hz per card, which forced every visible card
@@ -270,6 +339,7 @@ const ApprovalCard = memo(function ApprovalCard({
         <div className="apc-body">
           <h3 className="apc-title">{heading}</h3>
         </div>
+        <BlastBadge cls={actionClass} />
         <RiskMeter level={p.tier} />
         {match && (
           <span className={`pill ${ruleClass(match)} apc-shrink0`}>
@@ -294,6 +364,10 @@ const ApprovalCard = memo(function ApprovalCard({
           )}
         </span>
       </div>
+
+      {isHighStakes && (
+        <p className="apc-considered-sentence">{wantsToSentence(p.toolName, p.params)}</p>
+      )}
 
       {p.summary && (
         <p className="apc-summary">{p.summary}</p>
@@ -341,7 +415,10 @@ const ApprovalCard = memo(function ApprovalCard({
           <button
             type="button"
             className="approval-params-toggle"
-            onClick={() => onToggleExpand(p.callId)}
+            onClick={() => {
+              onToggleExpand(p.callId);
+              markEvidenceOpened();
+            }}
             aria-expanded={isExpanded}
             aria-controls={`approval-params-${p.callId}`}
           >
@@ -383,37 +460,91 @@ const ApprovalCard = memo(function ApprovalCard({
         </div>
       )}
 
-      <div className="apc-code">
-        {diff ? (
-          <CodeBlock>
-            <div className="apc-diff-path">{diff.path}</div>
-            {diff.lines.map((line, i) => {
-              const kind = line.kind === "add" ? "add" : line.kind === "del" ? "del" : "ctx";
-              const prefix = line.kind === "add" ? "+" : line.kind === "del" ? "-" : " ";
-              return (
-                <div key={i} className="apc-diff-line" data-kind={kind}>
-                  <span aria-hidden="true" className="apc-diff-prefix" data-kind={kind}>{prefix}</span>
-                  <span className="apc-diff-text" data-kind={kind}>{line.text}</span>
+      <div className={isHighStakes ? "apc-considered-body" : undefined}>
+        <div
+          className="apc-code"
+          data-evidence-surface={isIrreversible ? "true" : undefined}
+          onClick={isIrreversible ? markEvidenceOpened : undefined}
+          onFocus={isIrreversible ? markEvidenceOpened : undefined}
+          tabIndex={isIrreversible ? 0 : undefined}
+          role={isIrreversible ? "group" : undefined}
+          aria-label={isIrreversible ? "What exactly it will run" : undefined}
+        >
+          {isHighStakes && (
+            <div className="apc-considered-label">What exactly it will run</div>
+          )}
+          {diff ? (
+            <CodeBlock>
+              <div className="apc-diff-path">{diff.path}</div>
+              {diff.lines.map((line, i) => {
+                const kind = line.kind === "add" ? "add" : line.kind === "del" ? "del" : "ctx";
+                const prefix = line.kind === "add" ? "+" : line.kind === "del" ? "-" : " ";
+                return (
+                  <div key={i} className="apc-diff-line" data-kind={kind}>
+                    <span aria-hidden="true" className="apc-diff-prefix" data-kind={kind}>{prefix}</span>
+                    <span className="apc-diff-text" data-kind={kind}>{line.text}</span>
+                  </div>
+                );
+              })}
+              {diff.truncated && (
+                <div className="apc-diff-truncated">
+                  … truncated. Expand &quot;Full params&quot; for the complete payload.
                 </div>
-              );
-            })}
-            {diff.truncated && (
-              <div className="apc-diff-truncated">
-                … truncated. Expand &quot;Full params&quot; for the complete payload.
-              </div>
+              )}
+            </CodeBlock>
+          ) : codeLines && codeLines.some((l) => l.trim().length > 0) ? (
+            <CodeBlock>
+              {codeLines.map((line, i) => (
+                <div key={i} className="apc-code-line">
+                  <span className="apc-line-num">{i + 1}</span>
+                  <span className="apc-line-text">{line}</span>
+                </div>
+              ))}
+            </CodeBlock>
+          ) : isHighStakes ? (
+            <div className="apc-no-preview muted">
+              No preview available — raw tool: <code>{p.toolName}</code>
+              {hasParams ? " (see Full params above)" : ""}
+            </div>
+          ) : null}
+          {isHighStakes && p.sessionId && (
+            <div className="apc-why-fired">
+              Why it fired: session{" "}
+              <Link href={`/approvals?session=${encodeURIComponent(p.sessionId)}`}>
+                {p.sessionId.slice(0, 8)}
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {isHighStakes && (
+          <aside className="apc-worker-rail" aria-label="Worker record — this action class">
+            <div className="apc-considered-label">Worker record — this action class</div>
+            <p className="apc-no-trust">
+              No trust record — this approval isn&apos;t attributed to a
+              worker identity, so there&apos;s no per-worker trust history to
+              show here.
+            </p>
+            {actionClass && (
+              <p className="apc-class-key muted" title="domain::reversibility">
+                <code>{actionClass.key}</code>
+              </p>
             )}
-          </CodeBlock>
-        ) : (
-          <CodeBlock>
-            {codeLines?.map((line, i) => (
-              <div key={i} className="apc-code-line">
-                <span className="apc-line-num">{i + 1}</span>
-                <span className="apc-line-text">{line}</span>
-              </div>
-            ))}
-          </CodeBlock>
+            {actionClass && CONSEQUENCE_IF_WRONG[actionClass.domain] && (
+              <p className="apc-if-wrong">
+                <strong>If it&apos;s wrong:</strong>{" "}
+                {CONSEQUENCE_IF_WRONG[actionClass.domain]}
+              </p>
+            )}
+          </aside>
         )}
       </div>
+
+      {evidenceLocked && (
+        <p className="apc-evidence-gate-hint">
+          🔒 Approve unlocks after you open the draft or the run.
+        </p>
+      )}
 
       {/* Decision cluster kept on its own row so Approve and Reject stay
           together at all viewport widths. Audit caught that the previous
@@ -426,12 +557,18 @@ const ApprovalCard = memo(function ApprovalCard({
           type="button"
           className="btn primary apc-approve-btn"
           onClick={() => handleDecide("approve")}
-          disabled={isApproving || isRejecting || expired}
-          title={expired ? "Expired — the agent has moved on" : undefined}
+          disabled={isApproving || isRejecting || expired || evidenceLocked}
+          title={
+            expired
+              ? "Expired — the agent has moved on"
+              : evidenceLocked
+                ? "Open the draft/run preview first"
+                : undefined
+          }
           aria-label={`Approve ${p.toolName}`}
         >
-          {isApproving ? <Spinner /> : <span aria-hidden="true">✓</span>}
-          {isApproving ? " Approving…" : " Approve"}
+          {isApproving ? <Spinner /> : <span aria-hidden="true">{evidenceLocked ? "🔒" : "✓"}</span>}
+          {isApproving ? " Approving…" : evidenceLocked ? " Approve (locked)" : " Approve"}
           <KeyChip>E</KeyChip>
         </button>
         <button
@@ -575,6 +712,13 @@ function ApprovalsContent() {
   // path (E/X). The ref alone doesn't trigger re-renders, so cards
   // gave no visual feedback when a keystroke was already in motion.
   const [kbdInFlight, setKbdInFlight] = useState<Record<string, "approve" | "reject">>({});
+  // Evidence-gate tracking (Considered redesign): which callIds have had
+  // their evidence surface opened, so the irreversible-only Approve gate
+  // applies uniformly across the mouse and keyboard (E) decision paths.
+  const [evidenceOpenedIds, setEvidenceOpenedIds] = useState<Set<string>>(new Set());
+  const markEvidenceOpened = useCallback((callId: string) => {
+    setEvidenceOpenedIds((prev) => (prev.has(callId) ? prev : new Set(prev).add(callId)));
+  }, []);
   const { patterns, clearPatterns } = useApprovalPatterns();
 
   useEffect(() => {
@@ -757,9 +901,22 @@ function ApprovalsContent() {
     });
   }, []);
 
-  const filtered = pending.filter(
-    (p) => riskFilter === "all" || p.tier === riskFilter,
-  );
+  // Sorted by blast radius — the action that can't be undone floats to the
+  // top of the queue. Unclassified tools are grouped with reversible
+  // (reversibilityRank's documented fallback) rather than a separate bucket:
+  // an unknown tool isn't a claim of danger, so it doesn't jump the queue
+  // ahead of tools we've actually classified as compensable/irreversible.
+  // Ties within a tier keep the oldest request first.
+  const filtered = pending
+    .filter((p) => riskFilter === "all" || p.tier === riskFilter)
+    .slice()
+    .sort((a, b) => {
+      const rankDiff =
+        reversibilityRank(classifyPendingAction(a.toolName)?.reversibility) -
+        reversibilityRank(classifyPendingAction(b.toolName)?.reversibility);
+      if (rankDiff !== 0) return rankDiff;
+      return (a.requestedAt ?? 0) - (b.requestedAt ?? 0);
+    });
 
   const allFilteredSelected =
     filtered.length > 0 && filtered.every((p) => selected.has(p.callId));
@@ -869,6 +1026,19 @@ function ApprovalsContent() {
         e.preventDefault();
         const choice = key === "e" ? "approve" : "reject";
         const verb = key === "e" ? "Approved" : "Rejected";
+        // Evidence gate on the keyboard path too — an irreversible action
+        // whose evidence hasn't been opened yet can't be approved via E
+        // either; only the mouse "Approve" button would be silently
+        // ungated otherwise.
+        if (choice === "approve") {
+          const cls = classifyPendingAction(target.toolName);
+          if (cls?.reversibility === "irreversible" && !evidenceOpenedIds.has(target.callId)) {
+            setAnnouncement(
+              "Approve is locked — open the draft or the run first.",
+            );
+            return;
+          }
+        }
         // Confirm high-tier approves on keyboard path too — matches the
         // mouse path guard added to handleDecide.
         if (choice === "approve" && target.tier === "high") {
@@ -908,7 +1078,7 @@ function ApprovalsContent() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [filtered, focusIndex]);
+  }, [filtered, focusIndex, evidenceOpenedIds]);
 
   const copyRule = useCallback((toolName: string) => {
     const snippet = JSON.stringify({ allow: [toolName] }, null, 2);
@@ -954,8 +1124,33 @@ function ApprovalsContent() {
         <div>
           <div className="page-head-title-row">
             <h1 className="editorial-h1">
-              Approval queue — <span className="accent">nothing leaves your machine without a nod.</span>
+              Approvals — <span className="accent">{pending.length} waiting</span>
             </h1>
+            {(() => {
+              // Honesty pill: denial rate only. A "median decision time"
+              // stat was speced but there's no real data source for it —
+              // useApprovalPatterns only tracks approve/reject COUNTS
+              // (localStorage), not a requested→decided timestamp pair,
+              // and the /workers latency stat measures recipe-run
+              // duration, not approval decision time. Rather than
+              // fabricate a number, this pill reports only what's real:
+              // the denial percentage from the same local pattern store
+              // the "Historical rate" card below already uses.
+              let approved = 0;
+              let rejected = 0;
+              for (const p of patterns.values()) {
+                approved += p.approved;
+                rejected += p.rejected;
+              }
+              const total = approved + rejected;
+              if (total === 0) return null;
+              const deniedPct = Math.round((rejected / total) * 100);
+              return (
+                <span className="pill muted apq-honesty-pill" title="From this browser's local decision history, last 30 days">
+                  {deniedPct}% denied recently
+                </span>
+              );
+            })()}
             <HintCard.Toggle id="approvals" />
           </div>
           <div className="editorial-sub">
@@ -968,6 +1163,9 @@ function ApprovalsContent() {
                 : null;
               return `~/.patchwork/inbox · ${pending.length} pending${oldestTs ? ` · oldest ${relTime(oldestTs)}` : ""}`;
             })()}
+          </div>
+          <div className="apq-sort-note muted">
+            Sorted by blast radius — the one that can&apos;t be undone is on top.
           </div>
           {/* The related-links strip (Insights / Suggestions / Settings /
               Knowledge) was redundant here: Suggested + Knowledge are the
@@ -1197,6 +1395,8 @@ function ApprovalsContent() {
                 fadingOut={fadingOut.has(p.callId)}
                 isKeyboardFocused={idx === focusIndex}
                 externalInFlight={kbdInFlight[p.callId] ?? null}
+                evidenceOpened={evidenceOpenedIds.has(p.callId)}
+                onEvidenceOpened={markEvidenceOpened}
               />
             ))}
           </div>
