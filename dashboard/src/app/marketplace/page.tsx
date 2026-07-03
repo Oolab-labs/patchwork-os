@@ -241,19 +241,18 @@ function connectorColor(id: string): string {
 }
 
 
-// ------------------------------------------------------------------ card
+// ------------------------------------------------------------------ shared install-flow hook
+//
+// Extracted from RecipeCard so the compact shelf tile (RecipeTile) can
+// reuse the exact same loading/error/confirm/justInstalled state machine
+// and runInstall/handleInstall logic without duplicating it — only the
+// markup differs between the two presentations.
 
-function RecipeCard({
-  recipe,
-  installed,
-  bridgeStatus,
-  onInstall,
-}: {
-  recipe: RegistryRecipe;
-  installed: boolean;
-  bridgeStatus: BridgeStatus;
-  onInstall: (recipe: RegistryRecipe) => Promise<void>;
-}) {
+function useRecipeInstall(
+  recipe: RegistryRecipe,
+  installed: boolean,
+  onInstall: (recipe: RegistryRecipe) => Promise<void>,
+) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [justInstalled, setJustInstalled] = useState(false);
@@ -292,6 +291,42 @@ function RecipeCard({
     }
     void runInstall();
   }
+
+  return {
+    loading,
+    err,
+    isInstalled,
+    confirmOpen,
+    setConfirmOpen,
+    installSuccess,
+    runInstall,
+    handleInstall,
+  };
+}
+
+// ------------------------------------------------------------------ card
+
+function RecipeCard({
+  recipe,
+  installed,
+  bridgeStatus,
+  onInstall,
+}: {
+  recipe: RegistryRecipe;
+  installed: boolean;
+  bridgeStatus: BridgeStatus;
+  onInstall: (recipe: RegistryRecipe) => Promise<void>;
+}) {
+  const {
+    loading,
+    err,
+    isInstalled,
+    confirmOpen,
+    setConfirmOpen,
+    installSuccess,
+    runInstall,
+    handleInstall,
+  } = useRecipeInstall(recipe, installed, onInstall);
 
   return (
     <>
@@ -518,6 +553,154 @@ function RecipeCard({
       />
     </div>
     </>
+  );
+}
+
+// ------------------------------------------------------------------ compact shelf tile
+//
+// Mockup M-A's shelf tiles are much smaller than the full RecipeCard —
+// name, author, 3-line description, and a compact footer (risk pill +
+// install count + Install control). Reuses useRecipeInstall for the
+// exact same install state machine as RecipeCard; only markup differs.
+
+function RecipeTile({
+  recipe,
+  installed,
+  bridgeStatus,
+  onInstall,
+}: {
+  recipe: RegistryRecipe;
+  installed: boolean;
+  bridgeStatus: BridgeStatus;
+  onInstall: (recipe: RegistryRecipe) => Promise<void>;
+}) {
+  const {
+    loading,
+    err,
+    isInstalled,
+    confirmOpen,
+    setConfirmOpen,
+    installSuccess,
+    runInstall,
+    handleInstall,
+  } = useRecipeInstall(recipe, installed, onInstall);
+
+  return (
+    <div className="template-card glass-card ma-tile mkt-recipe-card">
+      <Link
+        href={`/marketplace/${recipe.name}`}
+        className="nm"
+        style={{ color: "var(--ink-0)", textDecoration: "none", wordBreak: "break-word" }}
+        aria-label={`View details for ${shortName(recipe.name)}`}
+      >
+        {shortName(recipe.name)}
+      </Link>
+      {recipe.maintainer && <div className="by">by {recipe.maintainer}</div>}
+      <p className="ds">{recipe.description}</p>
+
+      <div className="ft">
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          {recipe.risk_level && (
+            <span
+              className={`pill ${RISK_PILL_CLASS[recipe.risk_level]}`}
+              style={{ fontSize: "var(--fs-2xs)" }}
+              title={`Risk level: ${recipe.risk_level}`}
+            >
+              {recipe.risk_level}
+            </span>
+          )}
+          {recipe.downloads > 0 && (
+            <span
+              style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-3)" }}
+              title={`${recipe.downloads.toLocaleString()} installs`}
+            >
+              ↓ {recipe.downloads >= 1000
+                ? `${(recipe.downloads / 1000).toFixed(1)}k`
+                : recipe.downloads}
+            </span>
+          )}
+        </div>
+
+        <div style={{ flexShrink: 0 }}>
+          {isInstalled ? (
+            <Link
+              href={`/recipes/${canonicalRecipeKey(recipe.name)}`}
+              className="pill mkt-installed-pill"
+              style={{
+                background: "var(--ok-soft)",
+                color: "var(--ok)",
+                border: "1px solid var(--ok)",
+                fontSize: "var(--fs-2xs)",
+                textDecoration: "none",
+              }}
+              title="Open installed recipe"
+            >
+              &#10003; Installed
+            </Link>
+          ) : bridgeStatus === "online" ? (
+            <button
+              type="button"
+              className="btn sm primary mkt-install-btn"
+              onClick={handleInstall}
+              disabled={loading}
+              aria-label={`Install ${shortName(recipe.name)}`}
+            >
+              {loading ? (
+                <>
+                  <span className="mkt-spinner-icon" aria-hidden="true" />
+                  Installing…
+                </>
+              ) : installSuccess ? (
+                "✓ Done!"
+              ) : "Install"}
+            </button>
+          ) : bridgeStatus === "unauth" ? (
+            <Link
+              href={`/login?next=${encodeURIComponent(`/dashboard/marketplace/${recipe.name}`)}`}
+              className="btn sm"
+              style={{ textDecoration: "none" }}
+              aria-label={`Log in to install ${shortName(recipe.name)}`}
+            >
+              Log in
+            </Link>
+          ) : bridgeStatus === "offline" ? (
+            <a
+              href="https://patchworkos.com/#install"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn sm"
+              style={{ textDecoration: "none" }}
+              aria-label={`Get Patchwork to install ${shortName(recipe.name)}`}
+            >
+              Get Patchwork
+            </a>
+          ) : (
+            <span aria-hidden="true" style={{ display: "inline-block", width: 84, height: 28 }} />
+          )}
+        </div>
+      </div>
+
+      {err && (
+        <div
+          style={{ fontSize: "var(--fs-xs)", color: "var(--err)", lineHeight: 1.5 }}
+          role="alert"
+        >
+          {err}
+        </div>
+      )}
+
+      <InstallConfirmDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => void runInstall()}
+        name={shortName(recipe.name)}
+        source={recipe.install}
+        riskLevel={recipe.risk_level}
+        connectors={recipe.connectors}
+        networkAccess={recipe.network_access}
+        fileAccess={recipe.file_access}
+      />
+    </div>
   );
 }
 
@@ -846,9 +1029,54 @@ export default function MarketplacePage() {
   });
 
   const isSearching = search.trim().length > 0;
-  const featured = isSearching ? undefined : filtered[0];
-  const rest = isSearching ? filtered : filtered.slice(1);
+
+  // Featured pick: the registry doesn't carry an explicit "featured" flag
+  // (checked RegistryRecipe/RegistryBundle — no such field exists), so we
+  // use the highest install count as a defensible, non-fabricated default.
+  // Ties broken by registry order (first recipe wins) for stability.
+  const featured =
+    !isSearching && filtered.length > 0
+      ? filtered.reduce((best, r) => (r.downloads > best.downloads ? r : best), filtered[0])
+      : undefined;
+  const rest = isSearching ? filtered : filtered.filter((r) => r.name !== featured?.name);
   const totalVisible = filtered.length;
+
+  // Shelves for the non-search browse view. The live registry has no
+  // category/theme field on RegistryRecipe (only free-form `tags`, which
+  // aren't consistent enough across recipes to build reliable themed
+  // shelves like "GitHub automation" / "Reporting" without inventing
+  // categories) — so shelves are derived from fields that DO exist:
+  //   1. "Start here" — low-risk recipes (reuses the existing risk_level
+  //      field / RISK_PILL_CLASS mapping, not a new risk model).
+  //   2. One shelf per most-common connector (coarse but real signal —
+  //      `connectors` is a first-class registry field) for the next-most
+  //      populated groups, so the page doesn't collapse to a single shelf.
+  const startHere = rest.filter((r) => r.risk_level === "low");
+  const startHereNames = new Set(startHere.map((r) => r.name));
+  const remaining = rest.filter((r) => !startHereNames.has(r.name));
+
+  const connectorCounts = new Map<string, number>();
+  for (const r of remaining) {
+    for (const rawId of r.connectors) {
+      const c = normalizeConnectorId(rawId);
+      connectorCounts.set(c, (connectorCounts.get(c) ?? 0) + 1);
+    }
+  }
+  const topConnectors = [...connectorCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([id]) => id);
+
+  const connectorShelves = topConnectors.map((connectorId) => ({
+    connectorId,
+    recipes: remaining.filter((r) =>
+      r.connectors.some((c) => normalizeConnectorId(c) === connectorId),
+    ),
+  }));
+  const shelvedNames = new Set(
+    connectorShelves.flatMap((s) => s.recipes.map((r) => r.name)),
+  );
+  const everythingElse = remaining.filter((r) => !shelvedNames.has(r.name));
 
   return (
     <section>
@@ -917,85 +1145,67 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      <div className="page-head">
+      <div className="ra-head page-head">
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <h1 className="editorial-h1" style={{ margin: 0 }}>
-              Marketplace — <span className="accent">open-source YAML, curated.</span>
-            </h1>
+            <h2 className="mono" style={{ margin: 0 }}>
+              Marketplace — <em>open-source YAML, curated</em>
+            </h2>
             <HintCard.Toggle id="marketplace" />
           </div>
           <div className="editorial-sub">
             {`${registry?.length ?? FALLBACK_REGISTRY.recipes.length} recipes · sourced from github.com/patchworkos/recipes`}
           </div>
         </div>
-        {/* flex-wrap so Search + Submit drop below the title on narrow
-            viewports instead of squeezing the heading; flex-shrink:0 on
-            the action chips so they don't compress past their text width. */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            flexWrap: "wrap",
-            flexShrink: 0,
-          }}
-        >
+
+        {/* Reuses the existing search/searchOpen state verbatim — the "/"
+            style pill from mockup M-A, click-to-expand into the real
+            input. When collapsed, clicking the pill (or the existing
+            Search toggle) opens it, matching prior toggle behavior. */}
+        {searchOpen ? (
+          <label className="ra-search">
+            ⌕
+            <input
+              type="search"
+              placeholder="Search by name, tags, connectors…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search marketplace"
+              autoFocus
+              onBlur={() => {
+                if (!search.trim()) setSearchOpen(false);
+              }}
+            />
+          </label>
+        ) : (
           <button
             type="button"
-            onClick={() => setSearchOpen((v) => !v)}
-            className="btn sm ghost"
-            style={{ fontSize: "var(--fs-s)", flexShrink: 0 }}
+            onClick={() => setSearchOpen(true)}
+            className="ra-search"
             aria-label="Toggle search"
             aria-expanded={searchOpen}
           >
-            Search
+            ⌕ <span>{`Search ${registry?.length ?? FALLBACK_REGISTRY.recipes.length} recipes…`}</span>
           </button>
-          <Link
-            href="/marketplace/submit"
-            className="btn sm primary"
-            style={{
-              textDecoration: "none",
-              fontSize: "var(--fs-s)",
-              flexShrink: 0,
-            }}
-            title="Compose a recipe and open a PR against patchworkos/recipes via GitHub's web flow."
-          >
-            Submit a recipe
-          </Link>
-        </div>
+        )}
+
+        <Link
+          href="/marketplace/submit"
+          className="btn ghost"
+          style={{ textDecoration: "none", flexShrink: 0 }}
+          title="Compose a recipe and open a PR against patchworkos/recipes via GitHub's web flow."
+        >
+          Submit a recipe
+        </Link>
       </div>
 
       <HintCard id="marketplace" />
 
-      {searchOpen && (
-        <div style={{ marginBottom: "var(--s-6)" }}>
-          <input
-            type="search"
-            className="input mkt-search-input"
-            placeholder="Search by name, tags, connectors…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{
-              maxWidth: 360,
-              transition: "border-color 0.2s ease, box-shadow 0.2s ease",
-            }}
-            aria-label="Search marketplace"
-            autoFocus
-          />
-          {search.trim() && (
-            <div
-              style={{
-                fontSize: "var(--fs-xs)",
-                color: "var(--ink-3)",
-                marginTop: 6,
-              }}
-            >
-              {filtered.length === 0
-                ? "No recipes match — try different terms"
-                : `${filtered.length} result${filtered.length === 1 ? "" : "s"}`}
-            </div>
-          )}
+      {isSearching && (
+        <div style={{ marginBottom: "var(--s-4)", fontSize: "var(--fs-xs)", color: "var(--ink-3)" }}>
+          {filtered.length === 0
+            ? "No recipes match — try different terms"
+            : `${filtered.length} result${filtered.length === 1 ? "" : "s"}`}
         </div>
       )}
 
@@ -1032,100 +1242,180 @@ export default function MarketplacePage() {
               : "The registry appears empty. Check your connection or try again later."
           }
         />
+      ) : isSearching ? (
+        // Search mode: hero + shelves hidden, flat filtered grid instead
+        // (same RecipeCard used before, same filtering logic).
+        <div className="marketplace-grid">
+          {filtered.map((recipe, idx) => (
+            <div
+              key={recipe.name}
+              style={{
+                animation: "mkt-card-in 0.3s ease both",
+                animationDelay: `${Math.min(idx * 40, 400)}ms`,
+              }}
+            >
+              <RecipeCard
+                recipe={recipe}
+                installed={installedNames.has(shortName(recipe.name))}
+                bridgeStatus={bridgeStatus}
+                onInstall={handleInstall}
+              />
+            </div>
+          ))}
+        </div>
       ) : (
         <>
-          {bundles.length > 0 && (
-            <>
-              <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--ink-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
-                Capability bundles
-              </h2>
-              <p style={{ fontSize: "var(--fs-s)", color: "var(--ink-2)", marginBottom: "var(--s-4)", marginTop: "calc(-1 * var(--s-2))" }}>
-                Recipes + connectors + policy templates — install as one unit.
-              </p>
-              <div className="marketplace-grid" style={{ marginBottom: "var(--s-8)" }}>
-                {bundles.map((b) => <BundleCard key={b.name} bundle={b} />)}
+          {featured && (
+            <div className="mahero">
+              <div className="lft">
+                <div className="star">★ Featured this week</div>
+                <h3 className="mono">{shortName(featured.name)}</h3>
+                <div className="sub" style={{ maxWidth: "48ch", fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
+                  {featured.description}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: "var(--s-4)" }}>
+                  {installedNames.has(shortName(featured.name)) ? (
+                    <Link
+                      href={`/recipes/${canonicalRecipeKey(featured.name)}`}
+                      className="btn primary"
+                      style={{ textDecoration: "none" }}
+                    >
+                      Open installed recipe
+                    </Link>
+                  ) : bridgeStatus === "online" ? (
+                    <button type="button" className="btn primary" onClick={() => void handleInstall(featured)}>
+                      Install
+                    </button>
+                  ) : null}
+                  <Link href={`/marketplace/${featured.name}`} className="btn ghost" style={{ textDecoration: "none" }}>
+                    View YAML
+                  </Link>
+                </div>
               </div>
-            </>
+              <div className="rgt">
+                <div style={{ fontSize: "var(--fs-xs)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ink-3)", marginBottom: "var(--s-3)" }}>
+                  Before you install
+                </div>
+                {featured.risk_level && (
+                  <div className="hc-kv">
+                    <span style={{ color: "var(--ink-3)" }}>Risk</span>
+                    <span className={`pill ${RISK_PILL_CLASS[featured.risk_level]}`}>{featured.risk_level}</span>
+                  </div>
+                )}
+                {featured.approval_behavior && (
+                  <div className="hc-kv">
+                    <span style={{ color: "var(--ink-3)" }}>Approvals</span>
+                    <strong>{APPROVAL_LABEL[featured.approval_behavior]}</strong>
+                  </div>
+                )}
+                <div className="hc-kv">
+                  <span style={{ color: "var(--ink-3)" }}>Connectors</span>
+                  <span className="ma-cn">
+                    {featured.connectors.map((rawId) => {
+                      const c = normalizeConnectorId(rawId);
+                      return (
+                        <i key={c} title={c} style={{ background: connectorColor(c) }}>
+                          {connectorInitials(c)}
+                        </i>
+                      );
+                    })}
+                  </span>
+                </div>
+                {(featured.network_access !== undefined || featured.file_access !== undefined) && (
+                  <div className="hc-kv">
+                    <span style={{ color: "var(--ink-3)" }}>Network / file I/O</span>
+                    <strong>
+                      {featured.network_access !== undefined
+                        ? featured.network_access
+                          ? "outbound"
+                          : "none"
+                        : "unknown"}
+                      {" · "}
+                      {featured.file_access !== undefined ? (featured.file_access ? "reads/writes" : "none") : "unknown"}
+                    </strong>
+                  </div>
+                )}
+                <div className="hc-kv">
+                  <span style={{ color: "var(--ink-3)" }}>Installs</span>
+                  <strong>
+                    ↓ {featured.downloads >= 1000 ? `${(featured.downloads / 1000).toFixed(1)}k` : featured.downloads}
+                  </strong>
+                </div>
+              </div>
+            </div>
           )}
 
-          {featured && (
-            <>
-              <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--ink-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
-                Featured this week
-              </h2>
-              <div
-                className="marketplace-grid"
-                style={{
-                  gridTemplateColumns: "1fr",
-                  marginBottom: "var(--s-8)",
-                }}
-              >
-                <div
-                  style={{
-                    border: "1px solid var(--accent)",
-                    borderRadius: "var(--r-3)",
-                    // Theme-redesign: blend the orange frame with the card bg so
-                    // it's visible in dark too (the flat --accent-soft tint
-                    // vanished on the near-black canvas), plus a soft orange
-                    // glow so the featured card reads as featured in both themes.
-                    background: "color-mix(in srgb, var(--accent) 16%, var(--card-bg))",
-                    boxShadow: "0 1px 14px color-mix(in srgb, var(--accent) 20%, transparent)",
-                    padding: 3,
-                    position: "relative",
-                  }}
-                >
-                  <span
-                    className="pill"
-                    style={{
-                      position: "absolute",
-                      top: 12,
-                      right: 12,
-                      zIndex: 2,
-                      fontSize: "var(--fs-2xs)",
-                      fontFamily: "var(--font-mono)",
-                      background: "var(--accent-soft)",
-                      color: "var(--accent)",
-                      border: "1px solid var(--accent-tint)",
-                    }}
-                  >
-                    ★ Featured
-                  </span>
-                  <RecipeCard
-                    key={featured.name}
-                    recipe={featured}
-                    installed={installedNames.has(shortName(featured.name))}
+          {bundles.length > 0 && (
+            <div className="ma-shelf">
+              <div className="sh">
+                <h3>Capability bundles</h3>
+              </div>
+              <div className="ma-row">
+                {bundles.map((b) => <BundleCard key={b.name} bundle={b} />)}
+              </div>
+            </div>
+          )}
+
+          {startHere.length > 0 && (
+            <div className="ma-shelf">
+              <div className="sh">
+                <h3>Start here — low-risk, no setup</h3>
+                <span style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)" }}>{startHere.length} recipes</span>
+              </div>
+              <div className="ma-row">
+                {startHere.map((recipe) => (
+                  <RecipeTile
+                    key={recipe.name}
+                    recipe={recipe}
+                    installed={installedNames.has(shortName(recipe.name))}
                     bridgeStatus={bridgeStatus}
                     onInstall={handleInstall}
                   />
-                </div>
+                ))}
               </div>
-            </>
+            </div>
           )}
 
-          {rest.length > 0 && (
-            <>
-              <h2 style={{ fontSize: "var(--fs-m)", fontWeight: 600, color: "var(--ink-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
-                All recipes
-              </h2>
-              <div className="marketplace-grid">
-                {rest.map((recipe, idx) => (
-                  <div
-                    key={recipe.name}
-                    style={{
-                      animation: "mkt-card-in 0.3s ease both",
-                      animationDelay: `${Math.min(idx * 40, 400)}ms`,
-                    }}
-                  >
-                    <RecipeCard
+          {connectorShelves.map(({ connectorId, recipes }) =>
+            recipes.length > 0 ? (
+              <div className="ma-shelf" key={connectorId}>
+                <div className="sh">
+                  <h3>{formatConnectorLabel(connectorId)} recipes</h3>
+                  <span style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)" }}>{recipes.length} recipes</span>
+                </div>
+                <div className="ma-row">
+                  {recipes.map((recipe) => (
+                    <RecipeTile
+                      key={recipe.name}
                       recipe={recipe}
                       installed={installedNames.has(shortName(recipe.name))}
                       bridgeStatus={bridgeStatus}
                       onInstall={handleInstall}
                     />
-                  </div>
+                  ))}
+                </div>
+              </div>
+            ) : null,
+          )}
+
+          {everythingElse.length > 0 && (
+            <div className="ma-shelf">
+              <div className="sh">
+                <h3>Everything else</h3>
+                <span style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)" }}>{everythingElse.length} recipes</span>
+              </div>
+              <div className="ma-row">
+                {everythingElse.map((recipe) => (
+                  <RecipeTile
+                    key={recipe.name}
+                    recipe={recipe}
+                    installed={installedNames.has(shortName(recipe.name))}
+                    bridgeStatus={bridgeStatus}
+                    onInstall={handleInstall}
+                  />
                 ))}
               </div>
-            </>
+            </div>
           )}
         </>
       )}
