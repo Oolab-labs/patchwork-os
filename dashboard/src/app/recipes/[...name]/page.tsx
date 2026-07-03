@@ -47,7 +47,7 @@ import { detectConnectorsForRecipe } from "@/lib/recipeConnectors";
 import { fmtDuration } from "@/components/time";
 import { Skeleton } from "@/components/Skeleton";
 import { StatusMedallion } from "@/components/StatusMedallion";
-import { DetailsFold, ExpertToggle } from "@/components/DetailsFold";
+import { DetailsFold, ExpertToggle, useExpertMode } from "@/components/DetailsFold";
 import { describeNextRun, humanizeSchedule } from "@/lib/humanSchedule";
 import {
   deriveRecipeStatus,
@@ -391,11 +391,14 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
   // Deep-link: `?diagnose=1` (from the recipes list / failed-run views)
   // auto-runs the Doctor panel and scrolls to it.
   const autoDiagnose = useSearchParams().get("diagnose") === "1";
-  // M3 — the What-If Preview is the DEFAULT pre-run affordance: it auto-runs on
-  // every recipe view so the operator sees what a run would do (risk tiers,
-  // writes, blast radius) before clicking Run. Opt out with `?simulate=0`.
-  // `?simulate=1` still works (and scrolls to the panel via the deep-link).
-  const autoSimulate = useSearchParams().get("simulate") !== "0";
+  // The Doctor + What-If Preview are engineer tools and heavy (the What-If
+  // renders every projected action) — they no longer occupy the default view,
+  // where they made the page enormous and read as "something's wrong". They
+  // fold under "Show details" (expert mode), and still auto-run + render when
+  // explicitly deep-linked via `?diagnose=1` / `?simulate=1`.
+  const simulateDeepLink = useSearchParams().get("simulate") === "1";
+  const { expert } = useExpertMode();
+  const showDiagnostics = expert || autoDiagnose || simulateDeepLink;
 
   // Reusable list fetch for the recipe row (matches layout's data source).
   const { data: recipes, refetch: refetchRecipes } = useBridgeFetch<Recipe[]>(
@@ -873,13 +876,7 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
                   ? "Resume"
                   : "Pause"}
             </button>
-            <Link
-              href={`/recipes/${encodeURIComponent(name)}/edit`}
-              className="btn ghost hub-control-btn"
-              style={{ textDecoration: "none" }}
-            >
-              Edit
-            </Link>
+            {/* Edit lives in the tab bar (layout.tsx) — no duplicate inline button. */}
           </div>
         </div>
       )}
@@ -1196,23 +1193,33 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
         </PatchCard>
       </DetailsFold>
 
-      {/* DOCTOR — composed health diagnosis (lint + policy + recent halts).
-          The wrapping `#doctor` div is the scroll target for deep-links. */}
-      <div id="doctor">
-      <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 260ms 160ms ease both", animationFillMode: "both" }}>
-        <SectionHeader>Doctor</SectionHeader>
-        <DoctorPanel recipeName={name} autoRun={autoDiagnose} />
-      </PatchCard>
-      </div>
+      {/* DIAGNOSTICS (folded) — Doctor + What-If Preview are engineer tools; they
+          render only under "Show details" or when explicitly deep-linked, so the
+          default page stays short and calm. Marked data-details for the glance
+          test. `#doctor` / `#simulate` stay the scroll targets for deep-links. */}
+      {showDiagnostics && (
+        <div data-details={expert && !autoDiagnose && !simulateDeepLink ? "" : undefined}>
+          <div id="doctor">
+          <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 260ms 160ms ease both", animationFillMode: "both" }}>
+            <SectionHeader>Check for problems</SectionHeader>
+            <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", margin: "0 0 12px" }}>
+              Runs a quick health check — connectors, schedule, and recent stops — and tells you what to fix.
+            </div>
+            <DoctorPanel recipeName={name} autoRun={autoDiagnose} />
+          </PatchCard>
+          </div>
 
-      {/* WHAT-IF PREVIEW — static counterfactual simulation (no execution).
-          The wrapping `#simulate` div is the scroll target for deep-links. */}
-      <div id="simulate">
-      <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 280ms 180ms ease both", animationFillMode: "both" }}>
-        <SectionHeader>What-If Preview</SectionHeader>
-        <SimulatePanel recipeName={name} autoRun={autoSimulate} />
-      </PatchCard>
-      </div>
+          <div id="simulate" style={{ marginTop: "var(--s-5)" }}>
+          <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 280ms 180ms ease both", animationFillMode: "both" }}>
+            <SectionHeader>Preview what it would do</SectionHeader>
+            <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", margin: "0 0 12px" }}>
+              A dry run — shows the steps and any writes it would make, without actually running.
+            </div>
+            <SimulatePanel recipeName={name} autoRun={autoDiagnose || simulateDeepLink} />
+          </PatchCard>
+          </div>
+        </div>
+      )}
       </div>{/* end main column */}
 
       {/* related panel column */}

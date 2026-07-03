@@ -109,23 +109,25 @@ export function deriveRecipeStatus(input: RecipeStatusInput): RecipeStatusView {
   }
 
   // ── Needs-you rows ──────────────────────────────────────────────────────
+  // Deliberately NOT surfacing a "paused" row: the medallion already says
+  // "Paused" and the action bar already offers Resume — a second Resume here
+  // is pure redundancy.
   const needs: NeedRow[] = [];
 
-  if (!input.enabled && input.trigger !== "manual") {
+  // Disconnected connectors — grouped so N problems that all lead to the same
+  // Connections page read as one task, not a repetitive stack. A connector row
+  // supersedes a redundant auth/missing halt row for the same cause.
+  if (disconnected.length === 1) {
     needs.push({
-      key: "paused",
-      sentence: "This job is paused, but its schedule is still set — resume it to let it run again.",
-      fix: { action: "resume", label: "Resume" },
+      key: `connector:${disconnected[0]}`,
+      sentence: `It needs ${disconnected[0]} connected before it can run.`,
+      fix: { action: "connect-page", label: `Connect ${disconnected[0]}` },
     });
-  }
-
-  // Disconnected connectors first — a connector row supersedes a redundant
-  // auth/missing halt row for the same cause.
-  for (const c of disconnected) {
+  } else if (disconnected.length > 1) {
     needs.push({
-      key: `connector:${c}`,
-      sentence: `It needs ${c} connected before it can run.`,
-      fix: { action: "connect-page", label: `Connect ${c}` },
+      key: "connectors",
+      sentence: `It needs ${disconnected.length} connections set up before it can run: ${disconnected.join(", ")}.`,
+      fix: { action: "connect-page", label: "Go to Connections" },
     });
   }
 

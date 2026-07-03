@@ -131,10 +131,14 @@ describe("Recipe page — Band 1 status + Band 2 needs-you (R1)", () => {
     // Renamed control.
     expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
     expect(container.textContent).not.toContain("Uninstall");
-    // Danger zone is folded by default…
+    // Danger zone + heavy diagnostics are folded by default (calm short page)…
     expect(screen.queryByText("Delete this recipe")).toBeNull();
+    expect(screen.queryByText("Preview what it would do")).toBeNull();
+    expect(screen.queryByText("Check for problems")).toBeNull();
     // …and revealed by the page-level Show details toggle.
     fireEvent.click(screen.getByRole("button", { name: "Show details" }));
     await waitFor(() => expect(screen.getByText("Delete this recipe")).toBeTruthy());
+    expect(screen.getByText("Preview what it would do")).toBeTruthy();
+    expect(screen.getByText("Check for problems")).toBeTruthy();
   });
 });

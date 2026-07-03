@@ -25,12 +25,25 @@ describe("deriveRecipeStatus — medallion", () => {
     expect(v.needs).toEqual([]);
   });
 
-  it("paused wins over everything, muted tone", () => {
+  it("paused wins over everything, muted tone — and never a redundant Resume row", () => {
     const v = deriveRecipeStatus({ ...base, enabled: false, recentHalt: "tool_error" });
     expect(v.medallion.tone).toBe("muted");
     expect(v.medallion.title).toBe("Paused");
-    // …and a needs row nudges resume (non-manual trigger).
-    expect(v.needs.some((n) => n.fix?.action === "resume")).toBe(true);
+    // The medallion + action bar carry Resume; no duplicate row here.
+    expect(v.needs.some((n) => n.fix?.action === "resume")).toBe(false);
+    expect(v.needs.some((n) => n.key === "paused")).toBe(false);
+  });
+
+  it("groups multiple disconnected connectors into one row + single CTA", () => {
+    const v = deriveRecipeStatus({
+      ...base,
+      disconnectedConnectors: ["GitHub", "Slack", "Gmail"],
+    });
+    const rows = v.needs.filter((n) => n.key === "connectors" || n.key.startsWith("connector:"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].key).toBe("connectors");
+    expect(rows[0].sentence).toContain("3 connections");
+    expect(rows[0].fix?.label).toBe("Go to Connections");
   });
 
   it("halted → red medallion + a needs row with a fix", () => {
