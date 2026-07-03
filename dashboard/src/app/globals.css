@@ -9229,3 +9229,180 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ── Workers "Roster" (redesign W-A) ─────────────────────────────────────── */
+.wa-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-2);
+}
+.wa-head h2 {
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.wa-head h2 em {
+  font-style: normal;
+  color: var(--accent);
+}
+.wa-triage {
+  display: flex;
+  gap: var(--s-3);
+  margin: var(--s-4) 0;
+  flex-wrap: wrap;
+}
+.wa-triage a {
+  flex: 1 1 220px;
+  display: flex;
+  gap: var(--s-3);
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: var(--s-3) var(--s-4);
+}
+.wa-triage a:hover {
+  border-color: var(--line-3);
+}
+.wa-triage .big {
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  line-height: 1;
+}
+.wa-triage .lbl {
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+}
+.wa-triage .warnbar,
+.wa-triage .okbar,
+.wa-triage .accbar {
+  width: 4px;
+  align-self: stretch;
+  border-radius: 2px;
+}
+.wa-triage .warnbar {
+  background: var(--warn);
+}
+.wa-triage .okbar {
+  background: var(--ok);
+}
+.wa-triage .accbar {
+  background: var(--accent);
+}
+.wa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--s-4);
+}
+.wa-card {
+  padding: var(--s-4) var(--s-4) var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+.wa-card .top {
+  display: flex;
+  gap: var(--s-3);
+  align-items: center;
+}
+.wa-dial {
+  width: 64px;
+  height: 64px;
+  flex: none;
+  position: relative;
+}
+.wa-dial svg {
+  width: 64px;
+  height: 64px;
+  transform: rotate(-90deg);
+}
+.wa-dial .lvl {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-l);
+  font-weight: 700;
+}
+.wa-dial .lvl.muted {
+  color: var(--ink-2);
+  font-size: var(--fs-s);
+}
+.wa-card .who {
+  min-width: 0;
+}
+.wa-card .who .name {
+  font-weight: 700;
+  font-size: var(--fs-l);
+}
+.wa-card .who .role {
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+}
+.wa-leash {
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.wa-steps {
+  display: flex;
+  gap: 4px;
+}
+.wa-steps i {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--recess);
+}
+.wa-steps i.f {
+  background: var(--ok);
+}
+.wa-steps i.cap {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--pressed),
+    var(--pressed) 3px,
+    var(--recess) 3px,
+    var(--recess) 6px
+  );
+  border: 1px dashed var(--line-3);
+}
+.wa-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-2);
+  border-top: 1px solid var(--line-1);
+  padding-top: var(--s-3);
+}
+.wa-promote {
+  background: var(--ok-soft);
+  border: 1px solid rgba(91, 138, 79, 0.4);
+  border-radius: 6px;
+  padding: var(--s-3);
+  font-size: var(--fs-s);
+  color: var(--ok-text, #3f6b36);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-2);
+  align-items: center;
+}
+[data-theme="dark"] .wa-promote {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+}
