@@ -25,7 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-03 `feat/dashboard-today-page` — dashboard redesign Deliverable 2 (new "Today" page, `app/today/page.tsx`, ADDITIVE — does not replace Overview at `/`): single 840px column, hero (overnight run/halt count + 3-segment progress), §1 read-the-brief (newest unread inbox brief item), §2 clear-the-decisions (merged worst-first list reusing Deliverable 1's blast badges + pending worker verdicts + reversible-batch row), §3 glance-at-the-team (workers data). localStorage daily progress ticks. Added to sidebar `NAV_SECTIONS` "Today" section (`dashboard/src/lib/navRoutes.ts`), above Overview. Spec: docs/plans/dashboard-redesign-2026-07-03.md Deliverable 2. Follows PR #1089 (Deliverable 1, merged — reuses its blast-badge components). — build session
+- 2026-07-03 `feat/dashboard-recipe-run-health-extract` — Terminal+Copilot deck plan (docs/plans/dashboard-terminal-copilot-plan-2026-07-03.md) PR 1/10: extract `allRunsMap`/`successPct`/`avgDuration` out of `app/recipes/page.tsx` into `dashboard/src/lib/recipeRunHealth.ts` as pure functions, golden-master tested against current inline behavior, reconciled with any independent run-aggregation in `recipes/[...name]/page.tsx`. No UI change — data-layer prep for the future fleet pane. Worker-trust equivalent (PR 2) already landed as part of Deliverable 2 (#1090, `lib/workerTrust.ts`). — build session
 
 ## Recently closed (informal log, prune periodically)
 
