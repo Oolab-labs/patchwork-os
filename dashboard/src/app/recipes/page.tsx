@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { apiPath } from "@/lib/api";
 import { canonicalRecipeKey } from "@/lib/entityKey";
+import { computeAvgDuration, computeSuccessPct } from "@/lib/recipeRunHealth";
 import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
@@ -702,24 +703,11 @@ export default function RecipesPage() {
   }, [recipes]);
 
   function successPct(name: string): number | null {
-    const runs = allRunsMap.get(name);
-    if (!runs || runs.length === 0) return null;
-    const settled = runs.filter(
-      (r) => r.status !== "running" && r.status !== "queued" && r.status !== "pending",
-    );
-    if (settled.length === 0) return null;
-    const ok = settled.filter((r) => r.status === "done" || r.status === "success").length;
-    return (ok / settled.length) * 100;
+    return computeSuccessPct(allRunsMap.get(name));
   }
 
   function avgDuration(name: string): number | undefined {
-    const runs = allRunsMap.get(name);
-    if (!runs || runs.length === 0) return undefined;
-    const ds = runs
-      .map((r) => r.durationMs)
-      .filter((d): d is number => typeof d === "number" && d > 0);
-    if (ds.length === 0) return undefined;
-    return ds.reduce((s, d) => s + d, 0) / ds.length;
+    return computeAvgDuration(allRunsMap.get(name));
   }
 
   function isLive(name: string): boolean {
