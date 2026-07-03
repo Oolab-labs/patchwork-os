@@ -25,6 +25,8 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
+- 2026-07-03 `feat/dashboard-marketplace-storefront` — dashboard redesign page 6/7 (Marketplace → "Storefront", mockup M-A): `app/marketplace/page.tsx` — featured split hero (recipe of the week + "Before you install" facts: risk pill, approval behavior, connectors, network/file I/O, install count) above horizontal-scroll themed shelves (Start here, GitHub automation, etc); tiles (risk pill + ↓count + Install/Review); search replaces shelves with the flat filtered grid. Spec: docs/plans/dashboard-redesign-2026-07-03.md item 6. Follows PR #1085 (page 5, CI pending). — build session
+
 ## Recently closed (informal log, prune periodically)
 
 - 2026-07-03 `feat/dashboard-inbox-mailclient` (#1083) — dashboard redesign page 3/7 (Inbox → "Mail client", mockup I-B): investigated `app/inbox/page.tsx` — the two-pane mail-client layout was already built in an earlier session (`.inbox-twopane`/list/reader panes, folder chips, provenance strip, 65ch markdown, Replay/Trace/Archive/Delete toolbar, mobile back app-bar). Only change: removed a dead unused `RecipeIcon` component. Spec: docs/plans/dashboard-redesign-2026-07-03.md item 3. — merged
