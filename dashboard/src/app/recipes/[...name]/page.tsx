@@ -46,6 +46,7 @@ import {
 import { highlightYaml } from "@/components/patchwork/CodeBlock";
 import type { RelatedGroup } from "@/components/patchwork";
 import { detectConnectorsForRecipe } from "@/lib/recipeConnectors";
+import { computeAvgDuration, computeSuccessPct } from "@/lib/recipeRunHealth";
 import { fmtDuration } from "@/components/time";
 import { Skeleton } from "@/components/Skeleton";
 import { DetailsFold, ExpertToggle, useExpertMode } from "@/components/DetailsFold";
@@ -543,19 +544,8 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
   // Derived run metrics.
   const lastRun = runs[0];
   const recentRuns = runs.slice(0, 10);
-  const successPct = useMemo(() => {
-    const settled = runs.filter(
-      (r) => r.status !== "running" && r.status !== "queued" && r.status !== "pending",
-    );
-    if (settled.length === 0) return null;
-    const ok = settled.filter((r) => r.status === "done" || r.status === "success").length;
-    return (ok / settled.length) * 100;
-  }, [runs]);
-  const avgDurationMs = useMemo(() => {
-    const ds = runs.map((r) => r.durationMs).filter((d): d is number => typeof d === "number" && d > 0);
-    if (ds.length === 0) return undefined;
-    return ds.reduce((s, d) => s + d, 0) / ds.length;
-  }, [runs]);
+  const successPct = useMemo(() => computeSuccessPct(runs), [runs]);
+  const avgDurationMs = useMemo(() => computeAvgDuration(runs), [runs]);
 
   // Latest inbox output — PR #742 attaches inboxOutputs to RecipeRun.
   const latestInboxOutput = useMemo(() => {
