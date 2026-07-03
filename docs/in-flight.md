@@ -25,7 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-03 `feat/dashboard-recipes-gallery` — dashboard redesign page 1/7 (Recipes → "Gallery", mockup R-A): replaced the 7-col `<table>` in `app/recipes/page.tsx` with a responsive card grid (`auto-fill minmax(300px,1fr)`); filter chips (All/enabled/paused + per-trigger-type counts, new `triggerFilter` state); per-card trigger/live/off/lint pills, 14-bar `RunSparkBars`, meta footer (success% ring · cron/webhook · avg · last run), stop-propagated Run/toggle cluster; card click → recipe page. Dropped the side detail panel + `MobileRunBar` (+ now-unused `RecipeDetailPanel`/`RecipeYamlPanel`/archive/delete handlers/`recentRunsMap`) — navigation replaces it; archive/delete move to the Dossier page. New token-based `.recipes-gallery-*`/`.rgc-*` CSS (both themes). fontSize ratchet lowered 9→8 (removed an inline `fontSize:32`). Kept search/`/`/Reload/+Add/connector-badge/HintCard/j·k nav/run modal/enable-disable confirm/connector health + all empty/error/loading states. Spec: user's 7-page redesign task. Next: page 2 (Recipe detail → Dossier). — build session
+- 2026-07-03 `feat/dashboard-recipe-dossier` — dashboard redesign page 2/7 (Recipe detail → "Dossier", mockup D-A): `app/recipes/[...name]/` — sticky 280px identity rail (name/status/desc, Run now/Enable/Edit YAML, facts list, relation links, quiet danger zone at bottom) + content stack (doctor-first card, YAML "what it does", run history). Kills the Overview/Edit/Plan tab bar in `layout.tsx`; those become rail links. Spec: docs/plans/dashboard-redesign-2026-07-03.md item 2. Follows PR #1080 (page 1, merged). — build session
 
 ## Recently closed (informal log, prune periodically)
 

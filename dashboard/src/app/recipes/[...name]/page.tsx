@@ -1,18 +1,20 @@
 "use client";
 
 /**
- * Recipe detail hub — Overview tab.
+ * Recipe detail hub — Overview tab ("Dossier", mockup D-A).
  *
  * Lands when the user clicks a row on `/recipes`. Surfaces:
- *  - Summary card (trigger, schedule, last-run outcome, success rate, avg duration)
- *  - Recent runs (last 5-10, RunChip rows; "View all runs" link)
- *  - Halt summary (categorised; "View halts" link) — only when halts exist
+ *  - Status header (Band 1) + "Needs you" (Band 2)
+ *  - Doctor findings — only rendered when there are blockers to fix
+ *  - "What it does" — raw recipe YAML
+ *  - Run history (last 5-10, RunChip rows; "View all runs" link) + halts
  *  - Connectors required (ConnectorChip + health dot)
  *  - Latest inbox output (when bridge surfaces `inboxOutputs`; PR #742+)
- *  - Controls: Run now, Enable/Disable, Edit, Plan, Compare, Uninstall
+ *  - Controls: Plan, Simulate, Compare, Danger zone (delete)
  *
- * The shared `layout.tsx` owns the breadcrumb, H1, status pill, RelationStrip,
- * and tab bar — this file is just the body.
+ * The shared `layout.tsx` owns the breadcrumb, identity, status pill,
+ * primary actions (Run now / Pause-Resume / Edit YAML), and relation
+ * links in the sticky rail — this file is just the `.rd-stack` body.
  */
 
 import Link from "next/link";
@@ -24,6 +26,7 @@ import {
 } from "@/lib/simulation";
 import { DoctorPanel } from "./_components/DoctorPanel";
 import { SimulatePanel } from "./_components/SimulatePanel";
+import { RailProvider, type RailData } from "./_components/RailContext";
 import RecipeEditPage from "./_edit/page";
 import RecipePlanPage from "./_plan/page";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -35,18 +38,16 @@ import { Dialog } from "@/components/Dialog";
 import {
   ConnectorChip,
   EmptyState,
-  EntityTimeline,
   InboxChip,
   PatchCard,
   RelatedPanel,
   RunChip,
-  StatusPill,
 } from "@/components/patchwork";
-import type { TimelineEvent, RelatedGroup } from "@/components/patchwork";
+import { highlightYaml } from "@/components/patchwork/CodeBlock";
+import type { RelatedGroup } from "@/components/patchwork";
 import { detectConnectorsForRecipe } from "@/lib/recipeConnectors";
 import { fmtDuration } from "@/components/time";
 import { Skeleton } from "@/components/Skeleton";
-import { StatusMedallion } from "@/components/StatusMedallion";
 import { DetailsFold, ExpertToggle, useExpertMode } from "@/components/DetailsFold";
 import { describeNextRun, humanizeSchedule } from "@/lib/humanSchedule";
 import {
@@ -417,6 +418,20 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
     [recipes, name],
   );
 
+  // Raw YAML — same single-recipe endpoint the Edit tab uses to seed its
+  // editor buffer. Fetched read-only here for the "What it does" card.
+  const { data: yamlContent } = useBridgeFetch<string>(
+    `/api/bridge/recipes/${encodeURIComponent(name)}`,
+    {
+      intervalMs: 30_000,
+      transform: (raw) => {
+        if (typeof raw === "string") return raw;
+        const obj = raw as { content?: string } | null;
+        return obj?.content ?? "";
+      },
+    },
+  );
+
   // Runs filtered by recipe — bridge supports ?recipe= filter.
   // intervalMs is adaptive: poll at 3s when any run is in-flight, 10s otherwise.
   const [runsIntervalMs, setRunsIntervalMs] = useState(10_000);
@@ -479,6 +494,21 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
   const { data: haltSummary } = useBridgeFetch<HaltSummary>(
     `/api/bridge/runs/halt-summary?recipe=${encodeURIComponent(name)}`,
     { intervalMs: 30_000 },
+  );
+
+  // Passive doctor summary — same `/recipes/doctor` endpoint the DoctorPanel
+  // (folded under "Show details") calls on-demand. Polled quietly here so
+  // the "Why hasn't this run?" blockers card can render up front without
+  // requiring the operator to click "Run diagnosis" first.
+  const { data: doctorSummary } = useBridgeFetch<{
+    static: { issues: Array<{ level: "error" | "warning"; code: string; message: string; stepId?: string }> };
+    ok: boolean;
+  }>(`/api/bridge/recipes/doctor?recipe=${encodeURIComponent(name)}`, {
+    intervalMs: 60_000,
+  });
+  const doctorBlockers = useMemo(
+    () => doctorSummary?.static?.issues ?? [],
+    [doctorSummary],
   );
 
   // Connector health — best-effort.
@@ -721,6 +751,49 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
     });
   }, [recipe, runs.length, lastRunDerived, lastRun, haltSummary, humanSchedule, disconnectedConnectors]);
 
+  // ── Rail data — published up to the sticky identity rail in layout.tsx.
+  // The rail can't read this page's local state directly (it lives one
+  // level up in the tree), so we hand it everything it needs to render the
+  // primary actions, facts list, and "needs you" rows.
+  const railData: RailData | null = useMemo(() => {
+    if (!recipe) return null;
+    return {
+      ready: true,
+      enabled: recipe.enabled !== false,
+      trigger: recipe.trigger ?? "manual",
+      scheduleText: scheduleString,
+      lastRunLabel: lastRunDerived?.label ?? "never",
+      lastRunTone: lastRunDerived?.tone,
+      lastRunWhen: lastRunDerived?.when,
+      successPct,
+      avgDuration: formatDuration(avgDurationMs),
+      connectors: requiredConnectors.map((id) => ({
+        id,
+        healthy: connectorHealthMap.get(id),
+      })),
+      medallionTone: statusView.medallion.tone,
+      needs: statusView.needs,
+      runDisabled: recipe.enabled === false,
+      toggling,
+      onRunNow: () => setRunModalOpen(true),
+      onToggle: () => void handleToggle(),
+      onDelete: () => void handleUninstall(),
+      onResumeFix: () => void handleToggle(),
+    };
+  }, [
+    recipe,
+    scheduleString,
+    lastRunDerived,
+    successPct,
+    avgDurationMs,
+    requiredConnectors,
+    connectorHealthMap,
+    statusView,
+    toggling,
+    handleToggle,
+    handleUninstall,
+  ]);
+
   // Still fetching the recipe list — render a skeleton in the hub body shape
   // rather than the full layout pre-filled with "manual"/"never"/"—"
   // placeholders, which read as real (but empty) data on every navigation.
@@ -807,10 +880,13 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
     },
   ];
 
+  // `recipe` is guaranteed non-null past the two early-returns above, so
+  // `railData` (derived from it) is too — non-null assertion is safe here.
   return (
+    <RailProvider value={railData as RailData}>
     <div className="recipe-hub-layout">
       {/* main column */}
-      <div className="recipe-hub-main" style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)", minWidth: 0 }}>
+      <div className="rd-stack recipe-hub-main" style={{ minWidth: 0 }}>
       <RunModal
         open={runModalOpen}
         recipe={recipe}
@@ -819,71 +895,11 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
         running={runStarting}
       />
 
-      {/* BAND 1 — status header. The one dominant "is it okay?" object, plus
-          the primary actions inline. Raw cron / success% / trigger stay in the
-          Summary card below (folded in a later slice), reachable via details. */}
-      {recipe && (
-        <div
-          className="hub-card"
-          style={{
-            padding: "var(--s-4)",
-            display: "flex",
-            flexDirection: "column",
-            gap: "var(--s-4)",
-            animation: "hubCardIn 200ms ease both",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "var(--s-4)",
-              flexWrap: "wrap",
-            }}
-          >
-            <StatusMedallion
-              tone={statusView.medallion.tone}
-              title={statusView.medallion.title}
-              pulse={statusView.medallion.title === "Running now"}
-            >
-              {statusView.medallion.sentence}
-            </StatusMedallion>
-            <ExpertToggle />
-          </div>
-          <div className="hub-action-bar">
-            <button
-              type="button"
-              className="btn primary hub-control-btn"
-              onClick={() => setRunModalOpen(true)}
-              disabled={recipe.enabled === false}
-              title={recipe.enabled === false ? "This job is paused — resume it first" : "Run this job now"}
-            >
-              ▶ Run now
-            </button>
-            <button
-              type="button"
-              className="btn ghost hub-control-btn"
-              onClick={() => void handleToggle()}
-              disabled={toggling}
-              aria-pressed={recipe.enabled !== false}
-            >
-              {toggling
-                ? recipe.enabled === false
-                  ? "Resuming…"
-                  : "Pausing…"
-                : recipe.enabled === false
-                  ? "Resume"
-                  : "Pause"}
-            </button>
-            {/* Edit lives in the tab bar (layout.tsx) — no duplicate inline button. */}
-          </div>
-        </div>
-      )}
-
       {/* BAND 2 — "Needs you". Conditional: only renders when something is
           actually waiting on the operator. Each row = one plain sentence + one
-          fix button, derived from the owner-level halt phrasing map. */}
+          fix button, derived from the owner-level halt phrasing map. Distinct
+          from the doctor card below — this is runtime/status-derived, the
+          doctor card is static lint/policy findings. */}
       {recipe && statusView.needs.length > 0 && (
         <div
           className="hub-card"
@@ -927,82 +943,73 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
         </div>
       )}
 
-      {/* SUMMARY */}
-      <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animationDelay: "0ms", animation: "hubCardIn 200ms ease both" }}>
-        <SectionHeader>Summary</SectionHeader>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-            gap: "var(--s-4)",
-            fontSize: "var(--fs-s)",
-          }}
-        >
-          <div>
-            <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>Trigger</div>
-            <div className="stat-value" style={{ fontFamily: "var(--font-mono)", marginTop: 6 }}>{recipe?.trigger ?? "manual"}</div>
-          </div>
-          <div>
-            <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>Schedule</div>
-            <div className="stat-value" style={{ fontFamily: "var(--font-mono)", marginTop: 6 }}>{scheduleString}</div>
-          </div>
-          <div>
-            <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>Last run</div>
-            <div className="stat-value" style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
-              {lastRunDerived ? (
-                <>
-                  <StatusPill tone={lastRunDerived.tone}>{lastRunDerived.label}</StatusPill>
-                  <span style={{ color: "var(--ink-3)" }}>{lastRunDerived.when}</span>
-                </>
-              ) : (
-                <span style={{ color: "var(--ink-3)" }}>never</span>
-              )}
-            </div>
-          </div>
-          <div>
-            <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>Success rate</div>
-            <div className="stat-value" style={{ fontFamily: "var(--font-mono)", marginTop: 6, fontVariantNumeric: "tabular-nums" }}>
-              {successPct == null ? "—" : `${successPct.toFixed(0)}%`}
-              {runs.length > 0 && (
-                <span style={{ color: "var(--ink-3)", marginLeft: 4, fontSize: "var(--fs-xs)" }}>
-                  over {runs.length}
+      {/* WHY HASN'T THIS RUN? — static doctor findings (lint/write-policy).
+          Only rendered when there are blockers; a clean recipe skips it. */}
+      {doctorBlockers.length > 0 && (
+        <PatchCard className="rd-sec">
+          <h3>
+            Why hasn&apos;t this run?{" "}
+            <span className="pill warn">{doctorBlockers.length} blocker{doctorBlockers.length === 1 ? "" : "s"}</span>
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {doctorBlockers.map((b, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: static issues have no stable id
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                  fontSize: "var(--fs-s)",
+                }}
+              >
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    marginTop: 5,
+                    flexShrink: 0,
+                    background: b.level === "error" ? "var(--err)" : "var(--warn)",
+                  }}
+                />
+                <span>
+                  {b.stepId && <span className="mono muted">[{b.stepId}] </span>}
+                  {b.message}
                 </span>
-              )}
-            </div>
+              </div>
+            ))}
           </div>
-          <div>
-            <div style={{ color: "var(--ink-3)", fontSize: "var(--fs-xs)" }}>Avg duration</div>
-            <div className="stat-value" style={{ fontFamily: "var(--font-mono)", marginTop: 6, fontVariantNumeric: "tabular-nums" }}>
-              {formatDuration(avgDurationMs)}
-            </div>
-          </div>
-        </div>
+        </PatchCard>
+      )}
+
+      {/* WHAT IT DOES — raw recipe YAML, read-only. */}
+      <PatchCard className="rd-sec">
+        <h3>
+          What it does
+          <ExpertToggle />
+        </h3>
+        {yamlContent ? (
+          <pre className="rd-yaml">{highlightYaml(yamlContent)}</pre>
+        ) : (
+          <div className="rd-empty">Loading recipe definition…</div>
+        )}
       </PatchCard>
 
-      {/* RECENT RUNS */}
-      <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 220ms 40ms ease both", animationFillMode: "both" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <SectionHeader>Recent runs</SectionHeader>
+      {/* RUN HISTORY */}
+      <PatchCard className="rd-sec">
+        <h3>
+          Run history
           <Link
             href={`/runs?recipe=${encodeURIComponent(name)}`}
             style={{ fontSize: "var(--fs-xs)", color: "var(--accent)", textDecoration: "none" }}
           >
             View all runs →
           </Link>
-        </div>
+        </h3>
         {recentRuns.length === 0 ? (
-          <div style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 8,
-            padding: "24px 0",
-            color: "var(--ink-3)",
-            fontSize: "var(--fs-s)",
-            textAlign: "center",
-          }}>
-            <span style={{ fontSize: 24, opacity: 0.4 }}>▷</span>
-            No runs yet. Use <strong style={{ color: "var(--ink-2)" }}>Run now</strong> above to start one.
+          <div className="rd-empty">
+            No runs yet. Use <strong style={{ color: "var(--ink-2)" }}>Run now</strong> in the rail to start one.
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column" }}>
@@ -1237,6 +1244,7 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
         <RelatedPanel groups={relatedGroups} />
       </aside>
     </div>
+    </RailProvider>
   );
 }
 
