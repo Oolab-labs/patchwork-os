@@ -14,10 +14,9 @@ import { isNoiseEvent } from "@/lib/activityNoise";
 import { isHaltStatus } from "@/lib/runStatus";
 import {
   AnimatedNumber,
-  QuiltHero,
+  RunSparkBars,
   Sparkline,
 } from "@/components/patchwork";
-import { RecipeChip, ToolChip } from "@/components/patchwork/entity";
 import { canonicalRecipeKey } from "@/lib/entityKey";
 import {
   RecipeLeaderboard,
@@ -25,7 +24,6 @@ import {
 } from "@/components/RecipeLeaderboard";
 import { LiveRunsStrip, type LiveRun } from "@/components/LiveRunsStrip";
 import { LiveWire } from "@/components/LiveWire";
-import { FeaturedRecipeAside } from "@/components/FeaturedRecipeAside";
 import { useRunRecipe } from "@/hooks/useRunRecipe";
 
 // ---------------------------------------------------------------------------
@@ -136,20 +134,6 @@ function activityRecipe(e: ActivityEvent): string | undefined {
   return undefined;
 }
 
-function greetingFromHour(h: number): string {
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
-}
-
-function useGreeting(): string {
-  const [g, setG] = useState("");
-  useEffect(() => {
-    setG(greetingFromHour(new Date().getHours()));
-  }, []);
-  return g;
-}
-
 // Compact uptime renderer for the hero meta line — matches the wireframe's
 // "4d 12h uptime" rhythm. Drops smaller-than-relevant units so a 3-day-old
 // bridge reads "3d 4h", a fresh restart reads "12m", not "0d 0h 12m".
@@ -206,17 +190,6 @@ function TileIconOctagon() {
       <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2" />
     </svg>
   );
-}
-
-function parseToolCallTotal(text: string): number {
-  if (!text) return 0;
-  let total = 0;
-  for (const line of text.split("\n")) {
-    if (!line || line.startsWith("#")) continue;
-    const m = line.match(/^bridge_tool_calls_total(?:\{[^}]*\})?\s+(\d+(?:\.\d+)?)/);
-    if (m) total += Number.parseFloat(m[1]);
-  }
-  return Math.round(total);
 }
 
 // ---------------------------------------------------------------------------
@@ -281,414 +254,12 @@ function eventMatchesFilter(e: ActivityEvent, f: ActivityFilter): boolean {
 
 
 // ---------------------------------------------------------------------------
-// Health card
-// ---------------------------------------------------------------------------
-
-
-// ---------------------------------------------------------------------------
-// Needs-attention band
-// ---------------------------------------------------------------------------
-
-/**
- * Mission-control attention band.
- *
- * Shows three signals: pending approvals, halted runs in last 24h, and
- * error-status runs in last 24h. Each is a clickable chip that deep-links
- * into the relevant filtered surface. When all three are zero we render a
- * calm "all clear" state instead of an empty card — the card always
- * provides value (either "action needed" or "nothing broken").
- *
- * Deep-link verification:
- *  - /approvals         — no filter needed, approvals page shows all pending
- *  - /runs?halt=1       — runs/page.tsx reads searchParams.get("halt") === "1"
- *  - /runs?status=error — runs/page.tsx reads searchParams.get("status") but
- *                         the filter is named differently; use /runs?halt=1
- *                         for halts and /runs unfiltered for general errors
- *  - /activity          — activity/page.tsx is unfiltered entry point
- */
-function NeedsAttentionBand({
-  pendingCount,
-  haltCount24h,
-  failingCount24h,
-  bridgeOk,
-}: {
-  pendingCount: number;
-  haltCount24h: number;
-  failingCount24h: number;
-  bridgeOk: boolean;
-}) {
-  const items = buildAttentionItems({ pendingCount, haltCount24h, failingCount24h });
-
-  const allClear = items.length === 0;
-
-  if (!bridgeOk) {
-    return (
-      <div className="attention-offline">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--err)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span>
-          <strong className="attention-offline-label">Bridge offline</strong>
-          {" — connect to see agent status. "}
-          <Link href="/connections" className="attention-offline-link">
-            Check connections →
-          </Link>
-        </span>
-      </div>
-    );
-  }
-
-  if (allClear) {
-    return (
-      <div className="attention-clear">
-        <div className="attention-clear-ring" aria-hidden="true">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="attention-clear-ok">All clear</span>
-          <span
-            className="pw-live-dot"
-            aria-label="All systems healthy"
-            title="No issues detected"
-          />
-          <span className="attention-clear-sub">
-            No approvals pending · no halts · no failures
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="attention-band" data-severity={bandSeverity(items)}>
-      <span className="attention-band-label">Needs attention</span>
-      <div className="attention-chips">
-        {items.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`attention-chip attention-chip--${item.severity}`}
-            aria-label={`${item.count} ${item.label} — view all`}
-          >
-            <span className="attention-chip-count">{item.count}</span>
-            <span className="attention-chip-label">{item.label}</span>
-            <span className="attention-chip-arrow" aria-hidden="true">→</span>
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Recipes kanban (Draft / Paused / Active) — Framley/Kilo style
-// ---------------------------------------------------------------------------
-
-/** Derive stable pastel avatar colour from recipe name. */
-// Theme-redesign AP-04: a fixed 5-tone muted palette instead of a 360° hue
-// rotation, so recipe avatars stop forming a rainbow that competes with the
-// semantic status hues. Tones are dark + low-chroma (warm taupe / sage /
-// slate / mauve / ochre) so the white initials (.rag3-avatar) clear ~5:1+ in
-// both themes. (The audit's light-pastel palette assumed dark ink; these
-// initials are #fff, so the tones must stay dark.)
-const AVATAR_PALETTE = ["#6b5d4f", "#5a6b50", "#4f5d6b", "#6b5060", "#6b5a3a"];
-function ragColor(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return AVATAR_PALETTE[h % AVATAR_PALETTE.length];
-}
-
-/** Up to 2 uppercase initials from a recipe name. */
-function ragInitials(name: string): string {
-  const parts = name.replace(/[-_./]/g, " ").split(" ").filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-/** Short role text per column. */
-function ragRole(
-  kind: "draft" | "paused" | "active",
-  name: string,
-  runCount: number,
-  hasHalt: boolean,
-): string {
-  if (kind === "draft") return "No recent runs";
-  if (kind === "paused") return "Paused";
-  if (hasHalt) return `${runCount} run${runCount !== 1 ? "s" : ""} · halted`;
-  return `${runCount} run${runCount !== 1 ? "s" : ""}`;
-}
-
-/** Tag from last segment of recipe name for category chip. */
-function ragTag(name: string): string {
-  const n = name.toLowerCase();
-  if (/tweet|twitter|social/.test(n)) return "SOCIAL";
-  if (/github|commit|pull.?req|code.?review|pr.?review/.test(n)) return "GITHUB";
-  if (/gmail|email|inbox|mail/.test(n)) return "EMAIL";
-  if (/slack/.test(n)) return "SLACK";
-  if (/linear/.test(n)) return "LINEAR";
-  if (/notion/.test(n)) return "NOTION";
-  if (/health|monitor|check|alert|watch|status/.test(n)) return "OPS";
-  if (/snapshot|compact|compac/.test(n)) return "OPS";
-  if (/daily|morning|weekly|hourly|schedule|cron/.test(n)) return "CRON";
-  if (/journal|diary|ambient|note|memo/.test(n)) return "NOTES";
-  if (/report|digest|summary|brief/.test(n)) return "REPORT";
-  if (/test|debug|ci|build/.test(n)) return "CI";
-  if (/customer|support|ticket|escalat/.test(n)) return "SUPPORT";
-  if (/secur|auth/.test(n)) return "SECURITY";
-  if (/usage|analytic|metric/.test(n)) return "ANALYTICS";
-  if (/deploy|release|infra/.test(n)) return "DEVOPS";
-  if (/sync|mirror|replicate|backup/.test(n)) return "SYNC";
-  if (/webhook|event|trigger/.test(n)) return "EVENTS";
-  const first = name.replace(/[-_]/g, " ").split(/\s+/).find(w => w.length > 2) ?? "RECIPE";
-  return first.slice(0, 9).toUpperCase();
-}
-function tagColorClass(tag: string): string {
-  switch (tag) {
-    case "OPS": case "CI": case "DEVOPS": case "SECURITY": return "rag3-chip--tag-blue";
-    case "CRON": case "SCHEDULE": case "EVENTS": case "SYNC": return "rag3-chip--tag-purple";
-    case "SOCIAL": case "MARKETING": return "rag3-chip--tag-pink";
-    case "NOTES": case "DOCS": case "REPORT": return "rag3-chip--tag-slate";
-    case "SUPPORT": case "INBOX": return "rag3-chip--tag-amber";
-    case "GITHUB": case "LINEAR": case "NOTION": case "ANALYTICS": return "rag3-chip--tag-teal";
-    case "EMAIL": case "SLACK": return "rag3-chip--tag-indigo";
-    default: return "";
-  }
-}
-
-/** Calendar icon inline. */
-function RagCalIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-      <rect x="1" y="2" width="12" height="11" rx="2" />
-      <path d="M1 6h12M5 1v2M9 1v2" />
-    </svg>
-  );
-}
-
-/** Ring/ok-rate icon inline. */
-function RagRingIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-      <circle cx="7" cy="7" r="5" />
-    </svg>
-  );
-}
-
-/** Column status icon */
-function RagColIcon({ kind }: { kind: "draft" | "paused" | "active" }) {
-  if (kind === "active") return (
-    <svg width="10" height="10" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
-      <polygon points="3,1 13,7 3,13" />
-    </svg>
-  );
-  if (kind === "paused") return (
-    <svg width="10" height="10" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
-      <rect x="2" y="1" width="3.5" height="12" rx="1"/><rect x="8.5" y="1" width="3.5" height="12" rx="1"/>
-    </svg>
-  );
-  // draft — circle
-  return (
-    <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-      <circle cx="7" cy="7" r="5" />
-    </svg>
-  );
-}
-
-/**
- * Framley/Kilo-style three-column recipe kanban.
- * Draft | Paused | Active — each card shows avatar initials, name, run summary, and chips.
- */
-function RecipesAtAGlance({
-  runs,
-  recipes,
-}: {
-  runs: LiveRun[];
-  recipes: Recipe[];
-}) {
-  const { run: runRecipe, pending: runPending } = useRunRecipe();
-  const dayMs = 24 * 60 * 60 * 1000;
-
-  const runMap = new Map<string, { count: number; ok: number; lastAt: number; hasHalt: boolean }>();
-  for (const r of runs) {
-    if (!r.recipeName) continue;
-    const key = canonicalRecipeKey(r.recipeName);
-    const e = runMap.get(key) ?? { count: 0, ok: 0, lastAt: 0, hasHalt: false };
-    const isOk = r.status === "done" || r.status === "success";
-    runMap.set(key, {
-      count: e.count + 1,
-      ok: e.ok + (isOk ? 1 : 0),
-      lastAt: Math.max(e.lastAt, r.startedAt),
-      hasHalt: e.hasHalt || isHaltStatus(r.status),
-    });
-  }
-
-  const draft: Recipe[] = [];
-  const paused: Recipe[] = [];
-  const active: Recipe[] = [];
-
-  for (const recipe of recipes) {
-    if (recipe.enabled === false) {
-      paused.push(recipe);
-    } else {
-      const s = runMap.get(canonicalRecipeKey(recipe.name));
-      if (s && Date.now() - s.lastAt < 7 * dayMs) active.push(recipe);
-      else draft.push(recipe);
-    }
-  }
-  active.sort((a, b) => {
-    const as = runMap.get(canonicalRecipeKey(a.name));
-    const bs = runMap.get(canonicalRecipeKey(b.name));
-    return (bs?.lastAt ?? 0) - (as?.lastAt ?? 0);
-  });
-
-  // Active first: it's what's actually running and the column the operator
-  // cares about. Paused is an archive (often the bulk of recipes) and reads
-  // last so it stops dominating the board's prominent middle. Draft sits
-  // between as the "not yet live" middle ground.
-  const cols = [
-    { kind: "active" as const, label: "Active", items: active },
-    { kind: "draft"  as const, label: "Draft",  items: draft  },
-    { kind: "paused" as const, label: "Paused", items: paused },
-  ];
-
-  const defaultTab = active.length > 0 ? "active" : draft.length > 0 ? "draft" : "paused";
-  // Hook must be above the early return to satisfy Rules of Hooks
-  const [activeTab, setActiveTab] = useState<"draft" | "paused" | "active">(defaultTab);
-
-  if (recipes.length === 0) return null;
-
-  return (
-    <div className="card card--pg mb-5">
-      {/* Section header row */}
-      <div className="rag3-hd">
-        <h2 className="rag3-title">
-          Your Recipes
-          <span className="rag3-title-count">{recipes.length}</span>
-        </h2>
-        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-          <Link href="/recipes" className="btn sm ghost">View all</Link>
-          <Link href="/recipes/new" className="btn sm primary">+ New</Link>
-        </div>
-      </div>
-
-      {/* Mobile tab strip — hidden on desktop via CSS */}
-      <div className="rag3-tabs">
-        {cols.map(({ kind, label, items }) => (
-          <button
-            key={kind}
-            type="button"
-            className={`rag3-tab${activeTab === kind ? " rag3-tab--active" : ""}`}
-            onClick={() => setActiveTab(kind)}
-          >
-            {label}
-            <span className="rag3-tab-count">{items.length}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Three-column kanban */}
-      <div className="rag3-grid" data-active-tab={activeTab}>
-        {cols.map(({ kind, label, items }) => (
-          <div key={kind} className="rag3-col" data-kind={kind}>
-            {/* Column header */}
-            <div className="rag3-col-hd">
-              <span className={`rag3-col-icon rag3-col-icon--${kind}`}>
-                <RagColIcon kind={kind} />
-              </span>
-              <span className="rag3-col-label">{label}</span>
-              <span className="rag3-col-count">{items.length}</span>
-              <Link
-                href={`/recipes/new?status=${kind}`}
-                className="rag3-col-add"
-                aria-label={`New ${label.toLowerCase()} recipe`}
-                title={`New ${label.toLowerCase()} recipe`}
-              >
-                <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <line x1="7" y1="1" x2="7" y2="13"/><line x1="1" y1="7" x2="13" y2="7"/>
-                </svg>
-              </Link>
-            </div>
-
-            {/* Card stack */}
-            <div className="rag3-cards">
-              {items.length === 0 && (
-                <p className="rag3-empty">No recipes here</p>
-              )}
-              {items.slice(0, 6).map((recipe) => {
-                const stats = runMap.get(canonicalRecipeKey(recipe.name));
-                const refDate = stats?.lastAt ?? recipe.installedAt;
-                const dateLabel = refDate
-                  ? (() => {
-                      const d = new Date(refDate);
-                      const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-                      return `${d.getDate()} ${M[d.getMonth()]}`.toUpperCase();
-                    })()
-                  : null;
-                const roleText = ragRole(kind, recipe.name, stats?.count ?? 0, stats?.hasHalt ?? false);
-                const isQueueing = Boolean(runPending[canonicalRecipeKey(recipe.name)]);
-
-                return (
-                  <div key={recipe.name} className={`rag3-card rag3-card--${kind}`}>
-                    <Link
-                      href={`/recipes/${encodeURIComponent(recipe.name)}/edit`}
-                      className="rag3-card-link"
-                    >
-                      <div className="rag3-card-top">
-                        <span className="rag3-avatar" style={{ background: ragColor(recipe.name) }} aria-hidden="true">
-                          {ragInitials(recipe.name)}
-                        </span>
-                        <div className="rag3-card-info">
-                          <div className="rag3-card-name" title={recipeDisplayName(recipe.name)}>{recipeDisplayName(recipe.name)}</div>
-                          <div className="rag3-card-role">{roleText}</div>
-                        </div>
-                      </div>
-                      <div className="rag3-card-chips">
-                        {dateLabel && (
-                          <span className="rag3-chip">
-                            <RagCalIcon />{dateLabel}
-                          </span>
-                        )}
-                        {stats && (
-                          <span className="rag3-chip">
-                            <RagRingIcon />{stats.ok}/{stats.count}
-                          </span>
-                        )}
-                        {(() => { const t = ragTag(recipe.name); return <span className={`rag3-chip rag3-chip--tag ${tagColorClass(t)}`}>{t}</span>; })()}
-                      </div>
-                    </Link>
-                    {kind === "active" && (
-                      <button
-                        type="button"
-                        className="rag3-card-run"
-                        aria-label={`Run ${recipeDisplayName(recipe.name)} now`}
-                        title={`Run ${recipeDisplayName(recipe.name)}`}
-                        disabled={isQueueing}
-                        onClick={(e) => { e.preventDefault(); void runRecipe(canonicalRecipeKey(recipe.name)); }}
-                      >
-                        {isQueueing ? "…" : "▶"}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-              {items.length > 6 && (
-                <Link href="/recipes" className="rag3-more">
-                  +{items.length - 6} more
-                </Link>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
 export default function HomePage() {
   const bridgeStatus = useBridgeStatus();
+  const { run: runRecipe, pending: runPending } = useRunRecipe();
   const { data: health } = useBridgeFetch<BridgeHealth>(
     "/api/bridge/health",
     { intervalMs: 5000 },
@@ -698,20 +269,17 @@ export default function HomePage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [runs, setRuns] = useState<LiveRun[]>([]);
   const [haltCount24hState, setHaltCount24h] = useState<number | null>(null);
-  const [toolCallTotal, setToolCallTotal] = useState(0);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [syncSpinning, setSyncSpinning] = useState(false);
   const tickRef = useRef<() => void>(() => {});
-  const greet = useGreeting();
 
   useEffect(() => {
     let alive = true;
     const tick = async () => {
       try {
-        const [approvalsRes, metricsRes, recipesRes, activityRes, runsRes, haltRes] =
+        const [approvalsRes, recipesRes, activityRes, runsRes, haltRes] =
           await Promise.all([
             fetch(apiPath("/api/bridge/approvals")),
-            fetch(apiPath("/api/bridge/metrics")),
             fetch(apiPath("/api/bridge/recipes")),
             // Bumped from last=200 when the curve switched from 60-min to
             // 24h window — 200 events would undercount the 24h chart on
@@ -733,7 +301,6 @@ export default function HomePage() {
         const approvalsData = approvalsRes.ok
           ? ((await approvalsRes.json()) as Pending[])
           : [];
-        const metricsText = metricsRes.ok ? await metricsRes.text() : "";
         const recipesData = recipesRes.ok
           ? await recipesRes.json()
           : { recipes: [] };
@@ -743,7 +310,6 @@ export default function HomePage() {
 
         if (!alive) return;
 
-        const total = parseToolCallTotal(metricsText);
         const list: Recipe[] = Array.isArray(recipesData)
           ? recipesData
           : (recipesData as { recipes?: Recipe[] }).recipes ?? [];
@@ -755,7 +321,6 @@ export default function HomePage() {
           ? ((await haltRes.json()) as { total?: number })
           : null;
 
-        setToolCallTotal(total);
         setPendingApprovals(Array.isArray(approvalsData) ? approvalsData : []);
         setRecipes(list);
         setRuns(Array.isArray(runsData.runs) ? runsData.runs : []);
@@ -902,42 +467,6 @@ export default function HomePage() {
     return { toolsToday: today, toolsTrendLabel: label };
   })();
 
-  // Hero headline — lead with the one thing the operator should act on.
-  // Approvals waiting come first (they block agent work and need a human),
-  // then a calm "what happened" summary, then a reassuring quiet state.
-  // Every number is real bridge data; the copy stays scannable instead of
-  // burying the signal in narrative ("stitched N patches… needs a nod").
-  const patchesStitched = activityEvents.filter(
-    (e) => e.kind === "recipe" || e.kind === "tool",
-  ).length;
-  const headline = bridgeStatus.ok ? (
-    pendingCount > 0 ? (
-      <>
-        <span className="num">{pendingCount}</span>{" "}
-        {pendingCount === 1 ? "approval is" : "approvals are"}{" "}
-        <span className="accent">waiting for you.</span>
-      </>
-    ) : patchesStitched > 0 ? (
-      <>
-        <span className="num">{patchesStitched.toLocaleString()}</span>{" "}
-        agent {patchesStitched === 1 ? "action" : "actions"} overnight —{" "}
-        <span className="accent">all clear.</span>
-      </>
-    ) : (
-      <>Your agents are quiet. <span className="accent">Nothing needs you right now.</span></>
-    )
-  ) : (
-    <>Bridge offline — start it to see live agent activity here.</>
-  );
-
-  const summary = !bridgeStatus.ok
-    ? "Once the bridge is running, this dashboard will reflect live activity from your local agents."
-    : runsCount24h === 0
-      ? "Bridge connected. No recipe runs in the last 24h."
-      : haltCount24h > 0
-        ? `Bridge connected. ${runsCount24h} run${runsCount24h !== 1 ? "s" : ""} in 24h — ${haltCount24h} halted.`
-        : `Bridge connected. ${runsCount24h} run${runsCount24h !== 1 ? "s" : ""} ran clean in the last 24h.`;
-
   // Tool-calls 24h curve — bucketed from activity-event timestamps so
   // historical activity is visible immediately on page load (not only what
   // happens while the user stays on the tab). Switched from per-minute
@@ -989,63 +518,357 @@ export default function HomePage() {
       return `${h12}${h < 12 ? "am" : "pm"}`;
     });
   })();
+  // Command Deck header — app name + current date/time + bridge status pill.
+  const nowLabel = new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date());
+
+  // "Live now" panel — the most-recently-started running run, if any.
+  const liveRun = runs.find((r) => r.status === "running");
+  const liveRunOtherToday = runsCount24h > (liveRun ? 1 : 0)
+    ? runsCount24h - (liveRun ? 1 : 0)
+    : 0;
+
+  // 24h heatmap — reuses curveSeries' hourly buckets (tool-call counts) and
+  // layers in per-hour error presence from runs24h, which curveSeries does
+  // not track (it's tool-call-scoped, not run-scoped).
+  const heatmapCells = (() => {
+    const HOURS = 24;
+    const HOUR_MS = 60 * 60 * 1000;
+    const now = Date.now();
+    const windowStart = now - HOURS * HOUR_MS;
+    const errByHour = new Array(HOURS).fill(false);
+    for (const r of runs24h) {
+      if (r.status !== "error" && r.status !== "failed" && !isHaltStatus(r.status)) continue;
+      if (r.startedAt < windowStart) continue;
+      const idx = Math.min(HOURS - 1, Math.floor((r.startedAt - windowStart) / HOUR_MS));
+      errByHour[idx] = true;
+    }
+    const maxCount = Math.max(1, ...curveSeries);
+    return curveSeries.map((count, i) => {
+      let level: 0 | 1 | 2 | 3 = 0;
+      if (count > 0) {
+        const ratio = count / maxCount;
+        level = ratio > 0.66 ? 3 : ratio > 0.33 ? 2 : 1;
+      }
+      return { count, hasError: errByHour[i], level, label: hours24Labels[i] };
+    });
+  })();
+  const heatmapErrHours = heatmapCells.filter((c) => c.hasError).length;
+
+  // Vitals panel — reuse fetched state; sessions comes from bridgeStatus
+  // (falls back to health.activeSessions when the /status poll hasn't
+  // populated it yet, matching the source health already reads).
+  const sessionsCount = bridgeStatus.activeSessions ?? health?.activeSessions;
+  const enabledRecipesCount = recipes.filter((r) => r.enabled !== false).length;
+
+  // Top recipes leaderboard (24h) — same aggregation shape as
+  // RecipeLeaderboard (name, runs, total, halts, okRate), computed locally
+  // since that logic isn't exported; kept in lockstep by construction (both
+  // read `runs`/LiveRun directly, no separate fetch).
+  const topRecipes24h = (() => {
+    const cutoff = Date.now() - dayMs;
+    const byName = new Map<string, LiveRun[]>();
+    for (const r of runs) {
+      if (r.startedAt < cutoff) continue;
+      const name = canonicalRecipeKey(r.recipeName ?? r.recipe ?? "");
+      if (!name) continue;
+      const list = byName.get(name) ?? [];
+      list.push(r);
+      byName.set(name, list);
+    }
+    const out: Array<{ name: string; runs: LiveRun[]; total: number; okRate: number }> = [];
+    for (const [name, list] of byName) {
+      const sorted = [...list].sort((a, b) => b.startedAt - a.startedAt);
+      const decided = sorted.filter((r) => r.status !== "running");
+      const okCount = decided.filter((r) => r.status === "done" || r.status === "success").length;
+      out.push({
+        name,
+        runs: sorted,
+        total: sorted.length,
+        okRate: decided.length === 0 ? 0 : Math.round((okCount / decided.length) * 100),
+      });
+    }
+    out.sort((a, b) => b.total - a.total);
+    return out.slice(0, 5);
+  })();
+
   return (
     <section>
       {/* Kill-switch banner rendered globally by Shell — was duplicated here. */}
       {/*
         First-run checklist: orchestrates the 4-step happy path for
         brand-new workspaces (connect → install recipe → run → approve).
-        Auto-collapses once all four steps are complete; user-dismissable
-        any time. Lives above the hero so a new user can't miss it.
+        Self-gates to null once every step is complete or the user has
+        dismissed it, so it never lingers on an established workspace.
       */}
       <FirstRunChecklist />
 
       {/* ------------------------------------------------------------------ */}
-      {/* Quilt hero with LOAD widget                                          */}
+      {/* Command Deck header — app name + date/time + bridge status pill.    */}
       {/* ------------------------------------------------------------------ */}
-      {/* TODO(design): the wireframe shows a "buddy quilt" 68% warmth widget
-        * to the right of the hero (mood / fabric metaphor) instead of the
-        * load ring. WeatherRing is the closest existing primitive; swap when
-        * the buddy-quilt component spec lands. See screenshots @ 19.00.07. */}
-      <QuiltHero
-        greeting={greet ? greet.toLowerCase() : "welcome"}
-        headline={headline}
-        summary={summary}
-        stats={(() => {
-          // Hero meta line — matches the wireframe's
-          // "4d 12h uptime · v0.2.0-α35 bridge · claude-3.5-sonnet primary · 3 IDEs attached"
-          // rhythm. Only ship segments backed by real bridge data; the
-          // remaining wireframe segments (bridge version, IDE count) need
-          // bridge changes that haven't landed.
-          const stats: Array<{ label: string; value: React.ReactNode }> = [];
-          if (typeof bridgeStatus.uptimeMs === "number" && bridgeStatus.uptimeMs > 0) {
-            stats.push({ label: "uptime", value: formatUptime(bridgeStatus.uptimeMs) });
-          }
-          const driver = bridgeStatus.patchwork?.driver;
-          const model = bridgeStatus.patchwork?.model;
-          if (model) {
-            stats.push({ label: "primary", value: model });
-          } else if (driver) {
-            stats.push({ label: "driver", value: driver });
-          }
-          if (bridgeStatus.extensionConnected) {
-            stats.push({ label: "attached", value: "IDE" });
-          }
-          return stats.length > 0 ? stats : undefined;
-        })()}
-        aside={<FeaturedRecipeAside runs={runs as LeaderboardRun[]} recipesCount={recipes.length} />}
-      />
+      <div className="hc-top">
+        <h2>
+          Patchwork · <span className="muted">{nowLabel}</span>
+        </h2>
+        {bridgeStatus.ok ? (
+          <span className="pill ok">
+            <span className="dot ok" aria-hidden="true" />
+            {" bridge up "}
+            {typeof bridgeStatus.uptimeMs === "number" ? formatUptime(bridgeStatus.uptimeMs) : "—"}
+            {bridgeStatus.extensionConnected ? " · IDE attached" : ""}
+          </span>
+        ) : (
+          <span className="pill err">
+            <span className="dot err" aria-hidden="true" />
+            {" bridge offline"}
+          </span>
+        )}
+      </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* NEEDS ATTENTION — mission-control band: pending approvals, halts,  */}
-      {/* and errors. Zero state renders "all clear". Every chip links out.   */}
+      {/* COMMAND DECK — 12-col grid. Row 1: needs-attention (span 7) + live  */}
+      {/* now (span 5). Row 2: 24h heatmap / vitals / top recipes (span 4×3). */}
       {/* ------------------------------------------------------------------ */}
-      <NeedsAttentionBand
-        pendingCount={pendingCount}
-        haltCount24h={haltCount24h}
-        failingCount24h={errCount24h}
-        bridgeOk={bridgeStatus.ok === true}
-      />
+      <div className="hc-grid">
+        <div className="hc-panel card hc-a" data-severity={bandSeverity(buildAttentionItems({ pendingCount, haltCount24h, failingCount24h: errCount24h }))}>
+          <h3>
+            Needs attention
+            {!bridgeStatus.ok ? null : pendingCount + haltCount24h + errCount24h > 0 ? (
+              <span className="pill warn">
+                {[pendingCount > 0, haltCount24h > 0, errCount24h > 0].filter(Boolean).length} queue
+                {[pendingCount > 0, haltCount24h > 0, errCount24h > 0].filter(Boolean).length === 1 ? "" : "s"}
+              </span>
+            ) : (
+              <span className="pill ok">all clear</span>
+            )}
+          </h3>
+          {!bridgeStatus.ok ? (
+            <div className="muted" style={{ fontSize: "var(--fs-s)" }}>
+              Bridge offline — connect to see agent status.{" "}
+              <Link href="/connections">Check connections →</Link>
+            </div>
+          ) : (
+            <>
+              <div className="ha-chips">
+                <Link
+                  href="/approvals"
+                  className={`ha-chip${pendingCount > 0 ? " warn" : " ok"}`}
+                  aria-label={`${pendingCount} approvals pending — view all`}
+                >
+                  <span className="n">{pendingCount}</span> approvals →
+                </Link>
+                <Link
+                  href="/runs?halt=1"
+                  className={`ha-chip${haltCount24h > 0 ? " err" : " ok"}`}
+                  aria-label={`${haltCount24h} halts in last 24h — view all`}
+                >
+                  <span className="n">{haltCount24h}</span> halts →
+                </Link>
+                <Link
+                  href="/runs?window=24h"
+                  className={`ha-chip${errCount24h > 0 ? " err" : " ok"}`}
+                  aria-label={`${errCount24h} failing runs in last 24h — view all`}
+                >
+                  <span className="n">{errCount24h}</span> failures →
+                </Link>
+              </div>
+              {pendingCount === 0 && haltCount24h === 0 && errCount24h === 0 ? (
+                <div className="ha-row">
+                  <span className="pill ok">clear</span>
+                  <span className="muted">No approvals pending · no halts · no failures</span>
+                </div>
+              ) : (
+                <>
+                  {runs24h
+                    .filter((r) => isHaltStatus(r.status) || r.status === "error" || r.status === "failed")
+                    .sort((a, b) => b.startedAt - a.startedAt)
+                    .slice(0, 3)
+                    .map((r, i) => {
+                      const name = (r.recipeName ?? r.recipe ?? "").replace(/:agent$/, "");
+                      const isQueueing = Boolean(runPending[canonicalRecipeKey(name)]);
+                      return (
+                        <div className="ha-row" key={r.seq ?? `${name}-${r.startedAt}-${i}`}>
+                          <span className="pill err">
+                            {isHaltStatus(r.status) ? "halted" : r.status}
+                          </span>
+                          <strong className="mono">{recipeDisplayName(name)}</strong>
+                          <span className="muted">
+                            {r.haltReason ?? r.status} · {relTime(r.startedAt)}
+                          </span>
+                          <span className="sp" />
+                          <button
+                            type="button"
+                            className="btn sm"
+                            disabled={isQueueing}
+                            onClick={() => void runRecipe(canonicalRecipeKey(name))}
+                          >
+                            {isQueueing ? "…" : "↻ Retry"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  {pendingApprovals.slice(0, Math.max(0, 3 - haltCount24h - errCount24h)).map((p) => (
+                    <div className="ha-row" key={p.callId}>
+                      <span className="pill warn">approval</span>
+                      <strong className="mono">{p.toolName}</strong>
+                      <span className="muted">{p.summary ?? p.tier} · {relTime(p.requestedAt)}</span>
+                      <span className="sp" />
+                      <Link href="/approvals" className="btn sm">Review</Link>
+                    </div>
+                  ))}
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="hc-panel card hc-b">
+          <h3>Live now</h3>
+          {!bridgeStatus.ok ? (
+            <div className="muted" style={{ fontSize: "var(--fs-s)" }}>Bridge offline.</div>
+          ) : liveRun ? (
+            (() => {
+              const name = (liveRun.recipeName ?? liveRun.recipe ?? "").replace(/:agent$/, "");
+              const elapsedMs = Date.now() - liveRun.startedAt;
+              const elapsed =
+                elapsedMs < 60_000
+                  ? `${Math.floor(elapsedMs / 1000)}s`
+                  : elapsedMs < 3_600_000
+                    ? `${Math.floor(elapsedMs / 60_000)}m ${Math.floor((elapsedMs % 60_000) / 1000)}s`
+                    : `${Math.floor(elapsedMs / 3_600_000)}h ${Math.floor((elapsedMs % 3_600_000) / 60_000)}m`;
+              const startedLabel = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(
+                new Date(liveRun.startedAt),
+              );
+              return (
+                <>
+                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                    <svg className="hc-ring" viewBox="0 0 34 34" aria-hidden="true">
+                      <circle cx="17" cy="17" r="14" fill="none" stroke="var(--recess)" strokeWidth="4" />
+                      <circle
+                        cx="17"
+                        cy="17"
+                        r="14"
+                        fill="none"
+                        stroke="var(--ok)"
+                        strokeWidth="4"
+                        strokeDasharray="66 88"
+                        strokeLinecap="round"
+                        transform="rotate(-90 17 17)"
+                      />
+                    </svg>
+                    <div>
+                      <div style={{ fontWeight: 700 }} className="mono">
+                        {recipeDisplayName(name)} <span className="pill info">{elapsed}</span>
+                      </div>
+                      <div className="muted" style={{ fontSize: "var(--fs-2xs)" }}>
+                        started {startedLabel}
+                        {liveRunOtherToday > 0
+                          ? ` · ${liveRunOtherToday} other run${liveRunOtherToday === 1 ? "" : "s"} today`
+                          : ""}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <Link
+                      href={liveRun.seq != null ? `/runs/${liveRun.seq}` : `/runs?recipe=${encodeURIComponent(name)}`}
+                      className="btn sm primary"
+                    >
+                      View live →
+                    </Link>
+                    <Link href="/runs" className="btn sm ghost">All runs</Link>
+                  </div>
+                </>
+              );
+            })()
+          ) : (
+            <>
+              <div className="muted" style={{ fontSize: "var(--fs-s)" }}>
+                Nothing running right now.
+                {runs24h.length > 0
+                  ? ` Last finished ${relTime(runs24h[0].startedAt)}.`
+                  : ""}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <Link href="/runs" className="btn sm ghost">All runs</Link>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="hc-grid" style={{ marginTop: 14 }}>
+        <div className="hc-panel card hc-c">
+          <h3>
+            Runs · last 24h <span>{runsCount24h}</span>
+          </h3>
+          <div
+            className="hc-heat"
+            role="img"
+            aria-label={`hourly run activity, ${heatmapErrHours} hour${heatmapErrHours === 1 ? "" : "s"} with errors`}
+          >
+            {heatmapCells.map((c, i) => (
+              <i
+                key={i}
+                className={c.hasError ? "er" : c.level > 0 ? `l${c.level}` : undefined}
+                title={`${c.label} · ${c.count} call${c.count === 1 ? "" : "s"}${c.hasError ? " · error" : ""}`}
+              />
+            ))}
+          </div>
+          <div className="muted" style={{ fontSize: "var(--fs-xs)", marginTop: 8 }}>
+            {runsFootLabel}
+          </div>
+        </div>
+
+        <div className="hc-panel card hc-d">
+          <h3>Vitals</h3>
+          <div className="hc-kv">
+            <span className="muted">Tool calls · 24h</span>
+            <strong>{toolsToday.toLocaleString()}</strong>
+          </div>
+          {typeof sessionsCount === "number" && (
+            <div className="hc-kv">
+              <span className="muted">Sessions</span>
+              <strong>{sessionsCount} active</strong>
+            </div>
+          )}
+          <div className="hc-kv">
+            <span className="muted">Kill switch</span>
+            <strong style={{ color: bridgeStatus.killSwitch?.engaged ? "#93312f" : "#3f6b36" }}>
+              {bridgeStatus.killSwitch?.engaged ? "engaged" : "released"}
+            </strong>
+          </div>
+          <div className="hc-kv">
+            <span className="muted">Recipes enabled</span>
+            <strong>
+              {enabledRecipesCount} / {recipes.length}
+            </strong>
+          </div>
+        </div>
+
+        <div className="hc-panel card hc-e">
+          <h3>Top recipes · 24h</h3>
+          {topRecipes24h.length === 0 ? (
+            <div className="muted" style={{ fontSize: "var(--fs-s)" }}>
+              No runs in the last 24h.
+            </div>
+          ) : (
+            topRecipes24h.map((a) => (
+              <div className="hc-lead" key={a.name}>
+                <strong className="mono" style={{ flex: 1 }}>
+                  {recipeDisplayName(a.name)}
+                </strong>
+                <RunSparkBars runs={a.runs.slice(0, 8)} slots={8} width={70} height={16} />
+                <span className="muted">{a.okRate}%</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
 
       {/* ------------------------------------------------------------------ */}
       {/* LIVE RUNS — pulses any currently-running or recently-finished       */}
@@ -1212,22 +1035,18 @@ export default function HomePage() {
       </>}
 
       {/* ------------------------------------------------------------------ */}
-      {/* Recipes at a glance — top 6 by run count over last 7 days           */}
-      {/* Each row links to /runs?recipe=<name> (param honored by runs/page) */}
+      {/* Recipes — detailed health view. The three-column Draft/Paused/     */}
+      {/* Active kanban that used to live here was removed from the landing  */}
+      {/* flow per the Command Deck redesign; the leaderboard is now the     */}
+      {/* sole recipes surface on Home (full board still lives at /recipes). */}
       {/* ------------------------------------------------------------------ */}
       <div className="pg-section-head" style={{ animation: "pw-fade-in 0.4s ease both" }}>
         <span className="pg-section-head-label">
           <span aria-hidden="true" className="pg-section-head-bar" />
           Recipes
         </span>
-        {/* No "view all" here — the RecipesAtAGlance card header below has
-            its own "View all" + "+ New"; two view-all links 40px apart was
-            redundant. The eyebrow keeps just the label + rule for rhythm. */}
         <div className="pg-section-head-rule" aria-hidden="true" />
       </div>
-      <RecipesAtAGlance runs={runs} recipes={recipes} />
-
-      {/* Recipe leaderboard — detailed health view */}
       <RecipeLeaderboard runs={runs as LeaderboardRun[]} />
 
       {/* ------------------------------------------------------------------ */}

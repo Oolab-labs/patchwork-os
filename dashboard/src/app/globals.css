@@ -9302,6 +9302,7 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   outline-offset: 2px;
 }
 
+<<<<<<< HEAD
 /* ── Workers "Roster" (redesign W-A) ─────────────────────────────────────── */
 .wa-head {
   display: flex;
@@ -9478,3 +9479,80 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 [data-theme="dark"] .wa-promote {
   border-color: color-mix(in srgb, var(--ok) 45%, transparent);
 }
+
+/* ── Generic text utilities ───────────────────────────────────────────────
+   `.mono`/`.muted` were already referenced (unscoped) by RecipeLeaderboard
+   and other surfaces but never defined globally — only scoped variants
+   (`.table .mono`, `.rgc-meta-item.mono`) existed, so bare usages rendered
+   unstyled. Defining them here makes those pre-existing usages (and the
+   Command Deck below) actually take effect. */
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--ink-3); }
+
+/* ── Home → "Command Deck" (mockup H-C) ───────────────────────────────────
+   Redesign 5/7. 12-col grid: row 1 = needs-attention (span 7) + live-now
+   (span 5); row 2 = 24h heatmap / vitals / top-recipes (span 4 each).
+   Breakpoint follows the 860px convention set by .rd-layout (dossier). */
+.hc-top { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.hc-top h2 { font-size: var(--fs-2xl); }
+.hc-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+.hc-grid > * { grid-column: span 12; }
+@media (min-width: 860px) {
+  .hc-a { grid-column: span 7 !important; }
+  .hc-b { grid-column: span 5 !important; }
+  .hc-c { grid-column: span 4 !important; }
+  .hc-d { grid-column: span 4 !important; }
+  .hc-e { grid-column: span 4 !important; }
+}
+.hc-panel { padding: 14px 16px; }
+.hc-panel h3 {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-3);
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+}
+.hc-heat { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; }
+.hc-heat i { aspect-ratio: 1; border-radius: 2px; background: var(--recess); display: block; }
+.hc-heat i.l1 { background: rgba(91, 138, 79, 0.3); }
+.hc-heat i.l2 { background: rgba(91, 138, 79, 0.55); }
+.hc-heat i.l3 { background: var(--ok); }
+.hc-heat i.er { background: var(--err); }
+.hc-kv { display: flex; justify-content: space-between; font-size: var(--fs-m); padding: 6px 0; border-top: 1px solid var(--line-1); }
+.hc-kv:first-of-type { border-top: 0; }
+.hc-lead { display: flex; gap: 10px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line-1); font-size: var(--fs-m); }
+.hc-lead:first-of-type { border-top: 0; }
+.hc-ring { width: 34px; height: 34px; flex-shrink: 0; }
+.ha-chips { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.ha-chip {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid var(--line-2);
+  border-radius: 99px;
+  padding: 7px 16px 7px 10px;
+  background: var(--surface);
+  font-size: var(--fs-base);
+}
+.ha-chip:hover { border-color: var(--line-3); background: var(--recess); }
+.ha-chip .n { font-size: var(--fs-xl); font-weight: 700; }
+.ha-chip.warn .n { color: #8a5f14; }
+.ha-chip.err .n { color: #93312f; }
+.ha-chip.ok .n { color: #3f6b36; }
+.ha-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line-1); font-size: var(--fs-m); flex-wrap: wrap; }
+.ha-row:first-of-type { border-top: 0; }
+.ha-row .sp { flex: 1; }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+.dot.ok { background: var(--ok); }
+.dot.err { background: var(--err); }
+[data-theme="dark"] .ha-chip.warn .n { color: #e0b054; }
+[data-theme="dark"] .ha-chip.err .n { color: #e8817f; }
+[data-theme="dark"] .ha-chip.ok .n { color: #7fbf6f; }
+[data-theme="dark"] .hc-heat i.l1 { background: rgba(127, 191, 111, 0.28); }
+[data-theme="dark"] .hc-heat i.l2 { background: rgba(127, 191, 111, 0.5); }
