@@ -13,6 +13,7 @@ import { SkeletonList } from "@/components/Skeleton";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useDebounced } from "@/hooks/useDebounced";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
+import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
 import { dedupeRunsByKey } from "@/lib/dedupeRuns";
 
 interface AssertionFailure {
@@ -441,15 +442,9 @@ export default function RunsPage() {
   // windowedRuns; j → next, k → prev, wraps. Skipped while typing or
   // when no rows are visible. Sets `expanded` so the selected row also
   // reveals its detail panel (same effect as clicking the row).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  usePaneShortcut(
+    (e) => {
       if (e.key !== "j" && e.key !== "k") return;
-      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-      const t = e.target as HTMLElement | null;
-      if (t) {
-        const tag = t.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
-      }
       const list = windowedRuns ?? [];
       if (list.length === 0) return;
       e.preventDefault();
@@ -474,10 +469,10 @@ export default function RunsPage() {
         // feedback from j/k, not just a visual selection change.
         row?.focus();
       });
-    };
-    globalThis.addEventListener("keydown", onKey);
-    return () => globalThis.removeEventListener("keydown", onKey);
-  }, [windowedRuns, expanded]);
+    },
+    [windowedRuns, expanded],
+    { ignoreShift: true },
+  );
 
   return (
     <section>

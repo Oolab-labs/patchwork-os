@@ -9,6 +9,7 @@ import { EmptyState, ErrorState, RelationStrip } from "@/components/patchwork";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { useToast } from "@/components/Toast";
 import { useSearchHotkey } from "@/hooks/useSearchHotkey";
+import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
 
 interface Task {
   taskId: string;
@@ -461,15 +462,9 @@ function TasksContent() {
   // j → next, k → prev, wraps. Skipped while typing in an input or
   // when no rows are visible. Sets `selectedTaskId` so the detail
   // panel reveals (same as clicking the row).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  usePaneShortcut(
+    (e) => {
       if (e.key !== "j" && e.key !== "k") return;
-      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-      const t = e.target as HTMLElement | null;
-      if (t) {
-        const tag = t.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
-      }
       // Scope j/k to the rendered window so we never select a hidden
       // row. If a press lands on the last visible row, reveal more.
       const visible = filteredTasks.slice(0, visibleCount);
@@ -502,10 +497,10 @@ function TasksContent() {
         // keyboard + screen-reader users get no feedback from j/k.
         row?.focus();
       });
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [filteredTasks, selectedTaskId]);
+    },
+    [filteredTasks, selectedTaskId],
+    { ignoreShift: true },
+  );
 
   const statusCounts = useMemo(() => {
     const c = { all: tasks.length, live: 0, done: 0, error: 0 };

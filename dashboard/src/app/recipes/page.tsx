@@ -11,6 +11,7 @@ import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import { useActiveRuns } from "@/hooks/LiveRunsContext";
+import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
 import type { ActiveRunState } from "@/hooks/useRecipeRunStream";
 import { RecipeRunInline } from "./_components/RecipeRunInline";
 import {
@@ -354,21 +355,15 @@ export default function RecipesPage() {
   // "/" hotkey focuses the search input (GitHub-style). Ignored while
   // typing in another input/textarea/contenteditable so it doesn't
   // hijack normal keystrokes.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target as HTMLElement | null;
-      if (t) {
-        const tag = t.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
-      }
+  usePaneShortcut(
+    (e) => {
+      if (e.key !== "/") return;
       e.preventDefault();
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    },
+    [],
+  );
   // Live SSE-driven run state, keyed by recipe name. Foundation for inline
   // run observability — see PR #642 (bridge lifecycle emit) + RecipeRunInline.
   const activeRunsByName = useActiveRuns();
@@ -382,20 +377,14 @@ export default function RecipesPage() {
   // Escape closes the detail panel (when no modal is open — modal owns
   // its own Escape handling via Dialog). Skipped while typing in an
   // input so it doesn't fight the browser's clear-search behavior.
-  useEffect(() => {
-    if (!selectedName) return;
-    const onKey = (e: KeyboardEvent) => {
+  usePaneShortcut(
+    (e) => {
+      if (!selectedName) return;
       if (e.key !== "Escape" || modal) return;
-      const t = e.target as HTMLElement | null;
-      if (t) {
-        const tag = t.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
-      }
       setSelectedName(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedName, modal]);
+    },
+    [selectedName, modal],
+  );
   // ?selected=<name> deep-link redirect: navigate to hub so the user
   // always lands on the full recipe hub page regardless of entry point.
   // This keeps links from suggestions/page.tsx working while ensuring
@@ -718,16 +707,10 @@ export default function RecipesPage() {
   // j/k row navigation through filteredRecipes. j → next, k → prev.
   // Wraps at ends. Skipped while typing or when a modal is open so it
   // doesn't fight inputs or override modal-local shortcuts.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  usePaneShortcut(
+    (e) => {
       if (e.key !== "j" && e.key !== "k") return;
-      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if (modal) return;
-      const t = e.target as HTMLElement | null;
-      if (t) {
-        const tag = t.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
-      }
       if (filteredRecipes.length === 0) return;
       e.preventDefault();
       const idx = selectedName
@@ -754,13 +737,12 @@ export default function RecipesPage() {
       // If Enter is pressed after j/k movement the row's onKeyDown handler
       // calls router.push — same as a click. We no longer open the inline
       // RecipeDetailPanel from j/k; both input methods navigate to the hub.
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  // selectedName intentionally removed from deps — j/k no longer drives
-  // the side panel; it only moves DOM focus so the row can handle Enter.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredRecipes, modal]);
+    },
+    // selectedName intentionally removed from deps — j/k no longer drives
+    // the side panel; it only moves DOM focus so the row can handle Enter.
+    [filteredRecipes, modal],
+    { ignoreShift: true },
+  );
 
   return (
     <section>
