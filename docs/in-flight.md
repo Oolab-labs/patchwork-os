@@ -26,9 +26,13 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 ## Active
 
 - 2026-07-03 `feat/dashboard-terminal-deck-phase1` (PR #1095, awaiting user visual review before merge) — Terminal+Copilot deck plan PR 6/10: full rewrite of `app/page.tsx` replacing the PR #1085 Command Deck bento with the "Home D · Terminal (dark)" statusline + 7-pane mono grid. Prep sequence PRs 1-5 all merged.
-- 2026-07-03 `docs/gap-assessment-verify-orphans` — dashboard gap remediation task item 0 (verify-first): confirmed all 4 "possible orphan" endpoints flagged in docs/dashboard-gap-assessment-2026-07-03.md (`GET /approval-insights` base, `GET /analytics`, `GET /inbox`+`/inbox/{file}`, `GET /stream`) are real consumers, missed by the original scan because they're hit via `/api/bridge/*`/`/api/inbox` proxy routes and shared hooks (`streamLiveness.ts`, `useBridgeStream`) rather than page-level literal-path fetches. Doc corrected with exact consumer citations. No UI work (per task instruction). — build session
 
 ## Recently closed (informal log, prune periodically)
+
+- 2026-07-03 `fix/dashboard-staleness-indicator` (#1097) — dashboard gap remediation item 1 (bug-shaped, Bug Fix Protocol: failing test first): `useBridgeFetch` kept last-good data forever with no freshness marker. Added `lastSuccessAt` tracking + `stale: boolean` + one global Shell strip aggregating across all opted-in fetchers via a small registry, not per-page banners. No poll-interval changes, no new endpoints. — merged
+- 2026-07-03 `docs/gap-assessment-verify-orphans` (#1096) — dashboard gap remediation item 0 (verify-first): confirmed all 4 "possible orphan" endpoints flagged in docs/dashboard-gap-assessment-2026-07-03.md are real, missed by the original scan (proxy-route/shared-hook consumers). No UI work.
+
+- 2026-07-03 `feat/dashboard-killswitch-confirm` (#1093) — Terminal+Copilot deck plan PR 4/10 (last of the prep sequence): shared confirm dialog for engaging/releasing the kill-switch, wired into `KillSwitchBanner.tsx` and `settings/page.tsx`'s `ToggleRow` — neither had a client-side confirm before. — merged
 
 - 2026-07-03 `feat/decision-record-http-source` (#1094) — Terminal+Copilot deck plan PR 5/10: Decision Record HTTP route (`POST /traces/decision`, Bearer-gated) + optional `source` field on `DecisionTrace`/`RecordDecisionInput`, backward-compatible with existing `decision_traces.jsonl`. Ships standalone value; no dashboard wiring yet. — merged
 - 2026-07-03 `feat/dashboard-shared-hotkey-hook` (#1092) — Terminal+Copilot deck plan PR 3/10: consolidate the 6x-duplicated tag/isContentEditable keyboard-shortcut guard pattern into a shared `usePaneShortcuts`/`useGlobalHotkey` hook in `dashboard/src/hooks/`. Pure refactor, no behavior change. — merged
