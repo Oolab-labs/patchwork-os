@@ -46,6 +46,14 @@ import type { TimelineEvent, RelatedGroup } from "@/components/patchwork";
 import { detectConnectorsForRecipe } from "@/lib/recipeConnectors";
 import { fmtDuration } from "@/components/time";
 import { Skeleton } from "@/components/Skeleton";
+import { StatusMedallion } from "@/components/StatusMedallion";
+import { DetailsFold, ExpertToggle, useExpertMode } from "@/components/DetailsFold";
+import { describeNextRun, humanizeSchedule } from "@/lib/humanSchedule";
+import {
+  deriveRecipeStatus,
+  type LastOutcome,
+  type NeedFix,
+} from "@/lib/recipeStatus";
 
 interface RecipeVar {
   name: string;
@@ -335,17 +343,62 @@ function RunModal({
   );
 }
 
+/** The single fix button on a "Needs you" row. Maps a semantic fix action to
+ *  the right destination — a link for navigable fixes, a resume button for the
+ *  in-page toggle. */
+function NeedFixButton({
+  action,
+  label,
+  recipeName,
+  latestRunSeq,
+  onResume,
+  resuming,
+}: {
+  action: NeedFix;
+  label: string;
+  recipeName: string;
+  latestRunSeq?: number;
+  onResume: () => void;
+  resuming: boolean;
+}) {
+  if (action === "resume") {
+    return (
+      <button type="button" className="btn sm primary" onClick={onResume} disabled={resuming}>
+        {resuming ? "Resuming…" : label}
+      </button>
+    );
+  }
+  const href =
+    action === "open-trace"
+      ? typeof latestRunSeq === "number"
+        ? `/runs/${latestRunSeq}`
+        : `/runs?recipe=${encodeURIComponent(recipeName)}`
+      : action === "raise-budget"
+        ? `/recipes/${encodeURIComponent(recipeName)}/edit`
+        : action === "release-kill-switch"
+          ? "/"
+          : "/connections"; // reconnect | connect | connect-page
+  return (
+    <Link href={href} className="btn sm primary" style={{ textDecoration: "none", whiteSpace: "nowrap" }}>
+      {label}
+    </Link>
+  );
+}
+
 function RecipeHubOverviewPage({ name }: { name: string }) {
   const toast = useToast();
   const router = useRouter();
   // Deep-link: `?diagnose=1` (from the recipes list / failed-run views)
   // auto-runs the Doctor panel and scrolls to it.
   const autoDiagnose = useSearchParams().get("diagnose") === "1";
-  // M3 — the What-If Preview is the DEFAULT pre-run affordance: it auto-runs on
-  // every recipe view so the operator sees what a run would do (risk tiers,
-  // writes, blast radius) before clicking Run. Opt out with `?simulate=0`.
-  // `?simulate=1` still works (and scrolls to the panel via the deep-link).
-  const autoSimulate = useSearchParams().get("simulate") !== "0";
+  // The Doctor + What-If Preview are engineer tools and heavy (the What-If
+  // renders every projected action) — they no longer occupy the default view,
+  // where they made the page enormous and read as "something's wrong". They
+  // fold under "Show details" (expert mode), and still auto-run + render when
+  // explicitly deep-linked via `?diagnose=1` / `?simulate=1`.
+  const simulateDeepLink = useSearchParams().get("simulate") === "1";
+  const { expert } = useExpertMode();
+  const showDiagnostics = expert || autoDiagnose || simulateDeepLink;
 
   // Reusable list fetch for the recipe row (matches layout's data source).
   const { data: recipes, refetch: refetchRecipes } = useBridgeFetch<Recipe[]>(
@@ -608,6 +661,66 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
     return { tone, label, when: relTime(lastRun.startedAt) };
   }, [lastRun]);
 
+  // ── Band 1/2: humane status header + "Needs you" rows ────────────────────
+  // Schedule in plain words: cron/@every through the humanizer, other triggers
+  // through a small verb map. Powers the medallion sentence + the next-run hint.
+  const humanSchedule = useMemo(() => {
+    const trig = recipe?.trigger ?? "manual";
+    if (trig === "cron" || trig === "schedule") {
+      return humanizeSchedule(recipe?.schedule);
+    }
+    const TRIGGER_WORDS: Record<string, string> = {
+      manual: "Runs only when you start it",
+      webhook: "Runs when its webhook is called",
+      file_watch: "Runs when watched files change",
+      git_hook: "Runs on a git action",
+      on_test_run: "Runs after your tests run",
+      on_file_save: "Runs when you save a matching file",
+    };
+    return {
+      text: TRIGGER_WORDS[trig] ?? `Runs on: ${trig}`,
+      humanized: true,
+      raw: trig,
+    };
+  }, [recipe]);
+
+  const disconnectedConnectors = useMemo(
+    () =>
+      requiredConnectors
+        .filter((id) => connectorHealthMap.get(id) === false)
+        .map((id) => id.charAt(0).toUpperCase() + id.slice(1)),
+    [requiredConnectors, connectorHealthMap],
+  );
+
+  const statusView = useMemo(() => {
+    const toneToOutcome: Record<string, LastOutcome> = {
+      ok: "ok",
+      warn: "warn",
+      err: "err",
+      info: "running",
+      muted: "other",
+    };
+    const lastOutcome: LastOutcome | undefined = lastRunDerived
+      ? toneToOutcome[lastRunDerived.tone]
+      : undefined;
+    const recentHalt =
+      lastOutcome === "err" ? (haltSummary?.recent?.[0]?.category ?? "unknown") : null;
+    return deriveRecipeStatus({
+      enabled: recipe?.enabled !== false,
+      trigger: recipe?.trigger ?? "manual",
+      hasRuns: runs.length > 0,
+      lastOutcome,
+      lastWhen: lastRunDerived?.when,
+      lastDuration: lastRun?.durationMs ? formatDuration(lastRun.durationMs) : undefined,
+      scheduleText: humanSchedule.text,
+      nextRunPhrase: describeNextRun(
+        "nextRunAt" in humanSchedule ? humanSchedule.nextRunAt : undefined,
+      ),
+      recentHalt,
+      disconnectedConnectors,
+    });
+  }, [recipe, runs.length, lastRunDerived, lastRun, haltSummary, humanSchedule, disconnectedConnectors]);
+
   // Still fetching the recipe list — render a skeleton in the hub body shape
   // rather than the full layout pre-filled with "manual"/"never"/"—"
   // placeholders, which read as real (but empty) data on every navigation.
@@ -706,43 +819,111 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
         running={runStarting}
       />
 
-      {/* PRIMARY ACTIONS — lifted above the fold so Run now / Enable / Edit
-          are reachable immediately instead of buried in the Controls card
-          near the bottom of a 7-card stack. Secondary + destructive actions
-          (Plan, Simulate, Compare, Uninstall) stay in the Controls card. */}
+      {/* BAND 1 — status header. The one dominant "is it okay?" object, plus
+          the primary actions inline. Raw cron / success% / trigger stay in the
+          Summary card below (folded in a later slice), reachable via details. */}
       {recipe && (
-        <div className="hub-action-bar">
-          <button
-            type="button"
-            className="btn primary hub-control-btn"
-            onClick={() => setRunModalOpen(true)}
-            disabled={recipe.enabled === false}
-            title={recipe.enabled === false ? "Recipe is disabled — enable it first" : "Execute this recipe now"}
+        <div
+          className="hub-card"
+          style={{
+            padding: "var(--s-4)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--s-4)",
+            animation: "hubCardIn 200ms ease both",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "var(--s-4)",
+              flexWrap: "wrap",
+            }}
           >
-            ▶ Run now
-          </button>
-          <button
-            type="button"
-            className="btn ghost hub-control-btn"
-            onClick={() => void handleToggle()}
-            disabled={toggling}
-            aria-pressed={recipe.enabled !== false}
-          >
-            {toggling
-              ? recipe.enabled === false
-                ? "Enabling…"
-                : "Disabling…"
-              : recipe.enabled === false
-                ? "Enable"
-                : "Disable"}
-          </button>
-          <Link
-            href={`/recipes/${encodeURIComponent(name)}/edit`}
-            className="btn ghost hub-control-btn"
-            style={{ textDecoration: "none" }}
-          >
-            Edit
-          </Link>
+            <StatusMedallion
+              tone={statusView.medallion.tone}
+              title={statusView.medallion.title}
+              pulse={statusView.medallion.title === "Running now"}
+            >
+              {statusView.medallion.sentence}
+            </StatusMedallion>
+            <ExpertToggle />
+          </div>
+          <div className="hub-action-bar">
+            <button
+              type="button"
+              className="btn primary hub-control-btn"
+              onClick={() => setRunModalOpen(true)}
+              disabled={recipe.enabled === false}
+              title={recipe.enabled === false ? "This job is paused — resume it first" : "Run this job now"}
+            >
+              ▶ Run now
+            </button>
+            <button
+              type="button"
+              className="btn ghost hub-control-btn"
+              onClick={() => void handleToggle()}
+              disabled={toggling}
+              aria-pressed={recipe.enabled !== false}
+            >
+              {toggling
+                ? recipe.enabled === false
+                  ? "Resuming…"
+                  : "Pausing…"
+                : recipe.enabled === false
+                  ? "Resume"
+                  : "Pause"}
+            </button>
+            {/* Edit lives in the tab bar (layout.tsx) — no duplicate inline button. */}
+          </div>
+        </div>
+      )}
+
+      {/* BAND 2 — "Needs you". Conditional: only renders when something is
+          actually waiting on the operator. Each row = one plain sentence + one
+          fix button, derived from the owner-level halt phrasing map. */}
+      {recipe && statusView.needs.length > 0 && (
+        <div
+          className="hub-card"
+          role="alert"
+          style={{
+            padding: "var(--s-4)",
+            border: "1px solid color-mix(in srgb, var(--warn) 45%, transparent)",
+            background: "color-mix(in srgb, var(--warn) 7%, transparent)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--s-3)",
+            animation: "hubCardIn 220ms 40ms ease both",
+          }}
+        >
+          <SectionHeader>Needs you</SectionHeader>
+          {statusView.needs.map((n) => (
+            <div
+              key={n.key}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "var(--s-3)",
+                flexWrap: "wrap",
+                fontSize: "var(--fs-m)",
+              }}
+            >
+              <span style={{ flex: 1, minWidth: "16rem" }}>{n.sentence}</span>
+              {n.fix && (
+                <NeedFixButton
+                  action={n.fix.action}
+                  label={n.fix.label}
+                  recipeName={name}
+                  latestRunSeq={lastRun?.seq}
+                  onResume={() => void handleToggle()}
+                  resuming={toggling}
+                />
+              )}
+            </div>
+          ))}
         </div>
       )}
 
@@ -971,35 +1152,74 @@ function RecipeHubOverviewPage({ name }: { name: string }) {
           >
             Compare versions
           </Link>
-          <button
-            type="button"
-            className="btn ghost hub-control-btn"
-            style={{ color: "var(--err)", marginLeft: "auto" }}
-            onClick={() => void handleUninstall()}
-            disabled={!recipe}
-          >
-            Uninstall
-          </button>
         </div>
       </PatchCard>
 
-      {/* DOCTOR — composed health diagnosis (lint + policy + recent halts).
-          The wrapping `#doctor` div is the scroll target for deep-links. */}
-      <div id="doctor">
-      <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 260ms 160ms ease both", animationFillMode: "both" }}>
-        <SectionHeader>Doctor</SectionHeader>
-        <DoctorPanel recipeName={name} autoRun={autoDiagnose} />
-      </PatchCard>
-      </div>
+      {/* DANGER ZONE — the destructive action is folded out of the default
+          view (an operator can't hit "Delete" by accident) and reworded from
+          "Uninstall". Reachable via the page-level "Show details" toggle. */}
+      <DetailsFold>
+        <PatchCard
+          className="hub-card"
+          style={{
+            padding: "var(--s-4)",
+            border: "1px solid color-mix(in srgb, var(--err) 40%, transparent)",
+          }}
+        >
+          <SectionHeader>Danger zone</SectionHeader>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "var(--s-3)",
+              flexWrap: "wrap",
+              fontSize: "var(--fs-m)",
+            }}
+          >
+            <span style={{ color: "var(--ink-2)" }}>
+              Permanently remove this recipe. This deletes its file and can&apos;t be undone.
+            </span>
+            <button
+              type="button"
+              className="btn hub-control-btn"
+              style={{ color: "var(--err)", borderColor: "var(--err)" }}
+              onClick={() => void handleUninstall()}
+              disabled={!recipe}
+            >
+              Delete this recipe
+            </button>
+          </div>
+        </PatchCard>
+      </DetailsFold>
 
-      {/* WHAT-IF PREVIEW — static counterfactual simulation (no execution).
-          The wrapping `#simulate` div is the scroll target for deep-links. */}
-      <div id="simulate">
-      <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 280ms 180ms ease both", animationFillMode: "both" }}>
-        <SectionHeader>What-If Preview</SectionHeader>
-        <SimulatePanel recipeName={name} autoRun={autoSimulate} />
-      </PatchCard>
-      </div>
+      {/* DIAGNOSTICS (folded) — Doctor + What-If Preview are engineer tools; they
+          render only under "Show details" or when explicitly deep-linked, so the
+          default page stays short and calm. Marked data-details for the glance
+          test. `#doctor` / `#simulate` stay the scroll targets for deep-links. */}
+      {showDiagnostics && (
+        <div data-details={expert && !autoDiagnose && !simulateDeepLink ? "" : undefined}>
+          <div id="doctor">
+          <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 260ms 160ms ease both", animationFillMode: "both" }}>
+            <SectionHeader>Check for problems</SectionHeader>
+            <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", margin: "0 0 12px" }}>
+              Runs a quick health check — connectors, schedule, and recent stops — and tells you what to fix.
+            </div>
+            <DoctorPanel recipeName={name} autoRun={autoDiagnose} />
+          </PatchCard>
+          </div>
+
+          <div id="simulate" style={{ marginTop: "var(--s-5)" }}>
+          <PatchCard className="hub-card" style={{ padding: "var(--s-4)", animation: "hubCardIn 280ms 180ms ease both", animationFillMode: "both" }}>
+            <SectionHeader>Preview what it would do</SectionHeader>
+            <div style={{ fontSize: "var(--fs-s)", color: "var(--ink-3)", margin: "0 0 12px" }}>
+              A dry run — shows the steps and any writes it would make, without actually running.
+            </div>
+            <SimulatePanel recipeName={name} autoRun={autoDiagnose || simulateDeepLink} />
+          </PatchCard>
+          </div>
+        </div>
+      )}
       </div>{/* end main column */}
 
       {/* related panel column */}
