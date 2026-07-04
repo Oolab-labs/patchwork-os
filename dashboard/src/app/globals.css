@@ -9664,6 +9664,15 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-statusline .td-err { color: #e8817f; }
 .td-statusline .td-warn { color: #e0b054; }
 
+/* Unscoped: pane headers (e.g. tail's "● live" badge, mockup's seg-ok
+   convention) reuse the same ok/err/warn vocabulary outside the statusline. */
+.td-ok { color: #7fd1a8; }
+.td-err { color: #e8817f; }
+.td-warn { color: #e0b054; }
+[data-theme="paper"] .td-ok { color: var(--ok-text, var(--ok)); }
+[data-theme="paper"] .td-err { color: var(--err-text, var(--err)); }
+[data-theme="paper"] .td-warn { color: var(--warn-text, var(--warn)); }
+
 /* Light-mode statusline: the terminal-* tokens are dark-only; derive
    readable equivalents from the paper-theme surface tokens instead of
    forcing the dark strip onto a light page. */
