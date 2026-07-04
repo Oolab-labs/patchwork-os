@@ -9851,7 +9851,10 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-fleet-glyph { width: 1em; text-align: center; }
 .td-fleet-name { flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .td-fleet-trigger { flex: 0 0 auto; }
-.td-fleet-bar { flex: 1; letter-spacing: 1px; text-align: right; }
+/* Packed solid block-fill bar (mockup's .hd-ascii sparkline) — no
+   letter-spacing, so the blocks read as one continuous meter rather
+   than spaced-out discrete dots. */
+.td-fleet-bar { margin-left: auto; white-space: pre; }
 .td-blk-ok { color: #7fbf6f; }
 .td-blk-err { color: #e8817f; }
 .td-blk-empty { color: var(--line-3); }
