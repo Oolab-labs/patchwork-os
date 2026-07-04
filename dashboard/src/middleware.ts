@@ -22,9 +22,14 @@ const ALLOW_UNAUTHENTICATED =
 
 /**
  * The negative-lookahead matcher that decides which paths the session gate
- * runs on. Exported so it can be unit-tested against concrete request paths
- * (Next.js consumes `config.matcher` at build time, not at runtime, so the
- * lookahead is not exercised inside `middleware()`).
+ * runs on. Defined as the literal string that `config.matcher` (below)
+ * requires — Next.js parses `config` at build time via static AST analysis,
+ * not by executing the module, so `config.matcher` entries must be literal
+ * syntax; an identifier reference there fails with "Unknown identifier
+ * ... at config.matcher[1]". `SESSION_GATE_MATCHER` (exported near `config`,
+ * below) derives from `config.matcher[1]` at runtime instead, for
+ * `middleware.test.ts` to exercise against concrete request paths —
+ * that's a plain property read Next.js's static analyzer never has to see.
  *
  * `connections/[^/]+/callback` exempts the OAuth callback PAGE routes
  * (`/connections/<name>/callback`). On authenticated deployments
@@ -39,8 +44,6 @@ const ALLOW_UNAUTHENTICATED =
  * `google-drive`). The same-origin API route is also exempted for
  * defense-in-depth.
  */
-export const SESSION_GATE_MATCHER =
-  "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace|api/login|api/relay/push|api/relay/halt|sw\\.js|icons/|api/push/vapid-key|connections/[^/]+/callback|api/connections/[^/]+/callback).*)";
 
 function unauthenticated(req: NextRequest): NextResponse {
   // For HTML navigations: redirect to /dashboard/login with the original
@@ -161,6 +164,12 @@ export const config = {
     // matcher below doesn't reliably catch `/` alone in Next.js, which
     // means the dashboard's overview page would otherwise be unprotected.
     "/",
-    SESSION_GATE_MATCHER,
+    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace|api/login|api/relay/push|api/relay/halt|sw\\.js|icons/|api/push/vapid-key|connections/[^/]+/callback|api/connections/[^/]+/callback).*)",
   ],
 };
+
+/** See the comment above `config.matcher` — this must stay a runtime
+ *  property read, never an identifier moved into `config.matcher` itself,
+ *  or the build breaks (Next.js statically parses `config`, it doesn't
+ *  execute the module). */
+export const SESSION_GATE_MATCHER = config.matcher[1] as string;
