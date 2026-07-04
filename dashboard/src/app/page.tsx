@@ -721,25 +721,20 @@ export default function HomePage() {
         <span className="td-seg td-seg-brand">
           patchwork · local:{bridgeStatus.port ?? bridgeStatus.patchwork?.port ?? "—"}
         </span>
-        <span className="td-sep">|</span>
         <span className={`td-seg${bridgeStatus.ok ? " td-ok" : " td-err"}`}>
           {bridgeStatus.ok
             ? `up ${typeof bridgeStatus.uptimeMs === "number" ? formatUptime(bridgeStatus.uptimeMs) : "—"}`
             : "offline"}
         </span>
-        <span className="td-sep">|</span>
         <span className="td-seg">
           runs 24h {okCount24h}ok/{errCount24h}err
         </span>
-        <span className="td-sep">|</span>
         <span className={`td-seg${pendingCount > 0 ? " td-warn" : ""}`}>
           {pendingCount} approvals
         </span>
-        <span className="td-sep">|</span>
         <span className={`td-seg${haltCount24h > 0 ? " td-err" : ""}`}>
           {haltCount24h} halts
         </span>
-        <span className="td-sep">|</span>
         <span className="td-seg">kill-switch {killSwitchLabel}</span>
         <span className="td-sp" />
         {deckStaleness.anyStale ? (

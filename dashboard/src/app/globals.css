@@ -9617,26 +9617,49 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
    Statusline + 7-pane mono-typeset grid, dark-first (matches the app's
    default dark `:root`), with a [data-theme="paper"] override block for
    light mode. Breakpoint follows the 860px convention set by .rd-layout. */
-.td-root { font-family: var(--font-mono); }
+/* Island card: the mockup's `.hd-scope` wraps the whole deck as one
+   padded, rounded card sitting on the page background (not flush content).
+   We keep both themes (paper override below) rather than mockup's
+   always-dark scope — see docs/in-flight.md visual-parity entry. */
+.td-root {
+  font-family: var(--font-mono);
+  background: var(--terminal-bg);
+  border-radius: var(--r-4, 14px);
+  padding: 20px;
+  margin: 0 -4px;
+}
+[data-theme="paper"] .td-root {
+  background: var(--recess);
+}
 
 .td-statusline {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: stretch;
+  gap: 0;
   flex-wrap: wrap;
-  padding: 10px 14px;
   margin-bottom: 14px;
   border: 1px solid var(--line-2);
   border-radius: var(--r-2, 6px);
-  background: var(--terminal-bg);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--terminal-fg);
   font-size: var(--fs-s);
+  overflow: hidden;
 }
-.td-statusline .td-seg { white-space: nowrap; }
+.td-statusline .td-seg {
+  white-space: nowrap;
+  padding: 7px 14px;
+  border-right: 1px solid var(--line-1);
+  display: flex;
+  align-items: center;
+}
 .td-statusline .td-seg-brand { color: var(--terminal-prompt); font-weight: 700; }
-.td-statusline .td-sep { color: var(--terminal-comment); }
-.td-statusline .td-sp { flex: 1; }
-.td-statusline .td-clock { font-variant-numeric: tabular-nums; color: var(--terminal-comment); }
+.td-statusline .td-sp { flex: 1; border-right: 0; padding: 0; }
+.td-statusline .td-clock {
+  font-variant-numeric: tabular-nums;
+  color: var(--terminal-comment);
+  border-right: 0;
+  margin-left: auto;
+}
 .td-statusline .td-ok { color: #7fd1a8; }
 .td-statusline .td-err { color: #e8817f; }
 .td-statusline .td-warn { color: #e0b054; }
@@ -9645,12 +9668,12 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
    readable equivalents from the paper-theme surface tokens instead of
    forcing the dark strip onto a light page. */
 [data-theme="paper"] .td-statusline {
-  background: var(--recess);
+  background: var(--surface);
   color: var(--ink-0);
   border-color: var(--line-2);
 }
+[data-theme="paper"] .td-statusline .td-seg { border-right-color: var(--line-1); }
 [data-theme="paper"] .td-statusline .td-seg-brand { color: var(--accent); }
-[data-theme="paper"] .td-statusline .td-sep,
 [data-theme="paper"] .td-statusline .td-clock { color: var(--ink-3); }
 [data-theme="paper"] .td-statusline .td-ok { color: var(--ok-text, var(--ok)); }
 [data-theme="paper"] .td-statusline .td-err { color: var(--err-text, var(--err)); }
@@ -9670,13 +9693,13 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-pane {
   display: flex;
   flex-direction: column;
-  background: var(--terminal-bg);
+  background: var(--surface);
   color: var(--terminal-fg);
   border: 1px solid var(--line-2);
   border-radius: var(--r-2, 6px);
-  padding: 10px 12px;
   font-size: var(--fs-s);
   outline: none;
+  overflow: hidden;
 }
 .td-pane:focus-visible,
 .td-pane.td-pane-active {
@@ -9689,14 +9712,17 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   border-color: var(--line-2);
 }
 
+/* Titlebar strip: own background distinct from the pane body, matching
+   the mockup's `.hd-pane .pt` (tmux-style pane titlebar). */
 .td-pane-head {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.03);
   border-bottom: 1px solid var(--line-1);
 }
+[data-theme="paper"] .td-pane-head { background: var(--recess); }
 .td-pane-tag { color: var(--terminal-prompt); font-weight: 700; }
 [data-theme="paper"] .td-pane-tag { color: var(--accent); }
 .td-pane-title { text-transform: uppercase; letter-spacing: 0.08em; font-size: var(--fs-xs); color: var(--terminal-comment); }
@@ -9711,6 +9737,7 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   gap: 6px;
   flex: 1;
   min-width: 0;
+  padding: 10px 12px;
   /* Mockup's tailbox caps at a fixed height (overflow-hidden, bottom-anchored)
      so a busy pane never grows taller than its half-width row partner —
      panes render at wildly different content lengths (tail's 7 rows vs
