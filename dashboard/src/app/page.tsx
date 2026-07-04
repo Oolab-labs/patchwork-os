@@ -786,7 +786,6 @@ export default function HomePage() {
   // rows. Same 15s cadence as the workers-shadow fetch (no new timer).
   const {
     data: pendingOutcomesData,
-    error: pendingOutcomesError,
     refetch: refetchPendingOutcomes,
   } = useBridgeFetch<PendingOutcomesResponse>("/api/bridge/outcomes/pending", {
     intervalMs: 15000,
