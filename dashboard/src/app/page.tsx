@@ -878,6 +878,14 @@ export default function HomePage() {
   const [copilotInput, setCopilotInput] = useState("");
   const [copilotSending, setCopilotSending] = useState(false);
   const copilotMsgSeq = useRef(0);
+  const copilotMsgsRef = useRef<HTMLDivElement>(null);
+  // Auto-scroll to the newest message/thinking-indicator — without this,
+  // a reply landing past the 340px scroll cap is invisible until the
+  // user manually scrolls down.
+  useEffect(() => {
+    const el = copilotMsgsRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [copilotMessages, copilotSending]);
 
   async function sendCopilotMessage() {
     const text = copilotInput.trim();
@@ -1666,7 +1674,7 @@ export default function HomePage() {
             · chat proposes, buttons dispose — every action hits the same gate as cron
           </span>
         </div>
-        <div className="td-copilot-msgs">
+        <div className="td-copilot-msgs" ref={copilotMsgsRef}>
           {copilotMessages.length === 0 && (
             <div className="td-copilot-empty">
               ask or act: pause · run · why did X halt…
@@ -1675,16 +1683,16 @@ export default function HomePage() {
           {copilotMessages.map((m) => (
             <div
               key={m.id}
-              className={`td-copilot-msg ${m.role === "user" ? "td-copilot-msg-user" : "td-copilot-msg-bot"}`}
+              className={`td-copilot-msg td-tail-enter ${m.role === "user" ? "td-copilot-msg-user" : "td-copilot-msg-bot"}`}
             >
               {m.role === "bot" && <span className="td-copilot-who">◆ copilot</span>}
               {m.text}
               {m.action && (
                 <div
-                  className={`td-copilot-act${m.action.status === "done" ? " done" : ""}`}
+                  className={`td-copilot-act td-tail-enter${m.action.status === "done" ? " done" : ""}`}
                 >
                   <div className="td-copilot-act-head">
-                    <span className="td-pill">
+                    <span className={`td-pill${m.action.kind === "run_recipe" ? " td-pill-accent" : ""}`}>
                       {m.action.kind === "run_recipe" ? "run" : "lever"}
                     </span>
                     <strong>{recipeDisplayName(m.action.recipeName)}</strong>
@@ -1722,6 +1730,11 @@ export default function HomePage() {
               )}
             </div>
           ))}
+          {copilotSending && (
+            <div className="td-copilot-msg td-copilot-thinking" aria-live="polite">
+              <span className="td-copilot-who">◆ copilot</span>thinking…
+            </div>
+          )}
         </div>
         <form
           className="td-copilot-in"
