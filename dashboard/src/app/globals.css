@@ -9765,6 +9765,16 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   overflow-y: auto;
 }
 
+/* Mockup wraps 1:tail/3:next/5:vitals bodies in a "num" class (tabular
+   digits, no jitter as timestamps/countdowns/percentages tick over).
+   2:fleet/4:workers don't need it — their numbers sit inside monospace
+   .hd-ascii blocks, already fixed-width by the font itself. */
+.td-pane[data-pane-index="1"] .td-pane-body,
+.td-pane[data-pane-index="3"] .td-pane-body,
+.td-pane[data-pane-index="5"] .td-pane-body {
+  font-variant-numeric: tabular-nums;
+}
+
 .td-muted { color: var(--terminal-comment); }
 [data-theme="paper"] .td-muted { color: var(--ink-3); }
 .td-muted-row, .td-empty-line, .td-error-row {

@@ -1094,7 +1094,15 @@ export default function HomePage() {
         </Pane>
 
         {/* 3: next (cron countdown) */}
-        <Pane index={3} id="next" title="next" activePane={activePane} setActivePane={setActivePane} href="/recipes">
+        <Pane
+          index={3}
+          id="next"
+          title="next"
+          activePane={activePane}
+          setActivePane={setActivePane}
+          href="/recipes"
+          headerExtra={<span className="td-muted">· cron queue</span>}
+        >
           {fetchErrors.recipes ? (
             <div className="td-error-row">recipe schedules unavailable</div>
           ) : cronRows.length === 0 ? (
