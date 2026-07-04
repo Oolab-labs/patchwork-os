@@ -1270,7 +1270,7 @@ export default function MarketplacePage() {
               <div className="lft">
                 <div className="star">★ Featured this week</div>
                 <h3 className="mono">{shortName(featured.name)}</h3>
-                <div className="sub" style={{ maxWidth: "48ch", fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
+                <div style={{ maxWidth: "48ch", fontSize: "var(--fs-s)", color: "var(--ink-2)" }}>
                   {featured.description}
                 </div>
                 <div style={{ display: "flex", gap: 8, marginTop: "var(--s-4)" }}>

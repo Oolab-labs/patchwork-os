@@ -195,9 +195,7 @@ function DecisionsContent() {
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <label className="decisions-input-focus" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span className="visually-hidden" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)" }}>
-              Search decisions
-            </span>
+            <span className="sr-only">Search decisions</span>
             <input
               ref={searchInputRef}
               type="text"
