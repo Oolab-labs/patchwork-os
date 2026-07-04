@@ -10,7 +10,13 @@ import { isHaltStatus } from "@/lib/runStatus";
 import { canonicalRecipeKey } from "@/lib/entityKey";
 import type { LiveRun } from "@/components/LiveRunsStrip";
 import { useRunRecipe } from "@/hooks/useRunRecipe";
-import { useManualPollStaleness } from "@/lib/staleFetchRegistry";
+import {
+  useManualPollStaleness,
+  getStaleFetchSummary,
+  subscribeStaleFetchRegistry,
+} from "@/lib/staleFetchRegistry";
+import { useCancelRun } from "@/hooks/useCancelRun";
+import { CancelRunDialog } from "@/components/CancelRunDialog";
 import { computeSuccessPct } from "@/lib/recipeRunHealth";
 import {
   isReversible,
@@ -237,6 +243,28 @@ function useClock(): string {
   return label;
 }
 
+/** Subscribes to the shared staleFetchRegistry (the same registry
+ *  `useBridgeFetch({ trackStaleness: true })` and `useManualPollStaleness`
+ *  write to) so the deck's own statusline clock segment can flip to an
+ *  amber "data as of HH:MM:SS — reconnecting…" state whenever ANY of the
+ *  deck's own tracked fetchers has gone stale — a separate, page-local
+ *  presentation of the same underlying signal the global `StalenessStrip`
+ *  banner shows, not a duplicate state machine. */
+function useDeckStaleness() {
+  const [summary, setSummary] = useState(() => getStaleFetchSummary());
+  useEffect(() => {
+    const recompute = () => setSummary(getStaleFetchSummary());
+    recompute();
+    const unsubscribe = subscribeStaleFetchRegistry(recompute);
+    const id = setInterval(recompute, 1000);
+    return () => {
+      unsubscribe();
+      clearInterval(id);
+    };
+  }, []);
+  return summary;
+}
+
 /** Forces a re-render every `everyMs` so relative-time / countdown strings
  *  stay live without each consumer running its own interval. */
 function useTick(everyMs: number): number {
@@ -330,7 +358,7 @@ export default function HomePage() {
   // fetch effect below — new proxy wiring per the plan's Pane 4/6 sections.
   const { data: shadowData, error: shadowError } = useBridgeFetch<ShadowResponse>(
     "/api/bridge/workers/shadow",
-    { intervalMs: 15000 },
+    { intervalMs: 15000, trackStaleness: true },
   );
   // Gate activity feed for pane 4 — GET /gate/decisions with no filters
   // returns the most-recent decisions across ALL workers (query() only
@@ -339,15 +367,24 @@ export default function HomePage() {
   // Same 15s cadence as the workers-shadow fetch above (no new timer).
   const { data: gateDecisionsData, error: gateDecisionsError } = useBridgeFetch<{
     decisions?: GateDecisionRecord[];
-  }>("/api/bridge/gate/decisions?limit=6", { intervalMs: 15000 });
+  }>("/api/bridge/gate/decisions?limit=6", { intervalMs: 15000, trackStaleness: true });
   const { data: inboxData, error: inboxError } = useBridgeFetch<{ items?: InboxItem[] }>(
     "/api/inbox",
-    { intervalMs: 15000 },
+    { intervalMs: 15000, trackStaleness: true },
   );
 
   const [pendingApprovals, setPendingApprovals] = useState<Pending[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [runs, setRuns] = useState<LiveRun[]>([]);
+  // Stop control shared by the 0:attention live-run row and the 1:tail
+  // in-progress row — same hook/dialog the other 4 cancel call sites
+  // (GlobalLiveRunsStrip, LiveRunsStrip, /runs, /runs/[seq]) already use.
+  // Optimistic local override by seq, same pattern as LiveRunsStrip.tsx,
+  // so a just-cancelled run stops showing "running" before the next poll.
+  const [cancelledSeqs, setCancelledSeqs] = useState<Set<number>>(new Set());
+  const cancelRun = useCancelRun((seq) => {
+    setCancelledSeqs((prev) => new Set(prev).add(seq));
+  });
   const [haltCount24hState, setHaltCount24h] = useState<number | null>(null);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [fetchErrors, setFetchErrors] = useState<{
@@ -442,6 +479,13 @@ export default function HomePage() {
 
   // Live clock (statusline). SSR-safe placeholder, ticks client-side.
   const clockLabel = useClock();
+  // Aggregate staleness across the deck's own tracked fetchers (the
+  // primary recipes/runs/halts/activity poll via useManualPollStaleness
+  // above, plus workers/shadow, gate/decisions, and inbox via
+  // useBridgeFetch's trackStaleness). When any is stale, the clock
+  // segment itself flips to an amber "data as of … reconnecting…"
+  // instead of the live tick.
+  const deckStaleness = useDeckStaleness();
   // Drive re-renders for the attention "halted Xh Ym ago" ticker + the
   // cron countdowns in pane 3 — both need a 1s heartbeat but shouldn't
   // each run their own interval.
@@ -477,6 +521,14 @@ export default function HomePage() {
   const topAttentionRun = attentionRuns[0];
   const attentionCount = pendingCount + haltCount24h + errCount24h;
 
+  // A run "live" locally overrides its status if we've already optimistically
+  // cancelled it (same override LiveRunsStrip.tsx uses) so the Stop control
+  // disappears immediately instead of waiting on the next poll tick.
+  const liveRuns = runs
+    .filter((r) => r.status === "running" && !(r.seq != null && cancelledSeqs.has(r.seq)))
+    .sort((a, b) => b.startedAt - a.startedAt);
+  const topLiveRun = liveRuns[0];
+
   // ---- Pane 1: tail (activity) --------------------------------------------
   // Default-hide bridge-lifecycle plumbing (grace/extension/heartbeat
   // churn) — previously this pane showed near-100% plumbing NOTE events
@@ -505,6 +557,28 @@ export default function HomePage() {
     tailEvents.length > 0
       ? `Latest: ${eventLine(tailEvents[tailEvents.length - 1].event)}`
       : "No recent activity.";
+
+  // Map recipe name -> the single live run for it (undefined when 0 or 2+
+  // live runs share a name — ambiguous, so no Stop control renders rather
+  // than risk stopping the wrong run). Backs the tail row Stop control:
+  // a tail event whose metadata.recipeName matches a currently-running
+  // run's recipe name is treated as representing that in-progress run.
+  const liveRunByRecipeName = useMemo(() => {
+    const m = new Map<string, LiveRun | null>();
+    for (const r of liveRuns) {
+      const name = (r.recipeName ?? r.recipe ?? "").replace(/:agent$/, "");
+      if (!name) continue;
+      m.set(name, m.has(name) ? null : r);
+    }
+    return m;
+  }, [liveRuns]);
+
+  function tailEventLiveRun(e: ActivityEvent): LiveRun | undefined {
+    const metaName = e.metadata?.recipeName;
+    if (typeof metaName !== "string" || !metaName) return undefined;
+    const match = liveRunByRecipeName.get(metaName.replace(/:agent$/, ""));
+    return match ?? undefined;
+  }
 
   // ---- Pane 2: fleet -------------------------------------------------------
   const allRunsMap = useMemo(() => {
@@ -668,9 +742,19 @@ export default function HomePage() {
         <span className="td-sep">|</span>
         <span className="td-seg">kill-switch {killSwitchLabel}</span>
         <span className="td-sp" />
-        <span className="td-seg td-clock" suppressHydrationWarning>
-          {clockLabel}
-        </span>
+        {deckStaleness.anyStale ? (
+          <span className="td-seg td-clock td-warn" suppressHydrationWarning>
+            data as of{" "}
+            {deckStaleness.mostRecentSuccessAt != null
+              ? tsLabel(deckStaleness.mostRecentSuccessAt)
+              : "—"}{" "}
+            — reconnecting…
+          </span>
+        ) : (
+          <span className="td-seg td-clock" suppressHydrationWarning>
+            {clockLabel}
+          </span>
+        )}
       </div>
 
       <div className="td-grid">
@@ -685,24 +769,59 @@ export default function HomePage() {
         >
           {!bridgeStatus.ok ? (
             <div className="td-error-row">bridge offline — can&apos;t reach attention data</div>
-          ) : isMuted ? (
-            <div className="td-muted-row">
-              Muted until {new Date(muteUntil).toLocaleTimeString()}.{" "}
-              <button
-                type="button"
-                className="td-link-btn"
-                onClick={() => {
-                  writeMuteUntil(0);
-                  setMuteUntilState(0);
-                }}
-              >
-                unmute
-              </button>
-            </div>
-          ) : attentionCount === 0 ? (
-            <div className="td-empty-line">nothing needs you</div>
           ) : (
             <>
+              {topLiveRun && (() => {
+                const name = (topLiveRun.recipeName ?? topLiveRun.recipe ?? "").replace(/:agent$/, "");
+                const isStopping =
+                  topLiveRun.seq != null &&
+                  cancelRun.cancelSeq === topLiveRun.seq &&
+                  cancelRun.phase === "cancelling";
+                const agoMs = nowMs - topLiveRun.startedAt;
+                return (
+                  <div className="td-attention-item td-attention-live">
+                    <div className="td-attention-head">
+                      <span className="td-pill td-pill-warn">running</span>
+                      <strong className="mono">{recipeDisplayName(name)}</strong>
+                      <span className="td-muted">started {formatAgo(agoMs)}</span>
+                    </div>
+                    <div className="td-attention-actions">
+                      <button
+                        type="button"
+                        className="btn sm ghost"
+                        disabled={isStopping || topLiveRun.seq == null}
+                        title={`Stop this run of ${name}`}
+                        onClick={() => {
+                          if (topLiveRun.seq != null) cancelRun.requestConfirm(topLiveRun.seq);
+                        }}
+                      >
+                        {isStopping ? "stopping…" : "■ Stop"}
+                      </button>
+                      <Link href={`/runs/${topLiveRun.seq ?? ""}`} className="btn sm ghost">
+                        View run
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })()}
+              {isMuted ? (
+                <div className="td-muted-row">
+                  Muted until {new Date(muteUntil).toLocaleTimeString()}.{" "}
+                  <button
+                    type="button"
+                    className="td-link-btn"
+                    onClick={() => {
+                      writeMuteUntil(0);
+                      setMuteUntilState(0);
+                    }}
+                  >
+                    unmute
+                  </button>
+                </div>
+              ) : attentionCount === 0 ? (
+                !topLiveRun && <div className="td-empty-line">nothing needs you</div>
+              ) : (
+              <>
               {topAttentionRun && (() => {
                 const name = (topAttentionRun.recipeName ?? topAttentionRun.recipe ?? "").replace(/:agent$/, "");
                 const key = canonicalRecipeKey(name);
@@ -758,6 +877,8 @@ export default function HomePage() {
                   <Link href="/approvals">{pendingCount} approval{pendingCount === 1 ? "" : "s"} pending →</Link>
                 </div>
               )}
+              </>
+              )}
             </>
           )}
         </Pane>
@@ -810,14 +931,40 @@ export default function HomePage() {
                 ) : (
                   tailEvents.map(({ event: e, count }, i) => {
                     const level = activityEventLevel(e);
+                    const rowLiveRun = tailEventLiveRun(e);
+                    const isStopping =
+                      rowLiveRun?.seq != null &&
+                      cancelRun.cancelSeq === rowLiveRun.seq &&
+                      cancelRun.phase === "cancelling";
                     return (
-                      <div className={`td-tail-row td-lvl-${level} td-tail-enter`} key={e.id ?? `${e.at}-${i}`}>
+                      <div
+                        className={`td-tail-row td-lvl-${level} td-tail-enter`}
+                        key={e.id ?? `${e.at}-${i}`}
+                        // The parent .td-tail is aria-hidden (a fast-updating
+                        // feed would spam screen readers) — a row carrying a
+                        // Stop control must stay reachable, so un-hide it.
+                        aria-hidden={rowLiveRun ? "false" : undefined}
+                      >
                         <span className="td-tail-ts">{tsLabel(e.at ?? Date.now())}</span>
                         <span className="td-tail-level">{level.toUpperCase()}</span>
                         <span className="td-tail-msg">
                           {eventLine(e)}
                           {count > 1 ? ` ×${count}` : ""}
                         </span>
+                        {rowLiveRun && rowLiveRun.seq != null && (
+                          <button
+                            type="button"
+                            className="btn sm ghost td-tail-stop"
+                            disabled={isStopping}
+                            title={`Stop this run of ${(rowLiveRun.recipeName ?? rowLiveRun.recipe ?? "").replace(/:agent$/, "")}`}
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              cancelRun.requestConfirm(rowLiveRun.seq as number);
+                            }}
+                          >
+                            {isStopping ? "stopping…" : "■ Stop"}
+                          </button>
+                        )}
                       </div>
                     );
                   })
@@ -1061,6 +1208,16 @@ export default function HomePage() {
           )}
         </Pane>
       </div>
+
+      <CancelRunDialog
+        open={cancelRun.phase === "confirming"}
+        onClose={cancelRun.dismiss}
+        onConfirm={() => void cancelRun.confirm()}
+        recipeName={
+          runs.find((r) => r.seq === cancelRun.cancelSeq)?.recipeName
+        }
+        seq={cancelRun.cancelSeq}
+      />
     </section>
   );
 }

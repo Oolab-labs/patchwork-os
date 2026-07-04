@@ -11,7 +11,7 @@
  *   - pane focus responds to number-key shortcuts (0-6)
  */
 
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import HomePage from "@/app/page";
 
@@ -219,6 +219,168 @@ describe("<HomePage/> — Terminal deck", () => {
     expect(workersPane.textContent).toMatch(
       /earned trust \(L1\) below the compensable-action threshold \(L2\)/,
     );
+  });
+
+  it("statusline clock flips to 'data as of … reconnecting' when the deck's own poll goes stale, and clears on recovery", async () => {
+    // Bug Fix Protocol: this test must fail before the statusline is wired
+    // to the staleness registry — the deck's primary poll (tracked via
+    // useManualPollStaleness) already existed, but nothing in the
+    // statusline read `getStaleFetchSummary()`, so a stalled bridge never
+    // changed what the clock segment showed.
+    let hang = false;
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/recipes": () => {
+        if (hang) return new Promise(() => {}) as unknown as Response;
+        return jsonResponse({ recipes: [] });
+      },
+    });
+    render(<HomePage />);
+
+    // First tick succeeds — registers a lastSuccessAt.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const statusline = screen.getByRole("status", { name: "Bridge status" });
+    expect(statusline.textContent).not.toMatch(/reconnecting/);
+
+    // Now every subsequent poll hangs forever — 3x the 5000ms interval
+    // (plus the 1s staleness re-check cadence) must flip the flag.
+    hang = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(16_000);
+    });
+
+    await waitFor(() => {
+      expect(statusline.textContent).toMatch(/data as of .* reconnecting/i);
+    });
+
+    // Recovery: next successful poll clears it back to the live clock.
+    hang = false;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
+
+    await waitFor(() => {
+      expect(statusline.textContent).not.toMatch(/reconnecting/i);
+    });
+  });
+
+  it("0:attention shows a Stop control for a live run and cancels it via the shared dialog", async () => {
+    const cancelMock = vi.fn().mockResolvedValue(
+      jsonResponse({ cancelled: true, seq: 501 }),
+    );
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/bridge/runs/501/cancel")) return cancelMock();
+      for (const [key, make] of Object.entries({
+        ...HEALTHY_ROUTES,
+        "/api/bridge/runs": () =>
+          jsonResponse({
+            runs: [
+              {
+                seq: 501,
+                recipe: "daily-brief",
+                recipeName: "daily-brief",
+                startedAt: Date.now() - 5000,
+                status: "running",
+              },
+            ],
+          }),
+      })) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const attentionPane = screen.getByRole("region", { name: "attention" });
+    expect(attentionPane.textContent).toMatch(/running/i);
+    expect(attentionPane.textContent).toMatch(/daily brief/i);
+
+    const stopBtn = within(attentionPane).getByTitle("Stop this run of daily-brief");
+    await act(async () => {
+      stopBtn.click();
+    });
+
+    // Confirm dialog gates the actual cancel call.
+    const confirmBtn = await screen.findByText("Stop run");
+    await act(async () => {
+      confirmBtn.click();
+    });
+
+    await waitFor(() => {
+      expect(cancelMock).toHaveBeenCalledTimes(1);
+    });
+
+    // Optimistic update: the live-run row disappears once cancelled.
+    await waitFor(() => {
+      expect(within(attentionPane).queryByTitle("Stop this run of daily-brief")).toBeNull();
+    });
+  });
+
+  it("1:tail shows a Stop control on the row for an in-progress run matched by recipeName", async () => {
+    const cancelMock = vi.fn().mockResolvedValue(
+      jsonResponse({ cancelled: true, seq: 777 }),
+    );
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/bridge/runs/777/cancel")) return cancelMock();
+      for (const [key, make] of Object.entries({
+        ...HEALTHY_ROUTES,
+        "/api/bridge/runs": () =>
+          jsonResponse({
+            runs: [
+              {
+                seq: 777,
+                recipe: "morning-brief",
+                recipeName: "morning-brief",
+                startedAt: Date.now() - 2000,
+                status: "running",
+              },
+            ],
+          }),
+        "/api/bridge/activity": () =>
+          jsonResponse({
+            events: [
+              {
+                kind: "lifecycle",
+                event: "recipe_step_started",
+                at: Date.now() - 1000,
+                metadata: { recipeName: "morning-brief" },
+              },
+            ],
+          }),
+      })) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const tailPane = screen.getByRole("region", { name: "tail" });
+    const stopBtn = within(tailPane).getByTitle("Stop this run of morning-brief");
+    await act(async () => {
+      stopBtn.click();
+    });
+
+    const confirmBtn = await screen.findByText("Stop run");
+    await act(async () => {
+      confirmBtn.click();
+    });
+
+    await waitFor(() => {
+      expect(cancelMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("fails soft when /gate/decisions is empty or errors", async () => {
