@@ -10111,6 +10111,10 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 /* Pane 5: vitals */
 .td-kv-row { display: flex; justify-content: space-between; font-size: var(--fs-xs); padding: 3px 0; border-top: 1px solid var(--line-1); }
 .td-kv-row:first-of-type { border-top: 0; }
+/* Mockup's H-C ".hc-kv" trend annotation — a small delta next to a KV
+   value that genuinely goes up/down between polls (sessions), not a
+   monotonic counter. */
+.td-kv-delta { font-size: var(--fs-2xs); font-weight: 400; margin-left: 2px; }
 .td-rate-budget { flex-wrap: wrap; }
 /* Mockup's .hd-bar2: a thin fill bar (rate-budget remaining/limit). */
 .td-bar2 {

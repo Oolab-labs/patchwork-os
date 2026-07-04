@@ -903,6 +903,24 @@ export default function HomePage() {
   const okCount24h = succeeded24h.length - withErrCount24h;
 
   const sessionsCount = bridgeStatus.activeSessions ?? health?.activeSessions;
+  // Mockup's H-C ".hc-kv" trend annotations (mined idea #3) — scoped to
+  // sessions only, not every KV row: sessions is a small gauge that
+  // genuinely goes up/down between polls, so a delta is informative. A
+  // monotonic 24h counter (tool calls) or a rarely-changing one (recipes
+  // enabled) would just show noise or near-always-zero, so those are left
+  // alone rather than fabricating a "trend" that isn't one.
+  const prevSessionsRef = useRef<number | undefined>(undefined);
+  const [sessionsDelta, setSessionsDelta] = useState<number | null>(null);
+  useEffect(() => {
+    if (typeof sessionsCount !== "number") return;
+    if (
+      typeof prevSessionsRef.current === "number" &&
+      prevSessionsRef.current !== sessionsCount
+    ) {
+      setSessionsDelta(sessionsCount - prevSessionsRef.current);
+    }
+    prevSessionsRef.current = sessionsCount;
+  }, [sessionsCount]);
   const enabledRecipesCount = recipes.filter((r) => r.enabled !== false).length;
 
   // ---- Pane 0: attention -------------------------------------------------
@@ -2198,7 +2216,19 @@ export default function HomePage() {
         <Pane index={5} id="vitals" title="vitals" activePane={activePane} setActivePane={setActivePane}>
           <div className="td-kv-row">
             <span className="td-muted">sessions</span>
-            <strong>{typeof sessionsCount === "number" ? sessionsCount : "—"}</strong>
+            <strong>
+              {typeof sessionsCount === "number" ? sessionsCount : "—"}
+              {sessionsDelta ? (
+                <span
+                  className={`td-kv-delta ${sessionsDelta > 0 ? "td-ok" : "td-err"}`}
+                  title="change since the last poll"
+                >
+                  {" "}
+                  {sessionsDelta > 0 ? "↑" : "↓"}
+                  {Math.abs(sessionsDelta)}
+                </span>
+              ) : null}
+            </strong>
           </div>
           <div className="td-kv-row">
             <span className="td-muted">tool calls · 24h</span>
