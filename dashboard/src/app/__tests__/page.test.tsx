@@ -757,6 +757,167 @@ describe("<HomePage/> — Terminal deck", () => {
     });
   });
 
+  it("confirming an action records a Decision Record trace with source:copilot", async () => {
+    const traceMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method ?? "GET";
+      if (url.includes("/api/bridge/copilot/message")) {
+        return jsonResponse({
+          reply: 'Review the card below to disable "daily-brief".',
+          action: { kind: "pause_recipe", recipeName: "daily-brief" },
+        });
+      }
+      if (method === "PATCH" && url.includes("/api/bridge/recipes/daily-brief")) {
+        return jsonResponse({ ok: true });
+      }
+      if (method === "POST" && url.includes("/api/bridge/traces/decision")) {
+        return traceMock(init);
+      }
+      for (const [key, make] of Object.entries(HEALTHY_ROUTES)) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const input = screen.getByLabelText("Copilot chat input");
+    await act(async () => {
+      typeIntoInput(input as HTMLInputElement, "pause daily-brief");
+    });
+    const form = input.closest("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const confirmBtn = await screen.findByText("Confirm");
+    await act(async () => {
+      confirmBtn.click();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    await waitFor(() => {
+      expect(traceMock).toHaveBeenCalledTimes(1);
+    });
+    const traceBody = JSON.parse((traceMock.mock.calls[0]?.[0] as RequestInit)?.body as string);
+    expect(traceBody).toMatchObject({
+      ref: "copilot:daily-brief",
+      problem: "pause daily-brief",
+      source: "copilot",
+      tags: ["copilot", "pause_recipe"],
+    });
+    expect(traceBody.solution).toMatch(/daily-brief/);
+  });
+
+  it("Undo on a done pause_recipe card re-enables the recipe and records another trace", async () => {
+    const patchCalls: unknown[] = [];
+    const traceMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method ?? "GET";
+      if (url.includes("/api/bridge/copilot/message")) {
+        return jsonResponse({
+          reply: 'Review the card below to disable "daily-brief".',
+          action: { kind: "pause_recipe", recipeName: "daily-brief" },
+        });
+      }
+      if (method === "PATCH" && url.includes("/api/bridge/recipes/daily-brief")) {
+        patchCalls.push(JSON.parse((init?.body as string) ?? "{}"));
+        return jsonResponse({ ok: true });
+      }
+      if (method === "POST" && url.includes("/api/bridge/traces/decision")) {
+        return traceMock(init);
+      }
+      for (const [key, make] of Object.entries(HEALTHY_ROUTES)) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const input = screen.getByLabelText("Copilot chat input");
+    await act(async () => {
+      typeIntoInput(input as HTMLInputElement, "pause daily-brief");
+    });
+    const form = input.closest("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    const confirmBtn = await screen.findByText("Confirm");
+    await act(async () => {
+      confirmBtn.click();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    await waitFor(() => expect(screen.getByText("✓ done")).toBeTruthy());
+
+    const undoBtn = await screen.findByText("Undo");
+    await act(async () => {
+      undoBtn.click();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("↺ undone")).toBeTruthy();
+    });
+    expect(patchCalls).toHaveLength(2);
+    expect(patchCalls[0]).toEqual({ enabled: false });
+    expect(patchCalls[1]).toEqual({ enabled: true });
+    await waitFor(() => {
+      expect(traceMock).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.queryByText("Undo")).toBeNull();
+  });
+
+  it("run_recipe action cards never show an Undo button once done", async () => {
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/bridge/copilot/message")) {
+        return jsonResponse({
+          reply: 'Review the card below to run "daily-brief" now.',
+          action: { kind: "run_recipe", recipeName: "daily-brief" },
+        });
+      }
+      if (url.includes("/api/bridge/recipes/daily-brief/run")) {
+        return jsonResponse({ ok: true, taskId: "abc123" });
+      }
+      for (const [key, make] of Object.entries(HEALTHY_ROUTES)) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    const input = screen.getByLabelText("Copilot chat input");
+    await act(async () => {
+      typeIntoInput(input as HTMLInputElement, "run daily-brief");
+    });
+    const form = input.closest("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    const confirmBtn = await screen.findByText("Confirm");
+    await act(async () => {
+      confirmBtn.click();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    await waitFor(() => expect(screen.getByText("✓ done")).toBeTruthy());
+    expect(screen.queryByText("Undo")).toBeNull();
+  });
+
   it("Dismiss removes the action card without calling any endpoint", async () => {
     global.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();

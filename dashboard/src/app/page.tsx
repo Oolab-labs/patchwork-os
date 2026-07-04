@@ -106,12 +106,18 @@ interface InboxItem {
 
 // 7:copilot — Tier 1 lever-action chat. `CopilotAction` mirrors the
 // bridge's `/copilot/message` response shape (src/copilot/parseIntent.ts);
-// `status` is client-side only, added once the card renders.
-type CopilotActionStatus = "pending" | "running" | "done";
+// `status` is client-side only, added once the card renders. "undone" is
+// reachable only from "done" on pause_recipe/enable_recipe — run_recipe
+// has no undo (nothing to revert once a recipe has actually run).
+type CopilotActionStatus = "pending" | "running" | "done" | "undoing" | "undone";
 interface CopilotAction {
   kind: "pause_recipe" | "enable_recipe" | "run_recipe";
   recipeName: string;
   status: CopilotActionStatus;
+  /** The user message text that produced this action — recorded on the
+   *  Decision Record when confirmed, so /traces can show what was asked
+   *  for, not just what ran. */
+  sourceText: string;
 }
 interface CopilotMessage {
   id: number;
@@ -906,13 +912,16 @@ export default function HomePage() {
       });
       const data = (await res.json().catch(() => ({}))) as {
         reply?: string;
-        action?: CopilotAction;
+        action?: Omit<CopilotAction, "status" | "sourceText">;
       };
       const botMsg: CopilotMessage = {
         id: ++copilotMsgSeq.current,
         role: "bot",
         text: res.ok ? (data.reply ?? "(no reply)") : "Couldn't reach the copilot endpoint.",
-        action: res.ok && data.action ? { ...data.action, status: "pending" } : undefined,
+        action:
+          res.ok && data.action
+            ? { ...data.action, status: "pending", sourceText: text }
+            : undefined,
       };
       setCopilotMessages((prev) => [...prev, botMsg]);
     } catch (e) {
@@ -929,12 +938,59 @@ export default function HomePage() {
     }
   }
 
-  function setCopilotActionStatus(msgId: number, status: CopilotActionStatus) {
+  function setCopilotActionStatus(
+    msgId: number,
+    status: CopilotActionStatus,
+    kind?: CopilotAction["kind"],
+  ) {
     setCopilotMessages((prev) =>
       prev.map((m) =>
-        m.id === msgId && m.action ? { ...m, action: { ...m.action, status } } : m,
+        m.id === msgId && m.action
+          ? { ...m, action: { ...m.action, status, ...(kind && { kind }) } }
+          : m,
       ),
     );
+  }
+
+  // Best-effort Decision Record write — the mockup's promise that copilot
+  // actions are "attributable in /traces" like cron. Uses the same HTTP
+  // route (POST /traces/decision, #1094) the ctxSaveTrace MCP tool backs.
+  // Fire-and-forget: a failed audit write must never block or roll back
+  // an action the operator already confirmed.
+  function recordCopilotDecisionTrace(action: CopilotAction, solution: string) {
+    void fetch(apiPath("/api/bridge/traces/decision"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ref: `copilot:${action.recipeName}`,
+        problem: action.sourceText,
+        solution,
+        tags: ["copilot", action.kind],
+        source: "copilot",
+      }),
+    }).catch((e) => {
+      console.error("[copilot] decision-trace write failed:", e);
+    });
+  }
+
+  // Keeps the page's local `recipes` array in sync with a copilot-driven
+  // pause/enable/undo, mirroring recipes/page.tsx's handleToggleEnabled.
+  // Without this, a second toggle in the same session (e.g. Undo right
+  // after Confirm) recomputes its target off a stale `enabled` value and
+  // can silently repeat the same PATCH instead of flipping back.
+  function recipeToggleCallbacks(recipeName: string) {
+    return {
+      onOptimistic: (nextEnabled: boolean) => {
+        setRecipes((prev) =>
+          prev.map((r) => (r.name === recipeName ? { ...r, enabled: nextEnabled } : r)),
+        );
+      },
+      onRollback: (previousEnabled: boolean) => {
+        setRecipes((prev) =>
+          prev.map((r) => (r.name === recipeName ? { ...r, enabled: previousEnabled } : r)),
+        );
+      },
+    };
   }
 
   async function confirmCopilotAction(msg: CopilotMessage) {
@@ -944,6 +1000,9 @@ export default function HomePage() {
     if (action.kind === "run_recipe") {
       const result = await runRecipe(action.recipeName);
       setCopilotActionStatus(msg.id, result.ok ? "done" : "pending");
+      if (result.ok) {
+        recordCopilotDecisionTrace(action, `Ran "${action.recipeName}" via copilot.`);
+      }
       return;
     }
     // pause_recipe / enable_recipe — same gated hook the recipes page uses,
@@ -957,9 +1016,45 @@ export default function HomePage() {
       typeof recipe.trigger === "string" ? recipe.trigger : recipe.trigger?.type;
     const result = await toggleRecipeEnabled(
       { name: recipe.name, enabled: recipe.enabled, trigger },
-      {},
+      recipeToggleCallbacks(recipe.name),
     );
     setCopilotActionStatus(msg.id, result.ok ? "done" : "pending");
+    if (result.ok) {
+      const verb = action.kind === "pause_recipe" ? "Disabled" : "Enabled";
+      recordCopilotDecisionTrace(
+        action,
+        `${verb} "${action.recipeName}" via copilot lever action.`,
+      );
+    }
+  }
+
+  // Undo — pause_recipe/enable_recipe only (a run can't be un-run). Calls
+  // the identical gated hook a second time; toggleRecipeEnabled reads the
+  // CURRENT recipe.enabled off shared state, so this naturally flips back
+  // to the pre-confirm state without needing to track it separately. If
+  // the recipe is now autonomous+enabled, the hook's own confirm() gate
+  // fires again exactly as it would for a manual disable elsewhere.
+  async function undoCopilotAction(msg: CopilotMessage) {
+    const action = msg.action;
+    if (!action || action.status !== "done" || action.kind === "run_recipe") return;
+    const recipe = recipes.find((r) => r.name === action.recipeName);
+    if (!recipe) return;
+    setCopilotActionStatus(msg.id, "undoing");
+    const trigger =
+      typeof recipe.trigger === "string" ? recipe.trigger : recipe.trigger?.type;
+    const result = await toggleRecipeEnabled(
+      { name: recipe.name, enabled: recipe.enabled, trigger },
+      recipeToggleCallbacks(recipe.name),
+    );
+    if (result.ok) {
+      setCopilotActionStatus(msg.id, "undone");
+      recordCopilotDecisionTrace(
+        action,
+        `Reverted "${action.recipeName}" back to its prior state via copilot undo.`,
+      );
+    } else {
+      setCopilotActionStatus(msg.id, "done");
+    }
   }
 
   return (
@@ -1689,7 +1784,7 @@ export default function HomePage() {
               {m.text}
               {m.action && (
                 <div
-                  className={`td-copilot-act td-tail-enter${m.action.status === "done" ? " done" : ""}`}
+                  className={`td-copilot-act td-tail-enter${["done", "undoing", "undone"].includes(m.action.status) ? " done" : ""}`}
                 >
                   <div className="td-copilot-act-head">
                     <span className={`td-pill${m.action.kind === "run_recipe" ? " td-pill-accent" : ""}`}>
@@ -1699,8 +1794,11 @@ export default function HomePage() {
                     {m.action.status === "done" && (
                       <span className="td-pill td-pill-ok">✓ done</span>
                     )}
+                    {m.action.status === "undone" && (
+                      <span className="td-pill">↺ undone</span>
+                    )}
                   </div>
-                  {m.action.status !== "done" && (
+                  {(m.action.status === "pending" || m.action.status === "running") && (
                     <div className="td-copilot-act-actions">
                       <button
                         type="button"
@@ -1726,6 +1824,19 @@ export default function HomePage() {
                       </button>
                     </div>
                   )}
+                  {(m.action.status === "done" || m.action.status === "undoing") &&
+                    m.action.kind !== "run_recipe" && (
+                      <div className="td-copilot-act-actions">
+                        <button
+                          type="button"
+                          className="btn sm ghost"
+                          disabled={m.action.status === "undoing"}
+                          onClick={() => void undoCopilotAction(m)}
+                        >
+                          {m.action.status === "undoing" ? "undoing…" : "Undo"}
+                        </button>
+                      </div>
+                    )}
                 </div>
               )}
             </div>

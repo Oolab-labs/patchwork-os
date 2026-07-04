@@ -3,13 +3,13 @@
  * "7:copilot", docs/plans/dashboard-terminal-copilot-plan-2026-07-03.md).
  *
  * Tier 1 only: a small, explicit set of safe "lever" intents (pause/enable/
- * run a recipe by name, explain a recent halt). Deliberately NOT an LLM
- * call — every phrasing this recognizes is enumerable and unit-testable,
- * and an unrecognized message always falls back to a canned reply rather
- * than guessing. Recipe/worker AI-creation (the mockup's tiers 2/3) are
- * out of scope here; see the plan doc's risk register for why those need
- * a generation endpoint + lint/preflight wiring + much more safety review
- * before they can ship.
+ * run a recipe by name, explain a recent halt, read-only status Q&A).
+ * Deliberately NOT an LLM call — every phrasing this recognizes is
+ * enumerable and unit-testable, and an unrecognized message always falls
+ * back to a canned reply rather than guessing. Recipe/worker AI-creation
+ * (the mockup's tiers 2/3) are out of scope here; see the plan doc's risk
+ * register for why those need a generation endpoint + lint/preflight
+ * wiring + much more safety review before they can ship.
  */
 
 export interface CopilotRecipeRef {
@@ -22,6 +22,9 @@ export type CopilotIntent =
   | { kind: "enable_recipe"; recipe: CopilotRecipeRef }
   | { kind: "run_recipe"; recipe: CopilotRecipeRef }
   | { kind: "explain_halt"; recipe?: CopilotRecipeRef }
+  | { kind: "ambiguous_recipe"; candidates: CopilotRecipeRef[] }
+  | { kind: "approvals_status" }
+  | { kind: "kill_switch_status" }
   | { kind: "unrecognized"; text: string };
 
 /** "nightly-review" / "nightly review" / "NIGHTLY_REVIEW" all match a
@@ -31,28 +34,35 @@ function normalizeSlug(s: string): string {
   return s.toLowerCase().replace(/[-_]+/g, " ").trim();
 }
 
-/** Finds the recipe whose (normalized) name is the longest match found as
- *  a substring of the (normalized) input text — longest wins so a recipe
- *  named "outcome-ingester" doesn't lose to a shorter unrelated match. */
-function findMentionedRecipe(
+/** Finds every recipe whose (normalized) name is tied for the longest
+ *  match found as a substring of the (normalized) input text. A single
+ *  result means an unambiguous match (longest wins over shorter
+ *  unrelated matches, e.g. "outcome-ingester" over a shorter false
+ *  positive); more than one result means the text is genuinely
+ *  ambiguous — two distinct recipes both plausibly match — and the
+ *  caller must not silently guess which one the user meant. */
+function findMentionedRecipes(
   text: string,
   recipes: CopilotRecipeRef[],
-): CopilotRecipeRef | undefined {
+): CopilotRecipeRef[] {
   const normalizedText = normalizeSlug(text);
-  let best: CopilotRecipeRef | undefined;
   let bestLen = 0;
+  let candidates: CopilotRecipeRef[] = [];
   for (const r of recipes) {
     const normalizedName = normalizeSlug(r.name);
     if (normalizedName.length === 0) continue;
-    if (
-      normalizedText.includes(normalizedName) &&
-      normalizedName.length > bestLen
-    ) {
-      best = r;
+    if (!normalizedText.includes(normalizedName)) continue;
+    if (normalizedName.length > bestLen) {
       bestLen = normalizedName.length;
+      candidates = [r];
+    } else if (
+      normalizedName.length === bestLen &&
+      !candidates.some((c) => c.name === r.name)
+    ) {
+      candidates.push(r);
     }
   }
-  return best;
+  return candidates;
 }
 
 const HALT_PATTERN =
@@ -60,6 +70,8 @@ const HALT_PATTERN =
 const PAUSE_PATTERN = /\b(pause|disable|stop|turn off|kill)\b/i;
 const ENABLE_PATTERN = /\b(enable|resume|unpause|re-?enable|turn on)\b/i;
 const RUN_PATTERN = /\b(run|start|trigger|kick off|fire)\b/i;
+const APPROVALS_PATTERN = /\bapprovals?\b/i;
+const KILL_SWITCH_PATTERN = /\bkill.?switch\b/i;
 
 export function parseCopilotIntent(
   text: string,
@@ -68,9 +80,17 @@ export function parseCopilotIntent(
   const trimmed = text.trim();
   if (!trimmed) return { kind: "unrecognized", text };
 
-  const mentioned = findMentionedRecipe(trimmed, recipes);
+  // Read-only status Q&A — independent of recipe matching, checked first
+  // since these questions never name a recipe.
+  if (KILL_SWITCH_PATTERN.test(trimmed)) return { kind: "kill_switch_status" };
+  if (APPROVALS_PATTERN.test(trimmed)) return { kind: "approvals_status" };
 
-  // Halt explanation is checked first — "why did X halt" would otherwise
+  const matches = findMentionedRecipes(trimmed, recipes);
+  if (matches.length > 1)
+    return { kind: "ambiguous_recipe", candidates: matches };
+  const mentioned = matches[0];
+
+  // Halt explanation is checked next — "why did X halt" would otherwise
   // also match nothing else, but a phrase like "why is X stopped" could
   // collide with the pause pattern's "stop" if checked in the wrong order.
   if (HALT_PATTERN.test(trimmed)) {
@@ -92,7 +112,7 @@ export function parseCopilotIntent(
 }
 
 const CAN_DO_HINT =
-  'I can pause, enable, or run a recipe by name, or explain a recent halt — try "pause nightly-review" or "why did outcome-ingester halt".';
+  'I can pause, enable, or run a recipe by name, explain a recent halt, or answer "approvals pending"/"kill switch status" — try "pause nightly-review" or "why did outcome-ingester halt".';
 
 const CREATION_HINT =
   "Creating recipes or workers from a goal isn't wired up yet — for now, use Marketplace → Install or `recipe new` for those.";
@@ -108,13 +128,18 @@ export interface CopilotReplyResult {
   };
 }
 
-/** Given a parsed intent (and, for explain_halt, the most recent halt
- *  reason if one was found), produce the chat reply + optional proposed
+/** Given a parsed intent (plus read-only status context the route
+ *  handler already has on hand — halt reason, approvals count,
+ *  kill-switch state), produce the chat reply + optional proposed
  *  action card. Never executes anything — matches the mockup's "chat
  *  proposes, buttons dispose" rule verbatim. */
 export function buildCopilotReply(
   intent: CopilotIntent,
-  opts: { haltReason?: string | null } = {},
+  opts: {
+    haltReason?: string | null;
+    approvalsPending?: number;
+    killSwitchEngaged?: boolean;
+  } = {},
 ): CopilotReplyResult {
   switch (intent.kind) {
     case "pause_recipe":
@@ -144,6 +169,25 @@ export function buildCopilotReply(
         reply: opts.haltReason
           ? `"${intent.recipe.name}" last halted: ${opts.haltReason}`
           : `I don't see a recent halt for "${intent.recipe.name}".`,
+      };
+    case "ambiguous_recipe": {
+      const names = intent.candidates.map((c) => `"${c.name}"`).join(", ");
+      return {
+        reply: `That matches more than one recipe: ${names}. Try naming one more specifically.`,
+      };
+    }
+    case "approvals_status": {
+      const n = opts.approvalsPending ?? 0;
+      return {
+        reply:
+          n === 0
+            ? "No approvals pending."
+            : `${n} approval${n === 1 ? "" : "s"} pending — see 0:attention or /approvals.`,
+      };
+    }
+    case "kill_switch_status":
+      return {
+        reply: `Kill switch is ${opts.killSwitchEngaged ? "engaged (writes blocked)" : "released"}.`,
       };
     case "unrecognized":
       if (CREATION_KEYWORDS.test(intent.text)) {
