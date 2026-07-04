@@ -1656,6 +1656,46 @@ export default function HomePage() {
             })
           )}
 
+          {/* Review-needed tray (mockup's W-B "Ledger" .wb-review) — the
+              worker-verdict confirm queue, surfaced HERE too, not just in
+              0:attention. 4:workers previously only showed aggregate
+              counts ("N ready to promote · N slipped back"); this is the
+              actual "is it real?" queue the counts refer to, reusing the
+              exact same workerPending/actOutcome data+handler
+              0:attention's identical item already uses — additive, same
+              established pattern as the earlier approval item. */}
+          {workerPending.length > 0 && (
+            <div className="td-worker-review">
+              <div className="td-worker-review-head">review needed</div>
+              {workerPending.map((p) => (
+                <div className="td-worker-review-row" key={p.issueUrl}>
+                  <span className="pill muted">issue</span>
+                  <span className="td-worker-review-body">
+                    <strong>{p.workerName}</strong> filed &ldquo;{p.title ?? "a new issue"}&rdquo;
+                    <span className="td-muted"> · {formatAgo(nowMs - p.filedAt)} · {p.classKey}</span>
+                  </span>
+                  <span className="td-pane-sp" />
+                  <button
+                    type="button"
+                    className="btn sm primary"
+                    disabled={outcomeBusy === p.issueUrl}
+                    onClick={() => void actOutcome(p, "confirmed")}
+                  >
+                    Looks real
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm ghost"
+                    disabled={outcomeBusy === p.issueUrl}
+                    onClick={() => void actOutcome(p, "junk")}
+                  >
+                    Not real
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Gate activity — first-ever dashboard surface of the Decision
               Record (GET /gate/decisions, backs `patchwork gate explain`).
               Renders the last ~6 gate decisions across all workers. */}

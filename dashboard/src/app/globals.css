@@ -9953,6 +9953,34 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 [data-theme="paper"] .td-worker-status-climbing { color: var(--warn-text); }
 [data-theme="paper"] .td-worker-status-reversible { color: var(--ink-3); }
 
+/* Pane 4: workers — review-needed tray (mockup's W-B ".wb-review"), the
+   worker-verdict confirm queue surfaced inline instead of just an
+   aggregate count. */
+.td-worker-review {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(224, 176, 84, 0.35);
+  border-radius: var(--r-2, 6px);
+  background: rgba(224, 176, 84, 0.08);
+}
+.td-worker-review-head {
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--terminal-comment);
+  margin-bottom: 6px;
+}
+[data-theme="paper"] .td-worker-review-head { color: var(--ink-3); }
+.td-worker-review-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: var(--fs-xs);
+  padding: 4px 0;
+}
+.td-worker-review-body { min-width: 0; }
+
 /* Pane 4: workers — gate activity feed (Decision Record, GET /gate/decisions) */
 .td-gate-activity { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line-1); }
 .td-gate-activity-title { font-size: var(--fs-xs); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
