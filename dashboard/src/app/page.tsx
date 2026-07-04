@@ -195,6 +195,18 @@ function formatAgo(ms: number): string {
   return `${sec}s ago`;
 }
 
+// Phase 4: halt-age escalation — a halt sitting unaddressed for hours
+// shouldn't look identical to one from 2 minutes ago. The attention pane's
+// pool is `runs24h` (bounded to the last 24h — see the statusline's "runs
+// 24h" tile), so tiers live inside that window: fresh <1h, stale 1-6h,
+// critical >=6h ("this has been open a quarter of the day, unaddressed").
+type HaltAgeTier = "fresh" | "stale" | "critical";
+function haltAgeTier(ageMs: number): HaltAgeTier {
+  if (ageMs >= 6 * 60 * 60 * 1000) return "critical";
+  if (ageMs >= 60 * 60 * 1000) return "stale";
+  return "fresh";
+}
+
 function eventLine(e: ActivityEvent): string {
   if (e.kind === "tool") return e.tool ?? "tool";
   if (e.kind === "lifecycle" && e.event) return e.event.replace(/_/g, " ");
@@ -236,6 +248,30 @@ function readMuteUntil(): number {
 function writeMuteUntil(ts: number) {
   try {
     window.localStorage.setItem(MUTE_KEY, String(ts));
+  } catch {
+    /* private mode */
+  }
+}
+
+// Phase 4 fix: mute used to be purely time-based — a "Mute 24h" click on
+// today's halt would also hide tomorrow's unrelated halt for the rest of
+// the window. Persist WHICH halt was muted alongside the timestamp, and
+// only suppress the attention pane while the current top halt is still
+// that same one — a genuinely new/different halt bypasses the mute.
+const MUTE_FINGERPRINT_KEY = "patchwork.td.attentionMuteFingerprint";
+
+function readMuteFingerprint(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(MUTE_FINGERPRINT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeMuteFingerprint(fp: string) {
+  try {
+    window.localStorage.setItem(MUTE_FINGERPRINT_KEY, fp);
   } catch {
     /* private mode */
   }
@@ -560,8 +596,11 @@ export default function HomePage() {
 
   // ---- Pane 0: attention -------------------------------------------------
   const [muteUntil, setMuteUntilState] = useState(0);
-  useEffect(() => setMuteUntilState(readMuteUntil()), []);
-  const isMuted = muteUntil > nowMs;
+  const [muteFingerprint, setMuteFingerprintState] = useState("");
+  useEffect(() => {
+    setMuteUntilState(readMuteUntil());
+    setMuteFingerprintState(readMuteFingerprint());
+  }, []);
 
   const attentionRuns = runs24h
     .filter((r) => isHaltStatus(r.status) || r.status === "error" || r.status === "failed")
@@ -570,6 +609,15 @@ export default function HomePage() {
   const workerPending = pendingOutcomesData?.pending ?? [];
   const attentionCount = pendingCount + haltCount24h + errCount24h + workerPending.length;
   const topWorkerPending = [...workerPending].sort((a, b) => a.filedAt - b.filedAt)[0];
+  // Identity of whatever halt is currently the top attention item — a
+  // "Mute 24h" click only ever fires from inside that halt's own action
+  // row, so this is what a stored mute fingerprint gets compared against.
+  const topAttentionFingerprint = topAttentionRun
+    ? `run:${topAttentionRun.seq ?? topAttentionRun.startedAt}`
+    : "";
+  const isMuted =
+    muteUntil > nowMs &&
+    (topAttentionFingerprint === "" || topAttentionFingerprint === muteFingerprint);
 
   async function actOutcome(p: PendingConfirmation, disposition: "confirmed" | "junk") {
     setOutcomeBusy(p.issueUrl);
@@ -911,6 +959,8 @@ export default function HomePage() {
                     onClick={() => {
                       writeMuteUntil(0);
                       setMuteUntilState(0);
+                      writeMuteFingerprint("");
+                      setMuteFingerprintState("");
                     }}
                   >
                     unmute
@@ -925,14 +975,18 @@ export default function HomePage() {
                 const key = canonicalRecipeKey(name);
                 const isQueueing = Boolean(runPending[key]);
                 const agoMs = nowMs - topAttentionRun.startedAt;
+                const ageTier = haltAgeTier(agoMs);
                 return (
-                  <div className="td-attention-item">
+                  <div className={`td-attention-item${ageTier !== "fresh" ? ` td-attention-${ageTier}` : ""}`}>
                     <div className="td-attention-head">
-                      <span className="td-pill td-pill-err">
+                      <span className={`td-pill td-pill-err${ageTier === "critical" ? " td-pill-critical" : ""}`}>
                         {isHaltStatus(topAttentionRun.status) ? "halted" : topAttentionRun.status}
                       </span>
                       <strong className="mono">{recipeDisplayName(name)}</strong>
-                      <span className="td-muted">{formatAgo(agoMs)}</span>
+                      <span className={`td-muted${ageTier !== "fresh" ? " td-age-stale" : ""}`}>
+                        {formatAgo(agoMs)}
+                        {ageTier === "critical" ? " — needs attention" : ageTier === "stale" ? " — unaddressed" : ""}
+                      </span>
                     </div>
                     {topAttentionRun.haltReason && (
                       <div className="td-attention-reason">└ {topAttentionRun.haltReason}</div>
@@ -962,6 +1016,8 @@ export default function HomePage() {
                           const until = Date.now() + 24 * 60 * 60 * 1000;
                           writeMuteUntil(until);
                           setMuteUntilState(until);
+                          writeMuteFingerprint(topAttentionFingerprint);
+                          setMuteFingerprintState(topAttentionFingerprint);
                         }}
                       >
                         Mute 24h
@@ -1492,6 +1548,13 @@ export default function HomePage() {
             })
           )}
         </Pane>
+      </div>
+
+      {/* Phase 4: footer hint — usePaneShortcut (0-6 focus, Enter open)
+          had zero on-screen discoverability; a keyboard-only feature with
+          no visible hint is undiscoverable UI. */}
+      <div className="td-footer" aria-hidden="true">
+        <span className="td-muted">0–6 focus a pane · Enter open it</span>
       </div>
 
       <CancelRunDialog
