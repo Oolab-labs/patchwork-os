@@ -25,7 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-(none)
+- 2026-07-04 `fix/copilot-pane-ui-polish` (#1116) — UI polish pass on the Tier-1 copilot pane (#1114); found 5 real CSS/JSX class-name mismatches that left the input row, action-buttons row, "done" state, recipe-name emphasis, and empty-state hint completely unstyled. Fixed + added entrance animation, thinking indicator, auto-scroll, accent "run" pill. — awaiting CI
 
 ## Recently closed (informal log, prune periodically)
 
