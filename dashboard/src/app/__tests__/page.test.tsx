@@ -62,7 +62,24 @@ const HEALTHY_ROUTES: Record<string, () => Response> = {
   "/api/bridge/runs": () => jsonResponse({ runs: [] }),
   "/api/bridge/workers/shadow": () =>
     jsonResponse({ workers: [], runsScanned: 0, decisionsScanned: 0 }),
+  "/api/bridge/gate/decisions": () => jsonResponse({ decisions: [] }),
   "/api/inbox": () => jsonResponse({ items: [] }),
+};
+
+const SAMPLE_GATE_DECISION = {
+  seq: 42,
+  decidedAt: Date.UTC(2026, 5, 3, 7, 43),
+  workerId: "test-guardian",
+  toolName: "githubCreateIssue",
+  classKey: "issue:compensable:high",
+  action: "gate",
+  owned: true,
+  earnedLevel: 1,
+  autonomyCeiling: 3,
+  effectiveLevel: 1,
+  reason: "earned trust (L1) below the compensable-action threshold (L2)",
+  recipeName: "triage-failing-tests",
+  gatePolicyVersion: "v1",
 };
 
 describe("<HomePage/> — Terminal deck", () => {
@@ -154,5 +171,80 @@ describe("<HomePage/> — Terminal deck", () => {
     await waitFor(() => {
       expect(fleetPane.className).toMatch(/td-pane-active/);
     });
+  });
+
+  it("renders gate-activity entries in the workers pane (Decision Record feed)", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/gate/decisions": () =>
+        jsonResponse({ decisions: [SAMPLE_GATE_DECISION] }),
+    });
+    render(<HomePage />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const workersPane = screen.getByRole("region", { name: "workers" });
+    expect(workersPane.textContent).toMatch(/GATE/);
+    expect(workersPane.textContent).toMatch(/test-guardian/);
+    expect(workersPane.textContent).toMatch(/issue:compensable:high/);
+    // effectiveLevel 1 → "asks first" per the shared level-phrase vocabulary.
+    expect(workersPane.textContent).toMatch(/asks first/);
+  });
+
+  it("expands a gate-activity row to show the plain-English explain rendering", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/gate/decisions": () =>
+        jsonResponse({ decisions: [SAMPLE_GATE_DECISION] }),
+    });
+    render(<HomePage />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const row = screen.getByRole("button", { expanded: false });
+    await act(async () => {
+      row.click();
+    });
+
+    await waitFor(() => {
+      expect(row.getAttribute("aria-expanded")).toBe("true");
+    });
+    const workersPane = screen.getByRole("region", { name: "workers" });
+    expect(workersPane.textContent).toMatch(/earned L1/);
+    expect(workersPane.textContent).toMatch(/autonomy ceiling L3/);
+    expect(workersPane.textContent).toMatch(
+      /earned trust \(L1\) below the compensable-action threshold \(L2\)/,
+    );
+  });
+
+  it("fails soft when /gate/decisions is empty or errors", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/gate/decisions": () => jsonResponse({ decisions: [] }),
+    });
+    const { unmount } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    let workersPane = screen.getByRole("region", { name: "workers" });
+    expect(workersPane.textContent).toMatch(/no gate decisions yet/i);
+    unmount();
+
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/gate/decisions": () => jsonResponse({ error: "boom" }, 500),
+    });
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    workersPane = screen.getByRole("region", { name: "workers" });
+    expect(workersPane.textContent).toMatch(/gate activity unavailable/i);
+    // Rest of the pane (worker trust rows) still renders — fail-soft.
+    expect(workersPane.textContent).toMatch(/no worker activity yet/i);
   });
 });

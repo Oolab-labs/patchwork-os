@@ -25,7 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-04 `fix/deck-pane-signal-quality` — Terminal deck v2 Phase 1 (pane signal quality): user reviewed the merged deck (#1095) live and found real-data signal-quality problems the mockup couldn't expose. 1:tail defaults to hiding bridge-lifecycle plumbing (grace/heartbeat/connected) behind a toggle + collapses consecutive duplicates with ×N (reusing activity page's compression logic) + fixes level coloring. 3:next shows only enabled schedules sorted by next-fire with countdowns, paused collapse to one footer line. 2:fleet sorts real/active recipes first, maps trigger labels to short display names, caps ~6 rows + "+N more". 6:inbox strips markdown + truncates at word boundary. Phases 2-4 (Decision Record gate-activity in 4:workers, staleness-in-statusline + run-cancel-on-deck, halt-age escalation + polish) follow as separate PRs. — build session
+- 2026-07-04 `feat/deck-workers-gate-activity` — Terminal deck v2 Phase 2: `4:workers` pane gets a "gate activity" feed below the trust lines — last ~6 `GET /gate/decisions` entries (worker × classKey decisions), terminal-style rows, expandable to a plain-English `gate explain`-style rendering. First-ever dashboard surface for the Decision Record. Reuses the pane's existing poll cadence, no new loop. Phase 1 (pane signal quality) merged as #1100. Phases 3-4 (staleness/cancel-in-deck, polish) follow as separate PRs. — build session
 
 ## Recently closed (informal log, prune periodically)
 
