@@ -39,6 +39,8 @@ import { collapseConsecutiveEvents } from "@/lib/collapseConsecutiveEvents";
 import { triggerLabel } from "@/lib/triggerLabel";
 import { previewText } from "@/lib/textPreview";
 import { useToast } from "@/components/Toast";
+import { classifyPendingAction, reversibilityRank } from "@/lib/actionClass";
+import { BlastBadge } from "@/components/patchwork";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -219,6 +221,17 @@ function formatAgo(ms: number): string {
   if (hours > 0) return `${hours}h ${mins % 60}m ago`;
   if (mins > 0) return `${mins}m ${sec % 60}s ago`;
   return `${sec}s ago`;
+}
+
+/** A duration (not "ago"), for fleet's "avg 48s" metadata line. */
+function formatDurationShort(ms: number): string {
+  if (ms < 0) ms = 0;
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const mins = Math.floor(sec / 60);
+  if (mins < 60) return `${mins}m ${sec % 60}s`;
+  const hours = Math.floor(mins / 60);
+  return `${hours}h ${mins % 60}m`;
 }
 
 // Phase 4: halt-age escalation — a halt sitting unaddressed for hours
@@ -907,6 +920,15 @@ export default function HomePage() {
   const workerPending = pendingOutcomesData?.pending ?? [];
   const attentionCount = pendingCount + haltCount24h + errCount24h + workerPending.length;
   const topWorkerPending = [...workerPending].sort((a, b) => a.filedAt - b.filedAt)[0];
+  // Worst-blast-tier pending approval first (mockup's A-A "Considered" —
+  // "sorted by blast radius, the one that can't be undone is on top").
+  // Maps directly onto the worker-autonomy gate's existing
+  // domain:reversibility:blastTier vocabulary via classifyPendingAction.
+  const topApproval = [...pendingApprovals].sort(
+    (a, b) =>
+      reversibilityRank(classifyPendingAction(a.toolName)?.reversibility) -
+      reversibilityRank(classifyPendingAction(b.toolName)?.reversibility),
+  )[0];
   // Identity of whatever halt is currently the top attention item — a
   // "Mute 24h" click only ever fires from inside that halt's own action
   // row, so this is what a stored mute fingerprint gets compared against.
@@ -1624,6 +1646,38 @@ export default function HomePage() {
                   </div>
                 );
               })()}
+              {topApproval && (
+                <div className="td-attention-item">
+                  <div className="td-attention-head">
+                    <BlastBadge cls={classifyPendingAction(topApproval.toolName)} />
+                    <strong className="mono">{topApproval.toolName}</strong>
+                    <span className="td-muted">
+                      filed {formatAgo(nowMs - topApproval.requestedAt)}
+                    </span>
+                  </div>
+                  {topApproval.summary && (
+                    <div className="td-attention-reason">└ {topApproval.summary}</div>
+                  )}
+                  <div className="td-attention-actions">
+                    <button
+                      type="button"
+                      className="btn sm primary"
+                      disabled={approvalBusy === topApproval.callId}
+                      onClick={() => void actApproval(topApproval, "approve")}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      className="btn sm ghost"
+                      disabled={approvalBusy === topApproval.callId}
+                      onClick={() => void actApproval(topApproval, "reject")}
+                    >
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              )}
               {topWorkerPending && (
                 <div className="td-attention-item">
                   <div className="td-attention-head">
@@ -1800,40 +1854,59 @@ export default function HomePage() {
                 // sized to the success percentage.
                 const BAR_WIDTH = 8;
                 const filled = pct == null ? 0 : Math.round((pct / 100) * BAR_WIDTH);
+                // Mockup's R-A ".ra-meta" row (mined idea #7) — avg
+                // duration + last-run-relative-time, using the same
+                // runList this row's health bar already computes from.
+                const finishedRuns = runList.filter((r) => r.durationMs != null);
+                const avgDurationMs =
+                  finishedRuns.length > 0
+                    ? finishedRuns.reduce((sum, r) => sum + (r.durationMs ?? 0), 0) /
+                      finishedRuns.length
+                    : null;
+                const lastRun = runList[0];
                 return (
                   <div className="td-fleet-row" key={recipe.name}>
-                    <span
-                      className={`td-fleet-glyph${isLive ? " td-fleet-glyph-live" : ""}`}
-                      title={isLive ? "running now" : enabled ? "enabled" : "paused"}
-                    >
-                      {enabled ? "▶" : "⏸"}
-                    </span>
-                    <strong className="mono td-fleet-name">{recipeDisplayName(recipe.name)}</strong>
-                    <span className="td-muted td-fleet-trigger">{triggerLabel(trigger)}</span>
-                    {!enabled ? (
-                      <span className="td-fleet-bar td-muted" aria-hidden="true">
-                        {"─".repeat(BAR_WIDTH)}
+                    <div className="td-fleet-row-top">
+                      <span
+                        className={`td-fleet-glyph${isLive ? " td-fleet-glyph-live" : ""}`}
+                        title={isLive ? "running now" : enabled ? "enabled" : "paused"}
+                      >
+                        {enabled ? "▶" : "⏸"}
                       </span>
-                    ) : (
-                      // Keyed by `filled` so the whole bar remounts (and
-                      // replays its fade-in) when the success rate changes
-                      // between polls — reuses the tail pane's existing
-                      // .td-tail-enter convention rather than a new one.
-                      <span className="td-fleet-bar td-tail-enter" key={filled} aria-hidden="true">
-                        {Array.from({ length: BAR_WIDTH }, (_, i) =>
-                          i < filled ? (
-                            <span key={i} className="td-blk-ok">
-                              █
-                            </span>
-                          ) : (
-                            <span key={i} className="td-blk-empty">
-                              {hasHistory ? "─" : "·"}
-                            </span>
-                          ),
-                        )}
-                      </span>
+                      <strong className="mono td-fleet-name">{recipeDisplayName(recipe.name)}</strong>
+                      <span className="td-muted td-fleet-trigger">{triggerLabel(trigger)}</span>
+                      {!enabled ? (
+                        <span className="td-fleet-bar td-muted" aria-hidden="true">
+                          {"─".repeat(BAR_WIDTH)}
+                        </span>
+                      ) : (
+                        // Keyed by `filled` so the whole bar remounts (and
+                        // replays its fade-in) when the success rate changes
+                        // between polls — reuses the tail pane's existing
+                        // .td-tail-enter convention rather than a new one.
+                        <span className="td-fleet-bar td-tail-enter" key={filled} aria-hidden="true">
+                          {Array.from({ length: BAR_WIDTH }, (_, i) =>
+                            i < filled ? (
+                              <span key={i} className="td-blk-ok">
+                                █
+                              </span>
+                            ) : (
+                              <span key={i} className="td-blk-empty">
+                                {hasHistory ? "─" : "·"}
+                              </span>
+                            ),
+                          )}
+                        </span>
+                      )}
+                      <span className="td-muted">{!enabled ? "off" : pct == null ? "—" : `${Math.round(pct)}%`}</span>
+                    </div>
+                    {enabled && hasHistory && (avgDurationMs != null || lastRun) && (
+                      <div className="td-fleet-meta td-muted">
+                        {avgDurationMs != null && <>avg {formatDurationShort(avgDurationMs)}</>}
+                        {avgDurationMs != null && lastRun ? " · " : ""}
+                        {lastRun && <>{formatAgo(nowMs - lastRun.startedAt)}</>}
+                      </div>
                     )}
-                    <span className="td-muted">{!enabled ? "off" : pct == null ? "—" : `${Math.round(pct)}%`}</span>
                   </div>
                 );
               })}
