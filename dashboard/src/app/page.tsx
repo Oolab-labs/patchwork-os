@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { apiPath } from "@/lib/api";
 import { recipeDisplayName } from "@/lib/recipeDisplay";
 import { FirstRunChecklist } from "@/components/FirstRunChecklist";
@@ -29,6 +30,8 @@ import {
   type WorkerReport,
 } from "@/lib/workerTrust";
 import { describeNextRun, humanizeSchedule } from "@/lib/humanSchedule";
+import { classifyPendingAction, reversibilityRank } from "@/lib/actionClass";
+import { BlastBadge } from "@/components/patchwork";
 import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
 import { isNoiseEvent } from "@/lib/activityNoise";
 import { eventLevel as activityEventLevel } from "@/lib/activityLevel";
@@ -228,6 +231,254 @@ function haltAgeTier(ageMs: number): HaltAgeTier {
   if (ageMs >= 6 * 60 * 60 * 1000) return "critical";
   if (ageMs >= 60 * 60 * 1000) return "stale";
   return "fresh";
+}
+
+/** agreed/compared as a 0-100 trust percentage, or null if there's no
+ *  comparison history yet (never fabricate a rate from zero data). */
+function workerTrustPct(w: WorkerReport): number | null {
+  if (w.compared <= 0) return null;
+  return Math.round((w.agreed / w.compared) * 100);
+}
+
+// The former standalone /today page's "unified morning" layout (numbered
+// 1/2/3 sections + progress dots + collapse-to-clear banner), removed as
+// a page in #1112, restored here as a section on Overview between the
+// statusline and the pane grid per user request (2026-07-04) — the
+// minimal "N of 3 done" text-only version from the first attempt at this
+// wasn't what was wanted; this is a faithful port of the richer mockup
+// (docs artifact 21d32382, "TY · Unified morning" section) using data the
+// panes below already compute, not a second source of truth. Approvals
+// and worker-verdict actions here are ADDITIVE to 0:attention's existing
+// versions of the same queues (user's explicit choice — some duplication,
+// more surface area, rather than relocating that pane's content).
+function TodayMorningSection({
+  newestUnreadBrief,
+  newestBrief,
+  onMarkBriefRead,
+  approvals,
+  approvalBusy,
+  onApprovalDecide,
+  workerPending,
+  outcomeBusy,
+  onOutcomeDecide,
+  promotableWorkers,
+  demotedRecentWorkers,
+  otherWorkerCount,
+}: {
+  newestUnreadBrief: InboxItem | undefined;
+  newestBrief: InboxItem | undefined;
+  onMarkBriefRead: (name: string) => void;
+  approvals: Pending[];
+  approvalBusy: string | null;
+  onApprovalDecide: (p: Pending, decision: "approve" | "reject") => void;
+  workerPending: PendingConfirmation[];
+  outcomeBusy: string | null;
+  onOutcomeDecide: (p: PendingConfirmation, disposition: "confirmed" | "junk") => void;
+  promotableWorkers: WorkerReport[];
+  demotedRecentWorkers: WorkerReport[];
+  otherWorkerCount: number;
+}) {
+  const decisionsDone = approvals.length === 0 && workerPending.length === 0;
+  const teamDone = promotableWorkers.length === 0 && demotedRecentWorkers.length === 0;
+  const briefDone = !newestUnreadBrief;
+  const doneCount = [decisionsDone, teamDone, briefDone].filter(Boolean).length;
+  const allDone = doneCount === 3;
+
+  const sortedApprovals = [...approvals].sort(
+    (a, b) =>
+      reversibilityRank(classifyPendingAction(a.toolName)?.reversibility) -
+      reversibilityRank(classifyPendingAction(b.toolName)?.reversibility),
+  );
+
+  if (allDone) {
+    return (
+      <div className="td-today-done" role="status">
+        <span aria-hidden="true">✓</span> You&apos;re clear — check back tomorrow.
+      </div>
+    );
+  }
+
+  const decisionCount = approvals.length + workerPending.length;
+  const titleParts: ReactNode[] = [];
+  if (!decisionsDone) {
+    titleParts.push(
+      <em key="decisions">
+        {decisionCount} decision{decisionCount === 1 ? "" : "s"}
+      </em>,
+    );
+  }
+  if (!briefDone) titleParts.push("one brief");
+
+  return (
+    <div className="td-today">
+      <div className="td-today-head">
+        <span className="td-today-title">
+          Morning.{" "}
+          {titleParts.length === 0 ? (
+            "Nothing waiting"
+          ) : (
+            titleParts.reduce<ReactNode[]>(
+              (acc, part, i) => (i === 0 ? [part] : [...acc, ", ", part]),
+              [],
+            )
+          )}
+          , and you&apos;re clear.
+        </span>
+        <span className="td-today-progress" aria-label={`${doneCount} of 3 done`}>
+          <i className={decisionsDone ? "d" : ""} />
+          <i className={teamDone ? "d" : ""} />
+          <i className={briefDone ? "d" : ""} />
+        </span>
+      </div>
+
+      <div className="td-today-sec">
+        <div className="td-today-sh">
+          <span className="td-today-n">1</span>
+          <h3>Read the brief</h3>
+          {newestUnreadBrief && <span className="td-muted">from {newestUnreadBrief.provenance?.recipe ?? "morning-brief"}</span>}
+        </div>
+        {newestUnreadBrief ? (
+          <div className="td-today-card">
+            <p className="td-today-brief-text">{newestUnreadBrief.preview}</p>
+            <div className="td-today-actions">
+              <Link href="/inbox" className="btn sm ghost">
+                Open full note
+              </Link>
+              <span className="td-sp" />
+              <button
+                type="button"
+                className="btn sm ghost"
+                onClick={() => onMarkBriefRead(newestUnreadBrief.name)}
+              >
+                Mark read ✓
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="td-today-card td-muted">
+            {newestBrief ? "No new brief since last read." : "No briefs yet."}
+          </div>
+        )}
+      </div>
+
+      <div className="td-today-sec">
+        <div className="td-today-sh">
+          <span className="td-today-n">2</span>
+          <h3>Clear the decisions</h3>
+          {!decisionsDone && (
+            <span className="td-muted">{decisionCount} waiting · worst first</span>
+          )}
+        </div>
+        {decisionsDone ? (
+          <div className="td-today-card td-muted">Nothing waiting.</div>
+        ) : (
+          <div className="td-today-card td-today-rows">
+            {sortedApprovals.map((p) => (
+              <div className="td-today-row" key={p.callId}>
+                <BlastBadge cls={classifyPendingAction(p.toolName)} />
+                <span className="td-today-row-body">
+                  <strong className="mono">{p.toolName}</strong>
+                  {p.summary ? ` — ${p.summary}` : ""}
+                </span>
+                <span className="td-sp" />
+                <button
+                  type="button"
+                  className="btn sm primary"
+                  disabled={approvalBusy === p.callId}
+                  onClick={() => onApprovalDecide(p, "approve")}
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  className="btn sm ghost"
+                  disabled={approvalBusy === p.callId}
+                  onClick={() => onApprovalDecide(p, "reject")}
+                >
+                  Deny
+                </button>
+              </div>
+            ))}
+            {workerPending.map((p) => (
+              <div className="td-today-row" key={p.issueUrl}>
+                <span className="pill muted">verdict</span>
+                <span className="td-today-row-body">
+                  <strong>{p.workerName}</strong> filed &ldquo;{p.title ?? "a new issue"}&rdquo; — real?
+                </span>
+                <span className="td-sp" />
+                <button
+                  type="button"
+                  className="btn sm primary"
+                  disabled={outcomeBusy === p.issueUrl}
+                  onClick={() => onOutcomeDecide(p, "confirmed")}
+                >
+                  Looks real
+                </button>
+                <button
+                  type="button"
+                  className="btn sm ghost"
+                  disabled={outcomeBusy === p.issueUrl}
+                  onClick={() => onOutcomeDecide(p, "junk")}
+                >
+                  Not real
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="td-today-sec">
+        <div className="td-today-sh">
+          <span className="td-today-n">3</span>
+          <h3>Glance at the team</h3>
+        </div>
+        {teamDone ? (
+          <div className="td-today-card td-muted">Team is quiet and healthy.</div>
+        ) : (
+          <div className="td-today-card td-today-rows">
+            {promotableWorkers.map((w) => {
+              const pct = workerTrustPct(w);
+              return (
+                <div className="td-today-row" key={`promo-${w.workerId}`}>
+                  <span className="dot ok" />
+                  <span className="td-today-row-body">
+                    <strong>{w.name}</strong> is ready for a promotion
+                    {pct != null ? ` — ${pct}% over ${w.compared} tries.` : "."}
+                  </span>
+                  <span className="td-sp" />
+                  <Link href="/workers" className="btn sm ghost">
+                    Raise limit →
+                  </Link>
+                </div>
+              );
+            })}
+            {demotedRecentWorkers.map((w) => {
+              const pct = workerTrustPct(w);
+              return (
+                <div className="td-today-row" key={`demote-${w.workerId}`}>
+                  <span className="dot warn" />
+                  <span className="td-today-row-body">
+                    <strong>{w.name}</strong> rebuilding trust after a recent demotion
+                    {pct != null ? ` (${pct}%).` : "."}
+                  </span>
+                </div>
+              );
+            })}
+            {otherWorkerCount > 0 && (
+              <div className="td-today-row">
+                <span className="dot mut" />
+                <span className="td-today-row-body">
+                  {otherWorkerCount} other{otherWorkerCount === 1 ? "" : "s"} quiet and healthy ·{" "}
+                  <Link href="/workers">full roster →</Link>
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function eventLine(e: ActivityEvent): string {
@@ -480,6 +731,7 @@ export default function HomePage() {
   });
   const toast = useToast();
   const [outcomeBusy, setOutcomeBusy] = useState<string | null>(null);
+  const [approvalBusy, setApprovalBusy] = useState<string | null>(null);
 
   const [pendingApprovals, setPendingApprovals] = useState<Pending[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -688,6 +940,43 @@ export default function HomePage() {
     }
   }
 
+  // Mirrors approvals/page.tsx's `decide()` — same endpoint, same high-tier
+  // confirm/reason-prompt gate (a stray click on a high-tier `rm -rf`
+  // approving instantly was a real, already-fixed bug there; this surface
+  // must not reopen it). A 409 means another session already decided —
+  // treated as success so the row just clears rather than erroring.
+  async function actApproval(p: Pending, decision: "approve" | "reject") {
+    if (decision === "approve" && p.tier === "high") {
+      const proceed = window.confirm(`Approve high-risk ${p.toolName}? This cannot be undone.`);
+      if (!proceed) return;
+    }
+    let reason: string | undefined;
+    if (decision === "reject" && p.tier === "high") {
+      const entered = window.prompt(
+        `Why are you rejecting ${p.toolName}? (logged for audit; max 500 chars)`,
+        "",
+      );
+      if (entered === null) return;
+      reason = entered.trim() || undefined;
+    }
+    setApprovalBusy(p.callId);
+    try {
+      const init: RequestInit = { method: "POST" };
+      if (reason) {
+        init.headers = { "Content-Type": "application/json" };
+        init.body = JSON.stringify({ reason: reason.slice(0, 500) });
+      }
+      const res = await fetch(apiPath(`/api/bridge/approvals/${decision}/${p.callId}`), init);
+      if (!res.ok && res.status !== 409) throw new Error(`${decision} failed (${res.status})`);
+      toast.success(decision === "approve" ? "Approved" : "Denied");
+      setPendingApprovals((prev) => prev.filter((x) => x.callId !== p.callId));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setApprovalBusy(null);
+    }
+  }
+
   // A run "live" locally overrides its status if we've already optimistically
   // cancelled it (same override LiveRunsStrip.tsx uses) so the Stop control
   // disappears immediately instead of waiting on the next poll tick.
@@ -841,11 +1130,13 @@ export default function HomePage() {
   // Per-row ⚑/▼ markers below already carry the detail; this is just the
   // one-line "should I even look" summary the deck's header convention
   // wants (mirrors 0:attention's "· N items" / 2:fleet's "N/M on").
-  const promotableCount = workers.filter(readyToAdvance).length;
-  const demotedRecentCount = workers.filter((w) => {
+  const promotableWorkers = workers.filter(readyToAdvance);
+  const demotedRecentWorkers = workers.filter((w) => {
     const d = lastDemotion(w);
     return Boolean(d) && Date.now() - (d?.at ?? 0) < 7 * 86_400_000;
-  }).length;
+  });
+  const promotableCount = promotableWorkers.length;
+  const demotedRecentCount = demotedRecentWorkers.length;
 
   // ---- Pane 6: inbox ---------------------------------------------------
   // Data source: workspace-level GET /api/inbox (proxies bridge GET /inbox,
@@ -863,9 +1154,30 @@ export default function HomePage() {
       /* ignore */
     }
   }, []);
+  // Shared by the 6:inbox row click and the morning-strip's "Mark read" —
+  // one seen-set, so reading the brief from either place clears both.
+  function markInboxSeen(name: string) {
+    setInboxSeen((prev) => {
+      const next = new Set(prev);
+      next.add(name);
+      try {
+        window.localStorage.setItem(INBOX_SEEN_KEY, JSON.stringify([...next]));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
   const inboxAllItems = inboxData?.items ?? [];
   const inboxItems = inboxAllItems.slice(0, 3);
   const inboxUnreadCount = inboxAllItems.filter((item) => !inboxSeen.has(item.name)).length;
+  const isBriefItem = (name: string) => name.toLowerCase().includes("morning-brief");
+  const briefItems = inboxAllItems
+    .filter((item) => isBriefItem(item.name))
+    .slice()
+    .sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt));
+  const newestBrief = briefItems[0];
+  const newestUnreadBrief = briefItems.find((item) => !inboxSeen.has(item.name));
 
   // Pane focus / keyboard nav (usePaneShortcuts, PR #1092).
   const [activePane, setActivePane] = useState(0);
@@ -1157,6 +1469,25 @@ export default function HomePage() {
           </span>
         )}
       </div>
+
+      <TodayMorningSection
+        newestUnreadBrief={newestUnreadBrief}
+        newestBrief={newestBrief}
+        onMarkBriefRead={markInboxSeen}
+        approvals={pendingApprovals}
+        approvalBusy={approvalBusy}
+        onApprovalDecide={actApproval}
+        workerPending={workerPending}
+        outcomeBusy={outcomeBusy}
+        onOutcomeDecide={actOutcome}
+        promotableWorkers={promotableWorkers}
+        demotedRecentWorkers={demotedRecentWorkers}
+        otherWorkerCount={Math.max(
+          0,
+          workers.length -
+            new Set([...promotableWorkers, ...demotedRecentWorkers].map((w) => w.workerId)).size,
+        )}
+      />
 
       <div className="td-grid">
         {/* 0: attention */}
@@ -1789,18 +2120,7 @@ export default function HomePage() {
                   href="/inbox"
                   className="td-inbox-row"
                   key={item.name}
-                  onClick={() => {
-                    setInboxSeen((prev) => {
-                      const next = new Set(prev);
-                      next.add(item.name);
-                      try {
-                        window.localStorage.setItem(INBOX_SEEN_KEY, JSON.stringify([...next]));
-                      } catch {
-                        /* ignore */
-                      }
-                      return next;
-                    });
-                  }}
+                  onClick={() => markInboxSeen(item.name)}
                 >
                   {isNew ? (
                     <span className="td-pill td-pill-warn">NEW</span>
