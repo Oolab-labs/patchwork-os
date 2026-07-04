@@ -380,6 +380,60 @@ describe("<HomePage/> — Terminal deck", () => {
     );
   });
 
+  it("groups gate activity into a collapsible per-worker accordion once more than one worker appears, collapsed by default", async () => {
+    const secondWorkerDecision = {
+      ...SAMPLE_GATE_DECISION,
+      seq: 43,
+      workerId: "dependency-bump-worker",
+      classKey: "vcs-remote:compensable:medium",
+    };
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/gate/decisions": () =>
+        jsonResponse({ decisions: [secondWorkerDecision, SAMPLE_GATE_DECISION] }),
+    });
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const workersPane = screen.getByRole("region", { name: "workers" });
+    // Collapsed by default — worker names visible, decision detail is not.
+    expect(workersPane.textContent).toMatch(/dependency-bump-worker/);
+    expect(workersPane.textContent).toMatch(/test-guardian/);
+    expect(workersPane.textContent).not.toMatch(/issue:compensable:high/);
+
+    const toggle = within(workersPane).getByText("test-guardian").closest("button");
+    expect(toggle).toBeTruthy();
+    await act(async () => {
+      toggle?.click();
+    });
+
+    await waitFor(() => {
+      expect(workersPane.textContent).toMatch(/issue:compensable:high/);
+    });
+    // The other worker's group is untouched — still collapsed.
+    expect(workersPane.textContent).not.toMatch(/vcs-remote:compensable:medium/);
+  });
+
+  it("a single worker's gate activity stays a flat list, no accordion grouping", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/gate/decisions": () =>
+        jsonResponse({ decisions: [SAMPLE_GATE_DECISION] }),
+    });
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    expect(container.querySelector(".td-gate-worker-group")).toBeNull();
+    // The flat row already shows the class key inline, unlike the
+    // grouped accordion which hides it behind a collapsed toggle.
+    const workersPane = screen.getByRole("region", { name: "workers" });
+    expect(workersPane.textContent).toMatch(/issue:compensable:high/);
+  });
+
   it("statusline clock flips to 'data as of … reconnecting' when the deck's own poll goes stale, and clears on recovery", async () => {
     // Bug Fix Protocol: this test must fail before the statusline is wired
     // to the staleness registry — the deck's primary poll (tracked via

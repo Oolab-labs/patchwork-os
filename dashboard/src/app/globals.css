@@ -9850,6 +9850,11 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-pane-title { text-transform: uppercase; letter-spacing: 0.08em; font-size: var(--fs-xs); color: var(--terminal-comment); }
 [data-theme="paper"] .td-pane-title { color: var(--ink-3); }
 .td-pane-sp { flex: 1; }
+/* Alias: several call sites (the "Unified morning" section's action
+   rows) use .td-sp as a flex spacer expecting it globally, but the only
+   existing rule was scoped to .td-statusline .td-sp — those spacers were
+   silent no-ops outside the statusline. Same behavior as .td-pane-sp. */
+.td-sp { flex: 1; }
 .td-pane-link { color: inherit; text-decoration: none; opacity: 0.7; }
 .td-pane-link:hover { opacity: 1; }
 
@@ -10080,6 +10085,27 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-gate-activity { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line-1); }
 .td-gate-activity-title { font-size: var(--fs-xs); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
 .td-gate-row-wrap { display: flex; flex-direction: column; }
+.td-gate-row-wrap.td-gate-row-indent { padding-left: 14px; }
+/* Per-worker collapsible group (mockup's W-B "Ledger" worker-row/
+   task-subrow split) — shown instead of one flat mixed feed once more
+   than one worker appears in the gate-activity data. */
+.td-gate-worker-group { margin-bottom: 2px; }
+.td-gate-worker-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  font-family: inherit;
+  background: none;
+  border: none;
+  padding: 3px 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font-weight: 600;
+}
+.td-gate-worker-toggle:hover { opacity: 0.85; }
 .td-gate-row {
   display: flex;
   align-items: center;

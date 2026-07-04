@@ -185,6 +185,56 @@ function gateLevelPhrase(n: number): string {
   return GATE_LEVEL_SHORT[n] ?? `level ${n}`;
 }
 
+/** One gate-decision row + its click-to-expand explain panel. Extracted
+ *  so it can render both in the flat single-worker list and inside each
+ *  worker's collapsible group without duplicating the JSX. */
+function GateRow({
+  d,
+  isOpen,
+  onToggle,
+  indent,
+}: {
+  d: GateDecisionRecord;
+  isOpen: boolean;
+  onToggle: () => void;
+  indent?: boolean;
+}) {
+  const hhmm = new Date(d.decidedAt).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return (
+    <div className={`td-gate-row-wrap${indent ? " td-gate-row-indent" : ""}`}>
+      <button type="button" className="td-gate-row" aria-expanded={isOpen} onClick={onToggle}>
+        <span className="mono td-muted">{hhmm}</span>
+        <span className="td-gate-verb">GATE</span>
+        {!indent && <span className="mono">{d.workerId}</span>}
+        <span className="td-muted mono">{d.classKey}</span>
+        <span className="td-gate-arrow">→</span>
+        <span>{gateLevelPhrase(d.effectiveLevel)}</span>
+      </button>
+      {isOpen && (
+        <div className="td-gate-explain">
+          <div>
+            effective L{d.effectiveLevel} ({gateLevelPhrase(d.effectiveLevel)})
+            {" vs required "}
+            {d.action === "allow" ? "— none (allowed)" : "higher"}
+          </div>
+          <div>
+            earned L{d.earnedLevel} · autonomy ceiling L{d.autonomyCeiling}
+            {d.contextCeiling !== undefined ? ` · context ceiling L${d.contextCeiling}` : ""}
+          </div>
+          {d.contextRiskReasons && d.contextRiskReasons.length > 0 && (
+            <div>context signals: {d.contextRiskReasons.join(", ")}</div>
+          )}
+          <div className="td-muted">{d.reason}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -1155,6 +1205,15 @@ export default function HomePage() {
   }
   const gateDecisions: GateDecisionRecord[] = gateDecisionsData?.decisions ?? [];
   const [expandedGateSeq, setExpandedGateSeq] = useState<number | null>(null);
+  // Mockup's W-B "Ledger" worker-row/task-subrow split (mined idea #9,
+  // previously deferred to a future /workers detail page) — brought into
+  // this compact pane per user request: when multiple workers are
+  // engaged, one flat feed mixing all their decisions together gets
+  // unreadable fast. Grouped by worker, collapsed by default, one open
+  // at a time (accordion). A single worker keeps today's flat list —
+  // there's nothing to disambiguate with only one source.
+  const [expandedGateWorker, setExpandedGateWorker] = useState<string | null>(null);
+  const gateWorkerIds = Array.from(new Set(gateDecisions.map((d) => d.workerId)));
   // Team rollup — formerly /today §3's "N ready to promote" framing.
   // Per-row ⚑/▼ markers below already carry the detail; this is just the
   // one-line "should I even look" summary the deck's header convention
@@ -2136,57 +2195,57 @@ export default function HomePage() {
 
           {/* Gate activity — first-ever dashboard surface of the Decision
               Record (GET /gate/decisions, backs `patchwork gate explain`).
-              Renders the last ~6 gate decisions across all workers. */}
+              Renders the last ~6 gate decisions. Grouped into a
+              collapsible-per-worker accordion (mockup's W-B "Ledger"
+              worker-row/task-subrow split) once more than one worker
+              shows up in the feed — a single flat list mixing multiple
+              workers' decisions together stops being readable fast. */}
           <div className="td-gate-activity">
             <div className="td-gate-activity-title td-muted">gate activity</div>
             {gateDecisionsError ? (
               <div className="td-error-row">gate activity unavailable</div>
             ) : gateDecisions.length === 0 ? (
               <div className="td-empty-line">no gate decisions yet</div>
+            ) : gateWorkerIds.length <= 1 ? (
+              gateDecisions.slice(0, 6).map((d) => (
+                <GateRow
+                  key={d.seq}
+                  d={d}
+                  isOpen={expandedGateSeq === d.seq}
+                  onToggle={() => setExpandedGateSeq(expandedGateSeq === d.seq ? null : d.seq)}
+                />
+              ))
             ) : (
-              gateDecisions.slice(0, 6).map((d) => {
-                const isOpen = expandedGateSeq === d.seq;
-                const hhmm = new Date(d.decidedAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hour12: false,
-                });
+              gateWorkerIds.map((workerId) => {
+                const workerDecisions = gateDecisions.filter((d) => d.workerId === workerId);
+                const latest = workerDecisions[0];
+                const isWorkerOpen = expandedGateWorker === workerId;
                 return (
-                  <div className="td-gate-row-wrap" key={d.seq}>
+                  <div className="td-gate-worker-group" key={workerId}>
                     <button
                       type="button"
-                      className="td-gate-row"
-                      aria-expanded={isOpen}
-                      onClick={() =>
-                        setExpandedGateSeq(isOpen ? null : d.seq)
-                      }
+                      className="td-gate-worker-toggle"
+                      aria-expanded={isWorkerOpen}
+                      onClick={() => setExpandedGateWorker(isWorkerOpen ? null : workerId)}
                     >
-                      <span className="mono td-muted">{hhmm}</span>
-                      <span className="td-gate-verb">GATE</span>
-                      <span className="mono">{d.workerId}</span>
-                      <span className="td-muted mono">{d.classKey}</span>
-                      <span className="td-gate-arrow">→</span>
-                      <span>{gateLevelPhrase(d.effectiveLevel)}</span>
+                      <span aria-hidden="true">{isWorkerOpen ? "▾" : "▸"}</span>
+                      <span className="mono">{workerId}</span>
+                      <span className="td-muted">
+                        {workerDecisions.length} decision{workerDecisions.length === 1 ? "" : "s"}
+                      </span>
+                      <span className="td-sp" />
+                      <span className="td-muted">{gateLevelPhrase(latest.effectiveLevel)}</span>
                     </button>
-                    {isOpen && (
-                      <div className="td-gate-explain">
-                        <div>
-                          effective L{d.effectiveLevel} ({gateLevelPhrase(d.effectiveLevel)})
-                          {" vs required "}
-                          {d.action === "allow" ? "— none (allowed)" : "higher"}
-                        </div>
-                        <div>
-                          earned L{d.earnedLevel} · autonomy ceiling L{d.autonomyCeiling}
-                          {d.contextCeiling !== undefined
-                            ? ` · context ceiling L${d.contextCeiling}`
-                            : ""}
-                        </div>
-                        {d.contextRiskReasons && d.contextRiskReasons.length > 0 && (
-                          <div>context signals: {d.contextRiskReasons.join(", ")}</div>
-                        )}
-                        <div className="td-muted">{d.reason}</div>
-                      </div>
-                    )}
+                    {isWorkerOpen &&
+                      workerDecisions.slice(0, 6).map((d) => (
+                        <GateRow
+                          key={d.seq}
+                          d={d}
+                          isOpen={expandedGateSeq === d.seq}
+                          onToggle={() => setExpandedGateSeq(expandedGateSeq === d.seq ? null : d.seq)}
+                          indent
+                        />
+                      ))}
                   </div>
                 );
               })
