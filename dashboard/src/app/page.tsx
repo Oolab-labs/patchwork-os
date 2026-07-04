@@ -923,6 +923,32 @@ export default function HomePage() {
   }, [sessionsCount]);
   const enabledRecipesCount = recipes.filter((r) => r.enabled !== false).length;
 
+  // Mockup's H-C ".hc-heat" 24-hour activity grid (mined idea #1) — one
+  // cell per hour of the last 24h, colored by event density/errors.
+  // Caveat, stated honestly rather than silently: activityEvents is
+  // capped at the last 500 fetched events (`/api/bridge/activity?last=500`
+  // above), so on a very high-traffic bridge the earliest hours in this
+  // window may under-count — this is the same fetch every other
+  // activity-derived number on this page already relies on, not a new
+  // limitation introduced here.
+  const activityHeatmap = useMemo(() => {
+    const HOURS = 24;
+    const bucketMs = 60 * 60 * 1000;
+    const cells = Array.from({ length: HOURS }, () => ({ count: 0, errors: 0 }));
+    const cutoff = nowMs - HOURS * bucketMs;
+    for (const e of activityEvents) {
+      if (isNoiseEvent(e)) continue;
+      const at = e.at ?? 0;
+      if (at < cutoff || at > nowMs) continue;
+      const bucketIndex = Math.min(HOURS - 1, Math.floor((nowMs - at) / bucketMs));
+      const cell = cells[HOURS - 1 - bucketIndex];
+      cell.count += 1;
+      if (e.status === "error") cell.errors += 1;
+    }
+    const maxCount = Math.max(1, ...cells.map((c) => c.count));
+    return { cells, maxCount };
+  }, [activityEvents, nowMs]);
+
   // ---- Pane 0: attention -------------------------------------------------
   const [muteUntil, setMuteUntilState] = useState(0);
   const [muteFingerprint, setMuteFingerprintState] = useState("");
@@ -2266,6 +2292,55 @@ export default function HomePage() {
                     )}%`,
                   }}
                 />
+              </div>
+            </div>
+          )}
+          {activityHeatmap.cells.some((c) => c.count > 0) && (
+            <div className="td-heatmap-block">
+              {/* GitHub-contribution-graph styling (rounder cells, tick
+                  labels, a Less→More legend) adapted to what's actually
+                  true of this data: 24 hours, not 52 weeks, so the ticks
+                  read "24h ago…now" instead of month names, and the count
+                  line is framed as "events" not "contributions". */}
+              <div className="td-heatmap-count td-muted">
+                {activityHeatmap.cells.reduce((sum, c) => sum + c.count, 0)} events in the last 24h
+              </div>
+              <div className="td-heatmap-ticks td-muted" aria-hidden="true">
+                <span>24h ago</span>
+                <span>18h ago</span>
+                <span>12h ago</span>
+                <span>6h ago</span>
+                <span>now</span>
+              </div>
+              <div className="td-heatmap" title="activity in the last 24h, one cell per hour, oldest on the left">
+                {activityHeatmap.cells.map((cell, i) => {
+                  const tier =
+                    cell.errors > 0
+                      ? "er"
+                      : cell.count === 0
+                        ? ""
+                        : cell.count >= activityHeatmap.maxCount * 0.66
+                          ? "l3"
+                          : cell.count >= activityHeatmap.maxCount * 0.33
+                            ? "l2"
+                            : "l1";
+                  const hoursAgo = activityHeatmap.cells.length - 1 - i;
+                  return (
+                    <span
+                      key={i}
+                      className={`td-heatmap-cell${tier ? ` td-heatmap-${tier}` : ""}`}
+                      title={`${cell.count} event${cell.count === 1 ? "" : "s"}${cell.errors > 0 ? `, ${cell.errors} error${cell.errors === 1 ? "" : "s"}` : ""}, ${hoursAgo}h-${hoursAgo + 1}h ago`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="td-heatmap-legend td-muted" aria-hidden="true">
+                <span>Less</span>
+                <span className="td-heatmap-cell" />
+                <span className="td-heatmap-cell td-heatmap-l1" />
+                <span className="td-heatmap-cell td-heatmap-l2" />
+                <span className="td-heatmap-cell td-heatmap-l3" />
+                <span>More</span>
               </div>
             </div>
           )}

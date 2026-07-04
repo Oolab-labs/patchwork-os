@@ -307,6 +307,38 @@ describe("<HomePage/> — Terminal deck", () => {
     expect(delta?.textContent).toMatch(/↑1/);
   });
 
+  it("5:vitals shows a 24h activity heatmap with an error-colored cell for the hour a tool call failed, and hides it entirely when there's no activity", async () => {
+    mockFetchRoutes(HEALTHY_ROUTES);
+    const { container: emptyContainer } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    // No activity at all — the heatmap doesn't render a wall of empty cells.
+    expect(emptyContainer.querySelector(".td-heatmap")).toBeNull();
+
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/activity": () =>
+        jsonResponse({
+          events: [
+            { kind: "tool", tool: "readFile", status: "success", at: Date.now() - 30 * 60_000 },
+            { kind: "tool", tool: "runCommand", status: "error", at: Date.now() - 30 * 60_000 },
+          ],
+        }),
+    });
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const heatmap = container.querySelector(".td-heatmap");
+    expect(heatmap).toBeTruthy();
+    expect(heatmap?.querySelectorAll(".td-heatmap-cell").length).toBe(24);
+    const errorCell = heatmap?.querySelector(".td-heatmap-er");
+    expect(errorCell).toBeTruthy();
+    expect(errorCell?.getAttribute("title")).toMatch(/1 error/);
+  });
+
   it("fails soft: one endpoint 500ing still lets the rest of the deck render", async () => {
     mockFetchRoutes({
       ...HEALTHY_ROUTES,
