@@ -9603,78 +9603,216 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
    `.mono`/`.muted` were already referenced (unscoped) by RecipeLeaderboard
    and other surfaces but never defined globally — only scoped variants
    (`.table .mono`, `.rgc-meta-item.mono`) existed, so bare usages rendered
-   unstyled. Defining them here makes those pre-existing usages (and the
-   Command Deck below) actually take effect. */
+   unstyled. Defining them here makes those pre-existing usages take effect. */
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--ink-3); }
-
-/* ── Home → "Command Deck" (mockup H-C) ───────────────────────────────────
-   Redesign 5/7. 12-col grid: row 1 = needs-attention (span 7) + live-now
-   (span 5); row 2 = 24h heatmap / vitals / top-recipes (span 4 each).
-   Breakpoint follows the 860px convention set by .rd-layout (dossier). */
-.hc-top { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
-.hc-top h2 { font-size: var(--fs-2xl); }
-.hc-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
-.hc-grid > * { grid-column: span 12; }
-@media (min-width: 860px) {
-  .hc-a { grid-column: span 7 !important; }
-  .hc-b { grid-column: span 5 !important; }
-  .hc-c { grid-column: span 4 !important; }
-  .hc-d { grid-column: span 4 !important; }
-  .hc-e { grid-column: span 4 !important; }
-}
-.hc-panel { padding: 14px 16px; }
-.hc-panel h3 {
-  font-size: var(--fs-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  color: var(--ink-3);
-  margin-bottom: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-weight: 700;
-}
-.hc-heat { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; }
-.hc-heat i { aspect-ratio: 1; border-radius: 2px; background: var(--recess); display: block; }
-.hc-heat i.l1 { background: rgba(91, 138, 79, 0.3); }
-.hc-heat i.l2 { background: rgba(91, 138, 79, 0.55); }
-.hc-heat i.l3 { background: var(--ok); }
-.hc-heat i.er { background: var(--err); }
-.hc-kv { display: flex; justify-content: space-between; font-size: var(--fs-m); padding: 6px 0; border-top: 1px solid var(--line-1); }
-.hc-kv:first-of-type { border-top: 0; }
-.hc-lead { display: flex; gap: 10px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line-1); font-size: var(--fs-m); }
-.hc-lead:first-of-type { border-top: 0; }
-.hc-ring { width: 34px; height: 34px; flex-shrink: 0; }
-.ha-chips { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-.ha-chip {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  text-decoration: none;
-  color: inherit;
-  border: 1px solid var(--line-2);
-  border-radius: 99px;
-  padding: 7px 16px 7px 10px;
-  background: var(--surface);
-  font-size: var(--fs-base);
-}
-.ha-chip:hover { border-color: var(--line-3); background: var(--recess); }
-.ha-chip .n { font-size: var(--fs-xl); font-weight: 700; }
-.ha-chip.warn .n { color: #8a5f14; }
-.ha-chip.err .n { color: #93312f; }
-.ha-chip.ok .n { color: #3f6b36; }
-.ha-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line-1); font-size: var(--fs-m); flex-wrap: wrap; }
-.ha-row:first-of-type { border-top: 0; }
-.ha-row .sp { flex: 1; }
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
 .dot.ok { background: var(--ok); }
 .dot.err { background: var(--err); }
-[data-theme="dark"] .ha-chip.warn .n { color: #e0b054; }
-[data-theme="dark"] .ha-chip.err .n { color: #e8817f; }
-[data-theme="dark"] .ha-chip.ok .n { color: #7fbf6f; }
-[data-theme="dark"] .hc-heat i.l1 { background: rgba(127, 191, 111, 0.28); }
-[data-theme="dark"] .hc-heat i.l2 { background: rgba(127, 191, 111, 0.5); }
+
+/* ── Home → "Terminal (dark)" deck (mockup Home D) ────────────────────────
+   Redesign 5/7, replacing the "Command Deck" 12-col bento (#1085). The old
+   `.hc-*`/`.ha-*` bento rules that were exclusive to this page were removed
+   here — `.hc-kv` stays (still used by marketplace/page.tsx).
+   Statusline + 7-pane mono-typeset grid, dark-first (matches the app's
+   default dark `:root`), with a [data-theme="paper"] override block for
+   light mode. Breakpoint follows the 860px convention set by .rd-layout. */
+.td-root { font-family: var(--font-mono); }
+
+.td-statusline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-2, 6px);
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  font-size: var(--fs-s);
+}
+.td-statusline .td-seg { white-space: nowrap; }
+.td-statusline .td-seg-brand { color: var(--terminal-prompt); font-weight: 700; }
+.td-statusline .td-sep { color: var(--terminal-comment); }
+.td-statusline .td-sp { flex: 1; }
+.td-statusline .td-clock { font-variant-numeric: tabular-nums; color: var(--terminal-comment); }
+.td-statusline .td-ok { color: #7fd1a8; }
+.td-statusline .td-err { color: #e8817f; }
+.td-statusline .td-warn { color: #e0b054; }
+
+/* Light-mode statusline: the terminal-* tokens are dark-only; derive
+   readable equivalents from the paper-theme surface tokens instead of
+   forcing the dark strip onto a light page. */
+[data-theme="paper"] .td-statusline {
+  background: var(--recess);
+  color: var(--ink-0);
+  border-color: var(--line-2);
+}
+[data-theme="paper"] .td-statusline .td-seg-brand { color: var(--accent); }
+[data-theme="paper"] .td-statusline .td-sep,
+[data-theme="paper"] .td-statusline .td-clock { color: var(--ink-3); }
+[data-theme="paper"] .td-statusline .td-ok { color: var(--ok-text, var(--ok)); }
+[data-theme="paper"] .td-statusline .td-err { color: var(--err-text, var(--err)); }
+[data-theme="paper"] .td-statusline .td-warn { color: var(--warn-text, var(--warn)); }
+
+.td-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 14px;
+}
+.td-grid > * { grid-column: span 6; }
+@media (min-width: 860px) {
+  .td-grid > * { grid-column: span 3; }
+  .td-grid > *:nth-child(1) { grid-column: span 6; } /* 0:attention — full width, top priority */
+}
+
+.td-pane {
+  display: flex;
+  flex-direction: column;
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-2, 6px);
+  padding: 10px 12px;
+  font-size: var(--fs-s);
+  outline: none;
+}
+.td-pane:focus-visible,
+.td-pane.td-pane-active {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 1px var(--orange);
+}
+[data-theme="paper"] .td-pane {
+  background: var(--surface);
+  color: var(--ink-0);
+  border-color: var(--line-2);
+}
+
+.td-pane-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-1);
+}
+.td-pane-tag { color: var(--terminal-prompt); font-weight: 700; }
+[data-theme="paper"] .td-pane-tag { color: var(--accent); }
+.td-pane-title { text-transform: uppercase; letter-spacing: 0.08em; font-size: var(--fs-xs); color: var(--terminal-comment); }
+[data-theme="paper"] .td-pane-title { color: var(--ink-3); }
+.td-pane-sp { flex: 1; }
+.td-pane-link { color: inherit; text-decoration: none; opacity: 0.7; }
+.td-pane-link:hover { opacity: 1; }
+
+.td-pane-body { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+
+.td-muted { color: var(--terminal-comment); }
+[data-theme="paper"] .td-muted { color: var(--ink-3); }
+.td-muted-row, .td-empty-line, .td-error-row {
+  color: var(--terminal-comment);
+  font-size: var(--fs-xs);
+}
+[data-theme="paper"] .td-muted-row,
+[data-theme="paper"] .td-empty-line,
+[data-theme="paper"] .td-error-row { color: var(--ink-3); }
+.td-error-row { color: var(--err-text, #e8817f); }
+.td-link-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.td-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 99px;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.td-pill-err { background: rgba(208,87,87,0.18); color: #e8817f; }
+.td-pill-warn { background: rgba(212,160,64,0.18); color: #e0b054; }
+[data-theme="paper"] .td-pill-err { background: var(--err-soft); color: var(--err-text); }
+[data-theme="paper"] .td-pill-warn { background: var(--warn-soft); color: var(--warn-text); }
+
+/* Pane 0: attention */
+.td-attention-item { display: flex; flex-direction: column; gap: 6px; }
+.td-attention-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.td-attention-reason { color: var(--terminal-comment); font-size: var(--fs-xs); }
+[data-theme="paper"] .td-attention-reason { color: var(--ink-3); }
+.td-attention-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.td-attention-foot { margin-top: 8px; font-size: var(--fs-xs); }
+.td-attention-foot a { color: inherit; }
+
+/* Pane 1: tail */
+.td-tail { display: flex; flex-direction: column; gap: 2px; }
+.td-tail-row { display: flex; gap: 8px; font-size: var(--fs-xs); align-items: baseline; }
+.td-tail-ts { color: var(--terminal-comment); font-variant-numeric: tabular-nums; }
+[data-theme="paper"] .td-tail-ts { color: var(--ink-3); }
+.td-tail-level { font-weight: 700; width: 3.5em; flex-shrink: 0; }
+.td-tail-msg { overflow-wrap: anywhere; }
+.td-lvl-done .td-tail-level { color: #7fbf6f; }
+.td-lvl-halt .td-tail-level { color: #e8817f; }
+.td-lvl-note .td-tail-level { color: #e0b054; }
+.td-lvl-tool .td-tail-level { color: var(--terminal-comment); }
+[data-theme="paper"] .td-lvl-done .td-tail-level { color: var(--ok-text); }
+[data-theme="paper"] .td-lvl-halt .td-tail-level { color: var(--err-text); }
+[data-theme="paper"] .td-lvl-note .td-tail-level { color: var(--warn-text); }
+[data-theme="paper"] .td-lvl-tool .td-tail-level { color: var(--ink-3); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .td-tail-enter { animation: td-tail-in 0.25s ease both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .td-tail-enter { animation: none; }
+}
+@keyframes td-tail-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Pane 2: fleet */
+.td-fleet-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); }
+.td-fleet-glyph { width: 1em; text-align: center; }
+.td-fleet-name { flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-fleet-trigger { flex: 0 0 auto; }
+.td-fleet-bar { flex: 1; letter-spacing: 1px; text-align: right; }
+.td-blk-ok { color: #7fbf6f; }
+.td-blk-err { color: #e8817f; }
+.td-blk-empty { color: var(--line-3); }
+[data-theme="paper"] .td-blk-ok { color: var(--ok-text); }
+[data-theme="paper"] .td-blk-err { color: var(--err-text); }
+.td-more-link { color: inherit; opacity: 0.75; font-size: var(--fs-xs); margin-top: 4px; }
+
+/* Pane 3: next */
+.td-next-row { display: flex; justify-content: space-between; gap: 8px; font-size: var(--fs-xs); }
+.td-next-row.td-off { opacity: 0.5; }
+.td-next-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Pane 4: workers */
+.td-worker-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); }
+.td-worker-name { flex: 0 0 auto; max-width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-worker-bar { display: flex; align-items: center; gap: 4px; letter-spacing: 1px; }
+.td-worker-status { margin-left: auto; text-align: right; }
+.td-worker-status-ready { color: #7fbf6f; }
+.td-worker-status-climbing { color: #e0b054; }
+.td-worker-status-reversible { color: var(--terminal-comment); }
+[data-theme="paper"] .td-worker-status-ready { color: var(--ok-text); }
+[data-theme="paper"] .td-worker-status-climbing { color: var(--warn-text); }
+[data-theme="paper"] .td-worker-status-reversible { color: var(--ink-3); }
+
+/* Pane 5: vitals */
+.td-kv-row { display: flex; justify-content: space-between; font-size: var(--fs-xs); padding: 3px 0; border-top: 1px solid var(--line-1); }
+.td-kv-row:first-of-type { border-top: 0; }
+
+/* Pane 6: inbox */
+.td-inbox-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: inherit; text-decoration: none; padding: 3px 0; }
+.td-inbox-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ------------------------------------------------------------------ */
 /* Today page (dashboard-redesign deliverable 2)                      */
