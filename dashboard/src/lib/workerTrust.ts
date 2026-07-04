@@ -1,9 +1,10 @@
 /**
  * Shared worker-trust aggregation helpers.
  *
- * Extracted from app/workers/page.tsx so /today's "glance at the team"
- * section can derive the same promotable/ready-to-advance signal instead
- * of re-implementing the classKey parsing rules. The page keeps its own
+ * Extracted from app/workers/page.tsx so other pages (Overview's 4:workers
+ * pane; formerly /today's "glance at the team" section, folded in
+ * 2026-07-04) can derive the same promotable/ready-to-advance signal
+ * instead of re-implementing the classKey parsing rules. The page keeps its own
  * richer vocabulary maps (LEVEL_LABELS, PLAIN_LEVELS, etc.) — those are
  * presentation-only and stay page-local; only the data-shape + pure
  * aggregation functions move here.

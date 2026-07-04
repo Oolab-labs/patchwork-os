@@ -34,6 +34,7 @@ import { eventLevel as activityEventLevel } from "@/lib/activityLevel";
 import { collapseConsecutiveEvents } from "@/lib/collapseConsecutiveEvents";
 import { triggerLabel } from "@/lib/triggerLabel";
 import { previewText } from "@/lib/textPreview";
+import { useToast } from "@/components/Toast";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -100,6 +101,24 @@ interface InboxItem {
   modifiedAt: string;
   preview: string;
   provenance?: { recipe?: string };
+}
+
+// A worker-filed issue awaiting the operator's confirm/reject verdict —
+// the self-confirm-prohibited "Clear the decisions" surface formerly on
+// the standalone /today page, folded into 0:attention here (2026-07-04).
+// Never a recipe step / MCP tool; POST /api/bridge/outcomes is the only
+// way to move a worker's `issue` dial (see CLAUDE.md "outcomes confirm").
+interface PendingConfirmation {
+  issueUrl: string;
+  recipeName: string;
+  workerId: string;
+  workerName: string;
+  filedAt: number;
+  classKey: string;
+  title?: string;
+}
+interface PendingOutcomesResponse {
+  pending: PendingConfirmation[];
 }
 
 // Slim mirror of `GateDecisionRecord` (src/workerGateDecisionLog.ts) — only
@@ -389,6 +408,18 @@ export default function HomePage() {
     "/api/inbox",
     { intervalMs: 15000, trackStaleness: true },
   );
+  // Worker-verdict confirm queue — formerly /today §2's "worker verdict"
+  // rows. Same 15s cadence as the workers-shadow fetch (no new timer).
+  const {
+    data: pendingOutcomesData,
+    error: pendingOutcomesError,
+    refetch: refetchPendingOutcomes,
+  } = useBridgeFetch<PendingOutcomesResponse>("/api/bridge/outcomes/pending", {
+    intervalMs: 15000,
+    trackStaleness: true,
+  });
+  const toast = useToast();
+  const [outcomeBusy, setOutcomeBusy] = useState<string | null>(null);
 
   const [pendingApprovals, setPendingApprovals] = useState<Pending[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -536,7 +567,32 @@ export default function HomePage() {
     .filter((r) => isHaltStatus(r.status) || r.status === "error" || r.status === "failed")
     .sort((a, b) => b.startedAt - a.startedAt);
   const topAttentionRun = attentionRuns[0];
-  const attentionCount = pendingCount + haltCount24h + errCount24h;
+  const workerPending = pendingOutcomesData?.pending ?? [];
+  const attentionCount = pendingCount + haltCount24h + errCount24h + workerPending.length;
+  const topWorkerPending = [...workerPending].sort((a, b) => a.filedAt - b.filedAt)[0];
+
+  async function actOutcome(p: PendingConfirmation, disposition: "confirmed" | "junk") {
+    setOutcomeBusy(p.issueUrl);
+    try {
+      const res = await fetch(apiPath("/api/bridge/outcomes"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          issueUrl: p.issueUrl,
+          disposition,
+          recipeName: p.recipeName,
+          workerClass: p.classKey,
+        }),
+      });
+      if (!res.ok) throw new Error(`Update failed (${res.status})`);
+      toast.success(disposition === "confirmed" ? "Marked real" : "Marked not real");
+      refetchPendingOutcomes();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOutcomeBusy(null);
+    }
+  }
 
   // A run "live" locally overrides its status if we've already optimistically
   // cancelled it (same override LiveRunsStrip.tsx uses) so the Stop control
@@ -687,6 +743,15 @@ export default function HomePage() {
   }
   const gateDecisions: GateDecisionRecord[] = gateDecisionsData?.decisions ?? [];
   const [expandedGateSeq, setExpandedGateSeq] = useState<number | null>(null);
+  // Team rollup — formerly /today §3's "N ready to promote" framing.
+  // Per-row ⚑/▼ markers below already carry the detail; this is just the
+  // one-line "should I even look" summary the deck's header convention
+  // wants (mirrors 0:attention's "· N items" / 2:fleet's "N/M on").
+  const promotableCount = workers.filter(readyToAdvance).length;
+  const demotedRecentCount = workers.filter((w) => {
+    const d = lastDemotion(w);
+    return Boolean(d) && Date.now() - (d?.at ?? 0) < 7 * 86_400_000;
+  }).length;
 
   // ---- Pane 6: inbox ---------------------------------------------------
   // Data source: workspace-level GET /api/inbox (proxies bridge GET /inbox,
@@ -905,9 +970,43 @@ export default function HomePage() {
                   </div>
                 );
               })()}
-              {pendingCount > 0 && (
+              {topWorkerPending && (
+                <div className="td-attention-item">
+                  <div className="td-attention-head">
+                    <span className="pill muted">worker verdict</span>
+                    <strong className="mono">{topWorkerPending.workerName}</strong>
+                    <span className="td-muted">filed {formatAgo(nowMs - topWorkerPending.filedAt)}</span>
+                  </div>
+                  <div className="td-attention-reason">└ {topWorkerPending.title ?? "a new issue"}</div>
+                  <div className="td-attention-actions">
+                    <button
+                      type="button"
+                      className="btn sm primary"
+                      disabled={outcomeBusy === topWorkerPending.issueUrl}
+                      onClick={() => void actOutcome(topWorkerPending, "confirmed")}
+                    >
+                      Looks real
+                    </button>
+                    <button
+                      type="button"
+                      className="btn sm ghost"
+                      disabled={outcomeBusy === topWorkerPending.issueUrl}
+                      onClick={() => void actOutcome(topWorkerPending, "junk")}
+                    >
+                      Not real
+                    </button>
+                  </div>
+                </div>
+              )}
+              {(pendingCount > 0 || workerPending.length > 0) && (
                 <div className="td-attention-foot">
-                  <Link href="/approvals">{pendingCount} approval{pendingCount === 1 ? "" : "s"} pending →</Link>
+                  {pendingCount > 0 && (
+                    <Link href="/approvals">{pendingCount} approval{pendingCount === 1 ? "" : "s"} pending →</Link>
+                  )}
+                  {pendingCount > 0 && workerPending.length > 0 ? " · " : ""}
+                  {workerPending.length > 0 && (
+                    <Link href="/workers">{workerPending.length} verdict{workerPending.length === 1 ? "" : "s"} pending →</Link>
+                  )}
                 </div>
               )}
               </>
@@ -1141,7 +1240,24 @@ export default function HomePage() {
         </Pane>
 
         {/* 4: workers */}
-        <Pane index={4} id="workers" title="workers" activePane={activePane} setActivePane={setActivePane} href="/workers">
+        <Pane
+          index={4}
+          id="workers"
+          title="workers"
+          activePane={activePane}
+          setActivePane={setActivePane}
+          href="/workers"
+          headerExtra={
+            promotableCount > 0 || demotedRecentCount > 0 ? (
+              <span className="td-muted">
+                ·{" "}
+                {promotableCount > 0 ? `${promotableCount} ready to promote` : ""}
+                {promotableCount > 0 && demotedRecentCount > 0 ? " · " : ""}
+                {demotedRecentCount > 0 ? `${demotedRecentCount} slipped back` : ""}
+              </span>
+            ) : null
+          }
+        >
           {shadowError ? (
             <div className="td-error-row">worker trust data unavailable</div>
           ) : workers.length === 0 ? (

@@ -41,7 +41,10 @@ export interface NavSection {
  * exposes every page that today is only reachable via those sub-navs.
  *
  * IA conventions:
- *   - "Today" = the morning-routine destinations.
+ *   - "Home" = the morning-routine destinations. Used to include a
+ *     separate "Today" page; its brief/decisions/team content folded
+ *     into Overview's terminal-deck panes on 2026-07-04 (see
+ *     docs/in-flight.md), so this section is just Overview + Inbox now.
  *   - "Build" = create/install. Promoted to position 2 (above Review)
  *     so the primary action — building/running recipes — sits at the
  *     top of the sidebar where it's discovered immediately, not buried
@@ -62,9 +65,8 @@ export interface NavSection {
  */
 export const NAV_SECTIONS: NavSection[] = [
   {
-    title: "Today",
+    title: "Home",
     routes: [
-      { href: "/today", label: "Today",    icon: "check" },
       { href: "/",      label: "Overview", icon: "home" },
       { href: "/inbox", label: "Inbox",    icon: "inbox" },
     ],
