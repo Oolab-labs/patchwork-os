@@ -25,14 +25,12 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-04 `fix/deck-pane-row-height-consistency` — Terminal deck v2, grid-geometry reconciliation pass (against the mockup's actual "H-D · Terminal" CSS): `.td-pane-body` gets a max-height + scroll cap (260px) so a content-heavy pane (tail's rows, workers' trust-lines + gate-activity feed) never stretches its grid row taller than a light neighbor (vitals' 4 KV rows) — mirrors the mockup's `.hd-tailbox{height:148px;overflow:hidden}` intent, generalized to every pane since more than just tail grew. CSS-only, no logic change. Phase 2 (gate-activity feed) merged as #1101. — build session
-
 ## Recently closed (informal log, prune periodically)
 
+- 2026-07-04 `fix/deck-pane-row-height-consistency` (#1102) — Terminal deck v2, grid-geometry reconciliation pass: `.td-pane-body` gets a max-height + scroll cap (260px) so a content-heavy pane never stretches its grid row taller than a light neighbor. CSS-only, no logic change. — merged
+- 2026-07-04 `feat/deck-staleness-and-cancel` (#1103) — Terminal deck v2 Phase 3: surface the already-existing staleness/cancel infra IN the deck itself. Statusline clock flips to "data as of HH:MM:SS — reconnecting…" (amber) when any deck fetcher is stale (reusing `staleFetchRegistry`/`useBridgeFetch`'s `stale` field from #1097). Live runs on `0:attention` and the tail row get a Stop control (reusing `useCancelRun`/`CancelRunDialog` from #1099). Phase 4 (halt-age escalation, footer hint, polish) and a separate visual-parity pass against the mockup follow. — merged
+- 2026-07-04 `feat/deck-workers-gate-activity` (#1101) — Terminal deck v2 Phase 2: `4:workers` pane gets a "gate activity" feed below the trust lines — last ~6 `GET /gate/decisions` entries, terminal-style rows, expandable to a plain-English `gate explain`-style rendering. First-ever dashboard surface for the Decision Record. — merged
 - 2026-07-03 `feat/dashboard-terminal-deck-phase1` (#1095) — Terminal+Copilot deck plan PR 6/10: full rewrite of `app/page.tsx` replacing the PR #1085 Command Deck bento with the "Home D · Terminal (dark)" statusline + 7-pane mono grid. — merged
-
-## Recently closed (informal log, prune periodically)
-
 - 2026-07-04 `feat/run-cancel-ui` (#1099) — dashboard gap remediation item 4: `POST /runs/:seq/cancel` had zero dashboard consumers. Stop control + confirm dialog wired into GlobalLiveRunsStrip, LiveRunsStrip, /runs list rows, /runs/[seq] header. — merged
 - 2026-07-03 `feat/connector-token-expiry` (#1098) — dashboard gap remediation item 2: connector `getStatus()`/`/connections` gets optional `tokenExpiresAt`/`lastSuccessAt`; connections card renders expiry pill + last-call line. Bridge-side — needs snapshotting to `../patchwork-multitenant/src/`. — merged
 - 2026-07-03 `fix/dashboard-staleness-indicator` (#1097) — dashboard gap remediation item 1 (bug-shaped, Bug Fix Protocol: failing test first): `useBridgeFetch` kept last-good data forever with no freshness marker. Added `lastSuccessAt` tracking + `stale: boolean` + one global Shell strip aggregating across all opted-in fetchers via a small registry, not per-page banners. No poll-interval changes, no new endpoints. — merged

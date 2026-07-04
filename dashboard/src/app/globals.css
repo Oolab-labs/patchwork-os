@@ -9770,10 +9770,13 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-attention-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .td-attention-foot { margin-top: 8px; font-size: var(--fs-xs); }
 .td-attention-foot a { color: inherit; }
+.td-attention-live { padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+[data-theme="paper"] .td-attention-live { border-bottom-color: var(--border-subtle, rgba(0,0,0,0.08)); }
 
 /* Pane 1: tail */
 .td-tail { display: flex; flex-direction: column; gap: 2px; }
 .td-tail-row { display: flex; gap: 8px; font-size: var(--fs-xs); align-items: baseline; }
+.td-tail-stop { margin-left: auto; flex-shrink: 0; }
 .td-tail-ts { color: var(--terminal-comment); font-variant-numeric: tabular-nums; }
 [data-theme="paper"] .td-tail-ts { color: var(--ink-3); }
 .td-tail-level { font-weight: 700; width: 3.5em; flex-shrink: 0; }
