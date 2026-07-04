@@ -59,15 +59,21 @@ const PATHS: Record<string, string> = {
 function BrandMark() {
   return (
     <div className="brand-mark" aria-hidden="true">
+      {/* Rebuilt 2026-07-04, same design: 2×2 quilt — solid / outlined ×2 / muted,
+          seam ticks between patches. Fixes vs v1: stroked patches inset by half
+          the stroke width so their OUTER edge matches the solid patches' 9×9
+          footprint (v1 rendered them optically larger); inner radius reduced on
+          stroked rects so corner curvature matches the filled ones; seam ticks
+          lengthened to 2 units so the .brand-stitch dasharray actually cycles. */}
       <svg viewBox="0 0 24 24" fill="none">
         <rect x="2" y="2" width="9" height="9" rx="1.5" fill="var(--accent)" />
-        <rect x="13" y="2" width="9" height="9" rx="1.5" fill="none" stroke="var(--accent)" strokeWidth="1.4" />
-        <rect x="2" y="13" width="9" height="9" rx="1.5" fill="none" stroke="var(--accent)" strokeWidth="1.4" />
+        <rect x="13.7" y="2.7" width="7.6" height="7.6" rx="1.1" fill="none" stroke="var(--accent)" strokeWidth="1.4" />
+        <rect x="2.7" y="13.7" width="7.6" height="7.6" rx="1.1" fill="none" stroke="var(--accent)" strokeWidth="1.4" />
         <rect x="13" y="13" width="9" height="9" rx="1.5" fill="var(--accent)" opacity="0.4" />
-        <line className="brand-stitch" x1="11.5" y1="6.5" x2="13" y2="6.5" stroke="var(--accent)" strokeWidth="1.2" />
-        <line className="brand-stitch" x1="11.5" y1="17.5" x2="13" y2="17.5" stroke="var(--accent)" strokeWidth="1.2" />
-        <line className="brand-stitch" x1="6.5" y1="11.5" x2="6.5" y2="13" stroke="var(--accent)" strokeWidth="1.2" />
-        <line className="brand-stitch" x1="17.5" y1="11.5" x2="17.5" y2="13" stroke="var(--accent)" strokeWidth="1.2" />
+        <line className="brand-stitch" x1="11" y1="6.5" x2="13" y2="6.5" stroke="var(--accent)" strokeWidth="1.2" />
+        <line className="brand-stitch" x1="11" y1="17.5" x2="13" y2="17.5" stroke="var(--accent)" strokeWidth="1.2" />
+        <line className="brand-stitch" x1="6.5" y1="11" x2="6.5" y2="13" stroke="var(--accent)" strokeWidth="1.2" />
+        <line className="brand-stitch" x1="17.5" y1="11" x2="17.5" y2="13" stroke="var(--accent)" strokeWidth="1.2" />
       </svg>
     </div>
   );
