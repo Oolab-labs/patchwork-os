@@ -741,6 +741,60 @@ describe("<HomePage/> — Terminal deck", () => {
     expect(workersPane.textContent).toMatch(/ready to promote/i);
   });
 
+  it("4:workers shows a review-needed tray for pending worker-verdict confirmations, sharing state with 0:attention's identical item", async () => {
+    const outcomeMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/bridge/outcomes") && !url.includes("/pending")) {
+        return outcomeMock(init);
+      }
+      for (const [key, make] of Object.entries({
+        ...HEALTHY_ROUTES,
+        "/api/bridge/outcomes/pending": () =>
+          jsonResponse({
+            pending: [
+              {
+                issueUrl: "https://github.com/o/r/issues/9",
+                recipeName: "triage-failing-tests",
+                workerId: "test-guardian",
+                workerName: "Test Guardian",
+                filedAt: Date.now() - 60_000,
+                classKey: "issue:compensable:high",
+                title: "Flaky reconnect test",
+              },
+            ],
+          }),
+      })) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const workersPane = screen.getByRole("region", { name: "workers" });
+    expect(workersPane.textContent).toMatch(/review needed/i);
+    expect(workersPane.textContent).toMatch(/Flaky reconnect test/);
+    expect(workersPane.textContent).toMatch(/issue:compensable:high/);
+
+    const confirmBtn = within(workersPane).getByText("Looks real");
+    await act(async () => {
+      confirmBtn.click();
+    });
+
+    await waitFor(() => {
+      expect(outcomeMock).toHaveBeenCalledTimes(1);
+    });
+    const body = JSON.parse((outcomeMock.mock.calls[0]?.[0] as RequestInit)?.body as string);
+    expect(body).toMatchObject({
+      issueUrl: "https://github.com/o/r/issues/9",
+      disposition: "confirmed",
+    });
+  });
+
   // --------------------------------------------------------------------
   // "Unified morning" section — restored /today content, between the
   // statusline and the pane grid.
