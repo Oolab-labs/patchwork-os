@@ -1032,35 +1032,43 @@ export default function HomePage() {
             <div className="td-empty-line">no recipes installed</div>
           ) : (
             <>
-              {fleetRows.map(({ recipe, runList, pct, trigger }) => (
-                <div className="td-fleet-row" key={recipe.name}>
-                  <span className="td-fleet-glyph">{recipe.enabled !== false ? "▶" : "⏸"}</span>
-                  <strong className="mono td-fleet-name">{recipeDisplayName(recipe.name)}</strong>
-                  <span className="td-muted td-fleet-trigger">{triggerLabel(trigger)}</span>
-                  <span className="td-fleet-bar" aria-hidden="true">
-                    {Array.from({ length: 6 }, (_, i) => {
-                      const r = runList[i];
-                      if (!r) {
-                        // No run history for this slot — render a neutral
-                        // placeholder dot, not a dim-gray filled block that
-                        // reads as "ran and looked empty/failed".
-                        return (
-                          <span key={i} className="td-blk-empty">
-                            ·
-                          </span>
-                        );
-                      }
-                      const err = r.status === "error" || r.status === "failed" || isHaltStatus(r.status);
-                      return (
-                        <span key={i} className={err ? "td-blk-err" : "td-blk-ok"}>
-                          █
-                        </span>
-                      );
-                    })}
-                  </span>
-                  <span className="td-muted">{pct == null ? "—" : `${Math.round(pct)}%`}</span>
-                </div>
-              ))}
+              {fleetRows.map(({ recipe, runList, pct, trigger, enabled }) => {
+                const hasHistory = runList.length > 0;
+                // Continuous proportional fill bar (mockup's .hd-ascii block
+                // sparkline) — was previously 6 discrete per-run history
+                // dots, a different metric (history) rendered a different
+                // way (spaced) than the mockup's single packed fill-bar
+                // sized to the success percentage.
+                const BAR_WIDTH = 8;
+                const filled = pct == null ? 0 : Math.round((pct / 100) * BAR_WIDTH);
+                return (
+                  <div className="td-fleet-row" key={recipe.name}>
+                    <span className="td-fleet-glyph">{enabled ? "▶" : "⏸"}</span>
+                    <strong className="mono td-fleet-name">{recipeDisplayName(recipe.name)}</strong>
+                    <span className="td-muted td-fleet-trigger">{triggerLabel(trigger)}</span>
+                    {!enabled ? (
+                      <span className="td-fleet-bar td-muted" aria-hidden="true">
+                        {"─".repeat(BAR_WIDTH)}
+                      </span>
+                    ) : (
+                      <span className="td-fleet-bar" aria-hidden="true">
+                        {Array.from({ length: BAR_WIDTH }, (_, i) =>
+                          i < filled ? (
+                            <span key={i} className="td-blk-ok">
+                              █
+                            </span>
+                          ) : (
+                            <span key={i} className="td-blk-empty">
+                              {hasHistory ? "─" : "·"}
+                            </span>
+                          ),
+                        )}
+                      </span>
+                    )}
+                    <span className="td-muted">{!enabled ? "off" : pct == null ? "—" : `${Math.round(pct)}%`}</span>
+                  </div>
+                );
+              })}
               {fleetOverflowCount > 0 && (
                 <Link href="/recipes" className="td-more-link">
                   +{fleetOverflowCount} more →
@@ -1125,17 +1133,27 @@ export default function HomePage() {
               // red instead of green when the worker's most recent event
               // was a demotion. ⚑ flags a higher earned-but-capped level.
               const dialLen = 4;
-              const filled = Math.min(dialLen, Math.max(0, w.autonomyCeiling));
+              // Reversible-only workers show an empty dial + "—" label
+              // (mockup's inbox-summ. row) — the autonomy ceiling is
+              // meaningless there since reversible actions bypass the
+              // gate unconditionally regardless of ceiling.
+              const filled = status === "reversible" ? 0 : Math.min(dialLen, Math.max(0, w.autonomyCeiling));
               return (
                 <div className="td-worker-row" key={w.workerId}>
                   <strong className="mono td-worker-name">{w.name}</strong>
                   <span className="td-worker-bar" aria-hidden="true">
+                    {/* Label comes BEFORE the dial (mockup: "L3 ▰▰▰▱"),
+                        not after — a real ordering mismatch caught after
+                        comparing pixel-for-pixel against the mockup
+                        screenshot rather than just the markup. "—" (not
+                        "L0") for reversible-only workers, matching the
+                        mockup's inbox-summ. row. */}
+                    <span className="td-muted">{status === "reversible" ? "—" : `L${w.autonomyCeiling}`}</span>
                     {Array.from({ length: dialLen }, (_, i) => (
                       <span key={i} className={i < filled ? (demoted ? "td-blk-err" : "td-blk-ok") : "td-blk-empty"}>
                         {i < filled ? "▰" : "▱"}
                       </span>
                     ))}
-                    <span className="td-muted">L{w.autonomyCeiling}</span>
                   </span>
                   <span className={`td-worker-status td-worker-status-${status}`}>
                     {status === "ready" && promo ? `⚑L${promo.level} ` : ""}
