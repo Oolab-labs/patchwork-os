@@ -1305,6 +1305,12 @@ a.btn { text-decoration: none; }
 .pill.err  { background: var(--err-soft);  color: var(--err-text);  border-color: transparent; }
 .pill.info { background: var(--blue-soft);  color: var(--info-text);  border-color: transparent; }
 .pill.muted { color: var(--ink-3); background: var(--recess); border-color: transparent; }
+@media (prefers-reduced-motion: no-preference) {
+  .pill-critical-pulse { animation: pulse-dot 0.8s ease-in-out infinite; font-weight: 700; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pill-critical-pulse { font-weight: 700; }
+}
 /* ── VD-3: per-step hover diff panel ─────────────────────────────── */
 /* Position is set inline (fixed coordinates from the anchor row's
  * getBoundingClientRect) — the panel renders into a React Portal at

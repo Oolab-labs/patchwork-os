@@ -76,16 +76,12 @@ function TtlPill({ expiresAt }: { expiresAt: number }) {
   const warning = !expired && !critical && ms < 60_000;
   const cls =
     expired || critical
-      ? "pill err"
+      ? `pill err${critical ? " pill-critical-pulse" : ""}`
       : warning
         ? "pill warn"
         : "pill muted";
   return (
-    <span
-      className={cls}
-      title={`expires ${new Date(expiresAt).toISOString()}`}
-      style={critical ? { animation: "pulse-dot 0.8s ease-in-out infinite", fontWeight: 700 } : undefined}
-    >
+    <span className={cls} title={`expires ${new Date(expiresAt).toISOString()}`}>
       TTL {ttlRemaining(expiresAt)}
     </span>
   );
