@@ -25,7 +25,7 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-04 `feat/deck-workers-gate-activity` — Terminal deck v2 Phase 2: `4:workers` pane gets a "gate activity" feed below the trust lines — last ~6 `GET /gate/decisions` entries (worker × classKey decisions), terminal-style rows, expandable to a plain-English `gate explain`-style rendering. First-ever dashboard surface for the Decision Record. Reuses the pane's existing poll cadence, no new loop. Phase 1 (pane signal quality) merged as #1100. Phases 3-4 (staleness/cancel-in-deck, polish) follow as separate PRs. — build session
+- 2026-07-04 `fix/deck-pane-row-height-consistency` — Terminal deck v2, grid-geometry reconciliation pass (against the mockup's actual "H-D · Terminal" CSS): `.td-pane-body` gets a max-height + scroll cap (260px) so a content-heavy pane (tail's rows, workers' trust-lines + gate-activity feed) never stretches its grid row taller than a light neighbor (vitals' 4 KV rows) — mirrors the mockup's `.hd-tailbox{height:148px;overflow:hidden}` intent, generalized to every pane since more than just tail grew. CSS-only, no logic change. Phase 2 (gate-activity feed) merged as #1101. — build session
 
 ## Recently closed (informal log, prune periodically)
 
