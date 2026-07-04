@@ -9849,6 +9849,18 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 /* Pane 2: fleet */
 .td-fleet-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); }
 .td-fleet-glyph { width: 1em; text-align: center; }
+/* Data-backed pulse for a recipe with a run in progress right now (not
+   decorative) — mirrors the mockup's .he-pulse ring convention, adapted
+   to a text glyph instead of a dot. */
+.td-fleet-glyph-live { color: #7fbf6f; }
+[data-theme="paper"] .td-fleet-glyph-live { color: var(--ok-text); }
+@media (prefers-reduced-motion: no-preference) {
+  .td-fleet-glyph-live { animation: td-glyph-pulse 1.6s ease-in-out infinite; }
+}
+@keyframes td-glyph-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
 .td-fleet-name { flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .td-fleet-trigger { flex: 0 0 auto; }
 /* Packed solid block-fill bar (mockup's .hd-ascii sparkline) — no
@@ -9930,6 +9942,9 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 /* Pane 6: inbox */
 .td-inbox-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: inherit; text-decoration: none; padding: 3px 0; }
 .td-inbox-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Matches the "NEW" pill's column width so read/unread rows align
+   (mockup's inbox pane: "NEW"/"read" both occupy the same left column). */
+.td-inbox-read { min-width: 2.6em; flex-shrink: 0; }
 
 /* ------------------------------------------------------------------ */
 /* Today page (dashboard-redesign deliverable 2)                      */
