@@ -20,6 +20,7 @@ import { CancelRunDialog } from "@/components/CancelRunDialog";
 import { computeSuccessPct } from "@/lib/recipeRunHealth";
 import {
   isReversible,
+  lastDemotion,
   readyToAdvance,
   taskName,
   topPromotable,
@@ -721,25 +722,20 @@ export default function HomePage() {
         <span className="td-seg td-seg-brand">
           patchwork · local:{bridgeStatus.port ?? bridgeStatus.patchwork?.port ?? "—"}
         </span>
-        <span className="td-sep">|</span>
         <span className={`td-seg${bridgeStatus.ok ? " td-ok" : " td-err"}`}>
           {bridgeStatus.ok
             ? `up ${typeof bridgeStatus.uptimeMs === "number" ? formatUptime(bridgeStatus.uptimeMs) : "—"}`
             : "offline"}
         </span>
-        <span className="td-sep">|</span>
         <span className="td-seg">
           runs 24h {okCount24h}ok/{errCount24h}err
         </span>
-        <span className="td-sep">|</span>
         <span className={`td-seg${pendingCount > 0 ? " td-warn" : ""}`}>
           {pendingCount} approvals
         </span>
-        <span className="td-sep">|</span>
         <span className={`td-seg${haltCount24h > 0 ? " td-err" : ""}`}>
           {haltCount24h} halts
         </span>
-        <span className="td-sep">|</span>
         <span className="td-seg">kill-switch {killSwitchLabel}</span>
         <span className="td-sp" />
         {deckStaleness.anyStale ? (
@@ -837,7 +833,7 @@ export default function HomePage() {
                       <span className="td-muted">{formatAgo(agoMs)}</span>
                     </div>
                     {topAttentionRun.haltReason && (
-                      <div className="td-attention-reason">{topAttentionRun.haltReason}</div>
+                      <div className="td-attention-reason">└ {topAttentionRun.haltReason}</div>
                     )}
                     <div className="td-attention-actions">
                       <button
@@ -892,25 +888,30 @@ export default function HomePage() {
           setActivePane={setActivePane}
           href="/activity"
           headerExtra={
-            <button
-              type="button"
-              className="td-link-btn td-plumbing-toggle"
-              aria-pressed={showPlumbing}
-              onClick={(ev) => {
-                ev.stopPropagation();
-                setShowPlumbing((prev) => {
-                  const next = !prev;
-                  writeShowPlumbing(next);
-                  return next;
-                });
-              }}
-            >
-              {showPlumbing
-                ? "hide plumbing"
-                : hiddenPlumbingCount > 0
-                  ? `show plumbing (${hiddenPlumbingCount})`
-                  : "show plumbing"}
-            </button>
+            <>
+              <button
+                type="button"
+                className="td-link-btn td-plumbing-toggle"
+                aria-pressed={showPlumbing}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  setShowPlumbing((prev) => {
+                    const next = !prev;
+                    writeShowPlumbing(next);
+                    return next;
+                  });
+                }}
+              >
+                {showPlumbing
+                  ? "hide plumbing"
+                  : hiddenPlumbingCount > 0
+                    ? `show plumbing (${hiddenPlumbingCount})`
+                    : "show plumbing"}
+              </button>
+              <span className={deckStaleness.anyStale ? "td-warn" : "td-ok"}>
+                ● {deckStaleness.anyStale ? "reconnecting" : "live"}
+              </span>
+            </>
           }
         >
           {fetchErrors.activity ? (
@@ -1069,17 +1070,28 @@ export default function HomePage() {
             workers.slice(0, 6).map((w) => {
               const status = workerStatusWord(w);
               const promo = topPromotable(w);
+              const demoted = lastDemotion(w);
+              // Diamond trust-dial (mockup's .hd-ascii "▰▰▰▱" glyph
+              // vocabulary): filled = ceiling out of 4 levels (L0-L4),
+              // red instead of green when the worker's most recent event
+              // was a demotion. ⚑ flags a higher earned-but-capped level.
+              const dialLen = 4;
+              const filled = Math.min(dialLen, Math.max(0, w.autonomyCeiling));
               return (
                 <div className="td-worker-row" key={w.workerId}>
                   <strong className="mono td-worker-name">{w.name}</strong>
                   <span className="td-worker-bar" aria-hidden="true">
-                    {Array.from({ length: Math.max(1, w.autonomyCeiling) }, (_, i) => (
-                      <span key={i} className="td-blk-ok">█</span>
+                    {Array.from({ length: dialLen }, (_, i) => (
+                      <span key={i} className={i < filled ? (demoted ? "td-blk-err" : "td-blk-ok") : "td-blk-empty"}>
+                        {i < filled ? "▰" : "▱"}
+                      </span>
                     ))}
                     <span className="td-muted">L{w.autonomyCeiling}</span>
                   </span>
                   <span className={`td-worker-status td-worker-status-${status}`}>
+                    {status === "ready" && promo ? `⚑L${promo.level} ` : ""}
                     {status}
+                    {demoted ? " ▼" : ""}
                     {status === "ready" && promo ? ` ↑ ${taskName(promo.classKey)}` : ""}
                   </span>
                 </div>
