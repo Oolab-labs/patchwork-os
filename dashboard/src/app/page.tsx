@@ -22,6 +22,11 @@ import {
 } from "@/lib/workerTrust";
 import { describeNextRun, humanizeSchedule } from "@/lib/humanSchedule";
 import { usePaneShortcut } from "@/hooks/usePaneShortcuts";
+import { isNoiseEvent } from "@/lib/activityNoise";
+import { eventLevel as activityEventLevel } from "@/lib/activityLevel";
+import { collapseConsecutiveEvents } from "@/lib/collapseConsecutiveEvents";
+import { triggerLabel } from "@/lib/triggerLabel";
+import { previewText } from "@/lib/textPreview";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -121,18 +126,6 @@ function formatAgo(ms: number): string {
   return `${sec}s ago`;
 }
 
-function eventLevel(e: ActivityEvent): "done" | "halt" | "note" | "tool" {
-  if (e.kind === "tool") {
-    return e.status === "error" ? "halt" : "tool";
-  }
-  if (e.kind === "lifecycle" && typeof e.event === "string") {
-    if (/halt|error|fail/i.test(e.event)) return "halt";
-    if (/done|success|complete/i.test(e.event)) return "done";
-    return "note";
-  }
-  return "note";
-}
-
 function eventLine(e: ActivityEvent): string {
   if (e.kind === "tool") return e.tool ?? "tool";
   if (e.kind === "lifecycle" && e.event) return e.event.replace(/_/g, " ");
@@ -168,6 +161,25 @@ function writeMuteUntil(ts: number) {
   }
 }
 
+const SHOW_PLUMBING_KEY = "patchwork.td.showPlumbing";
+
+function readShowPlumbing(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(SHOW_PLUMBING_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeShowPlumbing(v: boolean) {
+  try {
+    window.localStorage.setItem(SHOW_PLUMBING_KEY, v ? "1" : "0");
+  } catch {
+    /* private mode */
+  }
+}
+
 /** Live clock — client-only, renders "—" during SSR/first paint to avoid
  *  hydration mismatch, then ticks 1s via useEffect. */
 function useClock(): string {
@@ -197,6 +209,12 @@ function useTick(everyMs: number): number {
   }, [everyMs]);
   return Date.now();
 }
+
+// Fleet pane (2): how many individual rows show before collapsing the
+// rest into a "+N more" link, and how recent a run has to be to count as
+// "active" rather than "idle".
+const FLEET_VISIBLE_CAP = 6;
+const FLEET_RECENT_MS = 7 * 24 * 60 * 60 * 1000;
 
 function mmss(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -414,15 +432,32 @@ export default function HomePage() {
   const attentionCount = pendingCount + haltCount24h + errCount24h;
 
   // ---- Pane 1: tail (activity) --------------------------------------------
+  // Default-hide bridge-lifecycle plumbing (grace/extension/heartbeat
+  // churn) — previously this pane showed near-100% plumbing NOTE events
+  // with zero runs/tools/gate-decisions visible. `isNoiseEvent` is the
+  // same filter /activity and the Overview thread already use, so this
+  // pane doesn't invent a fourth definition of "plumbing".
+  const [showPlumbing, setShowPlumbing] = useState(false);
+  useEffect(() => setShowPlumbing(readShowPlumbing()), []);
+
   const tailEvents = useMemo(() => {
+    const visible = showPlumbing
+      ? activityEvents
+      : activityEvents.filter((e) => !isNoiseEvent(e));
     // Newest at the bottom per spec — activityEvents already arrives newest
-    // first (matches /activity's ordering), so reverse the last 7.
-    const sorted = [...activityEvents].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
-    return sorted.slice(-7);
-  }, [activityEvents]);
+    // first (matches /activity's ordering), so sort ascending then collapse
+    // consecutive duplicates (e.g. a burst of the same failing tool call)
+    // before taking the most recent rows.
+    const sorted = [...visible].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+    return collapseConsecutiveEvents(sorted).slice(-7);
+  }, [activityEvents, showPlumbing]);
+  const hiddenPlumbingCount = useMemo(
+    () => (showPlumbing ? 0 : activityEvents.filter((e) => isNoiseEvent(e)).length),
+    [activityEvents, showPlumbing],
+  );
   const tailSummary =
     tailEvents.length > 0
-      ? `Latest: ${eventLine(tailEvents[tailEvents.length - 1])}`
+      ? `Latest: ${eventLine(tailEvents[tailEvents.length - 1].event)}`
       : "No recent activity.";
 
   // ---- Pane 2: fleet -------------------------------------------------------
@@ -439,40 +474,66 @@ export default function HomePage() {
     return m;
   }, [runs]);
 
-  const fleetRows = useMemo(() => {
-    const enabled = recipes.filter((r) => r.enabled !== false);
-    return enabled
-      .map((r) => {
-        const key = canonicalRecipeKey(r.name);
-        const runList = allRunsMap.get(key) ?? [];
-        const pct = computeSuccessPct(runList);
-        const trigger =
-          typeof r.trigger === "string"
-            ? r.trigger
-            : r.trigger?.type ?? (r.schedule ? "cron" : "manual");
-        return { recipe: r, key, runList, pct, trigger };
-      })
-      .sort((a, b) => b.runList.length - a.runList.length)
-      .slice(0, 6);
+  const fleetAllRows = useMemo(() => {
+    return recipes.map((r) => {
+      const key = canonicalRecipeKey(r.name);
+      const runList = allRunsMap.get(key) ?? [];
+      const pct = computeSuccessPct(runList);
+      const trigger =
+        typeof r.trigger === "string"
+          ? r.trigger
+          : r.trigger?.type ?? (r.schedule ? "cron" : "manual");
+      const enabled = r.enabled !== false;
+      const hasRecentRun = runList.some((run) => Date.now() - run.startedAt < FLEET_RECENT_MS);
+      // Bucket 0 = enabled + recently run (the recipes actually doing
+      // work), 1 = enabled but idle, 2 = everything else — disabled
+      // recipes and one-off debug/manual-test artifacts. Bug fixed:
+      // previously this only looked at *enabled* recipes sorted by raw
+      // run count, so a disabled/manual "Outcome Ingester Debug1/2/3"
+      // artifact with a pile of manual test runs could still outrank a
+      // real cron recipe that simply runs less often.
+      const bucket = !enabled ? 2 : hasRecentRun ? 0 : 1;
+      return { recipe: r, key, runList, pct, trigger, enabled, bucket };
+    });
   }, [recipes, allRunsMap]);
 
+  const fleetRows = useMemo(() => {
+    return [...fleetAllRows]
+      .sort((a, b) => {
+        if (a.bucket !== b.bucket) return a.bucket - b.bucket;
+        // Within a bucket, most-recently-active first.
+        const aLast = a.runList[0]?.startedAt ?? 0;
+        const bLast = b.runList[0]?.startedAt ?? 0;
+        return bLast - aLast;
+      })
+      .slice(0, FLEET_VISIBLE_CAP);
+  }, [fleetAllRows]);
+
+  const fleetOverflowCount = fleetAllRows.length - fleetRows.length;
+
   // ---- Pane 3: next (cron countdown) --------------------------------------
+  // Bug: this used to list every cron-triggered recipe — enabled AND
+  // paused — so a paused recipe rendering "(off)" crowded out the ones
+  // that will actually fire next. Only enabled cron recipes belong in the
+  // main list; paused ones collapse to a single footer count instead.
+  const isCronRecipe = (r: Recipe) => {
+    const trigger = typeof r.trigger === "string" ? r.trigger : r.trigger?.type;
+    return Boolean(r.schedule) || trigger === "cron";
+  };
   const cronRows = useMemo(() => {
     return recipes
-      .filter((r) => {
-        const trigger = typeof r.trigger === "string" ? r.trigger : r.trigger?.type;
-        return Boolean(r.schedule) || trigger === "cron";
-      })
-      .map((r) => {
-        const hs = humanizeSchedule(r.schedule);
-        return { recipe: r, hs };
-      })
+      .filter((r) => isCronRecipe(r) && r.enabled !== false)
+      .map((r) => ({ recipe: r, hs: humanizeSchedule(r.schedule) }))
       .sort((a, b) => {
         const av = a.hs.nextRunAt ?? Infinity;
         const bv = b.hs.nextRunAt ?? Infinity;
         return av - bv;
       });
   }, [recipes]);
+  const pausedCronCount = useMemo(
+    () => recipes.filter((r) => isCronRecipe(r) && r.enabled === false).length,
+    [recipes],
+  );
 
   // ---- Pane 4: workers -----------------------------------------------------
   const workers: WorkerReport[] = shadowData?.workers ?? [];
@@ -654,7 +715,35 @@ export default function HomePage() {
         </Pane>
 
         {/* 1: tail */}
-        <Pane index={1} id="tail" title="tail" activePane={activePane} setActivePane={setActivePane} href="/activity">
+        <Pane
+          index={1}
+          id="tail"
+          title="tail"
+          activePane={activePane}
+          setActivePane={setActivePane}
+          href="/activity"
+          headerExtra={
+            <button
+              type="button"
+              className="td-link-btn td-plumbing-toggle"
+              aria-pressed={showPlumbing}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setShowPlumbing((prev) => {
+                  const next = !prev;
+                  writeShowPlumbing(next);
+                  return next;
+                });
+              }}
+            >
+              {showPlumbing
+                ? "hide plumbing"
+                : hiddenPlumbingCount > 0
+                  ? `show plumbing (${hiddenPlumbingCount})`
+                  : "show plumbing"}
+            </button>
+          }
+        >
           {fetchErrors.activity ? (
             <div className="td-error-row">activity feed unavailable</div>
           ) : (
@@ -671,13 +760,16 @@ export default function HomePage() {
                 {tailEvents.length === 0 ? (
                   <div className="td-muted-row">no recent events</div>
                 ) : (
-                  tailEvents.map((e, i) => {
-                    const level = eventLevel(e);
+                  tailEvents.map(({ event: e, count }, i) => {
+                    const level = activityEventLevel(e);
                     return (
                       <div className={`td-tail-row td-lvl-${level} td-tail-enter`} key={e.id ?? `${e.at}-${i}`}>
                         <span className="td-tail-ts">{tsLabel(e.at ?? Date.now())}</span>
                         <span className="td-tail-level">{level.toUpperCase()}</span>
-                        <span className="td-tail-msg">{eventLine(e)}</span>
+                        <span className="td-tail-msg">
+                          {eventLine(e)}
+                          {count > 1 ? ` ×${count}` : ""}
+                        </span>
                       </div>
                     );
                   })
@@ -692,20 +784,30 @@ export default function HomePage() {
           {fetchErrors.recipes ? (
             <div className="td-error-row">recipe list unavailable</div>
           ) : fleetRows.length === 0 ? (
-            <div className="td-empty-line">no enabled recipes</div>
+            <div className="td-empty-line">no recipes installed</div>
           ) : (
             <>
               {fleetRows.map(({ recipe, runList, pct, trigger }) => (
                 <div className="td-fleet-row" key={recipe.name}>
                   <span className="td-fleet-glyph">{recipe.enabled !== false ? "▶" : "⏸"}</span>
                   <strong className="mono td-fleet-name">{recipeDisplayName(recipe.name)}</strong>
-                  <span className="td-muted td-fleet-trigger">{String(trigger).slice(0, 8)}</span>
+                  <span className="td-muted td-fleet-trigger">{triggerLabel(trigger)}</span>
                   <span className="td-fleet-bar" aria-hidden="true">
                     {Array.from({ length: 6 }, (_, i) => {
                       const r = runList[i];
-                      const err = r && (r.status === "error" || r.status === "failed" || isHaltStatus(r.status));
+                      if (!r) {
+                        // No run history for this slot — render a neutral
+                        // placeholder dot, not a dim-gray filled block that
+                        // reads as "ran and looked empty/failed".
+                        return (
+                          <span key={i} className="td-blk-empty">
+                            ·
+                          </span>
+                        );
+                      }
+                      const err = r.status === "error" || r.status === "failed" || isHaltStatus(r.status);
                       return (
-                        <span key={i} className={err ? "td-blk-err" : r ? "td-blk-ok" : "td-blk-empty"}>
+                        <span key={i} className={err ? "td-blk-err" : "td-blk-ok"}>
                           █
                         </span>
                       );
@@ -714,9 +816,9 @@ export default function HomePage() {
                   <span className="td-muted">{pct == null ? "—" : `${Math.round(pct)}%`}</span>
                 </div>
               ))}
-              {recipes.filter((r) => r.enabled !== false).length > fleetRows.length && (
+              {fleetOverflowCount > 0 && (
                 <Link href="/recipes" className="td-more-link">
-                  :recipes → all {recipes.filter((r) => r.enabled !== false).length}
+                  +{fleetOverflowCount} more →
                 </Link>
               )}
             </>
@@ -728,29 +830,37 @@ export default function HomePage() {
           {fetchErrors.recipes ? (
             <div className="td-error-row">recipe schedules unavailable</div>
           ) : cronRows.length === 0 ? (
-            <div className="td-empty-line">no scheduled recipes</div>
+            <div className="td-empty-line">
+              no schedules — every enabled recipe is event-driven
+            </div>
           ) : (
-            cronRows.slice(0, 6).map(({ recipe, hs }) => {
-              const enabled = recipe.enabled !== false;
-              const remaining = hs.nextRunAt != null ? hs.nextRunAt - nowMs : null;
-              const countdown =
-                remaining == null
-                  ? hs.humanized
-                    ? describeNextRun(hs.nextRunAt) ?? hs.text
-                    : hs.text
-                  : remaining < 3_600_000
-                    ? mmss(remaining)
-                    : new Date(hs.nextRunAt as number).toLocaleTimeString(undefined, {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      });
-              return (
-                <div className={`td-next-row${enabled ? "" : " td-off"}`} key={recipe.name}>
-                  <strong className="mono td-next-name">{recipeDisplayName(recipe.name)}</strong>
-                  <span className="td-muted">{enabled ? countdown : "(off)"}</span>
-                </div>
-              );
-            })
+            <>
+              {cronRows.slice(0, 6).map(({ recipe, hs }) => {
+                const remaining = hs.nextRunAt != null ? hs.nextRunAt - nowMs : null;
+                const countdown =
+                  remaining == null
+                    ? hs.humanized
+                      ? describeNextRun(hs.nextRunAt) ?? hs.text
+                      : hs.text
+                    : remaining < 3_600_000
+                      ? mmss(remaining)
+                      : new Date(hs.nextRunAt as number).toLocaleTimeString(undefined, {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        });
+                return (
+                  <div className="td-next-row" key={recipe.name}>
+                    <strong className="mono td-next-name">{recipeDisplayName(recipe.name)}</strong>
+                    <span className="td-muted">{countdown}</span>
+                  </div>
+                );
+              })}
+              {pausedCronCount > 0 && (
+                <Link href="/recipes?filter=paused" className="td-more-link">
+                  {pausedCronCount} scheduled recipe{pausedCronCount === 1 ? "" : "s"} are off →
+                </Link>
+              )}
+            </>
           )}
         </Pane>
 
@@ -835,7 +945,9 @@ export default function HomePage() {
                   }}
                 >
                   {isNew && <span className="td-pill td-pill-warn">NEW</span>}
-                  <span className="td-inbox-preview">{item.preview.slice(0, 60) || item.name}</span>
+                  <span className="td-inbox-preview">
+                    {previewText(item.preview, 60) || item.name}
+                  </span>
                 </Link>
               );
             })
