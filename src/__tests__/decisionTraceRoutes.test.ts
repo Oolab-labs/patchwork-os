@@ -62,7 +62,15 @@ beforeEach(() => {
   tmpDir = mkdtempSync(path.join(os.tmpdir(), "decision-trace-routes-"));
   log = new DecisionTraceLog({ dir: tmpDir });
   deps = {
-    saveDecisionTraceFn: (input) =>
+    saveDecisionTraceFn: (input: {
+      ref: string;
+      problem: string;
+      solution: string;
+      workspace?: string;
+      tags?: string[];
+      sessionId?: string;
+      source?: string;
+    }) =>
       log.record({
         ref: input.ref,
         problem: input.problem,
