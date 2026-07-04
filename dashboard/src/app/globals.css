@@ -9825,8 +9825,14 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-pill-ok { background: rgba(127,209,168,0.18); color: #7fd1a8; }
 [data-theme="paper"] .td-pill-ok { background: var(--ok-soft, rgba(127,209,168,0.18)); color: var(--ok-text); }
 /* Halt-age escalation (Phase 4): a halt open >24h gets a brighter,
-   pulsing pill instead of looking identical to one from 2 minutes ago. */
-.td-pill-critical { animation: td-pill-pulse 2s ease-in-out infinite; }
+   pulsing pill instead of looking identical to one from 2 minutes ago.
+   Audit finding: this was the one pulsing-pill user of td-pill-pulse NOT
+   gated behind prefers-reduced-motion (the copilot "thinking" indicator
+   already was) — a vestibular-sensitive user with reduced motion enabled
+   got an infinite pulse tied to an anxiety-inducing "still broken" state. */
+@media (prefers-reduced-motion: no-preference) {
+  .td-pill-critical { animation: td-pill-pulse 2s ease-in-out infinite; }
+}
 @keyframes td-pill-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }

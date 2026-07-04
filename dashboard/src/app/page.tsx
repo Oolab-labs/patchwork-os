@@ -520,6 +520,14 @@ export default function HomePage() {
   // render.
   const markOverviewPollSuccessRef = useRef(markOverviewPollSuccess);
   markOverviewPollSuccessRef.current = markOverviewPollSuccess;
+  // Audit finding: this 5s poll used to overwrite `recipes` wholesale with
+  // zero reconciliation against an in-flight toggle's optimistic write. If
+  // the poll's GET started before a copilot/recipes-page toggle's PATCH
+  // landed, it could resolve AFTER the toggle and clobber the correct
+  // post-toggle state back to the pre-toggle value — e.g. Undo silently
+  // re-disabling instead of re-enabling. See `recipeOverrideUntilRef`
+  // (declared near recipeToggleCallbacks below, referenced inside tick()'s
+  // merge) for the time-based guard against this.
 
   useEffect(() => {
     let alive = true;
@@ -559,7 +567,21 @@ export default function HomePage() {
           : null;
 
         setPendingApprovals(Array.isArray(approvalsData) ? approvalsData : []);
-        setRecipes(list);
+        // Merge rather than blind-replace: a recipe still inside its
+        // post-toggle grace window (see recipeOverrideUntilRef below)
+        // keeps its locally-known `enabled` value instead of being
+        // overwritten by this poll's possibly-pre-toggle server snapshot.
+        setRecipes((prev) => {
+          const overrides = recipeOverrideUntilRef.current;
+          const now = Date.now();
+          const prevByName = new Map(prev.map((r) => [r.name, r]));
+          return list.map((r) => {
+            const until = overrides[r.name];
+            if (!until || now >= until) return r;
+            const localR = prevByName.get(r.name);
+            return localR ? { ...r, enabled: localR.enabled } : r;
+          });
+        });
         setRuns(Array.isArray(runsData.runs) ? runsData.runs : []);
         if (haltData != null && typeof haltData.total === "number") {
           setHaltCount24h(haltData.total);
@@ -885,13 +907,38 @@ export default function HomePage() {
   const [copilotSending, setCopilotSending] = useState(false);
   const copilotMsgSeq = useRef(0);
   const copilotMsgsRef = useRef<HTMLDivElement>(null);
+  // Tracks whether the user was scrolled near the bottom BEFORE the latest
+  // render's DOM mutation, via a live onScroll listener rather than
+  // recomputing post-mutation (scrollHeight/scrollTop already reflect the
+  // newly-appended content by the time a useEffect runs, so a post-hoc
+  // check can't tell "was at bottom" from "just became not-at-bottom
+  // because a message landed"). Defaults true so the initial empty state
+  // and first message both auto-scroll.
+  const copilotNearBottomRef = useRef(true);
   // Auto-scroll to the newest message/thinking-indicator — without this,
   // a reply landing past the 340px scroll cap is invisible until the
-  // user manually scrolls down.
+  // user manually scrolls down. Only sticks to bottom if the user hadn't
+  // scrolled up to reread earlier history — otherwise a new message would
+  // yank their view away from what they're reading.
   useEffect(() => {
     const el = copilotMsgsRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && copilotNearBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [copilotMessages, copilotSending]);
+
+  // Chat history is session-only (not persisted across reloads — matches
+  // the mockup) but still needs a cap: an all-day session chatting with
+  // the copilot would otherwise grow this array (and its DOM projection)
+  // unbounded, unlike every other polled array on this page which either
+  // replaces wholesale or is capped by its own query (e.g. tailEvents).
+  const COPILOT_MAX_MESSAGES = 100;
+  function appendCopilotMessage(msg: CopilotMessage) {
+    setCopilotMessages((prev) => {
+      const next = [...prev, msg];
+      return next.length > COPILOT_MAX_MESSAGES
+        ? next.slice(next.length - COPILOT_MAX_MESSAGES)
+        : next;
+    });
+  }
 
   async function sendCopilotMessage() {
     const text = copilotInput.trim();
@@ -902,7 +949,7 @@ export default function HomePage() {
       role: "user",
       text,
     };
-    setCopilotMessages((prev) => [...prev, userMsg]);
+    appendCopilotMessage(userMsg);
     setCopilotSending(true);
     try {
       const res = await fetch(apiPath("/api/bridge/copilot/message"), {
@@ -923,16 +970,13 @@ export default function HomePage() {
             ? { ...data.action, status: "pending", sourceText: text }
             : undefined,
       };
-      setCopilotMessages((prev) => [...prev, botMsg]);
+      appendCopilotMessage(botMsg);
     } catch (e) {
-      setCopilotMessages((prev) => [
-        ...prev,
-        {
-          id: ++copilotMsgSeq.current,
-          role: "bot",
-          text: `Couldn't reach the copilot endpoint: ${e instanceof Error ? e.message : String(e)}`,
-        },
-      ]);
+      appendCopilotMessage({
+        id: ++copilotMsgSeq.current,
+        role: "bot",
+        text: `Couldn't reach the copilot endpoint: ${e instanceof Error ? e.message : String(e)}`,
+      });
     } finally {
       setCopilotSending(false);
     }
@@ -978,14 +1022,28 @@ export default function HomePage() {
   // Without this, a second toggle in the same session (e.g. Undo right
   // after Confirm) recomputes its target off a stale `enabled` value and
   // can silently repeat the same PATCH instead of flipping back.
+  //
+  // Audit finding: checking the toggle hook's `pending` map alone isn't
+  // enough to protect this from the 5s poll (see toggleRecipePendingRef
+  // above) — a poll request that started BEFORE the toggle but resolves
+  // shortly AFTER it completes lands with `pending` already cleared, so
+  // it would still clobber the just-confirmed state. recipeOverrideUntilRef
+  // instead grants each toggled recipe a short time-based grace window
+  // (comfortably longer than one poll cycle) during which the poll's
+  // merge keeps the locally-known value regardless of in-flight status.
+  const recipeOverrideUntilRef = useRef<Record<string, number>>({});
+  const RECIPE_OVERRIDE_GRACE_MS = 8000;
+
   function recipeToggleCallbacks(recipeName: string) {
     return {
       onOptimistic: (nextEnabled: boolean) => {
+        recipeOverrideUntilRef.current[recipeName] = Date.now() + RECIPE_OVERRIDE_GRACE_MS;
         setRecipes((prev) =>
           prev.map((r) => (r.name === recipeName ? { ...r, enabled: nextEnabled } : r)),
         );
       },
       onRollback: (previousEnabled: boolean) => {
+        recipeOverrideUntilRef.current[recipeName] = Date.now() + RECIPE_OVERRIDE_GRACE_MS;
         setRecipes((prev) =>
           prev.map((r) => (r.name === recipeName ? { ...r, enabled: previousEnabled } : r)),
         );
@@ -1769,7 +1827,18 @@ export default function HomePage() {
             · chat proposes, buttons dispose — every action hits the same gate as cron
           </span>
         </div>
-        <div className="td-copilot-msgs" ref={copilotMsgsRef}>
+        <div
+          className="td-copilot-msgs"
+          ref={copilotMsgsRef}
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            copilotNearBottomRef.current =
+              el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          }}
+        >
           {copilotMessages.length === 0 && (
             <div className="td-copilot-empty">
               ask or act: pause · run · why did X halt…
@@ -1842,7 +1911,7 @@ export default function HomePage() {
             </div>
           ))}
           {copilotSending && (
-            <div className="td-copilot-msg td-copilot-thinking" aria-live="polite">
+            <div className="td-copilot-msg td-copilot-thinking">
               <span className="td-copilot-who">◆ copilot</span>thinking…
             </div>
           )}
@@ -1863,7 +1932,12 @@ export default function HomePage() {
             aria-label="Copilot chat input"
             disabled={copilotSending}
           />
-          <button type="submit" className="td-copilot-send" disabled={copilotSending || !copilotInput.trim()}>
+          <button
+            type="submit"
+            className="td-copilot-send"
+            disabled={copilotSending || !copilotInput.trim()}
+            aria-label="Send message"
+          >
             ↵
           </button>
         </form>
