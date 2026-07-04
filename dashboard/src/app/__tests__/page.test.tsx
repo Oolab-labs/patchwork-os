@@ -172,6 +172,108 @@ describe("<HomePage/> — Terminal deck", () => {
     expect(meta?.textContent).toMatch(/5m/);
   });
 
+  it("2:fleet dims the whole row (not just the bar) for a paused recipe", async () => {
+    mockFetchRoutes(HEALTHY_ROUTES);
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const rows = Array.from(container.querySelectorAll(".td-fleet-row"));
+    const pausedRow = rows.find((r) => r.textContent?.includes("Paused Thing"));
+    expect(pausedRow).toBeTruthy();
+    expect(pausedRow).toHaveClass("td-fleet-row-off");
+    const enabledRow = rows.find((r) => r.textContent?.includes("Daily Brief"));
+    expect(enabledRow).not.toHaveClass("td-fleet-row-off");
+  });
+
+  it("0:attention shows a persistent 'wire' line for the most recently finished run when nothing is live", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/runs": () =>
+        jsonResponse({
+          runs: [
+            {
+              seq: 900,
+              recipe: "outcome-ingester",
+              recipeName: "outcome-ingester",
+              startedAt: Date.now() - 120_000,
+              doneAt: Date.now() - 60_000,
+              status: "done",
+            },
+          ],
+        }),
+    });
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const wire = container.querySelector(".td-attention-wire");
+    expect(wire).toBeTruthy();
+    expect(wire?.textContent).toMatch(/last finished/);
+    expect(wire?.textContent).toMatch(/outcome-ingester/);
+  });
+
+  it("6:inbox shows an unread accent border and a produced-by byline with the run number", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/inbox": () =>
+        jsonResponse({
+          items: [
+            {
+              name: "morning-brief-2026-07-04.md",
+              modifiedAt: new Date().toISOString(),
+              preview: "Overnight I watched 11 runs finish.",
+              provenance: { recipe: "morning-brief", runSeq: 212 },
+            },
+          ],
+        }),
+    });
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const row = container.querySelector(".td-inbox-row");
+    expect(row).toHaveClass("td-inbox-row-unread");
+    expect(row?.textContent).toMatch(/produced by/);
+    expect(row?.textContent).toMatch(/morning-brief/);
+    expect(row?.textContent).toMatch(/run #212/);
+  });
+
+  it("4:workers shows the real trust percentage next to a demoted worker, not a fabricated one", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/workers/shadow": () =>
+        jsonResponse({
+          workers: [
+            {
+              workerId: "w1",
+              name: "Dependency Bump",
+              autonomyCeiling: 1,
+              board: [
+                { classKey: "vcs-remote:compensable:medium", level: 0, observations: 10, mean: 0.7, owned: true },
+              ],
+              events: [{ type: "demote", classKey: "vcs-remote:compensable:medium", from: 2, to: 1, at: Date.now() - 86_400_000, evidence: 5, reason: "regression", workerId: "w1" }],
+              compared: 14,
+              agreed: 10,
+              divergences: [],
+            },
+          ],
+          runsScanned: 0,
+          decisionsScanned: 0,
+        }),
+    });
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const workersPane = screen.getByRole("region", { name: "workers" });
+    expect(workersPane.textContent).toMatch(/71% over 14 tries/);
+  });
+
   it("fails soft: one endpoint 500ing still lets the rest of the deck render", async () => {
     mockFetchRoutes({
       ...HEALTHY_ROUTES,

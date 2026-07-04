@@ -9944,6 +9944,20 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-attention-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .td-attention-foot { margin-top: 8px; font-size: var(--fs-xs); }
 .td-attention-foot a { color: inherit; }
+/* Mockup's H-A "wire" footer — a persistent heartbeat line distinct from
+   the halted/pending list above, so the pane isn't silent when nothing's
+   actually wrong. */
+.td-attention-wire {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-1);
+  font-size: var(--fs-xs);
+  color: var(--terminal-comment);
+}
+[data-theme="paper"] .td-attention-wire { color: var(--ink-3); }
 .td-attention-live { padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); }
 [data-theme="paper"] .td-attention-live { border-bottom-color: var(--border-subtle, rgba(0,0,0,0.08)); }
 /* Halt-age escalation (Phase 4): stale (>1h) gets a left accent bar,
@@ -9988,6 +10002,10 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 /* Mockup's R-A ".ra-meta" row — avg duration + last-run-relative-time,
    indented under the glyph column so it reads as this row's detail. */
 .td-fleet-meta { padding-left: calc(1em + 8px); }
+/* Mockup's R-A "off" card dims the whole row (.ra-card.off{opacity:.6}),
+   not just the trailing "off" text — makes paused recipes unmistakable
+   at a glance instead of requiring you to read to the end of the row. */
+.td-fleet-row-off { opacity: 0.6; }
 .td-fleet-glyph { width: 1em; text-align: center; }
 /* Data-backed pulse for a recipe with a run in progress right now (not
    decorative) — mirrors the mockup's .he-pulse ring convention, adapted
@@ -10108,11 +10126,32 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 [data-theme="paper"] .td-bar2 span { background: var(--ok); }
 
 /* Pane 6: inbox */
-.td-inbox-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: inherit; text-decoration: none; padding: 3px 0; }
+.td-inbox-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: var(--fs-xs);
+  color: inherit;
+  text-decoration: none;
+  padding: 3px 0 3px 8px;
+  border-left: 2px solid transparent;
+}
+/* Mockup's .ia-letter.unread border-left accent — cheaper and more
+   scannable than the "NEW" pill alone across a list of rows. */
+.td-inbox-row-unread { border-left-color: var(--orange); }
+.td-inbox-row-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .td-inbox-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Matches the "NEW" pill's column width so read/unread rows align
    (mockup's inbox pane: "NEW"/"read" both occupy the same left column). */
 .td-inbox-read { min-width: 2.6em; flex-shrink: 0; }
+/* Mockup's .byline (I-A Newspaper) — recipe/run provenance instead of a
+   bare timestamp, so "who wrote this" is visible without opening it. */
+.td-inbox-byline {
+  color: var(--terminal-comment);
+  font-size: var(--fs-2xs);
+  padding-left: calc(2.6em + 8px);
+}
+[data-theme="paper"] .td-inbox-byline { color: var(--ink-3); }
 
 /* Pane 7: copilot (Tier 1 — deterministic lever intents, no LLM).
    Ported from the mockup's .hd-chat/.hd-msg/.hd-act/.hd-chatin classes,
