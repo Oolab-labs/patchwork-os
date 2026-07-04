@@ -783,7 +783,7 @@ export default function HomePage() {
     { intervalMs: 15000, trackStaleness: true },
   );
   // Worker-verdict confirm queue — formerly /today §2's "worker verdict"
-  // rows. Same 15s cadence as the workers-shadow fetch (no new timer).
+  // rows. Same 15s poll cadence as the workers-shadow request (no new timer).
   const {
     data: pendingOutcomesData,
     refetch: refetchPendingOutcomes,
