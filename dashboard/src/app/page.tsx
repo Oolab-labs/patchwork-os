@@ -230,6 +230,41 @@ function haltAgeTier(ageMs: number): HaltAgeTier {
   return "fresh";
 }
 
+// "N of 3 done" strip — the former standalone /today page's morning-habit
+// framing (clear decisions / glance at team / read the brief), removed as
+// a page in #1112 when its 3 sections were folded into 0:attention/
+// 4:workers/6:inbox. Re-added here (2026-07-04) as a thin status line the
+// user still wanted between the statusline and the pane grid: it derives
+// "done" from data these panes already compute, it isn't a second source
+// of truth. `nextBriefLabel` mirrors #1112's "next brief" framing when
+// all 3 are clear — passed in rather than fetched again here.
+function TodayProgressStrip({
+  decisionsDone,
+  teamDone,
+  briefDone,
+  nextBriefLabel,
+}: {
+  decisionsDone: boolean;
+  teamDone: boolean;
+  briefDone: boolean;
+  nextBriefLabel: string | null;
+}) {
+  const doneCount = [decisionsDone, teamDone, briefDone].filter(Boolean).length;
+  const allDone = doneCount === 3;
+  return (
+    <div className="td-today-strip" role="status" aria-live="polite" aria-atomic="true">
+      {allDone ? (
+        <span className="td-today-clear">
+          <span aria-hidden="true">✓</span> You&apos;re clear
+          {nextBriefLabel ? ` — next brief ${nextBriefLabel}` : " — check back tomorrow."}
+        </span>
+      ) : (
+        <span className="td-today-count">{doneCount} of 3 done</span>
+      )}
+    </div>
+  );
+}
+
 function eventLine(e: ActivityEvent): string {
   if (e.kind === "tool") return e.tool ?? "tool";
   if (e.kind === "lifecycle" && e.event) return e.event.replace(/_/g, " ");
@@ -1157,6 +1192,13 @@ export default function HomePage() {
           </span>
         )}
       </div>
+
+      <TodayProgressStrip
+        decisionsDone={workerPending.length === 0}
+        teamDone={promotableCount === 0 && demotedRecentCount === 0}
+        briefDone={inboxUnreadCount === 0}
+        nextBriefLabel={null}
+      />
 
       <div className="td-grid">
         {/* 0: attention */}

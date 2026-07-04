@@ -607,6 +607,57 @@ describe("<HomePage/> — Terminal deck", () => {
     });
   });
 
+  it("shows the 'N of 3 done' morning-habit strip between the statusline and the pane grid, and 'You're clear' once all 3 are done", async () => {
+    mockFetchRoutes(HEALTHY_ROUTES);
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const strip = container.querySelector(".td-today-strip");
+    expect(strip).toBeTruthy();
+    // Placed between the statusline and the grid, not inside either.
+    expect(strip?.previousElementSibling).toHaveClass("td-statusline");
+    expect(strip?.nextElementSibling).toHaveClass("td-grid");
+    // HEALTHY_ROUTES has no pending outcomes, no workers, no inbox items —
+    // all 3 sections ("decisions", "team", "brief") read as done.
+    expect(strip?.textContent).toMatch(/You're clear/);
+  });
+
+  it("today strip shows 'N of 3 done' when a worker-verdict confirmation is still pending", async () => {
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      for (const [key, make] of Object.entries({
+        ...HEALTHY_ROUTES,
+        "/api/bridge/outcomes/pending": () =>
+          jsonResponse({
+            pending: [
+              {
+                issueUrl: "https://github.com/o/r/issues/1",
+                recipeName: "triage-failing-tests",
+                workerId: "test-guardian",
+                workerName: "Test Guardian",
+                filedAt: Date.now() - 60_000,
+                classKey: "issue:compensable:high",
+                title: "Login test failing on main",
+              },
+            ],
+          }),
+      })) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const strip = container.querySelector(".td-today-strip");
+    expect(strip?.textContent).toMatch(/2 of 3 done/);
+  });
+
   it("4:workers header shows a promote/demote rollup (folded from /today's 'glance at the team')", async () => {
     mockFetchRoutes({
       ...HEALTHY_ROUTES,

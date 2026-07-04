@@ -9713,6 +9713,17 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 [data-theme="paper"] .td-statusline .td-err { color: var(--err-text, var(--err)); }
 [data-theme="paper"] .td-statusline .td-warn { color: var(--warn-text, var(--warn)); }
 
+/* "N of 3 done" morning-habit strip, between the statusline and the pane
+   grid — see TodayProgressStrip in page.tsx. */
+.td-today-strip {
+  margin-bottom: 14px;
+  font-size: var(--fs-s);
+  color: var(--terminal-comment);
+}
+.td-today-clear { color: #7fd1a8; }
+[data-theme="paper"] .td-today-strip { color: var(--ink-3); }
+[data-theme="paper"] .td-today-clear { color: var(--ok-text, var(--ok)); }
+
 .td-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
