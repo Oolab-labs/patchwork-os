@@ -10003,7 +10003,6 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   border-bottom: 1px solid var(--line-2);
   font-size: var(--fs-xs);
 }
-.td-copilot-head b { color: var(--terminal-fg); }
 .td-copilot-msgs {
   max-height: 340px;
   overflow-y: auto;
@@ -10011,17 +10010,42 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   display: flex;
   flex-direction: column;
   gap: 10px;
+  scroll-behavior: smooth;
 }
-.td-copilot-msg { font-size: var(--fs-s); line-height: 1.55; max-width: 72ch; }
+/* Matches the mockup's own empty-state hint line — was previously
+   unstyled (no CSS rule existed for this class at all), inheriting
+   plain body text instead of the muted/centered terminal-empty look
+   every other pane's empty state already uses. */
+.td-copilot-empty {
+  color: var(--terminal-comment);
+  font-size: var(--fs-xs);
+  text-align: center;
+  padding: 18px 0;
+}
+[data-theme="paper"] .td-copilot-empty { color: var(--ink-3); }
+.td-copilot-msg {
+  font-size: var(--fs-s);
+  line-height: 1.55;
+  max-width: 72ch;
+  overflow-wrap: anywhere;
+}
 .td-copilot-msg-user {
   align-self: flex-end;
   background: var(--pressed, rgba(255,255,255,0.05));
   border: 1px solid var(--line-2);
-  border-radius: 8px;
+  border-radius: 8px 8px 2px 8px;
   padding: 6px 10px;
 }
 .td-copilot-msg-bot { color: var(--terminal-fg); }
 .td-copilot-who { color: var(--accent); font-weight: 700; margin-right: 6px; }
+/* "◆ copilot is thinking…" placeholder row shown while a reply is in
+   flight — the mockup has an .hd-typing equivalent; previously the pane
+   just sat silent between send and reply with no feedback at all. */
+.td-copilot-thinking { color: var(--terminal-comment); font-size: var(--fs-s); }
+[data-theme="paper"] .td-copilot-thinking { color: var(--ink-3); }
+@media (prefers-reduced-motion: no-preference) {
+  .td-copilot-thinking { animation: td-pill-pulse 1.4s ease-in-out infinite; }
+}
 .td-copilot-act {
   border: 1px solid var(--line-2);
   border-left: 3px solid var(--accent);
@@ -10029,29 +10053,27 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   background: var(--surface);
   padding: 8px 10px;
   margin-top: 8px;
+  transition: border-left-color 0.2s ease;
 }
 .td-copilot-act-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
-.td-copilot-act-head b { color: var(--terminal-fg); }
-.td-copilot-act-kv {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-  color: var(--terminal-comment);
-  font-size: var(--fs-2xs);
-  margin-bottom: 8px;
-}
-.td-copilot-act-kv b { color: var(--terminal-fg); font-weight: 600; }
-.td-copilot-act-done { border-left-color: #7fbf6f; }
-[data-theme="paper"] .td-copilot-act-done { border-left-color: var(--ok-text); }
-.td-copilot-act-buttons { display: flex; gap: 8px; align-items: center; }
-.td-copilot-input {
+.td-copilot-act-head strong { color: var(--terminal-fg); }
+/* Run actions execute immediately on Confirm (no undo step like
+   pause/enable) — a distinct accent-tinted pill flags that at a glance
+   instead of looking identical to the lever pill. */
+.td-pill-accent { background: var(--accent-soft, rgba(224,101,60,0.16)); color: var(--accent); }
+.td-copilot-act.done { border-left-color: #7fbf6f; }
+[data-theme="paper"] .td-copilot-act.done { border-left-color: var(--ok-text); }
+.td-copilot-act-actions { display: flex; gap: 8px; align-items: center; }
+.td-copilot-in {
   display: flex;
   gap: 10px;
   align-items: center;
   border-top: 1px solid var(--line-1);
   padding: 9px 12px;
+  transition: background 0.15s ease;
 }
-.td-copilot-input input {
+.td-copilot-in:focus-within { background: var(--recess, rgba(255,255,255,0.03)); }
+.td-copilot-in input {
   flex: 1;
   background: transparent;
   border: 0;
@@ -10059,7 +10081,8 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   color: var(--terminal-fg);
   font: inherit;
 }
-.td-copilot-input input::placeholder { color: var(--terminal-comment); }
+.td-copilot-in input::placeholder { color: var(--terminal-comment); }
+.td-copilot-in input:disabled { opacity: 0.6; }
 .td-copilot-prompt { color: var(--accent); }
 .td-copilot-send {
   background: var(--accent);
@@ -10069,7 +10092,9 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   padding: 5px 12px;
   cursor: pointer;
   font: inherit;
+  transition: background 0.15s ease;
 }
+.td-copilot-send:hover:not(:disabled) { background: #ab4622; }
 .td-copilot-send:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ------------------------------------------------------------------ */
