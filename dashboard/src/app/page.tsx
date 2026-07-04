@@ -2296,27 +2296,52 @@ export default function HomePage() {
             </div>
           )}
           {activityHeatmap.cells.some((c) => c.count > 0) && (
-            <div className="td-heatmap" title="activity in the last 24h, one cell per hour, oldest on the left">
-              {activityHeatmap.cells.map((cell, i) => {
-                const tier =
-                  cell.errors > 0
-                    ? "er"
-                    : cell.count === 0
-                      ? ""
-                      : cell.count >= activityHeatmap.maxCount * 0.66
-                        ? "l3"
-                        : cell.count >= activityHeatmap.maxCount * 0.33
-                          ? "l2"
-                          : "l1";
-                const hoursAgo = activityHeatmap.cells.length - 1 - i;
-                return (
-                  <span
-                    key={i}
-                    className={`td-heatmap-cell${tier ? ` td-heatmap-${tier}` : ""}`}
-                    title={`${cell.count} event${cell.count === 1 ? "" : "s"}${cell.errors > 0 ? `, ${cell.errors} error${cell.errors === 1 ? "" : "s"}` : ""}, ${hoursAgo}h-${hoursAgo + 1}h ago`}
-                  />
-                );
-              })}
+            <div className="td-heatmap-block">
+              {/* GitHub-contribution-graph styling (rounder cells, tick
+                  labels, a Less→More legend) adapted to what's actually
+                  true of this data: 24 hours, not 52 weeks, so the ticks
+                  read "24h ago…now" instead of month names, and the count
+                  line is framed as "events" not "contributions". */}
+              <div className="td-heatmap-count td-muted">
+                {activityHeatmap.cells.reduce((sum, c) => sum + c.count, 0)} events in the last 24h
+              </div>
+              <div className="td-heatmap-ticks td-muted" aria-hidden="true">
+                <span>24h ago</span>
+                <span>18h ago</span>
+                <span>12h ago</span>
+                <span>6h ago</span>
+                <span>now</span>
+              </div>
+              <div className="td-heatmap" title="activity in the last 24h, one cell per hour, oldest on the left">
+                {activityHeatmap.cells.map((cell, i) => {
+                  const tier =
+                    cell.errors > 0
+                      ? "er"
+                      : cell.count === 0
+                        ? ""
+                        : cell.count >= activityHeatmap.maxCount * 0.66
+                          ? "l3"
+                          : cell.count >= activityHeatmap.maxCount * 0.33
+                            ? "l2"
+                            : "l1";
+                  const hoursAgo = activityHeatmap.cells.length - 1 - i;
+                  return (
+                    <span
+                      key={i}
+                      className={`td-heatmap-cell${tier ? ` td-heatmap-${tier}` : ""}`}
+                      title={`${cell.count} event${cell.count === 1 ? "" : "s"}${cell.errors > 0 ? `, ${cell.errors} error${cell.errors === 1 ? "" : "s"}` : ""}, ${hoursAgo}h-${hoursAgo + 1}h ago`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="td-heatmap-legend td-muted" aria-hidden="true">
+                <span>Less</span>
+                <span className="td-heatmap-cell" />
+                <span className="td-heatmap-cell td-heatmap-l1" />
+                <span className="td-heatmap-cell td-heatmap-l2" />
+                <span className="td-heatmap-cell td-heatmap-l3" />
+                <span>More</span>
+              </div>
             </div>
           )}
         </Pane>

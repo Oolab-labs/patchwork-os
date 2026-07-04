@@ -10130,18 +10130,31 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 [data-theme="paper"] .td-bar2 span { background: var(--ok); }
 
 /* Mockup's H-C ".hc-heat" 24h activity grid — one cell per hour, oldest
-   on the left, colored by event density/errors. */
+   on the left, colored by event density/errors. Styled after GitHub's
+   contribution graph (rounder cells, tick labels, a Less→More legend)
+   per user request, adapted to what's actually true here: 24 hours of
+   Patchwork activity, not 52 weeks of contributions. */
+.td-heatmap-block {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-1);
+}
+.td-heatmap-count { font-size: var(--fs-2xs); margin-bottom: 6px; }
+.td-heatmap-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-2xs);
+  margin-bottom: 3px;
+}
+.td-heatmap-ticks span { white-space: nowrap; }
 .td-heatmap {
   display: grid;
   grid-template-columns: repeat(24, 1fr);
-  gap: 2px;
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px solid var(--line-1);
+  gap: 3px;
 }
 .td-heatmap-cell {
   aspect-ratio: 1;
-  border-radius: 1px;
+  border-radius: 2px;
   background: var(--recess);
 }
 .td-heatmap-l1 { background: rgba(127, 191, 111, 0.3); }
@@ -10150,6 +10163,15 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-heatmap-er { background: #e0847e; }
 [data-theme="paper"] .td-heatmap-l3 { background: var(--ok); }
 [data-theme="paper"] .td-heatmap-er { background: var(--err); }
+.td-heatmap-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: var(--fs-2xs);
+}
+.td-heatmap-legend .td-heatmap-cell { width: 10px; height: 10px; aspect-ratio: unset; }
 
 /* Pane 6: inbox */
 .td-inbox-row {
