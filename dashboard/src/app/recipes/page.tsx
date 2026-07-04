@@ -347,7 +347,15 @@ export default function RecipesPage() {
   const [modal, setModal] = useState<RunModalState | null>(null);
   const [modalRunning, setModalRunning] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "paused">("all");
+  // ?filter=paused|enabled deep-link (e.g. from the Terminal deck's
+  // "next" pane footer link, which collapses paused cron recipes to a
+  // single "N scheduled recipes are off →" line pointing here).
+  const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "paused">(() => {
+    if (typeof window === "undefined") return "all";
+    const sp = new URLSearchParams(window.location.search);
+    const f = sp.get("filter");
+    return f === "paused" || f === "enabled" ? f : "all";
+  });
   const [triggerFilter, setTriggerFilter] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const toast = useToast();

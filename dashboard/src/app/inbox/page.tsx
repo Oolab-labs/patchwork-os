@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { apiPath } from "@/lib/api";
 import { inboxItemKey } from "@/lib/entityKey";
+import { stripMarkdown } from "@/lib/textPreview";
 import { EmptyState, ErrorState, HintCard, RelationStrip } from "@/components/patchwork";
 import { RecipeChip, RunChip } from "@/components/patchwork/entity";
 import { SkeletonList } from "@/components/Skeleton";
@@ -98,29 +99,6 @@ function SenderAvatar({ name, size = 40 }: { name: string; size?: number }) {
 }
 
 // ------------------------------------------------------------------ preview strip
-
-function stripMarkdown(text: string): string {
-  return text
-    .replace(/^#{1,6}\s+/gm, "")
-    // Drop GFM table delimiter rows ("| --- | :--: |") entirely — they
-    // carry no content, only render as "|---|---|" noise in the preview.
-    .replace(/^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/gm, "")
-    // Flatten remaining table rows: split cells on pipes, keep the text.
-    .replace(/^\s*\|(.+)\|\s*$/gm, (_, row: string) =>
-      row
-        .split("|")
-        .map((c) => c.trim())
-        .filter(Boolean)
-        .join(" · "),
-    )
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/^[-*]\s+/gm, "")
-    .replace(/_(.+?)_/g, "$1")
-    .replace(/`(.+?)`/g, "$1")
-    .replace(/\n+/g, " ")
-    .trim();
-}
 
 // ------------------------------------------------------------------ markdown renderer
 

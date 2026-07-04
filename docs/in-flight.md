@@ -25,7 +25,11 @@ Format: `- <date> <branch-or-PR> — <one-line scope> — <session/chat identity
 
 ## Active
 
-- 2026-07-03 `feat/dashboard-terminal-deck-phase1` (PR #1095, awaiting user visual review before merge) — Terminal+Copilot deck plan PR 6/10: full rewrite of `app/page.tsx` replacing the PR #1085 Command Deck bento with the "Home D · Terminal (dark)" statusline + 7-pane mono grid. Rebased onto main post gap-remediation items 0/1/2/4 (#1096-#1099). Prep sequence PRs 1-5 all merged.
+- 2026-07-04 `fix/deck-pane-signal-quality` — Terminal deck v2 Phase 1 (pane signal quality): user reviewed the merged deck (#1095) live and found real-data signal-quality problems the mockup couldn't expose. 1:tail defaults to hiding bridge-lifecycle plumbing (grace/heartbeat/connected) behind a toggle + collapses consecutive duplicates with ×N (reusing activity page's compression logic) + fixes level coloring. 3:next shows only enabled schedules sorted by next-fire with countdowns, paused collapse to one footer line. 2:fleet sorts real/active recipes first, maps trigger labels to short display names, caps ~6 rows + "+N more". 6:inbox strips markdown + truncates at word boundary. Phases 2-4 (Decision Record gate-activity in 4:workers, staleness-in-statusline + run-cancel-on-deck, halt-age escalation + polish) follow as separate PRs. — build session
+
+## Recently closed (informal log, prune periodically)
+
+- 2026-07-03 `feat/dashboard-terminal-deck-phase1` (#1095) — Terminal+Copilot deck plan PR 6/10: full rewrite of `app/page.tsx` replacing the PR #1085 Command Deck bento with the "Home D · Terminal (dark)" statusline + 7-pane mono grid. — merged
 
 ## Recently closed (informal log, prune periodically)
 
