@@ -90,6 +90,44 @@ interface InboxItem {
   provenance?: { recipe?: string };
 }
 
+// Slim mirror of `GateDecisionRecord` (src/workerGateDecisionLog.ts) — only
+// the fields this pane actually renders. The bridge's `GET /gate/decisions`
+// (backing `patchwork gate explain`) has never had a dashboard consumer
+// before this pane; this is its first.
+interface GateDecisionRecord {
+  seq: number;
+  decidedAt: number;
+  workerId: string;
+  toolName: string;
+  classKey: string;
+  action: "allow" | "gate";
+  owned: boolean;
+  earnedLevel: number;
+  autonomyCeiling: number;
+  effectiveLevel: number;
+  contextCeiling?: number;
+  contextRiskScore?: number;
+  contextRiskReasons?: string[];
+  reason: string;
+  recipeName: string;
+  gatePolicyVersion: string;
+}
+
+// Short level→phrase vocabulary, index = trust level 0-4. Mirrors
+// PLAIN_LEVEL_SHORT in app/workers/page.tsx (the source of "asks first" /
+// "acts + undo" etc.) — kept as a local copy since that array isn't
+// currently exported from a shared lib; do not invent new phrasing here.
+const GATE_LEVEL_SHORT = [
+  "suggests only",
+  "asks first",
+  "acts + undo",
+  "acts + spot-check",
+  "on its own",
+];
+function gateLevelPhrase(n: number): string {
+  return GATE_LEVEL_SHORT[n] ?? `level ${n}`;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -294,6 +332,14 @@ export default function HomePage() {
     "/api/bridge/workers/shadow",
     { intervalMs: 15000 },
   );
+  // Gate activity feed for pane 4 — GET /gate/decisions with no filters
+  // returns the most-recent decisions across ALL workers (query() only
+  // filters fields that are actually supplied), so this is a genuine "last
+  // N gate decisions, any worker" feed, not a per-worker/per-class lookup.
+  // Same 15s cadence as the workers-shadow fetch above (no new timer).
+  const { data: gateDecisionsData, error: gateDecisionsError } = useBridgeFetch<{
+    decisions?: GateDecisionRecord[];
+  }>("/api/bridge/gate/decisions?limit=6", { intervalMs: 15000 });
   const { data: inboxData, error: inboxError } = useBridgeFetch<{ items?: InboxItem[] }>(
     "/api/inbox",
     { intervalMs: 15000 },
@@ -544,6 +590,8 @@ export default function HomePage() {
     );
     return hasNonReversibleOwned ? "climbing" : "reversible";
   }
+  const gateDecisions: GateDecisionRecord[] = gateDecisionsData?.decisions ?? [];
+  const [expandedGateSeq, setExpandedGateSeq] = useState<number | null>(null);
 
   // ---- Pane 6: inbox ---------------------------------------------------
   // Data source: workspace-level GET /api/inbox (proxies bridge GET /inbox,
@@ -891,6 +939,65 @@ export default function HomePage() {
               );
             })
           )}
+
+          {/* Gate activity — first-ever dashboard surface of the Decision
+              Record (GET /gate/decisions, backs `patchwork gate explain`).
+              Renders the last ~6 gate decisions across all workers. */}
+          <div className="td-gate-activity">
+            <div className="td-gate-activity-title td-muted">gate activity</div>
+            {gateDecisionsError ? (
+              <div className="td-error-row">gate activity unavailable</div>
+            ) : gateDecisions.length === 0 ? (
+              <div className="td-empty-line">no gate decisions yet</div>
+            ) : (
+              gateDecisions.slice(0, 6).map((d) => {
+                const isOpen = expandedGateSeq === d.seq;
+                const hhmm = new Date(d.decidedAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                });
+                return (
+                  <div className="td-gate-row-wrap" key={d.seq}>
+                    <button
+                      type="button"
+                      className="td-gate-row"
+                      aria-expanded={isOpen}
+                      onClick={() =>
+                        setExpandedGateSeq(isOpen ? null : d.seq)
+                      }
+                    >
+                      <span className="mono td-muted">{hhmm}</span>
+                      <span className="td-gate-verb">GATE</span>
+                      <span className="mono">{d.workerId}</span>
+                      <span className="td-muted mono">{d.classKey}</span>
+                      <span className="td-gate-arrow">→</span>
+                      <span>{gateLevelPhrase(d.effectiveLevel)}</span>
+                    </button>
+                    {isOpen && (
+                      <div className="td-gate-explain">
+                        <div>
+                          effective L{d.effectiveLevel} ({gateLevelPhrase(d.effectiveLevel)})
+                          {" vs required "}
+                          {d.action === "allow" ? "— none (allowed)" : "higher"}
+                        </div>
+                        <div>
+                          earned L{d.earnedLevel} · autonomy ceiling L{d.autonomyCeiling}
+                          {d.contextCeiling !== undefined
+                            ? ` · context ceiling L${d.contextCeiling}`
+                            : ""}
+                        </div>
+                        {d.contextRiskReasons && d.contextRiskReasons.length > 0 && (
+                          <div>context signals: {d.contextRiskReasons.join(", ")}</div>
+                        )}
+                        <div className="td-muted">{d.reason}</div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </Pane>
 
         {/* 5: vitals */}
