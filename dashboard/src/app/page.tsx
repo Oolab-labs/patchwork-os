@@ -39,8 +39,6 @@ import { collapseConsecutiveEvents } from "@/lib/collapseConsecutiveEvents";
 import { triggerLabel } from "@/lib/triggerLabel";
 import { previewText } from "@/lib/textPreview";
 import { useToast } from "@/components/Toast";
-import { classifyPendingAction, reversibilityRank } from "@/lib/actionClass";
-import { BlastBadge } from "@/components/patchwork";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -106,7 +104,7 @@ interface InboxItem {
   name: string;
   modifiedAt: string;
   preview: string;
-  provenance?: { recipe?: string };
+  provenance?: { recipe?: string; runSeq?: number };
 }
 
 // 7:copilot — Tier 1 lever-action chat. `CopilotAction` mirrors the
@@ -247,7 +245,9 @@ function haltAgeTier(ageMs: number): HaltAgeTier {
 }
 
 /** agreed/compared as a 0-100 trust percentage, or null if there's no
- *  comparison history yet (never fabricate a rate from zero data). */
+ *  comparison history yet (never fabricate a rate from zero data) — the
+ *  mockup's W-A "ready for more independence — 92% over 38 tries" copy,
+ *  backed by data the pane already fetches. */
 function workerTrustPct(w: WorkerReport): number | null {
   if (w.compared <= 0) return null;
   return Math.round((w.agreed / w.compared) * 100);
@@ -1006,6 +1006,13 @@ export default function HomePage() {
     .filter((r) => r.status === "running" && !(r.seq != null && cancelledSeqs.has(r.seq)))
     .sort((a, b) => b.startedAt - a.startedAt);
   const topLiveRun = liveRuns[0];
+  // Mockup's H-A "wire" footer line — a persistent heartbeat distinct from
+  // the halted/pending list above it, so the pane isn't silent when
+  // there's genuinely nothing wrong. Most recently *finished* run (not
+  // running), across all statuses.
+  const lastFinishedRun = runs
+    .filter((r) => r.status !== "running" && r.doneAt != null)
+    .sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0))[0];
 
   // ---- Pane 1: tail (activity) --------------------------------------------
   // Default-hide bridge-lifecycle plumbing (grace/extension/heartbeat
@@ -1719,6 +1726,21 @@ export default function HomePage() {
               )}
               </>
               )}
+              {(topLiveRun ?? lastFinishedRun) && (
+                <div className="td-attention-wire">
+                  <span className={`dot ${topLiveRun ? "ok" : "mut"}`} aria-hidden="true" />
+                  {topLiveRun ? (
+                    <>
+                      {liveRuns.length} running · {(topLiveRun.recipeName ?? topLiveRun.recipe ?? "").replace(/:agent$/, "")}
+                    </>
+                  ) : lastFinishedRun ? (
+                    <>
+                      last finished {formatAgo(nowMs - (lastFinishedRun.doneAt ?? nowMs))} ·{" "}
+                      {(lastFinishedRun.recipeName ?? lastFinishedRun.recipe ?? "").replace(/:agent$/, "")}
+                    </>
+                  ) : null}
+                </div>
+              )}
             </>
           )}
         </Pane>
@@ -1865,7 +1887,10 @@ export default function HomePage() {
                     : null;
                 const lastRun = runList[0];
                 return (
-                  <div className="td-fleet-row" key={recipe.name}>
+                  <div
+                    className={`td-fleet-row${enabled ? "" : " td-fleet-row-off"}`}
+                    key={recipe.name}
+                  >
                     <div className="td-fleet-row-top">
                       <span
                         className={`td-fleet-glyph${isLive ? " td-fleet-glyph-live" : ""}`}
@@ -2054,6 +2079,15 @@ export default function HomePage() {
                       ""
                     )}
                     {status === "ready" && promo ? ` ↑ ${taskName(promo.classKey)}` : ""}
+                    {(() => {
+                      const pct = workerTrustPct(w);
+                      // Mockup's W-A "92% over 38 tries" copy — only for
+                      // the states where a rate is actually meaningful.
+                      if (pct == null || (status !== "ready" && !demoted)) return null;
+                      return (
+                        <span className="td-muted"> · {pct}% over {w.compared} tries</span>
+                      );
+                    })()}
                   </span>
                 </div>
               );
@@ -2231,18 +2265,26 @@ export default function HomePage() {
               return (
                 <Link
                   href="/inbox"
-                  className="td-inbox-row"
+                  className={`td-inbox-row${isNew ? " td-inbox-row-unread" : ""}`}
                   key={item.name}
                   onClick={() => markInboxSeen(item.name)}
                 >
-                  {isNew ? (
-                    <span className="td-pill td-pill-warn">NEW</span>
-                  ) : (
-                    <span className="td-muted td-inbox-read">read</span>
-                  )}
-                  <span className="td-inbox-preview">
-                    {previewText(item.preview, 60) || item.name}
+                  <span className="td-inbox-row-top">
+                    {isNew ? (
+                      <span className="td-pill td-pill-warn">NEW</span>
+                    ) : (
+                      <span className="td-muted td-inbox-read">read</span>
+                    )}
+                    <span className="td-inbox-preview">
+                      {previewText(item.preview, 60) || item.name}
+                    </span>
                   </span>
+                  {item.provenance?.recipe && (
+                    <span className="td-inbox-byline">
+                      produced by <span className="mono">{item.provenance.recipe}</span>
+                      {item.provenance.runSeq != null ? ` · run #${item.provenance.runSeq}` : ""}
+                    </span>
+                  )}
                 </Link>
               );
             })
