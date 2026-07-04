@@ -34,6 +34,7 @@ import {
   computeSummary as computeActivationSummary,
   loadMetrics as loadActivationMetrics,
 } from "./activationMetrics.js";
+import { getApprovalQueue } from "./approvalQueue.js";
 import {
   buildCopilotReply,
   type CopilotRecipeRef,
@@ -2261,7 +2262,20 @@ export function tryHandleRecipeRoute(
           haltReason = lastHalt?.haltReason ?? null;
         }
 
-        const result = buildCopilotReply(intent, { haltReason });
+        // Read-only status Q&A — same singletons the /approvals and
+        // /kill-switch routes already read from, so the copilot's answer
+        // can never drift from what those pages show.
+        const result = buildCopilotReply(intent, {
+          haltReason,
+          approvalsPending:
+            intent.kind === "approvals_status"
+              ? getApprovalQueue().list().length
+              : undefined,
+          killSwitchEngaged:
+            intent.kind === "kill_switch_status"
+              ? isWriteKillSwitchActive()
+              : undefined,
+        });
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result));
       } catch (err) {

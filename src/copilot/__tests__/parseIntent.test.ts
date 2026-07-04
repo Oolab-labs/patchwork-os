@@ -130,6 +130,82 @@ describe("parseCopilotIntent — ambiguous / no match", () => {
   });
 });
 
+describe("parseCopilotIntent — ambiguous_recipe", () => {
+  it("returns ambiguous_recipe when two distinct recipes tie for the longest match", () => {
+    const recipes = [
+      { name: "foo-bar", enabled: true },
+      { name: "baz-qux", enabled: true },
+    ];
+    const intent = parseCopilotIntent("pause foo-bar or baz-qux", recipes);
+    expect(intent.kind).toBe("ambiguous_recipe");
+    if (intent.kind === "ambiguous_recipe") {
+      expect(intent.candidates.map((c) => c.name).sort()).toEqual([
+        "baz-qux",
+        "foo-bar",
+      ]);
+    }
+  });
+
+  it("does not flag ambiguity when one match is strictly longer", () => {
+    const recipes = [
+      { name: "ingest", enabled: true },
+      { name: "outcome-ingester", enabled: true },
+    ];
+    // Both names are substrings of the text, but "outcome-ingester" is
+    // longer, so it wins outright rather than being flagged ambiguous.
+    const intent = parseCopilotIntent(
+      "run outcome-ingester not just ingest",
+      recipes,
+    );
+    expect(intent).toEqual({
+      kind: "run_recipe",
+      recipe: { name: "outcome-ingester", enabled: true },
+    });
+  });
+
+  it("takes ambiguity precedence over halt-explanation phrasing", () => {
+    const recipes = [
+      { name: "foo-bar", enabled: true },
+      { name: "baz-qux", enabled: true },
+    ];
+    const intent = parseCopilotIntent(
+      "why did foo-bar or baz-qux halt",
+      recipes,
+    );
+    expect(intent.kind).toBe("ambiguous_recipe");
+  });
+});
+
+describe("parseCopilotIntent — read-only status Q&A", () => {
+  it.each([
+    "how many approvals pending",
+    "approvals?",
+    "any approval left",
+  ])("recognizes %s as approvals_status", (text) => {
+    expect(parseCopilotIntent(text, RECIPES)).toEqual({
+      kind: "approvals_status",
+    });
+  });
+
+  it.each([
+    "kill switch status",
+    "is the killswitch engaged",
+    "kill-switch?",
+  ])("recognizes %s as kill_switch_status", (text) => {
+    expect(parseCopilotIntent(text, RECIPES)).toEqual({
+      kind: "kill_switch_status",
+    });
+  });
+
+  it("kill-switch pattern doesn't collide with the pause pattern's bare 'kill'", () => {
+    const intent = parseCopilotIntent("kill nightly-review", RECIPES);
+    expect(intent).toEqual({
+      kind: "pause_recipe",
+      recipe: { name: "nightly-review", enabled: true },
+    });
+  });
+});
+
 describe("buildCopilotReply", () => {
   it("proposes a pause_recipe action card", () => {
     const result = buildCopilotReply({
@@ -201,5 +277,53 @@ describe("buildCopilotReply", () => {
     });
     expect(result.reply).toMatch(/isn't wired up yet/i);
     expect(result.action).toBeUndefined();
+  });
+
+  it("asks for disambiguation without proposing an action", () => {
+    const result = buildCopilotReply({
+      kind: "ambiguous_recipe",
+      candidates: [
+        { name: "foo-bar", enabled: true },
+        { name: "baz-qux", enabled: true },
+      ],
+    });
+    expect(result.action).toBeUndefined();
+    expect(result.reply).toMatch(/"foo-bar"/);
+    expect(result.reply).toMatch(/"baz-qux"/);
+  });
+
+  it("reports zero approvals pending", () => {
+    const result = buildCopilotReply(
+      { kind: "approvals_status" },
+      { approvalsPending: 0 },
+    );
+    expect(result.reply).toMatch(/no approvals pending/i);
+    expect(result.action).toBeUndefined();
+  });
+
+  it("reports a nonzero approvals count with correct pluralization", () => {
+    expect(
+      buildCopilotReply({ kind: "approvals_status" }, { approvalsPending: 1 })
+        .reply,
+    ).toMatch(/1 approval pending/i);
+    expect(
+      buildCopilotReply({ kind: "approvals_status" }, { approvalsPending: 3 })
+        .reply,
+    ).toMatch(/3 approvals pending/i);
+  });
+
+  it("reports kill-switch engaged vs released", () => {
+    expect(
+      buildCopilotReply(
+        { kind: "kill_switch_status" },
+        { killSwitchEngaged: true },
+      ).reply,
+    ).toMatch(/engaged/i);
+    expect(
+      buildCopilotReply(
+        { kind: "kill_switch_status" },
+        { killSwitchEngaged: false },
+      ).reply,
+    ).toMatch(/released/i);
   });
 });

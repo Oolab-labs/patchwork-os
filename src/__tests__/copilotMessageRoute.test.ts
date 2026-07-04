@@ -13,7 +13,8 @@
 
 import { EventEmitter } from "node:events";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { getApprovalQueue } from "../approvalQueue.js";
 import type { RecipeRouteDeps } from "../recipeRoutes.js";
 import { tryHandleRecipeRoute } from "../recipeRoutes.js";
 
@@ -78,6 +79,12 @@ async function postCopilotMessage(
 }
 
 describe("POST /copilot/message", () => {
+  beforeEach(() => {
+    // getApprovalQueue() is a process-wide singleton other test files also
+    // touch — start each test from a known-empty state.
+    getApprovalQueue().clear();
+  });
+
   it("proposes a pause_recipe action card for a recognized pause phrase", async () => {
     const { handled, status, body } = await postCopilotMessage({
       text: "pause nightly-review, it's too noisy this week",
@@ -180,6 +187,46 @@ describe("POST /copilot/message", () => {
     const parsed = JSON.parse(body);
     // No recipe list to match against → falls back to unrecognized.
     expect(parsed.action).toBeUndefined();
+  });
+
+  it("asks for disambiguation and proposes no action when two recipes tie for the longest match", async () => {
+    const deps = makeDeps({
+      recipesFn: () => ({
+        recipes: [
+          { name: "foo-bar", enabled: true },
+          { name: "baz-qux", enabled: true },
+        ],
+      }),
+    });
+    const { status, body } = await postCopilotMessage(
+      { text: "pause foo-bar or baz-qux" },
+      deps,
+    );
+    expect(status).toBe(200);
+    const parsed = JSON.parse(body);
+    expect(parsed.action).toBeUndefined();
+    expect(parsed.reply).toMatch(/"foo-bar"/);
+    expect(parsed.reply).toMatch(/"baz-qux"/);
+  });
+
+  it("answers approvals_status from the real approval queue singleton (zero pending)", async () => {
+    const { status, body } = await postCopilotMessage({
+      text: "how many approvals pending",
+    });
+    expect(status).toBe(200);
+    const parsed = JSON.parse(body);
+    expect(parsed.action).toBeUndefined();
+    expect(parsed.reply).toMatch(/no approvals pending/i);
+  });
+
+  it("answers kill_switch_status, proposing no action", async () => {
+    const { status, body } = await postCopilotMessage({
+      text: "what's the kill switch status",
+    });
+    expect(status).toBe(200);
+    const parsed = JSON.parse(body);
+    expect(parsed.action).toBeUndefined();
+    expect(parsed.reply).toMatch(/released|engaged/i);
   });
 });
 
