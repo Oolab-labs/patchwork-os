@@ -7896,6 +7896,8 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .runs-tr[data-status="error"] td:first-child,
 .runs-tr[data-status="error"] { border-left: 3px solid var(--err); }
 .runs-tr[data-status="running"] { border-left: 3px solid var(--accent); }
+.runs-tr--failure td:first-child,
+.runs-tr--failure { border-left: 3px solid var(--err); }
 .runs-tr td:first-child { padding-left: 12px; }
 .run-card { transition: box-shadow 0.15s ease, transform 0.15s ease, background 0.12s ease; }
 .run-card:hover {
@@ -8523,6 +8525,23 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.rd-needs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--warn) 8%, var(--card-bg));
+}
+.rd-needs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: var(--fs-s);
+  color: var(--ink-1);
 }
 .rd-facts {
   display: flex;
