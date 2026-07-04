@@ -32,6 +32,11 @@ export interface BridgeStatus {
     version?: string;
   };
   killSwitch?: { engaged: boolean; locked: boolean } | null;
+  /** Most-constrained active session's tool-call token bucket (see
+   *  McpTransport.getToolRateLimitState) — null when rate limiting is
+   *  disabled or no session is connected. Not session-scoped: the vitals
+   *  pane shows one aggregate number, not a per-session breakdown. */
+  toolRateLimit?: { limit: number; remaining: number } | null;
 }
 
 const BASE_INTERVAL_MS = 5000;

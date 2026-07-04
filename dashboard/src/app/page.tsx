@@ -86,6 +86,11 @@ interface ActivityEvent {
   at?: number;
   id?: number;
   event?: string;
+  /** Present on tool-call entries from an interactive WebSocket session
+   *  (src/transport.ts's `this.sessionId`); absent/undefined for
+   *  recipe/cron-triggered tool calls, which have no session to attach to
+   *  — that's real, not a bug (see docs/in-flight.md 2026-07-04). */
+  sessionId?: string;
   metadata?: Record<string, unknown>;
   [k: string]: unknown;
 }
@@ -175,6 +180,17 @@ function eventLine(e: ActivityEvent): string {
   if (e.kind === "tool") return e.tool ?? "tool";
   if (e.kind === "lifecycle" && e.event) return e.event.replace(/_/g, " ");
   return e.kind ?? "event";
+}
+
+/** Tool-call entries carry sessionId top-level (src/transport.ts); lifecycle
+ *  entries carry it under metadata (src/bridge.ts). Absent for recipe/cron-
+ *  triggered tool calls, which have no interactive session — that's real,
+ *  not a gap (see docs/in-flight.md 2026-07-04 session-tagging entry). */
+function eventSessionId(e: ActivityEvent): string | undefined {
+  if (typeof e.sessionId === "string") return e.sessionId;
+  const meta = e.metadata;
+  if (meta && typeof meta.sessionId === "string") return meta.sessionId;
+  return undefined;
 }
 
 function tsLabel(at: number): string {
@@ -968,6 +984,11 @@ export default function HomePage() {
                           {eventLine(e)}
                           {count > 1 ? ` ×${count}` : ""}
                         </span>
+                        {eventSessionId(e) && (
+                          <span className="td-tail-session td-muted">
+                            session {eventSessionId(e)?.slice(0, 8)}
+                          </span>
+                        )}
                         {rowLiveRun && rowLiveRun.seq != null && (
                           <button
                             type="button"
@@ -1215,6 +1236,23 @@ export default function HomePage() {
               {enabledRecipesCount} / {recipes.length}
             </strong>
           </div>
+          {bridgeStatus.toolRateLimit && (
+            <div className="td-kv-row td-rate-budget">
+              <span className="td-muted">rate budget</span>
+              <strong>
+                {bridgeStatus.toolRateLimit.remaining}/{bridgeStatus.toolRateLimit.limit} min
+              </strong>
+              <div className="td-bar2" aria-hidden="true">
+                <span
+                  style={{
+                    width: `${Math.round(
+                      (bridgeStatus.toolRateLimit.remaining / Math.max(1, bridgeStatus.toolRateLimit.limit)) * 100,
+                    )}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </Pane>
 
         {/* 6: inbox */}

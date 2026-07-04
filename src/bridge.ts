@@ -1723,6 +1723,12 @@ export class Bridge {
     this.server.statusFn = () => {
       let sessionsInGrace = 0;
       const sessionList: Record<string, unknown>[] = [];
+      // Rate-limit state isn't a single bridge-wide value (each session has
+      // its own token bucket, or a shared one for HTTP session cycling — see
+      // McpTransport.setSharedToolRateLimitBucket) but the dashboard vitals
+      // pane isn't session-scoped, so surface the most-constrained session's
+      // remaining budget as a single aggregate rather than an arbitrary one.
+      let toolRateLimit: { limit: number; remaining: number } | null = null;
       for (const s of this.sessions.values()) {
         if (s.graceTimer) sessionsInGrace++;
         sessionList.push({
@@ -1732,11 +1738,19 @@ export class Bridge {
           openedFiles: s.openedFiles.size,
           terminalPrefix: s.terminalPrefix,
         });
+        const state = s.transport.getToolRateLimitState();
+        if (
+          state &&
+          (!toolRateLimit || state.remaining < toolRateLimit.remaining)
+        ) {
+          toolRateLimit = state;
+        }
       }
       return {
         claudeCode: this.sessions.size > 0,
         activeSessions: this.sessions.size,
         sessionsInGrace,
+        toolRateLimit,
         gracePeriodMs: this.config.gracePeriodMs,
         lastConnectAt: this.lastConnectAt,
         lastDisconnectAt: this.lastDisconnectAt,
