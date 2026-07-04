@@ -19,13 +19,18 @@ describe("navRoutes contract", () => {
   it("has the six IA sections in the expected order", () => {
     const titles = NAV_SECTIONS.map((s) => s.title);
     expect(titles).toEqual([
-      "Today",
+      "Home",
       "Build",
       "Review",
       "Activity",
       "Insights",
       "Setup",
     ]);
+  });
+
+  it("no longer lists the standalone /today page — folded into Overview's terminal-deck panes", () => {
+    const hrefs = new Set(flatRoutes().map((r) => r.href));
+    expect(hrefs).not.toContain("/today");
   });
 
   it("exposes every dashboard page in the sidebar (no orphans)", () => {
