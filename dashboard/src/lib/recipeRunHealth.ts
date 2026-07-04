@@ -8,7 +8,7 @@
  * duration logic independently. This module is the single source of truth;
  * behavior is byte-identical to both prior implementations.
  *
- * Prep for the future "fleet pane" (Terminal+Copilot redesign) which needs
+ * Also backs the terminal-deck's 2:fleet pane (app/page.tsx), which needs
  * the same per-recipe health computation without page component state.
  */
 

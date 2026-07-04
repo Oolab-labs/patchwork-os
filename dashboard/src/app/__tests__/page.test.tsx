@@ -85,11 +85,13 @@ const SAMPLE_GATE_DECISION = {
 describe("<HomePage/> — Terminal deck", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    window.localStorage.clear();
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
     vi.useRealTimers();
+    window.localStorage.clear();
   });
 
   it("renders the statusline + all 7 panes on a healthy bridge", async () => {
@@ -408,5 +410,225 @@ describe("<HomePage/> — Terminal deck", () => {
     expect(workersPane.textContent).toMatch(/gate activity unavailable/i);
     // Rest of the pane (worker trust rows) still renders — fail-soft.
     expect(workersPane.textContent).toMatch(/no worker activity yet/i);
+  });
+
+  // --------------------------------------------------------------------
+  // Phase 4: halt-age escalation, mute fingerprinting, footer hint, and
+  // the folded-in-from-/today worker-verdict confirm queue + team rollup.
+  // --------------------------------------------------------------------
+
+  it("escalates a halt's visual treatment once it's been open a long time (halt-age escalation)", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/runs": () =>
+        jsonResponse({
+          runs: [
+            {
+              seq: 900,
+              recipe: "stale-halt",
+              recipeName: "stale-halt",
+              startedAt: Date.now() - 7 * 60 * 60 * 1000,
+              status: "error",
+            },
+          ],
+        }),
+      "/api/bridge/runs/halt-summary": () => jsonResponse({ total: 1 }),
+    });
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const attentionPane = screen.getByRole("region", { name: "attention" });
+    expect(attentionPane.textContent).toMatch(/needs attention/i);
+    expect(attentionPane.querySelector(".td-pill-critical")).toBeTruthy();
+  });
+
+  it("does not escalate a fresh halt (<1h old)", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/runs": () =>
+        jsonResponse({
+          runs: [
+            {
+              seq: 901,
+              recipe: "fresh-halt",
+              recipeName: "fresh-halt",
+              startedAt: Date.now() - 5 * 60 * 1000,
+              status: "error",
+            },
+          ],
+        }),
+      "/api/bridge/runs/halt-summary": () => jsonResponse({ total: 1 }),
+    });
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const attentionPane = screen.getByRole("region", { name: "attention" });
+    expect(attentionPane.textContent).not.toMatch(/needs attention/i);
+    expect(attentionPane.querySelector(".td-pill-critical")).toBeNull();
+  });
+
+  it("mute suppresses the muted halt, but a genuinely new/different halt bypasses the mute (fingerprint fix)", async () => {
+    let runsPayload = {
+      runs: [
+        {
+          seq: 910,
+          recipe: "recurring-thing",
+          recipeName: "recurring-thing",
+          startedAt: Date.now() - 10 * 60 * 1000,
+          status: "error",
+          haltReason: "known flaky connector",
+        },
+      ],
+    };
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/runs": () => jsonResponse(runsPayload),
+      "/api/bridge/runs/halt-summary": () => jsonResponse({ total: 1 }),
+    });
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const attentionPane = screen.getByRole("region", { name: "attention" });
+    const muteBtn = within(attentionPane).getByText("Mute 24h");
+    await act(async () => {
+      muteBtn.click();
+    });
+
+    await waitFor(() => {
+      expect(attentionPane.textContent).toMatch(/Muted until/);
+    });
+
+    // A brand-new, different halt (different seq) shows up on the next poll
+    // — the mute must NOT hide it, even though we're still inside the 24h
+    // window from the click above.
+    runsPayload = {
+      runs: [
+        {
+          seq: 911,
+          recipe: "unrelated-thing",
+          recipeName: "unrelated-thing",
+          startedAt: Date.now() - 60 * 1000,
+          status: "error",
+          haltReason: "brand new problem",
+        },
+      ],
+    };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    await waitFor(() => {
+      expect(attentionPane.textContent).not.toMatch(/Muted until/);
+      expect(attentionPane.textContent).toMatch(/Unrelated Thing/i);
+    });
+  });
+
+  it("renders a footer hint for the pane keyboard shortcuts", async () => {
+    mockFetchRoutes(HEALTHY_ROUTES);
+    const { container } = render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const footer = container.querySelector(".td-footer");
+    expect(footer).toBeTruthy();
+    expect(footer?.textContent).toMatch(/0.{1,2}6 focus a pane/);
+  });
+
+  it("0:attention surfaces a pending worker-verdict confirmation and clears it via Confirm/Reject (folded from /today)", async () => {
+    const outcomeMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/bridge/outcomes") && !url.includes("/pending")) {
+        return outcomeMock(init);
+      }
+      for (const [key, make] of Object.entries({
+        ...HEALTHY_ROUTES,
+        "/api/bridge/outcomes/pending": () =>
+          jsonResponse({
+            pending: [
+              {
+                issueUrl: "https://github.com/o/r/issues/1",
+                recipeName: "triage-failing-tests",
+                workerId: "test-guardian",
+                workerName: "Test Guardian",
+                filedAt: Date.now() - 60_000,
+                classKey: "issue:compensable:high",
+                title: "Login test failing on main",
+              },
+            ],
+          }),
+      })) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const attentionPane = screen.getByRole("region", { name: "attention" });
+    expect(attentionPane.textContent).toMatch(/worker verdict/i);
+    expect(attentionPane.textContent).toMatch(/Login test failing on main/);
+
+    const confirmBtn = within(attentionPane).getByText("Looks real");
+    await act(async () => {
+      confirmBtn.click();
+    });
+
+    await waitFor(() => {
+      expect(outcomeMock).toHaveBeenCalledTimes(1);
+    });
+    const body = JSON.parse((outcomeMock.mock.calls[0]?.[0] as RequestInit)?.body as string);
+    expect(body).toMatchObject({
+      issueUrl: "https://github.com/o/r/issues/1",
+      disposition: "confirmed",
+    });
+  });
+
+  it("4:workers header shows a promote/demote rollup (folded from /today's 'glance at the team')", async () => {
+    mockFetchRoutes({
+      ...HEALTHY_ROUTES,
+      "/api/bridge/workers/shadow": () =>
+        jsonResponse({
+          workers: [
+            {
+              workerId: "w1",
+              name: "Dependency Bump",
+              autonomyCeiling: 1,
+              board: [
+                {
+                  classKey: "vcs-remote:compensable:medium",
+                  level: 3,
+                  observations: 20,
+                  mean: 0.95,
+                  owned: true,
+                },
+              ],
+              events: [],
+              compared: 10,
+              agreed: 10,
+              divergences: [],
+            },
+          ],
+          runsScanned: 0,
+          decisionsScanned: 0,
+        }),
+    });
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const workersPane = screen.getByRole("region", { name: "workers" });
+    expect(workersPane.textContent).toMatch(/ready to promote/i);
   });
 });

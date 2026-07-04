@@ -9693,6 +9693,13 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
   grid-template-columns: repeat(6, 1fr);
   gap: 14px;
 }
+/* Phase 4: footer hint for the usePaneShortcut keyboard nav (0-6 focus,
+   Enter open) — previously zero on-screen discoverability. */
+.td-footer {
+  margin-top: 10px;
+  text-align: center;
+  font-size: var(--fs-2xs);
+}
 .td-grid > * { grid-column: span 6; }
 @media (min-width: 860px) {
   /* Matches the mockup's actual .hd-panes geometry exactly (verified
@@ -9815,6 +9822,13 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-pill-warn { background: rgba(212,160,64,0.18); color: #e0b054; }
 [data-theme="paper"] .td-pill-err { background: var(--err-soft); color: var(--err-text); }
 [data-theme="paper"] .td-pill-warn { background: var(--warn-soft); color: var(--warn-text); }
+/* Halt-age escalation (Phase 4): a halt open >24h gets a brighter,
+   pulsing pill instead of looking identical to one from 2 minutes ago. */
+.td-pill-critical { animation: td-pill-pulse 2s ease-in-out infinite; }
+@keyframes td-pill-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
 
 /* Pane 0: attention */
 .td-attention-item { display: flex; flex-direction: column; gap: 6px; }
@@ -9826,6 +9840,12 @@ details[open] .traces-detail-arrow { transform: rotate(90deg); }
 .td-attention-foot a { color: inherit; }
 .td-attention-live { padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); }
 [data-theme="paper"] .td-attention-live { border-bottom-color: var(--border-subtle, rgba(0,0,0,0.08)); }
+/* Halt-age escalation (Phase 4): stale (>1h) gets a left accent bar,
+   critical (>24h) gets a stronger one plus the pulsing pill above. */
+.td-attention-stale { border-left: 2px solid rgba(224,176,84,0.5); padding-left: 8px; }
+.td-attention-critical { border-left: 2px solid rgba(232,129,127,0.7); padding-left: 8px; }
+.td-age-stale { color: #e0b054; }
+[data-theme="paper"] .td-age-stale { color: var(--warn-text); }
 
 /* Pane 1: tail */
 .td-tail { display: flex; flex-direction: column; gap: 2px; }
