@@ -878,6 +878,88 @@ describe("<HomePage/> — Terminal deck", () => {
     expect(screen.queryByText("Undo")).toBeNull();
   });
 
+  it("audit regression: a stale background poll landing right after Confirm does not clobber the optimistic state, so Undo still flips the right direction", async () => {
+    // Simulates the exact race an audit found: the page's 5s poll always
+    // returns the recipe as `enabled: true` here (as if fetched before the
+    // PATCH ever landed, or the bridge is just slow to reflect it) — a
+    // buggy implementation would let this stale snapshot overwrite the
+    // optimistic `false` written by Confirm, so a subsequent Undo would
+    // recompute its target off the clobbered `true` and PATCH
+    // `{enabled: false}` again instead of `{enabled: true}`.
+    const patchCalls: unknown[] = [];
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method ?? "GET";
+      if (url.includes("/api/bridge/copilot/message")) {
+        return jsonResponse({
+          reply: 'Review the card below to disable "daily-brief".',
+          action: { kind: "pause_recipe", recipeName: "daily-brief" },
+        });
+      }
+      if (method === "PATCH" && url.includes("/api/bridge/recipes/daily-brief")) {
+        patchCalls.push(JSON.parse((init?.body as string) ?? "{}"));
+        return jsonResponse({ ok: true });
+      }
+      if (method === "POST" && url.includes("/api/bridge/traces/decision")) {
+        return jsonResponse({ ok: true });
+      }
+      // Deliberately stale: the bridge "hasn't caught up" and keeps
+      // reporting enabled:true even after the PATCH above succeeds.
+      if (url.includes("/api/bridge/recipes")) {
+        return jsonResponse({
+          recipes: [{ name: "daily-brief", enabled: true, schedule: "0 7 * * *" }],
+        });
+      }
+      for (const [key, make] of Object.entries(HEALTHY_ROUTES)) {
+        if (url.includes(key)) return make();
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    render(<HomePage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const input = screen.getByLabelText("Copilot chat input");
+    await act(async () => {
+      typeIntoInput(input as HTMLInputElement, "pause daily-brief");
+    });
+    const form = input.closest("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    const confirmBtn = await screen.findByText("Confirm");
+    await act(async () => {
+      confirmBtn.click();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    await waitFor(() => expect(screen.getByText("✓ done")).toBeTruthy());
+    expect(patchCalls).toEqual([{ enabled: false }]);
+
+    // Let one stale background poll (5s cadence) land within the 8s grace
+    // window — it would clobber `recipes` back to enabled:true in the
+    // buggy version.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    const undoBtn = await screen.findByText("Undo");
+    await act(async () => {
+      undoBtn.click();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("↺ undone")).toBeTruthy();
+    });
+    // The critical assertion: Undo's PATCH must be the OPPOSITE of the
+    // original Confirm's PATCH, proving the stale polls never clobbered
+    // the locally-known post-Confirm state.
+    expect(patchCalls).toEqual([{ enabled: false }, { enabled: true }]);
+  });
+
   it("run_recipe action cards never show an Undo button once done", async () => {
     global.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
